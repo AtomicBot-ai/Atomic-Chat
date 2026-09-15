@@ -30,6 +30,8 @@ import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
  *    found there was imported and started.
  *  - `cloud_key` — connected a cloud provider with an API key.
  *  - `subscription` — signed in with a ChatGPT subscription.
+ *  - `hub` — left for the Hub to pick any model from Hugging Face. Nothing
+ *    is on its way yet, so the composer treats it like a dismissal.
  *  - `dismissed` — closed it, still with nothing to answer with.
  */
 export type ReplyGateOutcome =
@@ -38,6 +40,7 @@ export type ReplyGateOutcome =
   | 'folder'
   | 'cloud_key'
   | 'subscription'
+  | 'hub'
   | 'dismissed'
 
 function capture(event: string, props: Record<string, unknown>): void {

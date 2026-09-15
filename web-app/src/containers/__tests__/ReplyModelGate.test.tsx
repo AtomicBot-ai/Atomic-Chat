@@ -1,13 +1,21 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ONBOARDING_REMINDER_MODEL_HF_REPO } from '@/constants/models'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   switchToModel: vi.fn(() => Promise.resolve()),
+  navigate: vi.fn(),
   capture: vi.fn(),
   pullModelWithMetadata: vi.fn(),
   fetchHuggingFaceRepo: vi.fn(),
@@ -15,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   addLocalDownloadingModel: vi.fn(),
   clearResumableDownload: vi.fn(),
   chatgptSubscriptionAvailable: true,
+}))
+
+const sourcesMock = vi.hoisted(() => ({
+  sources: [] as CatalogModel[],
 }))
 
 const folderMocks = vi.hoisted(() => ({
@@ -41,6 +53,21 @@ vi.mock('@/lib/scanned-model-import', async () => {
 
 vi.mock('@/utils/switchModel', () => ({
   switchToModel: mocks.switchToModel,
+}))
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mocks.navigate,
+}))
+
+// The catalog the recommendations resolve against. Anything not in here is
+// fetched from Hugging Face through the mocked service hub below.
+vi.mock('@/hooks/useModelSources', () => ({
+  useModelSources: () => ({
+    sources: sourcesMock.sources,
+    loading: false,
+    error: null,
+    fetchSources: vi.fn(),
+  }),
 }))
 
 vi.mock('posthog-js', () => ({
@@ -173,7 +200,13 @@ describe('ReplyModelGate', () => {
     vi.clearAllMocks()
     localStorage.clear()
     mocks.chatgptSubscriptionAvailable = true
-    mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: 'repo' })
+    sourcesMock.sources = [catalogModel]
+    useRecommendedModelsRegistryStore.setState({ tiers: {} })
+    // Only the tier's lead has a card; the flat "other options" the registry
+    // appends stay unresolved and therefore unlisted.
+    mocks.fetchHuggingFaceRepo.mockImplementation(async (repo: string) =>
+      repo === ONBOARDING_REMINDER_MODEL_HF_REPO ? { id: 'repo' } : null
+    )
     mocks.convertHfRepoToCatalogModel.mockReturnValue(catalogModel)
     seedServiceHub({
       models: {
@@ -223,10 +256,9 @@ describe('ReplyModelGate', () => {
   it('recommends a download when the device has nothing', async () => {
     const { onResolved } = renderGate([unconnectedCloud()])
 
-    const download = await screen.findByRole('button', {
-      name: /replyGate.download/,
-    })
-    fireEvent.click(download)
+    // The best fit leads; the bundled "other options" follow it as rows.
+    const lead = await screen.findByTestId('reply-gate-recommended-lead')
+    fireEvent.click(within(lead).getByRole('button'))
 
     expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
       'AtomicChat/Qwen3.5-4B-Q4_K_M',
@@ -328,11 +360,93 @@ describe('ReplyModelGate', () => {
     ])
 
     expect(
-      await screen.findByRole('button', { name: 'chat:replyGate.connectCloud' })
+      await screen.findByRole('button', { name: 'setup:cloudStep.trigger' })
     ).toBeVisible()
     expect(
-      screen.getByRole('button', { name: 'chat:replyGate.connectSubscription' })
+      screen.getByRole('button', {
+        name: 'setup:cloudStep.subscriptionTrigger',
+      })
     ).toBeVisible()
+    // The rest of Hugging Face is a route too, in every branch.
+    expect(
+      screen.getByRole('button', { name: 'setup:cloudStep.huggingFaceTrigger' })
+    ).toBeVisible()
+  })
+
+  it('leaves for the Hub as its own outcome, keeping the message in the composer', async () => {
+    const { onDismissed, onResolved, onOpenChange } = renderGate([
+      unconnectedCloud(),
+    ])
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'setup:cloudStep.huggingFaceTrigger',
+      })
+    )
+
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: '/hub/' })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    // Nothing is on its way, so the queued send is dropped like a dismissal —
+    // but the record says where the user went.
+    expect(onDismissed).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'hub', branch: 'none' })
+    )
+    expect(onResolved).not.toHaveBeenCalled()
+    expect(capturedEvent('reply_model_gate_outcome')).toMatchObject({
+      outcome: 'hub',
+    })
+  })
+
+  it("lists the tier's other options behind the best fit, without sizes", async () => {
+    const other: CatalogModel = {
+      ...catalogModel,
+      model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
+      quants: [
+        {
+          model_id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',
+          path: 'https://example.test/LFM2.5-2.6B-Q4_K_M.gguf',
+          file_size: '1.5 GB',
+        },
+      ],
+    } as CatalogModel
+    sourcesMock.sources = [catalogModel, other]
+    useRecommendedModelsRegistryStore.setState({
+      recommendations: [],
+      tiers: {
+        vram_8: [
+          {
+            model_name: catalogModel.model_name,
+            description_key: 'hub:recEverydayUse',
+          },
+          { model_name: other.model_name, description_key: 'hub:recCompact' },
+        ],
+      },
+    })
+
+    renderGate([unconnectedCloud()])
+
+    const lead = await screen.findByTestId('reply-gate-recommended-lead')
+    expect(lead).toHaveTextContent('chat:replyGate.recommendedForDevice')
+    const others = screen.getAllByTestId('reply-gate-recommended-other')
+    expect(others).toHaveLength(1)
+    expect(others[0]).toHaveTextContent('LFM2.5 2.6B')
+    expect(others[0]).toHaveTextContent('hub:recCompact')
+    // The size belongs on the download, not on the choice.
+    expect(screen.queryByText(/GB/)).toBeNull()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'chat:replyGate.downloadLabel:{"name":"LFM2.5 2.6B"}',
+      })
+    )
+    expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+      'LiquidAI/LFM2.5-2.6B-Q4_K_M',
+      'https://example.test/LFM2.5-2.6B-Q4_K_M.gguf',
+      undefined,
+      '',
+      true,
+      false
+    )
   })
 
   it('hides the subscription route where the sign-in cannot run', async () => {
@@ -346,7 +460,7 @@ describe('ReplyModelGate', () => {
     await screen.findByText(/chat:replyGate\.startingTitle/)
     expect(
       screen.queryByRole('button', {
-        name: 'chat:replyGate.connectSubscription',
+        name: 'setup:cloudStep.subscriptionTrigger',
       })
     ).toBeNull()
   })

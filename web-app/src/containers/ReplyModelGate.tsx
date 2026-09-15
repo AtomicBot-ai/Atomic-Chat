@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Cloud, Download, FolderPlus, Loader2 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { Cloud, FolderPlus, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -10,8 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ChatGptMark } from '@/components/icons/chatgpt-mark'
+import { route } from '@/constants/routes'
 import { ModelLogo } from '@/containers/ModelLogo'
-import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { RouteRow } from '@/containers/RouteRow'
 import {
   AddCloudProviderDialog,
   selectCloudGalleryProviders,
@@ -21,10 +24,11 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useRecommendedLocalModel } from '@/hooks/useRecommendedLocalModel'
+import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
+import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
   importScannedModel,
@@ -207,6 +211,26 @@ export function ReplyModelGate({
     setCloudDialogOpen(true)
   }
 
+  const navigate = useNavigate()
+
+  // "Any model from Hugging Face" leaves for the Hub. Nothing is on its way,
+  // so the composer drops its queued send like a dismissal — the text stays
+  // in the composer — but the outcome is its own, not "gave up".
+  const handleBrowseHub = useCallback(() => {
+    if (!session) return
+    resolvedRef.current = true
+    const resolution = {
+      outcome: 'hub' as const,
+      branch: session.branch,
+      decidedInMs: Date.now() - openedAtRef.current,
+      openedAtMs: openedAtRef.current,
+    }
+    captureReplyGateOutcome(resolution)
+    callbacksRef.current.onDismissed(resolution)
+    onOpenChange(false)
+    void navigate({ to: route.hub.index })
+  }, [session, onOpenChange, navigate])
+
   const serviceHub = useServiceHub()
 
   const handleCloudConnected = useCallback(
@@ -242,6 +266,7 @@ export function ReplyModelGate({
               onResolve={resolve}
               onConnectCloud={() => openCloudDialog('gallery')}
               onConnectSubscription={() => openCloudDialog('subscription')}
+              onBrowseHub={handleBrowseHub}
             />
           )}
         </DialogContent>
@@ -263,9 +288,9 @@ export function ReplyModelGate({
 /**
  * The widget's contents.
  *
- * Split out so it mounts only while the dialog is open: it fetches the
- * recommended model's card from Hugging Face, and that request has no business
- * firing on every composer render.
+ * Split out so it mounts only while the dialog is open: it resolves the
+ * recommended models' cards from Hugging Face, and those requests have no
+ * business firing on every composer render.
  */
 function ReplyModelGateBody({
   branch,
@@ -274,6 +299,7 @@ function ReplyModelGateBody({
   onResolve,
   onConnectCloud,
   onConnectSubscription,
+  onBrowseHub,
 }: {
   branch: ReplyGateBranch
   target?: ReplyModelOption
@@ -281,6 +307,7 @@ function ReplyModelGateBody({
   onResolve: (outcome: ReplyGateOutcome) => void
   onConnectCloud: () => void
   onConnectSubscription: () => void
+  onBrowseHub: () => void
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -347,86 +374,106 @@ function ReplyModelGateBody({
       )}
 
       {branch === 'none' && (
-        <>
-          <RecommendedDownload onStarted={() => onResolve('download')} />
-          <AddFolderRoute
-            onStarted={(option) => start(option, 'folder')}
-            disabled={startingKey !== null}
-          />
-        </>
+        <RecommendedDownloads onStarted={() => onResolve('download')} />
       )}
 
-      <CloudAlternatives
+      <ModelRoutes
         providers={providers}
         onConnectCloud={onConnectCloud}
         onConnectSubscription={onConnectSubscription}
+        onBrowseHub={onBrowseHub}
       />
+
+      {branch === 'none' && (
+        <AddFolderRoute
+          onStarted={(option) => start(option, 'folder')}
+          disabled={startingKey !== null}
+        />
+      )}
     </>
   )
 }
 
 /**
- * Branch 2: nothing on the device. The recommendation is the same one
- * onboarding's reminder makes — see `useRecommendedLocalModel` — so the user is
- * never offered two different "recommended" models by the same app.
+ * Branch 2: nothing on the device. The list is the one onboarding leads with
+ * — see `useRecommendedDownloads` — so the user is never offered two different
+ * "recommended" models by the same app. The first row is the best fit and
+ * carries the filled button; the rest are the tier's other options.
  */
-function RecommendedDownload({ onStarted }: { onStarted: () => void }) {
+function RecommendedDownloads({ onStarted }: { onStarted: () => void }) {
   const { t } = useTranslation()
-  const { reminder, variant, isLoading, isDownloading, startDownload } =
-    useRecommendedLocalModel()
+  const { items, isLoading } = useRecommendedDownloads()
   const downloads = useDownloadStore((state) => state.downloads)
 
-  const progress = useMemo(() => {
-    if (!variant) return null
-    const entry = Object.values(downloads).find(
-      (d) => d.id === variant.model_id
-    )
+  const progressFor = (modelId: string | undefined) => {
+    if (!modelId) return null
+    const entry = Object.values(downloads).find((d) => d.id === modelId)
     if (!entry || entry.total <= 0) return null
     return Math.round((entry.progress ?? 0) * 100)
-  }, [downloads, variant])
+  }
 
-  const handleDownload = () => {
-    if (!startDownload()) return
-    onStarted()
+  if (items.length === 0) {
+    if (!isLoading) return null
+    return (
+      <div
+        className="flex items-center gap-3 rounded-lg border bg-secondary/50 p-3"
+        data-testid="reply-gate-recommended"
+      >
+        <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
+        <span className="text-muted-foreground truncate text-sm">
+          {t('chat:replyGate.findingRecommendation')}
+        </span>
+      </div>
+    )
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-secondary/50 p-3">
-      {/* Through `ModelLogo` for the same reason as the rows above: it tints
-          single-color marks (Liquid's LFM among them) so they survive a dark
-          background, where a plain <img> paints them black. */}
-      <ModelLogo
-        name={reminder.repo}
-        fallback="huggingface"
-        className="size-8 rounded-lg"
-      />
-      <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium leading-tight">
-          {reminder.title}
-          {variant && (
-            <span className="text-muted-foreground">
-              {' '}
-              ({variant.file_size})
-            </span>
-          )}
-        </span>
-        <span className="text-muted-foreground block truncate text-xs">
-          {isDownloading
+    <div
+      className="rounded-lg border bg-secondary/50 px-3 py-2"
+      data-testid="reply-gate-recommended"
+    >
+      <div className="flex flex-col divide-y divide-border/60">
+        {items.map((item, index) => {
+          const hero = index === 0
+          const progress = progressFor(item.variant.model_id)
+          const hint = item.isDownloading
             ? progress !== null
               ? t('chat:replyGate.downloadingPercent', { percent: progress })
               : t('chat:replyGate.downloading')
-            : t('chat:replyGate.recommendedForDevice')}
-        </span>
+            : hero
+              ? t('chat:replyGate.recommendedForDevice')
+              : t(item.descriptionKey)
+          return (
+            <RouteRow
+              key={item.repo}
+              icon={
+                // Through `ModelLogo` so single-color marks (Liquid's LFM among
+                // them) are tinted and survive a dark background.
+                <ModelLogo
+                  name={item.repo}
+                  fallback="huggingface"
+                  className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
+                />
+              }
+              title={item.title}
+              hint={hint}
+              action={t('chat:replyGate.download')}
+              label={t('chat:replyGate.downloadLabel', { name: item.title })}
+              primary={hero}
+              disabled={item.isDownloading}
+              onClick={() => {
+                if (!item.start()) return
+                onStarted()
+              }}
+              data-testid={
+                hero
+                  ? 'reply-gate-recommended-lead'
+                  : 'reply-gate-recommended-other'
+              }
+            />
+          )
+        })}
       </div>
-      <Button
-        size="sm"
-        className="shrink-0"
-        disabled={isLoading || !variant || isDownloading}
-        onClick={handleDownload}
-      >
-        <Download />
-        {t('chat:replyGate.download')}
-      </Button>
     </div>
   )
 }
@@ -492,9 +539,9 @@ function AddFolderRoute({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="link"
       size="sm"
-      className="w-full"
+      className="text-muted-foreground hover:text-foreground h-auto self-center py-1 text-xs hover:no-underline"
       disabled={disabled || scanning}
       onClick={() => void handlePick()}
       data-testid="reply-gate-add-folder"
@@ -512,20 +559,30 @@ function AddFolderRoute({
 }
 
 /**
- * The two cloud routes, offered in every branch.
+ * The other ways to get a model, offered in every branch as rows — the same
+ * rows onboarding shows, so the two screens read as one product.
  *
- * Each is hidden only when it cannot do anything: the gallery when no cloud
- * provider is connectable at all, the subscription when this platform cannot
- * serve the OAuth callback or the account is already signed in.
+ * Each cloud route is hidden only when it cannot do anything: the API-key
+ * route when no cloud provider is connectable at all, the subscription when
+ * this platform cannot serve the OAuth callback or the account is already
+ * signed in. The Hub route is always there: it is where the rest of Hugging
+ * Face lives.
+ *
+ * No "or" divider above these: it framed cloud as the fallback for people
+ * with nothing, and the point of showing it in every branch is that it is a
+ * peer of the local model. SetupScreen dropped the same divider for the same
+ * reason (ATO-454).
  */
-function CloudAlternatives({
+function ModelRoutes({
   providers,
   onConnectCloud,
   onConnectSubscription,
+  onBrowseHub,
 }: {
   providers: ModelProvider[]
   onConnectCloud: () => void
   onConnectSubscription: () => void
+  onBrowseHub: () => void
 }) {
   const { t } = useTranslation()
 
@@ -534,60 +591,50 @@ function CloudAlternatives({
     [providers]
   )
 
-  // Kept as the provider object rather than a boolean: the button wears the
-  // subscription's own mark, so the named route is recognisable at a glance
-  // beside the generic cloud one.
-  const subscriptionProvider = useMemo(() => {
-    if (!PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION])
-      return undefined
+  const subscriptionOffered = useMemo(() => {
+    if (!PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION]) return false
     const provider = providers.find((p) => p.provider === SUBSCRIPTION_PROVIDER)
-    return provider && !isProviderConnected(provider) ? provider : undefined
+    return !!provider && !isProviderConnected(provider)
   }, [providers])
 
-  if (!hasCloudProviders && !subscriptionProvider) return null
-
-  // No "or" divider above these: it framed cloud as the fallback for people
-  // with nothing, and the point of showing it in every branch is that it is a
-  // peer of the local model. SetupScreen dropped the same divider for the same
-  // reason (ATO-454).
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        {hasCloudProviders && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="flex-1"
-            onClick={onConnectCloud}
-          >
-            <Cloud />
-            {t('chat:replyGate.connectCloud')}
-          </Button>
-        )}
-        {subscriptionProvider && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="flex-1"
+    <div
+      className="rounded-lg border bg-secondary/50 px-3 py-2"
+      data-testid="reply-gate-routes"
+    >
+      <div className="flex flex-col divide-y divide-border/60">
+        <RouteRow
+          icon={<img src={HUGGINGFACE_LOGO_SRC} alt="" />}
+          title={t('setup:cloudStep.huggingFaceTitle')}
+          hint={t('setup:cloudStep.huggingFaceHint')}
+          action={t('setup:cloudStep.browse')}
+          label={t('setup:cloudStep.huggingFaceTrigger')}
+          onClick={onBrowseHub}
+          data-testid="reply-gate-browse-hub"
+        />
+        {subscriptionOffered && (
+          <RouteRow
+            icon={<ChatGptMark />}
+            title={t('setup:cloudStep.subscriptionTitle')}
+            hint={t('setup:cloudStep.subscriptionHint')}
+            action={t('setup:cloudStep.connect')}
+            label={t('setup:cloudStep.subscriptionTrigger')}
             onClick={onConnectSubscription}
-          >
-            {/* Decorative: the label already names the route, and the
-                avatar's own alt text would otherwise be read as part of the
-                button's name. */}
-            <span aria-hidden className="flex">
-              <ProvidersAvatar
-                provider={subscriptionProvider}
-                className="size-4 shrink-0"
-              />
-            </span>
-            {t('chat:replyGate.connectSubscription')}
-          </Button>
+            data-testid="reply-gate-subscription"
+          />
+        )}
+        {hasCloudProviders && (
+          <RouteRow
+            icon={<Cloud />}
+            title={t('setup:cloudStep.providerTitle')}
+            hint={t('setup:cloudStep.providerHint')}
+            action={t('setup:cloudStep.add')}
+            label={t('setup:cloudStep.trigger')}
+            onClick={onConnectCloud}
+            data-testid="reply-gate-cloud-key"
+          />
         )}
       </div>
     </div>
   )
 }
-
-export default ReplyModelGate

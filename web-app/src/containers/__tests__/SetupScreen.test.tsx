@@ -911,6 +911,8 @@ describe('SetupScreen', () => {
       const names = screen
         .getAllByRole('heading', { level: 2 })
         .map((heading) => heading.textContent?.replace(/ ·.*$/, '').trim())
+        // The "other ways" rows under the list are routes, not picks.
+        .filter((name) => !name?.startsWith('setup:'))
       expect(names).toEqual([
         'Qwen3.5 4B',
         'Gemma 4 12B',
@@ -1147,6 +1149,25 @@ describe('SetupScreen', () => {
       expect(
         screen.getByTitle(/setup:recommend\.whyCpuOnly/)
       ).toBeInTheDocument()
+      unmount()
+    })
+
+    it('offers the rest of Hugging Face as a row that leaves for the Hub', async () => {
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /setup:cloudStep\.huggingFaceTrigger/,
+        })
+      )
+
+      // Onboarding is done — the Hub takes over, and the composer's widget
+      // asks again if the user comes back empty-handed.
+      expect(localStorage.getItem('setup-completed')).toBe('true')
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/hub/',
+        replace: true,
+      })
       unmount()
     })
 

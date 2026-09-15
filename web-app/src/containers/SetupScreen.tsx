@@ -62,6 +62,8 @@ import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useStaffPicksStore } from '@/stores/staff-picks-store'
 import type { StaffPick } from '@/services/staff-picks-registry'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
+import { RouteRow, ROUTE_ROW_BUTTON_HOVER } from '@/containers/RouteRow'
+import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { prettyModelName } from '@/lib/model-display-name'
 import {
   buildRecommendedImpressions,
@@ -207,8 +209,7 @@ const SUBSCRIPTION_PROVIDER = 'chatgpt'
 /// A hover the eye can catch on the secondary row buttons. `secondary`'s own
 /// `hover:bg-secondary/80` moves the fill by a fifth of a shade towards the
 /// card behind it, which on this screen is no move at all.
-const ROW_BUTTON_HOVER =
-  'transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-600'
+const ROW_BUTTON_HOVER = ROUTE_ROW_BUTTON_HOVER
 
 /// Every row on this screen ends in one button, and the buttons read as a
 /// column only if they are one width. Each reserves room for the widest label
@@ -1317,7 +1318,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // widget already recommends the same model at the moment of the blocked
   // send, and two surfaces offering one download is nagging, not help.
   const leaveWithoutModel = useCallback(
-    (reason: 'dismissed') => {
+    (reason: 'dismissed' | 'hub') => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
 
@@ -1348,11 +1349,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       // with a collapsed sidebar regardless of how this path is reached.
       useLeftPanel.getState().setLeftPanel(true)
 
-      void navigate({
-        to: route.home,
-        replace: true,
-        search: {},
-      })
+      void navigate(
+        reason === 'hub'
+          ? { to: route.hub.index, replace: true }
+          : { to: route.home, replace: true, search: {} }
+      )
     },
     [
       navigate,
@@ -1656,6 +1657,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     t('setup:localStep.running'),
     t('setup:cloudStep.connect'),
     t('setup:cloudStep.add'),
+    t('setup:cloudStep.browse'),
   ]
 
   /**
@@ -1671,6 +1673,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     action,
     label,
     onClick,
+    testId,
   }: {
     icon: React.ReactNode
     title: string
@@ -1678,35 +1681,17 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     action: string
     label: string
     onClick: () => void
+    testId?: string
   }) => (
-    <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground [&_svg]:size-4"
-        >
-          {icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-medium leading-tight">
-            {title}
-          </h2>
-          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-            {hint}
-          </p>
-        </div>
-      </div>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        aria-label={label}
-        onClick={onClick}
-        className={cn('shrink-0 rounded-full px-4', ROW_BUTTON_HOVER)}
-      >
-        <RowActionLabel label={action} reserve={rowActionLabels} />
-      </Button>
-    </div>
+    <RouteRow
+      icon={icon}
+      title={title}
+      hint={hint}
+      action={<RowActionLabel label={action} reserve={rowActionLabels} />}
+      label={label}
+      onClick={onClick}
+      data-testid={testId}
+    />
   )
 
   return (
@@ -1927,37 +1912,47 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                     we have, and it had happened on seven devices in the
                     product's history while it lived as small print under the
                     list. The "or" now heads an equal card, not a footnote. */}
-                {(subscriptionProvider || hasCloudProviders) && (
-                  <div className="relative z-60 flex shrink-0 flex-col gap-2">
-                    <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
-                      {t('setup:cloudStep.sectionTitle')}
-                    </span>
-                    {/* The list's box, gutter included, so these buttons land
-                        in the same column as the Download buttons above. */}
-                    <div className="w-full shrink-0 overflow-hidden rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]">
-                      <div className="flex flex-col divide-y divide-border/60">
-                        {subscriptionProvider &&
-                          renderCloudRow({
-                            icon: <ChatGptMark />,
-                            title: t('setup:cloudStep.subscriptionTitle'),
-                            hint: t('setup:cloudStep.subscriptionHint'),
-                            action: t('setup:cloudStep.connect'),
-                            label: t('setup:cloudStep.subscriptionTrigger'),
-                            onClick: openSubscription,
-                          })}
-                        {hasCloudProviders &&
-                          renderCloudRow({
-                            icon: <Cloud />,
-                            title: t('setup:cloudStep.providerTitle'),
-                            hint: t('setup:cloudStep.providerHint'),
-                            action: t('setup:cloudStep.add'),
-                            label: t('setup:cloudStep.trigger'),
-                            onClick: openCloudGallery,
-                          })}
-                      </div>
+                <div className="relative z-60 flex shrink-0 flex-col gap-2">
+                  <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+                    {t('setup:cloudStep.sectionTitle')}
+                  </span>
+                  {/* The list's box, gutter included, so these buttons land
+                      in the same column as the Download buttons above. */}
+                  <div className="w-full shrink-0 overflow-hidden rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]">
+                    <div className="flex flex-col divide-y divide-border/60">
+                      {/* The rest of Hugging Face lives in Models. Offered
+                          here so a user who wants something other than the
+                          picks does not have to find the Hub by themselves. */}
+                      {renderCloudRow({
+                        icon: <img src={HUGGINGFACE_LOGO_SRC} alt="" />,
+                        title: t('setup:cloudStep.huggingFaceTitle'),
+                        hint: t('setup:cloudStep.huggingFaceHint'),
+                        action: t('setup:cloudStep.browse'),
+                        label: t('setup:cloudStep.huggingFaceTrigger'),
+                        onClick: () => leaveWithoutModel('hub'),
+                        testId: 'setup-browse-hub',
+                      })}
+                      {subscriptionProvider &&
+                        renderCloudRow({
+                          icon: <ChatGptMark />,
+                          title: t('setup:cloudStep.subscriptionTitle'),
+                          hint: t('setup:cloudStep.subscriptionHint'),
+                          action: t('setup:cloudStep.connect'),
+                          label: t('setup:cloudStep.subscriptionTrigger'),
+                          onClick: openSubscription,
+                        })}
+                      {hasCloudProviders &&
+                        renderCloudRow({
+                          icon: <Cloud />,
+                          title: t('setup:cloudStep.providerTitle'),
+                          hint: t('setup:cloudStep.providerHint'),
+                          action: t('setup:cloudStep.add'),
+                          label: t('setup:cloudStep.trigger'),
+                          onClick: openCloudGallery,
+                        })}
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* The honest way out, replacing a 15-second timer that took
                     60 % of all onboarding exits without ever showing itself.
