@@ -8,6 +8,7 @@ pub mod catalog;
 pub mod engine;
 pub mod secrets;
 pub mod server;
+pub mod supervisor;
 
 /// Desktop only: the commands wrap the OS credential store, which mobile does
 /// not have in this form and does not need - media providers are desktop.

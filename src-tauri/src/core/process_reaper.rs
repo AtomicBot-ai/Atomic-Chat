@@ -27,7 +27,9 @@ use tauri::{Manager, Runtime};
 use crate::core::app::commands::get_jan_data_folder_path;
 
 /// Executable file-name prefixes for the backends we manage.
-const BACKEND_NAME_PREFIXES: [&str; 2] = ["llama-server", "mlx-server"];
+// `sd-server` is the built-in media engine (Task 30), downloaded under the
+// data folder like llama.cpp.
+const BACKEND_NAME_PREFIXES: [&str; 3] = ["llama-server", "mlx-server", "sd-server"];
 
 /// How long to wait after `SIGTERM` before escalating survivors to `SIGKILL`.
 const GRACE_PERIOD: Duration = Duration::from_millis(1500);
@@ -140,6 +142,8 @@ mod tests {
     fn matches_exact_backend_names() {
         assert!(is_backend_name("llama-server"));
         assert!(is_backend_name("mlx-server"));
+        // The built-in media engine's server (Task 30).
+        assert!(is_backend_name("sd-server"));
     }
 
     #[test]
@@ -147,6 +151,7 @@ mod tests {
         // macOS/Windows may report a suffixed executable name.
         assert!(is_backend_name("llama-server-bin"));
         assert!(is_backend_name("mlx-server.exe"));
+        assert!(is_backend_name("sd-server.exe"));
     }
 
     #[test]
