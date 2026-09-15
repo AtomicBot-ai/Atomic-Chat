@@ -444,6 +444,8 @@
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
     "uploading": "Indexing…",
     "uploadingHint": "The first upload also downloads the embedding model. Progress is in the downloads panel.",
+    "preparingIndexModel": "Downloading the document index model",
+    "filesLoadFailed": "Couldn't load the project's files",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",

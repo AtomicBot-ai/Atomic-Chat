@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-260 records, 2026-05-19 → 2026-09-15.
+261 records, 2026-05-19 → 2026-09-15.
 
 ---
 
@@ -268,8 +268,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (40)
+## UI / UX (41)
 
+- **2026-09-15** — [Say what a project file upload is waiting on, and never hide a failed listing](2026-09-15-say-what-a-project-upload-is-waiting-on.md)
 - **2026-09-15** — [Say what a model load is waiting on, and let it be cancelled](2026-09-15-say-what-a-model-load-is-waiting-on-and-let-it-be-cancelled.md)
 - **2026-09-15** — [Show every tool call as its own line in the message](2026-09-15-show-every-tool-call-as-its-own-line.md)
 - **2026-09-15** — [Mark Full access by its icon and words, not by colour](2026-09-15-mark-full-access-by-icon-and-words-not-colour.md)
