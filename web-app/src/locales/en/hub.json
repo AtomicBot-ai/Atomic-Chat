@@ -91,5 +91,7 @@
     "someNotMoved": "Models folder changed, but some models couldn't be moved",
     "failed": "Couldn't change the models folder"
   },
-  "capabilitiesFilterHint": "Tick one or more to show only models that have all of them"
+  "capabilitiesFilterHint": "Tick one or more to show only models that have all of them",
+  "menuSearch": "Search sorts and filters",
+  "menuNoMatches": "Nothing matches"
 }

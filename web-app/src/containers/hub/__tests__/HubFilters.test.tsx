@@ -82,7 +82,7 @@ describe('HubFilters', () => {
     expect(trigger).toHaveTextContent('hub:sortRecommended')
 
     await openSortMenu(user)
-    await user.click(screen.getByRole('menuitem', { name: 'hub:sortDownloads' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'hub:sortDownloads' }))
 
     expect(
       screen.getByRole('button', { name: /hub:sortBy/ })
@@ -99,10 +99,10 @@ describe('HubFilters', () => {
     await openSortMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: 'hub:sortDownloads' })
+      screen.getByRole('menuitemcheckbox', { name: 'hub:sortDownloads' })
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('menuitem', { name: 'hub:sortLikes' })
+      screen.queryByRole('menuitemcheckbox', { name: 'hub:sortLikes' })
     ).not.toBeInTheDocument()
   })
 
@@ -113,7 +113,7 @@ describe('HubFilters', () => {
     await openSortMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: 'hub:sortLikes' })
+      screen.getByRole('menuitemcheckbox', { name: 'hub:sortLikes' })
     ).toBeInTheDocument()
   })
 
@@ -273,7 +273,7 @@ describe('HubFilters: more sorts and capability filters (the user, 2026-09-14)',
       'hub:sortNameAsc',
       'hub:sortNameDesc',
     ]) {
-      expect(screen.getByRole('menuitem', { name: key })).toBeInTheDocument()
+      expect(screen.getByRole('menuitemcheckbox', { name: key })).toBeInTheDocument()
     }
   })
 
@@ -284,7 +284,7 @@ describe('HubFilters: more sorts and capability filters (the user, 2026-09-14)',
     await openSortMenu(user)
 
     expect(
-      screen.queryByRole('menuitem', { name: 'hub:sortLikesAsc' })
+      screen.queryByRole('menuitemcheckbox', { name: 'hub:sortLikesAsc' })
     ).not.toBeInTheDocument()
   })
 
@@ -293,7 +293,7 @@ describe('HubFilters: more sorts and capability filters (the user, 2026-09-14)',
     const { onChange } = renderFilters()
 
     await openSortMenu(user)
-    await user.click(screen.getByRole('menuitem', { name: 'hub:sortSizeAsc' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'hub:sortSizeAsc' }))
 
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ sort: 'size-asc' })
@@ -349,5 +349,53 @@ describe('HubFilters: more sorts and capability filters (the user, 2026-09-14)',
     expect(
       screen.getByRole('menuitemcheckbox', { name: 'Tool Use' })
     ).not.toBeChecked()
+  })
+})
+
+describe('HubFilters: tick boxes and search (the user, 2026-09-15)', () => {
+  it('ticks the current sort and moves the tick when another is picked', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    await openSortMenu(user)
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:sortRecommended' })
+    ).toBeChecked()
+
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'hub:sortNameAsc' }))
+    await openSortMenu(user)
+
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:sortNameAsc' })
+    ).toBeChecked()
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:sortRecommended' })
+    ).not.toBeChecked()
+  })
+
+  it('narrows the whole menu to what the search matches', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    await openSortMenu(user)
+    await user.type(screen.getByRole('textbox', { name: 'hub:menuSearch' }), 'vis')
+
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Vision' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitemcheckbox', { name: 'Tool Use' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitemcheckbox', { name: 'hub:sortDownloads' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('says so when nothing matches', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    await openSortMenu(user)
+    await user.type(screen.getByRole('textbox', { name: 'hub:menuSearch' }), 'zzzz')
+
+    expect(screen.getByText('hub:menuNoMatches')).toBeInTheDocument()
   })
 })

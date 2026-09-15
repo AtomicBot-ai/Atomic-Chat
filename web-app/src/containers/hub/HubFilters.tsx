@@ -1,11 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { ChevronsUpDown } from 'lucide-react'
+import { IconSearch } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -88,6 +88,19 @@ export function HubFilters({
 
   const selectedFormat = state.formats[0] ?? 'gguf'
 
+  // Search inside the menu: sorts, filters and capabilities by their label.
+  const [query, setQuery] = useState('')
+  const matches = (label: string) =>
+    label.toLowerCase().includes(query.trim().toLowerCase())
+  const shownSortKeys = sortKeys.filter((key) => matches(t(SORT_LABEL_KEYS[key])))
+  const shownCapabilities = CAPABILITIES.filter((cap) => matches(cap.label))
+  const showInstalled = matches(t('hub:installedOnDevice'))
+  const showFit = canFilterByFit && matches(t('hub:fitFilterLabel'))
+  const showUncensored = matches(t('hub:uncensored'))
+  const anyFilter = showInstalled || showFit || showUncensored
+  const nothingMatches =
+    shownSortKeys.length === 0 && !anyFilter && shownCapabilities.length === 0
+
   return (
     <div className={cn('flex items-center gap-2', className)}>
       {availableFormats.length > 1 && (
@@ -115,7 +128,7 @@ export function HubFilters({
         </DropdownMenu>
       )}
 
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => !open && setQuery('')}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" aria-label={t('hub:sortBy')}>
             {t(SORT_LABEL_KEYS[state.sort])}
@@ -137,23 +150,41 @@ export function HubFilters({
           align="start"
           className="max-h-[var(--radix-dropdown-menu-content-available-height)] max-w-72 overflow-y-auto"
         >
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            {t('hub:sortBy')}
-          </DropdownMenuLabel>
-          {sortKeys.map((key) => (
-            <DropdownMenuItem
+          {/* Typing here must not jump to a menu item (Radix typeahead). */}
+          <div className="px-2 pb-1 pt-1.5" onKeyDown={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-1.5 rounded-md border border-input px-2">
+              <IconSearch size={13} className="shrink-0 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t('hub:menuSearch')}
+                aria-label={t('hub:menuSearch')}
+                className="h-7 w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+          </div>
+          {nothingMatches && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('hub:menuNoMatches')}</p>
+          )}
+          {shownSortKeys.length > 0 && (
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              {t('hub:sortBy')}
+            </DropdownMenuLabel>
+          )}
+          {/* One sort at a time, each with a tick box (the user, 2026-09-15). */}
+          {shownSortKeys.map((key) => (
+            <DropdownMenuCheckboxItem
               key={key}
-              className={cn(
-                'my-0.5 cursor-pointer',
-                state.sort === key && 'bg-secondary'
-              )}
-              onClick={() => onChange({ ...state, sort: key })}
+              checked={state.sort === key}
+              onCheckedChange={() => onChange({ ...state, sort: key })}
+              className={cn(FILTER_CHECKBOX_CLASS, 'my-0.5 items-center')}
             >
               {t(SORT_LABEL_KEYS[key])}
-            </DropdownMenuItem>
+            </DropdownMenuCheckboxItem>
           ))}
 
-          <DropdownMenuSeparator />
+          {shownSortKeys.length > 0 && anyFilter && <DropdownMenuSeparator />}
+          {showInstalled && (
           <DropdownMenuCheckboxItem
             checked={showOnlyDownloaded}
             onSelect={(event) => event.preventDefault()}
@@ -168,8 +199,9 @@ export function HubFilters({
           >
             {t('hub:installedOnDevice')}
           </DropdownMenuCheckboxItem>
+          )}
 
-          {canFilterByFit && (
+          {showFit && (
             <DropdownMenuCheckboxItem
               checked={state.onlyFitting}
               // Toggling a filter is not "picking one option and moving on":
@@ -188,6 +220,7 @@ export function HubFilters({
             </DropdownMenuCheckboxItem>
           )}
 
+          {showUncensored && (
           <DropdownMenuCheckboxItem
             checked={state.uncensored}
             title={t('hub:uncensoredHint')}
@@ -199,17 +232,22 @@ export function HubFilters({
           >
             {t('hub:uncensored')}
           </DropdownMenuCheckboxItem>
+          )}
 
           {/* The same neon badges the model page shows (the user, 2026-09-14).
               Ticking several keeps models that have all of them. */}
-          <DropdownMenuSeparator />
+          {shownCapabilities.length > 0 && (shownSortKeys.length > 0 || anyFilter) && (
+            <DropdownMenuSeparator />
+          )}
+          {shownCapabilities.length > 0 && (
           <DropdownMenuLabel
             className="text-xs text-muted-foreground"
             title={t('hub:capabilitiesFilterHint')}
           >
             {t('hub:capabilities')}
           </DropdownMenuLabel>
-          {CAPABILITIES.map((cap) => (
+          )}
+          {shownCapabilities.map((cap) => (
             <DropdownMenuCheckboxItem
               key={cap.key}
               checked={state.capabilities.includes(cap.key)}
