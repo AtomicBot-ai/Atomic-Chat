@@ -202,9 +202,12 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
 
       {/* On a wide window each column scrolls on its own, so the settings get
           their own scroll bar (with arrows) beside the preview instead of
-          being cut off (the user, 2026-09-15). Narrow windows scroll as one. */}
+          being cut off (the user, 2026-09-15). The row must be capped at the
+          grid's height (minmax(0,1fr)); an auto row grows to fit the content,
+          so the columns never overflowed and no scroll bar appeared.
+          Narrow windows scroll as one. */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:overflow-hidden lg:p-5">
-        <div className="mx-auto grid w-full max-w-[1500px] gap-4 lg:h-full lg:grid-cols-[minmax(320px,0.82fr)_minmax(440px,1.45fr)]">
+        <div className="mx-auto grid w-full max-w-[1500px] gap-4 lg:h-full lg:grid-cols-[minmax(320px,0.82fr)_minmax(440px,1.45fr)] lg:grid-rows-[minmax(0,1fr)]">
           <div
             className="lg:min-h-0 lg:overflow-y-auto lg:pr-2"
             data-testid="media-settings-column"
