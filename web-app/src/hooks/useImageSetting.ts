@@ -2,9 +2,21 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 import { localStorageKey } from '@/constants/localStorage'
-import type { DiffusionEngineId } from '@/services/diffusion/types'
+import type {
+  DiffusionEngineId,
+  DiffusionOffloadPolicy,
+} from '@/services/diffusion/types'
 
 export type ImageEngineOverride = 'auto' | DiffusionEngineId
+
+/** Where the weights live while generating; `auto` lets the fit decide. */
+export type ImageOffloadOverride = 'auto' | DiffusionOffloadPolicy
+export const IMAGE_OFFLOAD_OVERRIDES: readonly ImageOffloadOverride[] = [
+  'auto',
+  'none',
+  'group',
+  'model',
+]
 
 /** Whether loading an image model may evict the chat model from the GPU. */
 export type ImageEvictPolicy = 'whenNeeded' | 'always'
@@ -28,6 +40,10 @@ type ImageSettingState = {
   /** Force an engine instead of letting the plugin pick. */
   engineOverride: ImageEngineOverride
   setEngineOverride: (value: ImageEngineOverride) => void
+
+  /** Force an offload policy instead of the one the fit computes. */
+  offloadOverride: ImageOffloadOverride
+  setOffloadOverride: (value: ImageOffloadOverride) => void
 
   /**
    * Keep the model resident after generating, ignoring the idle timer. Off by
@@ -69,6 +85,9 @@ export const useImageSetting = create<ImageSettingState>()(
       engineOverride: 'auto',
       setEngineOverride: (value) => set({ engineOverride: value }),
 
+      offloadOverride: 'auto',
+      setOffloadOverride: (value) => set({ offloadOverride: value }),
+
       keepModelLoaded: false,
       setKeepModelLoaded: (value) => set({ keepModelLoaded: value }),
 
@@ -98,6 +117,12 @@ export const useImageSetting = create<ImageSettingState>()(
           !ENGINE_OVERRIDES.includes(next.engineOverride)
         ) {
           next.engineOverride = 'auto'
+        }
+        if (
+          !next.offloadOverride ||
+          !IMAGE_OFFLOAD_OVERRIDES.includes(next.offloadOverride)
+        ) {
+          next.offloadOverride = 'auto'
         }
         if (
           next.evictChatModel !== 'whenNeeded' &&

@@ -1,11 +1,13 @@
 import { memo, useEffect, useState } from 'react'
 
-import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
+import { cn } from '@/lib/utils'
+import { ImageFieldHint } from './ImageField'
 
 type ImageParamSliderProps = {
   id: string
   label: string
+  /** What the knob does, behind an (i) beside the label. */
   description?: string
   value: number
   min: number
@@ -19,11 +21,13 @@ const clamp = (value: number, lo: number, hi: number) =>
   Math.min(Math.max(value, lo), hi)
 
 /**
- * A slider with a numeric input beside it — the `ContextSizeControl` pattern.
+ * One row: label, track, value — the shape every slider on the page has, so
+ * the column reads as a table of settings rather than a stack of cards.
  *
- * The input keeps its own text while focused so the user can clear it and type
- * a new number without the field snapping back to the minimum after the first
- * keystroke; the value is committed on blur and Enter.
+ * The value is an input, not a readout: it keeps its own text while focused
+ * so the user can clear it and type a new number without the field snapping
+ * back to the minimum after the first keystroke; the value is committed on
+ * blur and Enter.
  */
 export const ImageParamSlider = memo(function ImageParamSlider({
   id,
@@ -55,30 +59,12 @@ export const ImageParamSlider = memo(function ImageParamSlider({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor={id} className="text-xs font-medium">
+    <div className="flex items-center gap-3">
+      <div className="flex w-24 shrink-0 items-center gap-1">
+        <label htmlFor={id} className="truncate text-xs font-medium">
           {label}
         </label>
-        <Input
-          id={id}
-          type="number"
-          inputMode="decimal"
-          min={min}
-          max={max}
-          step={step}
-          disabled={disabled}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              commit()
-            }
-          }}
-          className="h-7 w-20 text-right font-mono text-xs tabular-nums"
-        />
+        {description && <ImageFieldHint>{description}</ImageFieldHint>}
       </div>
       <Slider
         aria-label={label}
@@ -88,10 +74,32 @@ export const ImageParamSlider = memo(function ImageParamSlider({
         max={max}
         step={step}
         onValueChange={([next]) => onChange(next)}
+        className="min-w-0 flex-1"
       />
-      {description && (
-        <p className="text-[11px] text-muted-foreground">{description}</p>
-      )}
+      <input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+          }
+        }}
+        className={cn(
+          'h-7 w-14 shrink-0 rounded-md border border-transparent bg-transparent px-1.5 text-right text-sm tabular-nums outline-none transition-colors',
+          'hover:border-input focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+        )}
+      />
     </div>
   )
 })

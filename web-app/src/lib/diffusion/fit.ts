@@ -145,14 +145,47 @@ const largest = (quants: DiffusionCatalogQuant[]): DiffusionCatalogQuant | undef
 const smallest = (quants: DiffusionCatalogQuant[]): DiffusionCatalogQuant =>
   quants.reduce((best, quant) => (quant.bytes < best.bytes ? quant : best))
 
+const defaultTeOnCpu = (): boolean =>
+  typeof IS_MACOS !== 'undefined' && Boolean(IS_MACOS)
+
+/**
+ * The quant to recommend on this machine, regardless of what is on disk:
+ *
+ *   1. the catalog's `recommended` quant, if it is not a `no`,
+ *   2. the largest `ok`,
+ *   3. the largest `maybe`,
+ *   4. none — recommending a checkpoint that will not fit helps nobody.
+ *
+ * The catalog flag is the curator's pick for a typical machine; this is what
+ * the "Recommended" badge shows, so a small machine is steered to a quant it
+ * can run instead of the one the catalog chose.
+ */
+export function recommendedQuant(
+  family: DiffusionCatalogFamily,
+  profile: HardwareProfile | null,
+  opts: { teOnCpu?: boolean } = {}
+): DiffusionCatalogQuant | null {
+  const teOnCpu = opts.teOnCpu ?? defaultTeOnCpu()
+  const quants = family.transformer.quants
+  const fitOf = (quant: DiffusionCatalogQuant): DiffusionFit =>
+    fitForQuant(family, quant, profile, { teOnCpu }).fit
+
+  const curated = quants.find((quant) => quant.recommended)
+  if (curated && fitOf(curated) !== 'no') return curated
+
+  return (
+    largest(quants.filter((quant) => fitOf(quant) === 'ok')) ??
+    largest(quants.filter((quant) => fitOf(quant) === 'maybe')) ??
+    null
+  )
+}
+
 /**
  * The quant the selector opens on:
  *
  *   1. the largest installed quant that is not a `no`,
- *   2. the catalog's `recommended` quant, if it is not a `no`,
- *   3. the largest `ok`,
- *   4. the largest `maybe`,
- *   5. the smallest quant, and let the badge say so.
+ *   2. the {@link recommendedQuant},
+ *   3. the smallest quant, and let the badge say so.
  *
  * `installedIds` are artifact ids (`<family>:<quant>`) or bare quant ids;
  * both are accepted so callers need not reformat.
@@ -163,28 +196,22 @@ export function pickDefaultQuant(
   installedIds: string[],
   opts: { teOnCpu?: boolean } = {}
 ): DiffusionCatalogQuant {
-  const teOnCpu =
-    opts.teOnCpu ?? (typeof IS_MACOS !== 'undefined' && Boolean(IS_MACOS))
+  const teOnCpu = opts.teOnCpu ?? defaultTeOnCpu()
   const quants = family.transformer.quants
-  const fitOf = (quant: DiffusionCatalogQuant): DiffusionFit =>
-    fitForQuant(family, quant, profile, { teOnCpu }).fit
   const installedSet = new Set(installedIds)
   const isInstalled = (quant: DiffusionCatalogQuant): boolean =>
     installedSet.has(`${family.id}:${quant.id}`) || installedSet.has(quant.id)
 
   const installedUsable = largest(
-    quants.filter((quant) => isInstalled(quant) && fitOf(quant) !== 'no')
+    quants.filter(
+      (quant) =>
+        isInstalled(quant) &&
+        fitForQuant(family, quant, profile, { teOnCpu }).fit !== 'no'
+    )
   )
-  if (installedUsable) return installedUsable
-
-  const recommended = quants.find((quant) => quant.recommended)
-  if (recommended && fitOf(recommended) !== 'no') return recommended
-
-  const ok = largest(quants.filter((quant) => fitOf(quant) === 'ok'))
-  if (ok) return ok
-
-  const maybe = largest(quants.filter((quant) => fitOf(quant) === 'maybe'))
-  if (maybe) return maybe
-
-  return smallest(quants)
+  return (
+    installedUsable ??
+    recommendedQuant(family, profile, { teOnCpu }) ??
+    smallest(quants)
+  )
 }

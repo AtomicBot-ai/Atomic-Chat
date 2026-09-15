@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from 'react'
 import {
   IconLoader2,
   IconPlayerPlay,
-  IconPlayerStop,
+  IconPlayerStopFilled,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -19,11 +19,14 @@ import {
 import ImageDownloadPlanDialog from '@/containers/dialogs/ImageDownloadPlanDialog'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { ModelLogo } from '@/containers/ModelLogo'
+import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { recommendedQuant } from '@/lib/diffusion/fit'
 import { artifactId } from '@/lib/diffusion/models'
 import { formatBytes } from '@/lib/downloadFormat'
+import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import type {
   DiffusionCatalogFamily,
@@ -98,7 +101,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   }
 
   return (
-    <div className={cn('space-y-4', className)} data-testid="image-model-selector">
+    <div className={cn('space-y-2', className)} data-testid="image-model-selector">
       {sections.installed.length > 0 && (
         <Section title={t('images:model.installed')}>
           {sections.installed.map(([family, quants]) => (
@@ -147,9 +150,11 @@ function Section({
   title: string
   children: React.ReactNode
 }) {
+  // A rule between the sections is the only line in the list: families and
+  // rows are told apart by indent and hover, not by nested boxes.
   return (
-    <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <section className="space-y-1 [&:not(:first-child)]:border-t [&:not(:first-child)]:pt-2">
+      <h3 className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h3>
       <div className="space-y-2">{children}</div>
@@ -170,29 +175,40 @@ function FamilyBlock({
   variant,
   onRequestDownload,
 }: FamilyBlockProps) {
+  const { profile } = useHardwareTier()
+  // Over every quant of the family, not just this section's: the badge must
+  // sit on the same row whether that row is listed as installed or available.
+  const recommendedId = useMemo(
+    () => recommendedQuant(family, profile, { teOnCpu: IS_MACOS })?.id ?? null,
+    [family, profile]
+  )
+
   return (
-    <div className="rounded-xl border bg-secondary/40 p-3" data-testid={`family-${family.id}`}>
-      <div className="flex items-center gap-3">
+    <div data-testid={`family-${family.id}`}>
+      <div className="flex items-center gap-2.5 px-2 py-1">
         <ModelLogo
+          icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
           name={family.name}
           author={family.developer}
-          className="size-10 rounded-lg"
+          className="size-7 rounded-md"
         />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium leading-tight">{family.name}</p>
           {family.description && (
-            <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">
+            <p className="truncate text-[11px] leading-snug text-muted-foreground" title={family.description}>
               {family.description}
             </p>
           )}
         </div>
       </div>
-      <ul className="mt-2 space-y-1">
+      {/* Indented to the family name, so the quants read as its children. */}
+      <ul className="space-y-0.5 pl-[38px]">
         {quants.map((quant) => (
           <ArtifactRow
             key={quant.id}
             family={family}
             quant={quant}
+            recommended={quant.id === recommendedId}
             variant={variant}
             onRequestDownload={onRequestDownload}
           />
@@ -205,6 +221,8 @@ function FamilyBlock({
 type ArtifactRowProps = {
   family: DiffusionCatalogFamily
   quant: DiffusionCatalogQuant
+  /** The quant this machine should run, per {@link recommendedQuant}. */
+  recommended: boolean
   variant: 'page' | 'dialog'
   onRequestDownload: (artifactId: string) => void
 }
@@ -212,6 +230,7 @@ type ArtifactRowProps = {
 function ArtifactRow({
   family,
   quant,
+  recommended,
   variant,
   onRequestDownload,
 }: ArtifactRowProps) {
@@ -250,8 +269,8 @@ function ArtifactRow({
   return (
     <li
       className={cn(
-        'flex items-center gap-3 rounded-lg border bg-background px-3 py-2',
-        selected && 'border-primary'
+        'flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/50',
+        selected && 'bg-secondary hover:bg-secondary'
       )}
       data-testid={`artifact-${id}`}
       data-selected={selected ? 'true' : undefined}
@@ -268,20 +287,43 @@ function ArtifactRow({
       >
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm font-medium">{quant.label}</span>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {t('images:model.sizeGb', { size: gb(artifact.totalBytes) })}
-          </span>
-          {quant.recommended && (
+          {recommended && (
             <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
               {t('images:model.recommended')}
             </span>
           )}
-          <FitBadge fit={artifact.fit} className="px-2 py-0.5" />
           {artifact.installed && !artifact.complete && !artifact.downloading && (
             <span className="text-xs text-amber-600 dark:text-amber-400">
               {t('images:model.incomplete')}
             </span>
           )}
+        </span>
+        {/* Its own line in every state, so the size turning into a byte count
+            mid-download changes text, not the row's height. The fit badge
+            sits here too, so the first line stays short beside the buttons. */}
+        <span
+          className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
+          aria-live={artifact.downloading ? 'polite' : undefined}
+        >
+          {/* The fit as coloured words, not a third pill beside the badge
+              and the button. */}
+          <FitBadge
+            fit={artifact.fit}
+            className="rounded-none border-0 bg-transparent p-0 font-medium dark:bg-transparent"
+          />
+          <span aria-hidden>·</span>
+          {artifact.downloading
+            ? t('images:model.progress', {
+                current: formatBytes(
+                  artifact.currentBytes,
+                  artifact.downloadTotalBytes
+                ),
+                total: formatBytes(
+                  artifact.downloadTotalBytes,
+                  artifact.downloadTotalBytes
+                ),
+              })
+            : t('images:model.sizeGb', { size: gb(artifact.totalBytes) })}
         </span>
       </button>
 
@@ -294,6 +336,7 @@ function ArtifactRow({
           <Button
             size="sm"
             variant="outline"
+            className="w-24 justify-center"
             disabled={artifact.loading || generating}
             onClick={() => void artifact.load()}
             aria-label={t('images:model.load')}
@@ -310,11 +353,12 @@ function ArtifactRow({
           <Button
             size="sm"
             variant="outline"
+            className="w-24 justify-center"
             disabled={generating}
             onClick={() => void unloadModel()}
             aria-label={t('images:model.unload')}
           >
-            <IconPlayerStop size={14} />
+            <IconPlayerStopFilled size={14} />
             {t('images:model.unload')}
           </Button>
         )}

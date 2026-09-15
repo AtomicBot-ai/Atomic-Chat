@@ -84,7 +84,7 @@ export const ImageRecipePopover = memo(function ImageRecipePopover({
           data-testid="image-recipe-trigger"
         >
           <IconInfoCircle size={16} />
-          {t('images:viewer.recipe')}
+          <span>{t('images:viewer.recipe')}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 space-y-3 p-3">

@@ -363,6 +363,15 @@ describe('image-generation-store', () => {
       expect(state.lastError).toBeNull()
     })
 
+    it('honours a memory override instead of the fit policy', async () => {
+      useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+      useImageSetting.setState({ offloadOverride: 'model' })
+
+      await useImageGenerationStore.getState().loadModel('z-image:q4_k_m')
+
+      expect(fake.loadModel.mock.calls[0][0].offload).toBe('model')
+    })
+
     it('reports an unknown artifact as a missing model', async () => {
       await useImageGenerationStore.getState().loadModel('z-image:nope')
       expect(fake.loadModel).not.toHaveBeenCalled()

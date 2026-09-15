@@ -10,7 +10,7 @@ type ImageGalleryTileProps = {
   item: GalleryImageItem
   /** Shown large in the viewer. */
   current: boolean
-  /** Part of the multi-selection. */
+  /** Part of a multi-selection (two or more tiles); Delete acts on all of them. */
   selected: boolean
   onClick: (id: string, modifiers: { shift: boolean; meta: boolean }) => void
   onOpen: (id: string) => void
@@ -54,10 +54,11 @@ export const ImageGalleryTile = memo(function ImageGalleryTile({
       title={item.recipe.prompt}
       onClick={handleClick}
       onDoubleClick={() => onOpen(item.id)}
+      // The open image is the one large above, so its tile carries no frame;
+      // only a multi-selection is marked.
       className={cn(
-        'group relative aspect-square overflow-hidden rounded-md bg-secondary outline-none transition-[box-shadow] focus-visible:ring-2 focus-visible:ring-ring',
-        current && 'ring-2 ring-primary',
-        selected && !current && 'ring-2 ring-primary/50'
+        'group relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-secondary outline-none transition-[box-shadow] hover:ring-2 hover:ring-border focus-visible:ring-2 focus-visible:ring-ring',
+        selected && 'ring-2 ring-primary/50'
       )}
     >
       <img

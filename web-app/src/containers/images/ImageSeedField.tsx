@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/tooltip'
 import { randomSeed } from '@/hooks/useImageForm'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { ImageField } from './ImageField'
 
 type ImageSeedFieldProps = {
   value: string
@@ -35,10 +36,11 @@ export const ImageSeedField = memo(function ImageSeedField({
   const locked = value.trim().length > 0
 
   return (
-    <div className="space-y-1.5">
-      <label htmlFor="image-seed" className="text-xs font-medium">
-        {t('images:form.seed')}
-      </label>
+    <ImageField
+      htmlFor="image-seed"
+      label={t('images:form.seed')}
+      hint={t('images:form.seedHint')}
+    >
       <div className="flex items-center gap-1.5">
         <Input
           id="image-seed"
@@ -49,14 +51,14 @@ export const ImageSeedField = memo(function ImageSeedField({
           onChange={(event) =>
             onChange(event.target.value.replace(/[^\d]/g, ''))
           }
-          className="h-8 font-mono text-xs tabular-nums"
+          className="h-9 rounded-full px-3.5 tabular-nums"
         />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               type="button"
               variant="outline"
-              size="icon-sm"
+              size="icon"
               disabled={disabled}
               aria-label={t('images:form.seedRandom')}
               onClick={() => onChange(String(randomSeed()))}
@@ -71,15 +73,13 @@ export const ImageSeedField = memo(function ImageSeedField({
             <Button
               type="button"
               variant="outline"
-              size="icon-sm"
+              size="icon"
               disabled={disabled}
               aria-pressed={locked}
               aria-label={
                 locked ? t('images:form.seedUnlock') : t('images:form.seedLock')
               }
-              onClick={() =>
-                onChange(locked ? '' : String(randomSeed()))
-              }
+              onClick={() => onChange(locked ? '' : String(randomSeed()))}
             >
               {locked ? <IconLock size={16} /> : <IconLockOpen size={16} />}
             </Button>
@@ -89,7 +89,7 @@ export const ImageSeedField = memo(function ImageSeedField({
           </TooltipContent>
         </Tooltip>
       </div>
-    </div>
+    </ImageField>
   )
 })
 

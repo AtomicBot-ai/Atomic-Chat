@@ -22,6 +22,8 @@ export type AspectPreset = {
   ratio: number | null
   /** `images:size.aspect.<id>` label key. */
   labelKey: string
+  /** `1:1`, `16:9`… shown after the name; empty for custom. */
+  ratioLabel: string
 }
 
 /**
@@ -29,12 +31,12 @@ export type AspectPreset = {
  * 3:2 of a full-frame sensor; the two wide ones match monitors and cinema.
  */
 export const ASPECT_RATIOS: readonly AspectPreset[] = [
-  { id: 'square', ratio: 1, labelKey: 'images:size.aspect.square' },
-  { id: 'photo', ratio: 4 / 3, labelKey: 'images:size.aspect.photo' },
-  { id: 'landscape', ratio: 3 / 2, labelKey: 'images:size.aspect.landscape' },
-  { id: 'widescreen', ratio: 16 / 9, labelKey: 'images:size.aspect.widescreen' },
-  { id: 'ultrawide', ratio: 21 / 9, labelKey: 'images:size.aspect.ultrawide' },
-  { id: 'custom', ratio: null, labelKey: 'images:size.aspect.custom' },
+  { id: 'square', ratio: 1, labelKey: 'images:size.aspect.square', ratioLabel: '1:1' },
+  { id: 'photo', ratio: 4 / 3, labelKey: 'images:size.aspect.photo', ratioLabel: '4:3' },
+  { id: 'landscape', ratio: 3 / 2, labelKey: 'images:size.aspect.landscape', ratioLabel: '3:2' },
+  { id: 'widescreen', ratio: 16 / 9, labelKey: 'images:size.aspect.widescreen', ratioLabel: '16:9' },
+  { id: 'ultrawide', ratio: 21 / 9, labelKey: 'images:size.aspect.ultrawide', ratioLabel: '21:9' },
+  { id: 'custom', ratio: null, labelKey: 'images:size.aspect.custom', ratioLabel: '' },
 ] as const
 
 export type DimConstraints = {
@@ -100,6 +102,37 @@ export function sizeForAspect(
 }
 
 /**
+ * Width and height after the user sets one edge by hand while a preset is
+ * locked: the other edge follows the ratio. Under custom the pair is free and
+ * only the edited edge changes. Both edges leave snapped.
+ */
+export function sizeForEdge(
+  aspect: AspectId,
+  portrait: boolean,
+  edge: 'width' | 'height',
+  value: number,
+  constraints: DimConstraints,
+  current: { width: number; height: number }
+): { width: number; height: number } {
+  const snapped = snapDim(value, constraints)
+  const preset = ASPECT_RATIOS.find((entry) => entry.id === aspect)
+  if (!preset || preset.ratio === null) {
+    return edge === 'width'
+      ? { width: snapped, height: snapDim(current.height, constraints) }
+      : { width: snapDim(current.width, constraints), height: snapped }
+  }
+  // In landscape the width is the long edge; in portrait the height is.
+  const editedIsLong = edge === 'width' ? !portrait : portrait
+  const other = snapDim(
+    editedIsLong ? snapped / preset.ratio : snapped * preset.ratio,
+    constraints
+  )
+  return edge === 'width'
+    ? { width: snapped, height: other }
+    : { width: other, height: snapped }
+}
+
+/**
  * Candidate long-edge sizes for the size picker: every `step` between the
  * snapped bounds, always including both bounds. `step` defaults to 128 so a
  * 256–2048 model offers 15 choices rather than 113.
@@ -115,6 +148,34 @@ export function dimOptions(constraints: DimConstraints, step = 128): number[] {
   }
   options.add(hi)
   return [...options].sort((a, b) => a - b)
+}
+
+/**
+ * The sizes a locked preset offers, smallest first: one per long edge from
+ * {@link dimOptions}. A long edge whose short edge would fall below the floor
+ * is left out, since clamping it there would break the ratio the user picked.
+ * Custom has no list; its width and height are typed.
+ */
+export function sizeOptions(
+  aspect: AspectId,
+  portrait: boolean,
+  constraints: DimConstraints
+): Array<{ width: number; height: number }> {
+  const preset = ASPECT_RATIOS.find((entry) => entry.id === aspect)
+  if (!preset || preset.ratio === null) return []
+  const ratio = preset.ratio
+  const floor = snapDim(constraints.minDim, constraints)
+  const seen = new Set<string>()
+  const sizes: Array<{ width: number; height: number }> = []
+  for (const long of dimOptions(constraints)) {
+    if (long / ratio < floor) continue
+    const size = sizeForAspect(aspect, portrait, long, constraints)
+    const key = `${size.width}x${size.height}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    sizes.push(size)
+  }
+  return sizes
 }
 
 /** Megapixels with one decimal, for the size readout. */

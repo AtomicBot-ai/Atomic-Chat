@@ -35,9 +35,29 @@ vi.mock('@/lib/diffusion/models', async (importOriginal) => ({
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }))
+// Unknown hardware unless a test measures a machine: every quant is a "maybe".
+const hardware = vi.hoisted(() => ({
+  profile: null as import('@/lib/hardware-tier').HardwareProfile | null,
+}))
+vi.mock('@/hooks/useHardwareTier', () => ({
+  useHardwareTier: () => ({ tier: 'vram_8', profile: hardware.profile, ready: true }),
+}))
 
+const gpuWith = (budgetMib: number) => ({
+  tier: 'vram_8' as const,
+  memoryKind: 'vram' as const,
+  budgetMib,
+  systemRamMib: 32 * 1024,
+  vramMib: budgetMib,
+  hardCeiling: false,
+})
+
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useImageSetting } from '@/hooks/useImageSetting'
-import { listInstalledArtifacts } from '@/lib/diffusion/models'
+import {
+  diffusionDownloadTaskId,
+  listInstalledArtifacts,
+} from '@/lib/diffusion/models'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageModelSelector } from '../ImageModelSelector'
 
@@ -58,9 +78,11 @@ describe('ImageModelSelector', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    hardware.profile = null
     localStorage.clear()
     await useImageSetting.persist.rehydrate()
     useImageSetting.setState({ selectedArtifactId: null })
+    useDownloadStore.setState({ downloads: {} })
     fake = makeFakeDiffusion()
     fake.listModelFiles.mockResolvedValue(q4Files)
     seedServiceHub({ diffusion: fake })
@@ -88,6 +110,25 @@ describe('ImageModelSelector', () => {
     expect(within(available).getByText('Q8_0')).toBeInTheDocument()
     // The size shown is the whole artifact, side files included.
     expect(within(installed).getByText(/images:model.sizeGb/)).toBeInTheDocument()
+  })
+
+  it("badges the catalog's pick when this machine can run it", () => {
+    // 16 GiB: Q4 needs ~7.8 GiB with its encoder and activations (ok), Q8 ~11.6 (maybe).
+    hardware.profile = gpuWith(16 * 1024)
+    render(<ImageModelSelector />)
+    expect(
+      within(screen.getByTestId(`artifact-${Q4_ID}`)).getByText('images:model.recommended')
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId(`artifact-${Q8_ID}`)).queryByText('images:model.recommended')
+    ).not.toBeInTheDocument()
+  })
+
+  it('recommends nothing when no quant fits this machine', () => {
+    // 6 GiB: even Q4 is past the offload threshold.
+    hardware.profile = gpuWith(6 * 1024)
+    render(<ImageModelSelector />)
+    expect(screen.queryByText('images:model.recommended')).not.toBeInTheDocument()
   })
 
   it('loads an installed quant and then offers Unload instead', async () => {
@@ -154,6 +195,24 @@ describe('ImageModelSelector', () => {
       ).not.toBeInTheDocument()
     )
     expect(fake.deleteModelFile).toHaveBeenCalled()
+  })
+
+  it('turns the size line into a byte count while downloading, keeping the row one button tall', () => {
+    act(() => {
+      useDownloadStore
+        .getState()
+        .updateProgress(diffusionDownloadTaskId(Q8_ID), 0.18, Q8_ID, 1, 10)
+    })
+    render(<ImageModelSelector />)
+    const row = screen.getByTestId(`artifact-${Q8_ID}`)
+
+    const pick = within(row).getByRole('button', { name: 'images:model.pick' })
+    expect(within(pick).getByText('images:model.progress')).toBeInTheDocument()
+    expect(within(pick).queryByText('images:model.sizeGb')).not.toBeInTheDocument()
+    // Progress is the cancel button alone, with no second line stacked under it.
+    const cancel = within(row).getByRole('button', { name: 'common:cancelDownload' })
+    expect(cancel).toHaveTextContent('18%')
+    expect(within(row).getAllByText('images:model.progress')).toHaveLength(1)
   })
 
   it('tells the user when the catalog has not arrived', () => {

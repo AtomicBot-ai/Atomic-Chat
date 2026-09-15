@@ -1,14 +1,16 @@
 import { memo, useCallback } from 'react'
 import {
+  IconAdjustmentsHorizontal,
   IconCircleCheckFilled,
   IconCpu,
   IconDownload,
   IconLoader2,
   IconLock,
-  IconPhoto,
   IconSparkles,
   IconX,
 } from '@tabler/icons-react'
+// Lucide's image glyph, not Tabler's photo: it is the one the sidebar row uses.
+import { ImageIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -62,7 +64,7 @@ function StepDots({ step }: { step: number }) {
 
 const INTRO_BULLETS = [
   { icon: IconLock, text: 'images:setup.intro.bulletLocal' },
-  { icon: IconPhoto, text: 'images:setup.intro.bulletRecipes' },
+  { icon: IconAdjustmentsHorizontal, text: 'images:setup.intro.bulletRecipes' },
   { icon: IconSparkles, text: 'images:setup.intro.bulletApi' },
 ] as const
 
@@ -169,7 +171,7 @@ export const ImageEngineBlock = memo(function ImageEngineBlock() {
 
 const STEPS = [
   {
-    icon: IconSparkles,
+    icon: ImageIcon,
     title: 'images:setup.intro.title',
     description: 'images:setup.intro.description',
   },

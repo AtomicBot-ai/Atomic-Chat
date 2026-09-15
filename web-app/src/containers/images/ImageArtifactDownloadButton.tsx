@@ -1,9 +1,8 @@
 import { memo } from 'react'
-import { IconCircleCheckFilled, IconDownload, IconX } from '@tabler/icons-react'
+import { IconDownload, IconX } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { formatBytes } from '@/lib/downloadFormat'
 import type { ImageArtifactState } from '@/hooks/useImageArtifact'
 
 type ImageArtifactDownloadButtonProps = {
@@ -15,7 +14,7 @@ type ImageArtifactDownloadButtonProps = {
 }
 
 /**
- * Download / progress-with-cancel / installed, for one checkpoint. Reads its
+ * Download / progress-with-cancel for one checkpoint; nothing once complete. Reads its
  * progress from `useDownloadStore` through `useImageArtifact`, the same way
  * the voice model card does, so the download panel and this button agree.
  */
@@ -28,46 +27,31 @@ export const ImageArtifactDownloadButton = memo(
     const { t } = useTranslation()
     const percent = Math.round(artifact.progress * 100)
 
+    // One button-sized box in every state: the byte count lives in the row's
+    // size line, so starting a download does not make the row taller.
     if (artifact.downloading) {
       return (
-        <div className="flex flex-col items-end gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void artifact.cancelDownload()}
-            aria-label={t('common:cancelDownload')}
-            className="group relative w-24 justify-center overflow-hidden font-semibold"
-          >
-            <span
-              className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
-              style={{ width: `${percent}%` }}
-            />
-            <span className="relative z-10 tabular-nums group-hover:hidden">
-              {percent}%
-            </span>
-            <IconX size={14} className="relative z-10 hidden group-hover:block" />
-          </Button>
-          <p
-            className="text-right text-xs tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {t('images:model.progress', {
-              current: formatBytes(artifact.currentBytes, artifact.downloadTotalBytes),
-              total: formatBytes(artifact.downloadTotalBytes, artifact.downloadTotalBytes),
-            })}
-          </p>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void artifact.cancelDownload()}
+          aria-label={t('common:cancelDownload')}
+          className="group relative w-24 justify-center overflow-hidden font-semibold"
+        >
+          <span
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+            style={{ width: `${percent}%` }}
+          />
+          <span className="relative z-10 tabular-nums group-hover:hidden">
+            {percent}%
+          </span>
+          <IconX size={14} className="relative z-10 hidden group-hover:block" />
+        </Button>
       )
     }
 
-    if (artifact.complete) {
-      return (
-        <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          <IconCircleCheckFilled size={16} />
-          {t('images:model.installed')}
-        </span>
-      )
-    }
+    // Complete: nothing to fetch, and the row's Run/Stop already says it is on disk.
+    if (artifact.complete) return null
 
     return (
       <Button

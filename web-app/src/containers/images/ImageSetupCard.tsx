@@ -1,5 +1,10 @@
 import { memo } from 'react'
-import { IconCircleCheckFilled, IconCircleDashed, IconSparkles } from '@tabler/icons-react'
+import {
+  IconChevronRight,
+  IconCircleCheckFilled,
+  IconCircleDashed,
+} from '@tabler/icons-react'
+import { ImageIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useImageEngine } from '@/hooks/useImageEngine'
@@ -10,13 +15,19 @@ import {
   type ImageSetupStep,
 } from '@/stores/image-generation-store'
 
+type ImageSetupCardProps = {
+  className?: string
+}
+
 /**
- * What the form column shows until both prerequisites — the engine binary and
- * at least one complete checkpoint — are in place. Each row opens the setup
+ * What the page shows until both prerequisites — the engine binary and at
+ * least one complete checkpoint — are in place. Each row opens the setup
  * wizard on its own step, so "install the engine" and "get a model" are one
  * click each rather than a tour.
  */
-export const ImageSetupCard = memo(function ImageSetupCard() {
+export const ImageSetupCard = memo(function ImageSetupCard({
+  className,
+}: ImageSetupCardProps) {
   const { t } = useTranslation()
   const { installed: engineInstalled, hostBackendId, hostBackendReason } =
     useImageEngine()
@@ -33,23 +44,23 @@ export const ImageSetupCard = memo(function ImageSetupCard() {
 
   return (
     <div
-      className="space-y-4 rounded-xl border bg-secondary/40 p-4"
+      className={cn('space-y-4 rounded-xl border bg-secondary/40 p-4', className)}
       data-testid="image-setup-card"
     >
       <div className="flex items-start gap-3">
         <div className="grid size-10 shrink-0 place-items-center rounded-lg border bg-background">
-          <IconSparkles size={20} />
+          <ImageIcon size={20} />
         </div>
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium">{t('images:setup.card.title')}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs leading-snug text-muted-foreground">
             {unsupported
               ? t('images:setup.engine.unsupported')
               : t('images:setup.card.description')}
           </p>
         </div>
       </div>
-      <ul className="space-y-1.5">
+      <ul className="space-y-2">
         {rows.map((row) => (
           <li key={row.step}>
             <button
@@ -57,19 +68,28 @@ export const ImageSetupCard = memo(function ImageSetupCard() {
               disabled={unsupported}
               onClick={() => openSetup(row.step)}
               className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary disabled:opacity-60',
+                'flex w-full items-center gap-2.5 rounded-lg border bg-background px-3 py-2.5 text-left text-sm transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-60',
                 row.done && 'text-muted-foreground'
               )}
             >
               {row.done ? (
                 <IconCircleCheckFilled
                   size={16}
-                  className="text-emerald-600 dark:text-emerald-400"
+                  className="shrink-0 text-emerald-600 dark:text-emerald-400"
                 />
               ) : (
-                <IconCircleDashed size={16} className="text-muted-foreground" />
+                <IconCircleDashed
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                />
               )}
-              {row.label}
+              <span className="min-w-0 flex-1">{row.label}</span>
+              {!row.done && (
+                <IconChevronRight
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                />
+              )}
             </button>
           </li>
         ))}

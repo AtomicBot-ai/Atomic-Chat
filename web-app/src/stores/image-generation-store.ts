@@ -551,7 +551,10 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
             modelFiles,
             paths.modelsRoot,
             {
-              offload: fit.policy,
+              offload:
+                settings.offloadOverride === 'auto'
+                  ? fit.policy
+                  : settings.offloadOverride,
               engine:
                 settings.engineOverride === 'auto'
                   ? undefined

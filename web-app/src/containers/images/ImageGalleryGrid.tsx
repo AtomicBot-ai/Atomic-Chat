@@ -34,7 +34,9 @@ export const ImageGalleryGrid = memo(function ImageGalleryGrid({
 }: ImageGalleryGridProps) {
   const { t } = useTranslation()
   const sentinelRef = useRef<HTMLDivElement>(null)
-  const selectedSet = new Set(selectedIds)
+  // The store always selects the open image; a check on that tile alone would
+  // repeat the "current" ring, so checks appear only for a real multi-selection.
+  const selectedSet = new Set(selectedIds.length > 1 ? selectedIds : [])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -49,7 +51,7 @@ export const ImageGalleryGrid = memo(function ImageGalleryGrid({
 
   return (
     <div className="space-y-3" data-testid="image-gallery-grid">
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-2">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
         {items.map((item) => (
           <ImageGalleryTile
             key={item.id}

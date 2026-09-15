@@ -9,6 +9,7 @@ import {
   estimateResidentBytes,
   fitForQuant,
   pickDefaultQuant,
+  recommendedQuant,
 } from '../fit'
 
 const GIB = 1024 ** 3
@@ -219,5 +220,27 @@ describe('pickDefaultQuant', () => {
 
   it('leans on the recommendation while hardware is unknown', () => {
     expect(quantIds(null)).toBe('q4_k_m')
+  })
+})
+
+describe('recommendedQuant', () => {
+  const recommendedId = (profile: HardwareProfile | null) =>
+    recommendedQuant(family, profile, { teOnCpu: true })?.id ?? null
+
+  it("keeps the catalog's pick when it fits", () => {
+    expect(recommendedId(pc(12 * 1024))).toBe('q4_k_m')
+  })
+
+  it("moves off the catalog's pick when it does not fit", () => {
+    // 7.5 GiB budget: Q4 = 6.8 GiB (91 %, no); Q3 = 5.8 GiB (77 %, maybe).
+    expect(recommendedId(pc(7.5 * 1024))).toBe('q3_k_m')
+  })
+
+  it('recommends nothing when no quant fits', () => {
+    expect(recommendedId(pc(4 * 1024))).toBeNull()
+  })
+
+  it("keeps the catalog's pick while hardware is unknown", () => {
+    expect(recommendedId(null)).toBe('q4_k_m')
   })
 })

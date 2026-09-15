@@ -21,6 +21,7 @@ import {
   type CloudIconHandle,
 } from '@/components/animated-icon/cloud'
 import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
+import { ImageIcon, type ImageIconHandle } from '@/components/animated-icon/image'
 import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
 import {
@@ -31,10 +32,6 @@ import {
   RadioTowerIcon,
   type RadioTowerIconHandle,
 } from '@/components/animated-icon/radio-tower'
-import {
-  SparklesIcon,
-  type SparklesIconHandle,
-} from '@/components/animated-icon/sparkles'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { route } from '@/constants/routes'
@@ -64,7 +61,7 @@ export function NavMain() {
   const projectIconRef = useRef<AnimatedIconHandle>(null)
   const integrationsIconRef = useRef<PlugIconHandle>(null)
   const apiIconRef = useRef<RadioTowerIconHandle>(null)
-  const imagesIconRef = useRef<SparklesIconHandle>(null)
+  const imagesIconRef = useRef<ImageIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -149,7 +146,7 @@ export function NavMain() {
               onMouseLeave={() => imagesIconRef.current?.stopAnimation()}
             >
               <Link to={route.images.index}>
-                <SparklesIcon
+                <ImageIcon
                   ref={imagesIconRef}
                   className="text-foreground/70"
                   size={16}

@@ -6,6 +6,8 @@ import {
   formatMegapixels,
   matchAspect,
   sizeForAspect,
+  sizeForEdge,
+  sizeOptions,
   snapDim,
   type DimConstraints,
 } from '../size'
@@ -90,6 +92,43 @@ describe('sizeForAspect', () => {
   })
 })
 
+describe('sizeForEdge', () => {
+  const current = { width: 1024, height: 768 }
+
+  it('derives the other edge from the locked ratio', () => {
+    expect(sizeForEdge('photo', false, 'width', 1536, SD, current)).toEqual({
+      width: 1536,
+      height: 1152,
+    })
+    // 600 snaps to 608 first; 608 × 4/3 = 810.7 snaps to 816.
+    expect(sizeForEdge('photo', false, 'height', 600, SD, current)).toEqual({
+      width: 816,
+      height: 608,
+    })
+  })
+
+  it('treats the height as the long edge in portrait', () => {
+    expect(
+      sizeForEdge('widescreen', true, 'height', 1920, SD, { width: 576, height: 1024 })
+    ).toEqual({ width: 1088, height: 1920 })
+    expect(
+      sizeForEdge('widescreen', true, 'width', 576, SD, { width: 576, height: 1024 })
+    ).toEqual({ width: 576, height: 1024 })
+  })
+
+  it('changes only the edited edge under custom, snapped', () => {
+    expect(sizeForEdge('custom', false, 'width', 1000, SD, { width: 512, height: 700 })).toEqual(
+      { width: 1008, height: 704 }
+    )
+  })
+
+  it('never leaves the model range', () => {
+    const size = sizeForEdge('ultrawide', false, 'width', 4096, SD, current)
+    expect(size.width).toBe(2048)
+    expect(size.height).toBeGreaterThanOrEqual(256)
+  })
+})
+
 describe('dimOptions', () => {
   it('spans the range on the step and always includes both bounds', () => {
     const options = dimOptions(SD)
@@ -104,6 +143,34 @@ describe('dimOptions', () => {
     expect(dimOptions({ minDim: 512, maxDim: 640, dimMultiple: 16 }, 512)).toEqual([
       512, 640,
     ])
+  })
+})
+
+describe('sizeOptions', () => {
+  it('lists every size of a preset at its ratio, smallest first', () => {
+    const options = sizeOptions('square', false, SD)
+    expect(options[0]).toEqual({ width: 256, height: 256 })
+    expect(options).toContainEqual({ width: 1024, height: 1024 })
+    expect(options[options.length - 1]).toEqual({ width: 2048, height: 2048 })
+  })
+
+  it('follows the orientation', () => {
+    expect(sizeOptions('photo', false, SD)).toContainEqual({ width: 1024, height: 768 })
+    expect(sizeOptions('photo', true, SD)).toContainEqual({ width: 768, height: 1024 })
+  })
+
+  it('drops long edges whose short edge would be clamped off the ratio', () => {
+    // 21:9 at a 512 long edge needs a 219 short edge, under the 256 floor.
+    const options = sizeOptions('ultrawide', false, SD)
+    expect(options.some(({ width }) => width === 512)).toBe(false)
+    // Snapping to 16 moves the ratio a little; clamping would move it a lot.
+    for (const { width, height } of options) {
+      expect(Math.abs(width / height - 21 / 9) / (21 / 9)).toBeLessThan(0.05)
+    }
+  })
+
+  it('has no list for custom', () => {
+    expect(sizeOptions('custom', false, SD)).toEqual([])
   })
 })
 

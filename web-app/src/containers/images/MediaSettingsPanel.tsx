@@ -16,9 +16,11 @@ import { useImageEngine } from '@/hooks/useImageEngine'
 import {
   DEFAULT_IMAGE_IDLE_UNLOAD_MINUTES,
   IMAGE_IDLE_UNLOAD_OPTIONS,
+  IMAGE_OFFLOAD_OVERRIDES,
   useImageSetting,
   type ImageEngineOverride,
   type ImageEvictPolicy,
+  type ImageOffloadOverride,
 } from '@/hooks/useImageSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -61,6 +63,8 @@ export function MediaSettingsPanel() {
     setIdleUnloadMinutes,
     evictChatModel,
     setEvictChatModel,
+    offloadOverride,
+    setOffloadOverride,
   } = useImageSetting()
 
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -77,6 +81,17 @@ export function MediaSettingsPanel() {
     minutes === 0
       ? t('settings:media.idleNever')
       : t('settings:media.idleMinutes', { minutes })
+
+  const memoryLabel = (value: ImageOffloadOverride) =>
+    t(
+      value === 'auto'
+        ? 'images:form.memoryAuto'
+        : value === 'none'
+          ? 'images:form.memoryNone'
+          : value === 'group'
+            ? 'images:form.memoryGroup'
+            : 'images:form.memoryModel'
+    )
 
   const evictLabel = (value: ImageEvictPolicy) =>
     value === 'always'
@@ -128,6 +143,7 @@ export function MediaSettingsPanel() {
 
   const resetDefaults = () => {
     setEngineOverride('auto')
+    setOffloadOverride('auto')
     setKeepModelLoaded(false)
     setIdleUnloadMinutes(DEFAULT_IMAGE_IDLE_UNLOAD_MINUTES)
     setEvictChatModel('whenNeeded')
@@ -260,6 +276,34 @@ export function MediaSettingsPanel() {
             />
           ))
         )}
+        <CardItem
+          title={t('images:form.memory')}
+          description={t('images:form.memoryHint')}
+          actions={
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="w-44 justify-between">
+                  {memoryLabel(offloadOverride)}
+                  <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {IMAGE_OFFLOAD_OVERRIDES.map((value) => (
+                  <DropdownMenuItem
+                    key={value}
+                    className={cn(
+                      'my-0.5 cursor-pointer',
+                      offloadOverride === value && 'bg-secondary-foreground/8'
+                    )}
+                    onClick={() => setOffloadOverride(value)}
+                  >
+                    {memoryLabel(value)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          }
+        />
         <CardItem
           title={t('settings:media.keepLoaded')}
           description={t('settings:media.keepLoadedDescription')}

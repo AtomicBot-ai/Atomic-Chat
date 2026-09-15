@@ -72,7 +72,7 @@ export const ImageJobProgress = memo(function ImageJobProgress({
   }
 
   return (
-    <div className="space-y-1.5" data-testid="image-job-progress">
+    <div className="w-full space-y-1.5" data-testid="image-job-progress">
       <Progress
         aria-label={t('images:progress.label')}
         value={percent}
@@ -80,7 +80,7 @@ export const ImageJobProgress = memo(function ImageJobProgress({
         indicatorClassName={stopping ? 'bg-muted-foreground' : undefined}
       />
       <p
-        className="text-xs tabular-nums text-muted-foreground"
+        className="text-center text-xs tabular-nums text-muted-foreground"
         aria-live="polite"
       >
         {parts.join(' · ')}

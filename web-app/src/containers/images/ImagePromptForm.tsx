@@ -1,6 +1,18 @@
-import { memo, useCallback, useEffect, type KeyboardEvent } from 'react'
-import { ChevronRight } from 'lucide-react'
-import { IconRestore } from '@tabler/icons-react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconRestore,
+  IconSettings,
+  IconSparkles,
+} from '@tabler/icons-react'
 import { useShallow } from 'zustand/shallow'
 
 import { Button } from '@/components/ui/button'
@@ -10,14 +22,36 @@ import {
   CollapsibleTrigger,
   collapsiblePanelAnimation,
 } from '@/components/ui/collapsible'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { route } from '@/constants/routes'
 import { MAX_IMAGE_RUNS, useImageForm } from '@/hooks/useImageForm'
 import { useImageGeneration } from '@/hooks/useImageGeneration'
-import { useImageSetting } from '@/hooks/useImageSetting'
+import { useImageEngine } from '@/hooks/useImageEngine'
+import {
+  IMAGE_IDLE_UNLOAD_OPTIONS,
+  IMAGE_OFFLOAD_OVERRIDES,
+  useImageSetting,
+  type ImageEngineOverride,
+  type ImageEvictPolicy,
+  type ImageOffloadOverride,
+} from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DimConstraints } from '@/lib/diffusion/size'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { ImageField, ImageFieldHint } from './ImageField'
 import { ImageGenerateButton } from './ImageGenerateButton'
 import { ImageJobProgress } from './ImageJobProgress'
 import { ImageParamSlider } from './ImageParamSlider'
@@ -37,15 +71,19 @@ type ImagePromptFormProps = {
 }
 
 /**
- * The left column of the Images page: prompt, size, the advanced knobs, and
- * Generate. Everything reads and writes the persisted form; the model's
- * capabilities decide which controls exist at all (negative prompt, cfg,
- * guidance) — nothing here hardcodes engine behaviour.
+ * The left column of the Images page: a heading, the prompt, size, the
+ * sampling knobs as one-line sliders, the seed, an Advanced fold for the
+ * load-time options, and Generate pinned under the scrolling settings.
+ *
+ * Everything reads and writes the persisted form; the model's capabilities
+ * decide which controls exist at all (negative prompt, cfg, guidance) —
+ * nothing here hardcodes engine behaviour.
  */
 export const ImagePromptForm = memo(function ImagePromptForm({
   className,
 }: ImagePromptFormProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const form = useImageForm(
     useShallow((state) => ({
       prompt: state.prompt,
@@ -66,9 +104,40 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       clampTo: state.clampTo,
     }))
   )
-  const advancedOpen = useImageSetting((state) => state.advancedOpen)
-  const setAdvancedOpen = useImageSetting((state) => state.setAdvancedOpen)
+  const {
+    advancedOpen,
+    setAdvancedOpen,
+    keepModelLoaded,
+    setKeepModelLoaded,
+    idleUnloadMinutes,
+    setIdleUnloadMinutes,
+    offloadOverride,
+    setOffloadOverride,
+    engineOverride,
+    setEngineOverride,
+    evictChatModel,
+    setEvictChatModel,
+  } = useImageSetting(
+    useShallow((state) => ({
+      advancedOpen: state.advancedOpen,
+      setAdvancedOpen: state.setAdvancedOpen,
+      keepModelLoaded: state.keepModelLoaded,
+      setKeepModelLoaded: state.setKeepModelLoaded,
+      idleUnloadMinutes: state.idleUnloadMinutes,
+      setIdleUnloadMinutes: state.setIdleUnloadMinutes,
+      offloadOverride: state.offloadOverride,
+      setOffloadOverride: state.setOffloadOverride,
+      engineOverride: state.engineOverride,
+      setEngineOverride: state.setEngineOverride,
+      evictChatModel: state.evictChatModel,
+      setEvictChatModel: state.setEvictChatModel,
+    }))
+  )
+  const engine = useImageEngine()
   const capabilities = useImageGenerationStore((state) => state.capabilities)
+  const applyIdleSettings = useImageGenerationStore(
+    (state) => state.applyIdleSettings
+  )
   const generation = useImageGeneration()
 
   // A model just loaded: fold the draft into what it accepts.
@@ -96,6 +165,41 @@ export const ImagePromptForm = memo(function ImagePromptForm({
   const showGuidance = capabilities?.supportsGuidance ?? false
   const busy = generation.generating
 
+  const idleLabel = (minutes: number) =>
+    minutes === 0
+      ? t('settings:media.idleNever')
+      : t('settings:media.idleMinutes', { minutes })
+  const memoryLabel = (value: ImageOffloadOverride) =>
+    t(
+      value === 'auto'
+        ? 'images:form.memoryAuto'
+        : value === 'none'
+          ? 'images:form.memoryNone'
+          : value === 'group'
+            ? 'images:form.memoryGroup'
+            : 'images:form.memoryModel'
+    )
+  const engineLabel = (value: ImageEngineOverride) =>
+    value === 'auto'
+      ? t('settings:media.engineAuto')
+      : value === 'sd-cpp'
+        ? 'stable-diffusion.cpp'
+        : 'diffusers'
+  const evictLabel = (value: ImageEvictPolicy) =>
+    value === 'always'
+      ? t('settings:media.evictAlways')
+      : t('settings:media.evictWhenNeeded')
+
+  const setKeep = (value: boolean) => {
+    setKeepModelLoaded(value)
+    void applyIdleSettings()
+  }
+
+  const setIdle = (minutes: number) => {
+    setIdleUnloadMinutes(minutes)
+    void applyIdleSettings()
+  }
+
   const onPromptKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
@@ -108,181 +212,286 @@ export const ImagePromptForm = memo(function ImagePromptForm({
 
   return (
     <form
-      className={cn('flex flex-col gap-4', className)}
+      className={cn('flex min-h-0 flex-1 flex-col', className)}
       onSubmit={(event) => {
         event.preventDefault()
         if (generation.canGenerate) void generation.generate()
       }}
       data-testid="image-prompt-form"
     >
-      <div className="space-y-1.5">
-        <label htmlFor="image-prompt" className="text-xs font-medium">
-          {t('images:form.prompt')}
-        </label>
-        <Textarea
-          id="image-prompt"
-          value={form.prompt}
-          placeholder={t('images:form.promptPlaceholder')}
-          onChange={(event) => form.patch({ prompt: event.target.value })}
-          onKeyDown={onPromptKeyDown}
-          rows={4}
-          className="min-h-24 resize-y"
-        />
-        <p className="text-[11px] text-muted-foreground">
-          {IS_MACOS
-            ? t('images:form.shortcutMac')
-            : t('images:form.shortcut')}
-        </p>
-      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-4">
+        {/* The sidebar names the section; this names what the column does. */}
+        <div className="mb-1 flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <h2 className="flex items-center gap-2 font-studio text-xl font-medium leading-none">
+              <IconSparkles size={18} className="shrink-0" />
+              {t('images:page.createTitle')}
+            </h2>
+            <p className="text-xs leading-snug text-muted-foreground">
+              {t('images:page.createDescription')}
+            </p>
+          </div>
+          {capabilities && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  disabled={busy}
+                  aria-label={t('images:form.reset')}
+                  onClick={() => form.resetToDefaults(capabilities.defaults)}
+                >
+                  <IconRestore size={16} />
+                  <span className="sr-only">{t('images:form.reset')}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('images:form.resetHint')}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
 
-      {showNegative && (
+        <ImageField htmlFor="image-prompt" label={t('images:form.prompt')}>
+          <Textarea
+            id="image-prompt"
+            value={form.prompt}
+            placeholder={t('images:form.promptPlaceholder')}
+            onChange={(event) => form.patch({ prompt: event.target.value })}
+            onKeyDown={onPromptKeyDown}
+            rows={4}
+            className="min-h-24 resize-none rounded-2xl px-4 py-3"
+          />
+          <p className="text-[11px] text-muted-foreground/80">
+            {IS_MACOS
+              ? t('images:form.shortcutMac')
+              : t('images:form.shortcut')}
+          </p>
+        </ImageField>
+
+        {showNegative && (
+          <Collapsible
+            open={form.negativeOpen}
+            onOpenChange={(open) => form.patch({ negativeOpen: open })}
+            className="flex flex-col gap-1.5"
+          >
+            <div className="flex items-center gap-1">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {t('images:form.negativePrompt')}
+                  <IconChevronDown
+                    size={14}
+                    className={cn(
+                      'transition-transform',
+                      form.negativeOpen && 'rotate-180'
+                    )}
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <ImageFieldHint>{t('images:form.negativeHint')}</ImageFieldHint>
+            </div>
+            <CollapsibleContent className={collapsiblePanelAnimation}>
+              <Textarea
+                id="image-negative-prompt"
+                aria-label={t('images:form.negativePrompt')}
+                value={form.negativePrompt}
+                placeholder={t('images:form.negativePlaceholder')}
+                onChange={(event) =>
+                  form.patch({ negativePrompt: event.target.value })
+                }
+                onKeyDown={onPromptKeyDown}
+                rows={2}
+                className="min-h-16 resize-none rounded-2xl px-4 py-3"
+              />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+
+        <ImageSizeControl
+          value={{
+            width: form.width,
+            height: form.height,
+            aspect: form.aspect,
+            portrait: form.portrait,
+          }}
+          constraints={constraints}
+          disabled={busy}
+          onChange={(size) => form.patch(size)}
+        />
+
+        {/* The one-line sliders, a touch apart from the fields above. */}
+        <div className="flex flex-col gap-3.5 pt-1">
+          <ImageParamSlider
+            id="image-steps"
+            label={t('images:form.steps')}
+            description={t('images:form.stepsHint')}
+            value={form.steps}
+            min={minSteps}
+            max={maxSteps}
+            step={1}
+            disabled={busy}
+            onChange={(steps) => form.patch({ steps })}
+          />
+          {showCfg && (
+            <ImageParamSlider
+              id="image-cfg"
+              label={t('images:form.cfgScale')}
+              description={t('images:form.cfgScaleHint')}
+              value={form.cfgScale}
+              min={1}
+              max={20}
+              step={0.5}
+              disabled={busy}
+              onChange={(cfgScale) => form.patch({ cfgScale })}
+            />
+          )}
+          {showGuidance && (
+            <ImageParamSlider
+              id="image-guidance"
+              label={t('images:form.guidance')}
+              description={t('images:form.guidanceHint')}
+              value={form.guidance ?? capabilities?.defaults.guidance ?? 3.5}
+              min={0}
+              max={20}
+              step={0.5}
+              disabled={busy}
+              onChange={(guidance) => form.patch({ guidance })}
+            />
+          )}
+          <ImageParamSlider
+            id="image-batch"
+            label={t('images:form.batchSize')}
+            description={t('images:form.batchSizeHint')}
+            value={form.batchSize}
+            min={1}
+            max={maxBatch}
+            step={1}
+            disabled={busy || maxBatch === 1}
+            onChange={(batchSize) => form.patch({ batchSize })}
+          />
+          <ImageParamSlider
+            id="image-runs"
+            label={t('images:form.runs')}
+            description={t('images:form.runsHint')}
+            value={form.runs}
+            min={1}
+            max={MAX_IMAGE_RUNS}
+            step={1}
+            disabled={busy}
+            onChange={(runs) => form.patch({ runs })}
+          />
+        </div>
+
+        <ImageSeedField
+          value={form.seedText}
+          disabled={busy}
+          onChange={(seedText) => form.patch({ seedText })}
+        />
+
         <Collapsible
-          open={form.negativeOpen}
-          onOpenChange={(open) => form.patch({ negativeOpen: open })}
+          open={advancedOpen}
+          onOpenChange={setAdvancedOpen}
+          className="mt-1 border-t border-border/60 pt-3"
         >
           <CollapsibleTrigger asChild>
             <button
               type="button"
-              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
+              data-testid="image-advanced-toggle"
             >
-              <ChevronRight
+              <IconSettings
+                size={14}
+                className="shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 flex-1 text-xs font-medium">
+                {t('images:form.advanced')}
+              </span>
+              <IconChevronDown
+                size={16}
                 className={cn(
-                  'size-3.5 transition-transform',
-                  form.negativeOpen && 'rotate-90'
+                  'shrink-0 text-muted-foreground transition-transform',
+                  advancedOpen && 'rotate-180'
                 )}
               />
-              {t('images:form.negativePrompt')}
             </button>
           </CollapsibleTrigger>
           <CollapsibleContent className={collapsiblePanelAnimation}>
-            <Textarea
-              id="image-negative-prompt"
-              aria-label={t('images:form.negativePrompt')}
-              value={form.negativePrompt}
-              placeholder={t('images:form.negativePlaceholder')}
-              onChange={(event) =>
-                form.patch({ negativePrompt: event.target.value })
-              }
-              onKeyDown={onPromptKeyDown}
-              rows={2}
-              className="mt-2 min-h-16 resize-y"
-            />
+            <div className="flex flex-col gap-3 pt-3">
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                {t('images:form.advancedHint')}
+              </p>
+              <AdvancedSelect
+                label={t('images:form.memory')}
+                hint={t('images:form.memoryHint')}
+                value={offloadOverride}
+                options={IMAGE_OFFLOAD_OVERRIDES.map((value) => [
+                  value,
+                  memoryLabel(value),
+                ])}
+                onChange={setOffloadOverride}
+              />
+              {engine.engineChoices.length > 1 && (
+                <AdvancedSelect
+                  label={t('settings:media.engineOverride')}
+                  hint={t('images:form.engineHint')}
+                  value={engineOverride}
+                  options={(
+                    ['auto', ...engine.engineChoices] as ImageEngineOverride[]
+                  ).map((value) => [value, engineLabel(value)])}
+                  onChange={setEngineOverride}
+                />
+              )}
+              <AdvancedSelect
+                label={t('images:form.evictChat')}
+                hint={t('settings:media.evictChatDescription')}
+                value={evictChatModel}
+                options={(['whenNeeded', 'always'] as ImageEvictPolicy[]).map(
+                  (value) => [value, evictLabel(value)]
+                )}
+                onChange={setEvictChatModel}
+              />
+              <AdvancedSelect
+                label={t('settings:media.idleUnload')}
+                hint={t('settings:media.idleUnloadDescription')}
+                value={idleUnloadMinutes}
+                disabled={keepModelLoaded}
+                options={IMAGE_IDLE_UNLOAD_OPTIONS.map((minutes) => [
+                  minutes,
+                  idleLabel(minutes),
+                ])}
+                onChange={setIdle}
+              />
+              <div className="flex h-8 items-center justify-between gap-3">
+                <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                  {t('settings:media.keepLoaded')}
+                  <ImageFieldHint>
+                    {t('settings:media.keepLoadedDescription')}
+                  </ImageFieldHint>
+                </span>
+                <Switch
+                  checked={keepModelLoaded}
+                  onCheckedChange={setKeep}
+                  aria-label={t('settings:media.keepLoaded')}
+                />
+              </div>
+              <button
+                type="button"
+                className="flex items-center gap-1 self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => void navigate({ to: route.settings.media })}
+              >
+                {t('images:form.mediaSettings')}
+                <IconChevronRight size={14} />
+              </button>
+            </div>
           </CollapsibleContent>
         </Collapsible>
-      )}
+      </div>
 
-      <ImageSizeControl
-        value={{
-          width: form.width,
-          height: form.height,
-          aspect: form.aspect,
-          portrait: form.portrait,
-        }}
-        constraints={constraints}
-        disabled={busy}
-        onChange={(size) => form.patch(size)}
-      />
-
-      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-        <div className="flex items-center justify-between">
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-              data-testid="image-advanced-toggle"
-            >
-              <ChevronRight
-                className={cn(
-                  'size-3.5 transition-transform',
-                  advancedOpen && 'rotate-90'
-                )}
-              />
-              {t('images:form.advanced')}
-            </button>
-          </CollapsibleTrigger>
-          {capabilities && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={busy}
-              onClick={() => form.resetToDefaults(capabilities.defaults)}
-            >
-              <IconRestore size={12} />
-              {t('images:form.reset')}
-            </Button>
-          )}
-        </div>
-        <CollapsibleContent className={collapsiblePanelAnimation}>
-          <div className="mt-3 space-y-4">
-            <ImageParamSlider
-              id="image-steps"
-              label={t('images:form.steps')}
-              value={form.steps}
-              min={minSteps}
-              max={maxSteps}
-              step={1}
-              disabled={busy}
-              onChange={(steps) => form.patch({ steps })}
-            />
-            {showCfg && (
-              <ImageParamSlider
-                id="image-cfg"
-                label={t('images:form.cfgScale')}
-                description={t('images:form.cfgScaleHint')}
-                value={form.cfgScale}
-                min={1}
-                max={20}
-                step={0.5}
-                disabled={busy}
-                onChange={(cfgScale) => form.patch({ cfgScale })}
-              />
-            )}
-            {showGuidance && (
-              <ImageParamSlider
-                id="image-guidance"
-                label={t('images:form.guidance')}
-                description={t('images:form.guidanceHint')}
-                value={form.guidance ?? capabilities?.defaults.guidance ?? 3.5}
-                min={0}
-                max={20}
-                step={0.5}
-                disabled={busy}
-                onChange={(guidance) => form.patch({ guidance })}
-              />
-            )}
-            <ImageSeedField
-              value={form.seedText}
-              disabled={busy}
-              onChange={(seedText) => form.patch({ seedText })}
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <ImageParamSlider
-                id="image-batch"
-                label={t('images:form.batchSize')}
-                value={form.batchSize}
-                min={1}
-                max={maxBatch}
-                step={1}
-                disabled={busy || maxBatch === 1}
-                onChange={(batchSize) => form.patch({ batchSize })}
-              />
-              <ImageParamSlider
-                id="image-runs"
-                label={t('images:form.runs')}
-                value={form.runs}
-                min={1}
-                max={MAX_IMAGE_RUNS}
-                step={1}
-                disabled={busy}
-                onChange={(runs) => form.patch({ runs })}
-              />
-            </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-
-      <div className="space-y-2">
+      {/* Pinned under the scroll, so Generate is always in reach. */}
+      <div className="relative flex shrink-0 flex-col items-center gap-2 px-6 pt-2 pb-4">
+        <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-t from-background to-transparent" />
         <ImageGenerateButton
           generating={generation.generating}
           stopRequested={generation.stopRequested}
@@ -303,5 +512,67 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     </form>
   )
 })
+
+type AdvancedSelectProps<T extends string | number> = {
+  label: string
+  hint?: ReactNode
+  value: T
+  options: Array<[T, string]>
+  disabled?: boolean
+  onChange: (value: T) => void
+}
+
+/** One Advanced row: a muted label on the left, a pill menu on the right. */
+function AdvancedSelect<T extends string | number>({
+  label,
+  hint,
+  value,
+  options,
+  disabled,
+  onChange,
+}: AdvancedSelectProps<T>) {
+  const current =
+    options.find(([option]) => option === value)?.[1] ?? String(value)
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+        <span className="truncate">{label}</span>
+        {hint && <ImageFieldHint>{hint}</ImageFieldHint>}
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 w-40 shrink-0 justify-between text-xs font-normal"
+            disabled={disabled}
+            aria-label={label}
+          >
+            <span className="truncate">{current}</span>
+            <IconChevronDown
+              size={16}
+              className="shrink-0 text-muted-foreground"
+            />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          {options.map(([option, text]) => (
+            <DropdownMenuItem
+              key={String(option)}
+              className={cn(
+                'cursor-pointer text-xs',
+                option === value && 'bg-secondary-foreground/8'
+              )}
+              onClick={() => onChange(option)}
+            >
+              {text}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
 
 export default ImagePromptForm

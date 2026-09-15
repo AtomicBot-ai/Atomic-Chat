@@ -6,6 +6,7 @@ import {
   IconDeviceFloppy,
   IconFolderOpen,
   IconMaximize,
+  IconPhoto,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -103,10 +104,11 @@ export const ImageViewer = memo(function ImageViewer({
   if (!item) {
     return (
       <div
-        className="flex h-full min-h-48 items-center justify-center text-sm text-muted-foreground"
+        className="flex h-full min-h-48 flex-col items-center justify-center gap-3 text-muted-foreground"
         data-testid="image-viewer-empty"
       >
-        {t('images:viewer.empty')}
+        <IconPhoto size={40} stroke={1.5} />
+        <p className="text-sm">{t('images:viewer.empty')}</p>
       </div>
     )
   }
@@ -154,11 +156,17 @@ export const ImageViewer = memo(function ImageViewer({
   }
 
   return (
-    <div className="flex h-full flex-col gap-2" data-testid="image-viewer">
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-secondary/40">
+    <div
+      className="group/viewer @container grid h-full grid-rows-[minmax(0,1fr)_auto] gap-2 px-6 pt-4 pb-2"
+      data-testid="image-viewer"
+    >
+      {/* The grid row gives the image a definite box, so `max-h-full` holds
+          and a tall image can never slide under the toolbar. */}
+      <div className="relative flex min-h-0 min-w-0 items-center justify-center">
+        {/* Spans the box for keyboard focus; only the picture takes the pointer. */}
         <button
           type="button"
-          className="size-full cursor-zoom-in"
+          className="pointer-events-none flex size-full items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t('images:viewer.fullscreen')}
           onClick={() => {
             setFullscreen(true)
@@ -170,13 +178,15 @@ export const ImageViewer = memo(function ImageViewer({
             alt={item.recipe.prompt}
             decoding="async"
             draggable={false}
-            className="size-full object-contain"
+            className="pointer-events-auto max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md"
           />
         </button>
+
+        {/* Stepping arrows, shown when the pointer is over the canvas. */}
         <Button
           variant="outline"
           size="icon-sm"
-          className="absolute left-2 top-1/2 -translate-y-1/2 bg-background/80"
+          className="absolute left-0 top-1/2 -translate-y-1/2 bg-background/80 opacity-0 backdrop-blur transition-opacity group-hover/viewer:opacity-100 focus-visible:opacity-100"
           aria-label={t('images:viewer.previous')}
           onClick={() => step(-1)}
         >
@@ -185,7 +195,7 @@ export const ImageViewer = memo(function ImageViewer({
         <Button
           variant="outline"
           size="icon-sm"
-          className="absolute right-2 top-1/2 -translate-y-1/2 bg-background/80"
+          className="absolute right-0 top-1/2 -translate-y-1/2 bg-background/80 opacity-0 backdrop-blur transition-opacity group-hover/viewer:opacity-100 focus-visible:opacity-100"
           aria-label={t('images:viewer.next')}
           onClick={() => step(1)}
         >
@@ -193,7 +203,10 @@ export const ImageViewer = memo(function ImageViewer({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1">
+      {/* The actions for the open image, on their own row under it rather
+          than over it. On a narrow canvas the labels fold away and the icons
+          stay. */}
+      <div className="flex min-w-0 items-center justify-center gap-0.5 [&_button>span]:hidden @[32rem]:[&_button>span]:inline">
         <ImageRecipePopover
           recipe={item.recipe}
           modelDiffers={modelDiffers}
@@ -201,16 +214,26 @@ export const ImageViewer = memo(function ImageViewer({
         />
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="sm" onClick={() => void saveAs()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t('images:viewer.saveAs')}
+              onClick={() => void saveAs()}
+            >
               <IconDeviceFloppy size={16} />
-              {t('images:viewer.saveAs')}
+              <span>{t('images:viewer.saveAs')}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>{exportFilename(item)}</TooltipContent>
         </Tooltip>
-        <Button variant="ghost" size="sm" onClick={() => void reveal()}>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={t('images:viewer.reveal')}
+          onClick={() => void reveal()}
+        >
           <IconFolderOpen size={16} />
-          {t('images:viewer.reveal')}
+          <span>{t('images:viewer.reveal')}</span>
         </Button>
         <Button
           variant="ghost"
@@ -220,11 +243,13 @@ export const ImageViewer = memo(function ImageViewer({
           data-testid="image-viewer-delete"
         >
           <IconTrash size={16} />
-          {selectedIds.length > 1
-            ? t('images:viewer.deleteCount', { count: selectedIds.length })
-            : t('images:viewer.delete')}
+          <span>
+            {selectedIds.length > 1
+              ? t('images:viewer.deleteCount', { count: selectedIds.length })
+              : t('images:viewer.delete')}
+          </span>
         </Button>
-        <span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
+        <span className="hidden px-2 font-mono text-xs tabular-nums text-muted-foreground @[40rem]:inline">
           {item.width}×{item.height}
         </span>
         <Button
