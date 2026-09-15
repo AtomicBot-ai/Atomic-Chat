@@ -8,7 +8,11 @@ import {
   BACKEND_PRESERVE_KEYS,
   localStorageKey,
 } from '@/constants/localStorage'
-import type { LogEntry } from './types'
+import type {
+  LogEntry,
+  ModelsFolderInfo,
+  ModelsFolderMoveReport,
+} from './types'
 import { DefaultAppService } from './default'
 
 export class TauriAppService extends DefaultAppService {
@@ -66,6 +70,25 @@ export class TauriAppService extends DefaultAppService {
 
   async relocateJanDataFolder(path: string): Promise<void> {
     await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
+  }
+
+  async getModelsFolder(): Promise<ModelsFolderInfo | undefined> {
+    try {
+      return await invoke<ModelsFolderInfo>('get_models_folder')
+    } catch (error) {
+      console.error('Failed to get the models folder:', error)
+      return undefined
+    }
+  }
+
+  async setModelsFolder(
+    path: string | null,
+    moveExisting: boolean
+  ): Promise<ModelsFolderMoveReport> {
+    return await invoke<ModelsFolderMoveReport>('set_models_folder', {
+      path,
+      moveExisting,
+    })
   }
 
   async getAutostartPreference(): Promise<AutostartPreference> {

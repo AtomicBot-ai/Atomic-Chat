@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
+import { ensureConnectorReviewed } from '@/hooks/useConnectorReview'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -39,6 +40,10 @@ export function useMCPServerToggle(
       setPendingServers((prev) => ({ ...prev, [key]: true }))
       try {
         if (next) {
+          // Task 28 (decision D36): review before use. Cancel leaves it off.
+          if (!(await ensureConnectorReviewed(serviceHub.mcp(), key, config))) {
+            return
+          }
           await serviceHub
             .mcp()
             .activateMCPServer(key, { ...config, active: true })

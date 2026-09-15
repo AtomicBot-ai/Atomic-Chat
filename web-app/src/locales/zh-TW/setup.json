@@ -1,8 +1,8 @@
 {
-  "welcome": "歡迎來到 Atomic Bot",
-  "description": "若要開始使用，請使用 Atomic Bot Model 快速啟動，或選擇您自己的本機或遠端提供者",
+  "welcome": "歡迎來到 Radium",
+  "description": "若要開始使用，請使用 Radium Model 快速啟動，或選擇您自己的本機或遠端提供者",
   "descriptionWeb": "若要開始使用，您需要使用 API 金鑰連線至雲端模型",
-  "quickStart": "使用 Atomic Bot Model 快速啟動",
+  "quickStart": "使用 Radium Model 快速啟動",
   "quickStartDescription": "無需設定",
   "quickStartFailed": "發生錯誤。請重試。",
   "downloading": "下載中…",

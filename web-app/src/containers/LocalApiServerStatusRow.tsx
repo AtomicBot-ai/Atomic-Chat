@@ -70,7 +70,7 @@ export function LocalApiServerStatusRow() {
           </Button>
         )}
         <Button asChild variant="outline" size="sm">
-          <Link to={route.api.index}>
+          <Link to={route.settings.api}>
             {t('common:api')}
             <IconArrowRight size={14} />
           </Link>

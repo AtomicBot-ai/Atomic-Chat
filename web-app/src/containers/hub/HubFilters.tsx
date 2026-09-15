@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { ChevronsUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -161,28 +161,20 @@ export function HubFilters({
               {t('hub:fitFilterLabel')}
             </DropdownMenuCheckboxItem>
           )}
+
+          <DropdownMenuCheckboxItem
+            checked={state.uncensored}
+            title={t('hub:uncensoredHint')}
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={(checked) =>
+              onChange({ ...state, uncensored: checked === true })
+            }
+            className={FILTER_CHECKBOX_CLASS}
+          >
+            {t('hub:uncensored')}
+          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={state.uncensored}
-        title={t('hub:uncensoredHint')}
-        onClick={() => onChange({ ...state, uncensored: !state.uncensored })}
-        className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
-      >
-        <span
-          className={cn(
-            'flex size-4 shrink-0 items-center justify-center rounded-[5px] border border-input',
-            state.uncensored &&
-              'border-primary bg-primary text-primary-foreground'
-          )}
-        >
-          {state.uncensored && <Check className="size-3" />}
-        </span>
-        {t('hub:uncensored')}
-      </button>
     </div>
   )
 }

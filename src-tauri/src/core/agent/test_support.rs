@@ -49,12 +49,15 @@ impl TestWorkspace {
     }
 
     pub(crate) fn skill_registry(&self) -> SkillRegistry {
-        SkillRegistry::load(
+        let mut registry = SkillRegistry::load(
             self.path.join(".agent-skills"),
             &BTreeSet::new(),
             &BTreeSet::new(),
         )
-        .expect("create empty skill registry")
+        .expect("create empty skill registry");
+        // Test fixtures trust their own skills, like the eval harness (Task 28).
+        registry.trust_all();
+        registry
     }
 }
 

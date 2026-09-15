@@ -7,6 +7,7 @@ import type { MCPServerConfig } from '@/hooks/useMCPServers'
 import type {
   MCPService,
   MCPConfig,
+  MCPPreviewTool,
   MCPServerStatus,
   MCPToolsResponse,
   ToolCallWithCancellationResult,
@@ -83,6 +84,31 @@ export class DefaultMCPService implements MCPService {
 
   async checkJanBrowserExtensionConnected(): Promise<boolean> {
     return false
+  }
+
+  async connectorNeedsReview(
+    name: string,
+    config: MCPServerConfig
+  ): Promise<boolean> {
+    console.log('connectorNeedsReview called:', { name, config })
+    // Nothing starts outside the desktop app, so there is nothing to review.
+    return false
+  }
+
+  async approveConnector(
+    name: string,
+    config: MCPServerConfig
+  ): Promise<void> {
+    console.log('approveConnector called:', { name, config })
+    // No-op - not implemented in default service
+  }
+
+  async previewConnectorTools(
+    name: string,
+    config: MCPServerConfig
+  ): Promise<MCPPreviewTool[]> {
+    console.log('previewConnectorTools called:', { name, config })
+    throw new Error('Preview requires the desktop app')
   }
 
   async mcpOauthLogin(name: string, url: string): Promise<void> {

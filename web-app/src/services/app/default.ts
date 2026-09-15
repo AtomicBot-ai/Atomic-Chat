@@ -2,10 +2,28 @@
  * Default App Service - Generic implementation with minimal returns
  */
 
-import type { AppService, LogEntry } from './types'
+import type {
+  AppService,
+  LogEntry,
+  ModelsFolderInfo,
+  ModelsFolderMoveReport,
+} from './types'
 import type { AutostartPreference } from '@janhq/core'
 
 export class DefaultAppService implements AppService {
+  async getModelsFolder(): Promise<ModelsFolderInfo | undefined> {
+    return undefined
+  }
+
+  async setModelsFolder(
+    path: string | null,
+    moveExisting: boolean
+  ): Promise<ModelsFolderMoveReport> {
+    void path
+    void moveExisting
+    throw new Error('Choosing a models folder needs the desktop app')
+  }
+
   async factoryReset(): Promise<void> {
     // No-op
   }

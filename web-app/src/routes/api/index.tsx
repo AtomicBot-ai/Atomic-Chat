@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,18 +8,23 @@ import { ApiPageHeaderActions } from '@/containers/api/ApiPageHeaderActions'
 import { ApiRequestInspector } from '@/containers/api/ApiRequestInspector'
 import { ApiRequestList } from '@/containers/api/ApiRequestList'
 import { ApiStatTiles } from '@/containers/api/ApiStatTiles'
-import HeaderPage from '@/containers/HeaderPage'
+import { SettingsPageLayout } from '@/containers/SettingsPageLayout'
 import { useApiServerLog, filterEntries } from '@/hooks/useApiServerLog'
 import { useApiServerLogFeed } from '@/hooks/useApiServerLogFeed'
 import { useApiServerModelNotices } from '@/hooks/useApiServerModelNotices'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
 import { computeApiServerStats } from '@/utils/apiServerStats'
 
+/**
+ * The page lives at Settings > API (`/settings/api` renders `ApiPage`). This
+ * address stays so older links and bookmarks still land there.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.api.index as any)({
-  component: ApiPage,
+  beforeLoad: () => {
+    throw redirect({ to: route.settings.api })
+  },
 })
 
 /** How often the sliding stats window is recomputed. */
@@ -82,31 +87,22 @@ export function ApiPage() {
   }, [setFilter, setQuery])
 
   return (
-    <div className="flex h-svh w-full flex-col">
-      <HeaderPage>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
-          <span className="font-medium text-base font-studio">
-            {t('api:title')}
-          </span>
-          <ApiPageHeaderActions
-            isRunning={control.isRunning}
-            isBusy={control.isBusy}
-            isModelLoading={control.isModelLoading}
-            status={control.status}
-            onToggleServer={() => void control.toggle()}
-            onRefresh={() => void handleRefresh()}
-            onClear={() => void clear()}
-            refreshing={refreshing}
-          />
-        </div>
-      </HeaderPage>
-
-      <div className="flex h-[calc(100%-60px)] flex-col gap-3 overflow-y-auto p-4 pt-0">
+    <SettingsPageLayout
+      title={t('api:title')}
+      actions={
+        <ApiPageHeaderActions
+          isRunning={control.isRunning}
+          isBusy={control.isBusy}
+          isModelLoading={control.isModelLoading}
+          status={control.status}
+          onToggleServer={() => void control.toggle()}
+          onRefresh={() => void handleRefresh()}
+          onClear={() => void clear()}
+          refreshing={refreshing}
+        />
+      }
+    >
+      <div className="flex flex-col gap-3">
         <ApiConnectionStrip />
 
         {hydrated ? (
@@ -143,6 +139,6 @@ export function ApiPage() {
           />
         </div>
       </div>
-    </div>
+    </SettingsPageLayout>
   )
 }

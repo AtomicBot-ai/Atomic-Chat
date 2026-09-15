@@ -1,8 +1,8 @@
 {
-  "welcome": "Atomic Bot에 오신 것을 환영합니다",
-  "description": "시작하려면 Atomic Bot 모델로 빠르게 실행하거나, 직접 로컬 또는 원격 제공자를 설정하세요",
+  "welcome": "Radium에 오신 것을 환영합니다",
+  "description": "시작하려면 Radium 모델로 빠르게 실행하거나, 직접 로컬 또는 원격 제공자를 설정하세요",
   "descriptionWeb": "시작하려면 API 키를 사용하여 클라우드 모델에 연결해야 합니다",
-  "quickStart": "Atomic Bot 모델로 빠른 시작",
+  "quickStart": "Radium 모델로 빠른 시작",
   "quickStartDescription": "설정이 필요 없습니다",
   "quickStartFailed": "문제가 발생했습니다. 다시 시도해 주세요.",
   "downloading": "다운로드 중…",

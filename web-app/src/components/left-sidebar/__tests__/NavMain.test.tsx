@@ -96,12 +96,28 @@ describe('NavMain', () => {
 
     expect(screen.getByText('common:newChat')).toBeInTheDocument()
     expect(screen.getByText('common:models')).toBeInTheDocument()
-    expect(screen.getByText('common:cloud')).toBeInTheDocument()
     expect(screen.getByText('common:plugins')).toBeInTheDocument()
     expect(screen.getByText('common:projects.new')).toBeInTheDocument()
     expect(screen.getByText('common:launch')).toBeInTheDocument()
-    expect(screen.getByText('common:api')).toBeInTheDocument()
     expect(screen.queryByText('common:newTask')).not.toBeInTheDocument()
+  })
+
+  it('keeps Media as its own sidebar entry', () => {
+    // Radium Media's way in. Upstream has no such row, so a sync that takes
+    // upstream's sidebar would drop it without a word.
+    vi.mocked(useLocation).mockReturnValue({ pathname: '/media' } as never)
+    render(<NavMain />)
+
+    const media = screen.getByText('media:settings.title')
+    expect(media.closest('a')).toHaveAttribute('href', '/media')
+    expect(media.closest('[data-active]')).toHaveAttribute('data-active', 'true')
+  })
+
+  it('leaves Cloud and API to Settings', () => {
+    render(<NavMain />)
+
+    expect(screen.queryByText('common:cloud')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:api')).not.toBeInTheDocument()
   })
 
   it('keeps Connectors and Skills tucked inside the collapsed Plugins group', () => {
@@ -143,16 +159,6 @@ describe('NavMain', () => {
 
     expect(
       screen.getByText('common:plugins').closest('[data-active]')
-    ).toHaveAttribute('data-active', 'true')
-  })
-
-  it('highlights Cloud on the cloud route', () => {
-    vi.mocked(useLocation).mockReturnValue({ pathname: '/cloud/' } as never)
-
-    render(<NavMain />)
-
-    expect(
-      screen.getByText('common:cloud').closest('[data-active]')
     ).toHaveAttribute('data-active', 'true')
   })
 

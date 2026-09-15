@@ -1,4 +1,5 @@
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::app::models_folder::redirect_for_app;
 use jan_utils::{normalize_file_path, normalize_path};
 use std::path::PathBuf;
 use tauri::Runtime;
@@ -10,7 +11,7 @@ pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> 
             .trim_start_matches(std::path::MAIN_SEPARATOR)
             .trim_start_matches('/')
             .trim_start_matches('\\');
-        get_jan_data_folder_path(app_handle).join(relative_normalized)
+        get_jan_data_folder_path(app_handle.clone()).join(relative_normalized)
     } else {
         PathBuf::from(path)
     };
@@ -23,6 +24,10 @@ pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> 
         // get persisted as `model_path` in `model.yml`, and are handed to
         // `llama-server` on the command line. Normalize the prefix away so
         // callers only ever see ordinary paths (issue #256).
+        //
+        // A path under `<data folder>/llamacpp/models` goes to the models
+        // folder the user chose, when there is one (core::app::models_folder).
+        let path = redirect_for_app(&app_handle, &normalize_path(&path));
         normalize_path(&path.canonicalize().unwrap_or(path))
     }
 }

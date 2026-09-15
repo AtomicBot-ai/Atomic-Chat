@@ -7,19 +7,12 @@ import {
   afterEach,
   vi,
 } from 'vitest'
-import {
-  render,
-  screen,
-  cleanup,
-  fireEvent,
-  within,
-} from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
-import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -161,7 +154,6 @@ describe('DropdownModelProvider - the composer pill', () => {
       reasoningBudget: 'medium',
     })
     useLeftPanel.setState({ open: false })
-    useRunSettingsPanel.setState({ isOpen: false })
     selectModel(thinkingModel)
   })
 
@@ -244,32 +236,14 @@ describe('DropdownModelProvider - the composer pill', () => {
     expect(modelRow()).toBeInTheDocument()
   })
 
-  it('folds down to the model mark while both side bars are open', () => {
+  it('keeps the model name with the sidebar open', () => {
+    // The pill used to fold down to its mark while the run settings panel
+    // shared the row; those settings live in Settings > Chat now.
     useLeftPanel.setState({ open: true })
-    useRunSettingsPanel.setState({ isOpen: true })
 
     render(<DropdownModelProvider />)
 
-    // The name leaves the pill but not the pill's name, nor its hover title.
-    expect(pill()).not.toHaveTextContent('Qwen 3')
-    expect(pill()).toHaveTextContent('common:reasoningEffort.medium')
-    expect(pill()).toHaveAccessibleName('Qwen 3')
-    expect(pill()).toHaveAttribute('title', 'qwen3.gguf')
-    expect(
-      within(pill()).getByTestId('provider-avatar-llamacpp-upstream')
-    ).toBeInTheDocument()
-  })
-
-  it('keeps the name with one bar open, or with nothing to fold down to', () => {
-    useLeftPanel.setState({ open: true })
-    const oneBar = render(<DropdownModelProvider />)
     expect(pill()).toHaveTextContent('Qwen 3')
-    oneBar.unmount()
-
-    useRunSettingsPanel.setState({ isOpen: true })
-    selectModel(undefined)
-    render(<DropdownModelProvider />)
-    expect(pill()).toHaveTextContent('common:selectAModel')
   })
 
   it('carries no level for a model without a thinking phase', () => {

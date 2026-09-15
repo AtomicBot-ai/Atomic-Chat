@@ -6,8 +6,8 @@ import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
-import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 
+const navigate = vi.hoisted(() => vi.fn())
 const media = vi.hoisted(() => ({ desktop: true }))
 const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
 const agentWorkspace = {
@@ -65,15 +65,8 @@ vi.mock('./AgentWorkspaceFiles', () => ({
   ),
 }))
 
-vi.mock('./RunSettingsPanel', () => ({
-  RunSettingsPanel: ({ onClose }: { onClose: () => void }) => (
-    <div>
-      Run settings
-      <button type="button" onClick={onClose}>
-        Close run settings
-      </button>
-    </div>
-  ),
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigate,
 }))
 
 vi.mock('./ArtifactPanel', () => ({
@@ -83,11 +76,11 @@ vi.mock('./ArtifactPanel', () => ({
 describe('AgentWorkspaceLayout', () => {
   beforeEach(() => {
     media.desktop = true
+    navigate.mockClear()
     panelLayouts.values = []
     useArtifactStore.getState().close()
     useWorkspacePreviewStore.getState().reset()
     useHeaderOverlay.getState().setRightOverlayButtons(0)
-    useRunSettingsPanel.getState().close()
     useGeneralSetting.setState({ agentModeEnabled: true })
   })
 
@@ -382,11 +375,7 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    // Run settings hold the right column until the folder lands.
-    fireEvent.click(
-      screen.getByRole('button', { name: 'chat:runSettings.open' })
-    )
-    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+    expect(screen.queryByText('Files')).not.toBeInTheDocument()
 
     rerender(
       <AgentWorkspaceLayout
@@ -409,10 +398,7 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    // The run settings node lingers while its exit animation runs, so the
-    // store is what says the slot changed hands.
     expect(await screen.findByText('Files')).toBeInTheDocument()
-    expect(useRunSettingsPanel.getState().isOpen).toBe(false)
   })
 
   it('opens preview space without changing the files panel width', async () => {
@@ -467,7 +453,7 @@ describe('AgentWorkspaceLayout', () => {
     })
   })
 
-  it('opens and closes the run settings, hiding the corner buttons meanwhile', async () => {
+  it('sends the run settings button to Settings > Chat', async () => {
     render(
       <AgentWorkspaceLayout
         threadId="thread"
@@ -479,80 +465,23 @@ describe('AgentWorkspaceLayout', () => {
       </AgentWorkspaceLayout>
     )
 
-    expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
-
     fireEvent.click(
       screen.getByRole('button', { name: 'chat:runSettings.open' })
     )
-    expect(await screen.findByText('Run settings')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'chat:runSettings.open' })
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Open files sidebar' })
-    ).not.toBeInTheDocument()
-    await waitFor(() => {
-      expect(panelLayouts.values.at(-1)).toEqual([76, 0, 24])
-    })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
-    await waitFor(() => {
-      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
-    })
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/chat' })
+    // The chat keeps its full width: nothing opens beside it any more.
+    expect(screen.getByTestId('panel-agent-sidebar')).toHaveAttribute(
+      'data-default-size',
+      '0'
+    )
     expect(
-      screen.getByRole('button', { name: 'chat:runSettings.open' })
+      screen.getByRole('button', { name: 'Open files sidebar' })
     ).toBeInTheDocument()
   })
 
-  it('lets files and run settings take turns in the right column', async () => {
-    render(
-      <AgentWorkspaceLayout
-        threadId="thread"
-        workspace={agentWorkspace}
-        onAddExternal={onAddExternal}
-        refreshKey={0}
-      >
-        <div>Chat</div>
-      </AgentWorkspaceLayout>
-    )
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'chat:runSettings.open' })
-    )
-    expect(await screen.findByText('Run settings')).toBeInTheDocument()
-
-    // Closing the settings brings the corner buttons back; opening files from
-    // there is the only route to the files panel, and it takes the column.
-    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Open files sidebar' })
-    )
-    expect(await screen.findByText('Files')).toBeInTheDocument()
-    // The settings panel may still be sliding out; it must end up gone.
-    await waitFor(() => {
-      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
-    })
-    expect(useRunSettingsPanel.getState().isOpen).toBe(false)
-  })
-
-  it('keeps run settings open across a thread switch while files reset', async () => {
+  it('closes the files sidebar on a thread switch', async () => {
     const { rerender } = render(
-      <AgentWorkspaceLayout
-        threadId="thread-a"
-        workspace={agentWorkspace}
-        onAddExternal={onAddExternal}
-        refreshKey={0}
-      >
-        <div>Chat</div>
-      </AgentWorkspaceLayout>
-    )
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'chat:runSettings.open' })
-    )
-    expect(await screen.findByText('Run settings')).toBeInTheDocument()
-
-    rerender(
       <AgentWorkspaceLayout
         threadId="thread-b"
         workspace={agentWorkspace}
@@ -562,11 +491,7 @@ describe('AgentWorkspaceLayout', () => {
         <div>Chat</div>
       </AgentWorkspaceLayout>
     )
-    expect(await screen.findByText('Run settings')).toBeInTheDocument()
 
-    // Files, on the other hand, close on a thread switch and hand the column
-    // back to the settings that were left open.
-    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
     fireEvent.click(
       await screen.findByRole('button', { name: 'Open files sidebar' })
     )
