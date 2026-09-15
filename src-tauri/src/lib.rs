@@ -129,6 +129,8 @@ pub fn run() {
         core::app::commands::get_configuration_file_path,
         core::app::commands::default_data_folder_path,
         core::app::commands::change_app_data_folder,
+        core::app::models_folder::get_models_folder,
+        core::app::models_folder::set_models_folder,
         core::app::commands::app_token,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,
@@ -302,6 +304,8 @@ pub fn run() {
         core::app::commands::get_configuration_file_path,
         core::app::commands::default_data_folder_path,
         core::app::commands::change_app_data_folder,
+        core::app::models_folder::get_models_folder,
+        core::app::models_folder::set_models_folder,
         core::app::commands::app_token,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,

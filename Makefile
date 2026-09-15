@@ -475,6 +475,7 @@ test-hardening-contracts:
 		tests/hardware-profiles.test.mjs \
 		tests/no-auto-update.test.mjs \
 		tests/radium-product-name.test.mjs \
+		tests/models-folder.test.mjs \
 		tests/window-controls.test.mjs \
 		tests/scrollbar-arrows.test.mjs \
 		tests/radium-logo.test.mjs \
