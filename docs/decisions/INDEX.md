@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-252 records, 2026-05-19 → 2026-09-13.
+253 records, 2026-05-19 → 2026-09-15.
 
 <!-- Counted from the files on disk, not by arithmetic. Verified by counting *.md excluding INDEX and _TEMPLATE. -->
 
@@ -313,8 +313,9 @@ library on disk, and how the frozen surface is allowed to change.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (11)
+## Other (12)
 
+- **2026-09-15** — [Add a StructuredDocument IR beside `parse_document`, not instead of it](2026-09-15-add-a-structureddocument-ir-beside-parsedocument-not-instead.md)
 - **2026-09-13** — [Gate every upstream sync on a Fork features impact report](2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
 - **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)
