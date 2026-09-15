@@ -19,7 +19,10 @@ use tauri::{Runtime, State};
 use tokio::{process::Child, sync::Mutex};
 
 use super::{
-    catalog::{catalog, find_model, model_install_plan, GenerationDefaults, ModelTask},
+    catalog::{
+        catalog, model_install_plan, resolve_model, CatalogModel, CatalogQuant, GenerationDefaults,
+        ModelFileRole, ModelTask,
+    },
     engine::{
         choose_engine_variant, engine_install_plan, host_platform, EngineInstallPlan,
         EngineVariant, GpuSummary, GpuVendor,
@@ -120,7 +123,33 @@ pub struct ModelStatus {
     pub license_url: &'static str,
     pub min_memory_mb: u64,
     pub defaults: GenerationDefaults,
+    /// The default size's download, and whether it is complete.
     pub size_bytes: u64,
+    pub installed: bool,
+    /// The size used when none is chosen.
+    pub default_quant: &'static str,
+    /// Every size offered, smallest first.
+    pub quants: Vec<QuantStatus>,
+}
+
+/// One size of a model, and what downloading it saves.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct QuantStatus {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub note: &'static str,
+    /// Every file this size needs, shared parts included.
+    pub size_bytes: u64,
+    pub installed: bool,
+    pub files: Vec<FileStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct FileStatus {
+    pub role: ModelFileRole,
+    pub name: &'static str,
+    pub repo: &'static str,
+    pub size: u64,
     pub installed: bool,
 }
 
@@ -135,12 +164,13 @@ pub struct EngineStatus {
     pub base_url: Option<String>,
 }
 
-/// Every catalog model and whether it is downloaded under `data_dir`.
+/// Every catalog model, each of its sizes, and what is downloaded under
+/// `data_dir`.
 pub fn model_statuses(data_dir: &Path) -> Vec<ModelStatus> {
     catalog()
         .iter()
         .map(|model| {
-            let plan = model_install_plan(data_dir, model);
+            let standard = quant_status(data_dir, model, model.standard_quant());
             ModelStatus {
                 id: model.id,
                 label: model.label,
@@ -150,11 +180,42 @@ pub fn model_statuses(data_dir: &Path) -> Vec<ModelStatus> {
                 license_url: model.license_url,
                 min_memory_mb: model.min_memory_mb,
                 defaults: model.defaults,
-                size_bytes: plan.total_size,
-                installed: plan.installed,
+                size_bytes: standard.size_bytes,
+                installed: standard.installed,
+                default_quant: standard.id,
+                quants: model
+                    .quants
+                    .iter()
+                    .map(|quant| quant_status(data_dir, model, quant))
+                    .collect(),
             }
         })
         .collect()
+}
+
+fn quant_status(data_dir: &Path, model: &CatalogModel, quant: &CatalogQuant) -> QuantStatus {
+    let plan = model_install_plan(data_dir, model, quant);
+    let files = model
+        .files_for(quant)
+        .into_iter()
+        .zip(&plan.downloads)
+        .map(|(file, download)| FileStatus {
+            role: file.role,
+            name: file.file_name(),
+            repo: file.repo,
+            size: file.size,
+            installed: fs::metadata(under(data_dir, &download.save_path))
+                .is_ok_and(|meta| meta.is_file() && meta.len() == download.size),
+        })
+        .collect();
+    QuantStatus {
+        id: quant.id,
+        label: quant.label,
+        note: quant.note,
+        size_bytes: plan.total_size,
+        installed: plan.installed,
+        files,
+    }
 }
 
 /// What still has to be downloaded to make images with `model_id`: the engine
@@ -164,7 +225,7 @@ pub fn downloads_needed(
     variant: EngineVariant,
     model_id: &str,
 ) -> Result<Vec<DownloadItem>, String> {
-    let model = find_model(model_id)
+    let (model, quant) = resolve_model(model_id)
         .ok_or_else(|| format!("The built-in engine has no model called \"{model_id}\"."))?;
     let mut items = Vec::new();
     let engine = engine_install_plan(data_dir, variant);
@@ -178,7 +239,7 @@ pub fn downloads_needed(
             model_id: Some("media-engine".to_string()),
         }));
     }
-    let plan = model_install_plan(data_dir, model);
+    let plan = model_install_plan(data_dir, model, quant);
     items.extend(
         plan.downloads
             .iter()
@@ -266,9 +327,9 @@ pub fn start_command(
                 .to_string(),
         );
     }
-    let model = find_model(model_id)
+    let (model, quant) = resolve_model(model_id)
         .ok_or_else(|| format!("The built-in engine has no model called \"{model_id}\"."))?;
-    let args = server_args(data_dir, model, port)?;
+    let args = server_args(data_dir, model, quant, port)?;
     for (_, relative) in super::server::SCAN_DIRS {
         fs::create_dir_all(under(data_dir, relative))
             .map_err(|error| format!("Could not create the media folder {relative}: {error}"))?;
@@ -396,6 +457,7 @@ pub async fn stop_engine_on_exit(engine: &MediaEngineState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::media::catalog::find_model;
     use std::io::Write;
     use tempfile::tempdir;
 
@@ -448,7 +510,53 @@ mod tests {
         assert!(items
             .iter()
             .all(|item| !item.save_path.starts_with("media/engine/")));
-        assert_eq!(items.len(), find_model("sd-1.5").unwrap().files.len());
+        let model = find_model("sd-1.5").unwrap();
+        assert_eq!(items.len(), model.files_for(model.standard_quant()).len());
+    }
+
+    #[test]
+    fn every_model_lists_its_sizes_with_the_files_each_downloads() {
+        let tmp = tempdir().unwrap();
+        let statuses = model_statuses(tmp.path());
+        for status in &statuses {
+            assert!(!status.quants.is_empty(), "{}", status.id);
+            let standard = status
+                .quants
+                .iter()
+                .find(|quant| quant.id == status.default_quant)
+                .expect("the default size is listed");
+            assert_eq!(standard.size_bytes, status.size_bytes, "{}", status.id);
+            for quant in &status.quants {
+                let files: u64 = quant.files.iter().map(|file| file.size).sum();
+                assert_eq!(files, quant.size_bytes, "{} {}", status.id, quant.id);
+                assert!(!quant.installed && quant.files.iter().all(|file| !file.installed));
+            }
+        }
+        let flux = statuses
+            .iter()
+            .find(|status| status.id == "flux.1-schnell")
+            .unwrap();
+        let q8 = flux.quants.iter().find(|quant| quant.id == "q8_0").unwrap();
+        assert_eq!(q8.files[0].name, "flux1-schnell-Q8_0.gguf");
+        assert_eq!(q8.files[0].role, ModelFileRole::DiffusionModel);
+        assert_eq!(q8.files.len(), 4, "the VAE and both text encoders come too");
+    }
+
+    #[test]
+    fn a_chosen_size_downloads_its_own_main_file_and_the_shared_parts() {
+        let tmp = tempdir().unwrap();
+        let items =
+            downloads_needed(tmp.path(), EngineVariant::WindowsCpu, "flux.1-schnell@q8_0").unwrap();
+        let paths: Vec<&str> = items.iter().map(|item| item.save_path.as_str()).collect();
+
+        assert!(paths.contains(&"media/models/flux.1-schnell/flux1-schnell-Q8_0.gguf"));
+        assert!(paths.contains(&"media/models/flux.1-schnell/ae.safetensors"));
+        assert!(!paths
+            .iter()
+            .any(|path| path.ends_with("flux1-schnell-Q4_0.gguf")));
+        let error = downloads_needed(tmp.path(), EngineVariant::WindowsCpu, "flux.1-schnell@q9")
+            .unwrap_err();
+        assert!(error.contains("flux.1-schnell@q9"), "{error}");
     }
 
     #[test]
@@ -583,7 +691,7 @@ mod tests {
         let model = find_model("sd-1.5").unwrap();
         let target = under(
             data,
-            &model_install_plan(data, model).downloads[0].save_path,
+            &model_install_plan(data, model, model.standard_quant()).downloads[0].save_path,
         );
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         if fs::hard_link(&model_file, &target).is_err() {

@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use super::catalog::{model_install_plan, CatalogModel, ModelFileRole, ModelTask};
+use super::catalog::{model_install_plan, CatalogModel, CatalogQuant, ModelFileRole, ModelTask};
 
 /// The server only ever listens on this computer.
 pub const LISTEN_IP: &str = "127.0.0.1";
@@ -39,17 +39,18 @@ pub fn role_flag(role: ModelFileRole) -> &'static str {
 pub fn server_args(
     data_dir: &Path,
     model: &CatalogModel,
+    quant: &CatalogQuant,
     port: u16,
 ) -> Result<Vec<String>, String> {
-    let plan = model_install_plan(data_dir, model);
+    let plan = model_install_plan(data_dir, model, quant);
     if !plan.installed {
         return Err(format!(
-            "{} is not fully downloaded yet. Download it before making images with it.",
-            model.label
+            "{} ({}) is not fully downloaded yet. Download it before making images with it.",
+            model.label, quant.label
         ));
     }
     let mut args = Vec::new();
-    for (file, download) in model.files.iter().zip(&plan.downloads) {
+    for (file, download) in model.files_for(quant).into_iter().zip(&plan.downloads) {
         // Built part by part so the path uses this system's separators.
         let path = download
             .save_path
@@ -98,10 +99,13 @@ pub fn pick_free_port() -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::media::catalog::{CatalogFile, GenerationDefaults, ModelTask};
+    use crate::core::media::catalog::{CatalogFile, CatalogQuant, GenerationDefaults, ModelTask};
 
-    const IMAGE_FILES: [CatalogFile; 2] = [
-        CatalogFile {
+    const TINY_QUANTS: [CatalogQuant; 1] = [CatalogQuant {
+        id: "q4_0",
+        label: "Q4_0",
+        note: "Small.",
+        file: CatalogFile {
             role: ModelFileRole::DiffusionModel,
             repo: "example/tiny-model",
             revision: "0123456789abcdef0123456789abcdef01234567",
@@ -109,15 +113,16 @@ mod tests {
             sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             size: 5,
         },
-        CatalogFile {
-            role: ModelFileRole::Vae,
-            repo: "example/tiny-parts",
-            revision: "89abcdef0123456789abcdef0123456789abcdef",
-            file: "split_files/vae/tiny_vae.safetensors",
-            sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            size: 3,
-        },
-    ];
+    }];
+
+    const SHARED_FILES: [CatalogFile; 1] = [CatalogFile {
+        role: ModelFileRole::Vae,
+        repo: "example/tiny-parts",
+        revision: "89abcdef0123456789abcdef0123456789abcdef",
+        file: "split_files/vae/tiny_vae.safetensors",
+        sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        size: 3,
+    }];
 
     const DEFAULTS: GenerationDefaults = GenerationDefaults {
         width: 64,
@@ -136,7 +141,9 @@ mod tests {
         tasks: &[ModelTask::TextToImage],
         min_memory_mb: 1,
         defaults: DEFAULTS,
-        files: &IMAGE_FILES,
+        quants: &TINY_QUANTS,
+        default_quant: "q4_0",
+        files: &SHARED_FILES,
     };
 
     const TINY_VIDEO: CatalogModel = CatalogModel {
@@ -148,7 +155,9 @@ mod tests {
         tasks: &[ModelTask::TextToVideo],
         min_memory_mb: 1,
         defaults: DEFAULTS,
-        files: &IMAGE_FILES,
+        quants: &TINY_QUANTS,
+        default_quant: "q4_0",
+        files: &SHARED_FILES,
     };
 
     /// Puts the tiny model's files in place at their full size.
@@ -189,7 +198,7 @@ mod tests {
         let data = tempfile::TempDir::new().unwrap();
         install_tiny(data.path());
 
-        let args = server_args(data.path(), &TINY_IMAGE, 41_234).unwrap();
+        let args = server_args(data.path(), &TINY_IMAGE, &TINY_QUANTS[0], 41_234).unwrap();
 
         assert_eq!(
             args,
@@ -218,8 +227,8 @@ mod tests {
         let data = tempfile::TempDir::new().unwrap();
         install_tiny(data.path());
 
-        let video = server_args(data.path(), &TINY_VIDEO, 41_234).unwrap();
-        let image = server_args(data.path(), &TINY_IMAGE, 41_234).unwrap();
+        let video = server_args(data.path(), &TINY_VIDEO, &TINY_QUANTS[0], 41_234).unwrap();
+        let image = server_args(data.path(), &TINY_IMAGE, &TINY_QUANTS[0], 41_234).unwrap();
 
         for option in ["--diffusion-fa", "--offload-to-cpu"] {
             assert!(
@@ -237,11 +246,11 @@ mod tests {
     fn a_model_that_is_not_fully_downloaded_is_not_started() {
         let data = tempfile::TempDir::new().unwrap();
 
-        let error = server_args(data.path(), &TINY_IMAGE, 41_234).unwrap_err();
+        let error = server_args(data.path(), &TINY_IMAGE, &TINY_QUANTS[0], 41_234).unwrap_err();
 
         assert!(error.contains("Tiny image model"), "{error}");
         assert!(error.contains("not fully downloaded"), "{error}");
-        assert!(!model_install_plan(data.path(), &TINY_IMAGE).installed);
+        assert!(!model_install_plan(data.path(), &TINY_IMAGE, &TINY_QUANTS[0]).installed);
     }
 
     #[test]

@@ -230,9 +230,10 @@ describe('the provider selector', () => {
       target: { value: 'beta' },
     })
 
-    const models = within(screen.getByLabelText('Model'))
+    fireEvent.click(screen.getByLabelText('Model'))
+    const models = within(screen.getByRole('listbox'))
       .getAllByRole('option')
-      .map((node) => node.textContent)
+      .map((node) => node.getAttribute('aria-label'))
 
     expect(models).toEqual(['flux on beta'])
   })

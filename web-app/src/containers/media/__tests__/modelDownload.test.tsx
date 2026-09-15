@@ -88,9 +88,7 @@ describe('downloading a model from the Media page', () => {
       screen.getByRole('button', { name: 'Download model (1.6 GB)' })
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Generate' })).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('option', { name: 'Stable Diffusion 1.5 (not downloaded)' })
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Model')).toHaveTextContent('Not downloaded')
     expect(screen.getByTestId('media-form-status')).toHaveTextContent(
       'Download Stable Diffusion 1.5 to start making images with it'
     )

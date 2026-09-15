@@ -46,6 +46,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fieldClass, labelClass } from './params/paramIdentity'
 import { formatDownloadSize } from './downloadSize'
 import { ImageFileInput } from './params/ImageFileInput'
+import { MediaModelPicker } from './MediaModelPicker'
 
 /** The one parameter drawn outside the grid. See D10. */
 const PROMPT_PARAM = 'prompt'
@@ -250,14 +251,6 @@ export function MediaGenerationForm({
     }
   }
 
-  const modelOptionLabel = (model: MediaModelDescriptor) =>
-    needsDownload(model)
-      ? t('media:form.notDownloaded', {
-          model: model.label,
-          defaultValue: '{{model}} (not downloaded)',
-        })
-      : model.label
-
   return (
     <div className="flex min-h-0 flex-col gap-3">
       <div className="rounded-xl border border-border/60 bg-background p-4 shadow-sm">
@@ -320,20 +313,14 @@ export function MediaGenerationForm({
               <label htmlFor="media-model" className={labelClass}>
                 Model
               </label>
-              <select
+              <MediaModelPicker
                 id="media-model"
-                aria-label={t('media:form.model', { defaultValue: 'Model' })}
-                className={fieldClass}
-                value={shownModelId}
-                onChange={(event) => onSelectModel(event.target.value)}
+                ariaLabel={t('media:form.model', { defaultValue: 'Model' })}
+                models={providerModels}
+                selectedId={shownModelId}
+                onSelect={onSelectModel}
                 disabled={disabled || downloading}
-              >
-                {providerModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {modelOptionLabel(model)}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             {/* The download right under the model picker, so it is found without

@@ -65,8 +65,30 @@ export type EngineModelStatus = {
     cfg_scale: number
     sampler: string
   }
+  /** The default size's download, and whether it is complete. */
   size_bytes: number
   installed: boolean
+  /** The size used when none is chosen. */
+  default_quant?: string
+  /** Every size offered, smallest first. */
+  quants?: EngineQuantStatus[]
+}
+
+export type EngineFileStatus = {
+  role: string
+  name: string
+  repo: string
+  size: number
+  installed: boolean
+}
+
+export type EngineQuantStatus = {
+  id: string
+  label: string
+  note: string
+  size_bytes: number
+  installed: boolean
+  files: EngineFileStatus[]
 }
 
 export type EngineStatus = {
@@ -324,27 +346,30 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
   return specs.map((spec, index) => ({ ...spec, order: index }))
 }
 
-function modelDescriptor(
+/** Memory a download of this size needs, roughly: its weights plus room to work. */
+function memoryFor(model: EngineModelStatus, sizeBytes: number): number {
+  return Math.max(model.min_memory_mb, Math.ceil((sizeBytes * 1.2) / (1024 * 1024)))
+}
+
+/**
+ * One descriptor per size of each model. The default size keeps the plain
+ * model id, so a saved selection and earlier jobs still find it; another size
+ * is `<model>@<size>`, which the Rust side resolves the same way.
+ */
+function modelDescriptors(
   model: EngineModelStatus,
   providerId: string
-): MediaModelDescriptor {
+): MediaModelDescriptor[] {
   const tasks = model.tasks.filter(
     (task) => task === MEDIA_TASK.TEXT_TO_IMAGE || task === MEDIA_TASK.TEXT_TO_VIDEO
   )
-  return {
-    id: `${providerId}:${model.id}`,
+  const shared = (localId: string) => ({
+    id: `${providerId}:${localId}`,
     provider_id: providerId,
-    local_id: model.id,
-    label: model.label,
+    local_id: localId,
     family: model.family,
     tasks,
     params: Object.fromEntries(tasks.map((task) => [task, paramsFor(model, task)])),
-    install: {
-      installed: model.installed,
-      installable: true,
-      size_bytes: model.size_bytes,
-      source: { kind: 'provider' },
-    },
     license: { id: model.license, url: model.license_url },
     outputs: Object.fromEntries(
       tasks.map((task) => [
@@ -354,7 +379,54 @@ function modelDescriptor(
           : { media_type: 'image' as const, mime: ['image/png'] },
       ])
     ),
+  })
+  const quants = model.quants ?? []
+  if (quants.length === 0) {
+    return [
+      {
+        ...shared(model.id),
+        label: model.label,
+        install: {
+          installed: model.installed,
+          installable: true,
+          size_bytes: model.size_bytes,
+          source: { kind: 'provider' },
+        },
+        min_memory_mb: model.min_memory_mb,
+      },
+    ]
   }
+  const standard = quants.find((quant) => quant.id === model.default_quant) ?? quants[0]
+  // The default size first, so a page falling back to the first model gets it.
+  const ordered = [standard, ...quants.filter((quant) => quant !== standard)]
+  return ordered.map((quant) => {
+    const isDefault = quant === standard
+    return {
+      ...shared(isDefault ? model.id : `${model.id}@${quant.id}`),
+      label: `${model.label} · ${quant.label}`,
+      install: {
+        installed: quant.installed,
+        installable: true,
+        size_bytes: quant.size_bytes,
+        source: { kind: 'provider' },
+      },
+      quant: {
+        group_id: model.id,
+        group_label: model.label,
+        label: quant.label,
+        note: quant.note,
+        is_default: isDefault,
+      },
+      download_files: quant.files.map((file) => ({
+        name: file.name,
+        role: file.role,
+        size_bytes: file.size,
+        source: `huggingface.co/${file.repo}`,
+        installed: file.installed,
+      })),
+      min_memory_mb: memoryFor(model, quant.size_bytes),
+    }
+  })
 }
 
 /** The body the engine's server takes for one job. */
@@ -523,7 +595,7 @@ export function createBuiltinEngineAdapter(
 
     async capabilities(signal?: AbortSignal): Promise<MediaCapabilities> {
       const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
-      const models = status.models.map((model) => modelDescriptor(model, providerId))
+      const models = status.models.flatMap((model) => modelDescriptors(model, providerId))
       const taskIds = [...new Set(models.flatMap((model) => model.tasks))]
       return {
         contract_version: MEDIA_CONTRACT_VERSION,

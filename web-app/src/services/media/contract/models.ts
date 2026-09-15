@@ -36,6 +36,29 @@ export type MediaInstallState = {
   source?: { kind: 'huggingface' | 'url' | 'provider'; ref?: string }
 }
 
+/** One size (quantisation) of a model that is offered in several. */
+export type MediaModelQuant = {
+  /** Descriptors sharing a group are one model, shown together. */
+  group_id: string
+  group_label: string
+  /** As its source names it, such as `Q4_0`. */
+  label: string
+  note?: string
+  /** The size used when none is chosen. */
+  is_default?: boolean
+}
+
+/** One file a model's download saves. */
+export type MediaDownloadFile = {
+  name: string
+  /** What the file is for, such as `vae` or `diffusion_model`. */
+  role: string
+  size_bytes: number
+  /** Where it comes from, for display. */
+  source?: string
+  installed?: boolean
+}
+
 export type MediaModelDescriptor = {
   /**
    * Globally unique and provider-qualified: `${provider_id}:${local_id}`.
@@ -74,6 +97,12 @@ export type MediaModelDescriptor = {
       }
     >
   >
+  /** Its size, when the model is offered in several. Display only. */
+  quant?: MediaModelQuant
+  /** What downloading it saves, file by file. Display only. */
+  download_files?: MediaDownloadFile[]
+  /** Roughly how much graphics or shared memory it needs. Display only. */
+  min_memory_mb?: number
   /** Non-local providers only. Display-only; never used to gate submission. */
   cost?: { unit: 'credit' | 'usd'; per_job?: number; note_key?: string }
 }

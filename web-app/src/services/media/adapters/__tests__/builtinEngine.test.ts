@@ -475,3 +475,106 @@ describe('engineRequestBody and outputsOf', () => {
     expect(outputsOf({ result: null })).toEqual([])
   })
 })
+
+describe('a model offered in several sizes', () => {
+  const SIZED: EngineStatus = {
+    ...STATUS,
+    models: [
+      {
+        ...STATUS.models[0],
+        default_quant: 'q8_0',
+        quants: [
+          {
+            id: 'q4_0',
+            label: 'Q4_0',
+            note: 'Small and quick to load.',
+            size_bytes: 1_566_768_416,
+            installed: false,
+            files: [
+              {
+                role: 'model',
+                name: 'stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf',
+                repo: 'second-state/stable-diffusion-v1-5-GGUF',
+                size: 1_566_768_416,
+                installed: false,
+              },
+            ],
+          },
+          {
+            id: 'q8_0',
+            label: 'Q8_0',
+            note: 'Near full quality.',
+            size_bytes: 1_763_578_176,
+            installed: true,
+            files: [
+              {
+                role: 'model',
+                name: 'stable-diffusion-v1-5-pruned-emaonly-Q8_0.gguf',
+                repo: 'second-state/stable-diffusion-v1-5-GGUF',
+                size: 1_763_578_176,
+                installed: true,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const sizedTransport: BuiltinEngineTransport = {
+    async invoke<T>(command: string, args?: Record<string, unknown>) {
+      invoked.push({ command, args })
+      if (command === 'media_engine_status') return SIZED as T
+      return undefined as T
+    },
+    async fetch() {
+      return json({}, 404)
+    },
+    async listen() {
+      return () => {}
+    },
+  }
+  const sizedAdapter = () => createBuiltinEngineAdapter(descriptor, sizedTransport)
+
+  it('lists each size as its own model, the default size under the plain id', async () => {
+    const { models, recommended } = await sizedAdapter().capabilities()
+
+    // The default size keeps the plain id, so saved selections still find it.
+    expect(models.map((model) => model.id)).toEqual([
+      'builtin-engine:sd-1.5',
+      'builtin-engine:sd-1.5@q4_0',
+    ])
+    expect(models[0]).toMatchObject({
+      label: 'Stable Diffusion 1.5 · Q8_0',
+      install: { installed: true, size_bytes: 1_763_578_176 },
+      quant: { group_id: 'sd-1.5', group_label: 'Stable Diffusion 1.5', label: 'Q8_0', is_default: true },
+    })
+    expect(models[1]).toMatchObject({
+      label: 'Stable Diffusion 1.5 · Q4_0',
+      install: { installed: false, size_bytes: 1_566_768_416 },
+      quant: { label: 'Q4_0', note: 'Small and quick to load.', is_default: false },
+      min_memory_mb: 3072,
+    })
+    expect(models[1].download_files).toEqual([
+      {
+        name: 'stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf',
+        role: 'model',
+        size_bytes: 1_566_768_416,
+        source: 'huggingface.co/second-state/stable-diffusion-v1-5-GGUF',
+        installed: false,
+      },
+    ])
+    expect(recommended).toEqual([{ task: 'text_to_image', model_id: 'builtin-engine:sd-1.5' }])
+  })
+
+  it('downloads exactly the size chosen', async () => {
+    invoked.length = 0
+
+    await sizedAdapter().install!('builtin-engine:sd-1.5@q4_0', () => {})
+
+    expect(invoked).toContainEqual({
+      command: 'media_engine_install',
+      args: { modelId: 'sd-1.5@q4_0', taskId: 'media-engine-sd-1_5_q4_0' },
+    })
+  })
+})
