@@ -21,9 +21,11 @@ title: "List the rest of Hugging Face under the picks, in its trending order, a 
   does not know yet cannot fail the fit filter.
 - **Consequences:** Anonymous requests to Hugging Face are rate-limited per
   IP, which is why sizes follow the viewport rather than the page: a page is
-  one request, a fast scroll costs what it shows. In the app the listing goes
-  through the Tauri HTTP plugin so the `Link` header's cursor is readable; in
-  a plain browser the first page is all there is. Pages and cards live in a
+  one request, a fast scroll costs what it shows. Hugging Face exposes the
+  `Link` header to cross-origin fetches, so the cursor is read from a plain
+  fetch, with the Tauri HTTP plugin as the fallback the registries also use.
+  The list endpoint returns `lastModified` only when sorting by it; the other
+  orders carry the creation date. Pages and cards live in a
   module-level cache, not the persisted catalog. The Hub's own sort dropdown
   now names Hugging Face's orders too. A picked model is listed once, as the
   pick.

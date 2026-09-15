@@ -348,12 +348,20 @@ export class DefaultModelsService implements ModelsService {
     })
     if (cursor) params.set('cursor', cursor)
     const url = `https://huggingface.co/api/models?${params.toString()}`
-    // The next page lives in the `Link` header, which a cross-origin browser
-    // fetch does not expose; the Tauri HTTP plugin returns every header.
-    const doFetch = isTauriRuntime() ? (fetchTauri as typeof fetch) : fetch
-    const response = await doFetch(url, {
-      headers: this.getHuggingFaceHeaders(hfToken),
-    })
+    // The next page lives in the `Link` header. Hugging Face exposes it to
+    // cross-origin fetches; the Tauri HTTP plugin is the fallback for a
+    // webview whose plain fetch fails, as the registries do.
+    let response: Response
+    try {
+      response = await fetch(url, {
+        headers: this.getHuggingFaceHeaders(hfToken),
+      })
+    } catch (primaryError) {
+      if (!isTauriRuntime()) throw primaryError
+      response = await (fetchTauri as typeof fetch)(url, {
+        headers: this.getHuggingFaceHeaders(hfToken),
+      })
+    }
     if (!response.ok) {
       throw new Error(
         `Failed to list Hugging Face models: ${response.status} ${response.statusText}`

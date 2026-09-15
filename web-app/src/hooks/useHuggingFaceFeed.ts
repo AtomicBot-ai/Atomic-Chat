@@ -77,12 +77,16 @@ export function useHuggingFaceFeed(
   const rerender = useCallback(() => bump((n) => n + 1), [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const inFlight = useRef<FeedKey | null>(null)
+  // One entry per page request, `key|cursor`, so a sort switched mid-flight
+  // neither blocks the new key nor lets the old request's end clear the
+  // new one's guard and let the same cursor be asked for twice.
+  const inFlight = useRef(new Set<string>())
 
   const loadPage = useCallback(
     async (cursor: string | null) => {
-      if (inFlight.current === key) return
-      inFlight.current = key
+      const ticket = `${key}|${cursor ?? ''}`
+      if (inFlight.current.has(ticket)) return
+      inFlight.current.add(ticket)
       setLoading(true)
       setError(null)
       try {
@@ -112,8 +116,8 @@ export function useHuggingFaceFeed(
           feeds.set(key, { models: [], nextCursor: null, loadedAt: Date.now() })
         }
       } finally {
-        inFlight.current = null
-        setLoading(false)
+        inFlight.current.delete(ticket)
+        setLoading(inFlight.current.size > 0)
         rerender()
       }
     },
@@ -135,7 +139,7 @@ export function useHuggingFaceFeed(
 
   const loadMore = useCallback(() => {
     const current = feeds.get(key)
-    if (!enabled || !current?.nextCursor || inFlight.current === key) return
+    if (!enabled || !current?.nextCursor) return
     void loadPage(current.nextCursor)
   }, [enabled, key, loadPage])
 

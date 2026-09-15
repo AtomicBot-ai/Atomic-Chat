@@ -30,6 +30,7 @@ import {
   hasLikeData,
   huggingFaceQueries,
   isUncensoredModel,
+  modelDownloadSizeText,
   modelFitsBudget,
   readHubFilters,
   sortModels,
@@ -460,7 +461,7 @@ function HubContent() {
         if (
           filters.onlyFitting &&
           budgetBytes > 0 &&
-          (model.quants?.length ?? 0) > 0 &&
+          modelDownloadSizeText(model) !== undefined &&
           !modelFitsBudget(model, budgetBytes)
         ) {
           continue
@@ -695,7 +696,8 @@ function HubContent() {
         .map((v) => listItems[v.index])
         .filter(
           (item): item is HubListItem =>
-            !!item?.fromHuggingFace && (item.model.quants?.length ?? 0) === 0
+            !!item?.fromHuggingFace &&
+            modelDownloadSizeText(item.model) === undefined
         )
         .map((item) => item.model.model_name)
         .join('\n'),
@@ -711,6 +713,16 @@ function HubContent() {
     }
     if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
   }, [isSearchMode, listItems.length, lastVisibleIndex, visibleFeedRepos, feed])
+
+  // A selected feed row needs its card whether or not it is still on screen:
+  // the detail panel's download options come from it.
+  useEffect(() => {
+    const model = selectedItem?.model
+    if (!model || !('fromHuggingFace' in selectedItem)) return
+    if (!selectedItem.fromHuggingFace) return
+    if (modelDownloadSizeText(model) !== undefined) return
+    feed.ensureDetails([model.model_name])
+  }, [selectedItem, feed])
 
   const isEmpty = listItems.length === 0
   const showSkeleton = isEmpty && ((loading && !isSearchMode) || hfSearching)

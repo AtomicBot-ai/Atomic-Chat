@@ -200,6 +200,7 @@ describe('/hub route', () => {
       models: [],
       nextCursor: null,
     }))
+    mocks.fetchHuggingFaceRepo.mockImplementation(async () => null)
     resetHuggingFaceFeedForTest()
   })
 
