@@ -53,6 +53,7 @@ const FETCH_TIMEOUT_MS = 5000
 
 /** Adapters this build actually has. Anything else cannot be constructed. */
 const KNOWN_ADAPTERS: ReadonlySet<string> = new Set<MediaProviderAdapterId>([
+  'builtin-engine',
   'atomic-media-worker',
   'comfyui',
   'openai-images',
@@ -60,6 +61,7 @@ const KNOWN_ADAPTERS: ReadonlySet<string> = new Set<MediaProviderAdapterId>([
 ])
 
 const KNOWN_KINDS: ReadonlySet<string> = new Set<MediaProviderKind>([
+  'local_engine',
   'local_worker',
   'local_comfy',
   'remote_http',

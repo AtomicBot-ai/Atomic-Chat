@@ -14,6 +14,15 @@ use super::catalog::{model_install_plan, CatalogModel, ModelFileRole, ModelTask}
 /// The server only ever listens on this computer.
 pub const LISTEN_IP: &str = "127.0.0.1";
 
+/// Folders the server scans when it makes an image, relative to the data
+/// folder. They must exist: without them every job failed with "The system
+/// cannot find the path specified" (checked on this PC, 2026-09-15).
+pub const SCAN_DIRS: [(&str, &str); 3] = [
+    ("--lora-model-dir", "media/loras"),
+    ("--embd-dir", "media/embeddings"),
+    ("--hires-upscalers-dir", "media/upscalers"),
+];
+
 /// The engine option each kind of model file is passed with.
 pub fn role_flag(role: ModelFileRole) -> &'static str {
     match role {
@@ -53,6 +62,13 @@ pub fn server_args(
         // The engine's Wan guide runs video with these so it fits in memory.
         args.push("--diffusion-fa".to_string());
         args.push("--offload-to-cpu".to_string());
+    }
+    for (flag, relative) in SCAN_DIRS {
+        let folder = relative
+            .split('/')
+            .fold(data_dir.to_path_buf(), |path, part| path.join(part));
+        args.push(flag.to_string());
+        args.push(folder.to_string_lossy().into_owned());
     }
     args.extend([
         "--listen-ip".to_string(),
@@ -143,6 +159,10 @@ mod tests {
         std::fs::write(folder.join("tiny_vae.safetensors"), b"123").unwrap();
     }
 
+    fn scan_dir(data: &Path, name: &str) -> String {
+        data.join("media").join(name).to_string_lossy().into_owned()
+    }
+
     fn model_file(data: &Path, name: &str) -> String {
         data.join("media")
             .join("models")
@@ -178,6 +198,12 @@ mod tests {
                 model_file(data.path(), "tiny-Q4_0.gguf"),
                 "--vae".to_string(),
                 model_file(data.path(), "tiny_vae.safetensors"),
+                "--lora-model-dir".to_string(),
+                scan_dir(data.path(), "loras"),
+                "--embd-dir".to_string(),
+                scan_dir(data.path(), "embeddings"),
+                "--hires-upscalers-dir".to_string(),
+                scan_dir(data.path(), "upscalers"),
                 "--listen-ip".to_string(),
                 "127.0.0.1".to_string(),
                 "--listen-port".to_string(),

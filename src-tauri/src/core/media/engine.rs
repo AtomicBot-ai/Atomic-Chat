@@ -194,12 +194,14 @@ pub fn engine_install_plan(
     let install_dir = format!("{release_dir}/{}", variant_dir_name(variant));
     let program = match variant {
         EngineVariant::WindowsCuda12 | EngineVariant::WindowsVulkan | EngineVariant::WindowsCpu => {
-            "sd-cli.exe"
+            "sd-server.exe"
         }
         EngineVariant::LinuxVulkan | EngineVariant::LinuxCpu | EngineVariant::MacosMetal => {
-            "sd-cli"
+            "sd-server"
         }
     };
+    // Radium runs the engine's server, which keeps the model loaded between
+    // images; the archive also has a one-shot tool, which is not used.
     let executable = format!("{install_dir}/{program}");
     // Archives are saved apart from the unpacked engine, so unpacking one build
     // never mixes with another's files.
@@ -450,7 +452,7 @@ mod tests {
         );
         assert_eq!(
             plan.executable,
-            "media/engine/master-866-42d6c0a/windows_vulkan/sd-cli.exe"
+            "media/engine/master-866-42d6c0a/windows_vulkan/sd-server.exe"
         );
         // Archives are saved apart from the unpacked engine, and each keeps the
         // exact checksum and size it is pinned to.
@@ -516,11 +518,11 @@ mod tests {
 
         assert_eq!(
             engine_install_plan(data.path(), EngineVariant::LinuxCpu).executable,
-            "media/engine/master-866-42d6c0a/linux_cpu/sd-cli"
+            "media/engine/master-866-42d6c0a/linux_cpu/sd-server"
         );
         assert_eq!(
             engine_install_plan(data.path(), EngineVariant::MacosMetal).executable,
-            "media/engine/master-866-42d6c0a/macos_metal/sd-cli"
+            "media/engine/master-866-42d6c0a/macos_metal/sd-server"
         );
         assert_eq!(variant_dir_name(EngineVariant::LinuxVulkan), "linux_vulkan");
     }

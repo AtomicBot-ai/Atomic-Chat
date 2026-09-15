@@ -1,0 +1,404 @@
+/**
+ * Built-in engine adapter tests.
+ *
+ * The wire shapes below are the ones the engine's server returned on the laptop
+ * (2026-09-15, stable-diffusion.cpp master-866-42d6c0a): a 202 with a job id,
+ * then `status` moving queued -> generating -> completed with the image as
+ * `result.images[].b64_json`. The Tauri side is faked; `runtime.rs` has its own
+ * tests.
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { MediaJobState, MediaProviderDescriptor } from '../../contract'
+import {
+  createBuiltinEngineAdapter,
+  engineRequestBody,
+  outputsOf,
+  type BuiltinEngineTransport,
+  type EngineStatus,
+} from '../builtinEngine'
+import {
+  describeMediaAdapterConformance,
+  type ConformanceScenarios,
+} from './conformance'
+
+const descriptor: MediaProviderDescriptor = {
+  id: 'builtin-engine',
+  label: 'Built-in engine',
+  kind: 'local_engine',
+  adapter: 'builtin-engine',
+  auth: { type: 'none' },
+  enabled: true,
+  origin: 'builtin',
+}
+
+const STATUS: EngineStatus = {
+  variant: 'windows_vulkan',
+  engine_installed: true,
+  engine_size_bytes: 39_092_706,
+  running_model: null,
+  base_url: null,
+  models: [
+    {
+      id: 'sd-1.5',
+      label: 'Stable Diffusion 1.5',
+      family: 'sd1',
+      tasks: ['text_to_image'],
+      license: 'creativeml-openrail-m',
+      license_url: 'https://huggingface.co/spaces/CompVis/stable-diffusion-license',
+      min_memory_mb: 3072,
+      defaults: { width: 512, height: 512, steps: 20, cfg_scale: 7, sampler: 'euler_a' },
+      size_bytes: 1_763_578_176,
+      installed: true,
+    },
+    {
+      id: 'wan2.2-ti2v-5b',
+      label: 'Wan 2.2 TI2V 5B',
+      family: 'wan',
+      tasks: ['text_to_video'],
+      license: 'apache-2.0',
+      license_url: 'https://www.apache.org/licenses/LICENSE-2.0',
+      min_memory_mb: 12000,
+      defaults: { width: 832, height: 480, steps: 30, cfg_scale: 5, sampler: 'euler' },
+      size_bytes: 5_000_000_000,
+      installed: false,
+    },
+  ],
+}
+
+const BASE_URL = 'http://127.0.0.1:41234'
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+type FakeState = {
+  reachable: boolean
+  jobId: string
+  states: MediaJobState[]
+  calls: number
+  lastSignal?: AbortSignal
+  invoked: Array<{ command: string; args?: Record<string, unknown> }>
+  fetched: Array<{ url: string; method?: string; body?: unknown }>
+  listeners: Map<string, (payload: unknown) => void>
+  generating: boolean
+}
+
+let fake: FakeState
+
+const ENGINE_STATUS_FOR: Record<MediaJobState, string> = {
+  queued: 'queued',
+  running: 'generating',
+  succeeded: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function nextJobState(): MediaJobState {
+  return fake.states.length > 1 ? (fake.states.shift() as MediaJobState) : fake.states[0]
+}
+
+const transport: BuiltinEngineTransport = {
+  async invoke<T>(command: string, args?: Record<string, unknown>, signal?: AbortSignal) {
+    fake.calls += 1
+    fake.lastSignal = signal
+    fake.invoked.push({ command, args })
+    if (!fake.reachable) throw new Error('The built-in media engine has no build for this computer.')
+    if (command === 'media_engine_status') return STATUS as T
+    if (command === 'media_engine_start') {
+      return { model_id: args?.modelId, base_url: BASE_URL } as T
+    }
+    if (command === 'media_engine_install') {
+      fake.listeners.get(`download-${args?.taskId}`)?.({ transferred: 512, total: 1024 })
+      return undefined as T
+    }
+    return undefined as T
+  },
+  async fetch(url: string, init?: RequestInit) {
+    fake.calls += 1
+    fake.lastSignal = init?.signal ?? undefined
+    fake.fetched.push({
+      url,
+      method: init?.method,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    })
+    if (!fake.reachable) throw new TypeError('fetch failed')
+    if (url.endsWith('/sdcpp/v1/img_gen') || url.endsWith('/sdcpp/v1/vid_gen')) {
+      return json({ id: fake.jobId, kind: 'img_gen', status: 'queued', poll_url: `/sdcpp/v1/jobs/${fake.jobId}` }, 202)
+    }
+    if (url.endsWith(`/sdcpp/v1/jobs/${fake.jobId}/cancel`)) {
+      return fake.generating
+        ? json({ error: 'job is currently generating and cannot be interrupted yet' }, 409)
+        : json({ status: 'cancelled' })
+    }
+    if (url.endsWith(`/sdcpp/v1/jobs/${fake.jobId}`)) {
+      const state = nextJobState()
+      return json({
+        id: fake.jobId,
+        status: ENGINE_STATUS_FOR[state],
+        queue_position: state === 'queued' ? 1 : 0,
+        error: state === 'failed' ? { message: 'out of video memory' } : null,
+        result:
+          state === 'succeeded'
+            ? { images: [{ b64_json: PNG_BASE64, index: 0 }], output_format: 'png' }
+            : null,
+      })
+    }
+    return json({ error: 'not_found' }, 404)
+  },
+  async listen<T>(event: string, handler: (payload: T) => void) {
+    fake.listeners.set(event, handler as (payload: unknown) => void)
+    return () => fake.listeners.delete(event)
+  },
+}
+
+beforeEach(() => {
+  fake = {
+    reachable: true,
+    jobId: 'job_6aa955be_00000000',
+    states: ['queued'],
+    calls: 0,
+    invoked: [],
+    fetched: [],
+    listeners: new Map(),
+    generating: false,
+  }
+})
+
+const scenarios: ConformanceScenarios = {
+  online() {
+    fake.reachable = true
+  },
+  unreachable() {
+    fake.reachable = false
+  },
+  unauthorised() {
+    // The engine runs on this computer with nothing to authenticate.
+    return false
+  },
+  capabilities() {
+    fake.reachable = true
+  },
+  acceptsSubmit(providerJobId: string) {
+    fake.reachable = true
+    fake.jobId = providerJobId
+  },
+  jobStates(states: MediaJobState[]) {
+    fake.states = [...states]
+  },
+  lastSignal: () => fake.lastSignal,
+  callCount: () => fake.calls,
+}
+
+describeMediaAdapterConformance({
+  name: 'Built-in engine',
+  descriptor,
+  createAdapter: (d) => createBuiltinEngineAdapter(d, transport),
+  scenarios,
+})
+
+describe('built-in engine specifics', () => {
+  const adapter = () => createBuiltinEngineAdapter(descriptor, transport)
+
+  it('lists every catalog model with its download state and a size to show', async () => {
+    const capabilities = await adapter().capabilities()
+
+    expect(capabilities.models.map((m) => m.id)).toEqual([
+      'builtin-engine:sd-1.5',
+      'builtin-engine:wan2.2-ti2v-5b',
+    ])
+    expect(capabilities.models[0].install).toMatchObject({ installed: true, installable: true })
+    expect(capabilities.models[1].install).toMatchObject({ installed: false, installable: true })
+    expect(capabilities.features?.install).toBe(true)
+    expect(capabilities.recommended).toEqual([
+      { task: 'text_to_image', model_id: 'builtin-engine:sd-1.5' },
+    ])
+  })
+
+  it('offers the model default size first, then the family sizes', async () => {
+    const sd = (await adapter().capabilities()).models[0]
+    const resolution = sd.params.text_to_image.find((p) => p.id === 'resolution')
+
+    expect(resolution?.default).toBe('512x512')
+    expect(resolution?.options?.map((o) => o.value)).toEqual(['512x512', '512x768', '768x512'])
+  })
+
+  it('gives video models frames and FPS, and image models neither', async () => {
+    const [image, video] = (await adapter().capabilities()).models
+    const ids = (specs: { id: string }[]) => specs.map((s) => s.id)
+
+    expect(ids(video.params.text_to_video)).toEqual(
+      expect.arrayContaining(['num_frames', 'fps'])
+    )
+    expect(ids(image.params.text_to_image)).not.toContain('num_frames')
+  })
+
+  it('starts the model the job needs, then sends the job to the engine', async () => {
+    const instance = adapter()
+    await instance.submit({
+      client_job_id: 'c1',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'a red apple', resolution: '512x768', steps: 12, guidance_scale: 6.5 },
+    })
+
+    expect(fake.invoked.find((c) => c.command === 'media_engine_start')?.args).toEqual({
+      modelId: 'sd-1.5',
+    })
+    expect(fake.fetched[0]).toMatchObject({
+      url: `${BASE_URL}/sdcpp/v1/img_gen`,
+      method: 'POST',
+      body: {
+        prompt: 'a red apple',
+        width: 512,
+        height: 768,
+        // The engine's own settings shape: steps and guidance under sample_params.
+        sample_params: { sample_steps: 12, guidance: { txt_cfg: 6.5 } },
+        seed: -1,
+        batch_count: 1,
+      },
+    })
+  })
+
+  it('returns the finished image inline, as the engine sent it', async () => {
+    const instance = adapter()
+    const submitted = await instance.submit({
+      client_job_id: 'c2',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'x' },
+    })
+    fake.states = ['succeeded']
+
+    const done = await instance.poll(submitted)
+
+    expect(done.state).toBe('succeeded')
+    expect(done.outputs).toEqual([{ kind: 'inline', base64: PNG_BASE64, mime: 'image/png' }])
+  })
+
+  it('reports a job the engine forgot as failed, not retryable', async () => {
+    const instance = adapter()
+    const submitted = await instance.submit({
+      client_job_id: 'c3',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'x' },
+    })
+    fake.jobId = 'someone-else'
+
+    const snapshot = await instance.poll(submitted)
+
+    expect(snapshot.state).toBe('failed')
+    expect(snapshot.error).toMatchObject({ code: 'job_unknown', retryable: false })
+  })
+
+  it('installs through Radium, reporting download progress', async () => {
+    const onProgress = vi.fn()
+
+    await adapter().install!('builtin-engine:sd-1.5', onProgress)
+
+    expect(fake.invoked.find((c) => c.command === 'media_engine_install')?.args).toEqual({
+      modelId: 'sd-1.5',
+      taskId: 'media-engine-sd-1.5',
+    })
+    expect(onProgress).toHaveBeenCalledWith({ received: 512, total: 1024 })
+    // The progress listener is let go afterwards.
+    expect(fake.listeners.size).toBe(0)
+  })
+
+  it('cancels a running job on the engine', async () => {
+    const instance = adapter()
+    const submitted = await instance.submit({
+      client_job_id: 'c4',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'x' },
+    })
+
+    await instance.cancel!(submitted)
+
+    expect(fake.fetched.at(-1)).toMatchObject({
+      url: `${BASE_URL}/sdcpp/v1/jobs/${fake.jobId}/cancel`,
+      method: 'POST',
+    })
+  })
+})
+
+describe('built-in engine: what the real server does', () => {
+  const adapter = () => createBuiltinEngineAdapter(descriptor, transport)
+
+  it('says plainly that an image already being made cannot be stopped', async () => {
+    const instance = adapter()
+    const submitted = await instance.submit({
+      client_job_id: 'c5',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'x' },
+    })
+    fake.generating = true
+
+    await expect(instance.cancel!(submitted)).rejects.toMatchObject({
+      code: 'cancel_unavailable',
+    })
+  })
+
+  it("passes on the engine's own reason when it refuses a job", async () => {
+    const refusing: BuiltinEngineTransport = {
+      ...transport,
+      async fetch(url: string, init?: RequestInit) {
+        if (url.endsWith('/sdcpp/v1/vid_gen')) {
+          return json({ error: 'loaded model does not support vid_gen' }, 400)
+        }
+        return transport.fetch(url, init)
+      },
+    }
+
+    await expect(
+      createBuiltinEngineAdapter(descriptor, refusing).submit({
+        client_job_id: 'c6',
+        provider_id: 'builtin-engine',
+        model_id: 'builtin-engine:sd-1.5',
+        task: 'text_to_video',
+        params: { prompt: 'waves' },
+      })
+    ).rejects.toThrow('loaded model does not support vid_gen')
+  })
+})
+
+describe('engineRequestBody and outputsOf', () => {
+  it('sends video frames and FPS only for video', () => {
+    const body = engineRequestBody({
+      client_job_id: 'v',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:wan',
+      task: 'text_to_video',
+      params: { prompt: 'waves', num_frames: 33, fps: 16, seed: 42 },
+    })
+    expect(body).toMatchObject({ prompt: 'waves', video_frames: 33, fps: 16, seed: 42 })
+  })
+
+  it('keeps every image of a batch and names its type', () => {
+    expect(
+      outputsOf({
+        result: {
+          output_format: 'jpg',
+          images: [{ b64_json: 'AAA' }, { b64_json: 'BBB' }],
+        },
+      })
+    ).toEqual([
+      { kind: 'inline', base64: 'AAA', mime: 'image/jpeg' },
+      { kind: 'inline', base64: 'BBB', mime: 'image/jpeg' },
+    ])
+    expect(outputsOf({ result: null })).toEqual([])
+  })
+})

@@ -9,9 +9,15 @@
 import type { MediaCapabilities } from './models'
 import type { MediaTaskId } from './tasks'
 
-export type MediaProviderKind = 'local_worker' | 'local_comfy' | 'remote_http'
+export type MediaProviderKind =
+  | 'local_worker'
+  | 'local_comfy'
+  | 'remote_http'
+  /** The engine Radium installs and runs itself (Task 30). */
+  | 'local_engine'
 
 export type MediaProviderAdapterId =
+  | 'builtin-engine'
   | 'atomic-media-worker'
   | 'comfyui'
   | 'openai-images'

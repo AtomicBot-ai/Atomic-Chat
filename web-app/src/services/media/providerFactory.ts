@@ -8,6 +8,7 @@
  */
 
 import { createAtomicWorkerAdapter } from './adapters/atomicWorker'
+import { createBuiltinEngineAdapter } from './adapters/builtinEngine'
 import { createComfyUiAdapter } from './adapters/comfyui'
 import { createRemoteHttpAdapter } from './adapters/remoteHttp'
 import { readMediaSecret } from './secrets'
@@ -27,6 +28,8 @@ export function createMediaAdapter(
   descriptor: MediaProviderDescriptor
 ): MediaProviderAdapter {
   switch (descriptor.adapter) {
+    case 'builtin-engine':
+      return createBuiltinEngineAdapter(descriptor)
     case 'atomic-media-worker':
       return createAtomicWorkerAdapter(descriptor)
     case 'comfyui':
