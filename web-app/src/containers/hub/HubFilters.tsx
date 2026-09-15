@@ -16,18 +16,30 @@ import { useHardware } from '@/hooks/useHardware'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HUB_SORT_KEYS,
+  LIKE_SORT_KEYS,
   type HubFilterState,
   type HubSortKey,
 } from '@/lib/hub-filters'
-import { getMemoryBudgetBytes, type ModelFormat } from '@/lib/model-card'
+import {
+  CAPABILITIES,
+  getMemoryBudgetBytes,
+  type ModelFormat,
+} from '@/lib/model-card'
 import { cn } from '@/lib/utils'
 import { useShallow } from 'zustand/shallow'
 
 const SORT_LABEL_KEYS: Record<HubSortKey, string> = {
   'recommended': 'hub:sortRecommended',
-  'likes': 'hub:sortLikes',
   'downloads': 'hub:sortDownloads',
+  'downloads-asc': 'hub:sortDownloadsAsc',
+  'likes': 'hub:sortLikes',
+  'likes-asc': 'hub:sortLikesAsc',
   'last-modified': 'hub:sortLastModified',
+  'last-modified-asc': 'hub:sortLastModifiedAsc',
+  'size-asc': 'hub:sortSizeAsc',
+  'size-desc': 'hub:sortSizeDesc',
+  'name-asc': 'hub:sortNameAsc',
+  'name-desc': 'hub:sortNameDesc',
 }
 
 const FILTER_CHECKBOX_CLASS =
@@ -36,7 +48,7 @@ const FILTER_CHECKBOX_CLASS =
 export type HubFiltersProps = {
   state: HubFilterState
   onChange: (next: HubFilterState) => void
-  /** Hide the Likes option when the current data carries no like counts. */
+  /** Hide the Likes options when the current data carries no like counts. */
   showLikesSort?: boolean
   showOnlyDownloaded?: boolean
   onShowOnlyDownloadedChange?: (checked: boolean) => void
@@ -68,7 +80,7 @@ export function HubFilters({
   // be a filter that can only ever empty the list.
   const availableFormats: ModelFormat[] = IS_MACOS ? ['gguf', 'mlx'] : ['gguf']
   const sortKeys = HUB_SORT_KEYS.filter(
-    (key) => key !== 'likes' || showLikesSort
+    (key) => showLikesSort || !LIKE_SORT_KEYS.includes(key)
   )
   // Without a memory reading the checkbox could not filter anything, and the
   // caption would read "Based on : ".
@@ -107,10 +119,24 @@ export function HubFilters({
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" aria-label={t('hub:sortBy')}>
             {t(SORT_LABEL_KEYS[state.sort])}
+            {state.capabilities.length > 0 && (
+              <span
+                className="ml-1.5 rounded-[5px] bg-secondary px-1.5 text-[10px] font-semibold"
+                data-testid="hub-capability-count"
+              >
+                {state.capabilities.length}
+              </span>
+            )}
             <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="bottom" align="start" className="max-w-72">
+        {/* Sorts, filters and capabilities make a tall menu: let it scroll
+            within the window instead of running off the bottom. */}
+        <DropdownMenuContent
+          side="bottom"
+          align="start"
+          className="max-h-[var(--radix-dropdown-menu-content-available-height)] max-w-72 overflow-y-auto"
+        >
           <DropdownMenuLabel className="text-xs text-muted-foreground">
             {t('hub:sortBy')}
           </DropdownMenuLabel>
@@ -173,6 +199,42 @@ export function HubFilters({
           >
             {t('hub:uncensored')}
           </DropdownMenuCheckboxItem>
+
+          {/* The same neon badges the model page shows (the user, 2026-09-14).
+              Ticking several keeps models that have all of them. */}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel
+            className="text-xs text-muted-foreground"
+            title={t('hub:capabilitiesFilterHint')}
+          >
+            {t('hub:capabilities')}
+          </DropdownMenuLabel>
+          {CAPABILITIES.map((cap) => (
+            <DropdownMenuCheckboxItem
+              key={cap.key}
+              checked={state.capabilities.includes(cap.key)}
+              onSelect={(event) => event.preventDefault()}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...state,
+                  capabilities:
+                    checked === true
+                      ? [...state.capabilities.filter((k) => k !== cap.key), cap.key]
+                      : state.capabilities.filter((k) => k !== cap.key),
+                })
+              }
+              className={cn(FILTER_CHECKBOX_CLASS, 'items-center')}
+            >
+              <span
+                className={cn(
+                  'rounded-[5px] px-1.5 py-px text-[11px] font-semibold',
+                  cap.className
+                )}
+              >
+                {cap.label}
+              </span>
+            </DropdownMenuCheckboxItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

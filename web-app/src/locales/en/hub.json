@@ -39,9 +39,16 @@
   "allFormats": "All formats",
   "sortBy": "Sort by",
   "sortRecommended": "Recommended",
-  "sortLikes": "Likes",
-  "sortDownloads": "Downloads",
-  "sortLastModified": "Last modified",
+  "sortLikes": "Most liked",
+  "sortDownloads": "Most downloaded",
+  "sortLastModified": "Newest",
+  "sortDownloadsAsc": "Least downloaded",
+  "sortLikesAsc": "Least liked",
+  "sortLastModifiedAsc": "Oldest",
+  "sortSizeAsc": "Smallest file first",
+  "sortSizeDesc": "Largest file first",
+  "sortNameAsc": "Name A to Z",
+  "sortNameDesc": "Name Z to A",
   "onlyFitting": "Only include recommended models that fit on this device",
   "fitFilterLabel": "Only show models that fit",
   "uncensored": "Uncensored",
@@ -83,5 +90,6 @@
     "someSkipped": "Models folder changed. Some models were left where they were, because the new folder already has one with the same name.",
     "someNotMoved": "Models folder changed, but some models couldn't be moved",
     "failed": "Couldn't change the models folder"
-  }
+  },
+  "capabilitiesFilterHint": "Tick one or more to show only models that have all of them"
 }

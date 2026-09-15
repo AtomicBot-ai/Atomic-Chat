@@ -27,6 +27,7 @@ import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   applyHubFilters,
+  filterByCapabilities,
   hasLikeData,
   huggingFaceQueries,
   isUncensoredModel,
@@ -389,6 +390,13 @@ function HubContent() {
 
   // ---- Unified list -----------------------------------------------------
 
+  // Capability filters judge a recommended model by its hand-checked
+  // categories, exactly like the badges on its page.
+  const curatedCategories = useCallback(
+    (model: CatalogModel) => pickByRepo.get(model.model_name)?.categories,
+    [pickByRepo]
+  )
+
   const listItems = useMemo<HubListItem[]>(() => {
     if (showOnlyDownloaded) {
       // The format and fit filters describe what to look for in the catalog;
@@ -397,7 +405,12 @@ function HubContent() {
       const installed = filters.uncensored
         ? installedResults.filter(isUncensoredModel)
         : installedResults
-      return sortModels(installed, filters.sort).map((model) => ({
+      const withCapabilities = filterByCapabilities(
+        installed,
+        filters.capabilities,
+        curatedCategories
+      )
+      return sortModels(withCapabilities, filters.sort).map((model) => ({
         model,
         pick: pickByRepo.get(model.model_name),
       }))
@@ -407,6 +420,7 @@ function HubContent() {
       const filtered = applyHubFilters(staffPickModels, filters, {
         budgetBytes,
         applyFitFilter: true,
+        curatedCategories,
       })
       return filtered.map((model) => ({
         model,
@@ -435,7 +449,7 @@ function HubContent() {
     const filtered = applyHubFilters(
       [...head, ...catalogResults, ...tail],
       filters,
-      { budgetBytes, applyFitFilter: true }
+      { budgetBytes, applyFitFilter: true, curatedCategories }
     )
 
     return filtered.map((model) => ({
@@ -453,6 +467,7 @@ function HubContent() {
     hfCandidates,
     filters,
     budgetBytes,
+    curatedCategories,
   ])
 
   const showLikesSort = useMemo(

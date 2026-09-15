@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import {
+  CAPABILITIES,
   deriveCapabilities,
   estimateFit,
   findPinnedQuant,
@@ -301,5 +302,35 @@ describe('findPinnedQuant', () => {
     expect(findPinnedQuant(undefined, 'Q8_0')).toBeUndefined()
     expect(findPinnedQuant([], 'Q8_0')).toBeUndefined()
     expect(findPinnedQuant(quants, 'IQ4_XS')).toBeUndefined()
+  })
+})
+
+describe('deriveCapabilities: coding and multilingual', () => {
+  const model = (overrides: Partial<CatalogModel>): CatalogModel =>
+    ({ model_name: 'org/Model-GGUF', quants: [], ...overrides }) as unknown as CatalogModel
+
+  it('reads coding and multilingual off the catalog entry', () => {
+    const caps = deriveCapabilities(
+      model({
+        model_name: 'Qwen/Qwen2.5-Coder-7B-GGUF',
+        description: 'Multilingual code generation model.',
+      })
+    )
+    expect(caps.map((c) => c.key)).toEqual(['coding', 'multilingual'])
+    expect(caps.map((c) => c.label)).toEqual(['Coding', 'Multilingual'])
+  })
+
+  it('badges curated coding and multilingual picks', () => {
+    expect(
+      deriveCapabilities(model({}), ['general', 'coding', 'multilingual']).map(
+        (c) => c.label
+      )
+    ).toEqual(['Coding', 'Multilingual'])
+  })
+
+  it('gives every capability its own neon colour', () => {
+    const colours = CAPABILITIES.map((c) => c.className)
+    expect(new Set(colours).size).toBe(CAPABILITIES.length)
+    for (const c of CAPABILITIES) expect(c.className).toMatch(/dark:text-\w+-200/)
   })
 })

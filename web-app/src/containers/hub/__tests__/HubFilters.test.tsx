@@ -253,3 +253,101 @@ describe('HubFilters', () => {
     ).toBeChecked()
   })
 })
+
+describe('HubFilters: more sorts and capability filters (the user, 2026-09-14)', () => {
+  it('offers every sort both ways', async () => {
+    const user = userEvent.setup()
+    renderFilters({}, { showLikesSort: true })
+
+    await openSortMenu(user)
+
+    for (const key of [
+      'hub:sortDownloads',
+      'hub:sortDownloadsAsc',
+      'hub:sortLikes',
+      'hub:sortLikesAsc',
+      'hub:sortLastModified',
+      'hub:sortLastModifiedAsc',
+      'hub:sortSizeAsc',
+      'hub:sortSizeDesc',
+      'hub:sortNameAsc',
+      'hub:sortNameDesc',
+    ]) {
+      expect(screen.getByRole('menuitem', { name: key })).toBeInTheDocument()
+    }
+  })
+
+  it('hides both Likes sorts when there are no likes', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    await openSortMenu(user)
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'hub:sortLikesAsc' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('sorts smallest file first', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    await openSortMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: 'hub:sortSizeAsc' }))
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'size-asc' })
+    )
+    expect(
+      screen.getByRole('button', { name: /hub:sortBy/ })
+    ).toHaveTextContent('hub:sortSizeAsc')
+  })
+
+  it('lists each capability with a tick box and its neon badge', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    await openSortMenu(user)
+
+    for (const [label, colour] of [
+      ['Vision', 'amber'],
+      ['Tool Use', 'blue'],
+      ['Reasoning', 'fuchsia'],
+      ['Audio', 'teal'],
+      ['Coding', 'lime'],
+      ['Multilingual', 'rose'],
+    ]) {
+      const item = screen.getByRole('menuitemcheckbox', { name: label })
+      expect(item).not.toBeChecked()
+      expect(item).toHaveClass(
+        'data-[state=checked]:[&>span:first-child]:bg-primary'
+      )
+      expect(screen.getByText(label)).toHaveClass(`dark:text-${colour}-200`)
+    }
+  })
+
+  it('ticks capabilities, keeps the menu open and shows how many are on', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    await openSortMenu(user)
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Tool Use' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Vision' }))
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capabilities: ['tools', 'vision'] })
+    )
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'Tool Use' })
+    ).toBeChecked()
+    expect(screen.getByTestId('hub-capability-count')).toHaveTextContent('2')
+
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Tool Use' }))
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capabilities: ['vision'] })
+    )
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'Tool Use' })
+    ).not.toBeChecked()
+  })
+})
