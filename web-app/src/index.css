@@ -367,3 +367,59 @@
 [data-window-chrome] [class*='h-[calc(100dvh'] {
   height: calc(100dvh - var(--window-chrome-height));
 }
+
+/*
+ * Hover glow on everything you can press (the user, 2026-09-14): "Anytime a
+ * mouse hovers over an actional button or panel Radium should also have this
+ * white line glow. I want mine double the thickness and double the glow."
+ * Then (same day): "make the white line 1/3 thinner" - so 2px became 1.33px;
+ * the glow stays doubled.
+ *
+ * A 1.33px line on the element's edge plus a soft glow. White in the dark theme;
+ * a dark line in the light theme, where white would not show. Drawn with
+ * outline (inside the edge, so containers that clip their children cannot hide
+ * it) and box-shadow (the glow), so nothing moves or changes size.
+ *
+ * Left outside @layer on purpose: unlayered rules win over Tailwind utilities
+ * such as outline-hidden, which many buttons carry.
+ * tests/hover-glow.test.mjs keeps this in place.
+ */
+:root {
+  --action-hover-line: oklch(0.145 0 0 / 60%);
+  --action-hover-glow: oklch(0.145 0 0 / 28%);
+}
+
+.dark {
+  --action-hover-line: oklch(1 0 0 / 80%);
+  --action-hover-glow: oklch(1 0 0 / 45%);
+}
+
+:is(
+    button,
+    a[href],
+    summary,
+    select,
+    input[type='button'],
+    input[type='submit'],
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='range'],
+    [role='button'],
+    [role='link'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio'],
+    [role='option'],
+    [role='tab'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    [role='slider'],
+    .cursor-pointer
+  ):hover:not(:disabled, [aria-disabled='true'], [data-disabled], [data-no-hover-glow], .fixed.inset-0) {
+  outline: 1.33px solid var(--action-hover-line);
+  outline-offset: -1.33px;
+  box-shadow:
+    0 0 16px 2px var(--action-hover-glow),
+    inset 0 0 8px var(--action-hover-glow);
+}
