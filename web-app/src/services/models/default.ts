@@ -26,9 +26,13 @@ import type {
   ModelsService,
   ModelCatalog,
   HuggingFaceRepo,
+  HuggingFaceFeedPage,
+  HuggingFaceFeedParams,
+  HuggingFaceFeedSort,
   CatalogModel,
   ModelValidationResult,
 } from './types'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import {
@@ -49,8 +53,56 @@ import { queuedCapture } from '@/lib/telemetry-queue'
 // silently no-op because the EngineManager has no 'llamacpp' entry.
 const defaultProvider = LOCAL_LLAMACPP_PROVIDER
 const HUGGING_FACE_SEARCH_LIMIT = 10
+const HUGGING_FACE_FEED_LIMIT = 50
+
+/** `sort=` values Hugging Face's `/api/models` understands. */
+const HUGGING_FACE_FEED_SORT: Record<HuggingFaceFeedSort, string> = {
+  trending: 'trendingScore',
+  downloads: 'downloads',
+  likes: 'likes',
+  lastModified: 'lastModified',
+}
+
+/**
+ * The `cursor` of the `rel="next"` link, or `null` when the listing ends.
+ * Hugging Face paginates `/api/models` with a `Link` header only.
+ */
+export function parseHuggingFaceNextCursor(
+  linkHeader: string | null | undefined
+): string | null {
+  if (!linkHeader) return null
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="?next"?/)
+    if (!match) continue
+    try {
+      return new URL(match[1]).searchParams.get('cursor')
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+const isTauriRuntime = (): boolean => {
+  try {
+    return typeof IS_TAURI !== 'undefined' && Boolean(IS_TAURI)
+  } catch {
+    return false
+  }
+}
 const localProviders = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 type LocalProviderName = (typeof localProviders)[number]
+
+type HuggingFaceFeedEntry = Pick<
+  HuggingFaceRepo,
+  'downloads' | 'likes' | 'tags'
+> & {
+  id?: string
+  modelId?: string
+  createdAt?: string
+  lastModified?: string
+  trendingScore?: number
+}
 
 type HuggingFaceRepoSearchResult = Pick<
   HuggingFaceRepo,
@@ -278,6 +330,68 @@ export class DefaultModelsService implements ModelsService {
     } catch (error) {
       console.warn('searchHuggingFaceCandidates failed:', error)
       return []
+    }
+  }
+
+  async listHuggingFaceFeed({
+    format,
+    sort,
+    cursor,
+    limit = HUGGING_FACE_FEED_LIMIT,
+    hfToken,
+  }: HuggingFaceFeedParams): Promise<HuggingFaceFeedPage> {
+    const params = new URLSearchParams({
+      filter: format,
+      sort: HUGGING_FACE_FEED_SORT[sort],
+      direction: '-1',
+      limit: String(limit),
+    })
+    if (cursor) params.set('cursor', cursor)
+    const url = `https://huggingface.co/api/models?${params.toString()}`
+    // The next page lives in the `Link` header, which a cross-origin browser
+    // fetch does not expose; the Tauri HTTP plugin returns every header.
+    const doFetch = isTauriRuntime() ? (fetchTauri as typeof fetch) : fetch
+    const response = await doFetch(url, {
+      headers: this.getHuggingFaceHeaders(hfToken),
+    })
+    if (!response.ok) {
+      throw new Error(
+        `Failed to list Hugging Face models: ${response.status} ${response.statusText}`
+      )
+    }
+    const raw = (await response.json()) as HuggingFaceFeedEntry[]
+    const models = raw
+      .filter((repo) => getHuggingFaceRepoId(repo))
+      .map((repo) => {
+        const repoId = getHuggingFaceRepoId(repo)
+        const developer = repoId.includes('/')
+          ? repoId.split('/', 1)[0]
+          : undefined
+        const tags = repo.tags ?? []
+        return {
+          model_name: repoId,
+          developer,
+          downloads: repo.downloads ?? 0,
+          likes: repo.likes ?? 0,
+          description: `**Tags**: ${tags.join(', ')}`,
+          // No quants / mmproj here — the list endpoint carries no file sizes;
+          // the row's detail fetch fills them in once it is on screen.
+          num_quants: 0,
+          quants: [],
+          num_mmproj: 0,
+          mmproj_models: [],
+          num_safetensors: 0,
+          safetensors_files: [],
+          is_mlx:
+            format === 'mlx' || tags.some((t) => t.toLowerCase() === 'mlx'),
+          created_at: repo.createdAt,
+          last_modified: repo.lastModified,
+          readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
+        } satisfies CatalogModel
+      })
+    return {
+      models,
+      nextCursor: parseHuggingFaceNextCursor(response.headers.get('link')),
     }
   }
 

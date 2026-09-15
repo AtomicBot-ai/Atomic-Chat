@@ -14,7 +14,10 @@ vi.hoisted(() => {
   g.DecompressionStream = undefined
 })
 
-import { DefaultModelsService } from '../models/default'
+import {
+  DefaultModelsService,
+  parseHuggingFaceNextCursor,
+} from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
 import { BASELINE_MODEL_CATALOG } from '@/constants/models'
@@ -1316,5 +1319,93 @@ describe('DefaultModelsService', () => {
 
       expect(result).toBe('GREY')
     })
+  })
+})
+
+describe('listHuggingFaceFeed', () => {
+  const service = new DefaultModelsService()
+
+  it('asks Hugging Face for one page of a format in its order and reads the next cursor', async () => {
+    ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === 'link'
+            ? '<https://huggingface.co/api/models?filter=gguf&sort=trendingScore&direction=-1&limit=50&cursor=eyJfaWQiOjF9>; rel="next"'
+            : null,
+      },
+      json: async () => [
+        {
+          id: 'bartowski/Llama-4-8B-GGUF',
+          downloads: 1200,
+          likes: 34,
+          tags: ['gguf', 'llama'],
+          createdAt: '2026-09-01T00:00:00.000Z',
+          lastModified: '2026-09-10T00:00:00.000Z',
+        },
+      ],
+    })
+
+    const page = await service.listHuggingFaceFeed({
+      format: 'gguf',
+      sort: 'trending',
+      cursor: null,
+    })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://huggingface.co/api/models?filter=gguf&sort=trendingScore&direction=-1&limit=50',
+      { headers: undefined }
+    )
+    expect(page.nextCursor).toBe('eyJfaWQiOjF9')
+    expect(page.models).toHaveLength(1)
+    expect(page.models[0]).toMatchObject({
+      model_name: 'bartowski/Llama-4-8B-GGUF',
+      developer: 'bartowski',
+      downloads: 1200,
+      likes: 34,
+      is_mlx: false,
+      last_modified: '2026-09-10T00:00:00.000Z',
+      num_quants: 0,
+    })
+  })
+
+  it('passes the cursor on, sends the token, and ends the listing without a next link', async () => {
+    ;(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => null },
+      json: async () => [
+        { id: 'mlx-community/Qwen3.5-4B-4bit', tags: ['mlx'] },
+      ],
+    })
+
+    const page = await service.listHuggingFaceFeed({
+      format: 'mlx',
+      sort: 'downloads',
+      cursor: 'abc',
+      limit: 20,
+      hfToken: 'hf_test',
+    })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://huggingface.co/api/models?filter=mlx&sort=downloads&direction=-1&limit=20&cursor=abc',
+      { headers: { Authorization: 'Bearer hf_test' } }
+    )
+    expect(page.nextCursor).toBeNull()
+    expect(page.models[0]).toMatchObject({
+      model_name: 'mlx-community/Qwen3.5-4B-4bit',
+      is_mlx: true,
+    })
+  })
+
+  it('parses the next cursor out of a Link header, and only from rel=next', () => {
+    expect(
+      parseHuggingFaceNextCursor(
+        '<https://huggingface.co/api/models?cursor=one>; rel="prev", <https://huggingface.co/api/models?cursor=two>; rel="next"'
+      )
+    ).toBe('two')
+    expect(
+      parseHuggingFaceNextCursor('<https://x/?cursor=one>; rel="prev"')
+    ).toBeNull()
+    expect(parseHuggingFaceNextCursor(null)).toBeNull()
   })
 })

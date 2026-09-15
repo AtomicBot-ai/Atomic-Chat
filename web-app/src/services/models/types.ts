@@ -53,6 +53,29 @@ export interface CatalogModel {
 
 export type ModelCatalog = CatalogModel[]
 
+/** Hugging Face's own orders for a listing (`sort=` on `/api/models`). */
+export type HuggingFaceFeedSort =
+  | 'trending'
+  | 'downloads'
+  | 'likes'
+  | 'lastModified'
+
+export type HuggingFaceFeedFormat = 'gguf' | 'mlx'
+
+export type HuggingFaceFeedParams = {
+  format: HuggingFaceFeedFormat
+  sort: HuggingFaceFeedSort
+  /** Opaque cursor from the previous page's `nextCursor`. */
+  cursor?: string | null
+  limit?: number
+  hfToken?: string
+}
+
+export type HuggingFaceFeedPage = {
+  models: CatalogModel[]
+  nextCursor: string | null
+}
+
 // HuggingFace repository information
 export interface HuggingFaceRepo {
   id: string
@@ -129,6 +152,15 @@ export interface ModelsService {
     hfToken?: string,
     limit?: number
   ): Promise<CatalogModel[]>
+  /**
+   * One page of Hugging Face's own listing of a format, in one of its sort
+   * orders — the Hub's long tail under the curated picks. Entries are
+   * lightweight (no quants: the list endpoint carries no file sizes); the
+   * page's `nextCursor` feeds the next call, `null` when the listing ends.
+   */
+  listHuggingFaceFeed(
+    params: HuggingFaceFeedParams
+  ): Promise<HuggingFaceFeedPage>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(

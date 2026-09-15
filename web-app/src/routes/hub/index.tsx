@@ -19,6 +19,7 @@ import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardware } from '@/hooks/useHardware'
+import { useHuggingFaceFeed } from '@/hooks/useHuggingFaceFeed'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -29,10 +30,12 @@ import {
   hasLikeData,
   huggingFaceQueries,
   isUncensoredModel,
+  modelFitsBudget,
   readHubFilters,
   sortModels,
   writeHubFilters,
   type HubFilterState,
+  type HubSortKey,
 } from '@/lib/hub-filters'
 import {
   collectInstalledModels,
@@ -43,7 +46,7 @@ import { extractModelName } from '@/lib/models'
 import { cn } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import { useModelCatalogStore } from '@/stores/model-catalog-store'
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, HuggingFaceFeedSort } from '@/services/models/types'
 import type {
   StaffPick,
   StaffPickFormat,
@@ -64,7 +67,20 @@ type HubListItem = {
   model: CatalogModel
   pick?: StaffPick
   fromHuggingFace?: boolean
+  /** A heading painted above this row: the first row of a new section. */
+  sectionLabel?: string
 }
+
+/** The Hub's sort dropdown, in Hugging Face's own vocabulary. */
+const FEED_SORT_FOR: Record<HubSortKey, HuggingFaceFeedSort> = {
+  'recommended': 'trending',
+  'downloads': 'downloads',
+  'likes': 'likes',
+  'last-modified': 'lastModified',
+}
+
+/** How many rows before the end of the list the next page is asked for. */
+const FEED_PREFETCH_ROWS = 8
 
 // Base (non-instruction-tuned) Gemma 4 MLX builds (e.g.
 // `mlx-community/gemma-4-12B-4bit`, converted from `google/gemma-4-12B`)
@@ -228,6 +244,14 @@ function HubContent() {
   const isSearchMode =
     debouncedSearchValue.length > 0 || showOnlyDownloaded || filters.uncensored
 
+  // Under the picks, the rest of Hugging Face in the order the sort dropdown
+  // names — its own trending score by default — a page at a time.
+  const feed = useHuggingFaceFeed(
+    picksFormat,
+    FEED_SORT_FOR[filters.sort],
+    !isSearchMode
+  )
+
   // ---- Staff picks mode -------------------------------------------------
 
   const staffPickModels = useMemo(
@@ -272,7 +296,8 @@ function HubContent() {
   // Reading `providers` reactively (rather than via `getState()`) is what makes
   // a downloaded/deleted model appear or vanish immediately (ATO-180).
   const installedModels = useMemo(
-    () => (showOnlyDownloaded ? collectInstalledModels(sources, providers) : []),
+    () =>
+      showOnlyDownloaded ? collectInstalledModels(sources, providers) : [],
     [showOnlyDownloaded, sources, providers]
   )
 
@@ -407,10 +432,51 @@ function HubContent() {
         budgetBytes,
         applyFitFilter: true,
       })
-      return filtered.map((model) => ({
+      const picks: HubListItem[] = filtered.map((model) => ({
         model,
         pick: pickByRepo.get(model.model_name),
       }))
+
+      // The feed is already in Hugging Face's order for this sort, so it is
+      // appended as a section rather than re-sorted into the picks. A repo
+      // the catalog knows is shown from the catalog, sizes included; one the
+      // user has scrolled to shows the card fetched for it; the rest stay
+      // lightweight until they come on screen.
+      const taken = new Set(
+        staffPickModels.map((m) => m.model_name.toLowerCase())
+      )
+      const bySource = new Map(
+        sources.map((m) => [m.model_name.toLowerCase(), m])
+      )
+      const feedRows: HubListItem[] = []
+      for (const entry of feed.models) {
+        const key = entry.model_name.toLowerCase()
+        if (taken.has(key)) continue
+        taken.add(key)
+        const model =
+          bySource.get(key) ?? feed.details.get(entry.model_name) ?? entry
+        if (isUnsupportedBaseGemmaMlx(model)) continue
+        // A size the row does not know yet cannot fail the fit filter.
+        if (
+          filters.onlyFitting &&
+          budgetBytes > 0 &&
+          (model.quants?.length ?? 0) > 0 &&
+          !modelFitsBudget(model, budgetBytes)
+        ) {
+          continue
+        }
+        feedRows.push({
+          model,
+          fromHuggingFace: true,
+          sectionLabel:
+            feedRows.length === 0
+              ? t('hub:feedTitle', {
+                  sort: t(`hub:feedSort.${FEED_SORT_FOR[filters.sort]}`),
+                })
+              : undefined,
+        })
+      }
+      return [...picks, ...feedRows]
     }
 
     const seen = new Set(catalogResults.map((m) => m.model_name))
@@ -452,6 +518,10 @@ function HubContent() {
     hfCandidates,
     filters,
     budgetBytes,
+    sources,
+    feed.models,
+    feed.details,
+    t,
   ])
 
   const showLikesSort = useMemo(
@@ -482,7 +552,8 @@ function HubContent() {
   // Deep link into a repo the catalog does not carry: resolve it from HF once.
   useEffect(() => {
     if (!selectedRepo || selectedItem) return
-    const fallback = RECOMMENDED_MODEL_FALLBACKS[repoSearchParam ?? selectedRepo]
+    const fallback =
+      RECOMMENDED_MODEL_FALLBACKS[repoSearchParam ?? selectedRepo]
     if (fallback) {
       setDeepLinkedModel(fallback)
       return
@@ -493,7 +564,9 @@ function HubContent() {
       .fetchHuggingFaceRepo(repoSearchParam ?? selectedRepo, huggingfaceToken)
       .then((repo) => {
         if (cancelled || !repo) return
-        setDeepLinkedModel(serviceHub.models().convertHfRepoToCatalogModel(repo))
+        setDeepLinkedModel(
+          serviceHub.models().convertHfRepoToCatalogModel(repo)
+        )
       })
       .catch((error) => {
         console.error('Failed to resolve deep-linked model:', error)
@@ -609,6 +682,34 @@ function HubContent() {
     requestAnimationFrame(apply)
   }, [listItems.length, querySearchParam])
 
+  // The next page is asked for a few rows before the end, and the rows on
+  // screen that still lack a size get their card fetched — both from what the
+  // virtualizer is actually painting, so a fast scroll costs what it shows.
+  const virtualItems = rowVirtualizer.getVirtualItems()
+  const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1
+  const visibleFeedRepos = useMemo(
+    () =>
+      virtualItems
+        .map((v) => listItems[v.index])
+        .filter(
+          (item): item is HubListItem =>
+            !!item?.fromHuggingFace && (item.model.quants?.length ?? 0) === 0
+        )
+        .map((item) => item.model.model_name)
+        .join('\n'),
+    // The virtual window is a new array every render; its contents are what
+    // matter, and `lastVisibleIndex` moves whenever they do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lastVisibleIndex, listItems]
+  )
+  useEffect(() => {
+    if (isSearchMode || listItems.length === 0) return
+    if (lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS) {
+      feed.loadMore()
+    }
+    if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
+  }, [isSearchMode, listItems.length, lastVisibleIndex, visibleFeedRepos, feed])
+
   const isEmpty = listItems.length === 0
   const showSkeleton = isEmpty && ((loading && !isSearchMode) || hfSearching)
 
@@ -695,6 +796,14 @@ function HubContent() {
                       paddingBottom: 4,
                     }}
                   >
+                    {item.sectionLabel && (
+                      <p
+                        className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground"
+                        data-testid="hub-section-label"
+                      >
+                        {item.sectionLabel}
+                      </p>
+                    )}
                     <ModelListRow
                       model={item.model}
                       pick={item.pick}
@@ -706,6 +815,20 @@ function HubContent() {
                 )
               })}
             </div>
+          )}
+          {!isSearchMode && !isEmpty && feed.loading && (
+            <p
+              className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground"
+              role="status"
+            >
+              <Loader className="size-3 animate-spin" />
+              {t('hub:feedLoading')}
+            </p>
+          )}
+          {!isSearchMode && !isEmpty && !feed.loading && feed.error && (
+            <p className="py-3 text-center text-xs text-muted-foreground">
+              {t('hub:feedFailed')}
+            </p>
           )}
         </div>
       </div>

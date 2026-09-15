@@ -14,15 +14,17 @@ const mocks = vi.hoisted(() => ({
   search_: vi.fn(() => [] as CatalogModel[]),
   fetchHuggingFaceRepo: vi.fn(async () => null),
   searchHuggingFaceCandidates: vi.fn(async () => [] as CatalogModel[]),
+  listHuggingFaceFeed: vi.fn(async () => ({
+    models: [] as CatalogModel[],
+    nextCursor: null as string | null,
+  })),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute:
-    () =>
-    (options: Record<string, unknown>) => ({
-      ...options,
-      useSearch: () => mocks.search,
-    }),
+  createFileRoute: () => (options: Record<string, unknown>) => ({
+    ...options,
+    useSearch: () => mocks.search,
+  }),
   useNavigate: () => mocks.navigate,
 }))
 
@@ -116,6 +118,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
     models: () => ({
       fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
       searchHuggingFaceCandidates: mocks.searchHuggingFaceCandidates,
+      listHuggingFaceFeed: mocks.listHuggingFaceFeed,
       convertHfRepoToCatalogModel: (repo: CatalogModel) => repo,
     }),
     providers: () => ({ getProviders: async () => [] }),
@@ -137,11 +140,9 @@ vi.mock('@/stores/model-catalog-store', () => ({
 }))
 
 import { Route } from '../index'
-import {
-  HUB_FILTERS_STORAGE_KEY,
-  serializeHubFilters,
-} from '@/lib/hub-filters'
+import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { setHubSearchQuery } from '../hub-session'
+import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
 
 const model = (name: string, extra: Partial<CatalogModel> = {}): CatalogModel =>
   ({
@@ -195,6 +196,67 @@ describe('/hub route', () => {
     mocks.requestedPickFormats = []
     mocks.search_.mockReturnValue([])
     mocks.searchHuggingFaceCandidates.mockImplementation(async () => [])
+    mocks.listHuggingFaceFeed.mockImplementation(async () => ({
+      models: [],
+      nextCursor: null,
+    }))
+    resetHuggingFaceFeedForTest()
+  })
+
+  it('lists the rest of Hugging Face under the picks and asks for the next page at the end', async () => {
+    // What the list endpoint gives: names and popularity, no file sizes.
+    const feedEntry = (name: string) =>
+      model(name, { quants: [], num_quants: 0 })
+    mocks.listHuggingFaceFeed
+      .mockResolvedValueOnce({
+        models: [
+          feedEntry('bartowski/Llama-4-8B-GGUF'),
+          // Already a pick: listed once, as the pick.
+          feedEntry('Qwen/Qwen3.5-4B-GGUF'),
+        ],
+        nextCursor: 'page-2',
+      })
+      .mockResolvedValueOnce({
+        models: [feedEntry('unsloth/Mistral-Next-GGUF')],
+        nextCursor: null,
+      })
+    render(<HubPage />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Llama-4-8B-GGUF')).toBeInTheDocument()
+    )
+    expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: 'gguf',
+        sort: 'trending',
+        cursor: null,
+      })
+    )
+    // The picks lead; the feed follows under its own heading.
+    const rows = screen.getAllByRole('button').map((b) => b.textContent ?? '')
+    expect(rows.findIndex((r) => r.includes('Gemma 4 12B'))).toBeLessThan(
+      rows.findIndex((r) => r.includes('Llama-4-8B-GGUF'))
+    )
+    expect(screen.getByTestId('hub-section-label')).toHaveTextContent(
+      'hub:feedTitle'
+    )
+    expect(screen.getAllByText('Qwen3.5 4B')).toHaveLength(1)
+
+    // jsdom paints every row, so the end of the list is on screen at once:
+    // the next page is asked for, and the rows on screen get their sizes.
+    await waitFor(() =>
+      expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ cursor: 'page-2' })
+      )
+    )
+    await waitFor(() =>
+      expect(screen.getByText('Mistral-Next-GGUF')).toBeInTheDocument()
+    )
+    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(
+      'bartowski/Llama-4-8B-GGUF',
+      ''
+    )
+    expect(mocks.listHuggingFaceFeed).toHaveBeenCalledTimes(2)
   })
 
   it('opens on staff picks with an empty query', () => {
