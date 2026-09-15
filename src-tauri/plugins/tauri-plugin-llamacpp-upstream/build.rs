@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
     "cleanup_llama_processes",
     // LlamaCpp server commands
     "load_llama_model",
+    "cancel_llama_model_load",
     "unload_llama_model",
     "get_devices",
     "get_runtime_device",

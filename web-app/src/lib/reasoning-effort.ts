@@ -1,6 +1,11 @@
 import type { ReasoningControls } from '@janhq/core'
 
 import type { ReasoningBudgetLevel } from '@/hooks/useGeneralSetting'
+import { isKnownProvider } from '@/stores/provider-registry-store'
+import {
+  isLocalProvider,
+  isSelfHostedProviderName,
+} from '@/utils/registerRemoteProvider'
 
 /**
  * Maps the single UI level onto whichever reasoning knob a local model
@@ -44,13 +49,58 @@ const EFFORT_RANK: Record<string, number> = {
   max: 6,
 }
 
-const ALL_LEVELS: ReasoningEffortLevel[] = [
+/**
+ * The full scale, used by a model whose thinking phase is driven by a token
+ * budget rather than a template-declared effort value.
+ */
+export const ALL_LEVELS: ReasoningEffortLevel[] = [
   'low',
   'medium',
   'high',
   'xhigh',
   'max',
 ]
+
+/**
+ * Providers whose own API carries a reasoning switch, dispatched by name in
+ * `custom-chat-transport`. Named rather than derived from the registry because
+ * these are also the APIs that reject an unrecognised request field outright,
+ * so they must be excluded even in the moment before the registry resolves.
+ */
+const NATIVE_REASONING_API_PROVIDERS = new Set<string>([
+  'anthropic',
+  'openai',
+  'xai',
+  'google',
+  'gemini',
+  'moonshot',
+])
+
+/**
+ * Whether a provider's thinking phase is driven by chat-template kwargs.
+ *
+ * True for the servers the *user* runs: a self-hosted `llama-server` or Ollama,
+ * and any OpenAI-compatible endpoint they added themselves. Those serve
+ * open-weight models, so thinking is switched by the same
+ * `chat_template_kwargs` the local engines use — but their models arrive
+ * without the `ReasoningControls` the local backends read off the chat
+ * template, so nothing here can be derived from the model itself.
+ *
+ * False for the local engines, which have real controls and go through
+ * {@link buildReasoningRequestFields}, and for catalogue cloud providers,
+ * which drive reasoning through their own API fields (or not at all) and would
+ * only be offered a control that does nothing.
+ */
+export const usesTemplateReasoningKwargs = (
+  provider: string | undefined
+): boolean => {
+  if (!provider) return false
+  if (isLocalProvider(provider)) return false
+  if (NATIVE_REASONING_API_PROVIDERS.has(provider)) return false
+  if (isSelfHostedProviderName(provider)) return true
+  // Anything the catalogue does not define is one the user added by hand.
+  return !isKnownProvider(provider)
+}
 
 const usesNativeEffort = (
   controls?: ReasoningControls
@@ -155,6 +205,42 @@ export const buildReasoningRequestFields = (
     ? { thinking_budget: tokens }
     : { reasoning_budget_tokens: tokens }
 }
+
+/**
+ * The template-native effort value to send to a server we cannot inspect.
+ * `reasoning_effort` templates in the wild (gpt-oss and its ports) declare
+ * `low | medium | high` and nothing else, so the two levels above `high` land
+ * on `high` rather than on a value that would raise inside the template.
+ */
+const REMOTE_EFFORT_VALUE: Record<ReasoningEffortLevel, string> = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'high',
+  max: 'high',
+}
+
+/**
+ * Request fields that put a level into effect on a remote provider whose
+ * models arrive without `ReasoningControls` — see
+ * {@link usesTemplateReasoningKwargs}.
+ *
+ * Nothing about the model is known here, so this sends the two kwargs an
+ * open-weight chat template might read and lets the template pick: a Qwen-style
+ * one honours `enable_thinking`, a gpt-oss-style one honours
+ * `reasoning_effort`, and one that declares neither ignores both. Jinja drops
+ * kwargs it never references, and servers that do not implement
+ * `chat_template_kwargs` at all ignore the field — the same assumption the
+ * "off" path has always made when switching thinking off for these providers.
+ */
+export const buildRemoteReasoningRequestFields = (
+  level: ReasoningEffortLevel
+): Record<string, unknown> => ({
+  chat_template_kwargs: {
+    enable_thinking: true,
+    reasoning_effort: REMOTE_EFFORT_VALUE[level],
+  },
+})
 
 /**
  * Reasoning intent for one Agent turn, resolved on this side so the Rust

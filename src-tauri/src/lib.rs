@@ -143,6 +143,7 @@ pub fn run() {
         core::extensions::commands::get_active_extensions,
         // System commands
         core::system::commands::relaunch,
+        core::system::page_cache::get_page_cache_resident_fraction,
         core::system::commands::open_app_directory,
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
@@ -307,6 +308,7 @@ pub fn run() {
         core::extensions::commands::get_active_extensions,
         // System commands
         core::system::commands::relaunch,
+        core::system::page_cache::get_page_cache_resident_fraction,
         core::system::commands::open_app_directory,
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,

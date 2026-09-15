@@ -15,7 +15,6 @@ import {
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning'
 import { Shimmer } from '@/components/ai-elements/shimmer'
-import { Tool } from '@/components/ai-elements/tools/tool'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -32,10 +31,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { buildTraceBlocks } from '@/lib/tools/message-trace-parts'
 import { ToolRenderer } from '@/components/ai-elements/tools/tool-renderer'
 import { TraceBlock } from '@/lib/tools/types'
-import {
-  ActivityDetail,
-  AgentActivity,
-} from '@/components/ai-elements/agent-activity'
 import {
   agentFilePathFromHref,
   type AgentFileReference,
@@ -414,64 +409,55 @@ export const MessageItem = memo(
       )
     }
 
-    const renderActivityBlock = (block: ActivityTraceBlock) => {
+    const renderActivityBlock = (block: ActivityTraceBlock, index: number) => {
       const agentStatus = block.agentSummary?.status
       const active =
         isRequestActive &&
         (!agentStatus ||
           agentStatus === 'running' ||
           agentStatus === 'awaiting_approval')
-      const summaryToolCount =
-        block.agentSummary?.tools.filter(
-          ({ tool }) => tool !== 'reply' && tool !== 'finish'
-        ).length ?? 0
-      const toolCount = block.tools.length || summaryToolCount
-      const durationSeconds = Number(
-        Math.max(0.1, (block.durationMs ?? 100) / 1000).toFixed(1)
-      )
-      // Loops and the error are rendered as children too, so they have to
-      // count towards `hasDetails` — a collapsible with no details drops its
-      // content entirely, which is how a run that failed before its first tool
-      // call used to show nothing but its duration.
       const error = block.agentSummary?.error
-      const loopCount = block.agentSummary?.loops.length ?? 0
-      const hasDetails = toolCount > 0 || loopCount > 0 || Boolean(error)
+      const loops = block.agentSummary?.loops ?? []
+      // One live indicator at a time (ATO-529): a running call spins on its
+      // own line, a thinking stream says "Thinking...", and a Chat answer
+      // streaming below signals itself. "Working" only covers the gaps between
+      // them — for an agent run, every step that produces no text.
+      const toolRunning = block.tools.some(
+        ({ state }) =>
+          state === 'input-streaming' || state === 'input-available'
+      )
+      const reasoningLive = traceBlocks.some(
+        (other) => other.kind === 'reasoning' && other.streaming
+      )
+      const answerBelow = traceBlocks
+        .slice(index + 1)
+        .some((other) => other.kind === 'text')
+      const showWorking =
+        active &&
+        !toolRunning &&
+        !reasoningLive &&
+        (Boolean(block.agentSummary) || !answerBelow)
 
+      if (!block.tools.length && !loops.length && !error && !showWorking) {
+        return null
+      }
+
+      // Every call is its own line, straight in the message: no "Worked for"
+      // or "Called N tools" disclosure to open before the reader can see what
+      // ran. A line opens only its own parameters and output.
       return (
-        <AgentActivity
-          key={block.key}
-          active={active}
-          workingLabel={t('activity.working')}
-          durationLabel={t('activity.workedFor', {
-            count: durationSeconds,
-          })}
-          hasDetails={hasDetails}
-          // A failed turn has no reply to read, so its reason should not be
-          // one click away.
-          defaultOpen={Boolean(error)}
-        >
-          {toolCount > 0 && (
-            <ActivityDetail
-              label={t(
-                toolCount === 1
-                  ? 'activity.calledTool'
-                  : 'activity.calledTools',
-                { count: toolCount }
-              )}
-            >
-              {block.tools.map((tool) => (
-                <Tool key={tool.key} state={tool.state} className="py-1">
-                  <ToolRenderer
-                    presentation={tool.presentation}
-                    state={tool.state}
-                  />
-                </Tool>
-              ))}
-            </ActivityDetail>
-          )}
-          {block.agentSummary?.loops.map((loop, index) => (
+        <div key={block.key} className="not-prose mb-3 flex flex-col">
+          {block.tools.map((tool) => (
+            <ToolRenderer
+              key={tool.key}
+              toolName={tool.toolName}
+              presentation={tool.presentation}
+              state={tool.state}
+            />
+          ))}
+          {loops.map((loop, loopIndex) => (
             <div
-              key={`${block.key}-loop-${index}`}
+              key={`${block.key}-loop-${loopIndex}`}
               className="py-1 text-xs text-muted-foreground"
             >
               {loop.message}
@@ -482,7 +468,12 @@ export const MessageItem = memo(
               {error.category}: {error.message}
             </div>
           )}
-        </AgentActivity>
+          {showWorking && (
+            <Shimmer duration={1} className="py-1 text-sm">
+              {t('activity.working')}
+            </Shimmer>
+          )}
+        </div>
       )
     }
 
@@ -516,7 +507,7 @@ export const MessageItem = memo(
             case 'reasoning':
               return renderReasoningBlock(block)
             case 'activity':
-              return renderActivityBlock(block)
+              return renderActivityBlock(block, index)
             default:
               return null
           }

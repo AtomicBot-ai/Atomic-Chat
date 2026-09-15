@@ -27,6 +27,7 @@ import {
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
+  type ModelLoadOptions,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -56,6 +57,11 @@ import {
   type InstalledBackendPack,
 } from './backend'
 import { invoke, Channel } from '@tauri-apps/api/core'
+import {
+  buildEngineUpdateOffer,
+  clearEngineUpdateOffer,
+  publishEngineUpdateOffer,
+} from './engineUpdateOffer'
 import {
   TRANSCRIPTION_IDLE_UNLOAD_MS,
   TRANSCRIPTION_LOAD_OVERRIDES,
@@ -103,6 +109,7 @@ import { basename } from '@tauri-apps/api/path'
 import { getSystemUsage, getSystemInfo } from './hardware'
 import {
   loadLlamaModel,
+  cancelLlamaModelLoad,
   readGgufMetadata,
   getModelSize,
   isModelSupported,
@@ -183,6 +190,13 @@ const DFLASH_SPEC_TYPE = 'draft-dflash'
 /// app, or a stale path). Matches the Rust `ModelFileNotFound` code; the
 /// web-app maps it to an actionable "re-download the model" message.
 const ERR_MODEL_FILE_NOT_FOUND = 'MODEL_FILE_NOT_FOUND'
+/// ATO-530: a load stopped by `cancelLoad`. Matches the Rust
+/// `ModelLoadCancelled` code and core's `MODEL_LOAD_CANCELLED_CODE`; the
+/// web-app treats it as the user's choice, not a failure.
+const ERR_MODEL_LOAD_CANCELLED = 'MODEL_LOAD_CANCELLED'
+/// How soon `cancelLoad` asks the plugin again when the load it is chasing
+/// has been invoked but not registered there yet.
+const CANCEL_RETRY_INTERVAL_MS = 50
 /// ATO-187: the model / mmproj GGUF exists but is smaller than the size
 /// recorded at import — a partially-downloaded / incomplete file. Matches the
 /// Rust `ModelFileCorrupt` code; the web-app maps it to a "delete and
@@ -526,6 +540,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
+  /// ATO-530: `load` calls still running per model — including ones waiting
+  /// on backend configuration, before they reach `loadingModels`.
+  private loadRequests = new Map<string, number>()
+  /// Models whose running load the user cancelled. Checked at each step of
+  /// `performLoad`, and cleared once no load of the model is left.
+  private cancelledLoads = new Set<string>()
+  /// Models with a `load_llama_model` invoke outstanding: only while one is,
+  /// can the plugin's cancel command reach the load.
+  private pluginLoadsInFlight = new Set<string>()
   private sessionCache = new Map<string, SessionInfo>()
   /// Tracks the ctx_size a model was last loaded with so the Local API
   /// Server auto-increase flow knows the "current" value — the extension's
@@ -1722,18 +1745,54 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return
       }
 
+      // ATO-528: a tag bump is offered, not taken. It used to download here
+      // unannounced — hundreds of megabytes on a launch the user did not ask
+      // anything of. The offer is published instead and the web app's
+      // `<EngineUpdateBanner />` asks; accepting routes back through
+      // `downloadRecommendedBackend()`, which is what this call used to be.
+      // The recovery paths above (a parked `latest/` sentinel) still act on
+      // their own — those are not updates, they are a broken configuration.
       logger.info(
-        `reconcileBackendReleaseTag: moving '${current}' -> '${targetBackend}'`
+        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}'`
       )
-      await this.downloadRecommendedBackend(targetBackend)
-      logger.info(
-        `reconcileBackendReleaseTag: reconciled to '${targetBackend}'`
-      )
+      await this.offerEngineUpdate(current, targetBackend)
     } catch (err) {
       logger.error(
         'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
         err
       )
+    }
+  }
+
+  /**
+   * Publishes a "new engine build available" offer for the banner (ATO-528).
+   *
+   * Best-effort in both directions: the archive size comes from the signed
+   * mirror's manifest and is simply absent for an unmirrored tag, and a failure
+   * to publish costs the banner, not the app — the offer is rebuilt on the next
+   * launch because the tag comparison that produced it is stateless.
+   */
+  private async offerEngineUpdate(
+    currentBackend: string,
+    targetBackend: string
+  ): Promise<void> {
+    try {
+      const offer = await buildEngineUpdateOffer(
+        this.providerId,
+        currentBackend,
+        targetBackend,
+        async (version, backendId) =>
+          (await resolveBackendArchiveSource(version, backendId)).size
+      )
+      if (!offer) {
+        logger.warn(
+          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
+        )
+        return
+      }
+      publishEngineUpdateOffer(offer)
+    } catch (err) {
+      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
     }
   }
 
@@ -2377,6 +2436,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     localStorage.removeItem('llama_cpp_pending_backend')
+
+    // A pending engine-update offer is about this provider's backend, and the
+    // backend just changed — whatever it proposed is now either done or stale.
+    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
+    clearEngineUpdateOffer(this.providerId)
 
     // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
     // a pure UI concern (the dialog/pill in the web app) and does not
@@ -4501,7 +4565,122 @@ export default class llamacpp_upstream_extension extends AIEngine {
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
+  ): Promise<SessionInfo> {
+    this.loadRequests.set(modelId, (this.loadRequests.get(modelId) ?? 0) + 1)
+    try {
+      return await this.startLoad(
+        modelId,
+        overrideSettings,
+        isEmbedding,
+        bypassAutoUnload,
+        options
+      )
+    } finally {
+      const remaining = (this.loadRequests.get(modelId) ?? 1) - 1
+      if (remaining > 0) {
+        this.loadRequests.set(modelId, remaining)
+      } else {
+        this.loadRequests.delete(modelId)
+        this.cancelledLoads.delete(modelId)
+      }
+    }
+  }
+
+  /**
+   * ATO-530: stop a load of `modelId` that has not finished. Resolves `true`
+   * when one was running; that load then rejects with MODEL_LOAD_CANCELLED
+   * and leaves no server behind.
+   */
+  override async cancelLoad(modelId: string): Promise<boolean> {
+    if (!this.loadRequests.has(modelId)) return false
+    this.cancelledLoads.add(modelId)
+    // Inside the plugin the load is a child process only the plugin can kill,
+    // and the invoke that starts it may still be on its way there — so a miss
+    // is retried for as long as that invoke is outstanding. A load that has
+    // not reached the plugin yet stops at its next checkpoint instead.
+    // A command that fails outright will keep failing; the server is then
+    // taken down when its load returns instead.
+    while (this.pluginLoadsInFlight.has(modelId)) {
+      let reached: boolean
+      try {
+        reached = await cancelLlamaModelLoad(modelId)
+      } catch (error) {
+        logger.warn(`cancel_llama_model_load failed for "${modelId}": ${error}`)
+        break
+      }
+      if (reached) break
+      await new Promise((resolve) =>
+        setTimeout(resolve, CANCEL_RETRY_INTERVAL_MS)
+      )
+    }
+    return true
+  }
+
+  private throwIfLoadCancelled(modelId: string): void {
+    if (this.cancelledLoads.has(modelId)) {
+      throw codedLoadError(
+        ERR_MODEL_LOAD_CANCELLED,
+        'The model load was cancelled.'
+      )
+    }
+  }
+
+  /**
+   * Runs one `load_llama_model` invoke so that `cancelLoad` can reach it:
+   * refuses to start after a cancel, marks the invoke as outstanding while it
+   * runs, and takes down a server that came up before the cancel got to it.
+   */
+  private async loadInPlugin(
+    modelId: string,
+    start: () => Promise<SessionInfo>
+  ): Promise<SessionInfo> {
+    this.throwIfLoadCancelled(modelId)
+    this.pluginLoadsInFlight.add(modelId)
+    let sInfo: SessionInfo
+    try {
+      sInfo = await start()
+    } finally {
+      this.pluginLoadsInFlight.delete(modelId)
+    }
+    if (this.cancelledLoads.has(modelId)) {
+      await unloadLlamaModel(sInfo.pid).catch((error) => {
+        logger.warn(
+          `Failed to stop "${modelId}" after its load was cancelled: ${error}`
+        )
+      })
+      this.throwIfLoadCancelled(modelId)
+    }
+    return sInfo
+  }
+
+  /**
+   * How much of `paths` the OS already holds in its page cache (0–1), or
+   * `null` when that cannot be told. Only ever feeds the loading status, so a
+   * failure is not worth more than a debug line.
+   */
+  private async pageCacheFraction(
+    paths: (string | undefined)[]
+  ): Promise<number | null> {
+    try {
+      const fraction = await invoke<number | null>(
+        'get_page_cache_resident_fraction',
+        { paths: paths.filter((path): path is string => !!path) }
+      )
+      return typeof fraction === 'number' ? fraction : null
+    } catch (error) {
+      console.debug(`page cache probe failed: ${error}`)
+      return null
+    }
+  }
+
+  private async startLoad(
+    modelId: string,
+    overrideSettings: Partial<LlamacppConfig> | undefined,
+    isEmbedding: boolean,
+    bypassAutoUnload: boolean,
+    options: ModelLoadOptions | undefined
   ): Promise<SessionInfo> {
     if (this.configureBackendsPromise) {
       const vb = this.config.version_backend || ''
@@ -4549,12 +4728,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return this.loadingModels.get(modelId)!
     }
 
+    // A cancel that arrived while this load waited for backend configuration.
+    this.throwIfLoadCancelled(modelId)
+
     // Create the loading promise
     const loadingPromise = this.performLoad(
       modelId,
       overrideSettings,
       isEmbedding,
-      bypassAutoUnload
+      bypassAutoUnload,
+      options
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -4747,7 +4930,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
@@ -4891,6 +5075,17 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     }
 
+    // ATO-530: a missing engine build is downloaded before anything else can
+    // happen, and that wait is worth naming. An installed compatible fallback
+    // may still be found without a download; the next stage replaces this
+    // one within moments then.
+    if (
+      options?.onStage &&
+      !(await isBackendInstalled(stripBom(backend), stripBom(version)))
+    ) {
+      options.onStage({ kind: 'installingEngine' })
+    }
+
     // Ensure backend is downloaded and ready before proceeding. The returned
     // pair may differ from the requested one when an ATO-179 fallback to an
     // installed compatible backend kicks in; use it for the exe path below.
@@ -4900,6 +5095,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       true
     ))
     this.effectiveVersionBackend = `${version}/${backend}`
+    this.throwIfLoadCancelled(modelId)
 
     const janDataFolderPath = await getJanDataFolderPath()
     const modelConfigPath = await joinPath([
@@ -5151,17 +5347,32 @@ export default class llamacpp_upstream_extension extends AIEngine {
       JSON.stringify(cfg)
     )
 
+    if (options?.onStage) {
+      this.throwIfLoadCancelled(modelId)
+      options.onStage({
+        kind: 'loadingWeights',
+        cachedFraction: await this.pageCacheFraction([
+          modelPath,
+          mmprojPath,
+          cfg.mtp ? cfg.mtp_draft_path : undefined,
+          cfg.dflash ? cfg.dflash_draft_path : undefined,
+        ]),
+      })
+    }
+
     try {
-      const sInfo = await loadLlamaModel(
-        backendPath,
-        modelId,
-        modelPath,
-        port,
-        cfg,
-        envs,
-        mmprojPath,
-        isEmbedding,
-        modelLoadReadyTimeoutSecs(this.timeout)
+      const sInfo = await this.loadInPlugin(modelId, () =>
+        loadLlamaModel(
+          backendPath,
+          modelId,
+          modelPath,
+          port,
+          cfg,
+          envs,
+          mmprojPath,
+          isEmbedding,
+          modelLoadReadyTimeoutSecs(this.timeout)
+        )
       )
       this.sessionCache.set(modelId, sInfo)
       if (typeof cfg.ctx_size === 'number') {
@@ -5175,6 +5386,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // dropping --mmproj. This keeps the model usable instead of failing the
       // whole load with an opaque error. See issue #44.
       const code = (error as { code?: string } | undefined)?.code
+      // The user stopped it: nothing to retry, and nothing to report.
+      if (code === ERR_MODEL_LOAD_CANCELLED) throw toLoadError(error)
       // For the voice model the projector *is* the feature: a text-only
       // retry would produce a server that starts cleanly and can never
       // transcribe. Let the error through so the caller can say so.
@@ -5187,16 +5400,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
           `Model "${modelId}" has an unsupported multimodal projector for backend "${backend}". Retrying text-only (without --mmproj).`
         )
         try {
-          const sInfo = await loadLlamaModel(
-            backendPath,
-            modelId,
-            modelPath,
-            port,
-            cfg,
-            envs,
-            undefined, // text-only: drop the unsupported mmproj
-            isEmbedding,
-            modelLoadReadyTimeoutSecs(this.timeout)
+          const sInfo = await this.loadInPlugin(modelId, () =>
+            loadLlamaModel(
+              backendPath,
+              modelId,
+              modelPath,
+              port,
+              cfg,
+              envs,
+              undefined, // text-only: drop the unsupported mmproj
+              isEmbedding,
+              modelLoadReadyTimeoutSecs(this.timeout)
+            )
           )
           this.sessionCache.set(modelId, sInfo)
           if (typeof cfg.ctx_size === 'number') {
@@ -5232,16 +5447,18 @@ export default class llamacpp_upstream_extension extends AIEngine {
         cfg.mtp = false
         cfg.mtp_draft_path = ''
         try {
-          const sInfo = await loadLlamaModel(
-            backendPath,
-            modelId,
-            modelPath,
-            port,
-            cfg,
-            envs,
-            mmprojPath,
-            isEmbedding,
-            modelLoadReadyTimeoutSecs(this.timeout)
+          const sInfo = await this.loadInPlugin(modelId, () =>
+            loadLlamaModel(
+              backendPath,
+              modelId,
+              modelPath,
+              port,
+              cfg,
+              envs,
+              mmprojPath,
+              isEmbedding,
+              modelLoadReadyTimeoutSecs(this.timeout)
+            )
           )
           this.sessionCache.set(modelId, sInfo)
           if (typeof cfg.ctx_size === 'number') {

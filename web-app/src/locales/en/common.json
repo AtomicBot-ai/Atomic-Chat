@@ -703,5 +703,40 @@
     "paused": "Paused",
     "left": "{{eta}} left",
     "appUpdate": "App update"
+  },
+  "inferenceStatus": {
+    "starting": "Starting {{model}}…",
+    "startingDetail": "The model is loading into memory. Chat will answer as soon as it is ready.",
+    "restarting": "Restarting for {{model}}…",
+    "restartingDetail": "The previous engine is being stopped and this one started. Chat is paused until the swap finishes.",
+    "ready": "{{model}} is loaded",
+    "notLoaded": "No model loaded — the first message will start one",
+    "retry": "Try again"
+  },
+  "modelLoad": {
+    "cancel": "Cancel",
+    "cancelling": "Cancelling…",
+    "dismiss": "Dismiss",
+    "stage": {
+      "preparing": "Getting the engine ready.",
+      "unloadingPrevious": "Unloading the previous model to free memory.",
+      "installingEngine": "Downloading the engine first. This happens once per engine version.",
+      "loadingWeights": "Loading the model into memory.",
+      "loadingCachedWeights": "Loading cached model into memory.",
+      "readingWeightsFromDisk": "Reading the model from disk. The first load after a restart takes longer.",
+      "startingServer": "Starting the local API server.",
+      "retry_ctx": "Not enough memory. Retrying with a smaller context.",
+      "retry_ngl": "Not enough GPU memory. Retrying on the CPU.",
+      "retry_fit_target": "Not enough memory. Retrying with more headroom."
+    },
+    "indicator": {
+      "loaded": "{{model}} is loaded",
+      "unload": "Unload from memory",
+      "unloading": "Unloading {{model}}…",
+      "loading": "Loading {{model}}…",
+      "stopLoading": "Stop loading",
+      "notLoaded": "Not loaded — the first message will start it",
+      "failed": "Failed to load"
+    }
   }
 }

@@ -6,6 +6,7 @@ Default permissions for the llamacpp plugin
 
 - `allow-cleanup-llama-processes`
 - `allow-load-llama-model`
+- `allow-cancel-llama-model-load`
 - `allow-unload-llama-model`
 - `allow-get-devices`
 - `allow-get-runtime-device`
@@ -46,6 +47,32 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp:allow-cancel-llama-model-load`
+
+</td>
+<td>
+
+Enables the cancel_llama_model_load command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-cancel-llama-model-load`
+
+</td>
+<td>
+
+Denies the cancel_llama_model_load command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

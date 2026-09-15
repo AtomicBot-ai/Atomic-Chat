@@ -1,4 +1,3 @@
-import { isChatCompatibleSkill } from '@/containers/agentSkillSlash'
 import { readAgentSkillName } from '@/lib/agent-skill-selection'
 import type { AgentSkillDetail } from '@/services/agent/skills'
 
@@ -57,7 +56,7 @@ export function renderChatSkillsBlock(
 ): string | undefined {
   if (skills.length === 0) return undefined
   const header =
-    '## Invoked skills\nThe user invoked the following skills. Follow their instructions where relevant.'
+    '## Invoked skills\nThe user invoked the following skills. Follow their instructions where relevant. Never call a tool that is not in your tool list; if a skill needs one, tell the user.'
   const sections = skills.map(
     (skill) =>
       `# skill: ${skill.name} (v${skill.version})\n${truncateChars(
@@ -82,15 +81,17 @@ export function composeSystemMessage(
 
 /**
  * Load skill bodies by name, memoized in `cache` (null = known-unusable).
- * Skips — never throws — on IPC errors, disabled skills and skills the chat
- * pipeline can't serve (scripts / unavailable tools): a skill deleted or
- * disabled after it was invoked must not brick a regenerate. Softer than the
- * agent, which fails the turn on a broken selected skill.
+ * Skips — never throws — on IPC errors, disabled and broken skills: a skill
+ * deleted or disabled after it was invoked must not brick a regenerate.
+ * Softer than the agent, which fails the turn on a broken selected skill.
+ *
+ * Required tools and scripts are not checked: the user picked the skill
+ * explicitly, so a bundled one written for the agent's `os.*` tools still
+ * reaches the chat prompt.
  */
 export async function loadChatSkillDetails(
   names: string[],
-  cache: Map<string, AgentSkillDetail | null>,
-  availableToolNames: ReadonlySet<string>
+  cache: Map<string, AgentSkillDetail | null>
 ): Promise<AgentSkillDetail[]> {
   if (!IS_TAURI || names.length === 0) return []
   const details: AgentSkillDetail[] = []
@@ -101,10 +102,7 @@ export async function loadChatSkillDetails(
         // the web build and the vitest harness.
         const { getAgentSkill } = await import('@/services/agent/skills')
         const detail = await getAgentSkill(name)
-        const usable =
-          detail.enabled &&
-          !detail.error &&
-          isChatCompatibleSkill(detail, availableToolNames)
+        const usable = detail.enabled && !detail.error
         cache.set(name, usable ? detail : null)
       } catch (error) {
         console.warn(`Skipping chat skill "${name}":`, error)

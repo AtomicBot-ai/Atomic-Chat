@@ -3,6 +3,8 @@ import { createRootRoute, Outlet } from '@tanstack/react-router'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
+import EngineUpdateBanner from '@/containers/dialogs/EngineUpdateBanner'
+import ModelLoadSnackbar from '@/containers/ModelLoadSnackbar'
 import SuboptimalBackendDialog from '@/containers/dialogs/SuboptimalBackendDialog'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
@@ -73,6 +75,13 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
+        {/* ATO-528/531: offers a new inference-engine build. Gated on
+            the same flag as <BackendUpdater /> — an engine update is
+            noise while onboarding is still picking the first one. */}
+        {isSetupCompleted && <EngineUpdateBanner />}
+        {/* ATO-530: a load the user is waiting on, top-right — the opposite
+            corner from the update banners above, so the two never meet. */}
+        {isSetupCompleted && <ModelLoadSnackbar />}
         {/* Unlike the recommendation dialogs above, this dialog only opens
             after ChatInput dispatches a mismatch prompt. Keep it mounted for
             upgraded/legacy users whose setup-completed flag is absent. */}

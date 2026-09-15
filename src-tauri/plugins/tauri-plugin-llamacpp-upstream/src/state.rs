@@ -4,6 +4,8 @@ use std::sync::Arc;
 use tokio::process::Child;
 use tokio::sync::Mutex;
 
+use jan_utils::load_cancel::LoadCancelRegistry;
+
 use crate::runtime_device::{RuntimeDeviceInfo, SharedRuntimeDevice};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,12 +36,16 @@ pub struct LLamaBackendSession {
 /// LlamaCpp plugin state
 pub struct LlamacppState {
     pub llama_server_process: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    /// Loads that have not reached readiness yet, so a cancel can reach them
+    /// before they exist in `llama_server_process`.
+    pub load_cancels: LoadCancelRegistry,
 }
 
 impl Default for LlamacppState {
     fn default() -> Self {
         Self {
             llama_server_process: Arc::new(Mutex::new(HashMap::new())),
+            load_cancels: LoadCancelRegistry::new(),
         }
     }
 }

@@ -15,6 +15,24 @@ export interface UpdateState {
   downloadedBytes: number
   totalBytes: number
   remindMeLater: boolean
+  /// Version the app is running right now, so the banner can render the
+  /// `current -> new` transition ATO-533 asks for. Empty until the runtime
+  /// lookup resolves, and outside Tauri it falls back to the build-time
+  /// `VERSION` define.
+  currentVersion: string
+}
+
+/// Running app version, preferring what Tauri reports over the build-time
+/// define — a `yarn dev` web session has no Tauri API at all.
+const readCurrentVersion = async (): Promise<string> => {
+  try {
+    const { getVersion } = await import('@tauri-apps/api/app')
+    const version = await getVersion()
+    if (version && version !== '0.0.0') return version
+  } catch {
+    // Not running inside Tauri.
+  }
+  return typeof VERSION === 'string' ? VERSION : ''
 }
 
 export const useAppUpdater = () => {
@@ -27,7 +45,25 @@ export const useAppUpdater = () => {
     downloadedBytes: 0,
     totalBytes: 0,
     remindMeLater: false,
+    currentVersion: '',
   })
+
+  // Read once per hook instance. Cheap, and the value never changes for the
+  // life of the process.
+  useEffect(() => {
+    let cancelled = false
+    void readCurrentVersion().then((version) => {
+      if (cancelled || !version) return
+      setUpdateState((prev) =>
+        prev.currentVersion === version
+          ? prev
+          : { ...prev, currentVersion: version }
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Listen for app update state sync events
   useEffect(() => {

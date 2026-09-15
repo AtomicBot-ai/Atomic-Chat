@@ -19,6 +19,7 @@ import {
   events,
   DownloadEvent,
   UnloadResult,
+  type ModelLoadOptions,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
@@ -681,10 +682,18 @@ export class DefaultModelsService implements ModelsService {
     )
   }
 
+  async cancelModelLoad(provider: string, model: string): Promise<boolean> {
+    const engine = this.getEngine(provider)
+    // An extension bundled against an older core has no `cancelLoad`.
+    if (typeof engine?.cancelLoad !== 'function') return false
+    return engine.cancelLoad(model)
+  }
+
   async startModel(
     provider: ProviderObject,
     model: string,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo | undefined> {
     const engine = this.getEngine(provider.provider)
     if (!engine) return undefined
@@ -714,7 +723,7 @@ export class DefaultModelsService implements ModelsService {
       : undefined
 
     return engine
-      .load(model, settings, false, bypassAutoUnload)
+      .load(model, settings, false, bypassAutoUnload, options)
       .catch((error) => {
         console.error(
           `Failed to start model ${model} for provider ${provider.provider}:`,

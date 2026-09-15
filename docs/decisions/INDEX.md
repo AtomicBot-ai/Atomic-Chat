@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-249 records, 2026-05-19 → 2026-09-14.
+254 records, 2026-05-19 → 2026-09-15.
 
 ---
 
@@ -142,8 +142,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (51)
+## llama.cpp providers & backend selection (52)
 
+- **2026-09-14** — [Ask before updating an inference engine](2026-09-14-ask-before-updating-an-inference-engine.md)
 - **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
 - **2026-08-19** — [Disable the TurboQuant `llamacpp` provider by default on fresh installs](2026-08-19-disable-the-turboquant-provider-by-default-on-fresh-installs.md)
 - **2026-08-14** — [Keep the engine version out of the `latest/` sentinel trap](2026-08-14-keep-the-engine-version-out-of-the-latest-sentinel-trap.md)
@@ -262,8 +263,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (36)
+## UI / UX (40)
 
+- **2026-09-15** — [Say what a model load is waiting on, and let it be cancelled](2026-09-15-say-what-a-model-load-is-waiting-on-and-let-it-be-cancelled.md)
+- **2026-09-15** — [Show every tool call as its own line in the message](2026-09-15-show-every-tool-call-as-its-own-line.md)
+- **2026-09-15** — [Mark Full access by its icon and words, not by colour](2026-09-15-mark-full-access-by-icon-and-words-not-colour.md)
+- **2026-09-14** — [One update banner in the bottom-right corner at a time](2026-09-14-one-update-banner-in-the-corner-at-a-time.md)
 - **2026-09-11** — [List the Hub picks under the onboarding offer](2026-09-11-list-the-hub-picks-under-the-onboarding-offer.md)
 - **2026-09-11** — [Pick the model and its reasoning effort from one composer pill](2026-09-11-pick-the-model-and-its-effort-from-one-composer-pill.md)
 - **2026-09-11** — [Show engine state in the model dot and let a Stop hold](2026-09-11-show-engine-state-in-the-model-dot-and-let-a-stop-hold.md)
