@@ -6,7 +6,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { MCPTool } from '@/types/completion'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
-import type { MCPConfig, MCPServerStatus, MCPToolsResponse } from './types'
+import type {
+  MCPConfig,
+  MCPPreviewTool,
+  MCPServerStatus,
+  MCPToolsResponse,
+} from './types'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
@@ -128,6 +133,24 @@ export class TauriMCPService extends DefaultMCPService {
 
   async checkJanBrowserExtensionConnected(): Promise<boolean> {
     return await invoke('check_jan_browser_extension_connected')
+  }
+
+  async connectorNeedsReview(
+    name: string,
+    config: MCPServerConfig
+  ): Promise<boolean> {
+    return await invoke('mcp_connector_needs_review', { name, config })
+  }
+
+  async approveConnector(name: string, config: MCPServerConfig): Promise<void> {
+    return await invoke('approve_mcp_connector', { name, config })
+  }
+
+  async previewConnectorTools(
+    name: string,
+    config: MCPServerConfig
+  ): Promise<MCPPreviewTool[]> {
+    return await invoke('preview_mcp_connector_tools', { name, config })
   }
 
   async mcpOauthLogin(name: string, url: string): Promise<void> {

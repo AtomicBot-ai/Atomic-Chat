@@ -18,6 +18,7 @@ import { AgentSkillCreateDialog } from '@/containers/AgentSkillCreateDialog'
 import { AgentSkillEditDialog } from '@/containers/AgentSkillEditDialog'
 import { AgentSkillUploadDialog } from '@/containers/AgentSkillUploadDialog'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import { SkillReviewDialog } from '@/containers/SkillReviewDialog'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -39,7 +40,11 @@ import { route } from '@/constants/routes'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
-import type { AgentSkill } from '@/services/agent/skills'
+import {
+  getAgentSkill,
+  type AgentSkill,
+  type AgentSkillDetail,
+} from '@/services/agent/skills'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.skills.index as any)({
@@ -57,6 +62,7 @@ export function SkillsPage() {
     load,
     select,
     setEnabled,
+    approve,
     addCreated,
     addImported,
     remove,
@@ -67,6 +73,21 @@ export function SkillsPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  // Task 28 (D36): every skill - bundled, from Anthropic, written here or
+  // uploaded - is reviewed (Allow / Preview / Cancel) before it is switched on.
+  const [reviewing, setReviewing] = useState<AgentSkillDetail | null>(null)
+
+  const openReview = async (name: string) => {
+    try {
+      setReviewing(await getAgentSkill(name))
+    } catch (reason) {
+      toast.error(String(reason))
+    }
+  }
+
+  const reviewIfNeeded = (detail: AgentSkillDetail) => {
+    if (detail.needsReview) setReviewing(detail)
+  }
 
   const mutate = async (operation: () => Promise<void>) => {
     try {
@@ -175,9 +196,13 @@ export function SkillsPage() {
                   checked={skill.enabled}
                   disabled={Boolean(skill.error)}
                   aria-label={t('common:enableSkill')}
-                  onCheckedChange={(enabled) =>
+                  onCheckedChange={(enabled) => {
+                    if (enabled && skill.needsReview) {
+                      void openReview(skill.name)
+                      return
+                    }
                     void mutate(() => setEnabled(skill.name, enabled))
-                  }
+                  }}
                 />
                 <SkillActionsMenu
                   skill={skill}
@@ -273,13 +298,26 @@ export function SkillsPage() {
       <AgentSkillCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreate={addCreated}
+        onCreate={async (request) => reviewIfNeeded(await addCreated(request))}
       />
       <AgentSkillUploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
-        onUpload={addImported}
+        onUpload={async (path) => reviewIfNeeded(await addImported(path))}
       />
+      {reviewing && (
+        <SkillReviewDialog
+          open
+          skill={reviewing}
+          scripts={reviewing.files}
+          onAllow={() => {
+            const name = reviewing.name
+            setReviewing(null)
+            void mutate(() => approve(name))
+          }}
+          onCancel={() => setReviewing(null)}
+        />
+      )}
       <AgentSkillEditDialog
         skill={selected}
         open={editOpen}

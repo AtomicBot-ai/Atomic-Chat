@@ -167,12 +167,13 @@ mod tests {
         )
         .unwrap();
         let available_tools = BTreeSet::from(["os.shell.run".to_string()]);
-        let registry = SkillRegistry::load(
+        let mut registry = SkillRegistry::load(
             temp.path().join("skills"),
             &BTreeSet::new(),
             &available_tools,
         )
         .unwrap();
+        registry.trust_all();
         let loaded = LoadedSkills::default();
 
         loaded.view("cli-skill", &registry).await;

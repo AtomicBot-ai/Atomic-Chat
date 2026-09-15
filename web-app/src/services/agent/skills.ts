@@ -14,11 +14,22 @@ export interface AgentSkill {
   compatible: boolean
   reserved: boolean
   unavailableReasons: string[]
+  /** Added or changed since the user last allowed it; not offered to the AI. */
+  needsReview: boolean
   error: string | null
+}
+
+/** A file bundled with a skill besides SKILL.md, shown in Preview. */
+export interface AgentSkillFile {
+  path: string
+  content: string
+  /** Cut short for Preview because the file is large. */
+  truncated: boolean
 }
 
 export interface AgentSkillDetail extends AgentSkill {
   body: string
+  files: AgentSkillFile[]
 }
 
 export interface CreateAgentSkillRequest {
@@ -46,6 +57,11 @@ export function setAgentSkillEnabled(
   enabled: boolean
 ): Promise<void> {
   return invoke<void>('agent_set_skill_enabled', { name, enabled })
+}
+
+/** The user reviewed the skill and chose Allow: record it and switch it on. */
+export function approveAgentSkill(name: string): Promise<AgentSkillDetail> {
+  return invoke<AgentSkillDetail>('agent_approve_skill', { name })
 }
 
 export function createAgentSkill(

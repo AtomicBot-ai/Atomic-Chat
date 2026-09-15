@@ -1,9 +1,10 @@
 use super::commands::{collect_mcp_server_statuses, is_extension_not_connected_error};
 use super::helpers::{
-    add_server_config, add_server_config_with_path, append_bounded_stderr,
+    add_server_config, add_server_config_with_path, append_bounded_stderr, build_stdio_command,
     ensure_mcp_config_exists, extract_command_args, format_mcp_start_error,
-    is_process_already_gone, run_mcp_commands,
+    is_process_already_gone, run_mcp_commands, start_mcp_server,
 };
+use super::review::{approve_connector, preview_connector_tools};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
 use std::collections::HashMap;
@@ -516,4 +517,136 @@ fn a_real_taskkill_failure_is_still_reported() {
          Reason: Access is denied."
     ));
     assert!(!is_process_already_gone(""));
+}
+
+/// Task 28 (decision D36): a connector nobody allowed never starts, whichever
+/// way it is started - at launch, from a switch, or on a sign-in retry.
+#[tokio::test]
+async fn test_a_connector_nobody_reviewed_is_refused_before_anything_runs() {
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+    let name = format!("unreviewed-{}", uuid::Uuid::new_v4());
+    let config = serde_json::json!({
+        "command": "radium-test-program-that-does-not-exist",
+        "args": [],
+        "env": {}
+    });
+
+    let error = start_mcp_server(
+        app.handle().clone(),
+        servers_state.clone(),
+        name.clone(),
+        config,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error.contains("needs review"), "{error}");
+    assert!(servers_state.lock().await.is_empty());
+    let state = app.state::<AppState>();
+    // The Connectors page shows why it is not connected.
+    assert_eq!(
+        state.mcp_server_errors.lock().await.get(&name),
+        Some(&error)
+    );
+    // Nothing was launched and nothing is kept for an automatic restart.
+    assert!(!state.mcp_server_pids.lock().await.contains_key(&name));
+    assert!(!state.mcp_active_servers.lock().await.contains_key(&name));
+}
+
+#[tokio::test]
+async fn test_a_reviewed_connector_gets_past_the_review_check() {
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+    let name = format!("reviewed-{}", uuid::Uuid::new_v4());
+    let config = serde_json::json!({
+        "command": "radium-test-program-that-does-not-exist",
+        "args": [],
+        "env": {}
+    });
+    let data_dir = get_jan_data_folder_path(app.handle().clone());
+    std::fs::create_dir_all(&data_dir).unwrap();
+    approve_connector(&data_dir, &name, &config).unwrap();
+
+    let error = start_mcp_server(app.handle().clone(), servers_state, name, config)
+        .await
+        .unwrap_err();
+
+    // It fails only because the test program does not exist.
+    assert!(!error.contains("needs review"), "{error}");
+    assert!(error.contains("Failed to run command"), "{error}");
+}
+
+#[test]
+fn test_a_local_program_is_started_with_its_arguments_keys_and_folder() {
+    let folder = tempfile::TempDir::new().unwrap();
+    let config = serde_json::json!({
+        "command": "my-connector-program",
+        "args": ["--root", "C:/Users/me/Documents"],
+        "env": { "API_TOKEN": "abc" },
+        "cwd": folder.path().to_string_lossy()
+    });
+    let params = extract_command_args(&config).unwrap();
+
+    let command = build_stdio_command(folder.path(), "mine", &params);
+
+    let command = command.as_std();
+    assert_eq!(command.get_program(), "my-connector-program");
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        ["--root", "C:/Users/me/Documents"]
+    );
+    assert!(command
+        .get_envs()
+        .any(|(key, value)| key == "API_TOKEN" && value == Some("abc".as_ref())));
+    assert_eq!(command.get_current_dir(), Some(folder.path()));
+}
+
+/// Preview is part of the review, so it works before Allow, and it never
+/// connects the connector for the AI.
+#[tokio::test]
+async fn test_preview_of_a_program_that_cannot_start_says_why_and_connects_nothing() {
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+    let config = serde_json::json!({
+        "command": "radium-test-program-that-does-not-exist",
+        "args": [],
+        "env": {}
+    });
+
+    let error = preview_connector_tools(app.handle(), "preview-test", &config)
+        .await
+        .unwrap_err();
+
+    assert!(!error.contains("needs review"), "{error}");
+    assert!(error.contains("could not start"), "{error}");
+    assert!(servers_state.lock().await.is_empty());
+    let state = app.state::<AppState>();
+    assert!(state.mcp_active_servers.lock().await.is_empty());
+    assert!(state.mcp_server_errors.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn test_preview_of_an_online_service_without_an_address_says_why() {
+    let app = mock_app();
+    app.manage(AppState::default());
+    let config = serde_json::json!({ "type": "http", "url": "", "command": "" });
+
+    let error = preview_connector_tools(app.handle(), "preview-test", &config)
+        .await
+        .unwrap_err();
+
+    assert!(error.contains("non-empty URL"), "{error}");
 }
