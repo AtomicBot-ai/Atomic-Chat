@@ -8,7 +8,8 @@ use tokio::time::timeout;
 use super::{
     constants::{
         default_filesystem_root, default_mcp_config, filesystem_mcp_pinned_spec,
-        DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS, FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
+        APP_WRITTEN_FILESYSTEM_MCP_VERSIONS, DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS,
+        FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
     },
     helpers::{kill_process_tree_by_pid, restart_active_mcp_servers, start_mcp_server},
 };
@@ -23,6 +24,52 @@ use std::{collections::BTreeSet, fs, time::Duration};
 
 async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
     state.mcp_settings.lock().await.tool_call_timeout_duration()
+}
+
+/// Rewrite every filesystem-MCP package arg this app is responsible for to the
+/// currently pinned spec. Returns true when anything changed.
+///
+/// Two shapes are rewritten: the bare package name (an unversioned install,
+/// which lets `bun x` serve a stale cached build — ATO-164), and a spec an
+/// earlier release of this app pinned itself
+/// (`APP_WRITTEN_FILESYSTEM_MCP_VERSIONS`). A version the *user* pinned by hand
+/// is left alone, as is anything already on the current spec, which makes this
+/// idempotent.
+///
+/// The app-written set is what lets a bad pin be corrected at all. The first
+/// pin shipped `@2026.1.14`, published four weeks before the upstream fix it
+/// was chosen for (servers#2609) merged — so it froze users on the very build
+/// whose CWD-relative path resolution ATO-164 set out to escape. Matching only
+/// the bare token made every already-migrated config unreachable by any later
+/// release.
+///
+/// Scans every server entry, not just the one named `filesystem`, so
+/// custom-named entries are covered too.
+pub(crate) fn repin_filesystem_mcp_servers(servers: &mut Map<String, Value>) -> bool {
+    let pinned_spec = filesystem_mcp_pinned_spec();
+    let app_written_specs: Vec<String> = APP_WRITTEN_FILESYSTEM_MCP_VERSIONS
+        .iter()
+        .map(|version| format!("{FILESYSTEM_MCP_PACKAGE}@{version}"))
+        .collect();
+
+    let mut mutated = false;
+    for server in servers.values_mut() {
+        let Some(args) = server.get_mut("args").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        for arg in args.iter_mut() {
+            let Some(current) = arg.as_str() else { continue };
+            let needs_repin = current == FILESYSTEM_MCP_PACKAGE
+                || app_written_specs.iter().any(|spec| spec == current);
+            if !needs_repin {
+                continue;
+            }
+            log::info!("Migrating config: pinned filesystem MCP server {current} -> {pinned_spec}");
+            *arg = Value::String(pinned_spec.clone());
+            mutated = true;
+        }
+    }
+    mutated
 }
 
 #[tauri::command]
@@ -671,28 +718,23 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
     // forces a fresh fetch (cache miss) of the fixed build (servers#2609).
     //
     // We scan every server's args (not just the one named "filesystem") so
-    // custom-named entries are covered, and only rewrite the *bare* package
-    // token — an explicit user pin (`...@<ver>`) is left untouched. The check
-    // is idempotent: once rewritten, the arg equals the pinned spec and never
-    // re-triggers.
-    let pinned_spec = filesystem_mcp_pinned_spec();
+    // custom-named entries are covered, and rewrite two shapes: the *bare*
+    // package token, and a spec this app itself pinned in an earlier release
+    // (`APP_WRITTEN_FILESYSTEM_MCP_VERSIONS`). A version the *user* chose is
+    // left untouched. The check is idempotent: once rewritten, the arg equals
+    // the current pinned spec, which is in neither set.
+    //
+    // Re-pinning app-written specs is what makes this migration reach existing
+    // installs at all. The first pin shipped `@2026.1.14` — a build published
+    // before servers#2609 landed, i.e. still carrying the CWD-relative bug it
+    // was meant to cure. Matching only the bare token made that a one-shot:
+    // every config the app had already rewritten was frozen on the broken
+    // version, and no release could ever correct it.
     if let Some(servers) = config_object
         .get_mut("mcpServers")
         .and_then(|v| v.as_object_mut())
     {
-        for server in servers.values_mut() {
-            if let Some(args) = server.get_mut("args").and_then(|v| v.as_array_mut()) {
-                for arg in args.iter_mut() {
-                    if arg.as_str() == Some(FILESYSTEM_MCP_PACKAGE) {
-                        *arg = Value::String(pinned_spec.clone());
-                        log::info!(
-                            "Migrating config: pinned filesystem MCP server to {pinned_spec}"
-                        );
-                        mutated = true;
-                    }
-                }
-            }
-        }
+        mutated |= repin_filesystem_mcp_servers(servers);
     }
 
     // Migration: Linear retired its SSE endpoint (mcp.linear.app/sse now

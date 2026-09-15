@@ -10,17 +10,18 @@ const mockGetLlamacppDevices = vi.fn()
 
 // Mock useModelProvider
 const mockUpdateProvider = vi.fn()
+const mockGetProviderByName = vi.fn((_name: string) => ({
+  settings: [
+    {
+      key: 'device',
+      controller_props: { value: '' },
+    },
+  ],
+}))
 vi.mock('../useModelProvider', () => ({
   useModelProvider: {
     getState: () => ({
-      getProviderByName: () => ({
-        settings: [
-          {
-            key: 'device',
-            controller_props: { value: '' },
-          },
-        ],
-      }),
+      getProviderByName: mockGetProviderByName,
       updateProvider: mockUpdateProvider,
     }),
   },
@@ -83,6 +84,48 @@ describe('useLlamacppDevices', () => {
     expect(result.current.loading).toBe(false)
     expect(result.current.error).toBeNull()
     expect(mockGetLlamacppDevices).toHaveBeenCalledOnce()
+  })
+
+  // Regression: the device ids come from LOCAL_LLAMACPP_EXTENSION_NAME
+  // (`@janhq/llamacpp-upstream-extension`), so both the read that derives
+  // `activated` and the write that persists a toggle must address
+  // LOCAL_LLAMACPP_PROVIDER. Addressing the turboquant `llamacpp` provider
+  // made the Hardware page's GPU switches a no-op on Windows/Linux, where
+  // that extension is not bundled at all.
+  it('reads and writes the `device` setting on the provider the devices came from', async () => {
+    const updateSettings = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      hardware: {
+        getLlamacppDevices: mockGetLlamacppDevices,
+      } as HardwareService,
+      providers: { updateSettings } as unknown as ProvidersService,
+    })
+    mockGetLlamacppDevices.mockResolvedValue([
+      { id: 'Vulkan0', name: 'AMD Radeon RX 7800 XT', mem: 16384, free: 15000 },
+    ])
+
+    const { result } = renderHook(() => useLlamacppDevices())
+
+    await act(async () => {
+      await result.current.fetchDevices()
+    })
+    expect(mockGetProviderByName).toHaveBeenCalledWith('llamacpp-upstream')
+
+    await act(async () => {
+      await result.current.toggleDevice('Vulkan0')
+    })
+
+    expect(mockGetProviderByName).toHaveBeenLastCalledWith('llamacpp-upstream')
+    expect(updateSettings).toHaveBeenCalledWith(
+      'llamacpp-upstream',
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'device' }),
+      ])
+    )
+    expect(mockUpdateProvider).toHaveBeenCalledWith(
+      'llamacpp-upstream',
+      expect.objectContaining({ settings: expect.any(Array) })
+    )
   })
 
   it('should clear error', () => {

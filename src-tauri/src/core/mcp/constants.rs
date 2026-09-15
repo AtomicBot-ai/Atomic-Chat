@@ -38,7 +38,29 @@ pub const FILESYSTEM_MCP_PACKAGE: &str = "@modelcontextprotocol/server-filesyste
 /// busts the stale `bun`/`BUN_INSTALL` cache: `bun x <pkg>@<ver>` misses the
 /// cached old version and fetches the fixed build. Bump this when a newer
 /// fixed release is validated.
-pub const FILESYSTEM_MCP_PINNED_VERSION: &str = "2026.1.14";
+///
+/// The original pin, `2026.1.14`, did NOT carry that fix — it was published
+/// 2026-01-14, four weeks before servers#2609 merged (2026-02-11). Verified
+/// against the published tarballs: `dist/lib.js` in 2026.1.14 resolves a
+/// relative request as `path.resolve(process.cwd(), expandedPath)`, while
+/// 2026.8.31 routes it through `resolveRelativePathAgainstAllowedDirectories`,
+/// which walks the allowed dirs. So every user was pinned to the broken
+/// build, and the `cwd` field below was the only thing masking it — on fresh
+/// installs only, since the migration never retrofits `cwd`. Re-verify the
+/// same way before bumping again; publish dates alone do not prove the fix
+/// is in.
+pub const FILESYSTEM_MCP_PINNED_VERSION: &str = "2026.8.31";
+
+/// Versions of the filesystem MCP server that a previous build of Atomic Chat
+/// wrote into the user's `mcp_config.json` itself. The pin migration re-pins
+/// only these to `FILESYSTEM_MCP_PINNED_VERSION`; a version the *user* chose
+/// is left alone.
+///
+/// Without this the migration is a one-shot: it matches the bare package
+/// token, so once an arg reads `...@2026.1.14` it never matches again and no
+/// future release can correct the pin it shipped. Every entry here is a spec
+/// this app authored, never a user's choice.
+pub const APP_WRITTEN_FILESYSTEM_MCP_VERSIONS: &[&str] = &["2026.1.14"];
 
 /// Fully-qualified, version-pinned spec written into args, e.g.
 /// `@modelcontextprotocol/server-filesystem@2026.1.14`.

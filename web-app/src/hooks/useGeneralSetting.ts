@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ExtensionManager } from '@/lib/extension'
+import { hadLegacyPerThreadAgentMode } from '@/lib/legacy-agent-mode'
 /**
  * Thinking effort scale shared by the chat-input pill and Settings → General.
  * `max` means the model's own strongest effort value, or no thinking-token cap
@@ -150,7 +151,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const state = (persistedState ?? {}) as Partial<GeneralSettingState>
         if (version < 1 && (state.reasoningBudget as string) === 'unlimited') {
@@ -164,6 +165,15 @@ export const useGeneralSetting = create<GeneralSettingState>()(
           // the bulb's removal: the effort slider is now the only switch, and
           // its first stop is Off. The chosen level is kept.
           state.disableReasoning = true
+        }
+        if (version < 3 && hadLegacyPerThreadAgentMode()) {
+          // v2 → v3: Agent mode moved from a per-thread flag (`agentThreads`
+          // in the `agent-mode` store) to this global toggle, which defaults
+          // to off and was never migrated. Users who had been running threads
+          // on the agent engine were dropped back onto the chat pipeline —
+          // where agent skills never reach the model — with no notice.
+          // Carry their choice over.
+          state.agentModeEnabled = true
         }
         return state as GeneralSettingState
       },

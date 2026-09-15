@@ -1,0 +1,112 @@
+---
+title: Agent Skills
+description: Reusable instructions the model loads on demand — where they live, when the model sees them, and how to write one.
+keywords:
+  [
+    Atomic Chat,
+    agent skills,
+    SKILL.md,
+    agent mode,
+    local AI,
+    private and offline,
+    tool use,
+  ]
+---
+import { Callout } from 'nextra/components'
+
+# Agent Skills
+
+A skill is a folder with a `SKILL.md` inside it: front matter describing the skill, and a body of instructions
+the model follows once the skill is loaded. Skills keep long procedures out of every prompt — the model reads
+the one-line description in its catalog and pulls in the full text only when it needs it.
+
+Manage them on the **Skills** page in the left sidebar: create, edit, import, export, enable and disable.
+
+## Where skills live
+
+Skills are folders under `agent-skills/` in the app data folder:
+
+| Platform | Path |
+| -------- | ---- |
+| macOS    | `~/Library/Application Support/Atomic Chat/data/agent-skills/` |
+| Windows  | `%APPDATA%\Atomic Chat\data\agent-skills\` |
+| Linux    | `~/.local/share/Atomic Chat/data/agent-skills/` |
+
+If you moved the data folder (`Settings → Advanced → Change data folder location`), `agent-skills/` moves with it.
+
+<Callout type="warning">
+  This is **not** inside the filesystem MCP sandbox (`~/Documents/Atomic_chat`), and adding it there is not
+  supported. A model cannot list or edit your skills through the `filesystem` connector — skills reach it
+  through the agent's own skill tooling instead. See [Model Context Protocol](./mcp).
+</Callout>
+
+The skills shipped with the app are re-seeded from the installer on every launch, so editing one of those in
+place does not stick. Create your own skill (or duplicate the bundled one under a new name) instead.
+
+## When the model actually sees a skill
+
+This is the part that trips people up, so it is worth being exact:
+
+- **Agent mode on** — the model gets a catalog of every enabled, compatible skill (name + description) in its
+  system prompt, and loads the full body itself when one is relevant. Turn Agent mode on in the composer's `+`
+  menu.
+- **Ordinary chat** — there is no catalog. Only a skill you invoke explicitly is sent, by typing `/` in the
+  composer and picking it. Its instructions are appended to the system prompt for the rest of the thread.
+
+A skill that declares `requires_tools` is only offered in an ordinary chat when every one of those tools is
+actually connected for that chat. The bundled skills all require agent-engine tools (`os.*`), which an ordinary
+chat never has — so in practice **the bundled skills are Agent-mode only**.
+
+Edits take effect on your next message; you do not need to restart the app or open a new thread.
+
+## Writing a skill
+
+`SKILL.md` starts with YAML front matter, then the instructions:
+
+```markdown
+---
+name: release-notes
+description: Turn a changelog into customer-facing release notes in our house style.
+version: 1.0.0
+requires_tools: []
+requires_scripts: []
+dangerous: false
+platforms: [darwin, win32, linux]
+---
+
+Read the changelog the user provides and rewrite it as release notes.
+
+- Lead with what changed for the user, not the internal component name.
+- Group into Added / Fixed / Changed.
+- Keep each entry to one sentence.
+```
+
+| Field | Meaning |
+| ----- | ------- |
+| `name` | Unique, and the folder name. Required. |
+| `description` | One line, up to 512 characters. This is all the model sees until it loads the skill, so make it say when to use it. Required. |
+| `version` | Free-form, defaults to `0.0.0`. |
+| `requires_tools` | Tools the skill needs. A skill is listed as unavailable when they are missing. |
+| `requires_scripts` | Scripts the skill ships and runs. |
+| `dangerous` | Marks a skill whose actions need extra confirmation. |
+| `platforms` | Restrict to `darwin`, `win32` and/or `linux`. Omit for all. |
+
+<Callout type="info">
+  Unknown front-matter keys are rejected, and the skill is listed with a parse error instead of loading. A
+  `SKILL.md` written for another agent often carries extra keys (`license`, `allowed-tools`, `metadata`) — strip
+  them, and map its tool names onto the ones this app exposes.
+</Callout>
+
+The Skills page shows why a skill is unavailable — a parse error, a missing tool, or the wrong platform — next to
+the skill itself. Start there when one is not showing up.
+
+## Troubleshooting
+
+- **The model does not mention my skill.** Check Agent mode is on. In an ordinary chat you have to invoke the
+  skill with `/`; there is no catalog.
+- **The skill is listed but greyed out.** Read its unavailability reason on the Skills page: a required tool is
+  not connected, or the skill is restricted to another platform.
+- **My edit did not change anything.** Confirm you edited your own skill and not a bundled one — bundled skills
+  are restored from the installer on every launch.
+- **A skill imported from elsewhere fails to load.** Its front matter almost certainly carries keys this app does
+  not accept. The Skills page shows the parse error.

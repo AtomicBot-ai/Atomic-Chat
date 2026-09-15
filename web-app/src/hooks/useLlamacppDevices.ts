@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import type { DeviceList } from '@/services/hardware/types'
 import { useModelProvider } from './useModelProvider'
 
@@ -26,9 +27,18 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
     try {
       const devices = await getServiceHub().hardware().getLlamacppDevices()
       
-      // Check current device setting from provider
+      // Check current device setting from provider.
+      //
+      // Must be the provider the device list actually came from:
+      // `getLlamacppDevices()` asks LOCAL_LLAMACPP_EXTENSION_NAME
+      // (`@janhq/llamacpp-upstream-extension`, see services/hardware/tauri.ts),
+      // so the `device` setting that gates those ids lives on
+      // LOCAL_LLAMACPP_PROVIDER. Reading the hardcoded turboquant `llamacpp`
+      // provider annotated the upstream devices with a setting no running
+      // model ever reads — and on Windows/Linux, where the turboquant
+      // extension is not bundled at all (ADR 2026-05-22), with nothing.
       const { getProviderByName } = useModelProvider.getState()
-      const llamacppProvider = getProviderByName('llamacpp')
+      const llamacppProvider = getProviderByName(LOCAL_LLAMACPP_PROVIDER)
       const currentDeviceSetting = llamacppProvider?.settings.find(
         (s) => s.key === 'device'
       )?.controller_props.value as string
@@ -67,9 +77,9 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
       ),
     }))
 
-    // Update llamacpp provider settings
+    // Update llamacpp provider settings — same provider the ids came from.
     const { getProviderByName, updateProvider } = useModelProvider.getState()
-    const llamacppProvider = getProviderByName('llamacpp')
+    const llamacppProvider = getProviderByName(LOCAL_LLAMACPP_PROVIDER)
 
     if (llamacppProvider) {
       // Get activated devices after toggle
@@ -92,8 +102,10 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
         return setting
       })
 
-      await getServiceHub().providers().updateSettings('llamacpp', updatedSettings)
-      updateProvider('llamacpp', {
+      await getServiceHub()
+        .providers()
+        .updateSettings(LOCAL_LLAMACPP_PROVIDER, updatedSettings)
+      updateProvider(LOCAL_LLAMACPP_PROVIDER, {
         settings: updatedSettings,
       })
     }

@@ -80,7 +80,9 @@ export function composeSystemMessage(
 }
 
 /**
- * Load skill bodies by name, memoized in `cache` (null = known-unusable).
+ * Load skill bodies by name, memoized in `cache` (null = the skill could not
+ * be fetched at all — deleted, or a failed IPC).
+ *
  * Skips — never throws — on IPC errors, disabled and broken skills: a skill
  * deleted or disabled after it was invoked must not brick a regenerate.
  * Softer than the agent, which fails the turn on a broken selected skill.
@@ -88,6 +90,10 @@ export function composeSystemMessage(
  * Required tools and scripts are not checked: the user picked the skill
  * explicitly, so a bundled one written for the agent's `os.*` tools still
  * reaches the chat prompt.
+ *
+ * Only the *fetch* is memoized; usability is re-decided on every call.
+ * Whoever owns the cache is responsible for clearing it when a skill is
+ * edited; see `agentSkillRevision`.
  */
 export async function loadChatSkillDetails(
   names: string[],
@@ -101,16 +107,15 @@ export async function loadChatSkillDetails(
         // Lazy import keeps the module graph free of `@tauri-apps/api` for
         // the web build and the vitest harness.
         const { getAgentSkill } = await import('@/services/agent/skills')
-        const detail = await getAgentSkill(name)
-        const usable = detail.enabled && !detail.error
-        cache.set(name, usable ? detail : null)
+        cache.set(name, await getAgentSkill(name))
       } catch (error) {
         console.warn(`Skipping chat skill "${name}":`, error)
         cache.set(name, null)
       }
     }
     const cached = cache.get(name)
-    if (cached) details.push(cached)
+    if (!cached) continue
+    if (cached.enabled && !cached.error) details.push(cached)
   }
   return details
 }

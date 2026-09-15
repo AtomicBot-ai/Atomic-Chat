@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { captureLegacyAgentThreads } from '@/lib/legacy-agent-mode'
 
 export type AgentApprovalMode = 'manual' | 'skip'
 export type AgentWorkspaceRoot = {
@@ -256,6 +257,14 @@ export const useAgentMode = create<AgentModeState>()(
         if (version < 3) {
           // v3: the chat/agent split is gone — every thread runs on the agent
           // engine. Approval modes and workspaces survive untouched.
+          //
+          // Hand the per-thread flags to the shared probe before dropping
+          // them: `setting-general`'s v3 migration turns the global Agent
+          // mode toggle on for anyone who had it on here, and the two stores
+          // hydrate in an order nothing guarantees.
+          captureLegacyAgentThreads(
+            state.agentThreads as Record<string, unknown> | undefined
+          )
           delete state.agentThreads
           delete state.sidebarMode
         }
