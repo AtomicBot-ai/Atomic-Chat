@@ -14,7 +14,6 @@ import { useThreadNotifications } from '@/hooks/useThreadNotifications'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
-import LocalModelLocationsCard from '@/containers/LocalModelLocationsCard'
 import { FactoryResetDialog } from '@/containers/dialogs'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
@@ -603,8 +602,7 @@ function General() {
               />
             </Card>
 
-            {/* Detected model locations / scan folders - Desktop only */}
-            {IS_TAURI && <LocalModelLocationsCard />}
+            {/* Detected model locations moved to Models -> Model settings. */}
 
             {/* Advanced - Desktop only */}
             <Card title="Advanced">

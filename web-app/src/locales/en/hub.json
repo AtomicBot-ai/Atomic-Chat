@@ -63,9 +63,9 @@
   "tooLargeDescription": "It needs more memory than this device has, so it may fail to load or run slowly.",
   "downloadAnyway": "Download anyway",
   "modelsFolder": {
-    "button": "Models folder",
-    "title": "Models folder",
-    "description": "Radium saves the models you download here, and loads your models from here.",
+    "button": "Model settings",
+    "title": "Model settings",
+    "description": "Where your models are saved and loaded from, and where Radium looks for models you already have.",
     "current": "Current folder",
     "new": "New folder",
     "default": "Default",

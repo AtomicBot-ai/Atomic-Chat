@@ -25,7 +25,9 @@ const SIDEBAR_COOKIE_NAME = 'sidebar:state'
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = '15rem'
 const SIDEBAR_WIDTH_MOBILE = '18rem'
-const SIDEBAR_WIDTH_ICON = '5rem'
+// Collapsed strip: a third narrower than the old 5rem + gap (96px -> 64px),
+// with menu icons the size of the Radium mark, 36px (the user, 2026-09-15).
+const SIDEBAR_WIDTH_ICON = '3rem'
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b'
 
 //* new constants for sidebar resizing
@@ -357,6 +359,8 @@ const SidebarTrigger = React.forwardRef<
 })
 SidebarTrigger.displayName = 'SidebarTrigger'
 
+const noopToggle = () => {}
+
 const SidebarRail = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'> & {
@@ -364,14 +368,15 @@ const SidebarRail = React.forwardRef<
     enableDrag?: boolean
   }
 >(({ className, enableDrag = true, ...props }, ref) => {
-  const { toggleSidebar, setWidth, state, width, setIsDraggingRail } =
-    useSidebar()
+  const { setWidth, state, width, setIsDraggingRail } = useSidebar()
 
   const { dragRef, handleMouseDown } = useSidebarResize({
     direction: 'right',
     enableDrag,
     onResize: setWidth,
-    onToggle: toggleSidebar,
+    // Drag only. A click here used to hide the sidebar too, which the user
+    // hit by accident (2026-09-15); the sidebar button does that.
+    onToggle: noopToggle,
     currentWidth: width,
     isCollapsed: state === 'collapsed',
     minResizeWidth: MIN_SIDEBAR_WIDTH,
@@ -392,10 +397,11 @@ const SidebarRail = React.forwardRef<
       type="button"
       ref={combinedRef}
       data-sidebar="rail"
-      aria-label="Toggle Sidebar"
+      data-no-hover-glow
+      aria-label="Resize sidebar"
       tabIndex={-1}
       onMouseDown={handleMouseDown}
-      title="Toggle Sidebar"
+      title="Drag to resize"
       className={cn(
         //* Без видимой линии (::after), только ресайз и курсор
         'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 border-0 bg-transparent p-0 transition-all ease-linear sm:flex',
@@ -611,7 +617,7 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = 'SidebarMenuItem'
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+  'peer/menu-button flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0.5! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&_svg]:transition-[width,height] [&_svg]:duration-200 [&_svg]:ease-linear group-data-[collapsible=icon]:[&_svg]:size-9!',
   {
     variants: {
       variant: {

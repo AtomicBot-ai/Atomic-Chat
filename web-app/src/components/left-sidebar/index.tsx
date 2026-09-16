@@ -31,7 +31,9 @@ export function LeftSidebar() {
 
   return (
     <div className="relative z-50">
-      <Sidebar variant="floating" collapsible="offcanvas">
+      {/* Collapsed, the sidebar keeps a thin strip with the Radium mark and the
+          menu icons, still clickable (the user, 2026-09-15). */}
+      <Sidebar variant="floating" collapsible="icon">
         {/*
           On macOS the window uses ``titleBarStyle: "Overlay"`` (see
           ``src-tauri/tauri.macos.conf.json``), so the red/yellow/green
@@ -49,12 +51,13 @@ export function LeftSidebar() {
           <div
             className={cn(
               'flex w-full items-center',
-              IS_WINDOWS ? 'justify-between' : 'justify-end'
+              IS_WINDOWS ? 'justify-between' : 'justify-end',
+              'group-data-[collapsible=icon]:justify-center'
             )}
             {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
           >
             {IS_WINDOWS && (
-              <span className="pl-2 text-[10px] font-medium text-muted-foreground">
+              <span className="pl-2 text-[10px] font-medium text-muted-foreground group-data-[collapsible=icon]:hidden">
                 v{VERSION}
               </span>
             )}
@@ -65,10 +68,11 @@ export function LeftSidebar() {
           <div
             className={cn(
               'mt-1 flex w-full items-center justify-start gap-2 pl-2',
+              'group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pl-0',
               IS_MACOS && 'mt-3'
             )}
           >
-            <AppLogo wordmarkClassName="text-sidebar-foreground" />
+            <AppLogo wordmarkClassName="text-sidebar-foreground group-data-[collapsible=icon]:hidden" />
           </div>
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
