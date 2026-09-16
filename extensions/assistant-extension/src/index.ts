@@ -4,7 +4,7 @@ import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
  * functionality for managing assistants.
  */
 export default class JanAssistantExtension extends AssistantExtension {
-  private readonly CURRENT_MIGRATION_VERSION = 2
+  private readonly CURRENT_MIGRATION_VERSION = 3
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
 
   /**
@@ -77,6 +77,14 @@ export default class JanAssistantExtension extends AssistantExtension {
       console.log('Running migration v2: Update to Atomic Chat instructions')
       await this.migrateToAtomicChatInstructions()
       await this.saveMigrationVersion(2)
+    }
+
+    if (currentVersion < 3) {
+      console.log(
+        'Running migration v3: Replace Jan-branded prompts with Atomic Chat instructions'
+      )
+      await this.migrateJanBrandedAssistants()
+      await this.saveMigrationVersion(3)
     }
 
     console.log(
@@ -189,13 +197,81 @@ Current date: {{current_date}}`
             JSON.stringify(assistantWithParams, null, 2)
           )
           console.log(
-            `Migrated to Menlo instructions for assistant: ${assistant.id}`
+            `Migrated to Atomic Chat instructions for assistant: ${assistant.id}`
           )
         } catch (error) {
           console.error(`Failed to migrate assistant ${assistant.id}:`, error)
         }
       }
     }
+  }
+
+  /**
+   * Migration v3: Replace Jan-branded default prompts with the Atomic Chat default.
+   *
+   * Installs that ran upstream Jan's own migration v2 carry Jan's default prompt
+   * ("You are Jan, a helpful AI assistant who assists users ... Menlo Research")
+   * at migration version 2, so the rebranded v2 above never ran for them, and
+   * its prefix ("You are Jan, a helpful AI assistant." with a period) would not
+   * have matched that text anyway. Only the two Jan default signatures are
+   * replaced; a user-authored prompt that merely mentions Jan is left alone.
+   * The Jan default name and description are fixed with it; every other field
+   * (parameters, avatar, tools, ...) is preserved.
+   */
+  private async migrateJanBrandedAssistants(): Promise<void> {
+    const JAN_DEFAULT_NAME = 'Jan'
+    const JAN_DEFAULT_DESCRIPTION_PREFIX = 'Jan is a helpful desktop assistant'
+
+    if (!(await fs.existsSync('file://assistants'))) {
+      return
+    }
+
+    const assistants = await this.getAssistants()
+
+    for (const assistant of assistants) {
+      if (!this.hasJanDefaultPrompt(assistant.instructions)) continue
+
+      const migrated: Assistant = {
+        ...assistant,
+        instructions: this.defaultAssistant.instructions,
+      }
+      if (assistant.name?.trim() === JAN_DEFAULT_NAME) {
+        migrated.name = this.defaultAssistant.name
+      }
+      if (
+        assistant.description?.trim().startsWith(JAN_DEFAULT_DESCRIPTION_PREFIX)
+      ) {
+        migrated.description = this.defaultAssistant.description
+      }
+
+      const assistantPath = await joinPath([
+        'file://assistants',
+        assistant.id,
+        'assistant.json',
+      ])
+
+      try {
+        await fs.writeFileSync(assistantPath, JSON.stringify(migrated, null, 2))
+        console.log(
+          `Replaced Jan-branded prompt with Atomic Chat instructions for assistant: ${assistant.id}`
+        )
+      } catch (error) {
+        console.error(`Failed to migrate assistant ${assistant.id}:`, error)
+      }
+    }
+  }
+
+  /**
+   * True only for the two Jan default prompts: the v1 text that starts with
+   * "You are Jan" and the Menlo Research prompt upstream's v2 wrote.
+   */
+  private hasJanDefaultPrompt(instructions: string | undefined): boolean {
+    if (!instructions) return false
+    return (
+      instructions.trim().startsWith('You are Jan') ||
+      instructions.includes('Menlo Research') ||
+      instructions.includes('menlo.ai')
+    )
   }
 
   /**
