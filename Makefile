@@ -340,6 +340,7 @@ test-extensions:
 		--include '@janhq/llamacpp-upstream-extension' \
 		--include '@janhq/mlx-extension' \
 		--include '@janhq/download-extension' \
+		--include '@janhq/vector-db-extension' \
 		run test:run
 
 # Tauri validates bundle.resources and externalBin paths while compiling the
