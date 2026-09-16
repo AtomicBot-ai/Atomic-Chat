@@ -118,9 +118,42 @@ async fn run_script_with_options(
     documents_note: Option<&str>,
     disabled_tools: &std::collections::BTreeSet<String>,
 ) -> TestRun {
+    run_script_on_session(
+        AgentSessionState::new("test-session"),
+        workspace,
+        client,
+        approval,
+        cancellation,
+        max_steps,
+        reasoning,
+        mcp,
+        auto_approve_mcp,
+        docs,
+        documents_note,
+        disabled_tools,
+    )
+    .await
+}
+
+/// [`run_script_with_options`] on a caller-seeded session, for turns that
+/// must start with history behind them.
+#[allow(clippy::too_many_arguments)]
+async fn run_script_on_session(
+    mut session: AgentSessionState,
+    workspace: &TestWorkspace,
+    client: &dyn AgentLlmClient,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    reasoning: AgentReasoning,
+    mcp: Option<&dyn McpBridge>,
+    auto_approve_mcp: bool,
+    docs: Option<&dyn DocsBridge>,
+    documents_note: Option<&str>,
+    disabled_tools: &std::collections::BTreeSet<String>,
+) -> TestRun {
     let desktop = RecordingDesktop::default();
     let mut events = Vec::new();
-    let mut session = AgentSessionState::new("test-session");
     let skill_registry = workspace.skill_registry();
     let editable_roots = EditableRoots::new(workspace.path(), &[]).await.unwrap();
     let folder_access = RecordingFolderAccess::deny();
@@ -2476,6 +2509,196 @@ async fn an_uncapped_level_still_arms_the_sampler_with_no_budget() {
     assert!(run.result.is_ok());
     // -1 is the server's "no cap"; the grammar close tag still ends the block.
     assert_eq!(run.requests[0]["reasoning_budget_tokens"], -1);
+}
+
+/// Chat-transport twin of [`run_thinking_script`].
+async fn run_chat_thinking_script(
+    workspace: &TestWorkspace,
+    responses: Vec<ScriptedResponse>,
+    approval: &RecordingApproval,
+    cancellation: &CancellationToken,
+    max_steps: u32,
+    reasoning: AgentReasoning,
+) -> TestRun {
+    let server = ScriptedChatServer::start(responses).await;
+    let client = server.client();
+    let run = run_script_with_reasoning(
+        workspace,
+        &client,
+        approval,
+        cancellation,
+        max_steps,
+        reasoning,
+    )
+    .await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+#[tokio::test]
+async fn a_thinking_turn_reserves_its_budget_on_top_of_the_tool_call_budget() {
+    // (level, budget the web-app sends, sampler budget on the wire, n_predict)
+    let levels = [
+        ("low", Some(256), 256, 8_192 + 256),
+        ("medium", Some(1_024), 1_024, 8_192 + 1_024),
+        ("high", Some(4_096), 4_096, 8_192 + 4_096),
+        ("xhigh", Some(8_192), 8_192, 8_192 + 8_192),
+        // `max` stays uncapped on the wire; the reserve is the top finite tier.
+        ("max", None, -1, 8_192 + 8_192),
+    ];
+    for (level, budget_tokens, sampler_budget, n_predict) in levels {
+        let workspace = TestWorkspace::new();
+        let run = run_thinking_script(
+            &workspace,
+            vec![ScriptedResponse::completion(
+                "<think>brief</think>[{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+            )],
+            &RecordingApproval::deny(),
+            &CancellationToken::new(),
+            1,
+            AgentReasoning::On {
+                budget_tokens,
+                effort_value: None,
+            },
+        )
+        .await;
+
+        assert!(run.result.is_ok(), "{level}: {:?}", run.result);
+        let request = &run.requests[0];
+        assert_eq!(
+            request["reasoning_budget_tokens"], sampler_budget,
+            "{level}"
+        );
+        // The thinking block draws from `n_predict` too: the tool-call array
+        // must keep its whole budget after the block closes.
+        assert_eq!(request["n_predict"], n_predict, "{level}");
+    }
+}
+
+#[tokio::test]
+async fn a_thinking_turn_on_a_chat_transport_reserves_the_same_total() {
+    let workspace = TestWorkspace::new();
+    let run = run_chat_thinking_script(
+        &workspace,
+        vec![ScriptedResponse::chat_completion_with_reasoning(
+            r#"[{"tool":"reply","args":{"text":"done"}}]"#,
+            "brief",
+        )],
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        1,
+        AgentReasoning::On {
+            budget_tokens: Some(8_192),
+            effort_value: None,
+        },
+    )
+    .await;
+
+    assert!(run.result.is_ok(), "{:?}", run.result);
+    let request = &run.requests[0];
+    assert_eq!(request["thinking_budget"], 8_192);
+    // `max_tokens` caps thinking and answer together on mlx as well.
+    assert_eq!(request["max_tokens"], 8_192 + 8_192);
+}
+
+/// How many older turns the rendered conversation in `prompt` dropped.
+fn dropped_turns(prompt: &str) -> usize {
+    prompt
+        .lines()
+        .find_map(|line| {
+            let (count, tail) = line.strip_prefix("summary: ")?.split_once(' ')?;
+            tail.starts_with("older turns dropped")
+                .then(|| count.parse().ok())
+                .flatten()
+        })
+        .unwrap_or(0)
+}
+
+async fn run_seeded_thinking_script(
+    workspace: &TestWorkspace,
+    props: serde_json::Value,
+    reasoning: AgentReasoning,
+) -> TestRun {
+    // About 19,700 tokens of history: under a 32k context it fits next to the
+    // 8,192-token tool-call budget, but not next to that plus an 8,192-token
+    // thinking reserve.
+    let mut session = AgentSessionState::new("test-session");
+    for _ in 0..4 {
+        session.push_user(&"question ".repeat(800));
+        session.push_reply(&"answer ".repeat(1_500));
+    }
+    let server = ScriptedCompletionServer::start_with_props(
+        vec![ScriptedResponse::completion(
+            "<think>brief</think>[{\"tool\":\"reply\",\"args\":{\"text\":\"done\"}}]",
+        )],
+        props,
+    )
+    .await;
+    let client = server.client();
+    let run = run_script_on_session(
+        session,
+        workspace,
+        &client,
+        &RecordingApproval::deny(),
+        &CancellationToken::new(),
+        1,
+        reasoning,
+        None,
+        true,
+        None,
+        None,
+        &std::collections::BTreeSet::new(),
+    )
+    .await;
+    TestRun {
+        requests: server.requests(),
+        ..run
+    }
+}
+
+#[tokio::test]
+async fn a_thinking_turn_reserves_its_budget_in_the_context_window_too() {
+    // A history that fits the context once the tool-call budget is reserved,
+    // but not once the thinking budget is reserved on top of it: the prompt
+    // and the whole completion must still fit `n_ctx` together.
+    let props = serde_json::json!({"default_generation_settings": {"n_ctx": 32_768}});
+
+    let workspace = TestWorkspace::new();
+    let without_thinking =
+        run_seeded_thinking_script(&workspace, props.clone(), AgentReasoning::Off).await;
+    assert!(
+        without_thinking.result.is_ok(),
+        "{:?}",
+        without_thinking.result
+    );
+    let full_prompt = without_thinking.requests[0]["prompt"].as_str().unwrap();
+    assert_eq!(
+        dropped_turns(full_prompt),
+        0,
+        "the history fits without thinking"
+    );
+
+    let workspace = TestWorkspace::new();
+    let with_thinking = run_seeded_thinking_script(
+        &workspace,
+        props,
+        AgentReasoning::On {
+            budget_tokens: Some(8_192),
+            effort_value: None,
+        },
+    )
+    .await;
+    assert!(with_thinking.result.is_ok(), "{:?}", with_thinking.result);
+    let trimmed_prompt = with_thinking.requests[0]["prompt"].as_str().unwrap();
+    assert!(
+        dropped_turns(trimmed_prompt) > 0,
+        "the conversation cap must shrink by the thinking reserve (prompt tokens: {} without thinking, {} with)",
+        super::token_budget::estimate_tokens(full_prompt),
+        super::token_budget::estimate_tokens(trimmed_prompt),
+    );
+    assert!(trimmed_prompt.len() < full_prompt.len());
 }
 
 #[tokio::test]

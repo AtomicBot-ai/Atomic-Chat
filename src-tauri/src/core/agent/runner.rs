@@ -32,8 +32,8 @@ use super::resource_class::{is_batchable, resource_class_for_call, ResourceClass
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::token_budget::{
-    compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
-    CONFIGURED_CONVERSATION_CAP,
+    compute_effective_conversation_cap, estimate_tokens, thinking_reserve_tokens,
+    COMPLETION_MAX_TOKENS, CONFIGURED_CONVERSATION_CAP,
 };
 use super::tool_schema::tool_call_response_format_dynamic;
 use super::tools::{self, ApprovalHook, DesktopServices, FolderAccessHook, ToolContext};
@@ -169,6 +169,7 @@ pub async fn run_turn(
         }),
     };
     let completion_reasoning = completion_reasoning(&input.reasoning, input.model_profile);
+    let step_max_tokens = step_max_tokens(&completion_reasoning);
     let response_schema = capabilities.json_schema.then(|| {
         Arc::new(tool_call_response_format_dynamic(
             input.skill_registry,
@@ -221,7 +222,7 @@ pub async fn run_turn(
             CONFIGURED_CONVERSATION_CAP,
             context_window,
             estimate_tokens(&fixed_prompt),
-            COMPLETION_MAX_TOKENS,
+            step_max_tokens,
         );
         let conversation = input.session.render_conversation(conversation_cap);
         let prompt = build_prompt_parts_dynamic(
@@ -238,6 +239,7 @@ pub async fn run_turn(
         notice = None;
         let mut request = CompletionRequest {
             reasoning: completion_reasoning.clone(),
+            max_tokens: step_max_tokens,
             ..CompletionRequest::tool_call_parts(
                 AgentPrompt::parts(prompt.system, prompt.tail),
                 tool_grammar.clone(),
@@ -912,6 +914,20 @@ fn completion_reasoning(
             budget_tokens: *budget_tokens,
             effort_value: effort_value.clone(),
         },
+    }
+}
+
+/// The step's completion budget: the tool-call budget, plus the thinking
+/// budget when the turn thinks. Both draw from the same `n_predict` /
+/// `max_tokens`, so the reserve is what keeps a full thinking block from
+/// cutting the array off, and the conversation cap subtracts the same total
+/// so prompt and completion still fit the context together.
+fn step_max_tokens(reasoning: &CompletionReasoning) -> u32 {
+    match reasoning {
+        CompletionReasoning::On { budget_tokens, .. } => {
+            COMPLETION_MAX_TOKENS.saturating_add(thinking_reserve_tokens(*budget_tokens))
+        }
+        CompletionReasoning::Unset | CompletionReasoning::Off => COMPLETION_MAX_TOKENS,
     }
 }
 
