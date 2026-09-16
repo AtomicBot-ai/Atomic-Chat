@@ -87,8 +87,17 @@ vi.mock(
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
+  const legacyRuntimeStatus = {
+    active_runtime: null,
+    transitioning: false,
+    flags: { runtime: false },
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === 'atomic_core_status' ? legacyRuntimeStatus : undefined
+    )
     vi.mocked(readGgufMetadata).mockResolvedValue({
       version: 3,
       tensor_count: 1,
@@ -947,15 +956,22 @@ describe('llamacpp_extension', () => {
         Promise.resolve(paths.join('/'))
       )
 
-      // Mock model config
-      vi.mocked(invoke)
-        .mockResolvedValueOnce({
-          // read_yaml
-          model_path: 'test-model/model.gguf',
-          name: 'Test Model',
-          size_bytes: 1000000,
-        })
-        .mockResolvedValueOnce('test-api-key') // generate_api_key
+      // Mock model config without relying on IPC call order: the runtime-owner
+      // probe is itself an IPC call and must not consume the YAML response.
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return legacyRuntimeStatus
+        if (command === 'read_yaml') {
+          return {
+            model_path: 'test-model/model.gguf',
+            name: 'Test Model',
+            size_bytes: 1000000,
+          }
+        }
+        if (command === 'plugin:llamacpp-upstream|generate_api_key') {
+          return 'test-api-key'
+        }
+        return undefined
+      })
 
       vi.mocked(loadLlamaModel).mockResolvedValue({
         model_id: 'test-model',
@@ -1045,7 +1061,13 @@ describe('llamacpp_extension', () => {
         api_key: 'test-key',
       })
 
-      vi.mocked(invoke).mockResolvedValue(true) // is_process_running
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return legacyRuntimeStatus
+        if (command === 'plugin:llamacpp-upstream|is_process_running') {
+          return true
+        }
+        return undefined
+      })
 
       const mockResponse = {
         id: 'test-id',

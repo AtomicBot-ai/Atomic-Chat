@@ -21,6 +21,8 @@ use crate::core::server::proxy;
 use crate::core::server::request_inspector::{
     RequestInspector, API_INSPECTOR_FINISHED, API_INSPECTOR_STARTED,
 };
+use crate::core::sessions::mirror::CoreSessions;
+use crate::core::sessions::resolver::SessionResolver;
 use crate::core::state::{AutoIncreaseState, ServerHandle};
 
 type Captured = Arc<StdMutex<Vec<(&'static str, Value)>>>;
@@ -143,9 +145,12 @@ impl Harness {
         let proxy_port = proxy::start_server(
             tauri::test::mock_app().handle().clone(),
             server_handle.clone(),
-            sessions,
-            Arc::new(Mutex::new(HashMap::new())),
-            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(SessionResolver::new(
+                sessions,
+                Arc::new(Mutex::new(HashMap::new())),
+                Arc::new(Mutex::new(HashMap::new())),
+                Arc::new(CoreSessions::new()),
+            )),
             "127.0.0.1".to_string(),
             0,
             "/v1".to_string(),
@@ -228,9 +233,12 @@ async fn a_second_start_reuses_the_running_server() {
     let second = proxy::start_server(
         tauri::test::mock_app().handle().clone(),
         harness.server_handle.clone(),
-        Arc::new(Mutex::new(HashMap::new())),
-        Arc::new(Mutex::new(HashMap::new())),
-        Arc::new(Mutex::new(HashMap::new())),
+        Arc::new(SessionResolver::new(
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(CoreSessions::new()),
+        )),
         "127.0.0.1".to_string(),
         0,
         "/v1".to_string(),

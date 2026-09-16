@@ -3,8 +3,6 @@ use tauri::{
     Manager, Runtime,
 };
 
-pub mod legacy_state;
-pub mod model_claim;
 mod amd_rocm_pci_ids;
 mod args;
 mod backend;
@@ -13,6 +11,8 @@ mod commands;
 mod device;
 mod error;
 mod gguf;
+pub mod legacy_state;
+pub mod model_claim;
 mod path;
 mod process;
 pub mod runtime_device;
@@ -37,7 +37,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::check_spec_type_support,
             commands::generate_api_key,
             commands::is_process_running,
-            commands::set_core_dir,
             commands::get_random_port,
             commands::find_session_by_model,
             commands::get_loaded_models,

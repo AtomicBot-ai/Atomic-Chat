@@ -259,6 +259,9 @@ pub fn run() {
         core::telemetry::commands::set_telemetry_consent,
         core::telemetry::commands::set_telemetry_context,
         core::telemetry::commands::set_telemetry_user,
+        // Where a model is served. One answer for the webview, whoever owns the session.
+        core::sessions::resolve_local_session,
+        core::sessions::list_local_sessions,
         // atomic-chat-core: one call for the whole control API, plus the flags
         // that decide what the core owns. Desktop only — the core is a native
         // process the mobile targets do not ship.
@@ -442,6 +445,7 @@ pub fn run() {
             mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             api_request_inspector: Arc::new(Default::default()),
+            session_resolver: Arc::new(std::sync::OnceLock::new()),
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })

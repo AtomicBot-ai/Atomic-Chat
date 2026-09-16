@@ -162,7 +162,8 @@ describe('RunSettingsPanel', () => {
     expect(createAssistant).toHaveBeenCalled()
   })
 
-  it('edits the active assistant system prompt in place', () => {
+  it('edits the active assistant system prompt in place', async () => {
+    const createAssistant = vi.fn().mockResolvedValue(undefined)
     seedServiceHub({
       models: {
         stopModel: vi.fn(),
@@ -170,7 +171,7 @@ describe('RunSettingsPanel', () => {
         getActiveModels: vi.fn().mockResolvedValue([]),
       } as unknown as ModelsService,
       assistants: {
-        createAssistant: vi.fn().mockResolvedValue(undefined),
+        createAssistant,
       } as unknown as ReturnType<ServiceHub['assistants']>,
     })
     seedModel('llamacpp')
@@ -184,6 +185,17 @@ describe('RunSettingsPanel', () => {
     expect(field).toHaveValue('Answer in Russian.')
     expect(useAssistant.getState().assistants[0].instructions).toBe(
       'Answer in Russian.'
+    )
+    // The store persists text through a 300 ms debounce. Waiting here both
+    // verifies that write and prevents the suite-wide ServiceHub cleanup from
+    // racing a timer left behind by this test.
+    await waitFor(() =>
+      expect(createAssistant).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'writer',
+          instructions: 'Answer in Russian.',
+        })
+      )
     )
   })
 

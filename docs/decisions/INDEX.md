@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-256 records, 2026-05-19 → 2026-09-16.
+258 records, 2026-05-19 → 2026-09-16.
 
 ---
 
@@ -296,8 +296,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (11)
+## Inference core extraction — atomic-chat-core (12)
 
+- **2026-09-16** — [Change the inference runtime owner only while it is idle](2026-09-16-change-runtime-owner-only-while-idle.md)
 - **2026-09-16** — [Retry only read-only core calls and resume events after the snapshot cursor](2026-09-16-retry-only-read-only-core-calls-and-resume-after-snapshot.md)
 - **2026-09-16** — [The webview reaches the core only through Rust](2026-09-16-the-webview-reaches-the-core-only-through-rust.md)
 - **2026-09-16** — [Keep handles to the cores we start, purely to reap them](2026-09-16-reap-the-cores-we-start-even-though-we-detach-them.md)
@@ -310,8 +311,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Other (11)
+## Other (12)
 
+- **2026-09-16** — [Automate acceptance with layered Tauri evidence](2026-09-16-automate-acceptance-with-layered-tauri-evidence.md)
 - **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
 - **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)

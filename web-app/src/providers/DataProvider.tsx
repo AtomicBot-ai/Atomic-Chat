@@ -56,6 +56,7 @@ import {
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
+import { ModelFactory } from '@/lib/model-factory'
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
@@ -535,8 +536,9 @@ export function DataProvider() {
 
       const model = provider.models[modelIndex]
       const currentValue =
-        (model.settings?.ctx_len?.controller_props?.value as number | undefined) ??
-        null
+        (model.settings?.ctx_len?.controller_props?.value as
+          | number
+          | undefined) ?? null
       if (currentValue === newCtxLen) {
         console.log(
           `[LocalAPI] OnAutoIncreasedCtxLen (${source}): ctx_len for ${providerName}/${modelId} already = ${newCtxLen}, no-op`
@@ -686,6 +688,7 @@ export function DataProvider() {
     if (!IS_TAURI) return
 
     let unlistenSessionDied: (() => void) | undefined
+    let unlistenCoreSessionEvents: Array<() => void> = []
     let cancelled = false
     ;(async () => {
       try {
@@ -712,6 +715,10 @@ export function DataProvider() {
           // model here flips `isModelActive` to false, which re-triggers that
           // effect and lets it restart the model on its own.
           if (model_id) {
+            ModelFactory.invalidateLocalSessionCache(
+              'llamacpp-upstream',
+              model_id
+            )
             const { activeModels, setActiveModels } = useAppState.getState()
             if (activeModels.includes(model_id)) {
               setActiveModels(activeModels.filter((id) => id !== model_id))
@@ -729,6 +736,36 @@ export function DataProvider() {
           return
         }
         unlistenSessionDied = detachSessionDied
+
+        const invalidateCoreSession = (event: {
+          payload?: { model_id?: string; provider?: string }
+        }) => {
+          const provider = event.payload?.provider ?? 'llamacpp-upstream'
+          if (
+            provider === 'llamacpp' ||
+            provider === 'llamacpp-upstream' ||
+            provider === 'mlx'
+          ) {
+            ModelFactory.invalidateLocalSessionCache(
+              provider,
+              event.payload?.model_id
+            )
+          }
+        }
+        const coreUnsubs = await Promise.all([
+          listen('atomic-core://session:started', invalidateCoreSession),
+          listen('atomic-core://session:unloaded', invalidateCoreSession),
+          listen('atomic-core://session:died', invalidateCoreSession),
+          listen('atomic-core://detached', () => {
+            ModelFactory.invalidateLocalSessionCache('llamacpp-upstream')
+          }),
+        ])
+        const safeCoreUnsubs = coreUnsubs.map(createSafeUnlisten)
+        if (cancelled) {
+          safeCoreUnsubs.forEach((unsubscribe) => void unsubscribe())
+          return
+        }
+        unlistenCoreSessionEvents = safeCoreUnsubs
       } catch (e) {
         console.warn(
           '[LocalAPI] Failed to subscribe to llamacpp_upstream_session_died:',
@@ -740,6 +777,7 @@ export function DataProvider() {
     return () => {
       cancelled = true
       if (unlistenSessionDied) void unlistenSessionDied()
+      unlistenCoreSessionEvents.forEach((unsubscribe) => void unsubscribe())
     }
   }, [])
 

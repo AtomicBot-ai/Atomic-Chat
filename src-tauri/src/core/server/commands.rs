@@ -1,7 +1,4 @@
-use tauri::{AppHandle, Manager, Runtime, State};
-use tauri_plugin_llamacpp::state::LlamacppState;
-use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
-use tauri_plugin_mlx::state::MlxState;
+use tauri::{AppHandle, Runtime, State};
 
 use crate::core::server::proxy::{self, ServerStart};
 use crate::core::server::request_inspector::ApiRequestLogSnapshot;
@@ -38,14 +35,8 @@ pub async fn start_server<R: Runtime>(
     let mirror_host = host.clone();
     let mirror_prefix = prefix.clone();
     let server_handle = state.server_handle.clone();
-    let llama_state: State<LlamacppState> = app_handle.state();
-    let sessions = llama_state.llama_server_process.clone();
-
-    let llama_upstream_state: State<LlamacppUpstreamState> = app_handle.state();
-    let sessions_upstream = llama_upstream_state.llama_server_process.clone();
-
-    let mlx_state: State<MlxState> = app_handle.state();
-    let mlx_sessions = mlx_state.mlx_server_process.clone();
+    // One resolver for every session the proxy can route to, whoever owns it.
+    let resolver = crate::core::sessions::resolver_for(&app_handle, &state);
 
     // `AppState` is built before `.setup()`, so this is the first point where
     // the inspector and an `AppHandle` exist together. Idempotent.
@@ -54,9 +45,7 @@ pub async fn start_server<R: Runtime>(
     let started = proxy::start_server(
         app_handle.clone(),
         server_handle,
-        sessions,
-        sessions_upstream,
-        mlx_sessions,
+        resolver,
         host.clone(),
         port,
         prefix.clone(),

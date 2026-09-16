@@ -101,6 +101,7 @@ import {
 } from './chatTemplateOverrides'
 import { basename } from '@tauri-apps/api/path'
 import { getSystemUsage, getSystemInfo } from './hardware'
+import * as coreRuntime from './adapter/coreRuntime'
 import {
   loadLlamaModel,
   readGgufMetadata,
@@ -214,6 +215,21 @@ const MULTIMODAL_DISABLED_FALLBACK =
 /// loaded model exits unexpectedly during generation (ATO-244).
 /// Payload: `{ model_id: string, pid: number, error_code: string, message: string }`.
 const SESSION_DIED_EVENT = 'local_backend://llamacpp_upstream_session_died'
+const CORE_SETTINGS_CHANGED_EVENT = 'atomic-core://settings:changed'
+
+function stableSettingsFingerprint(values: Record<string, unknown>): string {
+  const stable = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stable)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, stable(entry)])
+    )
+  }
+  return JSON.stringify(stable(values))
+}
 
 /// MODEL_LOAD_TIMED_OUT (ATO-188): large models on slow / cold storage can take
 /// longer than the configured connection timeout (default 600s) to finish
@@ -535,6 +551,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private configureBackendsPromise: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private sessionCache = new Map<string, SessionInfo>()
+  /// Successful readiness is scoped to one attachment generation and one legacy settings image.
+  /// A core restart loses the in-memory hardware override, while an app-side settings change needs
+  /// a new three-way import even when the process stayed up.
+  private coreReady: { key: string; promise: Promise<void> } | undefined
+  private coreSettingsMirror: Promise<void> = Promise.resolve()
+  private isMirroringCoreSettings = false
   /// Tracks the ctx_size a model was last loaded with so the Local API
   /// Server auto-increase flow knows the "current" value — the extension's
   /// `this.config.ctx_size` is only a default and doesn't reflect UI-level
@@ -548,6 +570,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenSessionDied?: () => void
+  private unlistenCoreSettingsChanged?: () => void
   /// `<version>/<backend>` the last load actually launched. Diverges from the
   /// persisted `version_backend` when `resolveBackendFallback` tier 3 degrades
   /// to an installed backend without persisting the swap — the case where the
@@ -809,6 +832,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }>(SESSION_DIED_EVENT, (event) => {
       void this.handleSessionDied(event.payload)
     })
+
+    // Keep the rollback copy current when a CLI changes core-owned settings. Acknowledge is sent
+    // only after updateSettings has persisted the values in the legacy extension storage.
+    this.unlistenCoreSettingsChanged = await listen(
+      CORE_SETTINGS_CHANGED_EVENT,
+      (event: { payload?: { provider?: string } }) => {
+        // Import and acknowledge also change migration bookkeeping under the `state` scope. If
+        // those events were mirrored, each acknowledge would create a new revision and trigger
+        // another acknowledge forever. Only provider values belong in the legacy rollback copy.
+        if (event.payload?.provider !== this.provider) return
+        void this.coreOwnsRuntime()
+          .then((owned) =>
+            owned ? this.enqueueCoreSettingsMirror() : undefined
+          )
+          .catch((error) => {
+            logger.warn(
+              `[atomic-core] could not mirror changed settings: ${coreRuntime.describeCoreError(error)}`
+            )
+          })
+      }
+    )
 
     //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
     this.configureBackendsPromise = this.configureBackends()
@@ -1940,7 +1984,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // fresh install without libvulkan1, or a driver still settling.
         // Not a verdict — ask again next launch instead of pinning the host
         // to CPU for the life of the profile.
-        if (!features.vulkan && archSuffix === 'x64' && sysInfo.gpus.length > 0) {
+        if (
+          !features.vulkan &&
+          archSuffix === 'x64' &&
+          sysInfo.gpus.length > 0
+        ) {
           return { kind: 'detection-failed' }
         }
         // No accelerator at all: the CPU build is the right build.
@@ -2860,9 +2908,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
     if (this.unlistenSessionDied) {
       this.unlistenSessionDied()
     }
+    if (this.unlistenCoreSettingsChanged) {
+      this.unlistenCoreSettingsChanged()
+    }
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
+    if (this.isMirroringCoreSettings) {
+      // `updateSettings` synchronously calls this hook for every persisted descriptor. A mirror
+      // must refresh the rollback copy and in-memory config, but must not start legacy backend
+      // downloads or other owner-side work before the core revision is acknowledged.
+      this.config[key] = value
+      if (key === 'llamacpp_env') this.llamacpp_env = value as string
+      if (key === 'timeout') this.timeout = value as number
+      return
+    }
     if (key === 'version_backend') {
       // Skip entirely if updateBackend() is already handling it —
       // updateBackend() will commit to in-memory config itself after all
@@ -3358,9 +3418,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     const installed = await this.list()
     if (!installed.some((model) => model.id === TRANSCRIPTION_MODEL_ID)) {
-      const error = new Error(
-        'The voice model is not installed.'
-      ) as Error & { code?: string }
+      const error = new Error('The voice model is not installed.') as Error & {
+        code?: string
+      }
       error.code = ERR_TRANSCRIPTION_MODEL_MISSING
       throw error
     }
@@ -3399,7 +3459,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
       if (props?.modalities?.audio === false) {
         const error = new Error(
-          'This llama.cpp build cannot run the voice model\'s audio encoder.'
+          "This llama.cpp build cannot run the voice model's audio encoder."
         ) as Error & { code?: string }
         error.code = ERR_TRANSCRIPTION_UNSUPPORTED
         throw error
@@ -4048,9 +4108,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // only the first shard would advertise a 150 GB model as a few megabytes.
     let size_bytes = 0
     for (const shard of ggufShardSetPaths(fullModelPath)) {
-      size_bytes += (
-        await step(`reading ${shard}`, () => fs.fileStat(shard))
-      ).size
+      size_bytes += (await step(`reading ${shard}`, () => fs.fileStat(shard)))
+        .size
     }
     if (mmprojPath) {
       const fullMmprojPath = await joinPath([janDataFolderPath, mmprojPath])
@@ -4492,6 +4551,28 @@ export default class llamacpp_upstream_extension extends AIEngine {
     isEmbedding: boolean = false,
     bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
+    if (await this.coreOwnsRuntime()) {
+      // The core resolves its own backend, applies its own settings and owns the process. None of
+      // the preparation below applies: waiting here for *this* extension's backend configuration
+      // would delay a load that does not use it.
+      await this.ensureCoreIsReady()
+      try {
+        const session = await coreRuntime.load(modelId, {
+          ...(overrideSettings
+            ? { settings: overrideSettings as Record<string, unknown> }
+            : {}),
+          isEmbedding,
+          bypassAutoUnload,
+        })
+        if (typeof overrideSettings?.ctx_size === 'number') {
+          this.modelCtxSize.set(modelId, overrideSettings.ctx_size)
+        }
+        return session
+      } catch (error) {
+        throw new Error(coreRuntime.describeCoreError(error))
+      }
+    }
+
     if (this.configureBackendsPromise) {
       const vb = this.config.version_backend || ''
       // ATO-124: the `latest/<backend>` sentinel is NOT a concrete backend —
@@ -4762,10 +4843,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         const sessionInfos: (SessionInfo | null)[] = await Promise.all(
           allLoadedModels.map(async (modelId) => {
             try {
-              return (
-                this.sessionCache.get(modelId) ??
-                (await this.findSessionByModel(modelId))
-              )
+              return await this.resolveSession(modelId)
             } catch (e) {
               logger.warn(`Unable to find session for model "${modelId}": ${e}`)
               return null
@@ -5532,6 +5610,35 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return
       }
 
+      if (await this.coreOwnsRuntime()) {
+        // The core owns the process and the ladder. Doing it here would mean unloading a model we
+        // do not own and reloading it with settings the core did not choose.
+        const outcome = await coreRuntime.increaseContext(model_id, trigger)
+        if (!outcome.ok) {
+          await sendDone({ ok: false, reason: outcome.reason })
+          logger.info(
+            `auto_increase_ctx (core) declined model=${model_id} reason=${outcome.reason}`
+          )
+          return
+        }
+        this.modelCtxSize.set(model_id, outcome.new_ctx_len)
+        const notifyPayload = {
+          provider: this.provider,
+          modelId: model_id,
+          newCtxLen: outcome.new_ctx_len,
+        }
+        if (events && typeof events.emit === 'function') {
+          events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+        }
+        try {
+          await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+        } catch (e) {
+          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
+        }
+        await sendDone({ ok: true, new_ctx_len: outcome.new_ctx_len })
+        return
+      }
+
       const currentCtxLen =
         this.modelCtxSize.get(model_id) ??
         this.config?.ctx_size ??
@@ -5616,8 +5723,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo: SessionInfo =
-      this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
+    // The core owns the process, so it does the killing: this extension has no handle on it and
+    // must not try to acquire one.
+    if (await this.coreOwnsRuntime()) {
+      try {
+        const result = await coreRuntime.unload(modelId)
+        this.sessionCache.delete(modelId)
+        this.modelCtxSize.delete(modelId)
+        return result
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to unload model: ${coreRuntime.describeCoreError(error)}`,
+        }
+      }
+    }
+
+    const sInfo = await this.resolveSession(modelId)
     if (!sInfo) {
       throw new Error(`No active session found for model: ${modelId}`)
     }
@@ -6797,6 +6919,129 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
+  /**
+   * Everything that must be true before the core loads its first model for us.
+   *
+   * Two things, both from PLAN.md §3.4 and §2 decision 10, and both once per attachment/settings
+   * generation:
+   *
+   * - the app's settings for this provider are imported, because until they are, this app's copy
+   *   is the truth and the core would load with its own defaults instead of the user's;
+   * - the hardware numbers the app can measure and the core cannot are injected, because the CUDA
+   *   tier a backend is chosen from is decided by exactly those.
+   *
+   * A conflict blocks the first core load. Continuing would acknowledge neither side while still
+   * handing the runtime over, making a later rollback silently use stale values.
+   */
+  private async ensureCoreIsReady(): Promise<void> {
+    const [values, status] = await Promise.all([
+      this.currentSettingValues(),
+      coreRuntime.getStatus(),
+    ])
+    const attachment = status.attached
+    if (!attachment?.instance_id || attachment.generation === undefined) {
+      throw new Error('Atomic core has no ready attachment generation')
+    }
+    const key = `${attachment.instance_id}:${attachment.generation}:${stableSettingsFingerprint(values)}`
+    if (this.coreReady?.key === key) return await this.coreReady.promise
+
+    const promise = this.prepareCore(values)
+    this.coreReady = { key, promise }
+    try {
+      await promise
+    } catch (error) {
+      if (this.coreReady?.promise === promise) this.coreReady = undefined
+      throw error
+    }
+  }
+
+  private async prepareCore(values: Record<string, unknown>): Promise<void> {
+    let result: Awaited<ReturnType<typeof coreRuntime.importSettings>>
+    try {
+      result = await coreRuntime.importSettings(values)
+    } catch (error) {
+      // The control route reports a merge conflict as HTTP 409. Rust preserves the core error
+      // envelope, so the conflict data may be in details rather than a successful result body.
+      throw new Error(`Atomic core settings import failed: ${coreRuntime.describeCoreError(error)}`)
+    }
+    if (result.status === 'conflict') {
+      throw new Error(
+        `Atomic core settings conflict: ${result.conflicts.map((conflict) => conflict.key).join(', ')}`
+      )
+    }
+
+    await this.enqueueCoreSettingsMirror()
+
+    const info = await getSystemInfo()
+    await coreRuntime.sendHardwareOverride({
+      gpus: (info?.gpus ?? []) as unknown[],
+      ...(info?.cpu?.extensions ? { cpu_extensions: info.cpu.extensions } : {}),
+      ...(info?.os_type ? { os_type: info.os_type } : {}),
+    })
+  }
+
+  private enqueueCoreSettingsMirror(): Promise<void> {
+    const mirror = this.coreSettingsMirror.then(() => this.mirrorCoreSettings())
+    this.coreSettingsMirror = mirror.catch(() => {})
+    return mirror
+  }
+
+  private async mirrorCoreSettings(): Promise<void> {
+    const snapshot = await coreRuntime.getSettings()
+    const persisted = await this.getSettings()
+    const mirrored = persisted.map((setting) => {
+      if (Object.prototype.hasOwnProperty.call(snapshot.values, setting.key)) {
+        setting.controllerProps.value = snapshot.values[setting.key] as never
+      }
+      return setting
+    })
+    this.isMirroringCoreSettings = true
+    try {
+      await this.updateSettings(mirrored)
+    } finally {
+      this.isMirroringCoreSettings = false
+    }
+    await coreRuntime.acknowledgeSettings(snapshot.revision)
+  }
+
+  /** This provider's settings as the app currently holds them, for the import. */
+  private async currentSettingValues(): Promise<Record<string, unknown>> {
+    const persisted = await this.getSettings()
+    const values: Record<string, unknown> = {}
+    for (const setting of persisted) {
+      const value = setting.controllerProps?.value
+      if (value !== undefined) values[setting.key] = value
+    }
+    return values
+  }
+
+  private async coreOwnsRuntime(): Promise<boolean> {
+    return coreRuntime.coreOwnsRuntime()
+  }
+
+  /**
+   * Where a model is served, from whoever owns it.
+   *
+   * The one lookup in this extension. When the core owns the runtime this never consults
+   * `sessionCache`: that cache was written when this extension owned the process and knew exactly
+   * when it died. It no longer does — the core reloads a model on its own when a prompt overflows
+   * the context window, and the port changes without this extension being asked.
+   */
+  private async resolveSession(
+    modelId: string
+  ): Promise<SessionInfo | undefined> {
+    if (await this.coreOwnsRuntime()) {
+      return coreRuntime.findSession(modelId)
+    }
+    const cached = this.sessionCache.get(modelId)
+    if (cached) return cached
+    try {
+      return await this.findSessionByModel(modelId)
+    } catch {
+      return undefined
+    }
+  }
+
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
     try {
       let sInfo = await invoke<SessionInfo>(
@@ -6816,28 +7061,30 @@ export default class llamacpp_upstream_extension extends AIEngine {
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo =
-      this.sessionCache.get(opts.model) ??
-      (await this.findSessionByModel(opts.model))
+    const sessionInfo = await this.resolveSession(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    const result = await invoke<boolean>(
-      'plugin:llamacpp-upstream|is_process_running',
-      {
-        pid: sessionInfo.pid,
+    // Liveness. The pid check only means anything for a session this plugin started: a core-owned
+    // process is not in the plugin's table, so asking would always answer "not running" and every
+    // chat would report a crash that did not happen. For those, the port answering `/health` is
+    // the honest test — and the only one available across a process boundary.
+    const coreOwned = await this.coreOwnsRuntime()
+    if (!coreOwned) {
+      const running = await invoke<boolean>(
+        'plugin:llamacpp-upstream|is_process_running',
+        { pid: sessionInfo.pid }
+      )
+      if (!running) {
+        throw new Error('Model have crashed! Please reload!')
       }
-    )
-    if (result) {
-      try {
-        await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.sessionCache.delete(opts.model)
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('Model have crashed! Please reload!')
+    }
+    try {
+      await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
+    } catch (e) {
+      this.sessionCache.delete(opts.model)
+      this.unload(sessionInfo.model_id)
+      throw new Error('Model appears to have crashed! Please reload!')
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
@@ -6898,6 +7145,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
   override async getLoadedModels(): Promise<string[]> {
     try {
+      if (await this.coreOwnsRuntime()) {
+        return await coreRuntime.getLoadedModels()
+      }
       let models: string[] = await invoke<string[]>(
         'plugin:llamacpp-upstream|get_loaded_models'
       )
@@ -7300,9 +7550,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return 0
     }
 
-    const sessionInfo =
-      this.sessionCache.get(opts.model) ??
-      (await this.findSessionByModel(opts.model))
+    const sessionInfo = await this.resolveSession(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }

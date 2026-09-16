@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::process::Child;
 use tokio::sync::Mutex;
@@ -34,6 +35,10 @@ pub struct LLamaBackendSession {
 /// LlamaCpp plugin state
 pub struct LlamacppState {
     pub llama_server_process: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    /// A load holds a read permit until its session/claim is published. Ownership handover takes
+    /// the write permit before checking the session map, closing the in-flight load gap.
+    pub ownership_gate: Arc<tokio::sync::RwLock<()>>,
+    pub core_owns_runtime: AtomicBool,
     /// `<data>/atomic-core/`, set once at startup. The session table is mirrored
     /// there so a core process owning the same data folder can see which models
     /// this runtime already holds (see `legacy_state`). `None` until the app
@@ -46,6 +51,8 @@ impl Default for LlamacppState {
     fn default() -> Self {
         Self {
             llama_server_process: Arc::new(Mutex::new(HashMap::new())),
+            ownership_gate: Arc::new(tokio::sync::RwLock::new(())),
+            core_owns_runtime: AtomicBool::new(false),
             core_dir: Arc::new(Mutex::new(None)),
             model_claims: Arc::new(Mutex::new(HashMap::new())),
         }

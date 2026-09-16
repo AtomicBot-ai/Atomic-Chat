@@ -35,26 +35,29 @@ vi.mock('@tauri-apps/api/path', () => ({
   basename: vi.fn(),
 }))
 
-vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
+vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),
   getSystemUsage: vi.fn(),
 }))
 
-vi.mock('@janhq/tauri-plugin-llamacpp-upstream-api', () => ({
-  loadLlamaModel: vi.fn(),
-  readGgufMetadata: vi.fn(),
-  getModelSize: vi.fn(),
-  isModelSupported: vi.fn(),
-  unloadLlamaModel: vi.fn(),
-  mapOldBackendToNew: vi.fn(),
-  findLatestVersionForBackend: vi.fn(),
-  prioritizeBackends: vi.fn(),
-  removeOldBackendVersions: vi.fn(),
-  shouldMigrateBackend: vi.fn(),
-  handleSettingUpdate: vi.fn(),
-  installBundledBackend: vi.fn(),
-  checkBackendForUpdates: vi.fn(),
-}))
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index',
+  () => ({
+    loadLlamaModel: vi.fn(),
+    readGgufMetadata: vi.fn(),
+    getModelSize: vi.fn(),
+    isModelSupported: vi.fn(),
+    unloadLlamaModel: vi.fn(),
+    mapOldBackendToNew: vi.fn(),
+    findLatestVersionForBackend: vi.fn(),
+    prioritizeBackends: vi.fn(),
+    removeOldBackendVersions: vi.fn(),
+    shouldMigrateBackend: vi.fn(),
+    handleSettingUpdate: vi.fn(),
+    installBundledBackend: vi.fn(),
+    checkBackendForUpdates: vi.fn(),
+  })
+)
 
 vi.mock('../backend', () => ({
   listSupportedBackends: vi.fn(),
@@ -113,6 +116,7 @@ vi.mock('@janhq/core', () => ({
 }))
 
 import llamacpp_extension from '../index'
+import { invoke } from '@tauri-apps/api/core'
 
 type AutoIncreaseRequest = {
   request_id: string
@@ -126,6 +130,11 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === 'atomic_core_status'
+        ? { active_runtime: null, transitioning: false }
+        : undefined
+    )
     ext = new llamacpp_extension()
     // Bypass the settings machinery that depends on AIEngine internals;
     // the handler only cares about `config.ctx_size`, `provider`, and the

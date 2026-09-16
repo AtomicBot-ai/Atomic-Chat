@@ -33,6 +33,15 @@ vi.mock('@/hooks/useFavoriteModel', () => ({
   useFavoriteModel: vi.fn(() => ({ favoriteModels: [] })),
 }))
 
+// This suite supplies provider objects directly, bypassing the registry
+// loader. Keep system/custom classification deterministic even when the
+// machine running Vitest cannot fetch the remote registry.
+vi.mock('@/stores/provider-registry-store', () => ({
+  isKnownProvider: vi.fn((provider: string) =>
+    ['openai', 'ollama'].includes(provider)
+  ),
+}))
+
 vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
     WEB_AUTO_MODEL_SELECTION: false,

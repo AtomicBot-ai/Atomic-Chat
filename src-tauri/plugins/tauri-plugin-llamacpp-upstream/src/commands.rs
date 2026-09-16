@@ -3,6 +3,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Emitter, Manager, Runtime, State};
@@ -290,9 +291,12 @@ pub async fn load_llama_model_impl(
             let stdout_output = stdout_task.await.unwrap_or_default();
             log::warn!("llama.cpp failed early with code {:?}", status);
             log::warn!("{}", stderr_output);
-            return Err(
-                LlamacppError::from_process_output(&status, &stderr_output, &stdout_output).into(),
-            );
+            return Err(LlamacppError::from_process_output(
+                &status,
+                &stderr_output,
+                &stdout_output,
+            )
+            .into());
         }
     }
 
@@ -398,7 +402,9 @@ pub async fn load_llama_model_impl(
 /// Tell the plugin where `<data>/atomic-core/` is, so the session table can be
 /// mirrored for a core process sharing this data folder. Called once at startup;
 /// until then publishing is a no-op.
-#[tauri::command]
+///
+/// Not a `#[tauri::command]`: where the core's directory is belongs to the app, not to the
+/// webview, and exposing it over IPC would mean a page could redirect the session mirror.
 pub async fn set_core_dir<R: Runtime>(app_handle: tauri::AppHandle<R>, path: String) {
     let state: State<LlamacppState> = app_handle.state();
     *state.core_dir.lock().await = Some(std::path::PathBuf::from(path));
@@ -439,6 +445,12 @@ pub async fn load_llama_model<R: Runtime>(
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
+    let _ownership = state.ownership_gate.read().await;
+    if state.core_owns_runtime.load(Ordering::SeqCst) {
+        return Err(ServerError::InvalidArgument(
+            "llamacpp-upstream runtime is owned by atomic-chat-core".into(),
+        ));
+    }
     let core_dir = state.core_dir.lock().await.clone();
     let mut claim = match core_dir {
         Some(ref dir) => Some(
@@ -459,10 +471,13 @@ pub async fn load_llama_model<R: Runtime>(
         is_embedding,
         timeout,
     )
-    .await {
+    .await
+    {
         Ok(session) => session,
         Err(error) => {
-            if let Some(claim) = claim.take() { claim.release(); }
+            if let Some(claim) = claim.take() {
+                claim.release();
+            }
             return Err(error);
         }
     };
@@ -473,9 +488,15 @@ pub async fn load_llama_model<R: Runtime>(
             if let Some(mut session) = map.remove(&session_info.pid) {
                 let _ = session.child.kill().await;
             }
-            return Err(ServerError::InvalidArgument(format!("Could not publish model claim: {error}")));
+            return Err(ServerError::InvalidArgument(format!(
+                "Could not publish model claim: {error}"
+            )));
         }
-        state.model_claims.lock().await.insert(session_info.pid, claim);
+        state
+            .model_claims
+            .lock()
+            .await
+            .insert(session_info.pid, claim);
     }
 
     // Mirror the session table for a core sharing this data folder (double-load guard).

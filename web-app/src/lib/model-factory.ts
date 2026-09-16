@@ -330,6 +330,107 @@ function createAudioInjectingFetch(
  * stream_local_http Tauri command + IPC Channel to relay response bytes
  * directly to a standard ReadableStream that the AI SDK can consume.
  */
+/**
+ * Point a request at `port`, whatever port it was built for.
+ *
+ * Only loopback requests are touched: a local model's URL is the only thing this layer is entitled
+ * to rewrite, and a cloud provider's must pass through untouched.
+ */
+/**
+ * Ask whoever owns this provider's sessions where the model is served.
+ *
+ * Two owners are possible: the app's own plugin, or `atomic-chat-core` once the runtime has been
+ * handed over. Rust knows which, so this asks Rust rather than reading a flag here — a flag read in
+ * the webview could be a moment out of date, and the answer would be a port belonging to the other
+ * owner entirely.
+ */
+function isUnknownCommandError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : JSON.stringify(error)
+  return /unknown command|command .* not found/i.test(message)
+}
+
+export async function findLocalSession(
+  providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+  modelId: string
+): Promise<SessionInfo | null> {
+  try {
+    return await invoke<SessionInfo | null>('resolve_local_session', {
+      provider: providerName,
+      modelId,
+    })
+  } catch (error) {
+    // Only an old shell that genuinely lacks the resolver may read the plugin map. `null` and
+    // operational errors are authoritative answers from the owner selected in Rust; falling back
+    // for either would cross the ownership boundary and can resurrect a former owner's session.
+    if (!isUnknownCommandError(error)) throw error
+    console.debug(
+      'resolve_local_session unavailable, using the plugin directly:',
+      error
+    )
+  }
+  const ipcName =
+    providerName === 'llamacpp'
+      ? 'plugin:llamacpp|find_session_by_model'
+      : providerName === 'llamacpp-upstream'
+        ? 'plugin:llamacpp-upstream|find_session_by_model'
+        : 'plugin:mlx|find_mlx_session_by_model'
+  return invoke<SessionInfo | null>(ipcName, { modelId })
+}
+
+export function retargetLocalRequest(
+  input: RequestInfo | URL,
+  port: number
+): RequestInfo | URL {
+  const raw =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url
+  if (
+    !raw.startsWith('http://localhost:') &&
+    !raw.startsWith('http://127.0.0.1:')
+  ) {
+    return input
+  }
+  const url = new URL(raw)
+  if (url.port === String(port)) return input
+  url.port = String(port)
+  const retargeted = url.toString()
+  if (typeof input === 'string' || input instanceof URL) return retargeted
+  return new Request(retargeted, input)
+}
+
+/** Replace the bearer token, leaving every other header alone. An empty key removes it. */
+export function withBearer(
+  init: RequestInit | undefined,
+  apiKey: string
+): RequestInit | undefined {
+  const headers = new Headers(init?.headers ?? {})
+  if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`)
+  else headers.delete('Authorization')
+  return { ...(init ?? {}), headers }
+}
+
+/** Resolve the target before every call; a failed resolve must never reuse a stale credential. */
+export function createLiveSessionFetch(
+  baseFetch: typeof httpFetch,
+  resolve: () => Promise<SessionInfo>
+): typeof httpFetch {
+  return async (input, init) => {
+    const current = await resolve()
+    return baseFetch(
+      retargetLocalRequest(input, current.port),
+      withBearer(init, current.api_key)
+    )
+  }
+}
+
 export function createLocalStreamingFetch(
   fallbackFetch: typeof httpFetch,
   parameters: Record<string, unknown>
@@ -568,7 +669,10 @@ export class ModelFactory {
   private static readonly FM_AVAILABILITY_TTL_MS = 30 * 60 * 1000
   private static localSessionCache: Map<string, CachedSession> = new Map()
 
-  private static sessionCacheKey(providerName: string, modelId: string): string {
+  private static sessionCacheKey(
+    providerName: string,
+    modelId: string
+  ): string {
     return `${providerName}::${modelId}`
   }
 
@@ -641,13 +745,7 @@ export class ModelFactory {
         }
       }
 
-      const ipcName =
-        providerName === 'llamacpp'
-          ? 'plugin:llamacpp|find_session_by_model'
-          : providerName === 'llamacpp-upstream'
-            ? 'plugin:llamacpp-upstream|find_session_by_model'
-            : 'plugin:mlx|find_mlx_session_by_model'
-      const sessionInfo = await invoke<SessionInfo | null>(ipcName, { modelId })
+      const sessionInfo = await findLocalSession(providerName, modelId)
       if (!sessionInfo) {
         throw new Error(
           `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
@@ -677,6 +775,37 @@ export class ModelFactory {
         entry.inFlight = undefined
       }
     }
+  }
+
+  /** Resolve immediately before a request; never reuse a cached bearer key or port. */
+  private static async resolveFreshLocalSession(
+    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+    modelId: string,
+    provider: ProviderObject | undefined
+  ): Promise<SessionInfo> {
+    let sessionInfo = await findLocalSession(providerName, modelId)
+    if (!sessionInfo && provider) {
+      const { useServiceStore } = await import('@/hooks/useServiceHub')
+      const serviceHub = useServiceStore.getState().serviceHub
+      if (serviceHub) {
+        await serviceHub.models().startModel(provider, modelId)
+        sessionInfo = await findLocalSession(providerName, modelId)
+      }
+    }
+    if (!sessionInfo) {
+      ModelFactory.invalidateLocalSessionCache(providerName, modelId)
+      throw new Error(
+        `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
+      )
+    }
+    ModelFactory.localSessionCache.set(
+      ModelFactory.sessionCacheKey(providerName, modelId),
+      {
+        sessionInfo,
+        expiresAt: Date.now() + LOCAL_SESSION_CACHE_TTL_MS,
+      }
+    )
+    return sessionInfo
   }
 
   /**
@@ -742,7 +871,7 @@ export class ModelFactory {
       const baseUrl = `http://localhost:${sessionInfo.port}`
       const headers = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionInfo.api_key}`,
+        'Authorization': `Bearer ${sessionInfo.api_key}`,
       }
       const applied = await invoke<string>('post_local_http', {
         url: `${baseUrl}/apply-template`,
@@ -891,6 +1020,18 @@ export class ModelFactory {
 
     const customFetch = createLocalStreamingFetch(httpFetch, parameters)
 
+    // The session is resolved again immediately before every request, and the URL and bearer key
+    // the model object was built with are replaced with what comes back.
+    //
+    // Without this, a model object carries the port it was created with for its whole life — and
+    // that port stops being true the moment the model is reloaded, which happens on its own
+    // whenever a prompt overflows the context window and the engine reloads it one step larger.
+    // The symptom was a conversation that worked until it grew, and then failed against a port
+    // nothing was listening on.
+    const liveFetch = createLiveSessionFetch(customFetch, () =>
+      ModelFactory.resolveFreshLocalSession(engineName, modelId, provider)
+    )
+
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: engineName,
       headers: () => ({
@@ -902,7 +1043,7 @@ export class ModelFactory {
         return url.toString()
       },
       includeUsage: true,
-      fetch: customFetch,
+      fetch: liveFetch,
       metadataExtractor: providerMetadataExtractor,
     })
 

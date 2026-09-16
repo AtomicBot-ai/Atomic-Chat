@@ -30,6 +30,10 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_status',
   'check_for_app_updates',
   'get_atomic_core_flags',
+  // The session resolver reaches into the llama.cpp and MLX plugin states, none of which the
+  // mobile targets bundle.
+  'list_local_sessions',
+  'resolve_local_session',
   'get_local_http',
   'is_update_available',
   'post_local_http',

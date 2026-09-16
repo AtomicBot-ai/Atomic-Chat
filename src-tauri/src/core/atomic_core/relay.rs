@@ -190,7 +190,7 @@ impl Cursor {
 /// A snapshot is the base state for every subsequent delta. Its cursor must
 /// belong to the attachment that produced it and have the documented numeric
 /// sequence suffix; otherwise accepting it would join two core generations.
-fn snapshot_cursor(snapshot: &Value, instance_id: &str) -> Result<String, CoreError> {
+pub(crate) fn snapshot_cursor(snapshot: &Value, instance_id: &str) -> Result<String, CoreError> {
     let snapshot_instance = snapshot.get("instance_id").and_then(Value::as_str);
     let cursor = snapshot.get("cursor").and_then(Value::as_str);
     let Some(cursor) = cursor else {

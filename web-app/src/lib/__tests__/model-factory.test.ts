@@ -313,7 +313,7 @@ describe('countLocalPromptTokens', () => {
 
   it('renders the prompt through /apply-template WITH tools and tokenizes it', async () => {
     mockedInvoke.mockImplementation(async (cmd, args) => {
-      if (cmd === 'plugin:llamacpp-upstream|find_session_by_model') return session
+      if (cmd === 'resolve_local_session') return session
       const { url } = args as { url: string; body: string }
       if (url.endsWith('/apply-template')) {
         const body = JSON.parse((args as { body: string }).body)
@@ -352,7 +352,7 @@ describe('countLocalPromptTokens', () => {
 
   it('returns null instead of throwing when the engine cannot answer', async () => {
     mockedInvoke.mockImplementation(async (cmd) => {
-      if (cmd === 'plugin:llamacpp-upstream|find_session_by_model') return session
+      if (cmd === 'resolve_local_session') return session
       throw new Error('timeout')
     })
     expect(

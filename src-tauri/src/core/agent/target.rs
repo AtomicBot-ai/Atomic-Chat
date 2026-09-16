@@ -13,8 +13,6 @@
 //! from the model id and substitutes its own key and headers.
 
 use tauri::{AppHandle, Manager, Runtime, State};
-use tauri_plugin_llamacpp::state::LlamacppState;
-use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 
 use crate::core::state::{AppState, LocalServerEndpoint};
 
@@ -60,30 +58,27 @@ pub async fn resolve_agent_target<R: Runtime>(
     state: &AppState,
     request: &AgentTurnRequest,
 ) -> Result<AgentTarget, String> {
-    let llama_state: State<LlamacppState> = app_handle.state();
-    let upstream_state: State<LlamacppUpstreamState> = app_handle.state();
+    // One resolver for every provider: the same call answers whether the session belongs to a
+    // plugin the app drives or to a core that owns the runtime.
+    let resolver = crate::core::sessions::resolver_for(app_handle, state);
 
     match request.provider.as_deref() {
         // A caller that predates the `provider` field gets exactly the old
         // behaviour: scan both llama.cpp plugin states.
-        None => find_session_by_model_id(&request.model_id, &llama_state, &upstream_state)
+        None => find_session_by_model_id(&request.model_id, &resolver)
             .await
             .map(AgentTarget::Llama)
             .map_err(|error| error.to_string()),
-        Some("llamacpp") => find_session_by_model_and_backend(
-            &request.model_id,
-            LlamaBackend::Llamacpp,
-            &llama_state,
-            &upstream_state,
-        )
-        .await
-        .map(AgentTarget::Llama)
-        .map_err(|error| error.to_string()),
+        Some("llamacpp") => {
+            find_session_by_model_and_backend(&request.model_id, LlamaBackend::Llamacpp, &resolver)
+                .await
+                .map(AgentTarget::Llama)
+                .map_err(|error| error.to_string())
+        }
         Some("llamacpp-upstream") => find_session_by_model_and_backend(
             &request.model_id,
             LlamaBackend::LlamacppUpstream,
-            &llama_state,
-            &upstream_state,
+            &resolver,
         )
         .await
         .map(AgentTarget::Llama)

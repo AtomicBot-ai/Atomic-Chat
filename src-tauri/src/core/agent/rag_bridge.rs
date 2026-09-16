@@ -13,17 +13,15 @@
 //! Rust never loads or downloads the model — when no session is running the
 //! tools return a structured error instead.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use super::llm_client::model_ids_match;
+use crate::core::sessions::resolver::SessionResolver;
 
 pub const EMBEDDING_MODEL_ID: &str = "sentence-transformer-mini";
 pub const DOCS_EMBED_TIMEOUT: Duration = Duration::from_secs(30);
@@ -109,17 +107,14 @@ pub trait DocsBridge: Send + Sync {
     ) -> Result<Vec<DocsChunk>, String>;
 }
 
-type LlamacppSessions = Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp::state::LLamaBackendSession>>>;
-type UpstreamSessions =
-    Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp_upstream::state::LLamaBackendSession>>>;
-
 pub struct LiveDocsBridge {
     base_dir: PathBuf,
     thread_collection: String,
     project_collection: Option<String>,
     scopes: Vec<DocsScope>,
-    llamacpp_sessions: LlamacppSessions,
-    upstream_sessions: UpstreamSessions,
+    /// The app's one session resolver: the embedding model may be held by a plugin or by the core,
+    /// and this bridge has no business knowing which.
+    resolver: Arc<SessionResolver>,
     http: reqwest::Client,
 }
 
@@ -128,8 +123,7 @@ impl LiveDocsBridge {
         base_dir: PathBuf,
         thread_collection: String,
         project_collection: Option<String>,
-        llamacpp_sessions: LlamacppSessions,
-        upstream_sessions: UpstreamSessions,
+        resolver: Arc<SessionResolver>,
     ) -> Self {
         let mut scopes = vec![DocsScope::Thread];
         if project_collection.is_some() {
@@ -140,8 +134,7 @@ impl LiveDocsBridge {
             thread_collection,
             project_collection,
             scopes,
-            llamacpp_sessions,
-            upstream_sessions,
+            resolver,
             http: reqwest::Client::new(),
         }
     }
@@ -153,47 +146,16 @@ impl LiveDocsBridge {
         }
     }
 
-    /// The embedding session, if one is running. Prefers the upstream engine
-    /// (mirroring the TS extension order) and the dedicated embedding model
-    /// id, falling back to any `is_embedding` session. Each map is locked only
-    /// long enough to copy port/key/model.
+    /// The embedding session, if one is running.
+    ///
+    /// Prefers the dedicated embedding model wherever it is loaded, falling back to any session
+    /// that can embed. The preference order lives in the resolver, so the agent, the proxy and this
+    /// bridge cannot drift apart about which model answers.
     async fn find_embedding_session(&self) -> Option<(i32, String, String)> {
-        let mut fallback: Option<(i32, String, String)> = None;
-        {
-            let sessions = self.upstream_sessions.lock().await;
-            for session in sessions.values() {
-                if !session.info.is_embedding {
-                    continue;
-                }
-                let candidate = (
-                    session.info.port,
-                    session.info.api_key.clone(),
-                    session.info.model_id.clone(),
-                );
-                if model_ids_match(&session.info.model_id, EMBEDDING_MODEL_ID) {
-                    return Some(candidate);
-                }
-                fallback.get_or_insert(candidate);
-            }
-        }
-        {
-            let sessions = self.llamacpp_sessions.lock().await;
-            for session in sessions.values() {
-                if !session.info.is_embedding {
-                    continue;
-                }
-                let candidate = (
-                    session.info.port,
-                    session.info.api_key.clone(),
-                    session.info.model_id.clone(),
-                );
-                if model_ids_match(&session.info.model_id, EMBEDDING_MODEL_ID) {
-                    return Some(candidate);
-                }
-                fallback.get_or_insert(candidate);
-            }
-        }
-        fallback
+        self.resolver
+            .find_embedding(EMBEDDING_MODEL_ID)
+            .await
+            .map(|session| (session.port, session.api_key, session.model_id))
     }
 
     async fn run_blocking<T, F>(&self, operation: F) -> Result<T, String>
