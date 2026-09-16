@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
-import { useRecommendedLocalModel } from '@/hooks/useRecommendedLocalModel'
-import { useEffect, useRef } from 'react'
+import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
+import { useEffect, useRef, useState } from 'react'
 import { HUGGINGFACE_LOGO_SRC, modelFamilyLogoSrc } from '@/lib/model-logo'
 import { captureOnboardingModelReminder } from '@/lib/onboarding-telemetry'
 
@@ -10,27 +10,43 @@ import { captureOnboardingModelReminder } from '@/lib/onboarding-telemetry'
 const reminderModelLogoSrc = (repo: string) =>
   modelFamilyLogoSrc(repo) ?? HUGGINGFACE_LOGO_SRC
 
+/** How long the recommendation may take to resolve before the card stops
+ *  waiting. Same budget as the composer's widget (`ReplyModelGate`). */
+const RECOMMENDATION_WAIT_MS = 8_000
+
 /// Bottom-right offer shown once onboarding has been left without a model,
 /// either by Skip or by the auto-exit timeout. Repeats the first onboarding
-/// recommendation so the user can still get a local model in one click.
+/// recommendation — the manifest's best fit for this machine, the same one the
+/// composer's widget leads with — so the user can still get a local model in
+/// one click.
 export function PromptOnboardingModel() {
   const { setPending } = useOnboardingModelReminder()
-  const {
-    reminder,
-    variant: defaultVariant,
-    isLoading,
-    isDownloading,
-    startDownload,
-  } = useRecommendedLocalModel()
+  const { items, isLoading } = useRecommendedDownloads(1)
+  const offer = items[0]
+
+  // The card lookup has no failure state of its own, so a lead that never
+  // resolves would keep this component waiting for the rest of the session.
+  // Past the budget it stops: a card surfacing minutes later would be a
+  // surprise, and the reminder stays armed for the next launch's fresh try.
+  const [gaveUp, setGaveUp] = useState(false)
+  useEffect(() => {
+    if (!isLoading || gaveUp) return
+    const timer = setTimeout(() => setGaveUp(true), RECOMMENDATION_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [isLoading, gaveUp])
+
+  const visible = Boolean(offer) && !gaveUp
 
   // Impression, fired once the card is actually on screen. The ref guard keeps
   // StrictMode's double-mount from counting it twice.
   const shownFiredRef = useRef(false)
   useEffect(() => {
-    if (isLoading || shownFiredRef.current) return
+    if (!visible || shownFiredRef.current) return
     shownFiredRef.current = true
     captureOnboardingModelReminder('shown')
-  }, [isLoading])
+  }, [visible])
+
+  if (!visible) return null
 
   const handleDismiss = () => {
     captureOnboardingModelReminder('later')
@@ -38,34 +54,30 @@ export function PromptOnboardingModel() {
   }
 
   const handleDownload = () => {
-    if (!startDownload()) return
+    if (!offer.start()) return
     captureOnboardingModelReminder('download')
     setPending(false)
   }
-
-  if (isLoading) return null
 
   return (
     <div className="fixed bottom-[calc(1rem+var(--download-panel-offset,0px))] right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg transition-[bottom] duration-200">
       <div className="flex items-center gap-2">
         <img
-          src={reminderModelLogoSrc(reminder.repo)}
+          src={reminderModelLogoSrc(offer.repo)}
           alt=""
           className="size-5 shrink-0 object-contain"
           aria-hidden
         />
         <h2 className="font-medium">
-          {reminder.title}
-          {defaultVariant && (
-            <span className="text-muted-foreground">
-              {' '}
-              ({defaultVariant.file_size})
-            </span>
-          )}
+          {offer.title}
+          <span className="text-muted-foreground">
+            {' '}
+            ({offer.variant.file_size})
+          </span>
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with {reminder.title}, our recommended local model for your
+        Get started with {offer.title}, our recommended local model for your
         device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
@@ -79,10 +91,10 @@ export function PromptOnboardingModel() {
         </Button>
         <Button
           onClick={handleDownload}
-          disabled={!defaultVariant || isDownloading}
+          disabled={offer.isDownloading}
           size="sm"
         >
-          {isDownloading ? 'Downloading' : 'Download'}
+          {offer.isDownloading ? 'Downloading' : 'Download'}
         </Button>
       </div>
     </div>
