@@ -3,9 +3,23 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 
-vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
+// `mcp-connectors:` keys resolve to the English strings so a row's tagline is
+// asserted as the words the user reads; every other key stays a key.
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const en = (await import('@/locales/en/mcp-connectors.json')).default
+  const t = (key: string) => {
+    const [ns, path] = key.split(':')
+    if (ns !== 'mcp-connectors' || !path) return key
+    const hit = path
+      .split('.')
+      .reduce<unknown>(
+        (node, part) => (node as Record<string, unknown> | undefined)?.[part],
+        en
+      )
+    return typeof hit === 'string' ? hit : key
+  }
+  return { useTranslation: () => ({ t }) }
+})
 
 const activateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
 const deactivateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
@@ -55,7 +69,13 @@ vi.mock('@/components/ui/dropdrawer', () => {
     DropDrawerSub: Passthrough,
     DropDrawerSubTrigger: Passthrough,
     DropDrawerSubContent: Passthrough,
-    DropDrawerItem: ({ children, icon, onSelect, onClick, disabled }: Props) => (
+    DropDrawerItem: ({
+      children,
+      icon,
+      onSelect,
+      onClick,
+      disabled,
+    }: Props) => (
       <div>
         <button
           disabled={disabled}
@@ -97,7 +117,10 @@ class MockResizeObserver {
   disconnect() {}
 }
 
-const skill = (name: string, overrides: Partial<AgentSkill> = {}): AgentSkill => ({
+const skill = (
+  name: string,
+  overrides: Partial<AgentSkill> = {}
+): AgentSkill => ({
   name,
   description: `${name} description`,
   version: '1.0.0',
@@ -151,14 +174,82 @@ describe('DropdownPlugins', () => {
     // The connector is the only switch there is — its tools are counted, not
     // listed, and none of them can be toggled on its own.
     expect(screen.getAllByRole('switch')).toHaveLength(2)
-    // The row carries the tool count (the cost label falls back to it until
-    // the transport has measured the tool block).
+    // The row says what the connector does; the tool count (the cost label
+    // falls back to it until the transport has measured the tool block) is
+    // in its tooltip.
     expect(screen.getByTestId('connector-cost-exa')).toHaveTextContent(
-      'common:connectorsMenu.toolCount'
+      'Web search'
     )
+    expect(
+      screen.getByTestId('connector-cost-exa').getAttribute('title')
+    ).toContain('common:connectorsMenu.toolCount')
     expect(screen.queryByText('web_search_exa')).toBeNull()
     // One connector connected out of two.
     expect(screen.getByText('connectors:1')).toBeInTheDocument()
+  })
+
+  it('names a catalog connector by what it does instead of counting its tools', () => {
+    useMCPServers.setState({
+      mcpServers: {
+        exa: { command: '', args: [], env: {}, active: true },
+        serper: { command: 'npx', args: [], env: {}, active: false },
+      },
+    })
+    useAppState.setState({
+      tools: [tool('exa', 'web_search_exa'), tool('exa', 'crawling_exa')],
+    })
+
+    renderDropdown()
+
+    const exa = screen.getByTestId('connector-cost-exa')
+    expect(exa).toHaveTextContent('Web search')
+    expect(exa).not.toHaveTextContent('common:connectorsMenu.toolCount')
+    // The count is still one hover away.
+    expect(exa.getAttribute('title')).toContain(
+      'common:connectorsMenu.toolCount'
+    )
+    // A connector that is off has no tools to count, but still says what it is for.
+    expect(screen.getByTestId('connector-cost-serper')).toHaveTextContent(
+      'Google search'
+    )
+  })
+
+  it('keeps the tool count for a server the catalog does not know', () => {
+    useMCPServers.setState({
+      mcpServers: {
+        'my-tools': { command: 'npx', args: [], env: {}, active: true },
+      },
+    })
+    useAppState.setState({
+      tools: [tool('my-tools', 'do_a'), tool('my-tools', 'do_b')],
+    })
+
+    renderDropdown()
+
+    const row = screen.getByTestId('connector-cost-my-tools')
+    expect(row).toHaveTextContent(/^common:connectorsMenu\.toolCount$/)
+    expect(row).not.toHaveAttribute('title')
+  })
+
+  it('keeps the tagline when single tools are off and moves "k of N" to the tooltip', () => {
+    useMCPServers.setState({
+      mcpServers: { exa: { command: '', args: [], env: {}, active: true } },
+    })
+    useAppState.setState({
+      tools: [tool('exa', 'web_search_exa'), tool('exa', 'crawling_exa')],
+    })
+    useToolAvailable.setState({
+      disabledTools: { 'thread-1': ['exa::web_search_exa'] },
+    })
+
+    renderDropdown()
+
+    const exa = screen.getByTestId('connector-cost-exa')
+    expect(exa).toHaveTextContent('Web search')
+    expect(exa).not.toHaveTextContent('common:connectorsMenu.toolCountPartial')
+    expect(exa.getAttribute('title')).toContain(
+      'common:connectorsMenu.toolCountPartial'
+    )
   })
 
   it('hides the browser server the Browse button owns', () => {
@@ -252,16 +343,16 @@ describe('DropdownPlugins', () => {
     renderDropdown()
     await userEvent.click(screen.getByRole('switch', { name: 'Exa' }))
 
-    await waitFor(() =>
-      expect(deactivateMCPServer).toHaveBeenCalledWith('exa')
-    )
+    await waitFor(() => expect(deactivateMCPServer).toHaveBeenCalledWith('exa'))
     expect(useMCPServers.getState().mcpServers.exa.active).toBe(false)
   })
 
   it('leaves the stored config off when the server fails to start', async () => {
     activateMCPServer.mockRejectedValueOnce(new Error('spawn failed') as never)
     useMCPServers.setState({
-      mcpServers: { serper: { command: 'npx', args: [], env: {}, active: false } },
+      mcpServers: {
+        serper: { command: 'npx', args: [], env: {}, active: false },
+      },
     })
 
     renderDropdown()
@@ -295,9 +386,9 @@ describe('DropdownPlugins', () => {
       'exa::web_search_exa',
       'serper::google_search',
     ])
-    expect(screen.getByTestId('connector-cost-exa')).toHaveTextContent(
-      'common:connectorsMenu.toolCountPartial'
-    )
+    expect(
+      screen.getByTestId('connector-cost-exa').getAttribute('title')
+    ).toContain('common:connectorsMenu.toolCountPartial')
   })
 
   it('opens the connectors page from the section footer', async () => {
@@ -374,7 +465,9 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    useMCPServers.setState({ mcpServers: { exa: exaConfig, linear: linearConfig } })
+    useMCPServers.setState({
+      mcpServers: { exa: exaConfig, linear: linearConfig },
+    })
     useAppState.setState({
       tools: [tool('exa', 'web_search_exa'), tool('linear', 'list_issues')],
       toolCostReports: {},
@@ -396,8 +489,20 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
           ctxLen: 16_384,
           ctxShare: 1.1,
           perServer: [
-            { server: 'linear', toolCount: 70, tokens: 18_000, ctxShare: 1.1, heavy: true },
-            { server: 'exa', toolCount: 1, tokens: 200, ctxShare: 0.01, heavy: false },
+            {
+              server: 'linear',
+              toolCount: 70,
+              tokens: 18_000,
+              ctxShare: 1.1,
+              heavy: true,
+            },
+            {
+              server: 'exa',
+              toolCount: 1,
+              tokens: 200,
+              ctxShare: 0.01,
+              heavy: false,
+            },
           ],
           heavyServers: ['linear'],
           tooHeavy: true,
@@ -408,9 +513,18 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
     renderDropdown()
 
     const linear = screen.getByTestId('connector-cost-linear')
-    expect(linear).toHaveTextContent('common:connectorsMenu.costShare')
+    expect(linear).toHaveTextContent('Issues & projects')
+    // The measured cost and the heavy warning share the tooltip.
+    expect(linear.getAttribute('title')).toContain(
+      'common:connectorsMenu.costShare'
+    )
+    expect(linear.getAttribute('title')).toContain(
+      'common:connectorsMenu.heavy'
+    )
     expect(linear).toHaveAttribute('data-heavy', 'true')
-    expect(screen.getByTestId('connector-cost-exa')).not.toHaveAttribute('data-heavy')
+    expect(screen.getByTestId('connector-cost-exa')).not.toHaveAttribute(
+      'data-heavy'
+    )
   })
 
   it('mutes a connector for this chat from its tools dialog, not the global switch', async () => {
@@ -423,9 +537,9 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
 
     await user.click(screen.getByTestId('connector-tools-master'))
 
-    expect(useToolAvailable.getState().getMutedServersForThread('thread-1')).toEqual([
-      'linear',
-    ])
+    expect(
+      useToolAvailable.getState().getMutedServersForThread('thread-1')
+    ).toEqual(['linear'])
     expect(activateMCPServer).not.toHaveBeenCalled()
     expect(deactivateMCPServer).not.toHaveBeenCalled()
     expect(useMCPServers.getState().mcpServers.linear.active).toBe(true)
@@ -438,7 +552,9 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
     expect(screen.getByRole('switch', { name: 'list_issues' })).toBeDisabled()
 
     await user.click(screen.getByTestId('connector-tools-master'))
-    expect(useToolAvailable.getState().getMutedServersForThread('thread-1')).toEqual([])
+    expect(
+      useToolAvailable.getState().getMutedServersForThread('thread-1')
+    ).toEqual([])
   })
 
   it('switches one tool off for this chat from the tools dialog', async () => {
@@ -459,9 +575,9 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
       'linear::list_issues',
     ])
     expect(useToolAvailable.getState().defaultDisabledTools).toEqual([])
-    expect(screen.getByTestId('connector-cost-linear')).toHaveTextContent(
-      'common:connectorsMenu.toolCountPartial'
-    )
+    expect(
+      screen.getByTestId('connector-cost-linear').getAttribute('title')
+    ).toContain('common:connectorsMenu.toolCountPartial')
     // The whole connector still rides the chat, so the trigger count holds.
     expect(screen.getByText('connectors:2')).toBeInTheDocument()
 
@@ -478,7 +594,9 @@ describe('DropdownPlugins tool cost and per-chat mute', () => {
         'common:connectorsMenu.mutedForChat'
       )
     })
-    expect(useToolAvailable.getState().mutedServers['thread-1']).toEqual(['linear'])
+    expect(useToolAvailable.getState().mutedServers['thread-1']).toEqual([
+      'linear',
+    ])
   })
 })
 
@@ -501,8 +619,8 @@ describe('DropdownPlugins system default servers', () => {
   it('never lists a system server, on or off — they are agent-mode tooling', () => {
     useMCPServers.setState({
       mcpServers: {
-        filesystem: { command: 'npx', args: [], env: {}, active: true },
-        fetch: { command: 'uvx', args: [], env: {}, active: false },
+        'filesystem': { command: 'npx', args: [], env: {}, active: true },
+        'fetch': { command: 'uvx', args: [], env: {}, active: false },
         'Jan Browser MCP': { command: '', args: [], env: {}, active: true },
       },
     })

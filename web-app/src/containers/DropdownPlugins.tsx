@@ -337,13 +337,19 @@ export default memo(function DropdownPlugins({
   const renderTrigger = () => children(isOpen, sentConnectors, activeConnectors)
 
   /**
-   * "N tools · ≈X tokens" for a connector, with the heavy flag as a tooltip.
-   * Reads "k of N tools" once single tools are off, so the number of tools
-   * the connector has and the number riding this chat are both there.
+   * The line under a connector's name. A catalog connector says what it does
+   * ("Web search"), on or off; a server the catalog does not know reads
+   * "N tools · ≈X tokens" as before. The count line moves to the tooltip when
+   * a tagline takes its place — the amber tools button already marks a
+   * half-off connector, so "k of N tools" only has to be a hover away.
    */
   const renderCost = (entry: ConnectorEntry, muted: boolean) => {
-    if (!entry.active || entry.tools.length === 0) return null
-    const cost = costByServer.get(entry.key)
+    const tagline = entry.connector?.taglineKey
+      ? t(entry.connector.taglineKey)
+      : undefined
+    const measured = entry.active && entry.tools.length > 0
+    if (!tagline && !measured) return null
+    const cost = measured ? costByServer.get(entry.key) : undefined
     const share =
       cost?.ctxShare !== undefined ? Math.round(cost.ctxShare * 100) : undefined
     const total = entry.tools.length
@@ -351,55 +357,66 @@ export default memo(function DropdownPlugins({
       (tool) => !disabledTools.has(createToolKey(entry.key, tool.name))
     ).length
     const partial = enabled < total
-    const label = cost
-      ? share !== undefined
-        ? t(
-            partial
-              ? 'common:connectorsMenu.costSharePartial'
-              : 'common:connectorsMenu.costShare',
-            {
+    const countLabel = !measured
+      ? undefined
+      : cost
+        ? share !== undefined
+          ? t(
+              partial
+                ? 'common:connectorsMenu.costSharePartial'
+                : 'common:connectorsMenu.costShare',
+              {
+                enabled,
+                count: partial ? total : cost.toolCount,
+                tokens: formatTokenCount(cost.tokens),
+                share,
+              }
+            )
+          : t(
+              partial
+                ? 'common:connectorsMenu.costPartial'
+                : 'common:connectorsMenu.cost',
+              {
+                enabled,
+                count: partial ? total : cost.toolCount,
+                tokens: formatTokenCount(cost.tokens),
+              }
+            )
+        : partial
+          ? t('common:connectorsMenu.toolCountPartial', {
               enabled,
-              count: partial ? total : cost.toolCount,
-              tokens: formatTokenCount(cost.tokens),
-              share,
-            }
-          )
-        : t(
-            partial
-              ? 'common:connectorsMenu.costPartial'
-              : 'common:connectorsMenu.cost',
-            {
-              enabled,
-              count: partial ? total : cost.toolCount,
-              tokens: formatTokenCount(cost.tokens),
-            }
-          )
-      : partial
-        ? t('common:connectorsMenu.toolCountPartial', {
-            enabled,
-            count: total,
-          })
-        : t('common:connectorsMenu.toolCount', { count: total })
+              count: total,
+            })
+          : t('common:connectorsMenu.toolCount', { count: total })
     const heavy = Boolean(cost?.heavy) && !muted
+    const heavyLabel =
+      heavy && share !== undefined && toolCost?.ctxLen
+        ? t('common:connectorsMenu.heavy', {
+            share,
+            ctx: formatTokenCount(toolCost.ctxLen),
+          })
+        : undefined
+    // "Off for this chat" is state and outranks both; it only applies while
+    // there is something on the wire to switch off.
+    const label =
+      muted && measured
+        ? t('common:connectorsMenu.mutedForChat')
+        : (tagline ?? countLabel)
+    const title = [tagline ? countLabel : undefined, heavyLabel]
+      .filter(Boolean)
+      .join('\n')
     return (
       <span
         className={cn(
           'truncate text-[11px] text-muted-foreground',
           heavy && 'text-amber-600 dark:text-amber-400',
-          muted && 'line-through opacity-70'
+          muted && measured && 'line-through opacity-70'
         )}
-        title={
-          heavy && share !== undefined && toolCost?.ctxLen
-            ? t('common:connectorsMenu.heavy', {
-                share,
-                ctx: formatTokenCount(toolCost.ctxLen),
-              })
-            : undefined
-        }
+        title={title || undefined}
         data-testid={`connector-cost-${entry.key}`}
         data-heavy={heavy ? 'true' : undefined}
       >
-        {muted ? t('common:connectorsMenu.mutedForChat') : label}
+        {label}
       </span>
     )
   }

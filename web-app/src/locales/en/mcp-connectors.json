@@ -65,5 +65,30 @@
     "zapier": "Run actions across thousands of apps through your Zapier MCP server.",
     "resend": "Send transactional emails through the Resend API.",
     "shopify-dev": "Shopify developer docs and GraphQL schemas for building apps."
+  },
+  "taglines": {
+    "exa": "Web search",
+    "atomicmail": "Email",
+    "linear": "Issues & projects",
+    "notion": "Pages & databases",
+    "sentry": "Error monitoring",
+    "atlassian": "Jira & Confluence",
+    "serper": "Google search",
+    "stripe": "Payments",
+    "supabase": "Database",
+    "cloudflare": "Edge & DNS",
+    "posthog": "Product analytics",
+    "paypal": "Payments",
+    "trello": "Boards",
+    "granola": "Meeting notes",
+    "calcom": "Scheduling",
+    "airtable": "Bases & records",
+    "webflow": "Sites & CMS",
+    "firecrawl": "Web scraping",
+    "perplexity": "Web research",
+    "zapier": "App automations",
+    "resend": "Transactional email",
+    "shopify-dev": "Shopify dev docs",
+    "github": "Repos & pull requests"
   }
 }
