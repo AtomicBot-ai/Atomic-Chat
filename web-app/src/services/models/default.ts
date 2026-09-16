@@ -295,7 +295,11 @@ export class DefaultModelsService implements ModelsService {
         `https://huggingface.co/api/models?search=${encodeURIComponent(ggufQuery)}&limit=${limit}`,
         { headers: this.getHuggingFaceHeaders(hfToken) }
       )
-      if (!response.ok) return []
+      if (!response.ok) {
+        throw new Error(
+          `Failed to search Hugging Face: ${response.status} ${response.statusText}`
+        )
+      }
       const raw = (await response.json()) as HuggingFaceRepoSearchResult[]
       const ranked = raw
         .filter((repo) => getHuggingFaceRepoId(repo))
@@ -328,8 +332,12 @@ export class DefaultModelsService implements ModelsService {
         } satisfies CatalogModel
       })
     } catch (error) {
+      // Rethrown, not swallowed: a caller that shows "nothing found" for a
+      // request that never reached Hugging Face is lying to the user. The Hub
+      // catches and shows its curated results alone; the composer's model
+      // list says the search could not be made.
       console.warn('searchHuggingFaceCandidates failed:', error)
-      return []
+      throw error
     }
   }
 

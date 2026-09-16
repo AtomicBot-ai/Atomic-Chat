@@ -48,6 +48,10 @@ import { switchToModel } from '@/utils/switchModel'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
+import {
+  HuggingFacePicks,
+  RecommendedPicks,
+} from '@/containers/ModelPickerDownloads'
 
 /**
  * Which providers may list models in the picker.
@@ -671,43 +675,43 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         )}
       >
         <ActiveModelIndicator className="ml-1.5" />
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title={selectedModel?.id ?? displayModel}
-          aria-label={compact ? displayModel : undefined}
-          data-test-id="model-picker-trigger"
-          className="inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2 pl-1.5"
-        >
-          {provider && (
-            <div className="shrink-0">
-              <ProvidersAvatar provider={provider} className="size-4" />
-            </div>
-          )}
-          {!compact && (
-            <span
-              className={cn(
-                'truncate font-medium',
-                !selectedModel?.id && 'text-muted-foreground'
-              )}
-            >
-              {displayModel}
-            </span>
-          )}
-          {settledEffortLabel && (
-            <span className="text-muted-foreground shrink-0">
-              {settledEffortLabel}
-            </span>
-          )}
-          <IconChevronDown
-            size={14}
-            className={cn(
-              'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
-              open && 'rotate-180'
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title={selectedModel?.id ?? displayModel}
+            aria-label={compact ? displayModel : undefined}
+            data-test-id="model-picker-trigger"
+            className="inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2 pl-1.5"
+          >
+            {provider && (
+              <div className="shrink-0">
+                <ProvidersAvatar provider={provider} className="size-4" />
+              </div>
             )}
-          />
-        </button>
-      </PopoverTrigger>
+            {!compact && (
+              <span
+                className={cn(
+                  'truncate font-medium',
+                  !selectedModel?.id && 'text-muted-foreground'
+                )}
+              >
+                {displayModel}
+              </span>
+            )}
+            {settledEffortLabel && (
+              <span className="text-muted-foreground shrink-0">
+                {settledEffortLabel}
+              </span>
+            )}
+            <IconChevronDown
+              size={14}
+              className={cn(
+                'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
+                open && 'rotate-180'
+              )}
+            />
+          </button>
+        </PopoverTrigger>
       </div>
 
       <PopoverContent
@@ -794,46 +798,154 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
             {/* Model list */}
             <div className="max-h-80 overflow-y-auto">
-              {Object.keys(groupedItems).length === 0 && searchValue ? (
-                <div className="py-3 px-4 text-sm ">
-                  {t('common:noModelsFoundFor', { searchValue })}
-                </div>
-              ) : (
-                <div className="py-1">
-                  {/* Favorites section - only show when not searching */}
-                  {!searchValue && favoriteItems.length > 0 && (
-                    <div className="bg-secondary/30 rounded-sm m-2 py-1">
-                      {/* Favorites header */}
-                      <div className="flex items-center gap-1.5 px-2 py-1">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {t('common:favorites')}
-                        </span>
+              <div className="py-1">
+                {/* Favorites section - only show when not searching */}
+                {!searchValue && favoriteItems.length > 0 && (
+                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                    {/* Favorites header */}
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {t('common:favorites')}
+                      </span>
+                    </div>
+
+                    {/* Favorite models */}
+                    {favoriteItems.map((searchableModel) => {
+                      const isSelected =
+                        selectedModel?.id === searchableModel.model.id &&
+                        selectedProvider === searchableModel.provider.provider
+
+                      return (
+                        <div
+                          key={`fav-${searchableModel.value}`}
+                          title={searchableModel.model.id}
+                          onClick={() => handleSelect(searchableModel)}
+                          className={cn(
+                            'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                            'hover:bg-secondary/40',
+                            isSelected && 'bg-secondary/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                            <div className="shrink-0 -ml-1">
+                              <ProvidersAvatar
+                                provider={searchableModel.provider}
+                              />
+                            </div>
+                            <span className="text-sm truncate">
+                              {getModelDisplayName(searchableModel.model)}
+                            </span>
+                            {searchableModel.model.source && (
+                              <ModelSourceBadge
+                                source={searchableModel.model.source}
+                                className="shrink-0"
+                              />
+                            )}
+                            {searchableModel.model.missing && (
+                              <MissingModelBadge
+                                source={searchableModel.model.source}
+                                className="shrink-0"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Divider between favorites and regular providers */}
+                {favoriteItems.length > 0 && (
+                  <div className="border-b mx-2"></div>
+                )}
+
+                {/* Regular provider sections */}
+                {Object.entries(groupedItems).map(([providerKey, models]) => {
+                  const providerInfo = providers.find(
+                    (p) => p.provider === providerKey
+                  )
+
+                  if (!providerInfo) return null
+
+                  return (
+                    <div
+                      key={providerKey}
+                      className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
+                    >
+                      {/* Provider header */}
+                      <div className="flex items-center justify-between px-2 py-1">
+                        {/* `min-w-0` on the group and the span is what lets
+                            a long title ("ChatGPT subscription (Codex)")
+                            ellipsise instead of wrapping and pushing the
+                            dot and the gear off their line. */}
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <ProvidersAvatar
+                            provider={providerInfo}
+                            className="size-4.5 shrink-0"
+                          />
+                          <span
+                            className="text-sm font-medium text-muted-foreground min-w-0 truncate"
+                            title={getProviderTitle(providerInfo.provider)}
+                          >
+                            {getProviderTitle(providerInfo.provider)}
+                          </span>
+                          {providerInfo.provider === selectedProvider && (
+                            <span className="size-2 rounded-full bg-green-500 shrink-0" />
+                          )}
+                        </div>
+
+                        <div
+                          className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Cloud providers are set up on `/cloud`; local
+                            // engines keep their Settings detail page.
+                            if (isCloudProvider(providerInfo)) {
+                              navigate({
+                                to: route.cloud.index,
+                                search: { provider: providerInfo.provider },
+                              })
+                            } else {
+                              navigate({
+                                to: route.settings.providers,
+                                params: {
+                                  providerName: providerInfo.provider,
+                                },
+                              })
+                            }
+                            setOpen(false)
+                          }}
+                        >
+                          <IconSettings
+                            size={16}
+                            className="text-muted-foreground"
+                          />
+                        </div>
                       </div>
 
-                      {/* Favorite models */}
-                      {favoriteItems.map((searchableModel) => {
+                      {/* Models for this provider */}
+                      {models.map((searchableModel) => {
                         const isSelected =
                           selectedModel?.id === searchableModel.model.id &&
                           selectedProvider === searchableModel.provider.provider
 
                         return (
                           <div
-                            key={`fav-${searchableModel.value}`}
+                            key={searchableModel.value}
                             title={searchableModel.model.id}
                             onClick={() => handleSelect(searchableModel)}
                             className={cn(
                               'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                               'hover:bg-secondary/40',
-                              isSelected && 'bg-secondary/50'
+                              isSelected &&
+                                'bg-secondary/60 hover:bg-secondary/60'
                             )}
                           >
-                            <div className="flex items-center gap-1 flex-1 min-w-0">
-                              <div className="shrink-0 -ml-1">
-                                <ProvidersAvatar
-                                  provider={searchableModel.provider}
-                                />
-                              </div>
-                              <span className="text-sm truncate">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <span
+                                className="text-sm truncate"
+                                title={searchableModel.model.id}
+                              >
                                 {getModelDisplayName(searchableModel.model)}
                               </span>
                               {searchableModel.model.source && (
@@ -853,124 +965,28 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                         )
                       })}
                     </div>
+                  )
+                })}
+
+                {/* Nothing to pick and nothing typed: the list would be a
+                      blank panel, so it offers the same downloads the
+                      blocked-send widget recommends for this device. */}
+                {!searchValue &&
+                  favoriteItems.length === 0 &&
+                  Object.keys(groupedItems).length === 0 && (
+                    <RecommendedPicks />
                   )}
 
-                  {/* Divider between favorites and regular providers */}
-                  {favoriteItems.length > 0 && (
-                    <div className="border-b mx-2"></div>
-                  )}
-
-                  {/* Regular provider sections */}
-                  {Object.entries(groupedItems).map(([providerKey, models]) => {
-                    const providerInfo = providers.find(
-                      (p) => p.provider === providerKey
-                    )
-
-                    if (!providerInfo) return null
-
-                    return (
-                      <div
-                        key={providerKey}
-                        className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
-                      >
-                        {/* Provider header */}
-                        <div className="flex items-center justify-between px-2 py-1">
-                          {/* `min-w-0` on the group and the span is what lets
-                              a long title ("ChatGPT subscription (Codex)")
-                              ellipsise instead of wrapping and pushing the
-                              dot and the gear off their line. */}
-                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <ProvidersAvatar
-                              provider={providerInfo}
-                              className="size-4.5 shrink-0"
-                            />
-                            <span
-                              className="text-sm font-medium text-muted-foreground min-w-0 truncate"
-                              title={getProviderTitle(providerInfo.provider)}
-                            >
-                              {getProviderTitle(providerInfo.provider)}
-                            </span>
-                            {providerInfo.provider === selectedProvider && (
-                              <span className="size-2 rounded-full bg-green-500 shrink-0" />
-                            )}
-                          </div>
-
-                          <div
-                            className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              // Cloud providers are set up on `/cloud`; local
-                              // engines keep their Settings detail page.
-                              if (isCloudProvider(providerInfo)) {
-                                navigate({
-                                  to: route.cloud.index,
-                                  search: { provider: providerInfo.provider },
-                                })
-                              } else {
-                                navigate({
-                                  to: route.settings.providers,
-                                  params: {
-                                    providerName: providerInfo.provider,
-                                  },
-                                })
-                              }
-                              setOpen(false)
-                            }}
-                          >
-                            <IconSettings
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Models for this provider */}
-                        {models.map((searchableModel) => {
-                          const isSelected =
-                            selectedModel?.id === searchableModel.model.id &&
-                            selectedProvider ===
-                              searchableModel.provider.provider
-
-                          return (
-                            <div
-                              key={searchableModel.value}
-                              title={searchableModel.model.id}
-                              onClick={() => handleSelect(searchableModel)}
-                              className={cn(
-                                'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                                'hover:bg-secondary/40',
-                                isSelected &&
-                                  'bg-secondary/60 hover:bg-secondary/60'
-                              )}
-                            >
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span
-                                  className="text-sm truncate"
-                                  title={searchableModel.model.id}
-                                >
-                                  {getModelDisplayName(searchableModel.model)}
-                                </span>
-                                {searchableModel.model.source && (
-                                  <ModelSourceBadge
-                                    source={searchableModel.model.source}
-                                    className="shrink-0"
-                                  />
-                                )}
-                                {searchableModel.model.missing && (
-                                  <MissingModelBadge
-                                    source={searchableModel.model.source}
-                                    className="shrink-0"
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                {/* Under the local matches, Hugging Face's GGUF repos for
+                      the query — a search with no local hit was a dead end
+                      ("No models found") with nothing to download from. */}
+                {searchValue && (
+                  <HuggingFacePicks
+                    query={searchValue}
+                    localEmpty={Object.keys(groupedItems).length === 0}
+                  />
+                )}
+              </div>
             </div>
 
             {/* Download CTA — shortcut into the Hub so users can grab a local
