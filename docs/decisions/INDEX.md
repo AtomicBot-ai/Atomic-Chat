@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-267 records, 2026-05-19 → 2026-09-16.
+268 records, 2026-05-19 → 2026-09-16.
 
 ---
 
@@ -64,7 +64,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (49)
+## Agent mode — autonomous loop, tools, skills, workspace (45)
 
 - **2026-09-16** — [Reserve the thinking budget on top of the tool-call budget](2026-09-16-reserve-the-thinking-budget-on-top-of-the-tool-call-budget.md)
 - **2026-09-15** — [Restore loaded skills from disk, not from the session copy](2026-09-15-restore-loaded-skills-from-disk-not-from-the-session.md)
@@ -81,7 +81,6 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-27** — [Evaluate the Rust Agent sequentially on gated GAIA validation](2026-07-27-evaluate-the-rust-agent-sequentially-on-gated-gaia-validation.md)
 - **2026-07-24** — [Schedule Agent batches by resource class](2026-07-24-schedule-agent-batches-by-resource-class.md)
 - **2026-07-24** — [Route live Agent messages by their originating thread](2026-07-24-route-live-agent-messages-by-their-originating-thread.md)
-- **2026-07-24** — [Restrict Agent mode to local llama.cpp providers](2026-07-24-restrict-agent-mode-to-local-llama-cpp-providers.md)
 - **2026-07-24** — [Let users revoke or downgrade Agent folder access](2026-07-24-let-users-revoke-or-downgrade-agent-folder-access.md)
 - **2026-07-24** — [Frame Gemma 4 Agent turns with native reasoning channels](2026-07-24-frame-gemma-4-agent-turns-with-native-reasoning-channels.md)
 - **2026-07-24** — [Constrain and bound Agent tool-call generation](2026-07-24-constrain-and-bound-agent-tool-call-generation.md)
@@ -101,10 +100,8 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-21** — [Add global SKILL.md capabilities to Agent mode](2026-07-21-add-global-skill-md-capabilities-to-agent-mode.md)
 - **2026-07-20** — [Stage Agent attachments and isolate image analysis from the agent slot](2026-07-20-stage-agent-attachments-and-isolate-image-analysis-from-the.md)
 - **2026-07-20** — [Keep the Agent preview panel structurally stable](2026-07-20-keep-the-agent-preview-panel-structurally-stable.md)
-- **2026-07-20** — [Give Agent runs a shared default workspace](2026-07-20-give-agent-runs-a-shared-default-workspace.md)
 - **2026-07-20** — [Compress verbose Agent observations only at the session boundary](2026-07-20-compress-verbose-agent-observations-only-at-the-session-boundary.md)
 - **2026-07-20** — [Add a scoped three-column workspace to Agent threads](2026-07-20-add-a-scoped-three-column-workspace-to-agent-threads.md)
-- **2026-07-17** — [Route Agent threads through direct IPC with run-scoped HITL](2026-07-17-route-agent-threads-through-direct-ipc-with-run-scoped-hitl.md)
 - **2026-07-17** — [Return structured web search results and bounded page extracts](2026-07-17-return-structured-web-search-results-and-bounded-page-extracts.md)
 - **2026-07-17** — [Preserve thread execution mode during regeneration](2026-07-17-preserve-thread-execution-mode-during-regeneration.md)
 - **2026-07-17** — [Make each Agent thread a durable session and recover invalid tool batches](2026-07-17-make-each-agent-thread-a-durable-session-and-recover-invalid.md)
@@ -113,7 +110,6 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-17** — [Collapse Agent, tool, and MCP traces into one compact activity block](2026-07-17-collapse-agent-tool-and-mcp-traces-into-one-compact-activity.md)
 - **2026-07-16** — [Test the Rust agent deterministically and keep model acceptance local](2026-07-16-test-the-rust-agent-deterministically-and-keep-model-acceptance.md)
 - **2026-07-16** — [Secure iteration 1b agent tools with run-scoped approvals](2026-07-16-secure-iteration-1b-agent-tools-with-run-scoped-approvals.md)
-- **2026-07-16** — [Isolate the first autonomous agent loop in the Rust backend](2026-07-16-isolate-the-first-autonomous-agent-loop-in-the-rust-backend.md)
 - **2026-07-16** — [Bind the agent approval policy to its thread](2026-07-16-bind-the-agent-approval-policy-to-its-thread.md)
 
 ## Speculative decoding — MTP / DFlash / EAGLE-3 / NextN (16)
@@ -135,7 +131,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Sync `AtomicBot-ai/mlx-vlm` fork to upstream v0.6.0 and surface a third speculative drafter family (EAGLE-3) + Qwen / DeepSeek-V4 MTP](2026-06-02-sync-atomicbot-ai-mlx-vlm-fork-to-upstream-v0-6-0-and-surface-a.md)
 - **2026-06-02** — [Fix MTP speculative rollback crash on Gemma 4 + DeepSeek-V4 (`'list' object has no attribute 'max'`)](2026-06-02-fix-mtp-speculative-rollback-crash-on-gemma-4-deepseek-v4-list.md)
 
-## MLX / mlx-vlm backend (9)
+## MLX / mlx-vlm backend (8)
 
 - **2026-07-22** — [Keep Gemma 4 Unified checkpoints on the multimodal MLX path](2026-07-22-keep-gemma-4-unified-checkpoints-on-the-multimodal-mlx-path.md)
 - **2026-07-14** — [Route text-only MLX checkpoints by embodied weights and keep failed loads off the session-map lock (ATO-295)](2026-07-14-route-text-only-mlx-checkpoints-by-embodied-weights-and-keep.md)
@@ -145,9 +141,8 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-08** — [Cherry-pick mlx-vlm #1288 into the fork to fix Gemma 4 12B MLX garbled generation (ATO-88 head 1 follow-up)](2026-06-08-cherry-pick-mlx-vlm-1288-into-the-fork-to-fix-gemma-4-12b-mlx.md)
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
-- **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (54)
+## llama.cpp providers & backend selection (47)
 
 - **2026-09-16** — [Bound the model load's wait on backend configuration, then load from disk](2026-09-16-bound-the-model-load-wait-on-backend-configuration.md)
 - **2026-09-14** — [Ask before updating an inference engine](2026-09-14-ask-before-updating-an-inference-engine.md)
@@ -155,8 +150,6 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
 - **2026-08-19** — [Disable the TurboQuant `llamacpp` provider by default on fresh installs](2026-08-19-disable-the-turboquant-provider-by-default-on-fresh-installs.md)
 - **2026-08-14** — [Keep the engine version out of the `latest/` sentinel trap](2026-08-14-keep-the-engine-version-out-of-the-latest-sentinel-trap.md)
-- **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)
-- **2026-08-13** — [Add Windows ROCm to the upstream backend matrix](2026-08-13-add-windows-rocm-to-the-upstream-backend-matrix.md)
 - **2026-08-13** — [Apply the detected backend tier at startup for `llamacpp-upstream`](2026-08-13-apply-the-detected-backend-tier-at-startup-for-upstream.md)
 - **2026-08-13** — [Generate the upstream offline baseline from the manifest](2026-08-13-generate-the-upstream-offline-baseline-from-the-manifest.md)
 - **2026-08-12** — [Update upstream llama.cpp at runtime on macOS too](2026-08-12-update-upstream-llama-cpp-at-runtime-on-macos-too.md)
@@ -190,19 +183,14 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-12** — [Force the model-status dot green while a llama.cpp model is running (drop the misleading "doesn't work on your device" red)](2026-06-12-force-the-model-status-dot-green-while-a-llama-cpp-model-is.md)
 - **2026-06-11** — [Surface a user-selectable K/V cache type dropdown on the upstream `llamacpp-upstream` provider (standard types only)](2026-06-11-surface-a-user-selectable-k-v-cache-type-dropdown-on-the.md)
 - **2026-06-09** — [Text-only fallback in the TurboQuant `llamacpp` provider on unsupported multimodal projector (Gemma 4 12B unified `gemma4uv`/`gemma4ua`)](2026-06-09-text-only-fallback-in-the-turboquant-llamacpp-provider-on.md)
-- **2026-06-09** — [Default the macOS local llama.cpp engine to `llamacpp-upstream` so the Recommended Gemma 4 vision model loads out of the box (ATO-116)](2026-06-09-default-the-macos-local-llama-cpp-engine-to-llamacpp-upstream.md)
 - **2026-06-08** — [Windows: fix clean-install config persistence (ATO-107), de-hardcode the CUDA-13 minor (ATO-105), and harden onboarding hardware detection against hangs (ATO-104)](2026-06-08-windows-fix-clean-install-config-persistence-ato-107-de.md)
 - **2026-06-05** — [Resolve the `latest/<backend>` sentinel before download + fix "Install from file" on Windows/Linux `llamacpp-upstream` (ATO-95)](2026-06-05-resolve-the-latest-backend-sentinel-before-download-fix-install.md)
 - **2026-06-05** — [Make the Windows release backend download asset-aware to beat the ggml-org "tag-marked-latest-before-asset-uploaded" race (ATO-95, CI)](2026-06-05-make-the-windows-release-backend-download-asset-aware-to-beat.md)
 - **2026-06-04** — [Resolve Windows CUDA-13 backend minor dynamically in `llamacpp-upstream`](2026-06-04-resolve-windows-cuda-13-backend-minor-dynamically-in-llamacpp.md)
-- **2026-05-28** — [Linux ships only `llamacpp-upstream` (AppImage, upstream `ggml-org/llama.cpp`); Vulkan is the sole GPU path](2026-05-28-linux-ships-only-llamacpp-upstream-appimage-upstream-ggml-org.md)
 - **2026-05-27** — [System Monitor falls back to NVML/Vulkan when `--list-devices` is empty; fix NVIDIA dup-log spam and the missing `refresh_system_info` ACL](2026-05-27-system-monitor-falls-back-to-nvml-vulkan-when-list-devices-is.md)
 - **2026-05-26** — [Correct CUDA 13.1 driver gate to NVIDIA-documented `581.15` and add runtime `--list-devices` health-check as self-healing degrade for the Windows tier picker](2026-05-26-correct-cuda-13-1-driver-gate-to-nvidia-documented-581-15-and.md)
-- **2026-05-22** — [Windows ships only `llamacpp-upstream`, sourced from `ggml-org/llama.cpp`](2026-05-22-windows-ships-only-llamacpp-upstream-sourced-from-ggml-org.md)
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
-- **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
-- **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
 ## Models, Hub & downloads (29)
 
@@ -254,7 +242,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (14)
+## Packaging, installers, autostart & platform policy (12)
 
 - **2026-09-04** — [Sanitize the AppImage environment before launching host processes](2026-09-04-sanitize-appimage-environment-before-launching-host-processes.md)
 - **2026-08-19** — [Leave launch at startup off for new installs](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
@@ -268,12 +256,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-09** — [Add a cross-platform "Launch at startup" toggle via `tauri-plugin-autostart` (ATO-96)](2026-06-09-add-a-cross-platform-launch-at-startup-toggle-via-tauri-plugin.md)
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
-- **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
-- **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (45)
+## UI / UX (48)
 
 - **2026-09-16** — [Confirm Full access before enabling it, every time](2026-09-16-confirm-full-access-before-enabling-it.md)
+- **2026-09-16** — [Unfold the release notes inside the update banner](2026-09-16-unfold-release-notes-inside-the-update-banner.md)
 - **2026-09-16** — [Offer the manifest's recommendation on the reminder card too, and stop waiting for it after 8 s](2026-09-16-offer-the-manifest-recommendation-on-the-reminder-card-too.md)
 - **2026-09-15** — [Ask for a model with the same rows and the same list as onboarding, and open the Hub from both](2026-09-15-ask-for-a-model-with-the-same-rows-and-list-as-onboarding.md)
 - **2026-09-15** — [Say what a project file upload is waiting on, and never hide a failed listing](2026-09-15-say-what-a-project-upload-is-waiting-on.md)
