@@ -8,7 +8,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
-import { Cloud } from 'lucide-react'
+import { Cloud, X } from 'lucide-react'
 import type {
   CatalogModel,
   MMProjModel,
@@ -81,6 +81,7 @@ import { describeProviderState } from '@/lib/onboarding'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 //* Формат прогресса общий с панелью закачек (ATO-462), чтобы не разъезжался
 import { formatProgressPair } from '@/lib/downloadFormat'
+import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 
 //* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
 //! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
@@ -238,12 +239,6 @@ function RowActionLabel({
     </span>
   )
 }
-
-/// A download click used to swap the screen out instantly, which read as "did
-/// my click register?" — the row flipping to a progress readout was gone before
-/// it could be seen. The picker now holds for this long so the started download
-/// is visible, then hands over to the chat where the sidebar continues it.
-const DOWNLOAD_ENTER_DELAY_MS = 3_000
 
 /// Neither the on-disk scan nor the hardware enumeration may hold the picker
 /// hostage. Both are raced against this deadline; whatever has not answered by
@@ -443,18 +438,21 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   >('idle')
   const autoRunFiredRef = useRef(false)
 
-  // Set while the picker holds on screen showing a just-started download (see
-  // DOWNLOAD_ENTER_DELAY_MS). The timer is kept so unmounting can cancel it.
-  const [downloadStartedId, setDownloadStartedId] = useState<string | null>(
-    null
-  )
-  const enterChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(
-    () => () => {
-      if (enterChatTimerRef.current) clearTimeout(enterChatTimerRef.current)
-    },
-    []
-  )
+  // Downloads started from this screen, by the id their row tracks. The
+  // screen stays up while they run — the row shows the progress and cancels —
+  // and the chat opens only once the model is in the library (see the effect
+  // after enterChatForDownload). A cancel deletes the entry, so a later
+  // stray import of that id cannot walk the user out of the list.
+  const pendingDownloadHandoffsRef = useRef<
+    Map<
+      string,
+      {
+        provider: LocalLlamacppProvider | 'mlx'
+        model: CatalogModel
+        variant: ModelQuant | null
+      }
+    >
+  >(new Map())
 
   useEffect(() => {
     fetchSources()
@@ -935,8 +933,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ) => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
+      // The import event also lands for a download started from this screen,
+      // usually before the library re-renders; it is a download exit, not an
+      // import of a model another app left on disk.
+      const startedHere = pendingDownloadHandoffsRef.current.delete(importedId)
       captureOnboardingCompleted({
-        exitPath: 'imported',
+        exitPath: startedHere ? 'download_started' : 'imported',
         hadAnyModel: true,
         providerState: describeProviderState(
           useModelProvider.getState().providers
@@ -1072,19 +1074,57 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   )
 
   // Download path: unlike "Run", which switches to a model that is ready, this
-  // one leaves the user waiting on bytes — so the row is held on screen long
-  // enough to show that the download actually started before the chat (and its
-  // sidebar progress) takes over.
-  const enterChatAfterDownloadStart = useCallback(
-    (modelId: string, providerName: LocalLlamacppProvider | 'mlx') => {
-      if (hasNavigatedRef.current || enterChatTimerRef.current) return
-      setDownloadStartedId(modelId)
-      enterChatTimerRef.current = setTimeout(() => {
-        enterChatTimerRef.current = null
-        enterChatForDownload(modelId, providerName)
-      }, DOWNLOAD_ENTER_DELAY_MS)
+  // one leaves the user waiting on bytes. The screen used to hand over to the
+  // chat 3 s after the click; a cancel from the download panel then left an
+  // empty chat with no way back to the list. Now the list stays until the
+  // model has landed in the library, and cancelling simply restores the row.
+  const armDownloadHandoff = useCallback(
+    (
+      modelId: string,
+      providerName: LocalLlamacppProvider | 'mlx',
+      model: CatalogModel,
+      variant: ModelQuant | null
+    ) => {
+      if (hasNavigatedRef.current) return
+      pendingDownloadHandoffsRef.current.set(modelId, {
+        provider: providerName,
+        model,
+        variant,
+      })
     },
-    [enterChatForDownload]
+    []
+  )
+
+  // Re-runs whenever a local provider's library changes (the downloaded
+  // checks are rebuilt on it); the import event usually gets there first and
+  // handleImportedId takes the same exit, so this is the backstop for an
+  // import that lands without its event or under another id.
+  useEffect(() => {
+    if (hasNavigatedRef.current) return
+    for (const [id, pending] of pendingDownloadHandoffsRef.current) {
+      const landed = pending.variant
+        ? isVariantDownloaded(pending.model, pending.variant)
+        : isMlxDownloaded(pending.model)
+      if (!landed) continue
+      pendingDownloadHandoffsRef.current.delete(id)
+      enterChatForDownload(id, pending.provider)
+      return
+    }
+  }, [isVariantDownloaded, isMlxDownloaded, enterChatForDownload])
+
+  // Same three steps as the Hub's cancel: resumable, flagged as the user's
+  // own stop (so the panel does not report a failure), then aborted. The
+  // stop event clears the store, which is what turns the row back into a
+  // Download button.
+  const cancelRowDownload = useCallback(
+    (modelId: string) => {
+      pendingDownloadHandoffsRef.current.delete(modelId)
+      trackedImportIdsRef.current.delete(modelId)
+      markResumableDownload(modelId)
+      markDownloadCancellationRequested(modelId)
+      void serviceHub.models().abortDownload(modelId)
+    },
+    [markResumableDownload, serviceHub]
   )
 
   // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
@@ -1492,7 +1532,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           position: index,
         })
         void startMlxDownload(model)
-        enterChatAfterDownloadStart(getMlxModelId(model), 'mlx')
+        armDownloadHandoff(getMlxModelId(model), 'mlx', model, null)
       } else if (variant) {
         captureRecommendedModelClicked({
           modelId: variant.model_id,
@@ -1501,9 +1541,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           position: index,
         })
         startDownload(model, variant, mmproj?.path)
-        enterChatAfterDownloadStart(
+        armDownloadHandoff(
           variant.model_id,
-          LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
+          LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider,
+          model,
+          variant
         )
       }
     }
@@ -1529,35 +1571,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         ? prettyModelName(model.model_name)
         : prettyModelName(rec.modelName))
 
-    const buttonLabel = rowDownloaded
-      ? t('hub:downloaded')
-      : rowDownloading
-        ? t('setup:downloading')
-        : t('hub:download')
+    const buttonLabel = rowDownloaded ? t('hub:downloaded') : t('hub:download')
 
-    const progressLine =
-      rowDownloading && rowTrackId ? (
-        <p
-          className="text-right text-xs text-muted-foreground tabular-nums"
-          aria-live="polite"
-        >
-          {rowDownloadProgress && rowDownloadProgress.total > 0
-            ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
-            : t('setup:downloadPreparing')}
-        </p>
-      ) : null
+    // While the bytes come in, the button's slot holds one pill — the same
+    // height, on the same line — reading Downloading… with an × to cancel;
+    // the figures sit beside it once the size is known. Nothing under the
+    // row, so it stays as tall as it was with the Download button.
+    const progressText =
+      rowDownloading && rowDownloadProgress && rowDownloadProgress.total > 0
+        ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
+        : null
 
-    // Says where the download is about to go, so the screen change three
-    // seconds later is something the user was told about.
-    const handoffLine =
-      rowTrackId && downloadStartedId === rowTrackId ? (
-        <p className="text-right text-xs text-muted-foreground">
-          {t('setup:downloadStartedOpening')}
-        </p>
-      ) : null
-
-    const disabled =
-      !model || (!isMlx && !variant) || rowDownloading || rowDownloaded
+    const disabled = !model || (!isMlx && !variant) || rowDownloaded
 
     //* «Почему эта»: размер против бюджета памяти этой машины, а не
     //* абстрактное «рекомендуем» — см. describeRecommendationFit.
@@ -1626,23 +1651,46 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
             ) : null}
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {/* The offer keeps the primary fill, not a bigger pill: a taller
-              button broke the column of buttons it heads. */}
-          <Button
-            variant={hero ? 'default' : 'secondary'}
-            size="sm"
-            disabled={disabled}
-            onClick={onDownload}
-            className={cn(
-              'shrink-0 rounded-full px-4',
-              !hero && ROW_BUTTON_HOVER
-            )}
-          >
-            <RowActionLabel label={buttonLabel} reserve={rowActionLabels} />
-          </Button>
-          {progressLine}
-          {handoffLine}
+        <div className="flex shrink-0 items-center gap-2">
+          {progressText ? (
+            <span
+              className="text-xs text-muted-foreground tabular-nums"
+              aria-live="polite"
+            >
+              {progressText}
+            </span>
+          ) : null}
+          {rowDownloading && rowTrackId ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => cancelRowDownload(rowTrackId)}
+              title={t('common:cancelDownload')}
+              aria-label={t('common:cancelDownload')}
+              className={cn('shrink-0 rounded-full px-4', ROW_BUTTON_HOVER)}
+            >
+              <RowActionLabel
+                label={t('setup:downloading')}
+                reserve={rowActionLabels}
+              />
+              <X className="size-3.5" aria-hidden="true" />
+            </Button>
+          ) : (
+            /* The offer keeps the primary fill, not a bigger pill: a taller
+               button broke the column of buttons it heads. */
+            <Button
+              variant={hero ? 'default' : 'secondary'}
+              size="sm"
+              disabled={disabled}
+              onClick={onDownload}
+              className={cn(
+                'shrink-0 rounded-full px-4',
+                !hero && ROW_BUTTON_HOVER
+              )}
+            >
+              <RowActionLabel label={buttonLabel} reserve={rowActionLabels} />
+            </Button>
+          )}
         </div>
       </div>
     )
