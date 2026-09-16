@@ -132,7 +132,7 @@ surface for the inline-chat path, the agent's `fs`/`web` tools, and any out-of-t
 
 Current schema (`db::create_schema`, `db.rs:152-189`):
 
-```
+```text
 files  (id TEXT PK, path TEXT UNIQUE NOT NULL, name, type, size, chunk_count)
 chunks (id TEXT PK, text NOT NULL, embedding BLOB NOT NULL, file_id, chunk_file_order)
 chunks_vec  -- vec0 virtual table, joined to chunks by rowid, only when sqlite-vec loads
@@ -148,7 +148,7 @@ Findings that shape the migration design:
    collections (its contract: never create a `.db` file), so migration runs only on a file
    that already exists.
 2. **All new chunk metadata must be nullable with no backfill.** Legacy rows keep
-   `NULL` page / element ids; retrieval must treat "no provenance" as normal, not as an error.
+   `NULL` page / element IDs; retrieval must treat "no provenance" as normal, not as an error.
    `ALTER TABLE ... ADD COLUMN` on SQLite is O(1) and does not rewrite rows, so migrating a
    20-manual project collection is instant.
 3. **`chunks_vec` is keyed by `rowid`** and is unaffected by adding columns to `chunks`; the
@@ -163,7 +163,7 @@ Findings that shape the migration design:
      `element_type`, `asset_id`.
    - `files` gains one nullable `metadata_json TEXT` for the extensible/domain metadata of
      §15 (`domain`, `manufacturer`, `model`, `engine`, …). Domain vocabulary never becomes a
-     column; the generic engine only filters `metadata_json` by key/value.
+     column; the generic engine only filters `metadata_json` by key-value pair.
    Per-document metadata on the chunk row would repeat `manufacturer: Volkswagen` across
    every chunk of a manual (thousands of rows per document) and turn a correction into a
    mass rewrite; on `files` it is one row and one `UPDATE`.
@@ -257,7 +257,7 @@ Phase 5 is where the migration above lands.
 - DOCX: `section_path` from `w:pStyle` heading levels. PPTX: `page` = slide index.
   XLSX: `section_path = [sheet]`. CSV: single table, no page.
 - **Element IDs are content-addressed** — `sha256(document_content_hash + ordinal)`, truncated
-  — so re-ingesting an unchanged file yields identical element ids. That is what makes the
+  — so re-ingesting an unchanged file yields identical element IDs. That is what makes the
   Phase 20 hash cache and any future "highlight this element" UI stable across re-ingest.
   `sha2 0.10` is already a workspace dependency (`src-tauri/Cargo.toml:114`) but not yet in
   the rag plugin's own `Cargo.toml`; adding it there is a new crate-level dep — call it out
@@ -320,9 +320,9 @@ better chunk boundaries, same storage shape, same retrieval contract.
 | Source-code file | code fences / whole-file element, no heading hallucination |
 | PDF with pages | `page` populated when `pdftotext` is present, `None` when absent (both asserted) |
 | PDF scanned / mixed | existing `build_pdf_gap_warning` behaviour unchanged |
-| Element-id stability | same bytes in → same ids out, across two runs |
+| Element-id stability | same bytes in → same IDs out, across two runs |
 | Chunker: oversize table | split by row groups, header repeated, never mid-row |
-| Chunker: figure + caption | land in one chunk with both element ids |
+| Chunker: figure + caption | land in one chunk with both element IDs |
 | Chunker: heading grouping | heading + its paragraphs together; next heading starts a new chunk |
 | Chunker: oversize paragraph | falls back to character window, no data loss |
 | **Regression: legacy path** | flag off → `chunk_text(512, 64)` output identical to today |
@@ -427,7 +427,7 @@ retrieval on the caption text returns a chunk carrying `page: 27`.
 
 5. **`retrieve` returns human-meaningful provenance, not plumbing.** Citations carry
    `filename`, `page`, `section` and `element_type` when present — that is what lets an
-   answer say "from page 137" instead of quoting a bare snippet. The ids (`document_id`,
+   answer say "from page 137" instead of quoting a bare snippet. The IDs (`document_id`,
    `element_id`, `chunk_id`, `asset_id`) stay out of the model-visible payload: they cost
    tokens on every citation and models tend to echo them at users. They remain in the API
    return so the UI can implement "open source → page 137 → highlight".
@@ -455,7 +455,7 @@ One PR per phase, each independently revertible:
 | 0b | Normalise ANN vs linear search scores (§12.4) | low, but changes returned `score` semantics — needs its own note |
 | 1 | Phase 1 types + tests | none — nothing imports them |
 | 2 | Phase 2 structured parsers, `flatten`, command, optional contract method, flag (off) | low — new code path, unreachable by default |
-| 3 | Phase 3 provenance + content-addressed ids | low — same |
+| 3 | Phase 3 provenance + content-addressed IDs | low — same |
 | 4 | Phase 4 chunker + flagged wiring | medium — first phase that changes what gets embedded, and only with the flag on |
 
 Phase 5 (schema + migration) opens as its own design note before implementation, because it
