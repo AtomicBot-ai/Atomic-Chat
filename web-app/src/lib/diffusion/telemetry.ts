@@ -77,6 +77,7 @@ export type ImageGalleryAction =
   | 'reveal'
   | 'delete'
   | 'restore_recipe'
+  | 'use_as_source'
   | 'copy_prompt'
 
 export function captureImageGalleryAction(action: ImageGalleryAction): void {

@@ -195,7 +195,26 @@ export type ImageCapabilities = {
   ranges: DiffusionFamilyRanges
 }
 
-export type ImageWorkflowId = 'create' | 'transform'
+/**
+ * What a request does with its images. Every workflow is served by the one
+ * `img_gen` endpoint; the body just carries different inputs. Order and
+ * labels live in `lib/diffusion/workflows.ts`.
+ */
+export type ImageWorkflowId =
+  | 'create'
+  | 'transform'
+  | 'inpaint'
+  | 'extend'
+  | 'upscale'
+  | 'reference'
+  | 'edit'
+
+/**
+ * One image input: a file the user picked (the plugin reads it) or PNG bytes
+ * the web app produced itself (a painted mask, a grown canvas). A data URL
+ * prefix is accepted on `base64`.
+ */
+export type ImageSource = { path: string } | { base64: string }
 
 export type ImageGenerateRequest = {
   prompt: string
@@ -214,8 +233,13 @@ export type ImageGenerateRequest = {
   samplingMethod?: string
   flowShift?: number
   workflow?: ImageWorkflowId
-  /** `transform` only: absolute path of the source image and denoise strength 0..1. */
-  initImagePath?: string
+  /** Source image for every workflow but `create`; the reference workflows send it as the first reference. */
+  initImage?: ImageSource
+  /** `inpaint` / `extend`: white where the model repaints. */
+  maskImage?: ImageSource
+  /** `reference`: extra references after the source, at most three. */
+  referenceImages?: ImageSource[]
+  /** Denoise strength 0..1 for transform / inpaint / extend / upscale. */
   strength?: number
 }
 

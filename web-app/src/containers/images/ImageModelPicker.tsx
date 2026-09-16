@@ -8,8 +8,10 @@ import {
 } from '@/components/ui/popover'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
+import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -33,6 +35,12 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const status = useImageGenerationStore((state) => state.status)
   const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
   const selected = useImageArtifact(selectedArtifactId ?? '')
+  const workflow = useImageForm((state) => state.workflow)
+  // The picked checkpoint cannot run this tab's workflow: say so where the
+  // model is named, so the disabled Generate is not a mystery.
+  const unsupported =
+    selected.family !== null &&
+    !familySupportsWorkflow(selected.family.id, workflow)
 
   const loadedName = status?.model.loaded?.displayName ?? null
   const name = selected.family
@@ -86,6 +94,16 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           {detail && (
             <span className="shrink-0 text-muted-foreground">{detail}</span>
           )}
+          {unsupported && (
+            <span
+              className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
+              data-testid="image-model-unsupported"
+            >
+              {t('images:model.notForWorkflow', {
+                workflow: t(`images:workflow.${workflow}.label`),
+              })}
+            </span>
+          )}
           {loading ? (
             <IconLoader2
               size={14}
@@ -109,7 +127,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
         // which is the same white, and must read as lifted off it.
         className="max-h-[min(60vh,480px)] w-[400px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
       >
-        <ImageModelSelector variant="page" />
+        <ImageModelSelector variant="page" workflow={workflow} />
       </PopoverContent>
     </Popover>
   )

@@ -183,7 +183,9 @@ pub(crate) fn build_request(
         sampling_method: defaults.sampling_method.clone(),
         flow_shift: defaults.flow_shift,
         workflow: None,
-        init_image_path: None,
+        init_image: None,
+        mask_image: None,
+        reference_images: None,
         strength: None,
     }
 }

@@ -182,3 +182,50 @@ export function sizeOptions(
 export function formatMegapixels(width: number, height: number): string {
   return ((width * height) / 1_000_000).toFixed(1)
 }
+
+/**
+ * Scale `width`×`height` to fit inside `maxWidth`×`maxHeight`, keeping the
+ * aspect ratio, never enlarging, and snapped to the model's grid. This is
+ * how a source image maps onto the form's resolution for Transform, and how
+ * an Upscale target is kept under the model's ceiling.
+ */
+export function fitWithin(
+  width: number,
+  height: number,
+  maxWidth: number,
+  maxHeight: number,
+  constraints: DimConstraints
+): { width: number; height: number } {
+  if (!(width > 0) || !(height > 0)) {
+    return { width: snapDim(maxWidth, constraints), height: snapDim(maxHeight, constraints) }
+  }
+  const scale = Math.min(1, maxWidth / width, maxHeight / height)
+  return {
+    width: snapDim(width * scale, constraints),
+    height: snapDim(height * scale, constraints),
+  }
+}
+
+/**
+ * `width`×`height` scaled by `factor`, capped so the longer edge stays at or
+ * under the model's ceiling. Returns the size and the factor actually used,
+ * so the form can show what a 4× on a big photo really produces.
+ */
+export function scaleWithin(
+  width: number,
+  height: number,
+  factor: number,
+  constraints: DimConstraints
+): { width: number; height: number; factor: number } {
+  if (!(width > 0) || !(height > 0)) {
+    const edge = snapDim(constraints.maxDim, constraints)
+    return { width: edge, height: edge, factor: 1 }
+  }
+  const longest = Math.max(width, height)
+  const used = Math.min(Math.max(factor, 1), constraints.maxDim / longest)
+  return {
+    width: snapDim(width * used, constraints),
+    height: snapDim(height * used, constraints),
+    factor: used,
+  }
+}

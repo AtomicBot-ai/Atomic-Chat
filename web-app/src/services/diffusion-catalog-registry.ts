@@ -19,6 +19,7 @@
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
+import { IMAGE_WORKFLOW_IDS } from '@/lib/diffusion/workflows'
 import { BASELINE_DIFFUSION_CATALOG } from './diffusion-catalog-baseline'
 import type {
   DiffusionFamilyId,
@@ -138,7 +139,7 @@ const TEXT_ENCODER_FIELDS: readonly DiffusionTextEncoderField[] = [
   'clip_l',
   't5xxl',
 ]
-const WORKFLOWS: readonly ImageWorkflowId[] = ['create', 'transform']
+const WORKFLOWS: readonly ImageWorkflowId[] = IMAGE_WORKFLOW_IDS
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const QUANT_ID_RE = /^[a-z0-9_]+$/

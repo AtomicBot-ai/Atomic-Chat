@@ -25,6 +25,7 @@ import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { recommendedQuant } from '@/lib/diffusion/fit'
 import { artifactId } from '@/lib/diffusion/models'
+import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { formatBytes } from '@/lib/downloadFormat'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
@@ -32,12 +33,19 @@ import type {
   DiffusionCatalogFamily,
   DiffusionCatalogQuant,
 } from '@/services/diffusion-catalog-registry'
+import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageArtifactDownloadButton } from './ImageArtifactDownloadButton'
 
 type ImageModelSelectorProps = {
   /** `dialog` hides Remove and keeps the list short; `page` is the full manager. */
   variant?: 'page' | 'dialog'
+  /**
+   * The workflow the list is picked for. Families that cannot run it are
+   * listed last, marked, and cannot be run or fetched from here — the setup
+   * wizard passes nothing and offers everything.
+   */
+  workflow?: ImageWorkflowId
   className?: string
 }
 
@@ -53,6 +61,7 @@ const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
  */
 export const ImageModelSelector = memo(function ImageModelSelector({
   variant = 'page',
+  workflow,
   className,
 }: ImageModelSelectorProps) {
   const { t } = useTranslation()
@@ -62,13 +71,21 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   )
   const [planFor, setPlanFor] = useState<string | null>(null)
 
+  const fits = (family: DiffusionCatalogFamily) =>
+    workflow === undefined || familySupportsWorkflow(family.id, workflow)
+
+  // Families that can run the workflow first; the rest stay visible so the
+  // user sees what would need switching, but sink to the bottom.
   const families = useMemo(
     () =>
-      (catalog?.families ?? []).filter(
-        (family) =>
-          family.modality === 'image' && family.engines.includes('sdcpp')
-      ),
-    [catalog]
+      (catalog?.families ?? [])
+        .filter(
+          (family) =>
+            family.modality === 'image' && family.engines.includes('sdcpp')
+        )
+        .sort((a, b) => Number(fits(b)) - Number(fits(a))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [catalog, workflow]
   )
 
   const installedIds = useMemo(
@@ -110,6 +127,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
               family={family}
               quants={quants}
               variant={variant}
+              unsupportedFor={fits(family) ? null : workflow ?? null}
               onRequestDownload={setPlanFor}
             />
           ))}
@@ -123,6 +141,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
               family={family}
               quants={quants}
               variant={variant}
+              unsupportedFor={fits(family) ? null : workflow ?? null}
               onRequestDownload={setPlanFor}
             />
           ))}
@@ -166,6 +185,8 @@ type FamilyBlockProps = {
   family: DiffusionCatalogFamily
   quants: DiffusionCatalogQuant[]
   variant: 'page' | 'dialog'
+  /** The workflow this family cannot run, when the list is picked for one. */
+  unsupportedFor: ImageWorkflowId | null
   onRequestDownload: (artifactId: string) => void
 }
 
@@ -173,8 +194,10 @@ function FamilyBlock({
   family,
   quants,
   variant,
+  unsupportedFor,
   onRequestDownload,
 }: FamilyBlockProps) {
+  const { t } = useTranslation()
   const { profile } = useHardwareTier()
   // Over every quant of the family, not just this section's: the badge must
   // sit on the same row whether that row is listed as installed or available.
@@ -184,7 +207,11 @@ function FamilyBlock({
   )
 
   return (
-    <div data-testid={`family-${family.id}`}>
+    <div
+      data-testid={`family-${family.id}`}
+      data-unsupported={unsupportedFor ?? undefined}
+      className={cn(unsupportedFor && 'opacity-60')}
+    >
       <div className="flex items-center gap-2.5 px-2 py-1">
         <ModelLogo
           icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
@@ -193,7 +220,16 @@ function FamilyBlock({
           className="size-7 rounded-md"
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium leading-tight">{family.name}</p>
+          <p className="flex items-center gap-2 text-sm font-medium leading-tight">
+            <span className="truncate">{family.name}</span>
+            {unsupportedFor && (
+              <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                {t('images:model.notForWorkflow', {
+                  workflow: t(`images:workflow.${unsupportedFor}.label`),
+                })}
+              </span>
+            )}
+          </p>
           {family.description && (
             <p className="truncate text-[11px] leading-snug text-muted-foreground" title={family.description}>
               {family.description}
@@ -210,6 +246,7 @@ function FamilyBlock({
             quant={quant}
             recommended={quant.id === recommendedId}
             variant={variant}
+            disabled={unsupportedFor !== null}
             onRequestDownload={onRequestDownload}
           />
         ))}
@@ -224,6 +261,8 @@ type ArtifactRowProps = {
   /** The quant this machine should run, per {@link recommendedQuant}. */
   recommended: boolean
   variant: 'page' | 'dialog'
+  /** The family cannot run the current workflow: no pick, run or fetch from here. */
+  disabled?: boolean
   onRequestDownload: (artifactId: string) => void
 }
 
@@ -232,6 +271,7 @@ function ArtifactRow({
   quant,
   recommended,
   variant,
+  disabled = false,
   onRequestDownload,
 }: ArtifactRowProps) {
   const { t } = useTranslation()
@@ -277,8 +317,9 @@ function ArtifactRow({
     >
       <button
         type="button"
-        className="min-w-0 flex-1 text-left"
+        className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
         onClick={pick}
+        disabled={disabled}
         aria-pressed={selected}
         aria-label={t('images:model.pick', {
           name: family.name,
@@ -328,16 +369,18 @@ function ArtifactRow({
       </button>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <ImageArtifactDownloadButton
-          artifact={artifact}
-          onRequestDownload={() => onRequestDownload(id)}
-        />
+        {!(disabled && !artifact.downloading) && (
+          <ImageArtifactDownloadButton
+            artifact={artifact}
+            onRequestDownload={() => onRequestDownload(id)}
+          />
+        )}
         {artifact.complete && !artifact.loaded && (
           <Button
             size="sm"
             variant="outline"
             className="w-24 justify-center"
-            disabled={artifact.loading || generating}
+            disabled={artifact.loading || generating || disabled}
             onClick={() => void artifact.load()}
             aria-label={t('images:model.load')}
           >

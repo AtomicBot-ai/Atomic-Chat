@@ -20,6 +20,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 // The jsdom bridge stub has no asset protocol; this is what the WebView does.
 vi.mock('@tauri-apps/api/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tauri-apps/api/core')>()),
@@ -133,6 +135,32 @@ describe('ImageViewer', () => {
     expect(form.height).toBe(768)
     expect(form.aspect).toBe('photo')
     expect(form.workflow).toBe('create')
+  })
+
+  it('makes the open image the source and moves Create to Transform', async () => {
+    useImageForm.setState({ workflow: 'create' })
+    render(<Gallery />)
+    await screen.findByTestId('image-viewer')
+
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('image-viewer-use-as-source'))
+    })
+
+    expect(useImageForm.getState().sourceImage).toEqual({
+      path: '/data/images/job-1-00.png',
+      width: 1024,
+      height: 768,
+    })
+    expect(navigate).toHaveBeenCalledWith({ to: '/images/transform' })
+    expect(toast.success).toHaveBeenCalledWith('images:viewer.useAsSourceDone')
+
+    // Already on an image workflow: stay there.
+    navigate.mockClear()
+    useImageForm.setState({ workflow: 'inpaint' })
+    await act(async () => {
+      await userEvent.click(screen.getByTestId('image-viewer-use-as-source'))
+    })
+    expect(navigate).not.toHaveBeenCalled()
   })
 
   it('switches the selected model and offers to load it when the recipe used another', async () => {

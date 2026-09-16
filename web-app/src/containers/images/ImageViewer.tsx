@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import {
   IconChevronLeft,
@@ -7,6 +8,7 @@ import {
   IconFolderOpen,
   IconMaximize,
   IconPhoto,
+  IconPhotoUp,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -24,6 +26,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { exportFilename, restoreDraftFromRecipe } from '@/lib/diffusion/recipe'
 import { captureImageGalleryAction } from '@/lib/diffusion/telemetry'
+import { workflowPath } from '@/lib/diffusion/workflows'
 import { useImageGalleryStore } from '@/stores/image-gallery-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import type { GalleryImageItem } from '@/services/diffusion/types'
@@ -61,10 +64,13 @@ export const ImageViewer = memo(function ImageViewer({
   onOfferLoad,
 }: ImageViewerProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const step = useImageGalleryStore((state) => state.step)
   const applyDraft = useImageForm((state) => state.applyDraft)
   const runs = useImageForm((state) => state.runs)
+  const setSourceImage = useImageForm((state) => state.setSourceImage)
+  const workflow = useImageForm((state) => state.workflow)
   const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
@@ -142,6 +148,15 @@ export const ImageViewer = memo(function ImageViewer({
         description: error instanceof Error ? error.message : String(error),
       })
     }
+  }
+
+  // The gallery → workflow handoff: this picture becomes the source. On
+  // Create there is nothing to feed, so the page moves to Transform.
+  const useAsSource = () => {
+    setSourceImage({ path: item.path, width: item.width, height: item.height })
+    captureImageGalleryAction('use_as_source')
+    if (workflow === 'create') void navigate({ to: workflowPath('transform') })
+    toast.success(t('images:viewer.useAsSourceDone'))
   }
 
   const reveal = async () => {
@@ -226,6 +241,16 @@ export const ImageViewer = memo(function ImageViewer({
           </TooltipTrigger>
           <TooltipContent>{exportFilename(item)}</TooltipContent>
         </Tooltip>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={t('images:viewer.useAsSource')}
+          onClick={useAsSource}
+          data-testid="image-viewer-use-as-source"
+        >
+          <IconPhotoUp size={16} />
+          <span>{t('images:viewer.useAsSource')}</span>
+        </Button>
         <Button
           variant="ghost"
           size="sm"

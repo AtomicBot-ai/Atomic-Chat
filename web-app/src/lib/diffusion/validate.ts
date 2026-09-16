@@ -10,8 +10,16 @@
 import type {
   ImageCapabilities,
   ImageGenerateRequest,
+  ImageSource,
   NativeDiffusionErrorCode,
 } from '@/services/diffusion/types'
+import { MAX_EXTRA_REFERENCES, workflowSpec } from './workflows'
+
+/** A source is a non-empty path or non-empty base64. */
+const hasSource = (source: ImageSource | undefined): boolean =>
+  !!source &&
+  (('path' in source && source.path.trim().length > 0) ||
+    ('base64' in source && source.base64.trim().length > 0))
 
 export type ImageRequestValidation =
   | { ok: true }
@@ -43,16 +51,30 @@ export function validateImageRequest(
       `This model does not support the "${workflow}" workflow.`
     )
   }
-  if (workflow === 'transform') {
-    if (!req.initImagePath) {
-      return reject('INVALID_REQUEST', 'Choose a source image to transform.')
-    }
+  const spec = workflowSpec(workflow)
+  if (spec.needsSource && !hasSource(req.initImage)) {
+    return reject('INVALID_REQUEST', 'Choose a source image first.')
+  }
+  if (spec.usesMask && !hasSource(req.maskImage)) {
+    return reject('INVALID_REQUEST', 'Paint the area to change first.')
+  }
+  if (req.referenceImages !== undefined) {
     if (
-      req.strength !== undefined &&
-      (!isFiniteNumber(req.strength) || req.strength < 0 || req.strength > 1)
+      !Array.isArray(req.referenceImages) ||
+      req.referenceImages.length > MAX_EXTRA_REFERENCES ||
+      !req.referenceImages.every(hasSource)
     ) {
-      return reject('INVALID_REQUEST', 'Strength must be between 0 and 1.')
+      return reject(
+        'INVALID_REQUEST',
+        `Add at most ${MAX_EXTRA_REFERENCES} extra reference images.`
+      )
     }
+  }
+  if (
+    req.strength !== undefined &&
+    (!isFiniteNumber(req.strength) || req.strength < 0 || req.strength > 1)
+  ) {
+    return reject('INVALID_REQUEST', 'Strength must be between 0 and 1.')
   }
 
   for (const [name, value] of [

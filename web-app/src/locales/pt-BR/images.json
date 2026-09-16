@@ -1,9 +1,46 @@
 {
   "page": {
     "title": "Images",
-    "loading": "Getting things ready…",
-    "createTitle": "Create images",
-    "createDescription": "Generate a new image from a prompt"
+    "loading": "Getting things ready…"
+  },
+  "workflow": {
+    "create": {
+      "label": "Create",
+      "title": "Create images",
+      "hint": "Generate a new image from a prompt"
+    },
+    "transform": {
+      "label": "Transform",
+      "title": "Transform",
+      "hint": "Redraw an image from your prompt"
+    },
+    "inpaint": {
+      "label": "Inpaint",
+      "title": "Inpaint",
+      "hint": "Regenerate a painted region"
+    },
+    "extend": {
+      "label": "Extend",
+      "title": "Extend",
+      "hint": "Grow the canvas and fill the edges"
+    },
+    "upscale": {
+      "label": "Upscale",
+      "title": "Upscale",
+      "hint": "Enlarge and re-detail an image"
+    },
+    "reference": {
+      "label": "Reference",
+      "title": "Reference",
+      "hint": "Generate guided by a reference image"
+    },
+    "edit": {
+      "label": "Edit",
+      "title": "Edit",
+      "hint": "Change an image with an instruction"
+    },
+    "unavailable": "The loaded model cannot do this",
+    "unavailableSelected": "The selected model cannot do this"
   },
   "setup": {
     "step": "Step {{current}} of {{total}}",
@@ -72,7 +109,8 @@
     "none": "No model selected",
     "change": "Change",
     "select": "Select image model",
-    "selectorHint": "Pick the checkpoint the form generates with. Models not on disk are downloaded first."
+    "selectorHint": "Pick the checkpoint the form generates with. Models not on disk are downloaded first.",
+    "notForWorkflow": "Not for {{workflow}}"
   },
   "plan": {
     "title": "Download {{name}} · {{quant}}",
@@ -119,7 +157,11 @@
       "noModel": "Download and load an image model first.",
       "modelLoading": "The model is still loading.",
       "emptyPrompt": "Write a prompt first.",
-      "busy": "A generation is already running."
+      "busy": "A generation is already running.",
+      "noSource": "Choose a source image first.",
+      "noMask": "Paint the area to change first.",
+      "noSides": "Pick at least one side to extend.",
+      "unsupportedWorkflow": "The loaded model cannot run this workflow."
     },
     "negativeHint": "What to steer the image away from. Only used when guidance is above 1.",
     "stepsHint": "Denoising passes. More is slower and rarely helps past the model default.",
@@ -136,7 +178,45 @@
     "memoryGroup": "Offload weights",
     "memoryModel": "Offload everything",
     "engineHint": "Which renderer serves generation.",
-    "evictChat": "Free chat model"
+    "evictChat": "Free chat model",
+    "sourceImage": "Source image",
+    "referenceImage": "Reference image",
+    "dropzone": "Click or drop an image",
+    "imageFiles": "Images",
+    "removeImage": "Remove image",
+    "replaceImage": "Replace image",
+    "sourceUnreadable": "The image could not be used",
+    "sourceSize": "{{width}}×{{height}}",
+    "mask": "Mask",
+    "maskHint": "Paint over what should change. Everything else is kept.",
+    "clearMask": "Clear mask",
+    "brushSize": "Brush size",
+    "strength": "Strength",
+    "strengthHint": "How far the picture is redrawn. Low keeps the source; 1 starts over from noise.",
+    "expandBy": "Expand by",
+    "expandHint": "How much each chosen side grows, as a percent of the source.",
+    "sides": "Sides",
+    "side": {
+      "top": "Top",
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right"
+    },
+    "scale": "Scale",
+    "scaleHint": "How many times larger. Capped by the model's size limit.",
+    "detailStrength": "Detail strength",
+    "detailStrengthHint": "How much new detail is painted into the enlarged picture. Higher drifts further from the source.",
+    "addReference": "Add another reference",
+    "referenceN": "Reference {{index}}",
+    "removeReference": "Remove reference {{index}}",
+    "instruction": "Instruction",
+    "instructionPlaceholder": "Describe the edit, e.g. make the sky sunset orange",
+    "outputSize": "Output {{width}}×{{height}}",
+    "fromGallery": "or choose from the gallery",
+    "galleryPickerTitle": "Choose from the gallery",
+    "galleryPickerDescription": "Click an image to use it.",
+    "galleryPickerEmpty": "No images in the gallery yet.",
+    "addReferenceFromGallery": "Add a reference from the gallery"
   },
   "size": {
     "title": "Size",
@@ -225,7 +305,9 @@
       "engine": "Engine",
       "duration": "Took",
       "seconds": "{{seconds}} s"
-    }
+    },
+    "useAsSource": "Use as source",
+    "useAsSourceDone": "Set as the source image."
   },
   "delete": {
     "title": "Delete {{count}} images?",

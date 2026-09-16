@@ -62,11 +62,76 @@ pub enum ModelState {
     Failed,
 }
 
+/// What the request does with its images. Mirrors Studio's workflow tabs;
+/// every one of them is served by the single `img_gen` endpoint, the body
+/// just carries different inputs (see `args::build_img_gen_request`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageWorkflow {
+    /// txt2img.
     Create,
+    /// img2img: redraw the source at `strength`.
     Transform,
+    /// img2img inside a painted mask (white = repaint).
+    Inpaint,
+    /// Outpaint: the web app grows the canvas and masks the new border.
+    Extend,
+    /// img2img at a larger size with a low strength — a re-detail pass.
+    Upscale,
+    /// Generate guided by reference images (FLUX.2 Klein / Kontext-style).
+    Reference,
+    /// Instruction edit of one reference image; the prompt is the instruction.
+    Edit,
+}
+
+impl ImageWorkflow {
+    /// Workflows that send an `init_image` (and therefore use `strength`).
+    pub fn uses_init_image(self) -> bool {
+        matches!(
+            self,
+            Self::Transform | Self::Inpaint | Self::Extend | Self::Upscale
+        )
+    }
+
+    pub fn uses_mask(self) -> bool {
+        matches!(self, Self::Inpaint | Self::Extend)
+    }
+
+    /// Workflows that send `ref_images` instead of an init image.
+    pub fn uses_references(self) -> bool {
+        matches!(self, Self::Reference | Self::Edit)
+    }
+
+    /// sd.cpp's denoise strength when the request leaves it unset.
+    pub fn default_strength(self) -> f64 {
+        match self {
+            Self::Extend => 1.0,
+            Self::Upscale => 0.35,
+            _ => 0.75,
+        }
+    }
+}
+
+/// One image input: a file the user picked (read by the plugin) or PNG bytes
+/// the web app produced itself (a painted mask, a grown canvas).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ImageSource {
+    Path { path: String },
+    Data { base64: String },
+}
+
+impl ImageSource {
+    /// A copy safe to keep in job snapshots: inline bytes are replaced by a
+    /// placeholder so a job record never carries megabytes of base64.
+    pub fn redacted(&self) -> Self {
+        match self {
+            Self::Path { path } => Self::Path { path: path.clone() },
+            Self::Data { .. } => Self::Data {
+                base64: String::new(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,8 +372,16 @@ pub struct ImageGenerateRequest {
     pub flow_shift: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow: Option<ImageWorkflow>,
+    /// Source image for transform / inpaint / extend / upscale / edit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub init_image_path: Option<String>,
+    pub init_image: Option<ImageSource>,
+    /// Inpaint / extend mask: white where the model repaints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask_image: Option<ImageSource>,
+    /// Extra references for `reference` (the init image is the first one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_images: Option<Vec<ImageSource>>,
+    /// Denoise strength 0..1 for the init-image workflows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strength: Option<f64>,
 }
@@ -316,6 +389,20 @@ pub struct ImageGenerateRequest {
 impl ImageGenerateRequest {
     pub fn workflow(&self) -> ImageWorkflow {
         self.workflow.unwrap_or(ImageWorkflow::Create)
+    }
+
+    /// The request as stored in the job record and sent with every job
+    /// event: file paths stay, inline image bytes are blanked.
+    pub fn without_sources(&self) -> Self {
+        Self {
+            init_image: self.init_image.as_ref().map(ImageSource::redacted),
+            mask_image: self.mask_image.as_ref().map(ImageSource::redacted),
+            reference_images: self
+                .reference_images
+                .as_ref()
+                .map(|refs| refs.iter().map(ImageSource::redacted).collect()),
+            ..self.clone()
+        }
     }
 }
 

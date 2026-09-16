@@ -7,6 +7,8 @@ import {
   matchAspect,
   sizeForAspect,
   sizeForEdge,
+  fitWithin,
+  scaleWithin,
   sizeOptions,
   snapDim,
   type DimConstraints,
@@ -183,5 +185,37 @@ describe('presets', () => {
   it('formats megapixels with one decimal', () => {
     expect(formatMegapixels(1024, 1024)).toBe('1.0')
     expect(formatMegapixels(1920, 1080)).toBe('2.1')
+  })
+})
+
+describe('fitWithin', () => {
+  it('shrinks to the box, keeps the aspect and snaps', () => {
+    expect(fitWithin(4000, 3000, 1024, 1024, SD)).toEqual({ width: 1024, height: 768 })
+    expect(fitWithin(1500, 3000, 1024, 1024, SD)).toEqual({ width: 512, height: 1024 })
+  })
+
+  it('never enlarges a small source', () => {
+    expect(fitWithin(640, 480, 1024, 1024, SD)).toEqual({ width: 640, height: 480 })
+  })
+
+  it('falls back to the box for a source with no size', () => {
+    expect(fitWithin(0, 0, 1024, 768, SD)).toEqual({ width: 1024, height: 768 })
+  })
+})
+
+describe('scaleWithin', () => {
+  it('multiplies and snaps', () => {
+    expect(scaleWithin(512, 384, 2, SD)).toEqual({ width: 1024, height: 768, factor: 2 })
+  })
+
+  it('caps the factor so the longer edge stays under the ceiling', () => {
+    const scaled = scaleWithin(1600, 1200, 4, SD)
+    expect(scaled.width).toBe(2048)
+    expect(scaled.height).toBe(1536)
+    expect(scaled.factor).toBeCloseTo(1.28)
+  })
+
+  it('never shrinks', () => {
+    expect(scaleWithin(1024, 1024, 0.5, SD).factor).toBe(1)
   })
 })
