@@ -344,7 +344,12 @@ mod fixture_dump {
         for c in cases() {
             let path = scratch.join(format!("{}.json", c.name));
             let (input, expected) = match c.op {
-                Op::MarkRunning { host, port, prefix, requires_api_key } => {
+                Op::MarkRunning {
+                    host,
+                    port,
+                    prefix,
+                    requires_api_key,
+                } => {
                     // Mirrors `mark_running`: the struct it builds, pid included.
                     let state = LocalApiServerState {
                         running: true,
@@ -354,10 +359,8 @@ mod fixture_dump {
                         requires_api_key,
                         pid: std::process::id(),
                     };
-                    let text = written_text(&state).replace(
-                        &format!("\"pid\": {}", state.pid),
-                        "\"pid\": \"<pid>\"",
-                    );
+                    let text = written_text(&state)
+                        .replace(&format!("\"pid\": {}", state.pid), "\"pid\": \"<pid>\"");
                     let mut tree = state_json(&state);
                     tree["pid"] = json!("<pid>");
                     (
@@ -422,6 +425,10 @@ mod fixture_dump {
             serde_json::to_string_pretty(&index).unwrap() + "\n",
         )
         .unwrap();
-        eprintln!("wrote {} state-file fixtures to {}", names.len(), out.display());
+        eprintln!(
+            "wrote {} state-file fixtures to {}",
+            names.len(),
+            out.display()
+        );
     }
 }

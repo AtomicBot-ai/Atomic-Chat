@@ -376,21 +376,19 @@ fn cases() -> Vec<Case> {
             "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"theme\": \"dracula\",\n  \"provider\": {\n    \"openrouter\": {\n      \"npm\": \"@openrouter/ai-sdk-provider\",\n      \"options\": { \"apiKey\": \"sk-or-user\" }\n    }\n  },\n  \"model\": \"openrouter/anthropic/claude-sonnet-4\"\n}\n",
         ),
     );
-    v.push(
-        case("kilo", "jsonc_comments_dropped").seed(
-            ".config/kilo/kilo.jsonc",
-            "{\n  // my kilo config\n  \"theme\": \"dracula\", // trailing comma next\n}\n",
-        ),
-    );
+    v.push(case("kilo", "jsonc_comments_dropped").seed(
+        ".config/kilo/kilo.jsonc",
+        "{\n  // my kilo config\n  \"theme\": \"dracula\", // trailing comma next\n}\n",
+    ));
     v.push(case("kilo", "empty_file").seed(".config/kilo/kilo.jsonc", ""));
-    v.push(
-        case("kilo", "provider_not_object_replaced")
-            .seed(".config/kilo/kilo.jsonc", "{\n  \"provider\": \"nonsense\"\n}\n"),
-    );
-    v.push(
-        case("kilo", "custom_schema_preserved")
-            .seed(".config/kilo/kilo.jsonc", "{\n  \"$schema\": \"./local.schema.json\"\n}\n"),
-    );
+    v.push(case("kilo", "provider_not_object_replaced").seed(
+        ".config/kilo/kilo.jsonc",
+        "{\n  \"provider\": \"nonsense\"\n}\n",
+    ));
+    v.push(case("kilo", "custom_schema_preserved").seed(
+        ".config/kilo/kilo.jsonc",
+        "{\n  \"$schema\": \"./local.schema.json\"\n}\n",
+    ));
 
     // ── claude-code: ~/.claude/settings.json ──────────────────────────────
     v.push(case("claude-code", "fresh"));
@@ -451,7 +449,11 @@ fn cases() -> Vec<Case> {
     );
     v.push(case("codex", "whitespace_only_file").seed(".codex/config.toml", "\n\n   \n"));
     v.push(case("codex", "model_needing_toml_escape").model("weird\\path/\"quoted\""));
-    v.push(case("codex", "keyed_then_keyless_rerun").key("").after(&default_url("codex"), MODEL, KEY));
+    v.push(case("codex", "keyed_then_keyless_rerun").key("").after(
+        &default_url("codex"),
+        MODEL,
+        KEY,
+    ));
 
     // ── opencode: ~/.config/opencode/opencode.json ────────────────────────
     v.push(case("opencode", "fresh"));
@@ -464,10 +466,10 @@ fn cases() -> Vec<Case> {
         ),
     );
     v.push(case("opencode", "empty_file").seed(".config/opencode/opencode.json", "  \n"));
-    v.push(
-        case("opencode", "provider_not_object_replaced")
-            .seed(".config/opencode/opencode.json", "{\n  \"provider\": 42\n}\n"),
-    );
+    v.push(case("opencode", "provider_not_object_replaced").seed(
+        ".config/opencode/opencode.json",
+        "{\n  \"provider\": 42\n}\n",
+    ));
 
     // ── openclaude: ~/.openclaude.json + ~/.openclaude/.openclaude-profile.json
     v.push(case("openclaude", "fresh"));
@@ -493,7 +495,11 @@ fn cases() -> Vec<Case> {
 
     // ── cline: spawns `cline auth`, writes nothing ────────────────────────
     v.push(case("cline", "auth_success").mode(Mode::ClineOk));
-    v.push(case("cline", "auth_success_empty_key").key("").mode(Mode::ClineOk));
+    v.push(
+        case("cline", "auth_success_empty_key")
+            .key("")
+            .mode(Mode::ClineOk),
+    );
     v.push(case("cline", "auth_command_fails").mode(Mode::ClineFail));
     v.push(case("cline", "binary_missing").mode(Mode::ClineMissing));
 
@@ -502,7 +508,11 @@ fn cases() -> Vec<Case> {
     v.push(case("dsh", "rerun").twice());
     v.push(case("dsh", "empty_key_writes_no_env").key(""));
     // A keyed run leaves a secret in .env; a later keyless run must clear it.
-    v.push(case("dsh", "keyed_then_keyless_clears_env").key("").after(&default_url("dsh"), MODEL, KEY));
+    v.push(case("dsh", "keyed_then_keyless_clears_env").key("").after(
+        &default_url("dsh"),
+        MODEL,
+        KEY,
+    ));
     v.push(
         case("dsh", "existing_yaml_preserved").seed(
             ".dsh/settings.yaml",
@@ -520,11 +530,10 @@ fn cases() -> Vec<Case> {
             .twice()
             .seed(".dsh/settings.yaml", "theme: dark\n"),
     );
+    v.push(case("dsh", "existing_env_preserved").seed(".dsh/.env", "MY_TOKEN=keep-me\nOTHER=1\n"));
     v.push(
-        case("dsh", "existing_env_preserved")
-            .seed(".dsh/.env", "MY_TOKEN=keep-me\nOTHER=1\n"),
+        case("dsh", "comment_only_yaml").seed(".dsh/settings.yaml", "# nothing but a comment\n"),
     );
-    v.push(case("dsh", "comment_only_yaml").seed(".dsh/settings.yaml", "# nothing but a comment\n"));
     v.push(case("dsh", "empty_url_rejected").url(""));
     v.push(case("dsh", "empty_model_rejected").model(""));
     v.push(case("dsh", "key_with_whitespace_rejected").key("sk atomic"));
@@ -542,10 +551,10 @@ fn cases() -> Vec<Case> {
             "{\n  // Zed settings\n  \"theme\": \"One Dark\",\n  \"language_models\": {\n    \"ollama\": { \"api_url\": \"http://localhost:11434\" },\n    \"openai_compatible\": {\n      \"Groq\": { \"api_url\": \"https://api.groq.com/openai/v1\", \"available_models\": [] }\n    }\n  },\n  \"agent\": { \"version\": \"2\", \"default_model\": { \"provider\": \"ollama\", \"model\": \"llama3.2\" } }\n}\n",
         ),
     );
-    v.push(
-        case("zed", "language_models_not_object_replaced")
-            .seed(".config/zed/settings.json", "{\n  \"language_models\": []\n}\n"),
-    );
+    v.push(case("zed", "language_models_not_object_replaced").seed(
+        ".config/zed/settings.json",
+        "{\n  \"language_models\": []\n}\n",
+    ));
 
     // ── mimo: ~/.config/mimocode/mimocode.json (OpenCode fork) ────────────
     v.push(case("mimo", "fresh"));
@@ -574,31 +583,29 @@ fn cases() -> Vec<Case> {
             "{\n  \"customModels\": [\n    { \"model\": \"stale\", \"displayName\": \"Atomic Chat\", \"baseUrl\": \"http://127.0.0.1:9999/v1\", \"apiKey\": \"old\", \"provider\": \"generic-chat-completion-api\", \"maxOutputTokens\": 4096 },\n    { \"model\": \"gpt-5\", \"displayName\": \"My OpenAI\" }\n  ]\n}\n",
         ),
     );
-    v.push(
-        case("droid", "custom_models_not_array_replaced")
-            .seed(".factory/settings.json", "{\n  \"customModels\": \"oops\"\n}\n"),
-    );
+    v.push(case("droid", "custom_models_not_array_replaced").seed(
+        ".factory/settings.json",
+        "{\n  \"customModels\": \"oops\"\n}\n",
+    ));
 
     // ── copilot: shell rc, marked block ───────────────────────────────────
     v.push(case("copilot", "fresh_zsh"));
     v.push(case("copilot", "rerun_zsh").twice());
     v.push(case("copilot", "empty_key_omits_key_var").key(""));
-    v.push(
-        case("copilot", "existing_rc_preserved")
-            .seed(".zshenv", "export EDITOR=nvim\nexport PATH=\"$HOME/bin:$PATH\"\n"),
-    );
-    v.push(
-        case("copilot", "stray_prefixed_export_removed").seed(
-            ".zshenv",
-            "export EDITOR=nvim\nexport COPILOT_MODEL='leftover-from-an-old-format'\n",
-        ),
-    );
+    v.push(case("copilot", "existing_rc_preserved").seed(
+        ".zshenv",
+        "export EDITOR=nvim\nexport PATH=\"$HOME/bin:$PATH\"\n",
+    ));
+    v.push(case("copilot", "stray_prefixed_export_removed").seed(
+        ".zshenv",
+        "export EDITOR=nvim\nexport COPILOT_MODEL='leftover-from-an-old-format'\n",
+    ));
     v.push(case("copilot", "fresh_bash").shell("/bin/bash"));
-    v.push(
-        case("copilot", "keyed_then_keyless_rerun")
-            .key("")
-            .after(&default_url("copilot"), MODEL, KEY),
-    );
+    v.push(case("copilot", "keyed_then_keyless_rerun").key("").after(
+        &default_url("copilot"),
+        MODEL,
+        KEY,
+    ));
 
     // ── openhands: shell rc ───────────────────────────────────────────────
     v.push(case("openhands", "fresh_zsh"));
@@ -617,10 +624,7 @@ fn cases() -> Vec<Case> {
     v.push(case("poolside", "url_without_v1").url("http://127.0.0.1:1337"));
     v.push(case("poolside", "url_with_trailing_slash").url("http://127.0.0.1:1337/v1/"));
     v.push(case("poolside", "url_with_padding").url("  http://127.0.0.1:1337/v1//  "));
-    v.push(
-        case("poolside", "existing_rc_preserved")
-            .seed(".zshenv", "export EDITOR=nvim\n"),
-    );
+    v.push(case("poolside", "existing_rc_preserved").seed(".zshenv", "export EDITOR=nvim\n"));
 
     // ── goose: shell rc, block strips non-prefixed managed vars ───────────
     v.push(case("goose", "fresh_zsh"));
@@ -628,20 +632,20 @@ fn cases() -> Vec<Case> {
     v.push(case("goose", "empty_key_uses_placeholder").key(""));
     // The user's own OPENAI_* export lives outside the block and must survive,
     // even though the managed block writes OPENAI_* vars too.
-    v.push(
-        case("goose", "unrelated_openai_export_preserved")
-            .seed(".zshenv", "export OPENAI_API_KEY='sk-user-owned'\nexport EDITOR=nvim\n"),
-    );
+    v.push(case("goose", "unrelated_openai_export_preserved").seed(
+        ".zshenv",
+        "export OPENAI_API_KEY='sk-user-owned'\nexport EDITOR=nvim\n",
+    ));
     v.push(case("goose", "fresh_bash").shell("/bin/bash"));
 
     // ── muse: shell rc, key only ──────────────────────────────────────────
     v.push(case("muse", "fresh_zsh"));
     v.push(case("muse", "rerun_zsh").twice());
     v.push(case("muse", "empty_key_uses_placeholder").key(""));
-    v.push(
-        case("muse", "existing_rc_preserved")
-            .seed(".zshenv", "export EDITOR=nvim\nexport META_UNRELATED='clobbered'\n"),
-    );
+    v.push(case("muse", "existing_rc_preserved").seed(
+        ".zshenv",
+        "export EDITOR=nvim\nexport META_UNRELATED='clobbered'\n",
+    ));
 
     // ── atomic-agent: ~/.atomic-agent/config.json ─────────────────────────
     v.push(case("atomic-agent", "fresh"));
@@ -660,18 +664,14 @@ fn cases() -> Vec<Case> {
             "{\n  \"llm\": {\n    \"providers\": [ { \"id\": \"openai\", \"kind\": \"openai\" } ],\n    \"activeEmbeddingProvider\": \"gone-away\"\n  }\n}\n",
         ),
     );
-    v.push(
-        case("atomic-agent", "managed_mode_seeds_daemon_url").seed(
-            ".atomic-agent/config.json",
-            "{\n  \"localModels\": { \"mode\": \"managed\", \"managed\": { \"port\": 20001 } }\n}\n",
-        ),
-    );
-    v.push(
-        case("atomic-agent", "managed_mode_default_port").seed(
-            ".atomic-agent/config.json",
-            "{\n  \"localModels\": { \"mode\": \"managed\" }\n}\n",
-        ),
-    );
+    v.push(case("atomic-agent", "managed_mode_seeds_daemon_url").seed(
+        ".atomic-agent/config.json",
+        "{\n  \"localModels\": { \"mode\": \"managed\", \"managed\": { \"port\": 20001 } }\n}\n",
+    ));
+    v.push(case("atomic-agent", "managed_mode_default_port").seed(
+        ".atomic-agent/config.json",
+        "{\n  \"localModels\": { \"mode\": \"managed\" }\n}\n",
+    ));
     v.push(
         case("atomic-agent", "embeddings_enabled_splits_base_url").seed(
             ".atomic-agent/config.json",
@@ -717,18 +717,15 @@ fn cases() -> Vec<Case> {
             "model:\n  default: x\n  provider: auto\n  base_url: https://example.invalid\ncustom_providers: []\nproviders:\n  custom:\n    request_timeout_seconds: 42\n  openai:\n    request_timeout_seconds: 60\n",
         ),
     );
-    v.push(
-        case("hermes", "env_gets_no_proxy")
-            .seed(".hermes/.env", "HERMES_API_KEY=user-key"),
-    );
+    v.push(case("hermes", "env_gets_no_proxy").seed(".hermes/.env", "HERMES_API_KEY=user-key"));
     v.push(
         case("hermes", "env_with_no_proxy_untouched")
             .seed(".hermes/.env", "NO_PROXY=example.com\n"),
     );
-    v.push(
-        case("hermes", "config_without_trailing_newline")
-            .seed(".hermes/config.yaml", "model:\n  default: x\n  provider: auto\n  base_url: https://example.invalid"),
-    );
+    v.push(case("hermes", "config_without_trailing_newline").seed(
+        ".hermes/config.yaml",
+        "model:\n  default: x\n  provider: auto\n  base_url: https://example.invalid",
+    ));
 
     // ── openclaw: ~/.openclaw/openclaw.json, parsed as JSON5 ──────────────
     v.push(case("openclaw", "fresh"));
@@ -746,24 +743,20 @@ fn cases() -> Vec<Case> {
             "{\n  \"agents\": { \"defaults\": { \"modelPolicy\": { \"allow\": [\"openai/gpt-5\"] } } }\n}\n",
         ),
     );
-    v.push(
-        case("openclaw", "empty_model_policy_left_alone").seed(
-            ".openclaw/openclaw.json",
-            "{\n  \"agents\": { \"defaults\": { \"modelPolicy\": { \"allow\": [] } } }\n}\n",
-        ),
-    );
+    v.push(case("openclaw", "empty_model_policy_left_alone").seed(
+        ".openclaw/openclaw.json",
+        "{\n  \"agents\": { \"defaults\": { \"modelPolicy\": { \"allow\": [] } } }\n}\n",
+    ));
     v.push(
         case("openclaw", "model_policy_wildcard_already_allows").seed(
             ".openclaw/openclaw.json",
             "{\n  \"agents\": { \"defaults\": { \"modelPolicy\": { \"allow\": [\"atomic/*\"] } } }\n}\n",
         ),
     );
-    v.push(
-        case("openclaw", "model_entry_string_normalised").seed(
-            ".openclaw/openclaw.json",
-            "{\n  \"agents\": { \"defaults\": { \"model\": \"openai/gpt-5\" } }\n}\n",
-        ),
-    );
+    v.push(case("openclaw", "model_entry_string_normalised").seed(
+        ".openclaw/openclaw.json",
+        "{\n  \"agents\": { \"defaults\": { \"model\": \"openai/gpt-5\" } }\n}\n",
+    ));
 
     v
 }
@@ -798,7 +791,8 @@ fn dump_fixtures() {
     let commit = git_head(&root);
     let source = "src-tauri/src/core/cli/fixture_dump.rs";
 
-    let sandbox = std::env::temp_dir().join(format!("atomic-agent-fixtures-{}", std::process::id()));
+    let sandbox =
+        std::env::temp_dir().join(format!("atomic-agent-fixtures-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&sandbox);
     std::fs::create_dir_all(&sandbox).expect("create sandbox");
 
@@ -898,23 +892,23 @@ fn dump_fixtures() {
         "comparator": "agent-config-files",
         "comparator_notes": {
             "agent-config-files": "Each case runs `cli::integrations::configure(agent, api_url, model, api_key)` \
-against a throwaway home directory. `input.seed_files` are written into that home (parent directories created) \
-BEFORE the call; `input.prior_runs`, when present, lists earlier `configure` invocations made in the same home, \
-in order, before the recorded one — that is how rerun/idempotence cases are expressed. `expected.files` is the \
-COMPLETE set of files present under the fake home afterwards: every path is relative to that home, uses forward \
-slashes, is sorted, and its value is the file's exact text — compare byte-exact, trailing newline included. A path \
-absent from `expected.files` must not exist after the port runs. `expected.ok` is false when `configure` returned \
-Err, and `expected.error` then carries the message verbatim.",
+    against a throwaway home directory. `input.seed_files` are written into that home (parent directories created) \
+    BEFORE the call; `input.prior_runs`, when present, lists earlier `configure` invocations made in the same home, \
+    in order, before the recorded one — that is how rerun/idempotence cases are expressed. `expected.files` is the \
+    COMPLETE set of files present under the fake home afterwards: every path is relative to that home, uses forward \
+    slashes, is sorted, and its value is the file's exact text — compare byte-exact, trailing newline included. A path \
+    absent from `expected.files` must not exist after the port runs. `expected.ok` is false when `configure` returned \
+    Err, and `expected.error` then carries the message verbatim.",
             "paths": "Relative to the fake home ($HOME on unix, %USERPROFILE% on Windows — `agent_home_dir()`). \
-The emitter also pins $DSH_HOME to `<home>/.dsh` (its default) so dsh never probes a login shell, and clears \
-$OPENCLAW_CONFIG_PATH, $ATOMIC_AGENT_STATE_DIR and $HERMES_HOME so every writer uses its default location.",
+    The emitter also pins $DSH_HOME to `<home>/.dsh` (its default) so dsh never probes a login shell, and clears \
+    $OPENCLAW_CONFIG_PATH, $ATOMIC_AGENT_STATE_DIR and $HERMES_HOME so every writer uses its default location.",
             "shell": "`input.shell` is $SHELL during the run. The four env-var agents (copilot, goose, openhands, \
-muse, poolside) pick their rc file from it: a value ending in `/bash` selects ~/.bash_profile on macOS and \
-~/.bashrc on Linux, anything else selects ~/.zshenv. These fixtures were emitted on a host where \
-cfg!(target_os) = macos, so the bash cases show ~/.bash_profile; on Linux the same writer targets ~/.bashrc.",
+    muse, poolside) pick their rc file from it: a value ending in `/bash` selects ~/.bash_profile on macOS and \
+    ~/.bashrc on Linux, anything else selects ~/.zshenv. These fixtures were emitted on a host where \
+    cfg!(target_os) = macos, so the bash cases show ~/.bash_profile; on Linux the same writer targets ~/.bashrc.",
             "cline": "Cline writes no config file at all — it runs `cline auth …` as a subprocess. Those cases put a \
-recording stub named `cline` on PATH, so `expected.spawn` is the exact argv the writer passed, `expected.files` is \
-empty, and the failure/missing cases show the error text. A port must reproduce the argv, not a file.",
+    recording stub named `cline` on PATH, so `expected.spawn` is the exact argv the writer passed, `expected.files` is \
+    empty, and the failure/missing cases show the error text. A port must reproduce the argv, not a file.",
             "placeholders": placeholders,
         },
         "cases": names,

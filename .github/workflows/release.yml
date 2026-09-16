@@ -234,6 +234,10 @@ jobs:
           make install-and-build
           make install-rust-targets
 
+      - name: Gate atomic-core lock identity (macOS)
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::atomic_core::lock::tests::
+
       - name: Build web app and generate icons
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
@@ -662,6 +666,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::atomic_core::lock::tests::
           cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
           yarn workspace @janhq/web-app vitest --run src/lib/agent-path.test.ts src/lib/agent-file-links.test.ts src/stores/workspace-preview-store.test.ts
 
@@ -999,6 +1004,7 @@ jobs:
       - name: Gate Agent checks (Linux)
         timeout-minutes: 20
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::atomic_core::lock::tests::
           cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::agent::
 
       - name: Build app (AppImage)

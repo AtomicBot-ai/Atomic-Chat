@@ -733,9 +733,8 @@ pub fn install_jan_cli_sync<R: Runtime>(
     {
         if bundled.exists() {
             let staged = dest.with_extension("exe.atomic-new");
-            std::fs::copy(&bundled, &staged).map_err(|e| {
-                format!("Could not stage the Atomic Chat CLI update: {e}")
-            })?;
+            std::fs::copy(&bundled, &staged)
+                .map_err(|e| format!("Could not stage the Atomic Chat CLI update: {e}"))?;
             if dest.exists() {
                 std::fs::remove_file(&dest).map_err(|e| {
                     let _ = std::fs::remove_file(&staged);

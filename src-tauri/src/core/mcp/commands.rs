@@ -58,7 +58,9 @@ pub(crate) fn repin_filesystem_mcp_servers(servers: &mut Map<String, Value>) -> 
             continue;
         };
         for arg in args.iter_mut() {
-            let Some(current) = arg.as_str() else { continue };
+            let Some(current) = arg.as_str() else {
+                continue;
+            };
             let needs_repin = current == FILESYSTEM_MCP_PACKAGE
                 || app_written_specs.iter().any(|spec| spec == current);
             if !needs_repin {

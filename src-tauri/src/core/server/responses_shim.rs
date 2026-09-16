@@ -751,322 +751,496 @@ mod fixture_dump {
     const STREAM_MODEL: &str = "fixture-model";
 
     fn req(name: &'static str, body: Value) -> Case {
-        Case { name, kind: Kind::Request(body) }
+        Case {
+            name,
+            kind: Kind::Request(body),
+        }
     }
 
     fn resp(name: &'static str, chat: Value) -> Case {
-        Case { name, kind: Kind::Response(chat) }
+        Case {
+            name,
+            kind: Kind::Response(chat),
+        }
     }
 
     fn stream(name: &'static str, chunks: Vec<Value>) -> Case {
-        Case { name, kind: Kind::Stream(chunks) }
+        Case {
+            name,
+            kind: Kind::Stream(chunks),
+        }
     }
 
     fn cases() -> Vec<Case> {
         vec![
             // ── request: input / instructions ──────────────────────────────
-            req("request_string_input_with_instructions_stream", json!({
-                "model": "m", "instructions": "you are helpful", "input": "hello", "stream": true
-            })),
-            req("request_stream_false_no_stream_options", json!({
-                "model": "m", "input": "hello", "stream": false
-            })),
-            req("request_stream_absent_omitted", json!({"model": "m", "input": "hello"})),
-            req("request_empty_instructions_dropped", json!({
-                "model": "m", "instructions": "", "input": "hi"
-            })),
-            req("request_input_missing_gives_empty_messages", json!({"model": "m"})),
-            req("request_input_non_string_non_array_ignored", json!({"model": "m", "input": 42})),
-            req("request_message_items_all_roles", json!({
-                "model": "m",
-                "input": [
-                    {"type": "message", "role": "user", "content": "plain string"},
-                    {"type": "message", "role": "assistant",
-                     "content": [{"type": "output_text", "text": "prior answer"}]},
-                    {"type": "message", "role": "user",
-                     "content": [{"type": "input_text", "text": "look: "},
-                                 {"type": "input_image", "image_url": "data:image/png;base64,AAA"},
-                                 {"type": "input_text", "text": "what is it"}]}
-                ]
-            })),
-            req("request_merges_system_and_developer_into_leading_system", json!({
-                "model": "m",
-                "instructions": "base policy",
-                "input": [
-                    {"type": "message", "role": "developer",
-                     "content": [{"type": "input_text", "text": "project rules"}]},
-                    {"type": "message", "role": "user",
-                     "content": [{"type": "input_text", "text": "hi"}]},
-                    {"type": "message", "role": "system",
-                     "content": [{"type": "input_text", "text": "late system"}]}
-                ]
-            })),
-            req("request_item_without_type_or_role_defaults_user_message", json!({
-                "model": "m", "input": [{"content": "no type no role"}]
-            })),
-            req("request_message_without_content_gives_empty_string", json!({
-                "model": "m", "input": [{"type": "message", "role": "user"}]
-            })),
-            req("request_content_parts_any_type_with_text_concatenated", json!({
-                "model": "m",
-                "input": [{"type": "message", "role": "user", "content": [
-                    {"type": "input_text", "text": "a"},
-                    {"type": "output_text", "text": "b"},
-                    {"type": "input_file", "filename": "x.pdf"},
-                    {"text": "c"},
-                    {"type": "input_text", "text": 7}
-                ]}]
-            })),
-            req("request_system_only_input_yields_single_system", json!({
-                "model": "m",
-                "input": [
-                    {"type": "message", "role": "system", "content": "one"},
-                    {"type": "message", "role": "system", "content": "two"}
-                ]
-            })),
-            req("request_all_system_text_empty_yields_no_system", json!({
-                "model": "m",
-                "instructions": "",
-                "input": [
-                    {"type": "message", "role": "system", "content": ""},
-                    {"type": "message", "role": "developer", "content": []},
-                    {"type": "message", "role": "user", "content": "hi"}
-                ]
-            })),
+            req(
+                "request_string_input_with_instructions_stream",
+                json!({
+                    "model": "m", "instructions": "you are helpful", "input": "hello", "stream": true
+                }),
+            ),
+            req(
+                "request_stream_false_no_stream_options",
+                json!({
+                    "model": "m", "input": "hello", "stream": false
+                }),
+            ),
+            req(
+                "request_stream_absent_omitted",
+                json!({"model": "m", "input": "hello"}),
+            ),
+            req(
+                "request_empty_instructions_dropped",
+                json!({
+                    "model": "m", "instructions": "", "input": "hi"
+                }),
+            ),
+            req(
+                "request_input_missing_gives_empty_messages",
+                json!({"model": "m"}),
+            ),
+            req(
+                "request_input_non_string_non_array_ignored",
+                json!({"model": "m", "input": 42}),
+            ),
+            req(
+                "request_message_items_all_roles",
+                json!({
+                    "model": "m",
+                    "input": [
+                        {"type": "message", "role": "user", "content": "plain string"},
+                        {"type": "message", "role": "assistant",
+                         "content": [{"type": "output_text", "text": "prior answer"}]},
+                        {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": "look: "},
+                                     {"type": "input_image", "image_url": "data:image/png;base64,AAA"},
+                                     {"type": "input_text", "text": "what is it"}]}
+                    ]
+                }),
+            ),
+            req(
+                "request_merges_system_and_developer_into_leading_system",
+                json!({
+                    "model": "m",
+                    "instructions": "base policy",
+                    "input": [
+                        {"type": "message", "role": "developer",
+                         "content": [{"type": "input_text", "text": "project rules"}]},
+                        {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": "hi"}]},
+                        {"type": "message", "role": "system",
+                         "content": [{"type": "input_text", "text": "late system"}]}
+                    ]
+                }),
+            ),
+            req(
+                "request_item_without_type_or_role_defaults_user_message",
+                json!({
+                    "model": "m", "input": [{"content": "no type no role"}]
+                }),
+            ),
+            req(
+                "request_message_without_content_gives_empty_string",
+                json!({
+                    "model": "m", "input": [{"type": "message", "role": "user"}]
+                }),
+            ),
+            req(
+                "request_content_parts_any_type_with_text_concatenated",
+                json!({
+                    "model": "m",
+                    "input": [{"type": "message", "role": "user", "content": [
+                        {"type": "input_text", "text": "a"},
+                        {"type": "output_text", "text": "b"},
+                        {"type": "input_file", "filename": "x.pdf"},
+                        {"text": "c"},
+                        {"type": "input_text", "text": 7}
+                    ]}]
+                }),
+            ),
+            req(
+                "request_system_only_input_yields_single_system",
+                json!({
+                    "model": "m",
+                    "input": [
+                        {"type": "message", "role": "system", "content": "one"},
+                        {"type": "message", "role": "system", "content": "two"}
+                    ]
+                }),
+            ),
+            req(
+                "request_all_system_text_empty_yields_no_system",
+                json!({
+                    "model": "m",
+                    "instructions": "",
+                    "input": [
+                        {"type": "message", "role": "system", "content": ""},
+                        {"type": "message", "role": "developer", "content": []},
+                        {"type": "message", "role": "user", "content": "hi"}
+                    ]
+                }),
+            ),
             // ── request: tool call replay ──────────────────────────────────
-            req("request_function_call_and_output_items", json!({
-                "model": "m",
-                "input": [
-                    {"type": "message", "role": "user",
-                     "content": [{"type": "input_text", "text": "run ls"}]},
-                    {"type": "function_call", "name": "shell",
-                     "arguments": "{\"cmd\":\"ls\"}", "call_id": "call_1"},
-                    {"type": "function_call_output", "call_id": "call_1", "output": "file.txt"}
-                ]
-            })),
-            req("request_function_call_falls_back_to_id_and_defaults", json!({
-                "model": "m",
-                "input": [
-                    {"type": "function_call", "id": "fc_abc"},
-                    {"type": "function_call", "name": "x", "arguments": "{}", "call_id": "call_2", "id": "fc_2"}
-                ]
-            })),
-            req("request_function_call_output_non_string_serialised", json!({
-                "model": "m",
-                "input": [
-                    {"type": "function_call_output", "call_id": "call_1", "output": {"a": 1, "b": [true, null]}},
-                    {"type": "function_call_output", "call_id": "call_2", "output": 3.5},
-                    {"type": "function_call_output"}
-                ]
-            })),
-            req("request_reasoning_and_unknown_items_dropped", json!({
-                "model": "m",
-                "input": [
-                    {"type": "reasoning", "summary": [], "encrypted_content": "zzz"},
-                    {"type": "web_search_call", "id": "ws_1"},
-                    {"type": "item_reference", "id": "msg_1"},
-                    {"type": "message", "role": "user", "content": "kept"}
-                ]
-            })),
+            req(
+                "request_function_call_and_output_items",
+                json!({
+                    "model": "m",
+                    "input": [
+                        {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": "run ls"}]},
+                        {"type": "function_call", "name": "shell",
+                         "arguments": "{\"cmd\":\"ls\"}", "call_id": "call_1"},
+                        {"type": "function_call_output", "call_id": "call_1", "output": "file.txt"}
+                    ]
+                }),
+            ),
+            req(
+                "request_function_call_falls_back_to_id_and_defaults",
+                json!({
+                    "model": "m",
+                    "input": [
+                        {"type": "function_call", "id": "fc_abc"},
+                        {"type": "function_call", "name": "x", "arguments": "{}", "call_id": "call_2", "id": "fc_2"}
+                    ]
+                }),
+            ),
+            req(
+                "request_function_call_output_non_string_serialised",
+                json!({
+                    "model": "m",
+                    "input": [
+                        {"type": "function_call_output", "call_id": "call_1", "output": {"a": 1, "b": [true, null]}},
+                        {"type": "function_call_output", "call_id": "call_2", "output": 3.5},
+                        {"type": "function_call_output"}
+                    ]
+                }),
+            ),
+            req(
+                "request_reasoning_and_unknown_items_dropped",
+                json!({
+                    "model": "m",
+                    "input": [
+                        {"type": "reasoning", "summary": [], "encrypted_content": "zzz"},
+                        {"type": "web_search_call", "id": "ws_1"},
+                        {"type": "item_reference", "id": "msg_1"},
+                        {"type": "message", "role": "user", "content": "kept"}
+                    ]
+                }),
+            ),
             // ── request: tools / tool_choice ───────────────────────────────
-            req("request_tools_flattened_builtin_and_nameless_dropped", json!({
-                "model": "m", "input": "x",
-                "tools": [
-                    {"type": "function", "name": "shell", "description": "run a shell command",
-                     "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}},
-                     "strict": true},
-                    {"type": "function", "name": "bare"},
-                    {"type": "web_search_preview"},
-                    {"type": "function", "description": "no name"}
-                ]
-            })),
-            req("request_tools_all_dropped_omits_key", json!({
-                "model": "m", "input": "x", "tools": [{"type": "web_search"}]
-            })),
-            req("request_tool_choice_string_passthrough", json!({
-                "model": "m", "input": "x", "tool_choice": "required"
-            })),
-            req("request_tool_choice_named_function_wrapped", json!({
-                "model": "m", "input": "x", "tool_choice": {"type": "function", "name": "shell"}
-            })),
-            req("request_tool_choice_object_without_name_passthrough", json!({
-                "model": "m", "input": "x",
-                "tool_choice": {"type": "allowed_tools", "mode": "auto", "tools": []}
-            })),
-            req("request_tool_choice_null_defaults_auto", json!({
-                "model": "m", "input": "x", "tool_choice": null
-            })),
+            req(
+                "request_tools_flattened_builtin_and_nameless_dropped",
+                json!({
+                    "model": "m", "input": "x",
+                    "tools": [
+                        {"type": "function", "name": "shell", "description": "run a shell command",
+                         "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}},
+                         "strict": true},
+                        {"type": "function", "name": "bare"},
+                        {"type": "web_search_preview"},
+                        {"type": "function", "description": "no name"}
+                    ]
+                }),
+            ),
+            req(
+                "request_tools_all_dropped_omits_key",
+                json!({
+                    "model": "m", "input": "x", "tools": [{"type": "web_search"}]
+                }),
+            ),
+            req(
+                "request_tool_choice_string_passthrough",
+                json!({
+                    "model": "m", "input": "x", "tool_choice": "required"
+                }),
+            ),
+            req(
+                "request_tool_choice_named_function_wrapped",
+                json!({
+                    "model": "m", "input": "x", "tool_choice": {"type": "function", "name": "shell"}
+                }),
+            ),
+            req(
+                "request_tool_choice_object_without_name_passthrough",
+                json!({
+                    "model": "m", "input": "x",
+                    "tool_choice": {"type": "allowed_tools", "mode": "auto", "tools": []}
+                }),
+            ),
+            req(
+                "request_tool_choice_null_defaults_auto",
+                json!({
+                    "model": "m", "input": "x", "tool_choice": null
+                }),
+            ),
             // ── request: scalar knobs / unknown fields ─────────────────────
-            req("request_knobs_mapped_unknown_fields_dropped", json!({
-                "model": "m", "input": "x",
-                "temperature": 0.2, "top_p": 0.9, "max_output_tokens": 256,
-                "parallel_tool_calls": false,
-                "store": false, "include": ["reasoning.encrypted_content"],
-                "metadata": {"k": "v"}, "reasoning": {"effort": "high"},
-                "previous_response_id": "resp_prev", "prompt_cache_key": "pk", "user": "u1"
-            })),
+            req(
+                "request_knobs_mapped_unknown_fields_dropped",
+                json!({
+                    "model": "m", "input": "x",
+                    "temperature": 0.2, "top_p": 0.9, "max_output_tokens": 256,
+                    "parallel_tool_calls": false,
+                    "store": false, "include": ["reasoning.encrypted_content"],
+                    "metadata": {"k": "v"}, "reasoning": {"effort": "high"},
+                    "previous_response_id": "resp_prev", "prompt_cache_key": "pk", "user": "u1"
+                }),
+            ),
             req("request_model_missing_omitted", json!({"input": "x"})),
             // ── request: text.format ───────────────────────────────────────
-            req("request_text_format_json_schema", json!({
-                "model": "m", "input": "x",
-                "text": {"format": {"type": "json_schema", "name": "answer",
-                                    "schema": {"type": "object", "properties": {"a": {"type": "integer"}}},
-                                    "strict": true}}
-            })),
-            req("request_text_format_json_schema_partial", json!({
-                "model": "m", "input": "x", "text": {"format": {"type": "json_schema"}}
-            })),
-            req("request_text_format_json_object", json!({
-                "model": "m", "input": "x", "text": {"format": {"type": "json_object"}, "verbosity": "low"}
-            })),
-            req("request_text_format_text_ignored", json!({
-                "model": "m", "input": "x", "text": {"format": {"type": "text"}}
-            })),
+            req(
+                "request_text_format_json_schema",
+                json!({
+                    "model": "m", "input": "x",
+                    "text": {"format": {"type": "json_schema", "name": "answer",
+                                        "schema": {"type": "object", "properties": {"a": {"type": "integer"}}},
+                                        "strict": true}}
+                }),
+            ),
+            req(
+                "request_text_format_json_schema_partial",
+                json!({
+                    "model": "m", "input": "x", "text": {"format": {"type": "json_schema"}}
+                }),
+            ),
+            req(
+                "request_text_format_json_object",
+                json!({
+                    "model": "m", "input": "x", "text": {"format": {"type": "json_object"}, "verbosity": "low"}
+                }),
+            ),
+            req(
+                "request_text_format_text_ignored",
+                json!({
+                    "model": "m", "input": "x", "text": {"format": {"type": "text"}}
+                }),
+            ),
             // ── non-streaming response ─────────────────────────────────────
-            resp("response_text_only_with_usage", json!({
-                "model": "m", "created": 1700000000,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi there"},
-                             "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
-            })),
-            resp("response_tool_calls_only_null_content_no_usage", json!({
-                "choices": [{"message": {
-                    "role": "assistant", "content": null,
-                    "tool_calls": [{"id": "call_9", "type": "function",
-                                    "function": {"name": "shell", "arguments": "{\"cmd\":\"ls\"}"}}]
-                }, "finish_reason": "tool_calls"}]
-            })),
-            resp("response_text_and_two_tool_calls_ordered", json!({
-                "model": "m", "created": 1,
-                "choices": [{"message": {
-                    "role": "assistant", "content": "calling",
-                    "tool_calls": [
-                        {"id": "call_a", "type": "function", "function": {"name": "a", "arguments": "{}"}},
-                        {"id": "call_b", "type": "function", "function": {"name": "b", "arguments": "{\"x\":1}"}}
-                    ]
-                }, "finish_reason": "tool_calls"}],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 2}
-            })),
-            resp("response_empty_content_no_message_item", json!({
-                "model": "m", "choices": [{"message": {"role": "assistant", "content": ""}}]
-            })),
-            resp("response_content_array_not_string_ignored", json!({
-                "model": "m",
-                "choices": [{"message": {"role": "assistant",
-                                         "content": [{"type": "text", "text": "x"}]}}]
-            })),
+            resp(
+                "response_text_only_with_usage",
+                json!({
+                    "model": "m", "created": 1700000000,
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi there"},
+                                 "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}
+                }),
+            ),
+            resp(
+                "response_tool_calls_only_null_content_no_usage",
+                json!({
+                    "choices": [{"message": {
+                        "role": "assistant", "content": null,
+                        "tool_calls": [{"id": "call_9", "type": "function",
+                                        "function": {"name": "shell", "arguments": "{\"cmd\":\"ls\"}"}}]
+                    }, "finish_reason": "tool_calls"}]
+                }),
+            ),
+            resp(
+                "response_text_and_two_tool_calls_ordered",
+                json!({
+                    "model": "m", "created": 1,
+                    "choices": [{"message": {
+                        "role": "assistant", "content": "calling",
+                        "tool_calls": [
+                            {"id": "call_a", "type": "function", "function": {"name": "a", "arguments": "{}"}},
+                            {"id": "call_b", "type": "function", "function": {"name": "b", "arguments": "{\"x\":1}"}}
+                        ]
+                    }, "finish_reason": "tool_calls"}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 2}
+                }),
+            ),
+            resp(
+                "response_empty_content_no_message_item",
+                json!({
+                    "model": "m", "choices": [{"message": {"role": "assistant", "content": ""}}]
+                }),
+            ),
+            resp(
+                "response_content_array_not_string_ignored",
+                json!({
+                    "model": "m",
+                    "choices": [{"message": {"role": "assistant",
+                                             "content": [{"type": "text", "text": "x"}]}}]
+                }),
+            ),
             resp("response_empty_object", json!({})),
-            resp("response_multiple_choices_only_first_used", json!({
-                "model": "m",
-                "choices": [{"message": {"role": "assistant", "content": "first"}},
-                            {"message": {"role": "assistant", "content": "second"}}]
-            })),
-            resp("response_usage_total_derived_when_missing", json!({
-                "model": "m", "choices": [{"message": {"content": "x"}}],
-                "usage": {"prompt_tokens": 3, "completion_tokens": 4}
-            })),
-            resp("response_usage_non_integer_fields_zeroed", json!({
-                "model": "m", "choices": [{"message": {"content": "x"}}],
-                "usage": {"prompt_tokens": -1, "completion_tokens": 2.5, "total_tokens": "9"}
-            })),
-            resp("response_usage_null_stays_null", json!({
-                "model": "m", "choices": [{"message": {"content": "x"}}], "usage": null
-            })),
-            resp("response_tool_call_missing_fields_default_empty", json!({
-                "model": "m",
-                "choices": [{"message": {"content": null, "tool_calls": [{}, {"id": "call_1"}]}}]
-            })),
-            resp("response_tool_call_name_non_string_cloned_verbatim", json!({
-                "model": "m",
-                "choices": [{"message": {"content": null,
-                    "tool_calls": [{"id": "call_1", "function": {"name": 5, "arguments": {"not": "string"}}}]}}]
-            })),
-            resp("response_finish_reason_length_still_completed", json!({
-                "model": "served-model", "created": 1700000000,
-                "choices": [{"message": {"content": "trunc"}, "finish_reason": "length"}],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-            })),
+            resp(
+                "response_multiple_choices_only_first_used",
+                json!({
+                    "model": "m",
+                    "choices": [{"message": {"role": "assistant", "content": "first"}},
+                                {"message": {"role": "assistant", "content": "second"}}]
+                }),
+            ),
+            resp(
+                "response_usage_total_derived_when_missing",
+                json!({
+                    "model": "m", "choices": [{"message": {"content": "x"}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 4}
+                }),
+            ),
+            resp(
+                "response_usage_non_integer_fields_zeroed",
+                json!({
+                    "model": "m", "choices": [{"message": {"content": "x"}}],
+                    "usage": {"prompt_tokens": -1, "completion_tokens": 2.5, "total_tokens": "9"}
+                }),
+            ),
+            resp(
+                "response_usage_null_stays_null",
+                json!({
+                    "model": "m", "choices": [{"message": {"content": "x"}}], "usage": null
+                }),
+            ),
+            resp(
+                "response_tool_call_missing_fields_default_empty",
+                json!({
+                    "model": "m",
+                    "choices": [{"message": {"content": null, "tool_calls": [{}, {"id": "call_1"}]}}]
+                }),
+            ),
+            resp(
+                "response_tool_call_name_non_string_cloned_verbatim",
+                json!({
+                    "model": "m",
+                    "choices": [{"message": {"content": null,
+                        "tool_calls": [{"id": "call_1", "function": {"name": 5, "arguments": {"not": "string"}}}]}}]
+                }),
+            ),
+            resp(
+                "response_finish_reason_length_still_completed",
+                json!({
+                    "model": "served-model", "created": 1700000000,
+                    "choices": [{"message": {"content": "trunc"}, "finish_reason": "length"}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+                }),
+            ),
             // ── streaming ──────────────────────────────────────────────────
-            stream("stream_text_sequence_with_usage", vec![
-                json!({"choices":[{"delta":{"role":"assistant"}}]}),
-                json!({"choices":[{"delta":{"content":"He"}}]}),
-                json!({"choices":[{"delta":{"content":"llo"}}]}),
-                json!({"choices":[{"delta":{},"finish_reason":"stop"}],
+            stream(
+                "stream_text_sequence_with_usage",
+                vec![
+                    json!({"choices":[{"delta":{"role":"assistant"}}]}),
+                    json!({"choices":[{"delta":{"content":"He"}}]}),
+                    json!({"choices":[{"delta":{"content":"llo"}}]}),
+                    json!({"choices":[{"delta":{},"finish_reason":"stop"}],
                        "usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}),
-            ]),
-            stream("stream_tool_call_sequence", vec![
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
+                ],
+            ),
+            stream(
+                "stream_tool_call_sequence",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
                     "type":"function","function":{"name":"shell","arguments":"{\"cmd"}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,
                     "function":{"arguments":"\":\"ls\"}"}}]}}]}),
-                json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
-            ]),
-            stream("stream_text_then_tool_call", vec![
-                json!({"choices":[{"delta":{"content":"let me "}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
+                    json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+                ],
+            ),
+            stream(
+                "stream_text_then_tool_call",
+                vec![
+                    json!({"choices":[{"delta":{"content":"let me "}}]}),
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
                     "function":{"name":"shell","arguments":"{}"}}]}}]}),
-                json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
-            ]),
-            stream("stream_tool_call_then_text_output_sorted_by_index", vec![
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
+                    json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+                ],
+            ),
+            stream(
+                "stream_tool_call_then_text_output_sorted_by_index",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
                     "function":{"name":"shell","arguments":"{}"}}]}}]}),
-                json!({"choices":[{"delta":{"content":"done"}}]}),
-                json!({"choices":[{"delta":{},"finish_reason":"stop"}]}),
-            ]),
-            stream("stream_two_tool_calls_interleaved_args", vec![
-                json!({"choices":[{"delta":{"tool_calls":[
+                    json!({"choices":[{"delta":{"content":"done"}}]}),
+                    json!({"choices":[{"delta":{},"finish_reason":"stop"}]}),
+                ],
+            ),
+            stream(
+                "stream_two_tool_calls_interleaved_args",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[
                     {"index":0,"id":"call_a","function":{"name":"a","arguments":"{\"x\":"}},
                     {"index":1,"id":"call_b","function":{"name":"b","arguments":"{\"y\":"}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"2}"}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}),
-                json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
-            ]),
-            stream("stream_tool_call_name_split_across_chunks_concatenated", vec![
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"she"}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"ll","arguments":"{}"}}]}}]}),
-            ]),
-            stream("stream_tool_call_id_last_nonempty_wins_added_keeps_first", vec![
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"","function":{"name":"shell"}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_late","function":{"arguments":"{}"}}]}}]}),
-            ]),
-            stream("stream_tool_call_missing_index_defaults_zero", vec![
-                json!({"choices":[{"delta":{"tool_calls":[{"id":"call_1","function":{"name":"a","arguments":"{"}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"}"}}]}}]}),
-            ]),
-            stream("stream_tool_call_args_before_name", vec![
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\""}}]}}]}),
-                json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"late","arguments":":1}"}}]}}]}),
-            ]),
-            stream("stream_empty_and_null_content_deltas_ignored", vec![
-                json!({"choices":[{"delta":{"content":""}}]}),
-                json!({"choices":[{"delta":{"content":null}}]}),
-                json!({"choices":[{"delta":{"content":"x"}}]}),
-            ]),
-            stream("stream_reasoning_content_delta_dropped", vec![
-                json!({"choices":[{"delta":{"reasoning_content":"thinking..."}}]}),
-                json!({"choices":[{"delta":{"content":"answer"}}]}),
-            ]),
-            stream("stream_error_object_mid_stream_not_translated", vec![
-                json!({"choices":[{"delta":{"content":"par"}}]}),
-                json!({"error":{"message":"boom","type":"server_error","code":500}}),
-            ]),
-            stream("stream_chunks_without_usable_choice_ignored", vec![
-                json!({"choices":[]}),
-                json!({"choices":[{"finish_reason":"stop"}]}),
-                json!({"choices":"nope"}),
-                json!({"choices":[{"delta":{"content":"ok"}}]}),
-            ]),
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"2}"}}]}}]}),
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}),
+                    json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+                ],
+            ),
+            stream(
+                "stream_tool_call_name_split_across_chunks_concatenated",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"she"}}]}}]}),
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"ll","arguments":"{}"}}]}}]}),
+                ],
+            ),
+            stream(
+                "stream_tool_call_id_last_nonempty_wins_added_keeps_first",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"","function":{"name":"shell"}}]}}]}),
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_late","function":{"arguments":"{}"}}]}}]}),
+                ],
+            ),
+            stream(
+                "stream_tool_call_missing_index_defaults_zero",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[{"id":"call_1","function":{"name":"a","arguments":"{"}}]}}]}),
+                    json!({"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"}"}}]}}]}),
+                ],
+            ),
+            stream(
+                "stream_tool_call_args_before_name",
+                vec![
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\""}}]}}]}),
+                    json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"late","arguments":":1}"}}]}}]}),
+                ],
+            ),
+            stream(
+                "stream_empty_and_null_content_deltas_ignored",
+                vec![
+                    json!({"choices":[{"delta":{"content":""}}]}),
+                    json!({"choices":[{"delta":{"content":null}}]}),
+                    json!({"choices":[{"delta":{"content":"x"}}]}),
+                ],
+            ),
+            stream(
+                "stream_reasoning_content_delta_dropped",
+                vec![
+                    json!({"choices":[{"delta":{"reasoning_content":"thinking..."}}]}),
+                    json!({"choices":[{"delta":{"content":"answer"}}]}),
+                ],
+            ),
+            stream(
+                "stream_error_object_mid_stream_not_translated",
+                vec![
+                    json!({"choices":[{"delta":{"content":"par"}}]}),
+                    json!({"error":{"message":"boom","type":"server_error","code":500}}),
+                ],
+            ),
+            stream(
+                "stream_chunks_without_usable_choice_ignored",
+                vec![
+                    json!({"choices":[]}),
+                    json!({"choices":[{"finish_reason":"stop"}]}),
+                    json!({"choices":"nope"}),
+                    json!({"choices":[{"delta":{"content":"ok"}}]}),
+                ],
+            ),
             stream("stream_no_chunks_finish_only", vec![]),
-            stream("stream_usage_last_non_null_wins", vec![
-                json!({"choices":[{"delta":{"content":"a"}}],
+            stream(
+                "stream_usage_last_non_null_wins",
+                vec![
+                    json!({"choices":[{"delta":{"content":"a"}}],
                        "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}),
-                json!({"choices":[{"delta":{"content":"b"}}],"usage":null}),
-            ]),
-            stream("stream_usage_total_derived_when_missing", vec![
-                json!({"choices":[{"delta":{"content":"a"}}]}),
-                json!({"choices":[{"delta":{},"finish_reason":"length"}],
+                    json!({"choices":[{"delta":{"content":"b"}}],"usage":null}),
+                ],
+            ),
+            stream(
+                "stream_usage_total_derived_when_missing",
+                vec![
+                    json!({"choices":[{"delta":{"content":"a"}}]}),
+                    json!({"choices":[{"delta":{},"finish_reason":"length"}],
                        "usage":{"prompt_tokens":10,"completion_tokens":20}}),
-            ]),
+                ],
+            ),
         ]
     }
 
@@ -1113,8 +1287,10 @@ mod fixture_dump {
                     json!({"responses": chat_response_to_responses(&chat, RESPONSE_ID, MODEL_FALLBACK)}),
                 ),
                 Kind::Stream(chunks) => {
-                    let mut conv =
-                        ResponsesStreamConverter::new(RESPONSE_ID.to_string(), STREAM_MODEL.to_string());
+                    let mut conv = ResponsesStreamConverter::new(
+                        RESPONSE_ID.to_string(),
+                        STREAM_MODEL.to_string(),
+                    );
                     let mut events = vec![conv.created_event()];
                     let mut usage: Option<Value> = None;
                     for chunk in &chunks {
@@ -1176,6 +1352,10 @@ mod fixture_dump {
             serde_json::to_string_pretty(&index).unwrap() + "\n",
         )
         .unwrap();
-        eprintln!("wrote {} responses-shim fixtures to {}", names.len(), out.display());
+        eprintln!(
+            "wrote {} responses-shim fixtures to {}",
+            names.len(),
+            out.display()
+        );
     }
 }

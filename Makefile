@@ -478,6 +478,17 @@ test-live:
 test-live-cloud:
 	python3 scripts/record-cloud-live.py $(if $(filter 1,$(REQUIRE)),--require,)
 
+# The core supervisor against a real `atomic-chat-core` binary, which is the
+# only way to check that the app and the core agree about the lock file, the
+# control token and what a dead owner looks like. The fake core in the unit
+# tests proves the app's half only. Point ATOMIC_CORE_BIN at a built core
+# (`npm run build:bin` in atomic-chat-core writes one to dist/bin/), or at the
+# one this app bundles after `make download-core`.
+ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-core
+test-core-live:
+	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" cargo test --manifest-path src-tauri/Cargo.toml \
+		-p Atomic-Chat --features test-tauri,cli --lib core::atomic_core::live_tests -- --test-threads=1
+
 mutants:
 	bash scripts/test-cargo-mutants.sh
 

@@ -14,6 +14,11 @@ const TAURI_ROOT = join(REPO_ROOT, 'src-tauri')
 const PLUGINS_ROOT = join(TAURI_ROOT, 'plugins')
 
 const EXPECTED_DESKTOP_ONLY = new Set([
+  // atomic-chat-core is a native sidecar. Mobile builds neither bundle it nor
+  // expose its process lifecycle and control commands.
+  'atomic_core_call',
+  'atomic_core_snapshot',
+  'atomic_core_status',
   // ChatGPT subscription sign-in. Desktop only on purpose: the OAuth callback
   // needs a loopback listener on a fixed port, and the refresh token needs a
   // mode-0600 file. `PlatformFeature.CHATGPT_SUBSCRIPTION` gates the UI to
@@ -24,9 +29,11 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'check_for_app_updates',
+  'get_atomic_core_flags',
   'get_local_http',
   'is_update_available',
   'post_local_http',
+  'set_atomic_core_flags',
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',

@@ -259,6 +259,14 @@ pub fn run() {
         core::telemetry::commands::set_telemetry_consent,
         core::telemetry::commands::set_telemetry_context,
         core::telemetry::commands::set_telemetry_user,
+        // atomic-chat-core: one call for the whole control API, plus the flags
+        // that decide what the core owns. Desktop only — the core is a native
+        // process the mobile targets do not ship.
+        core::atomic_core::commands::atomic_core_call,
+        core::atomic_core::commands::atomic_core_status,
+        core::atomic_core::commands::atomic_core_snapshot,
+        core::atomic_core::commands::get_atomic_core_flags,
+        core::atomic_core::commands::set_atomic_core_flags,
     ]);
 
     // Mobile: no updater commands
@@ -498,13 +506,22 @@ pub fn run() {
             // Tell the llama.cpp plugin where `<data>/atomic-core/` is, so it can mirror its
             // session table for a core process that shares this data folder (double-load guard).
             {
-                let core_dir = crate::core::app::commands::get_jan_data_folder_path(app.handle().clone())
-                    .join("atomic-core");
+                let core_dir =
+                    crate::core::app::commands::get_jan_data_folder_path(app.handle().clone())
+                        .join("atomic-core");
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     tauri_plugin_llamacpp_upstream::set_core_dir(handle, core_dir).await;
                 });
             }
+
+            // Attach to `atomic-chat-core` if this install has delegated
+            // anything to it. Placed after the reaper so the reaper has already
+            // decided which processes a live core owns, and after the plugin
+            // learns the core directory so both sides of the double-load guard
+            // are in place before the app can load anything.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            crate::core::atomic_core::commands::init(app.handle());
 
             // Same rationale for the agent's own children, which the backend
             // reaper cannot recognise: they are arbitrary user commands, so
@@ -673,6 +690,21 @@ pub fn run() {
                         let _ = window.emit("app-shutting-down", ());
                         let _ = window.hide();
                     }
+                }
+
+                // Leave the core's client registry cleanly. Not a shutdown: the
+                // core and the models it loaded go on running, so a model the
+                // CLI is using survives the app closing. Waiting for it is one
+                // loopback request, and skipping it would leave the core
+                // counting a client that is gone until the registration expires.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    let handle = app_handle.clone();
+                    tokio::task::block_in_place(|| {
+                        tauri::async_runtime::block_on(async move {
+                            crate::core::atomic_core::commands::shutdown(&handle).await;
+                        })
+                    });
                 }
 
                 let state = app_handle.state::<AppState>();

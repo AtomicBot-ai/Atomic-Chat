@@ -54,7 +54,11 @@ fn exe_under_any_root(exe: &Path, roots: &[PathBuf]) -> bool {
 ///
 /// Entries from a *previous* core instance are deliberately not protected: that
 /// owner is gone, so its leftovers are exactly what the reaper exists for.
-fn journalled_pids(journal_text: &str, instance_id: &str, owner_pid: u32) -> std::collections::HashSet<u32> {
+fn journalled_pids(
+    journal_text: &str,
+    instance_id: &str,
+    owner_pid: u32,
+) -> std::collections::HashSet<u32> {
     use std::collections::HashSet;
     let mut protected: HashSet<u32> = HashSet::new();
     protected.insert(owner_pid);
@@ -77,53 +81,34 @@ fn journalled_pids(journal_text: &str, instance_id: &str, owner_pid: u32) -> std
 
 /// The backend PIDs a live core owner is responsible for right now.
 ///
-/// Returns an empty set unless (a) the lock names a process that is still
-/// alive, and (b) that process looks like a core (its executable is named
-/// `atomic-chat-core` or `jan-cli`). Both checks matter: a PID alone can have
-/// been recycled by something unrelated, and protecting a stranger's children
-/// would defeat the reaper.
+/// Returns an empty set unless the shared lock parser proves the owner process
+/// is still the same PID incarnation that wrote the record. Process names are
+/// deliberately not evidence: a source checkout runs as `bun`, while PID plus
+/// start identity is what excludes a recycled, unrelated process.
 fn core_owned_pids(data_folder: &Path, system: &sysinfo::System) -> std::collections::HashSet<u32> {
+    use crate::core::atomic_core::lock::{self, LockState};
     use std::collections::HashSet;
 
     let empty = HashSet::new();
-    let core_dir = data_folder.join("atomic-core");
-    let Ok(lock_text) = std::fs::read_to_string(core_dir.join("instance.lock")) else {
-        return empty;
-    };
-    let Ok(lock) = serde_json::from_str::<serde_json::Value>(&lock_text) else {
-        return empty;
-    };
-    let (Some(owner_pid), Some(instance_id)) = (
-        lock.get("pid").and_then(|v| v.as_u64()),
-        lock.get("instance_id").and_then(|v| v.as_str()),
-    ) else {
-        return empty;
-    };
-
-    let owner = system.process(sysinfo::Pid::from_u32(owner_pid as u32));
-    let looks_like_core = owner.is_some_and(|p| {
-        let name = p.name().to_string_lossy().to_lowercase();
-        name.starts_with("atomic-chat-core") || name.starts_with("jan-cli")
-    });
-    if !looks_like_core {
-        log::info!("[reaper] no live core owner for {}", data_folder.display());
-        return empty;
-    }
-    if let Some(expected) = lock.get("owner_started_at").and_then(|v| v.as_str()) {
-        let actual = owner
-            .map(|process| format!("epoch:{}", process.start_time()))
-            .unwrap_or_default();
-        if actual != expected {
-            log::info!("[reaper] core owner pid was reused; lock identity does not match");
+    // One reader for the lock, shared with the supervisor: two parsers of the
+    // same record would eventually disagree about who is alive, and here that
+    // disagreement means killing a live core's backends.
+    let record = match lock::inspect(data_folder, system) {
+        LockState::Owned(record) => record,
+        LockState::Stale(_) | LockState::Corrupt | LockState::Free => {
+            log::info!("[reaper] no live core owner for {}", data_folder.display());
             return empty;
         }
-    }
+    };
 
-    let journal_text = std::fs::read_to_string(core_dir.join("processes.json")).unwrap_or_default();
-    let protected = journalled_pids(&journal_text, instance_id, owner_pid as u32);
+    let journal_text = std::fs::read_to_string(lock::core_dir(data_folder).join("processes.json"))
+        .unwrap_or_default();
+    let protected = journalled_pids(&journal_text, &record.instance_id, record.pid);
 
     log::info!(
-        "[reaper] live core owner pid={owner_pid} instance={instance_id}; sparing {} process(es)",
+        "[reaper] live core owner pid={} instance={}; sparing {} process(es)",
+        record.pid,
+        record.instance_id,
         protected.len()
     );
     protected
@@ -133,16 +118,27 @@ fn core_owned_pids(data_folder: &Path, system: &sysinfo::System) -> std::collect
 /// During that gap the app cannot map a just-created backend PID yet, so it must defer reaping.
 fn core_has_live_loading_claim(data_folder: &Path, system: &sysinfo::System) -> bool {
     let claims = data_folder.join("atomic-core").join("model-claims");
-    let Ok(entries) = std::fs::read_dir(claims) else { return false };
+    let Ok(entries) = std::fs::read_dir(claims) else {
+        return false;
+    };
     entries.flatten().any(|entry| {
-        let Ok(text) = std::fs::read_to_string(entry.path().join("claim.json")) else { return false };
-        let Ok(claim) = serde_json::from_str::<serde_json::Value>(&text) else { return false };
+        let Ok(text) = std::fs::read_to_string(entry.path().join("claim.json")) else {
+            return false;
+        };
+        let Ok(claim) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return false;
+        };
         if claim.get("owner_kind").and_then(|v| v.as_str()) != Some("core")
-            || claim.get("state").and_then(|v| v.as_str()) != Some("loading") {
+            || claim.get("state").and_then(|v| v.as_str()) != Some("loading")
+        {
             return false;
         }
-        let Some(pid) = claim.get("owner_pid").and_then(|v| v.as_u64()) else { return false };
-        let Some(process) = system.process(sysinfo::Pid::from_u32(pid as u32)) else { return false };
+        let Some(pid) = claim.get("owner_pid").and_then(|v| v.as_u64()) else {
+            return false;
+        };
+        let Some(process) = system.process(sysinfo::Pid::from_u32(pid as u32)) else {
+            return false;
+        };
         match claim.get("owner_started_at").and_then(|v| v.as_str()) {
             Some(expected) => expected == format!("epoch:{}", process.start_time()),
             None => true,
@@ -297,7 +293,10 @@ mod tests {
     #[test]
     fn a_missing_or_broken_journal_still_protects_the_owner() {
         assert_eq!(journalled_pids("", "live", 7), [7].into_iter().collect());
-        assert_eq!(journalled_pids("{ not json", "live", 7), [7].into_iter().collect());
+        assert_eq!(
+            journalled_pids("{ not json", "live", 7),
+            [7].into_iter().collect()
+        );
         assert_eq!(journalled_pids("{}", "live", 7), [7].into_iter().collect());
         assert_eq!(
             journalled_pids(r#"{"processes": "nope"}"#, "live", 7),

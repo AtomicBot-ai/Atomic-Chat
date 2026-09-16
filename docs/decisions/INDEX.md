@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-248 records, 2026-05-19 → 2026-09-15.
+256 records, 2026-05-19 → 2026-09-16.
 
 ---
 
@@ -296,8 +296,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (8)
+## Inference core extraction — atomic-chat-core (11)
 
+- **2026-09-16** — [Retry only read-only core calls and resume events after the snapshot cursor](2026-09-16-retry-only-read-only-core-calls-and-resume-after-snapshot.md)
+- **2026-09-16** — [The webview reaches the core only through Rust](2026-09-16-the-webview-reaches-the-core-only-through-rust.md)
+- **2026-09-16** — [Keep handles to the cores we start, purely to reap them](2026-09-16-reap-the-cores-we-start-even-though-we-detach-them.md)
 - **2026-09-16** — [Claim models before mutating runtime state](2026-09-16-claim-models-before-mutating-runtime-state.md)
 - **2026-09-15** — [Extract the inference core into atomic-chat-core](2026-09-15-extract-the-inference-core-into-atomic-chat-core.md)
 - **2026-09-15** — [Migrate to the core in phases](2026-09-15-migrate-to-the-core-in-phases.md)
