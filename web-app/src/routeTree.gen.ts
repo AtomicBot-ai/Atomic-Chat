@@ -37,6 +37,7 @@ import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attac
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
+import { Route as ImagesWorkflowRouteImport } from './routes/images/$workflow'
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
@@ -181,6 +182,11 @@ const LocalApiServerLogsRoute = LocalApiServerLogsRouteImport.update({
   path: '/local-api-server/logs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImagesWorkflowRoute = ImagesWorkflowRouteImport.update({
+  id: '/images/$workflow',
+  path: '/images/$workflow',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HubModelIdRoute = HubModelIdRouteImport.update({
   id: '/hub/$modelId',
   path: '/hub/$modelId',
@@ -203,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
+  '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
+  '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
@@ -270,6 +278,7 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
+  '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
@@ -305,6 +314,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
+    | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/assistant'
@@ -338,6 +348,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
+    | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/assistant'
@@ -371,6 +382,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/system-monitor'
     | '/hub/$modelId'
+    | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
     | '/settings/assistant'
@@ -405,6 +417,7 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
+  ImagesWorkflowRoute: typeof ImagesWorkflowRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
@@ -632,6 +645,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LocalApiServerLogsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/images/$workflow': {
+      id: '/images/$workflow'
+      path: '/images/$workflow'
+      fullPath: '/images/$workflow'
+      preLoaderRoute: typeof ImagesWorkflowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/hub/$modelId': {
       id: '/hub/$modelId'
       path: '/hub/$modelId'
@@ -661,6 +681,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   HubModelIdRoute: HubModelIdRoute,
+  ImagesWorkflowRoute: ImagesWorkflowRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,

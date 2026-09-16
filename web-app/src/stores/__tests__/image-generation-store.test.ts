@@ -43,10 +43,19 @@ vi.mock('@/lib/diffusion/arbiter', () => ({
 const install = vi.hoisted(() => ({
   ensure: vi.fn(),
   select: vi.fn(async () => ({ backendId: 'macos-arm64' as string | null, reason: undefined as string | undefined })),
+  manifest: vi.fn(async () => ({
+    manifest: {
+      tag_name: 'master-849-d04e895',
+      assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
+    },
+    source: 'cache' as const,
+    fetchedAt: 1,
+  })),
 }))
 vi.mock('@/services/diffusion/install', () => ({
   ensureDiffusionBackend: install.ensure,
   selectDiffusionBackendForHost: install.select,
+  resolveSdcppManifest: install.manifest,
 }))
 vi.mock('@/lib/notifications', () => ({ notifyThreadCompleted: vi.fn() }))
 const captured = vi.hoisted(() => ({ events: [] as Array<[string, Record<string, unknown>]> }))
@@ -613,5 +622,85 @@ describe('image-generation-store', () => {
       useImageGenerationStore.getState().closeSetup()
       expect(useImageGenerationStore.getState().setupOpen).toBe(false)
     })
+  })
+})
+
+describe('engine updates', () => {
+  let fake: FakeDiffusion
+
+  beforeEach(() => {
+    install.ensure.mockReset()
+    install.manifest.mockReset()
+    install.manifest.mockResolvedValue({
+      manifest: {
+        tag_name: 'master-849-d04e895',
+        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
+      },
+      source: 'cache' as const,
+      fetchedAt: 1,
+    })
+    resetImageGenerationForTests()
+    fake = makeFakeDiffusion()
+    seedServiceHub({ diffusion: fake })
+    useImageGenerationStore.setState({ status: makeStatus(), hostBackendId: 'macos-arm64' })
+  })
+
+  it('finds nothing when the manifest names the installed tag', async () => {
+    await useImageGenerationStore.getState().checkEngineUpdate()
+    const { engineUpdate } = useImageGenerationStore.getState()
+    expect(engineUpdate.availableTag).toBeNull()
+    expect(engineUpdate.checkedAt).not.toBeNull()
+    expect(install.manifest).toHaveBeenCalledWith({ force: undefined })
+  })
+
+  it('reports a newer tag only when it is published for this host', async () => {
+    install.manifest.mockResolvedValue({
+      manifest: { tag_name: 'master-900-abc1234', assets: [{ backend: 'win-cuda12-x64', name: 'x.zip' }] },
+      source: 'remote' as const,
+      fetchedAt: 2,
+    })
+    await useImageGenerationStore.getState().checkEngineUpdate({ force: true })
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBeNull()
+    expect(install.manifest).toHaveBeenLastCalledWith({ force: true })
+
+    install.manifest.mockResolvedValue({
+      manifest: {
+        tag_name: 'master-900-abc1234',
+        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
+      },
+      source: 'remote' as const,
+      fetchedAt: 2,
+    })
+    await useImageGenerationStore.getState().checkEngineUpdate()
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe('master-900-abc1234')
+  })
+
+  it('unloads the model, installs the new tag and clears the offer', async () => {
+    useImageGenerationStore.setState({
+      status: makeLoadedStatus(),
+      capabilities: makeCapabilities(),
+      engineUpdate: { checking: false, availableTag: 'master-900-abc1234', checkedAt: 1, error: null },
+    })
+    install.ensure.mockResolvedValue({
+      dir: '/data/diffusion/backends/master-900-abc1234/macos-arm64',
+      tag: 'master-900-abc1234',
+      backendId: 'macos-arm64',
+      backend: 'metal',
+      engine: 'sd-cpp',
+    })
+    await useImageGenerationStore.getState().updateEngine()
+    expect(fake.unloadModel).toHaveBeenCalled()
+    expect(install.ensure).toHaveBeenCalledTimes(1)
+    expect(install.ensure.mock.calls[0][0]).toMatchObject({ force: undefined })
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBeNull()
+  })
+
+  it('does nothing without an offer or an installed engine', async () => {
+    await useImageGenerationStore.getState().updateEngine()
+    expect(install.ensure).not.toHaveBeenCalled()
+
+    useImageGenerationStore.setState({ status: makeStatus({ install: { state: 'not-installed' } }) })
+    await useImageGenerationStore.getState().checkEngineUpdate()
+    expect(install.manifest).not.toHaveBeenCalled()
   })
 })

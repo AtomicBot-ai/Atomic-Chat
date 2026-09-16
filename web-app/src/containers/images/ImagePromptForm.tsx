@@ -11,7 +11,6 @@ import {
   IconChevronRight,
   IconRestore,
   IconSettings,
-  IconSparkles,
 } from '@tabler/icons-react'
 import { useShallow } from 'zustand/shallow'
 
@@ -49,9 +48,12 @@ import {
 } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DimConstraints } from '@/lib/diffusion/size'
+import { workflowSpec } from '@/lib/diffusion/workflows'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageField, ImageFieldHint } from './ImageField'
+import { ImageWorkflowInputs } from './ImageWorkflowInputs'
+import { WORKFLOW_ICONS } from './workflowIcons'
 import { ImageGenerateButton } from './ImageGenerateButton'
 import { ImageJobProgress } from './ImageJobProgress'
 import { ImageParamSlider } from './ImageParamSlider'
@@ -99,6 +101,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       seedText: state.seedText,
       batchSize: state.batchSize,
       runs: state.runs,
+      workflow: state.workflow,
       patch: state.patch,
       resetToDefaults: state.resetToDefaults,
       clampTo: state.clampTo,
@@ -164,6 +167,9 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     capabilities.supportsNegativePrompt
   const showGuidance = capabilities?.supportsGuidance ?? false
   const busy = generation.generating
+  const spec = workflowSpec(form.workflow)
+  const WorkflowIcon = WORKFLOW_ICONS[form.workflow]
+  const isEdit = form.workflow === 'edit'
 
   const idleLabel = (minutes: number) =>
     minutes === 0
@@ -223,12 +229,15 @@ export const ImagePromptForm = memo(function ImagePromptForm({
         {/* The sidebar names the section; this names what the column does. */}
         <div className="mb-1 flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
-            <h2 className="flex items-center gap-2 font-studio text-xl font-medium leading-none">
-              <IconSparkles size={18} className="shrink-0" />
-              {t('images:page.createTitle')}
+            <h2
+              className="flex items-center gap-2 font-studio text-xl font-medium leading-none"
+              data-testid="image-workflow-title"
+            >
+              <WorkflowIcon size={18} className="shrink-0" />
+              {t(`images:workflow.${form.workflow}.title`)}
             </h2>
             <p className="text-xs leading-snug text-muted-foreground">
-              {t('images:page.createDescription')}
+              {t(`images:workflow.${form.workflow}.hint`)}
             </p>
           </div>
           {capabilities && (
@@ -251,11 +260,25 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           )}
         </div>
 
-        <ImageField htmlFor="image-prompt" label={t('images:form.prompt')}>
+        <ImageWorkflowInputs
+          workflow={form.workflow}
+          constraints={constraints}
+          outputSize={generation.outputSize}
+          disabled={busy}
+        />
+
+        <ImageField
+          htmlFor="image-prompt"
+          label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}
+        >
           <Textarea
             id="image-prompt"
             value={form.prompt}
-            placeholder={t('images:form.promptPlaceholder')}
+            placeholder={t(
+              isEdit
+                ? 'images:form.instructionPlaceholder'
+                : 'images:form.promptPlaceholder'
+            )}
             onChange={(event) => form.patch({ prompt: event.target.value })}
             onKeyDown={onPromptKeyDown}
             rows={4}
@@ -309,17 +332,21 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           </Collapsible>
         )}
 
-        <ImageSizeControl
-          value={{
-            width: form.width,
-            height: form.height,
-            aspect: form.aspect,
-            portrait: form.portrait,
-          }}
-          constraints={constraints}
-          disabled={busy}
-          onChange={(size) => form.patch(size)}
-        />
+        {/* Inpaint, extend, upscale and edit take their size from the
+            source; a size control there would be a knob that does nothing. */}
+        {spec.usesResolution && (
+          <ImageSizeControl
+            value={{
+              width: form.width,
+              height: form.height,
+              aspect: form.aspect,
+              portrait: form.portrait,
+            }}
+            constraints={constraints}
+            disabled={busy}
+            onChange={(size) => form.patch(size)}
+          />
+        )}
 
         {/* The one-line sliders, a touch apart from the fields above. */}
         <div className="flex flex-col gap-3.5 pt-1">

@@ -3,7 +3,11 @@
  * the file when the user saves a copy.
  */
 
-import type { GalleryImageItem, ImageRecipe } from '@/services/diffusion/types'
+import type {
+  GalleryImageItem,
+  ImageRecipe,
+  ImageWorkflowId,
+} from '@/services/diffusion/types'
 import { matchAspect, type AspectId } from './size'
 
 /**
@@ -26,7 +30,7 @@ export type ImageFormDraft = {
   seedText: string
   batchSize: number
   runs: number
-  workflow: 'create' | 'transform'
+  workflow: ImageWorkflowId
 }
 
 export type RestoredDraft = {
@@ -62,9 +66,10 @@ export function exportFilename(item: GalleryImageItem): string {
  * the same batch size reproduces the whole batch, image N included, whereas
  * restoring the derived seed would shift every image by `index`.
  *
- * Never restores `initImagePath`: the source image may be gone, and a transform
- * is never silently re-run from a path the user did not just pick. The draft
- * comes back as a `create` workflow with the same prompt and settings.
+ * Never restores the source, mask or reference images: they may be gone, and
+ * an image workflow is never silently re-run from inputs the user did not
+ * just pick. The draft comes back as a `create` workflow with the same
+ * prompt and settings.
  */
 export function restoreDraftFromRecipe(
   recipe: ImageRecipe,

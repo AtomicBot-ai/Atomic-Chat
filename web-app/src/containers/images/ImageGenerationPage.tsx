@@ -15,6 +15,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
 import { artifactId } from '@/lib/diffusion/models'
 import { cn } from '@/lib/utils'
+import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageEmptyState } from './ImageEmptyState'
 import { ImageErrorBanner } from './ImageErrorBanner'
@@ -25,6 +26,8 @@ import { ImageSetupCard } from './ImageSetupCard'
 import { ImageViewer } from './ImageViewer'
 
 type ImageGenerationPageProps = {
+  /** The route's workflow: `/images/` is create, `/images/<id>` the rest. */
+  workflow: ImageWorkflowId
   /** `?model=&quant=` from the route: preselect (and offer to fetch) that checkpoint. */
   search: { model?: string; quant?: string }
 }
@@ -37,6 +40,7 @@ type ImageGenerationPageProps = {
  * scrolled grid.
  */
 export const ImageGenerationPage = memo(function ImageGenerationPage({
+  workflow,
   search,
 }: ImageGenerationPageProps) {
   const { t } = useTranslation()
@@ -59,6 +63,13 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   )
   const setupCompleted = useImageSetting((state) => state.setupCompleted)
   const [modelsOpen, setModelsOpen] = useState(false)
+
+  const modelLoaded = status?.model.state === 'loaded'
+
+  // The route names the workflow; the form carries it into the request.
+  useEffect(() => {
+    patchForm({ workflow })
+  }, [workflow, patchForm])
 
   const ready = engine.installed && hasModel
   // Nothing to generate with and nothing to look at: one centered setup card
@@ -202,7 +213,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
         )}
 
         {gallery.initialized && gallery.items.length === 0 ? (
-          <ImageEmptyState />
+          <ImageEmptyState modelLoaded={modelLoaded} />
         ) : (
           <>
             <div className="min-h-0 flex-[3]">

@@ -80,7 +80,8 @@ describe('restoreDraftFromRecipe', () => {
       makeRecipe({ workflow: 'transform', strength: 0.6 })
     )
     expect(draft.workflow).toBe('create')
-    expect(draft).not.toHaveProperty('initImagePath')
+    expect(draft).not.toHaveProperty('initImage')
+    expect(draft).not.toHaveProperty('sourceImage')
   })
 
   it('leaves the negative prompt collapsed when there was none', () => {

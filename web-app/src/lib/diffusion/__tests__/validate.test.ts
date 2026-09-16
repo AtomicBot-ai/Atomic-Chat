@@ -112,23 +112,70 @@ describe('validateImageRequest', () => {
   })
 
   it('needs a source image and a sane strength to transform', () => {
-    const editing = { ...caps, workflows: ['create', 'transform'] as const }
+    const editing: ImageCapabilities = { ...caps, workflows: ['create', 'transform'] }
     expect(
-      validateImageRequest(request({ workflow: 'transform' }), {
-        ...editing,
-        workflows: [...editing.workflows],
-      })
+      validateImageRequest(request({ workflow: 'transform' }), editing)
     ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' })
     expect(
       validateImageRequest(
-        request({ workflow: 'transform', initImagePath: '/in.png', strength: 1.5 }),
-        { ...editing, workflows: [...editing.workflows] }
+        request({ workflow: 'transform', initImage: { path: '/in.png' }, strength: 1.5 }),
+        editing
       )
     ).toMatchObject({ ok: false, message: 'Strength must be between 0 and 1.' })
     expect(
       validateImageRequest(
-        request({ workflow: 'transform', initImagePath: '/in.png', strength: 0.6 }),
-        { ...editing, workflows: [...editing.workflows] }
+        request({ workflow: 'transform', initImage: { path: '/in.png' }, strength: 0.6 }),
+        editing
+      )
+    ).toEqual({ ok: true })
+  })
+
+  it('checks the inputs of every image workflow', () => {
+    const all: ImageCapabilities = {
+      ...caps,
+      workflows: ['create', 'transform', 'inpaint', 'extend', 'upscale', 'reference', 'edit'],
+    }
+    const source = { path: '/in.png' }
+    const mask = { base64: 'data:image/png;base64,QUJD' }
+
+    for (const workflow of ['inpaint', 'extend'] as const) {
+      expect(
+        validateImageRequest(request({ workflow, initImage: source }), all)
+      ).toMatchObject({ ok: false, message: 'Paint the area to change first.' })
+      expect(
+        validateImageRequest(
+          request({ workflow, initImage: source, maskImage: mask }),
+          all
+        )
+      ).toEqual({ ok: true })
+    }
+
+    expect(
+      validateImageRequest(request({ workflow: 'upscale', initImage: mask }), all)
+    ).toEqual({ ok: true })
+    expect(
+      validateImageRequest(request({ workflow: 'edit' }), all)
+    ).toMatchObject({ ok: false, message: 'Choose a source image first.' })
+    expect(
+      validateImageRequest(
+        request({
+          workflow: 'reference',
+          initImage: source,
+          referenceImages: [source, source, source, source],
+        }),
+        all
+      )
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' })
+    expect(
+      validateImageRequest(
+        request({ workflow: 'reference', initImage: source, referenceImages: [{ path: '' }] }),
+        all
+      )
+    ).toMatchObject({ ok: false, code: 'INVALID_REQUEST' })
+    expect(
+      validateImageRequest(
+        request({ workflow: 'reference', initImage: source, referenceImages: [source] }),
+        all
       )
     ).toEqual({ ok: true })
   })

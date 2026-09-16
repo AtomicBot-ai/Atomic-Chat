@@ -36,6 +36,7 @@ vi.mock('../ImageModelSelector', () => ({
 import { DEFAULT_IMAGE_FORM, useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useImageGalleryStore } from '@/stores/image-gallery-store'
+import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageGenerationPage } from '../ImageGenerationPage'
 
@@ -64,12 +65,25 @@ describe('ImageGenerationPage', () => {
     seedServiceHub({ diffusion: fake })
   })
 
-  const renderPage = async () => {
-    render(<ImageGenerationPage search={{}} />)
+  const renderPage = async (workflow: ImageWorkflowId = 'create') => {
+    render(<ImageGenerationPage workflow={workflow} search={{}} />)
     await waitFor(() =>
       expect(useImageGalleryStore.getState().initialized).toBe(true)
     )
   }
+
+  it('hands the route workflow to the form and asks for a model on the empty canvas', async () => {
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      installedArtifacts: [completeArtifact],
+    })
+    await renderPage('upscale')
+
+    expect(useImageForm.getState().workflow).toBe('upscale')
+    expect(screen.getByTestId('image-empty-state')).toHaveTextContent(
+      'images:gallery.emptyNoModel'
+    )
+  })
 
   it('shows one centered setup card when nothing is installed', async () => {
     useImageGenerationStore.setState({

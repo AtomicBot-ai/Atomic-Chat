@@ -28,6 +28,11 @@ const install = vi.hoisted(() => ({
 vi.mock('@/services/diffusion/install', () => ({
   ensureDiffusionBackend: install.ensure,
   selectDiffusionBackendForHost: install.select,
+  resolveSdcppManifest: vi.fn(async () => ({
+    manifest: { tag_name: 'master-849-d04e895', assets: [] },
+    source: 'cache',
+    fetchedAt: 1,
+  })),
 }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 

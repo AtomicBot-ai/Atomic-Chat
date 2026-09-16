@@ -101,6 +101,41 @@ describe('ImageModelSelector', () => {
     })
   })
 
+  it('marks the families that cannot run the picked workflow and lists them last', () => {
+    const klein = { ...Z_IMAGE, id: 'flux.2-klein' as const, name: 'FLUX.2 Klein 4B' }
+    useImageGenerationStore.setState({ catalog: makeCatalog([Z_IMAGE, klein]) })
+    render(<ImageModelSelector workflow="edit" />)
+
+    // Z-Image sits in both sections (Q4 on disk, Q8 not); both copies are marked.
+    const installed = screen.getByRole('heading', { name: 'images:model.installed' }).closest('section')!
+    const available = screen.getByRole('heading', { name: 'images:model.available' }).closest('section')!
+    for (const zImage of screen.getAllByTestId('family-z-image')) {
+      expect(zImage).toHaveAttribute('data-unsupported', 'edit')
+      expect(within(zImage).getByText('images:model.notForWorkflow')).toBeInTheDocument()
+      expect(within(zImage).getAllByRole('button', { name: 'images:model.pick' })[0]).toBeDisabled()
+    }
+    // Neither the installed quant's Run nor an available quant's Download.
+    expect(within(installed).getByRole('button', { name: 'images:model.load' })).toBeDisabled()
+    expect(
+      within(within(available).getByTestId('family-z-image')).queryByRole('button', {
+        name: /images:model.download/,
+      })
+    ).not.toBeInTheDocument()
+
+    const kleinBlock = screen.getByTestId('family-flux.2-klein')
+    expect(kleinBlock).not.toHaveAttribute('data-unsupported')
+    const blocks = within(available).getAllByTestId(/^family-/)
+    expect(blocks[0]).toHaveAttribute('data-testid', 'family-flux.2-klein')
+  })
+
+  it('offers every family for a workflow they all run', () => {
+    render(<ImageModelSelector workflow="inpaint" />)
+    for (const zImage of screen.getAllByTestId('family-z-image')) {
+      expect(zImage).not.toHaveAttribute('data-unsupported')
+    }
+    expect(screen.getByRole('button', { name: 'images:model.load' })).toBeEnabled()
+  })
+
   it('splits the family into what is on disk and what is not', () => {
     render(<ImageModelSelector />)
     const installed = screen.getByRole('heading', { name: 'images:model.installed' }).closest('section')!

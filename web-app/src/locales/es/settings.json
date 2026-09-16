@@ -540,6 +540,12 @@
     "change": "Change…",
     "changeFailed": "The output folder could not be changed",
     "resetDefaults": "Reset to defaults",
-    "resetDefaultsDescription": "Engine, residency and eviction back to their defaults. The output folder is kept."
+    "resetDefaultsDescription": "Engine, residency and eviction back to their defaults. The output folder is kept.",
+    "update": "Update to {{tag}}",
+    "updateAvailable": "Update available: {{tag}}",
+    "checkUpdate": "Check for updates",
+    "checking": "Checking…",
+    "upToDate": "The engine is up to date.",
+    "updateCheckFailed": "Could not check for updates"
   }
 }

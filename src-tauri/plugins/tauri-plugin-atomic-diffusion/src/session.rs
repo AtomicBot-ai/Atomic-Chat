@@ -17,10 +17,21 @@ use crate::state::{
 /// driver reports the VRAM as free; spawning immediately fails to allocate.
 const GPU_SETTLE: Duration = Duration::from_millis(500);
 
+/// Which workflows a family can run on sd.cpp. img2img and masking are
+/// generic in sd.cpp (the init image is VAE-encoded and noised to
+/// `strength`; a mask blends latents), so every image family gets them.
+/// Reference-guided generation and instruction edits need a model trained
+/// on reference images: of the catalog families only FLUX.2 Klein is.
 pub fn workflows_for_family(family: &str) -> Vec<ImageWorkflow> {
+    use ImageWorkflow::*;
     match family {
-        "flux.2-klein" => vec![ImageWorkflow::Create, ImageWorkflow::Transform],
-        _ => vec![ImageWorkflow::Create],
+        "flux.2-klein" => vec![
+            Create, Transform, Inpaint, Extend, Upscale, Reference, Edit,
+        ],
+        "z-image" | "flux.1" | "qwen-image" => {
+            vec![Create, Transform, Inpaint, Extend, Upscale]
+        }
+        _ => vec![Create],
     }
 }
 
@@ -245,4 +256,23 @@ pub fn shutdown_blocking(state: &DiffusionState) {
             process::terminate_with_grace(&mut session.child, Duration::from_secs(2)).await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_image_family_gets_the_img2img_workflows_and_klein_gets_references() {
+        use ImageWorkflow::*;
+        for family in ["z-image", "flux.1", "qwen-image"] {
+            let ws = workflows_for_family(family);
+            assert_eq!(ws, vec![Create, Transform, Inpaint, Extend, Upscale], "{family}");
+        }
+        let klein = workflows_for_family("flux.2-klein");
+        assert!(klein.contains(&Reference) && klein.contains(&Edit));
+        assert_eq!(klein.len(), 7);
+        assert_eq!(workflows_for_family("wan2.2-ti2v-5b"), vec![Create]);
+        assert_eq!(workflows_for_family("unknown"), vec![Create]);
+    }
 }

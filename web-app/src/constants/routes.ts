@@ -33,6 +33,7 @@ export const route = {
   },
   images: {
     index: '/images/',
+    workflow: '/images/$workflow',
   },
   launch: {
     index: '/launch/',

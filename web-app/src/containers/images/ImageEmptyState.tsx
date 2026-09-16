@@ -3,8 +3,15 @@ import { IconPhoto } from '@tabler/icons-react'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
+type ImageEmptyStateProps = {
+  /** With no model resident the next step is picking one, not writing a prompt. */
+  modelLoaded?: boolean
+}
+
 /** The canvas before the first image: what this page does, nothing to click. */
-export const ImageEmptyState = memo(function ImageEmptyState() {
+export const ImageEmptyState = memo(function ImageEmptyState({
+  modelLoaded = true,
+}: ImageEmptyStateProps) {
   const { t } = useTranslation()
   return (
     <div
@@ -19,7 +26,11 @@ export const ImageEmptyState = memo(function ImageEmptyState() {
           {t('images:gallery.empty.title')}
         </p>
         <p className="max-w-md text-sm leading-snug text-muted-foreground">
-          {t('images:gallery.empty.description')}
+          {t(
+            modelLoaded
+              ? 'images:gallery.empty.description'
+              : 'images:gallery.emptyNoModel'
+          )}
         </p>
       </div>
     </div>

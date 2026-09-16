@@ -25,7 +25,7 @@ function ImagesRoute() {
   const search = Route.useSearch() as SearchParams
   return (
     <PlatformGuard feature={PlatformFeature.MEDIA_GENERATION}>
-      <ImageGenerationPage search={search} />
+      <ImageGenerationPage workflow="create" search={search} />
     </PlatformGuard>
   )
 }

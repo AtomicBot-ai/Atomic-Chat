@@ -1,6 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronsUpDown } from 'lucide-react'
-import { IconFolderOpen, IconLoader2, IconRefresh, IconTrash } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconFolderOpen,
+  IconLoader2,
+  IconRefresh,
+  IconTrash,
+} from '@tabler/icons-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -150,6 +156,25 @@ export function MediaSettingsPanel() {
     void applyIdleSettings()
   }
 
+  // Opening the page is the moment to look for a newer engine; the manifest
+  // is cached for an hour, so this is cheap. The button forces a fresh look.
+  useEffect(() => {
+    if (engine.installed) void engine.checkForUpdate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.installed])
+
+  const checkForUpdate = async () => {
+    await engine.checkForUpdate({ force: true })
+    const { engineUpdate } = useImageGenerationStore.getState()
+    if (engineUpdate.error && !engineUpdate.availableTag) {
+      toast.error(t('settings:media.updateCheckFailed'), {
+        description: engineUpdate.error,
+      })
+    } else if (!engineUpdate.availableTag) {
+      toast.success(t('settings:media.upToDate'))
+    }
+  }
+
   const artifactLabel = (id: string) => {
     const parsed = catalog ? parseArtifactId(id) : null
     if (!catalog || !parsed) return id
@@ -167,10 +192,17 @@ export function MediaSettingsPanel() {
           title={t('settings:media.engine')}
           description={
             engine.install.state === 'installed'
-              ? t('settings:media.engineInstalled', {
-                  tag: engine.install.tag,
-                  backend: engine.install.backendId,
-                })
+              ? engine.updateAvailable
+                ? `${t('settings:media.engineInstalled', {
+                    tag: engine.install.tag,
+                    backend: engine.install.backendId,
+                  })} · ${t('settings:media.updateAvailable', {
+                    tag: engine.updateAvailable,
+                  })}`
+                : t('settings:media.engineInstalled', {
+                    tag: engine.install.tag,
+                    backend: engine.install.backendId,
+                  })
               : engine.hostBackendId === null
                 ? (engine.hostBackendReason ?? t('settings:media.engineUnsupported'))
                 : t('settings:media.engineNotInstalled')
@@ -182,15 +214,44 @@ export function MediaSettingsPanel() {
                 {t('settings:media.installing')}
               </span>
             ) : engine.installed ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={generating}
-                onClick={() => void engine.reinstall()}
-              >
-                <IconRefresh size={14} />
-                {t('settings:media.reinstall')}
-              </Button>
+              <div className="flex items-center gap-1.5">
+                {engine.updateAvailable ? (
+                  <Button
+                    size="sm"
+                    disabled={generating}
+                    onClick={() => void engine.update()}
+                    data-testid="media-engine-update"
+                  >
+                    <IconDownload size={14} />
+                    {t('settings:media.update', { tag: engine.updateAvailable })}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={engine.checkingUpdate}
+                    onClick={() => void checkForUpdate()}
+                    data-testid="media-engine-check"
+                  >
+                    {engine.checkingUpdate ? (
+                      <IconLoader2 size={14} className="animate-spin" />
+                    ) : (
+                      <IconRefresh size={14} />
+                    )}
+                    {engine.checkingUpdate
+                      ? t('settings:media.checking')
+                      : t('settings:media.checkUpdate')}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={generating}
+                  onClick={() => void engine.reinstall()}
+                >
+                  {t('settings:media.reinstall')}
+                </Button>
+              </div>
             ) : (
               <Button
                 size="sm"

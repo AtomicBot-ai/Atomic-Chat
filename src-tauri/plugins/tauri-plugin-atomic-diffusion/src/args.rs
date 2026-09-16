@@ -8,6 +8,16 @@ use serde_json::{json, Map, Value};
 
 use crate::state::{FamilyDefaults, ImageGenerateRequest, OffloadPolicy, ServerSpec};
 
+/// The request's images already turned into base64 by the job runner, so
+/// this module stays free of I/O.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ResolvedInputs {
+    pub init: Option<String>,
+    pub mask: Option<String>,
+    /// For the reference workflows: the source first, then the extras.
+    pub refs: Vec<String>,
+}
+
 /// Kill switch for the Metal text-encoder placement (`1`/`true` keeps the
 /// encoder on Metal).
 pub const METAL_TE_GPU_ENV: &str = "ATOMIC_DIFFUSION_METAL_TE_GPU";
@@ -183,11 +193,17 @@ fn dedup(flags: Vec<&str>) -> Vec<String> {
 /// sampling lives under `sample_params` with guidance split the way sd.cpp
 /// expects (CFG → `txt_cfg`, FLUX distilled → `distilled_guidance`). Only set
 /// keys are emitted so the server's own defaults apply to the rest.
+///
+/// The workflow decides which images go in: `init_image` with `strength`
+/// (and `mask_image` for inpaint/extend) for the img2img family, and
+/// `ref_images` for reference and edit. sd.cpp resizes the init image to
+/// `width`×`height` itself, which is how Upscale works: the source at a
+/// larger size and a low strength.
 pub fn build_img_gen_request(
     request: &ImageGenerateRequest,
     defaults: &FamilyDefaults,
     seed: i64,
-    init_image_b64: Option<&str>,
+    inputs: &ResolvedInputs,
 ) -> Value {
     let mut guidance = Map::new();
     guidance.insert("txt_cfg".into(), json!(request.cfg_scale));
@@ -222,9 +238,23 @@ pub fn build_img_gen_request(
     body.insert("output_format".into(), json!("png"));
     body.insert("seed".into(), json!(seed));
     body.insert("sample_params".into(), Value::Object(sample_params));
-    if let Some(init) = init_image_b64 {
-        body.insert("init_image".into(), json!(init));
-        body.insert("strength".into(), json!(request.strength.unwrap_or(0.75)));
+    let workflow = request.workflow();
+    if workflow.uses_init_image() {
+        if let Some(init) = &inputs.init {
+            body.insert("init_image".into(), json!(init));
+            body.insert(
+                "strength".into(),
+                json!(request.strength.unwrap_or(workflow.default_strength())),
+            );
+        }
+        if workflow.uses_mask() {
+            if let Some(mask) = &inputs.mask {
+                body.insert("mask_image".into(), json!(mask));
+            }
+        }
+    }
+    if workflow.uses_references() && !inputs.refs.is_empty() {
+        body.insert("ref_images".into(), json!(inputs.refs));
     }
     Value::Object(body)
 }
@@ -528,8 +558,18 @@ mod tests {
             sampling_method: None,
             flow_shift: None,
             workflow: Some(ImageWorkflow::Create),
-            init_image_path: None,
+            init_image: None,
+            mask_image: None,
+            reference_images: None,
             strength: None,
+        }
+    }
+
+    fn inputs(init: Option<&str>, mask: Option<&str>, refs: &[&str]) -> ResolvedInputs {
+        ResolvedInputs {
+            init: init.map(str::to_string),
+            mask: mask.map(str::to_string),
+            refs: refs.iter().map(|r| r.to_string()).collect(),
         }
     }
 
@@ -544,7 +584,7 @@ mod tests {
             width: 1024,
             height: 1024,
         };
-        let body = build_img_gen_request(&request(), &defaults, 42, None);
+        let body = build_img_gen_request(&request(), &defaults, 42, &ResolvedInputs::default());
         assert_eq!(body["prompt"], "a cat");
         assert_eq!(body["negative_prompt"], "");
         assert_eq!(body["width"], 512);
@@ -558,6 +598,62 @@ mod tests {
         assert_eq!(body["sample_params"]["guidance"]["txt_cfg"], 1.0);
         assert_eq!(body["sample_params"]["guidance"]["distilled_guidance"], 3.5);
         assert!(body.get("init_image").is_none());
+        assert!(body.get("mask_image").is_none());
+        assert!(body.get("ref_images").is_none());
+    }
+
+    #[test]
+    fn each_workflow_sends_its_own_images() {
+        let defaults = FamilyDefaults {
+            steps: 8,
+            cfg_scale: 1.0,
+            guidance: None,
+            sampling_method: None,
+            flow_shift: None,
+            width: 1024,
+            height: 1024,
+        };
+        let full = inputs(Some("INIT"), Some("MASK"), &["INIT", "REF2"]);
+        let with = |workflow: ImageWorkflow, strength: Option<f64>| {
+            let mut req = request();
+            req.workflow = Some(workflow);
+            req.strength = strength;
+            build_img_gen_request(&req, &defaults, 1, &full)
+        };
+
+        // Create ignores every image, even when the runner resolved some.
+        let body = with(ImageWorkflow::Create, Some(0.5));
+        assert!(body.get("init_image").is_none());
+        assert!(body.get("strength").is_none());
+        assert!(body.get("ref_images").is_none());
+
+        let body = with(ImageWorkflow::Transform, None);
+        assert_eq!(body["init_image"], "INIT");
+        assert_eq!(body["strength"], 0.75);
+        assert!(body.get("mask_image").is_none());
+
+        let body = with(ImageWorkflow::Inpaint, Some(0.6));
+        assert_eq!(body["init_image"], "INIT");
+        assert_eq!(body["mask_image"], "MASK");
+        assert_eq!(body["strength"], 0.6);
+
+        // The grown border is blank canvas: repaint it fully by default.
+        let body = with(ImageWorkflow::Extend, None);
+        assert_eq!(body["mask_image"], "MASK");
+        assert_eq!(body["strength"], 1.0);
+
+        // A re-detail pass keeps most of the enlarged source.
+        let body = with(ImageWorkflow::Upscale, None);
+        assert_eq!(body["init_image"], "INIT");
+        assert_eq!(body["strength"], 0.35);
+        assert!(body.get("mask_image").is_none());
+
+        for workflow in [ImageWorkflow::Reference, ImageWorkflow::Edit] {
+            let body = with(workflow, Some(0.6));
+            assert_eq!(body["ref_images"], json!(["INIT", "REF2"]));
+            assert!(body.get("init_image").is_none(), "{workflow:?}");
+            assert!(body.get("strength").is_none(), "{workflow:?}");
+        }
     }
 
     #[test]
@@ -578,7 +674,7 @@ mod tests {
         req.negative_prompt = Some("blurry".into());
         req.workflow = Some(ImageWorkflow::Transform);
         req.strength = Some(0.6);
-        let body = build_img_gen_request(&req, &defaults, 7, Some("AAAA"));
+        let body = build_img_gen_request(&req, &defaults, 7, &inputs(Some("AAAA"), None, &[]));
         assert_eq!(body["sample_params"]["guidance"]["distilled_guidance"], 2.0);
         assert_eq!(body["sample_params"]["sample_method"], "dpm++2m");
         assert_eq!(body["sample_params"]["flow_shift"], 1.5);
@@ -598,7 +694,7 @@ mod tests {
             width: 1024,
             height: 1024,
         };
-        let body = build_img_gen_request(&request(), &defaults, 1, None);
+        let body = build_img_gen_request(&request(), &defaults, 1, &ResolvedInputs::default());
         assert!(body["sample_params"]["guidance"]
             .get("distilled_guidance")
             .is_none());

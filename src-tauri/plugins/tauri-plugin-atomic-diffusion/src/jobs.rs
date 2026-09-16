@@ -10,7 +10,9 @@ use base64::Engine as _;
 use serde::Serialize;
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 
-use crate::args::{build_img_gen_request, cpu_backend_extra_args, is_ggml_unsupported_op_abort};
+use crate::args::{
+    build_img_gen_request, cpu_backend_extra_args, is_ggml_unsupported_op_abort, ResolvedInputs,
+};
 use crate::error::{DiffusionError, DiffusionErrorCode, DiffusionResult};
 use crate::events::{
     emit, emit_error, DiffusionEmitter, JobPayload, ProgressPayload, SharedEmitter, EVENT_JOB,
@@ -22,8 +24,8 @@ use crate::progress::{classify_exit, diagnostic_tail, parse_step_line};
 use crate::session;
 use crate::state::{
     now_ms, tail_lines, DiffusionState, GalleryImageItem, ImageGenerateRequest, ImageJob,
-    ImageJobPhase, ImageJobProgress, ImageJobState, ImageRecipe, ImageWorkflow, JobRecord,
-    RecipeEngine, RecipeModel, ServerSpec, MAX_BATCH,
+    ImageJobPhase, ImageJobProgress, ImageJobState, ImageRecipe, ImageSource, ImageWorkflow,
+    JobRecord, RecipeEngine, RecipeModel, ServerSpec, MAX_BATCH,
 };
 
 pub const IMG_GEN_PATH: &str = "/sdcpp/v1/img_gen";
@@ -110,27 +112,126 @@ pub fn validate_request(request: &ImageGenerateRequest, spec: &ServerSpec) -> Di
             ));
         }
     }
-    if request.workflow() == ImageWorkflow::Transform {
-        if !session::workflows_for_family(&spec.family).contains(&ImageWorkflow::Transform) {
-            return Err(DiffusionError::with_details(
-                DiffusionErrorCode::UnsupportedWorkflow,
-                "This model cannot transform images.",
-                spec.family.clone(),
-            ));
-        }
-        let exists = request
-            .init_image_path
-            .as_deref()
-            .map(|p| std::path::Path::new(p).is_file())
-            .unwrap_or(false);
-        if !exists {
-            return Err(DiffusionError::new(
-                DiffusionErrorCode::InvalidRequest,
-                "Transform needs a source image.",
-            ));
-        }
+    let workflow = request.workflow();
+    if workflow == ImageWorkflow::Create {
+        return Ok(());
+    }
+    if !session::workflows_for_family(&spec.family).contains(&workflow) {
+        return Err(DiffusionError::with_details(
+            DiffusionErrorCode::UnsupportedWorkflow,
+            format!("This model cannot run the {} workflow.", workflow_name(workflow)),
+            spec.family.clone(),
+        ));
+    }
+    // Every workflow but Create starts from one source image; the reference
+    // workflows send it as the first reference.
+    check_source(request.init_image.as_ref(), "a source image")?;
+    if workflow.uses_mask() {
+        check_source(request.mask_image.as_ref(), "a mask")?;
+    }
+    for extra in request.reference_images.iter().flatten() {
+        check_source(Some(extra), "a reference image")?;
     }
     Ok(())
+}
+
+fn workflow_name(workflow: ImageWorkflow) -> &'static str {
+    match workflow {
+        ImageWorkflow::Create => "create",
+        ImageWorkflow::Transform => "transform",
+        ImageWorkflow::Inpaint => "inpaint",
+        ImageWorkflow::Extend => "extend",
+        ImageWorkflow::Upscale => "upscale",
+        ImageWorkflow::Reference => "reference",
+        ImageWorkflow::Edit => "edit",
+    }
+}
+
+/// A source must be present and usable: an existing file, or base64 that
+/// decodes. Rejecting here keeps a bad input from evicting the chat model
+/// and spinning up the server for nothing.
+fn check_source(source: Option<&ImageSource>, what: &str) -> DiffusionResult<()> {
+    match source {
+        None => Err(DiffusionError::new(
+            DiffusionErrorCode::InvalidRequest,
+            format!("This workflow needs {what}."),
+        )),
+        Some(ImageSource::Path { path }) if std::path::Path::new(path).is_file() => Ok(()),
+        Some(ImageSource::Path { path }) => Err(DiffusionError::with_details(
+            DiffusionErrorCode::InvalidRequest,
+            "The source image could not be found.",
+            path.clone(),
+        )),
+        Some(ImageSource::Data { base64 }) => {
+            let payload = strip_data_url(base64);
+            if payload.is_empty()
+                || base64::engine::general_purpose::STANDARD
+                    .decode(payload)
+                    .is_err()
+            {
+                return Err(DiffusionError::new(
+                    DiffusionErrorCode::InvalidRequest,
+                    "The inline image is not valid base64.",
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+/// `data:image/png;base64,....` → the base64 part. A plain payload is
+/// returned unchanged, so the web app may send either.
+fn strip_data_url(value: &str) -> &str {
+    match value.strip_prefix("data:") {
+        Some(rest) => rest.split_once(',').map(|(_, b)| b).unwrap_or(rest),
+        None => value,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+
+fn resolve_source(source: &ImageSource) -> DiffusionResult<String> {
+    match source {
+        ImageSource::Path { path } => {
+            let bytes = std::fs::read(path).map_err(|e| {
+                DiffusionError::with_details(
+                    DiffusionErrorCode::InvalidRequest,
+                    "The source image could not be read.",
+                    e.to_string(),
+                )
+            })?;
+            Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+        }
+        ImageSource::Data { base64 } => Ok(strip_data_url(base64).to_string()),
+    }
+}
+
+/// Turn the request's images into the base64 `sd-server` takes, once per
+/// job (not per retry). Only what the workflow uses is read.
+pub fn resolve_inputs(request: &ImageGenerateRequest) -> DiffusionResult<ResolvedInputs> {
+    let workflow = request.workflow();
+    let mut inputs = ResolvedInputs::default();
+    if workflow == ImageWorkflow::Create {
+        return Ok(inputs);
+    }
+    let source = match request.init_image.as_ref() {
+        Some(source) => resolve_source(source)?,
+        None => return Ok(inputs),
+    };
+    if workflow.uses_references() {
+        inputs.refs.push(source);
+        for extra in request.reference_images.iter().flatten() {
+            inputs.refs.push(resolve_source(extra)?);
+        }
+    } else {
+        inputs.init = Some(source);
+        if workflow.uses_mask() {
+            inputs.mask = request.mask_image.as_ref().map(resolve_source).transpose()?;
+        }
+    }
+    Ok(inputs)
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +478,7 @@ pub fn start_image_job(
         id: id.clone(),
         state: ImageJobState::Queued,
         model_id: spec.model_id.clone(),
-        request: request.clone(),
+        request: request.without_sources(),
         created_at_ms: now_ms(),
         started_at_ms: None,
         finished_at_ms: None,
@@ -554,19 +655,7 @@ async fn execute(
         .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
 
     let batch_seed = request.seed.filter(|s| *s >= 0).unwrap_or_else(draw_seed);
-    let init_image_b64 = match (request.workflow(), request.init_image_path.as_deref()) {
-        (ImageWorkflow::Transform, Some(path)) => {
-            let bytes = std::fs::read(path).map_err(|e| {
-                DiffusionError::with_details(
-                    DiffusionErrorCode::InvalidRequest,
-                    "The source image could not be read.",
-                    e.to_string(),
-                )
-            })?;
-            Some(base64::engine::general_purpose::STANDARD.encode(bytes))
-        }
-        _ => None,
-    };
+    let inputs = resolve_inputs(&request)?;
 
     let started = Instant::now();
     let mut attempts = 0u8;
@@ -577,7 +666,7 @@ async fn execute(
             &request,
             &view.spec.defaults,
             batch_seed,
-            init_image_b64.as_deref(),
+            &inputs,
         );
         let outcome = run_attempt(
             state, emitter, id, &request, &view, body, batch_seed, &cancel, started,
@@ -971,11 +1060,11 @@ async fn save_outputs(
                 .or_else(|| spec.defaults.sampling_method.clone()),
             flow_shift: request.flow_shift.or(spec.defaults.flow_shift),
             workflow: request.workflow(),
-            strength: if request.workflow() == ImageWorkflow::Transform {
-                request.strength
-            } else {
-                None
-            },
+            // The effective value, so a recipe can be replayed as sent.
+            strength: request
+                .workflow()
+                .uses_init_image()
+                .then(|| request.strength.unwrap_or(request.workflow().default_strength())),
             model: RecipeModel {
                 model_id: spec.model_id.clone(),
                 family: spec.family.clone(),
@@ -1239,7 +1328,9 @@ mod tests {
             sampling_method: None,
             flow_shift: None,
             workflow: None,
-            init_image_path: None,
+            init_image: None,
+            mask_image: None,
+            reference_images: None,
             strength: None,
         }
     }
@@ -1358,26 +1449,142 @@ mod tests {
 
         let mut r = ok.clone();
         r.workflow = Some(ImageWorkflow::Transform);
+        let mut video = s.clone();
+        video.family = "wan2.2-ti2v-5b".into();
         assert_eq!(
-            validate_request(&r, &s).unwrap_err().code,
+            validate_request(&r, &video).unwrap_err().code,
             DiffusionErrorCode::UnsupportedWorkflow
         );
 
-        let mut klein = s.clone();
-        klein.family = "flux.2-klein".into();
         assert_eq!(
-            validate_request(&r, &klein).unwrap_err().code,
-            DiffusionErrorCode::InvalidRequest
+            validate_request(&r, &s).unwrap_err().code,
+            DiffusionErrorCode::InvalidRequest,
+            "a transform without a source image"
         );
         let file = tempfile::NamedTempFile::new().unwrap();
-        r.init_image_path = Some(file.path().to_string_lossy().to_string());
+        let path = file.path().to_string_lossy().to_string();
+        r.init_image = Some(ImageSource::Path { path: path.clone() });
         r.strength = Some(1.5);
         assert_eq!(
-            validate_request(&r, &klein).unwrap_err().code,
+            validate_request(&r, &s).unwrap_err().code,
             DiffusionErrorCode::InvalidRequest
         );
         r.strength = Some(0.6);
-        assert!(validate_request(&r, &klein).is_ok());
+        assert!(validate_request(&r, &s).is_ok());
+    }
+
+    #[test]
+    fn every_workflow_checks_its_inputs_and_the_family() {
+        let s = spec(); // z-image: the img2img workflows, no references
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = ImageSource::Path {
+            path: file.path().to_string_lossy().to_string(),
+        };
+        let png = ImageSource::Data {
+            base64: "data:image/png;base64,iVBORw0KGgo=".into(),
+        };
+        let with = |workflow: ImageWorkflow| {
+            let mut r = request();
+            r.workflow = Some(workflow);
+            r
+        };
+
+        // Inpaint / extend need the source and a mask; base64 masks are fine.
+        for workflow in [ImageWorkflow::Inpaint, ImageWorkflow::Extend] {
+            let mut r = with(workflow);
+            r.init_image = Some(path.clone());
+            assert_eq!(
+                validate_request(&r, &s).unwrap_err().code,
+                DiffusionErrorCode::InvalidRequest,
+                "{workflow:?} without a mask"
+            );
+            r.mask_image = Some(png.clone());
+            assert!(validate_request(&r, &s).is_ok(), "{workflow:?}");
+            r.mask_image = Some(ImageSource::Data {
+                base64: "not base64!".into(),
+            });
+            assert_eq!(
+                validate_request(&r, &s).unwrap_err().code,
+                DiffusionErrorCode::InvalidRequest
+            );
+        }
+
+        // Upscale is img2img: a source is enough.
+        let mut r = with(ImageWorkflow::Upscale);
+        r.init_image = Some(png.clone());
+        assert!(validate_request(&r, &s).is_ok());
+
+        // A missing file is rejected up front, not after the server spawned.
+        let mut r = with(ImageWorkflow::Transform);
+        r.init_image = Some(ImageSource::Path {
+            path: "/nonexistent/source.png".into(),
+        });
+        assert_eq!(
+            validate_request(&r, &s).unwrap_err().code,
+            DiffusionErrorCode::InvalidRequest
+        );
+
+        // Reference / edit only on a family trained for it.
+        for workflow in [ImageWorkflow::Reference, ImageWorkflow::Edit] {
+            let mut r = with(workflow);
+            r.init_image = Some(path.clone());
+            assert_eq!(
+                validate_request(&r, &s).unwrap_err().code,
+                DiffusionErrorCode::UnsupportedWorkflow,
+                "{workflow:?} on z-image"
+            );
+            let mut klein = s.clone();
+            klein.family = "flux.2-klein".into();
+            assert!(validate_request(&r, &klein).is_ok(), "{workflow:?} on klein");
+            r.reference_images = Some(vec![ImageSource::Path {
+                path: "/nonexistent/ref.png".into(),
+            }]);
+            assert_eq!(
+                validate_request(&r, &klein).unwrap_err().code,
+                DiffusionErrorCode::InvalidRequest
+            );
+        }
+    }
+
+    #[test]
+    fn inputs_resolve_per_workflow_and_snapshots_drop_inline_bytes() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"PNG?").unwrap();
+        let path = ImageSource::Path {
+            path: file.path().to_string_lossy().to_string(),
+        };
+        let mask = ImageSource::Data {
+            base64: "data:image/png;base64,QUJD".into(),
+        };
+
+        let mut r = request();
+        r.workflow = Some(ImageWorkflow::Inpaint);
+        r.init_image = Some(path.clone());
+        r.mask_image = Some(mask.clone());
+        let inputs = resolve_inputs(&r).unwrap();
+        assert_eq!(inputs.init.as_deref(), Some("UE5HPw=="));
+        assert_eq!(inputs.mask.as_deref(), Some("QUJD"), "data URL prefix stripped");
+        assert!(inputs.refs.is_empty());
+
+        r.workflow = Some(ImageWorkflow::Reference);
+        r.reference_images = Some(vec![mask.clone()]);
+        let inputs = resolve_inputs(&r).unwrap();
+        assert!(inputs.init.is_none() && inputs.mask.is_none());
+        assert_eq!(inputs.refs, vec!["UE5HPw==".to_string(), "QUJD".to_string()]);
+
+        // Create reads nothing, whatever the request carries.
+        r.workflow = None;
+        assert_eq!(resolve_inputs(&r).unwrap(), ResolvedInputs::default());
+
+        let snapshot = r.without_sources();
+        assert_eq!(snapshot.init_image, Some(path));
+        assert_eq!(
+            snapshot.mask_image,
+            Some(ImageSource::Data {
+                base64: String::new()
+            })
+        );
+        assert_eq!(snapshot.prompt, r.prompt);
     }
 
     #[test]

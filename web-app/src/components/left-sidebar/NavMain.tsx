@@ -1,6 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Collapsible,
   CollapsibleContent,
@@ -34,13 +39,16 @@ import {
 } from '@/components/animated-icon/radio-tower'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
+import { WORKFLOW_ICONS } from '@/containers/images/workflowIcons'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useImageWorkflowAvailability } from '@/hooks/useImageWorkflowAvailability'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { IMAGE_WORKFLOWS } from '@/lib/diffusion/workflows'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
@@ -70,6 +78,10 @@ export function NavMain() {
   )
   const pluginsExpanded = useLeftPanel((state) => state.pluginsExpanded)
   const setPluginsExpanded = useLeftPanel((state) => state.setPluginsExpanded)
+  const imagesExpanded = useLeftPanel((state) => state.imagesExpanded)
+  const setImagesExpanded = useLeftPanel((state) => state.setImagesExpanded)
+  const { isAvailable: isWorkflowAvailable, unavailableReason } =
+    useImageWorkflowAvailability()
   const { addFolder } = useThreadManagement()
   const projectDialogOpen = useProjectDialog((state) => state.open)
   const setProjectDialogOpen = useProjectDialog((state) => state.setOpen)
@@ -83,6 +95,13 @@ export function NavMain() {
   useEffect(() => {
     if (isPluginsRoute) setPluginsExpanded(true)
   }, [isPluginsRoute, setPluginsExpanded])
+
+  // On the Images page the workflow list is the page's own navigation, so it
+  // stays open; elsewhere the chevron decides.
+  const isImagesRoute = pathname.startsWith('/images')
+  useEffect(() => {
+    if (isImagesRoute) setImagesExpanded(true)
+  }, [isImagesRoute, setImagesExpanded])
 
   const handleNewChat = () => {
     navigate({ to: route.home })
@@ -137,24 +156,105 @@ export function NavMain() {
             that supervises sd-server, so the row is gated the same way voice
             input is rather than shown and then refused. */}
         {PlatformFeatures[PlatformFeature.MEDIA_GENERATION] && (
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname.startsWith('/images')}
-              className="data-[active=true]:bg-sidebar-foreground/15"
-              onMouseEnter={() => imagesIconRef.current?.startAnimation()}
-              onMouseLeave={() => imagesIconRef.current?.stopAnimation()}
-            >
-              <Link to={route.images.index}>
-                <ImageIcon
-                  ref={imagesIconRef}
-                  className="text-foreground/70"
-                  size={16}
-                />
-                <span>{t('common:images')}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <Collapsible
+            open={imagesExpanded}
+            onOpenChange={setImagesExpanded}
+            className="group/images"
+          >
+            <SidebarMenuItem>
+              {/* The row itself is a link to Create; only the chevron folds
+                  the list, so a click never has to choose between the two. */}
+              <div className="relative flex w-full items-center">
+                <SidebarMenuButton
+                  asChild
+                  isActive={isImagesRoute && !imagesExpanded}
+                  className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
+                  onMouseEnter={() => imagesIconRef.current?.startAnimation()}
+                  onMouseLeave={() => imagesIconRef.current?.stopAnimation()}
+                >
+                  <Link to={route.images.index}>
+                    <ImageIcon
+                      ref={imagesIconRef}
+                      className="text-foreground/70"
+                      size={16}
+                    />
+                    <span>{t('common:images')}</span>
+                  </Link>
+                </SidebarMenuButton>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="hover:bg-sidebar-foreground/8 absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md transition-colors"
+                    aria-label={t('common:images')}
+                    aria-expanded={imagesExpanded}
+                    data-testid="images-disclosure"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'text-muted-foreground size-4 shrink-0 transition-transform duration-200 ease-out',
+                        imagesExpanded && 'rotate-90'
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent className={collapsiblePanelAnimation}>
+                <SidebarMenuSub data-testid="images-submenu">
+                  {IMAGE_WORKFLOWS.map((workflow) => {
+                    const Icon = WORKFLOW_ICONS[workflow.id]
+                    const available = isWorkflowAvailable(workflow.id)
+                    const active =
+                      workflow.id === 'create'
+                        ? pathname === '/images' || pathname === '/images/'
+                        : pathname.startsWith(workflow.path)
+                    const link = (
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={active}
+                        className={cn(
+                          'data-[active=true]:bg-sidebar-foreground/15',
+                          !available && 'opacity-50'
+                        )}
+                      >
+                        <Link
+                          to={workflow.path}
+                          aria-disabled={!available || undefined}
+                          onClick={(event: MouseEvent) => {
+                            if (!available) event.preventDefault()
+                          }}
+                        >
+                          <Icon size={14} className="shrink-0 text-foreground/70" />
+                          <span>{t(`images:workflow.${workflow.id}.label`)}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    )
+                    return (
+                      <SidebarMenuSubItem key={workflow.id}>
+                        {available ? (
+                          link
+                        ) : (
+                          <Tooltip>
+                            {/* The wrapper takes the hover: a disabled
+                                sub-button swallows pointer events. */}
+                            <TooltipTrigger asChild>
+                              <span className="block">{link}</span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                              {t(
+                                unavailableReason === 'selected'
+                                  ? 'images:workflow.unavailableSelected'
+                                  : 'images:workflow.unavailable'
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </SidebarMenuSubItem>
+                    )
+                  })}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
         )}
         {/* Cloud is offered in both modes: agent mode is what a user with no
             local engine is most likely to be blocked on, and connecting a
