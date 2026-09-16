@@ -1,0 +1,29 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".zshenv": "# Atomic Chat - Copilot CLI Config\nexport COPILOT_PROVIDER_BASE_URL='http://127.0.0.1:1337/v1'\nexport COPILOT_PROVIDER_TYPE='openai'\nexport COPILOT_MODEL='AtomicChat/Qwen3.5-9B-GGUF'\nexport COPILOT_OFFLINE='true'\n\n# Atomic Chat - Copilot CLI Config\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "copilot",
+    "api_key": "",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "prior_runs": [
+      {
+        "api_key": "sk-atomic-fixture-key",
+        "api_url": "http://127.0.0.1:1337/v1",
+        "model": "AtomicChat/Qwen3.5-9B-GGUF"
+      }
+    ],
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "copilot__keyed_then_keyless_rerun",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

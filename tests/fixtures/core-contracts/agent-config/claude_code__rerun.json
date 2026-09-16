@@ -1,0 +1,29 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".claude/settings.json": "{\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"sk-atomic-fixture-key\",\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:1337\",\n    \"ANTHROPIC_DEFAULT_HAIKU_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_DEFAULT_OPUS_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n  },\n  \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "claude-code",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "prior_runs": [
+      {
+        "api_key": "sk-atomic-fixture-key",
+        "api_url": "http://127.0.0.1:1337",
+        "model": "AtomicChat/Qwen3.5-9B-GGUF"
+      }
+    ],
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "claude_code__rerun",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

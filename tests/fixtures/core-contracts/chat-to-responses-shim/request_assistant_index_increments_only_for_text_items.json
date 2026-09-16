@@ -1,0 +1,103 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "first",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_atomic_0",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        {
+          "arguments": "{}",
+          "call_id": "call_1",
+          "name": "f",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_1",
+          "output": "ok",
+          "type": "function_call_output"
+        },
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "second",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_atomic_1",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "session-fixture",
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto"
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": "first",
+          "role": "assistant"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{}",
+                "name": "f"
+              },
+              "id": "call_1"
+            }
+          ]
+        },
+        {
+          "content": "ok",
+          "role": "tool",
+          "tool_call_id": "call_1"
+        },
+        {
+          "content": [
+            {
+              "text": "second",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        }
+      ]
+    },
+    "kind": "request",
+    "prompt_cache_key": "session-fixture"
+  },
+  "name": "request_assistant_index_increments_only_for_text_items",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

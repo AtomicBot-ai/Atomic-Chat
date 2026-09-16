@@ -455,3 +455,281 @@ load_tensors:        CUDA0 model buffer size =  4155.99 MiB
         assert_eq!(parse_loaded_backend("some other line"), None);
     }
 }
+
+/// Contract-fixture emitter for `atomic-chat-core` (PLAN.md phase 0 there). Ignored by default:
+///
+/// ```text
+/// cargo test -p tauri-plugin-llamacpp-upstream --lib -- --ignored dump_fixtures
+/// ```
+///
+/// Writes `<repo>/tests/fixtures/core-contracts/runtime-device/<case>.json` and `index.json`.
+#[cfg(test)]
+mod fixture_dump {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+
+    struct Case {
+        name: &'static str,
+        log: &'static str,
+        cuda_runtime_missing: bool,
+    }
+
+    const fn c(name: &'static str, log: &'static str) -> Case {
+        Case {
+            name,
+            log,
+            cuda_runtime_missing: false,
+        }
+    }
+
+    fn cases() -> Vec<Case> {
+        vec![
+            // ── the shipped unit-test scenarios ─────────────────────────────
+            c(
+                "healthy_cuda_load",
+                "load_backend: loaded CUDA backend from C:\\backends\\build\\bin\\ggml-cuda.dll\n\
+load_backend: loaded CPU backend from C:\\backends\\build\\bin\\ggml-cpu-haswell.dll\n\
+ggml_cuda_init: found 1 CUDA devices:\n\
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes\n\
+load_tensors: offloading 32 repeating layers to GPU\n\
+load_tensors: offloading output layer to GPU\n\
+load_tensors: offloaded 33/33 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =  4155.99 MiB\n\
+load_tensors:   CPU_Mapped model buffer size =   308.23 MiB\n",
+            ),
+            c(
+                "cuda_binary_silently_degraded_to_cpu",
+                "load_backend: loaded CPU backend from C:\\backends\\build\\bin\\ggml-cpu-haswell.dll\n\
+load_tensors: offloaded 0/33 layers to GPU\n\
+load_tensors:   CPU_Mapped model buffer size =  4464.22 MiB\n",
+            ),
+            c(
+                "cuda_loads_but_zero_layers_offloaded",
+                "load_backend: loaded CUDA backend from C:\\backends\\build\\bin\\ggml-cuda.dll\n\
+load_tensors: offloaded 0/33 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =     0.00 MiB\n\
+load_tensors:   CPU_Mapped model buffer size =  4464.22 MiB\n",
+            ),
+            c(
+                "vulkan_load",
+                "load_backend: loaded Vulkan backend from /usr/lib/libggml-vulkan.so\n\
+ggml_vulkan: Found 1 Vulkan devices:\n\
+ggml_vulkan: 0 = AMD Radeon RX 7900 XTX (RADV NAVI31)\n\
+load_tensors: offloaded 33/33 layers to GPU\n\
+load_tensors:      Vulkan0 model buffer size =  3820.94 MiB\n\
+load_tensors:          CPU model buffer size =   102.64 MiB\n",
+            ),
+            c(
+                "metal_load",
+                "load_backend: loaded Metal backend from /Applications/build/bin/libggml-metal.dylib\n\
+load_tensors: offloaded 29/29 layers to GPU\n\
+load_tensors:        Metal model buffer size =  4155.99 MiB\n\
+load_tensors:          CPU model buffer size =   308.23 MiB\n",
+            ),
+            c(
+                "cpu_only_build",
+                "load_backend: loaded CPU backend from /usr/lib/libggml-cpu-haswell.so\n\
+load_tensors:   CPU_Mapped model buffer size =  4464.22 MiB\n",
+            ),
+            c(
+                "multi_gpu_split_largest_share",
+                "load_backend: loaded CUDA backend from /usr/lib/libggml-cuda.so\n\
+load_tensors: offloaded 33/33 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =  1024.00 MiB\n\
+load_tensors:        CUDA1 model buffer size =  3072.00 MiB\n",
+            ),
+            c(
+                "legacy_llm_load_tensors_prefix",
+                "llm_load_tensors: offloaded 33/33 layers to GPU\n\
+llm_load_tensors:      CUDA0 model buffer size =  4155.99 MiB\n",
+            ),
+            c("repeating_layers_only", "load_tensors: offloading 32 repeating layers to GPU\n"),
+            c(
+                "unrelated_lines_ignored",
+                "main: server is listening on http://127.0.0.1:8080\n\
+srv    load_model: loading model\n\
+print_info: file size = 4.36 GiB (4.83 BPW)\n",
+            ),
+            c(
+                "device_init_error_first_failure_kept",
+                "/home/u/.local/share/Jan/data/llamacpp/backends/b7261/linux-cuda-x64/build/bin/llama-server: error while loading shared libraries: libcudart.so.12: cannot open shared object file: No such file or directory\n\
+ggml_cuda_init: failed to initialize CUDA: unknown error\n",
+            ),
+            Case {
+                cuda_runtime_missing: true,
+                ..c("cuda_runtime_missing_marked_conclusive", "")
+            },
+            // ── edge rules not covered by the unit tests ─────────────────────
+            c("empty_log_is_inconclusive", ""),
+            c(
+                "loaded_backends_deduped_in_order",
+                "load_backend: loaded CPU backend from a.so\n\
+load_backend: loaded CUDA backend from b.so\n\
+load_backend: loaded CPU backend from a.so\n\
+load_backend: loaded RPC backend from c.so\n",
+            ),
+            c(
+                "summary_overrides_repeating_layers",
+                "load_tensors: offloading 10 repeating layers to GPU\n\
+load_tensors: offloaded 33/33 layers to GPU\n",
+            ),
+            c(
+                "repeating_layers_do_not_override_summary",
+                "load_tensors: offloaded 33/33 layers to GPU\n\
+load_tensors: offloading 10 repeating layers to GPU\n",
+            ),
+            c(
+                "equal_buffers_tie_break_smaller_label_wins",
+                "load_tensors: offloaded 33/33 layers to GPU\n\
+load_tensors:        CUDA1 model buffer size =  2048.00 MiB\n\
+load_tensors:        CUDA0 model buffer size =  2048.00 MiB\n",
+            ),
+            c(
+                "duplicate_label_keeps_max",
+                "load_tensors: offloaded 33/33 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =  4096.00 MiB\n\
+load_tensors:        CUDA0 model buffer size =  1024.00 MiB\n",
+            ),
+            c(
+                "cpu_prefixed_labels_are_not_gpu",
+                "load_tensors: offloaded 0/33 layers to GPU\n\
+load_tensors:  CPU_AARCH64 model buffer size =  4096.00 MiB\n\
+load_tensors:   CPU_REPACK model buffer size =  1024.00 MiB\n\
+load_tensors:          CPU model buffer size =   512.00 MiB\n",
+            ),
+            c(
+                "nonzero_gpu_buffer_but_zero_offloaded",
+                "load_backend: loaded CUDA backend from b.so\n\
+load_tensors: offloaded 0/33 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =   256.00 MiB\n\
+load_tensors:   CPU_Mapped model buffer size =  4096.00 MiB\n",
+            ),
+            c(
+                "size_units_gib_kib_bytes",
+                "load_tensors: offloaded 1/1 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =     1.50 GiB\n\
+load_tensors:        CUDA1 model buffer size =  2048.00 KiB\n\
+load_tensors:        CUDA2 model buffer size =  4096\n",
+            ),
+            c(
+                "size_unknown_unit_treated_as_bytes",
+                "load_tensors: offloaded 1/1 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =  4096.00 TiB\n",
+            ),
+            c(
+                "size_not_a_number_ignored",
+                "load_tensors: offloaded 1/1 layers to GPU\n\
+load_tensors:        CUDA0 model buffer size =  n/a MiB\n",
+            ),
+            c(
+                "buffer_line_without_load_tensors_prefix_ignored",
+                "load_tensors: offloaded 1/1 layers to GPU\n\
+kv_cache:        CUDA0 model buffer size =  4096.00 MiB\n",
+            ),
+            c(
+                "device_init_error_no_cuda_devices",
+                "ggml_cuda_init: no CUDA devices found\n",
+            ),
+            c(
+                "device_init_error_failed_to_load_backend",
+                "load_backend: failed to load backend from /x/libggml-cuda.so\n",
+            ),
+            c(
+                "device_init_error_vulkan_no_devices",
+                "ggml_vulkan: No devices found.\n",
+            ),
+            c(
+                "device_init_error_no_usable_gpu",
+                "ggml_backend_cuda_init: no usable GPU found\n",
+            ),
+            c(
+                "device_init_error_does_not_block_other_parsing",
+                "ggml_cuda_init: failed to initialize CUDA: unknown error\n\
+load_backend: loaded CPU backend from a.so\n\
+load_tensors: offloaded 0/33 layers to GPU\n\
+load_tensors:   CPU_Mapped model buffer size =  4464.22 MiB\n",
+            ),
+            c(
+                "offload_line_malformed_ignored",
+                "load_tensors: offloaded many/33 layers to GPU\n\
+load_tensors: offloaded 33 layers to GPU\n",
+            ),
+            c(
+                "blank_and_whitespace_lines_ignored",
+                "\n   \n\t\nload_tensors: offloaded 2/2 layers to GPU\n\n",
+            ),
+        ]
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap()
+    }
+
+    fn git_head(root: &PathBuf) -> String {
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_fixtures() {
+        let root = repo_root();
+        let out = root.join("tests/fixtures/core-contracts/runtime-device");
+        fs::create_dir_all(&out).unwrap();
+        let commit = git_head(&root);
+        let source = "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs";
+
+        let mut names = Vec::new();
+        for case in cases() {
+            let mut acc = RuntimeDeviceAccumulator::new();
+            if case.cuda_runtime_missing {
+                acc.mark_cuda_runtime_missing();
+            }
+            let lines: Vec<&str> = case.log.lines().map(|l| l.trim_end()).collect();
+            for line in &lines {
+                acc.ingest(line);
+            }
+            let info = acc.snapshot();
+            let doc = json!({
+                "name": case.name,
+                "source": { "file": source, "commit": commit, "provider": "llamacpp-upstream" },
+                "comparator": "runtime-device-exact",
+                "input": { "lines": lines, "mark_cuda_runtime_missing": case.cuda_runtime_missing },
+                "expected": { "snapshot": serde_json::to_value(&info).unwrap(), "is_inconclusive": info.is_inconclusive() },
+            });
+            fs::write(
+                out.join(format!("{}.json", case.name)),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+            names.push(case.name);
+        }
+        let index = json!({
+            "source": { "file": source, "commit": commit },
+            "comparator": "runtime-device-exact",
+            "note": "lines are fed one by one (trailing whitespace trimmed, as the process reader does) then snapshot() is taken; compare every RuntimeDeviceInfo field and is_inconclusive exactly. gpu_buffer_bytes is an integer truncated from f64 * unit.",
+            "cases": names,
+        });
+        fs::write(
+            out.join("index.json"),
+            serde_json::to_string_pretty(&index).unwrap() + "\n",
+        )
+        .unwrap();
+        eprintln!(
+            "wrote {} runtime-device fixtures to {}",
+            names.len(),
+            out.display()
+        );
+    }
+}

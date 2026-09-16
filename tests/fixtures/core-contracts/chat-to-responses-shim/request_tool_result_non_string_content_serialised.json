@@ -1,0 +1,84 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "call_id": "call_1",
+          "output": "[{\"text\":\"a\",\"type\":\"text\"},{\"text\":\"b\",\"type\":\"text\"}]",
+          "type": "function_call_output"
+        },
+        {
+          "call_id": "call_2",
+          "output": "{\"ok\":true}",
+          "type": "function_call_output"
+        },
+        {
+          "call_id": "call_3",
+          "output": "",
+          "type": "function_call_output"
+        },
+        {
+          "call_id": "",
+          "output": "no call id",
+          "type": "function_call_output"
+        }
+      ],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "session-fixture",
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto"
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "a",
+              "type": "text"
+            },
+            {
+              "text": "b",
+              "type": "text"
+            }
+          ],
+          "role": "tool",
+          "tool_call_id": "call_1"
+        },
+        {
+          "content": {
+            "ok": true
+          },
+          "role": "tool",
+          "tool_call_id": "call_2"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_3"
+        },
+        {
+          "content": "no call id",
+          "role": "tool"
+        }
+      ]
+    },
+    "kind": "request",
+    "prompt_cache_key": "session-fixture"
+  },
+  "name": "request_tool_result_non_string_content_serialised",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

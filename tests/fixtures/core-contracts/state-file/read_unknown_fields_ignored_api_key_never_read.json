@@ -1,0 +1,25 @@
+{
+  "comparator": "state-file-schema",
+  "expected": {
+    "api_url": "http://localhost:1337",
+    "base_url": "http://localhost:1337",
+    "placeholders": [],
+    "state": {
+      "host": "localhost",
+      "pid": 7,
+      "port": 1337,
+      "prefix": "",
+      "requires_api_key": true,
+      "running": true
+    }
+  },
+  "input": {
+    "file": "{\"running\":true,\"host\":\"localhost\",\"port\":1337,\"prefix\":\"\",\"requires_api_key\":true,\"pid\":7,\"api_key\":\"sk-secret\",\"extra\":[1,2]}",
+    "op": "read"
+  },
+  "name": "read_unknown_fields_ignored_api_key_never_read",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

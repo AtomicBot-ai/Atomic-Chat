@@ -1,0 +1,28 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 1,
+        "id": "CUDA0",
+        "mem": 1,
+        "name": "A"
+      },
+      {
+        "free": 2,
+        "id": "CUDA1",
+        "mem": 2,
+        "name": "B"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "Available devices:\nCUDA0: A (1 MiB, 1 MiB free)\nAvailable devices:\nCUDA1: B (2 MiB, 2 MiB free)\n"
+  },
+  "name": "second_header_does_not_reset",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

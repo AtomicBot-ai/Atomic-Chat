@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 1024,
+        "id": "CUDA0",
+        "mem": 2048,
+        "name": "Device (test) with (1024 MiB, 512 MiB free) and"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "Available devices:\nCUDA0: Device (test) with (1024 MiB, 512 MiB free) and (2048 MiB, 1024 MiB free)\n"
+  },
+  "name": "last_memory_pattern_wins",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

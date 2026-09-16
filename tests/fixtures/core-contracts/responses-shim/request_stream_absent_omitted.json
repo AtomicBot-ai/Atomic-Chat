@@ -1,0 +1,27 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": "hello",
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_stream_absent_omitted",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

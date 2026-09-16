@@ -1,0 +1,25 @@
+{
+  "comparator": "state-file-schema",
+  "expected": {
+    "api_url": "http://127.0.0.1:8080/api",
+    "base_url": "http://127.0.0.1:8080",
+    "placeholders": [],
+    "state": {
+      "host": "0.0.0.0",
+      "pid": 4242,
+      "port": 8080,
+      "prefix": "/api",
+      "requires_api_key": true,
+      "running": true
+    }
+  },
+  "input": {
+    "file": "{\"running\":true,\"host\":\"0.0.0.0\",\"port\":8080,\"prefix\":\"/api\",\"requires_api_key\":true,\"pid\":4242}",
+    "op": "read"
+  },
+  "name": "read_round_trip_running_state_bind_all_dials_loopback",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

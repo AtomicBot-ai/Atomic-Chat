@@ -1,0 +1,22 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".claude/settings.json": "{\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"sk-atomic-fixture-key\",\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:1337\"\n  }\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "claude-code",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337",
+    "model": "",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "claude_code__empty_model",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": 4357871370,
+      "gpu_layers_offloaded": 29,
+      "loaded_backends": [
+        "Metal"
+      ],
+      "primary_device": "Metal",
+      "total_layers": 29
+    }
+  },
+  "input": {
+    "lines": [
+      "load_backend: loaded Metal backend from /Applications/build/bin/libggml-metal.dylib",
+      "load_tensors: offloaded 29/29 layers to GPU",
+      "load_tensors:        Metal model buffer size =  4155.99 MiB",
+      "load_tensors:          CPU model buffer size =   308.23 MiB"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "metal_load",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

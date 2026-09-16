@@ -1,0 +1,34 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 8128,
+        "id": "Vulkan0",
+        "mem": 8128,
+        "name": "Intel(R) Arc(tm) A750 Graphics (DG2)"
+      },
+      {
+        "free": 24000,
+        "id": "CUDA0",
+        "mem": 24576,
+        "name": "NVIDIA GeForce RTX 4090"
+      },
+      {
+        "free": 7721,
+        "id": "SYCL0",
+        "mem": 8000,
+        "name": "Intel(R) Arc(TM) A750 Graphics"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "\nSome header text\nAvailable devices:\nVulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)\nCUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)\n\nSYCL0: Intel(R) Arc(TM) A750 Graphics (8000 MiB, 7721 MiB free)\nSome footer text\n"
+  },
+  "name": "three_known_line_shapes",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "error": "No model selected. DeepSeek Harness rejects a provider with an empty model list, which would also disable any other provider configured in that section.",
+    "files": {},
+    "ok": false
+  },
+  "input": {
+    "agent": "dsh",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "dsh__empty_model_rejected",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

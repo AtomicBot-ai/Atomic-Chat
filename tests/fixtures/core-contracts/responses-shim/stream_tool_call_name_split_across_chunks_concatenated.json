@@ -1,0 +1,151 @@
+{
+  "comparator": "sse-sequence",
+  "expected": [
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [],
+          "parallel_tool_calls": true,
+          "status": "in_progress",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 0,
+        "type": "response.created"
+      },
+      "event": "response.created"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "",
+          "call_id": "call_1",
+          "id": "<fc_id_0>",
+          "name": "she",
+          "status": "in_progress",
+          "type": "function_call"
+        },
+        "output_index": 0,
+        "sequence_number": 1,
+        "type": "response.output_item.added"
+      },
+      "event": "response.output_item.added"
+    },
+    {
+      "data": {
+        "delta": "{}",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 2,
+        "type": "response.function_call_arguments.delta"
+      },
+      "event": "response.function_call_arguments.delta"
+    },
+    {
+      "data": {
+        "arguments": "{}",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 3,
+        "type": "response.function_call_arguments.done"
+      },
+      "event": "response.function_call_arguments.done"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "{}",
+          "call_id": "call_1",
+          "id": "<fc_id_0>",
+          "name": "shell",
+          "status": "completed",
+          "type": "function_call"
+        },
+        "output_index": 0,
+        "sequence_number": 4,
+        "type": "response.output_item.done"
+      },
+      "event": "response.output_item.done"
+    },
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [
+            {
+              "arguments": "{}",
+              "call_id": "call_1",
+              "id": "<fc_id_0>",
+              "name": "shell",
+              "status": "completed",
+              "type": "function_call"
+            }
+          ],
+          "parallel_tool_calls": true,
+          "status": "completed",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 5,
+        "type": "response.completed"
+      },
+      "event": "response.completed"
+    }
+  ],
+  "input": {
+    "chunks": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "name": "she"
+                  },
+                  "id": "call_1",
+                  "index": 0
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{}",
+                    "name": "ll"
+                  },
+                  "index": 0
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "kind": "stream",
+    "model": "fixture-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "stream_tool_call_name_split_across_chunks_concatenated",
+  "placeholders": [
+    "<fc_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

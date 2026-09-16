@@ -18,6 +18,14 @@
 //! (its data folder, where llama.cpp backends are downloaded, or its bundled
 //! resource dir, where `mlx-server` ships). That avoids ever touching an
 //! unrelated process that merely shares a name.
+//!
+//! The single-instance assumption above stops holding once `atomic-chat-core`
+//! ships: a CLI can own the same data folder and have models loaded right now,
+//! and its backends live under exactly the directories we scan. So before
+//! reaping we look for a live core owner (`<data>/atomic-core/instance.lock`)
+//! and spare every process that owner registered in its journal
+//! (`<data>/atomic-core/processes.json`). A dead owner protects nothing — its
+//! leftovers are orphans like any other.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -40,6 +48,106 @@ fn is_backend_name(name: &str) -> bool {
 
 fn exe_under_any_root(exe: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|root| exe.starts_with(root))
+}
+
+/// PIDs the journal attributes to `instance_id`, plus the owner itself.
+///
+/// Entries from a *previous* core instance are deliberately not protected: that
+/// owner is gone, so its leftovers are exactly what the reaper exists for.
+fn journalled_pids(journal_text: &str, instance_id: &str, owner_pid: u32) -> std::collections::HashSet<u32> {
+    use std::collections::HashSet;
+    let mut protected: HashSet<u32> = HashSet::new();
+    protected.insert(owner_pid);
+    let Ok(journal) = serde_json::from_str::<serde_json::Value>(journal_text) else {
+        return protected;
+    };
+    let Some(entries) = journal.get("processes").and_then(|v| v.as_array()) else {
+        return protected;
+    };
+    for entry in entries {
+        if entry.get("instance_id").and_then(|v| v.as_str()) != Some(instance_id) {
+            continue;
+        }
+        if let Some(pid) = entry.get("pid").and_then(|v| v.as_u64()) {
+            protected.insert(pid as u32);
+        }
+    }
+    protected
+}
+
+/// The backend PIDs a live core owner is responsible for right now.
+///
+/// Returns an empty set unless (a) the lock names a process that is still
+/// alive, and (b) that process looks like a core (its executable is named
+/// `atomic-chat-core` or `jan-cli`). Both checks matter: a PID alone can have
+/// been recycled by something unrelated, and protecting a stranger's children
+/// would defeat the reaper.
+fn core_owned_pids(data_folder: &Path, system: &sysinfo::System) -> std::collections::HashSet<u32> {
+    use std::collections::HashSet;
+
+    let empty = HashSet::new();
+    let core_dir = data_folder.join("atomic-core");
+    let Ok(lock_text) = std::fs::read_to_string(core_dir.join("instance.lock")) else {
+        return empty;
+    };
+    let Ok(lock) = serde_json::from_str::<serde_json::Value>(&lock_text) else {
+        return empty;
+    };
+    let (Some(owner_pid), Some(instance_id)) = (
+        lock.get("pid").and_then(|v| v.as_u64()),
+        lock.get("instance_id").and_then(|v| v.as_str()),
+    ) else {
+        return empty;
+    };
+
+    let owner = system.process(sysinfo::Pid::from_u32(owner_pid as u32));
+    let looks_like_core = owner.is_some_and(|p| {
+        let name = p.name().to_string_lossy().to_lowercase();
+        name.starts_with("atomic-chat-core") || name.starts_with("jan-cli")
+    });
+    if !looks_like_core {
+        log::info!("[reaper] no live core owner for {}", data_folder.display());
+        return empty;
+    }
+    if let Some(expected) = lock.get("owner_started_at").and_then(|v| v.as_str()) {
+        let actual = owner
+            .map(|process| format!("epoch:{}", process.start_time()))
+            .unwrap_or_default();
+        if actual != expected {
+            log::info!("[reaper] core owner pid was reused; lock identity does not match");
+            return empty;
+        }
+    }
+
+    let journal_text = std::fs::read_to_string(core_dir.join("processes.json")).unwrap_or_default();
+    let protected = journalled_pids(&journal_text, instance_id, owner_pid as u32);
+
+    log::info!(
+        "[reaper] live core owner pid={owner_pid} instance={instance_id}; sparing {} process(es)",
+        protected.len()
+    );
+    protected
+}
+
+/// A core writes its model claim before spawning and journals the child only after readiness.
+/// During that gap the app cannot map a just-created backend PID yet, so it must defer reaping.
+fn core_has_live_loading_claim(data_folder: &Path, system: &sysinfo::System) -> bool {
+    let claims = data_folder.join("atomic-core").join("model-claims");
+    let Ok(entries) = std::fs::read_dir(claims) else { return false };
+    entries.flatten().any(|entry| {
+        let Ok(text) = std::fs::read_to_string(entry.path().join("claim.json")) else { return false };
+        let Ok(claim) = serde_json::from_str::<serde_json::Value>(&text) else { return false };
+        if claim.get("owner_kind").and_then(|v| v.as_str()) != Some("core")
+            || claim.get("state").and_then(|v| v.as_str()) != Some("loading") {
+            return false;
+        }
+        let Some(pid) = claim.get("owner_pid").and_then(|v| v.as_u64()) else { return false };
+        let Some(process) = system.process(sysinfo::Pid::from_u32(pid as u32)) else { return false };
+        match claim.get("owner_started_at").and_then(|v| v.as_str()) {
+            Some(expected) => expected == format!("epoch:{}", process.start_time()),
+            None => true,
+        }
+    })
 }
 
 /// Kill any leftover backend processes belonging to this app before we spawn
@@ -70,12 +178,20 @@ pub fn reap_orphan_backends<R: Runtime>(app: &tauri::AppHandle<R>) {
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
 
+    if core_has_live_loading_claim(&roots[0], &system) {
+        log::info!("[reaper] core is loading a model; deferring orphan cleanup");
+        return;
+    }
+
+    // A core owner that is alive right now is using these backends; they are not orphans.
+    let protected = core_owned_pids(&roots[0].clone(), &system);
+
     // Collect victims first so we don't mutate while iterating the map.
     let victims: Vec<(sysinfo::Pid, String)> = system
         .processes()
         .iter()
         .filter_map(|(pid, process)| {
-            if pid.as_u32() == self_pid {
+            if pid.as_u32() == self_pid || protected.contains(&pid.as_u32()) {
                 return None;
             }
             let name = process.name().to_string_lossy();
@@ -155,6 +271,38 @@ mod tests {
         assert!(!is_backend_name("Atomic Chat"));
         assert!(!is_backend_name("node"));
         assert!(!is_backend_name("my-llama-server")); // prefix must be at the start
+    }
+
+    #[test]
+    fn protects_the_live_owner_and_the_backends_it_registered() {
+        let journal = r#"{
+            "version": 1,
+            "processes": [
+                {"instance_id": "live", "pid": 4242, "model_id": "a"},
+                {"instance_id": "live", "pid": 4243, "model_id": "b"},
+                {"instance_id": "a-dead-owner", "pid": 999, "model_id": "old"}
+            ]
+        }"#;
+        let protected = journalled_pids(journal, "live", 100);
+        assert!(protected.contains(&100), "the owner process itself");
+        assert!(protected.contains(&4242));
+        assert!(protected.contains(&4243));
+        assert!(
+            !protected.contains(&999),
+            "a previous instance's backend is an orphan, not something to spare"
+        );
+        assert_eq!(protected.len(), 3);
+    }
+
+    #[test]
+    fn a_missing_or_broken_journal_still_protects_the_owner() {
+        assert_eq!(journalled_pids("", "live", 7), [7].into_iter().collect());
+        assert_eq!(journalled_pids("{ not json", "live", 7), [7].into_iter().collect());
+        assert_eq!(journalled_pids("{}", "live", 7), [7].into_iter().collect());
+        assert_eq!(
+            journalled_pids(r#"{"processes": "nope"}"#, "live", 7),
+            [7].into_iter().collect()
+        );
     }
 
     #[test]

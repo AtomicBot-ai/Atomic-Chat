@@ -1,0 +1,77 @@
+{
+  "comparator": "sse-sequence",
+  "error": null,
+  "expected": [
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "content": "still here",
+              "role": "assistant"
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop",
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    }
+  ],
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "type": "response.content_part.added"
+      },
+      {
+        "type": "response.reasoning_summary_part.added"
+      },
+      {
+        "no": "type"
+      },
+      {
+        "type": 5
+      },
+      {
+        "delta": "still here",
+        "type": "response.output_text.delta"
+      },
+      {
+        "response": {},
+        "type": "response.completed"
+      }
+    ],
+    "kind": "stream",
+    "model": "gpt-5.4"
+  },
+  "name": "stream_unknown_events_and_missing_type_ignored",
+  "placeholders": [
+    "<chatcmpl_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

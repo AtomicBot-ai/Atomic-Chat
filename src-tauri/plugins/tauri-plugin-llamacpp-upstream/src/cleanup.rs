@@ -68,6 +68,9 @@ pub async fn cleanup_processes<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
                     }
                 }
             }
+            if let Some(claim) = app_state.model_claims.lock().await.remove(&pid) {
+                claim.release();
+            }
         }
     }
 }

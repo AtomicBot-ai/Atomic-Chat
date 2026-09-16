@@ -1,0 +1,68 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "run ls",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"cmd\":\"ls\"}",
+                "name": "shell"
+              },
+              "id": "call_1",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "file.txt",
+          "role": "tool",
+          "tool_call_id": "call_1"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "run ls",
+              "type": "input_text"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        },
+        {
+          "arguments": "{\"cmd\":\"ls\"}",
+          "call_id": "call_1",
+          "name": "shell",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_1",
+          "output": "file.txt",
+          "type": "function_call_output"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_function_call_and_output_items",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

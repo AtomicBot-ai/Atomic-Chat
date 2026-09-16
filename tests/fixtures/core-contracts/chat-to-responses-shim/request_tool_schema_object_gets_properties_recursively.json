@@ -1,0 +1,184 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "session-fixture",
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "name": "f",
+          "parameters": {
+            "$defs": {
+              "D": {
+                "properties": {},
+                "type": "object"
+              }
+            },
+            "additionalProperties": {
+              "properties": {},
+              "type": "object"
+            },
+            "allOf": [
+              {
+                "properties": {},
+                "type": "object"
+              }
+            ],
+            "anyOf": [
+              {
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "definitions": {
+              "E": {
+                "properties": {},
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            },
+            "not": {
+              "properties": {},
+              "type": "object"
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "x": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            ],
+            "prefixItems": [
+              {
+                "properties": {},
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "inner": {
+                "properties": {},
+                "type": "object"
+              },
+              "list": {
+                "items": {
+                  "properties": {},
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "inner"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [],
+      "tools": [
+        {
+          "function": {
+            "name": "f",
+            "parameters": {
+              "$defs": {
+                "D": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": {
+                "type": "object"
+              },
+              "allOf": [
+                {
+                  "type": "object"
+                }
+              ],
+              "anyOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "definitions": {
+                "E": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                }
+              },
+              "not": {
+                "type": "object"
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "x": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              ],
+              "prefixItems": [
+                {
+                  "type": "object"
+                }
+              ],
+              "properties": {
+                "inner": {
+                  "type": "object"
+                },
+                "list": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "inner"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "kind": "request",
+    "prompt_cache_key": "session-fixture"
+  },
+  "name": "request_tool_schema_object_gets_properties_recursively",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

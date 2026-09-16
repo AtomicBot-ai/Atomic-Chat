@@ -1,0 +1,48 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "max_tokens": 256,
+      "messages": [
+        {
+          "content": "x",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "parallel_tool_calls": false,
+      "temperature": 0.2,
+      "top_p": 0.9
+    }
+  },
+  "input": {
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": "x",
+      "max_output_tokens": 256,
+      "metadata": {
+        "k": "v"
+      },
+      "model": "m",
+      "parallel_tool_calls": false,
+      "previous_response_id": "resp_prev",
+      "prompt_cache_key": "pk",
+      "reasoning": {
+        "effort": "high"
+      },
+      "store": false,
+      "temperature": 0.2,
+      "top_p": 0.9,
+      "user": "u1"
+    },
+    "kind": "request"
+  },
+  "name": "request_knobs_mapped_unknown_fields_dropped",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

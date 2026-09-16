@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "OS_VERSION_UNSUPPORTED",
+    "details": "dyld[123]: Symbol not found: _OBJC_CLASS_$_MTLResidencySetDescriptor\n",
+    "message": "The model engine couldn't start because it requires a newer version of macOS than the one on this Mac."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "dyld[123]: Symbol not found: _OBJC_CLASS_$_MTLResidencySetDescriptor\n",
+    "stdout": ""
+  },
+  "name": "os_version_dyld_symbol",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

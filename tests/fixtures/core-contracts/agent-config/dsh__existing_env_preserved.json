@@ -1,0 +1,25 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".dsh/.env": "MY_TOKEN=keep-me\nOTHER=1\n\n# >>> Atomic Chat (managed) >>>\nATOMIC_API_KEY=sk-atomic-fixture-key\n# <<< Atomic Chat (managed) <<<\n",
+      ".dsh/settings.yaml": "llm-pi-ai:\n  providers:\n    atomic:\n      displayName: Atomic Chat\n      api: openai-completions\n      baseURL: http://127.0.0.1:1337/v1\n      apiKeyEnv: ATOMIC_API_KEY\n      models:\n      - id: AtomicChat/Qwen3.5-9B-GGUF\n        contextWindow: 65536\n        maxTokens: 8192\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "dsh",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".dsh/.env": "MY_TOKEN=keep-me\nOTHER=1\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "dsh__existing_env_preserved",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

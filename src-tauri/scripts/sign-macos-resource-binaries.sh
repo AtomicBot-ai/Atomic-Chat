@@ -12,9 +12,11 @@ if [[ -z "$IDENTITY" ]]; then
 fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENT="$HERE/Entitlements.plist"
+SIDE_ENT="$HERE/Entitlements.sidecar.plist"
 BIN="$HERE/resources/bin"
 [[ -d "$BIN" ]] || exit 0
 [[ -f "$ENT" ]] || { echo "sign-macos-resource-binaries: нет $ENT"; exit 1; }
+[[ -f "$SIDE_ENT" ]] || { echo "sign-macos-resource-binaries: нет $SIDE_ENT"; exit 1; }
 
 #? Подписываем только исполняемые Mach-O (не .bundle, не произвольные файлы).
 sign_if_macho() {
@@ -22,11 +24,15 @@ sign_if_macho() {
   [[ -f "$f" && -x "$f" ]] || return 0
   if file "$f" | grep -q 'Mach-O'; then
     echo "codesign (resources): $f"
-    codesign --force --sign "$IDENTITY" --options runtime --timestamp --entitlements "$ENT" "$f"
+    local entitlements="$ENT"
+    case "$(basename "$f")" in
+      jan-cli|atomic-chat-core) entitlements="$SIDE_ENT" ;;
+    esac
+    codesign --force --sign "$IDENTITY" --options runtime --timestamp --entitlements "$entitlements" "$f"
   fi
 }
 
-for name in jan-cli mlx-server foundation-models-server; do
+for name in jan-cli atomic-chat-core mlx-server foundation-models-server; do
   sign_if_macho "$BIN/$name"
 done
 

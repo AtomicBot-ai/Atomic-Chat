@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "OUT_OF_MEMORY",
+    "details": "kIOGPUCommandBufferCallbackErrorOutOfMemory\n",
+    "message": "Out of memory. The model requires more RAM or VRAM than available."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "kIOGPUCommandBufferCallbackErrorOutOfMemory\n",
+    "stdout": ""
+  },
+  "name": "oom_metal_command_buffer",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

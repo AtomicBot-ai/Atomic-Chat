@@ -1,0 +1,37 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "you are helpful",
+          "role": "system"
+        },
+        {
+          "content": "hello",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      }
+    }
+  },
+  "input": {
+    "body": {
+      "input": "hello",
+      "instructions": "you are helpful",
+      "model": "m",
+      "stream": true
+    },
+    "kind": "request"
+  },
+  "name": "request_string_input_with_instructions_stream",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

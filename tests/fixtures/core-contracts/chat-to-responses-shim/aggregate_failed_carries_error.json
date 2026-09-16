@@ -1,0 +1,50 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "x",
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1700000000,
+      "id": "<chatcmpl_id_0>",
+      "model": "gpt-5.4",
+      "object": "chat.completion"
+    },
+    "error": "quota"
+  },
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "delta": "x",
+        "type": "response.output_text.delta"
+      },
+      {
+        "response": {
+          "error": {
+            "message": "quota"
+          }
+        },
+        "type": "response.failed"
+      }
+    ],
+    "kind": "aggregate",
+    "model": "gpt-5.4"
+  },
+  "name": "aggregate_failed_carries_error",
+  "placeholders": [
+    "<chatcmpl_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

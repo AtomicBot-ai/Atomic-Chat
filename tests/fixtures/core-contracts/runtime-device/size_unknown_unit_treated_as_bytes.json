@@ -1,0 +1,28 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": 4096,
+      "gpu_layers_offloaded": 1,
+      "loaded_backends": [],
+      "primary_device": "CUDA0",
+      "total_layers": 1
+    }
+  },
+  "input": {
+    "lines": [
+      "load_tensors: offloaded 1/1 layers to GPU",
+      "load_tensors:        CUDA0 model buffer size =  4096.00 TiB"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "size_unknown_unit_treated_as_bytes",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

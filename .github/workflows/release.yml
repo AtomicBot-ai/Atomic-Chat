@@ -295,6 +295,7 @@ jobs:
           echo "=== Building ==="
 
           yarn download:bin
+          yarn download:core
           yarn build:foundation-models-server
           yarn build:cli
           # Универсальная macOS-сборка + переименование VOLNAME с версией + ресигн/нотаризация DMG
@@ -536,6 +537,9 @@ jobs:
       - name: Download binaries (bun, uv)
         run: yarn download:bin
 
+      - name: Download the pinned atomic-chat-core release
+        run: yarn download:core
+
       - name: Download upstream llamacpp backend (manifest resolver)
         shell: bash
         run: |
@@ -648,8 +652,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p src-tauri/resources/bin
-          cd src-tauri && cargo build --release --features cli --bin jan-cli
-          cp target/release/jan-cli.exe resources/bin/jan-cli.exe
+          cp src-tauri/resources/bin/atomic-chat-core.exe src-tauri/resources/bin/jan-cli.exe
 
       # Runs after Build CLI: the tauri build script requires
       # resources/bin/jan-cli.exe to exist, and `shell: bash` (-e -o pipefail)
@@ -923,6 +926,9 @@ jobs:
       - name: Download binaries (bun, uv, sqlite-vec)
         run: yarn download:bin
 
+      - name: Download the pinned atomic-chat-core release
+        run: yarn download:core
+
       - name: Assert sqlite-vec was bundled
         # `scripts/download-bin.mjs` treats sqlite-vec as non-fatal (it
         # logs and continues if the GitHub release lookup or download
@@ -982,9 +988,8 @@ jobs:
       - name: Build CLI (Linux)
         run: |
           mkdir -p src-tauri/resources/bin
-          cd src-tauri && cargo build --release --features cli --bin jan-cli
-          cp target/release/jan-cli resources/bin/jan-cli
-          chmod +x resources/bin/jan-cli
+          cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
+          chmod +x src-tauri/resources/bin/jan-cli
 
       # The agent's pty/process contract is Unix-only (see contract_tests.rs):
       # ConPTY never EOFs the output pipe on child exit, so those cases cannot

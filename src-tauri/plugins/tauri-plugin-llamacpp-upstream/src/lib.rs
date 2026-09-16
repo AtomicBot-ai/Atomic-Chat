@@ -3,6 +3,8 @@ use tauri::{
     Manager, Runtime,
 };
 
+pub mod legacy_state;
+pub mod model_claim;
 mod amd_rocm_pci_ids;
 mod args;
 mod backend;
@@ -35,6 +37,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::check_spec_type_support,
             commands::generate_api_key,
             commands::is_process_running,
+            commands::set_core_dir,
             commands::get_random_port,
             commands::find_session_by_model,
             commands::get_loaded_models,
@@ -71,4 +74,18 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             Ok(())
         })
         .build()
+}
+
+/// Point the plugin at `<data>/atomic-core/` so it can publish its session table
+/// there. The app calls this once at startup; see `legacy_state`.
+pub async fn set_core_dir<R: Runtime>(app: tauri::AppHandle<R>, core_dir: std::path::PathBuf) {
+    use tauri::Manager;
+    let state: tauri::State<state::LlamacppState> = app.state();
+    *state.core_dir.lock().await = Some(core_dir);
+    let map = state.llama_server_process.lock().await;
+    let sessions: Vec<state::SessionInfo> = map.values().map(|s| s.info.clone()).collect();
+    let dir = state.core_dir.lock().await.clone();
+    if let Some(dir) = dir {
+        legacy_state::publish(&dir, &sessions);
+    }
 }

@@ -1,0 +1,21 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "error": "No local server URL. Start the local API server and try again.",
+    "files": {},
+    "ok": false
+  },
+  "input": {
+    "agent": "dsh",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "dsh__empty_url_rejected",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

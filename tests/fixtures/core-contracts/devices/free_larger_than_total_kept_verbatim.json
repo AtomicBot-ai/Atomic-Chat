@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 200,
+        "id": "CUDA0",
+        "mem": 100,
+        "name": "Weird"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "Available devices:\nCUDA0: Weird (100 MiB, 200 MiB free)\n"
+  },
+  "name": "free_larger_than_total_kept_verbatim",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

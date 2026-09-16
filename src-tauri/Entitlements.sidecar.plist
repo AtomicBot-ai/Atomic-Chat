@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The core is a Bun single-file executable: JavaScriptCore compiles at runtime, so Hardened
+         Runtime must allow JIT or the binary dies at startup with "Ran out of executable memory". -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Bun also maps writable-then-executable pages, which allow-jit alone does not cover. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- The core spawns llama-server, which dlopens ggml/CUDA dylibs by name. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

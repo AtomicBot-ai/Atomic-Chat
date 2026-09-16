@@ -1,0 +1,15 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": []
+  },
+  "input": {
+    "stdout": "Available devices:\nCUDA0: NVIDIA (8128 MB, 8128 MB free)\n"
+  },
+  "name": "unit_mb_rejected",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

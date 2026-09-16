@@ -1,0 +1,25 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".openclaude.json": "{\n  \"activeProviderProfileId\": \"provider_atomic_chat\",\n  \"providerProfiles\": [\n    {\n      \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n      \"id\": \"provider_atomic_chat\",\n      \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n      \"name\": \"Atomic Chat\",\n      \"provider\": \"atomic-chat\"\n    },\n    {\n      \"id\": \"provider_openai\",\n      \"provider\": \"openai\"\n    }\n  ]\n}\n",
+      ".openclaude/.openclaude-profile.json": "{\n  \"createdAt\": \"<timestamp>\",\n  \"env\": {\n    \"OPENAI_BASE_URL\": \"http://127.0.0.1:1337/v1\",\n    \"OPENAI_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n  },\n  \"profile\": \"atomic-chat\"\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "openclaude",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".openclaude.json": "{\n  \"providerProfiles\": [\n    { \"id\": \"legacy_atomic\", \"provider\": \"atomic-chat\", \"baseUrl\": \"http://127.0.0.1:9999/v1\", \"model\": \"stale\", \"extraKey\": \"dropped\" },\n    { \"id\": \"provider_openai\", \"provider\": \"openai\" }\n  ]\n}\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "openclaude__matching_profile_replaced_in_place",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

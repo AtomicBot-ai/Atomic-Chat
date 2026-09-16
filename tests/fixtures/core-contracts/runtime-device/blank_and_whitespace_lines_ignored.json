@@ -1,0 +1,31 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": null,
+      "gpu_layers_offloaded": 2,
+      "loaded_backends": [],
+      "primary_device": "",
+      "total_layers": 2
+    }
+  },
+  "input": {
+    "lines": [
+      "",
+      "",
+      "",
+      "load_tensors: offloaded 2/2 layers to GPU",
+      ""
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "blank_and_whitespace_lines_ignored",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

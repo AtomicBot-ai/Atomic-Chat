@@ -312,3 +312,163 @@ mod tests {
         assert!(matches!(error.code, ErrorCode::OutOfMemory));
     }
 }
+
+/// Contract-fixture emitter for `atomic-chat-core` (PLAN.md phase 0 there). Ignored by default:
+///
+/// ```text
+/// cargo test -p tauri-plugin-llamacpp-upstream --lib -- --ignored dump_fixtures
+/// ```
+///
+/// Writes `<repo>/tests/fixtures/core-contracts/errors/<case>.json` and `index.json`. Unix-only:
+/// `ExitStatus` values are built from raw wait statuses; the Windows crash codes
+/// (`0xC0000005`, `0xC00000FD`, `0xC0000409`) cannot be constructed here and are covered by the
+/// port's own table (see `index.json`).
+#[cfg(all(test, unix))]
+mod fixture_dump {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use std::os::unix::process::ExitStatusExt;
+    use std::path::PathBuf;
+
+    enum Exit {
+        Code(i32),
+        Signal(i32),
+    }
+
+    struct Case {
+        name: &'static str,
+        stderr: &'static str,
+        stdout: &'static str,
+        exit: Exit,
+    }
+
+    const fn c(name: &'static str, stderr: &'static str, stdout: &'static str, exit: Exit) -> Case {
+        Case {
+            name,
+            stderr,
+            stdout,
+            exit,
+        }
+    }
+
+    fn cases() -> Vec<Case> {
+        use Exit::*;
+        vec![
+            // ── stderr cascade, one per substring (all exit 1) ─────────────
+            c("os_version_dyld_symbol", "dyld[123]: Symbol not found: _OBJC_CLASS_$_MTLResidencySetDescriptor\n", "", Code(1)),
+            c("os_version_dyld_alone_not_enough", "dyld[123]: Library not loaded\n", "", Code(1)),
+            c("oom_out_of_memory", "ggml_backend_metal: out of memory\n", "", Code(1)),
+            c("oom_failed_to_allocate", "ggml_gallocr_reserve_n: failed to allocate CUDA0 buffer of size 4096\n", "", Code(1)),
+            c("oom_insufficient_memory", "llama_model_load: insufficient memory\n", "", Code(1)),
+            c("oom_vulkan_device_memory", "vk::Device::allocateMemory: ErrorOutOfDeviceMemory\n", "", Code(1)),
+            c("oom_metal_command_buffer", "kIOGPUCommandBufferCallbackErrorOutOfMemory\n", "", Code(1)),
+            c("oom_cuda_error", "CUDA error: cudaErrorMemoryAllocation (cuda_error_out_of_memory)\n", "", Code(1)),
+            c("arch_error_loading_architecture", "llama_model_load: error loading model: error loading model architecture: unknown model architecture: 'dflash'\n", "", Code(1)),
+            c("arch_unknown_architecture", "unknown model architecture: 'gemma4'\n", "", Code(1)),
+            c("arch_hyperparameters", "error loading model hyperparameters: key not found\n", "", Code(1)),
+            c("arch_key_not_found", "llama_model_loader: key not found in model: gemma4.context_length\n", "", Code(1)),
+            c("projector_unknown_type", "clip_init: unknown projector type: gemma4a\n", "", Code(1)),
+            c("corrupt_corrupted_or_incomplete", "gguf_init_from_file: the file is corrupted or incomplete\n", "", Code(1)),
+            c("corrupt_invalid_magic", "gguf_init_from_file: invalid magic characters 'ABCD'\n", "", Code(1)),
+            c("corrupt_wrong_tensor_count", "llama_model_load: wrong number of tensors; expected 291, got 288\n", "", Code(1)),
+            c("corrupt_unexpected_eof", "gguf_init_from_file: unexpectedly reached end of file\n", "", Code(1)),
+            c("corrupt_failed_to_read_tensor", "llama_model_load: failed to read tensor data\n", "", Code(1)),
+            c("generic_unclassified_stderr", "main: server terminated for no obvious reason\n", "", Code(1)),
+            c("generic_empty_streams", "", "", Code(1)),
+            // ── precedence within the cascade ───────────────────────────────
+            c("precedence_oom_before_arch", "unknown model architecture: 'x'\nfailed to allocate buffer\n", "", Code(1)),
+            c("precedence_dyld_before_oom", "out of memory\ndyld: symbol not found\n", "", Code(1)),
+            c("precedence_arch_before_corrupt", "invalid magic\nkey not found in model\n", "", Code(1)),
+            c("precedence_projector_before_corrupt", "unexpectedly reached end of file\nunknown projector type\n", "", Code(1)),
+            c("case_insensitive_match", "GGML_BACKEND: OUT OF MEMORY\n", "", Code(1)),
+            // ── stdout fallback (from_process_output) ───────────────────────
+            c("stdout_classified_when_stderr_empty", "", "0.00.319.245 E llama_model_load: error loading model: unknown model architecture: 'dflash'\n", Code(1)),
+            c("stdout_ignored_when_stderr_classified", "ggml_backend_metal: out of memory\n", "unknown model architecture: 'dflash'\n", Code(1)),
+            c("stdout_classified_when_stderr_generic", "main: exiting\n", "gguf_init_from_file: invalid magic characters\n", Code(1)),
+            c("stdout_becomes_details_when_unclassified", "", "0.00.121.737 I cmn common_param: verbosity = 3\n", Code(1)),
+            c("stdout_not_details_when_stderr_present", "main: exiting\n", "0.00.121.737 I cmn common_param: verbosity = 3\n", Code(1)),
+            c("whitespace_only_stderr_counts_as_empty", "  \n\t\n", "verbosity = 3\n", Code(1)),
+            // ── exit status classification ──────────────────────────────────
+            c("crash_sigsegv_empty_stderr", "", "", Signal(11)),
+            c("crash_sigabrt_empty_stderr", "", "", Signal(6)),
+            c("crash_sigsegv_with_generic_stderr", "main: exiting\n", "", Signal(11)),
+            c("crash_sigsegv_keeps_specific_stderr", "ggml_backend_metal: out of memory\n", "", Signal(11)),
+            c("crash_sigsegv_then_stdout_classified", "", "unknown model architecture: 'x'\n", Signal(11)),
+            c("sigkill_is_not_a_crash", "", "", Signal(9)),
+            c("sigterm_is_not_a_crash", "", "", Signal(15)),
+            c("exit_code_139_is_not_a_signal", "", "", Code(139)),
+            c("exit_code_0_with_generic_stderr", "main: exiting\n", "", Code(0)),
+        ]
+    }
+
+    fn status(exit: &Exit) -> std::process::ExitStatus {
+        match exit {
+            Exit::Code(code) => std::process::ExitStatus::from_raw(code << 8),
+            Exit::Signal(sig) => std::process::ExitStatus::from_raw(*sig),
+        }
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap()
+    }
+
+    fn git_head(root: &PathBuf) -> String {
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_fixtures() {
+        let root = repo_root();
+        let out = root.join("tests/fixtures/core-contracts/errors");
+        fs::create_dir_all(&out).unwrap();
+        let commit = git_head(&root);
+        let source = "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs";
+
+        let mut names = Vec::new();
+        for case in cases() {
+            let st = status(&case.exit);
+            let error = LlamacppError::from_process_output(&st, case.stderr, case.stdout);
+            let exit = match case.exit {
+                Exit::Code(code) => json!({ "code": code, "signal": null }),
+                Exit::Signal(sig) => json!({ "code": null, "signal": sig }),
+            };
+            let doc = json!({
+                "name": case.name,
+                "source": { "file": source, "commit": commit, "provider": "llamacpp-upstream" },
+                "comparator": "error-exact",
+                "input": { "stderr": case.stderr, "stdout": case.stdout, "exit": exit },
+                "expected": serde_json::to_value(&error).unwrap(),
+            });
+            fs::write(
+                out.join(format!("{}.json", case.name)),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+            names.push(case.name);
+        }
+        let index = json!({
+            "source": { "file": source, "commit": commit },
+            "comparator": "error-exact",
+            "note": "expected = serialised LlamacppError {code, message, details?}; compare all three exactly (details is omitted when None). exit.signal uses Unix signal numbers (11 SIGSEGV, 6 SIGABRT are crashes). Windows crash exit codes 0xC0000005 / 0xC00000FD / 0xC0000409 map to the same crash message and are NOT emitted here (emitter runs on Unix); the port pins them in its own unit table.",
+            "cases": names,
+        });
+        fs::write(
+            out.join("index.json"),
+            serde_json::to_string_pretty(&index).unwrap() + "\n",
+        )
+        .unwrap();
+        eprintln!("wrote {} error fixtures to {}", names.len(), out.display());
+    }
+}

@@ -1,0 +1,21 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "error": "Atomic Agent needs a model: none is running.",
+    "files": {},
+    "ok": false
+  },
+  "input": {
+    "agent": "atomic-agent",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "atomic_agent__empty_model_rejected",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

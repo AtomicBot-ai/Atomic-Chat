@@ -1,0 +1,69 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "plain string",
+          "role": "user"
+        },
+        {
+          "content": "prior answer",
+          "role": "assistant"
+        },
+        {
+          "content": "look: what is it",
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "content": "plain string",
+          "role": "user",
+          "type": "message"
+        },
+        {
+          "content": [
+            {
+              "text": "prior answer",
+              "type": "output_text"
+            }
+          ],
+          "role": "assistant",
+          "type": "message"
+        },
+        {
+          "content": [
+            {
+              "text": "look: ",
+              "type": "input_text"
+            },
+            {
+              "image_url": "data:image/png;base64,AAA",
+              "type": "input_image"
+            },
+            {
+              "text": "what is it",
+              "type": "input_text"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_message_items_all_roles",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

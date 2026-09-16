@@ -760,16 +760,9 @@ if (-not (Test-Path 'src-tauri/resources/bin')) {
     New-Item -ItemType Directory -Path 'src-tauri/resources/bin' -Force | Out-Null
 }
 
-Push-Location src-tauri
-cargo build --features cli --bin jan-cli
-if ($LASTEXITCODE -ne 0) {
-    Pop-Location
-    Write-Host 'cargo build jan-cli failed' -ForegroundColor Red
-    exit 1
-}
-Pop-Location
-
-Copy-Item -Path 'src-tauri/target/debug/jan-cli.exe' -Destination $cliBin -Force
+node scripts/download-core.mjs
+if ($LASTEXITCODE -ne 0) { Write-Host 'download-core failed' -ForegroundColor Red; exit 1 }
+Copy-Item -Path 'src-tauri/resources/bin/atomic-chat-core.exe' -Destination $cliBin -Force
 Write-Host "  CLI built: $cliBin"
 
 # ── Generate icons (tauri icon, skip macOS-only Python padding) ─

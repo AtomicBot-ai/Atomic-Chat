@@ -1,0 +1,24 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".zshenv": "export EDITOR=nvim\nexport LANG=en_US.UTF-8\n# Atomic Chat - OpenHands Config\nexport LLM_MODEL='openai/AtomicChat/Qwen3.5-9B-GGUF'\nexport LLM_BASE_URL='http://127.0.0.1:1337/v1'\nexport LLM_API_KEY='sk-atomic-fixture-key'\n\n# Atomic Chat - OpenHands Config\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "openhands",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".zshenv": "export EDITOR=nvim\nexport LANG=en_US.UTF-8\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "openhands__existing_rc_preserved",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

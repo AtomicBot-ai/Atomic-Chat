@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-241 records, 2026-05-19 → 2026-09-11.
+248 records, 2026-05-19 → 2026-09-15.
 
 ---
 
@@ -295,6 +295,17 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-12** — [Make sampling global (model-bar popover) + slim the assistant to persona-only (ATO-155 rework)](2026-06-12-make-sampling-global-model-bar-popover-slim-the-assistant-to.md)
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
+
+## Inference core extraction — atomic-chat-core (8)
+
+- **2026-09-16** — [Claim models before mutating runtime state](2026-09-16-claim-models-before-mutating-runtime-state.md)
+- **2026-09-15** — [Extract the inference core into atomic-chat-core](2026-09-15-extract-the-inference-core-into-atomic-chat-core.md)
+- **2026-09-15** — [Migrate to the core in phases](2026-09-15-migrate-to-the-core-in-phases.md)
+- **2026-09-15** — [Pin wire contracts with Rust fixtures](2026-09-15-pin-wire-contracts-with-rust-fixtures.md)
+- **2026-09-15** — [The core ships as a bundled resource and runs as an independent owner](2026-09-15-the-core-is-a-bundled-resource-and-an-independent-owner.md)
+- **2026-09-15** — [jan-cli keeps its file name and becomes a copy of the core](2026-09-15-jan-cli-keeps-its-name-and-becomes-the-core.md)
+- **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
+- **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
 ## Other (11)
 

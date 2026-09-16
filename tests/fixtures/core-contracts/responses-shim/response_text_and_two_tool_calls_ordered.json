@@ -1,0 +1,107 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "created_at": 1,
+      "id": "resp_fixture",
+      "model": "m",
+      "object": "response",
+      "output": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "calling",
+              "type": "output_text"
+            }
+          ],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        {
+          "arguments": "{}",
+          "call_id": "call_a",
+          "id": "<fc_id_0>",
+          "name": "a",
+          "status": "completed",
+          "type": "function_call"
+        },
+        {
+          "arguments": "{\"x\":1}",
+          "call_id": "call_b",
+          "id": "<fc_id_1>",
+          "name": "b",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "status": "completed",
+      "tool_choice": "auto",
+      "tools": [],
+      "usage": {
+        "input_tokens": 1,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 2,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 3
+      }
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "message": {
+            "content": "calling",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{}",
+                  "name": "a"
+                },
+                "id": "call_a",
+                "type": "function"
+              },
+              {
+                "function": {
+                  "arguments": "{\"x\":1}",
+                  "name": "b"
+                },
+                "id": "call_b",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1,
+      "model": "m",
+      "usage": {
+        "completion_tokens": 2,
+        "prompt_tokens": 1
+      }
+    },
+    "kind": "response",
+    "model_fallback": "fallback-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "response_text_and_two_tool_calls_ordered",
+  "placeholders": [
+    "<msg_id_0>",
+    "<fc_id_0>",
+    "<fc_id_1>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

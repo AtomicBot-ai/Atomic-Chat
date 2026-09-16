@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 4096,
+        "id": "CUDA0",
+        "mem": 8128,
+        "name": "NVIDIA"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "Available devices:\nCUDA0: NVIDIA (  8128 MiB ,  4096 MiB free )\n"
+  },
+  "name": "extra_spaces_inside_pattern",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

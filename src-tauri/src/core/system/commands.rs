@@ -732,9 +732,23 @@ pub fn install_jan_cli_sync<R: Runtime>(
     #[cfg(windows)]
     {
         if bundled.exists() {
-            if let Err(e) = std::fs::rename(&bundled, &dest) {
-                log::warn!("Could not rename jan-cli.exe to atomic-chat-cli.exe: {}", e);
+            let staged = dest.with_extension("exe.atomic-new");
+            std::fs::copy(&bundled, &staged).map_err(|e| {
+                format!("Could not stage the Atomic Chat CLI update: {e}")
+            })?;
+            if dest.exists() {
+                std::fs::remove_file(&dest).map_err(|e| {
+                    let _ = std::fs::remove_file(&staged);
+                    format!(
+                        "Could not update {} because the installed binary is in use: {e}",
+                        dest.display()
+                    )
+                })?;
             }
+            std::fs::rename(&staged, &dest).map_err(|e| {
+                let _ = std::fs::remove_file(&staged);
+                format!("Could not activate the Atomic Chat CLI update: {e}")
+            })?;
         }
         // Older builds put `jan.exe` on PATH here; drop it so it stops shadowing Jan.ai.
         remove_legacy_cli_binary(&resource_bin_dir);
@@ -751,18 +765,23 @@ pub fn install_jan_cli_sync<R: Runtime>(
         std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
         let dest = install_dir.join(dest_bin_name);
 
-        std::fs::copy(&bundled, &dest).map_err(|e| {
+        let staged = install_dir.join(format!(".{dest_bin_name}.atomic-new"));
+        std::fs::copy(&bundled, &staged).map_err(|e| {
             format!(
                 "Failed to copy {} to {}: {}",
                 CLI_COMMAND_NAME,
-                dest.display(),
+                staged.display(),
                 e
             )
         })?;
 
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
+        std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
+        std::fs::rename(&staged, &dest).map_err(|e| {
+            let _ = std::fs::remove_file(&staged);
+            format!("Failed to activate {}: {e}", dest.display())
+        })?;
 
         // Older builds installed this binary as plain `jan` in the same directory.
         remove_legacy_cli_binary(&install_dir);

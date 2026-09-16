@@ -34,12 +34,20 @@ pub struct LLamaBackendSession {
 /// LlamaCpp plugin state
 pub struct LlamacppState {
     pub llama_server_process: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    /// `<data>/atomic-core/`, set once at startup. The session table is mirrored
+    /// there so a core process owning the same data folder can see which models
+    /// this runtime already holds (see `legacy_state`). `None` until the app
+    /// tells us where its data folder is, which makes publishing a no-op.
+    pub core_dir: Arc<Mutex<Option<std::path::PathBuf>>>,
+    pub model_claims: Arc<Mutex<HashMap<i32, crate::model_claim::ModelClaim>>>,
 }
 
 impl Default for LlamacppState {
     fn default() -> Self {
         Self {
             llama_server_process: Arc::new(Mutex::new(HashMap::new())),
+            core_dir: Arc::new(Mutex::new(None)),
+            model_claims: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

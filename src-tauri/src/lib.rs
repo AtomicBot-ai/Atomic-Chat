@@ -495,6 +495,17 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             crate::core::process_reaper::reap_orphan_backends(app.handle());
 
+            // Tell the llama.cpp plugin where `<data>/atomic-core/` is, so it can mirror its
+            // session table for a core process that shares this data folder (double-load guard).
+            {
+                let core_dir = crate::core::app::commands::get_jan_data_folder_path(app.handle().clone())
+                    .join("atomic-core");
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tauri_plugin_llamacpp_upstream::set_core_dir(handle, core_dir).await;
+                });
+            }
+
             // Same rationale for the agent's own children, which the backend
             // reaper cannot recognise: they are arbitrary user commands, so
             // they are identified by a journal of pids instead of by name.

@@ -441,3 +441,123 @@ AnotherInvalid
         assert_eq!(result[1].id, "CUDA0");
     }
 }
+
+/// Contract-fixture emitter for `atomic-chat-core` (PLAN.md phase 0 there). Ignored by default:
+///
+/// ```text
+/// cargo test -p tauri-plugin-llamacpp-upstream --lib -- --ignored dump_fixtures
+/// ```
+///
+/// Writes `<repo>/tests/fixtures/core-contracts/devices/<case>.json` and `index.json`.
+/// Exercises `parse_device_output` only (the `--list-devices` stdout parser); spawning and
+/// timeouts are process mechanics covered elsewhere.
+#[cfg(test)]
+mod fixture_dump {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+
+    struct Case {
+        name: &'static str,
+        stdout: &'static str,
+    }
+
+    const fn c(name: &'static str, stdout: &'static str) -> Case {
+        Case { name, stdout }
+    }
+
+    fn cases() -> Vec<Case> {
+        vec![
+            c(
+                "three_known_line_shapes",
+                "\nSome header text\nAvailable devices:\nVulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)\nCUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)\n\nSYCL0: Intel(R) Arc(TM) A750 Graphics (8000 MiB, 7721 MiB free)\nSome footer text\n",
+            ),
+            c("no_available_devices_header", "Some output without Available devices section\n"),
+            c("empty_section", "\nSome header text\nAvailable devices:\n\nSome footer text\n"),
+            c("empty_output", ""),
+            c(
+                "mixed_valid_and_invalid_lines",
+                "Available devices:\nVulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 8128 MiB free)\nInvalidLine: No memory info\nCUDA0: NVIDIA GeForce RTX 4090 (24576 MiB, 24000 MiB free)\nAnotherInvalid\n",
+            ),
+            c("header_with_surrounding_whitespace", "  Available devices:  \nCUDA0: NVIDIA A100 (81920 MiB, 80000 MiB free)\n"),
+            c("header_case_sensitive", "available devices:\nCUDA0: NVIDIA A100 (81920 MiB, 80000 MiB free)\n"),
+            c("lines_before_header_ignored", "CUDA9: Ghost (1 MiB, 1 MiB free)\nAvailable devices:\nCUDA0: Real (2 MiB, 2 MiB free)\n"),
+            c("name_with_nested_parentheses", "Available devices:\nVulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 4096 MiB free)\n"),
+            c("last_memory_pattern_wins", "Available devices:\nCUDA0: Device (test) with (1024 MiB, 512 MiB free) and (2048 MiB, 1024 MiB free)\n"),
+            c("unit_mb_rejected", "Available devices:\nCUDA0: NVIDIA (8128 MB, 8128 MB free)\n"),
+            c("missing_comma_rejected", "Available devices:\nCUDA0: NVIDIA (8128 MiB 8128 MiB free)\n"),
+            c("used_instead_of_free_rejected", "Available devices:\nCUDA0: NVIDIA (8128 MiB, 8128 MiB used)\n"),
+            c("missing_second_number_rejected", "Available devices:\nCUDA0: NVIDIA (8128 MiB, free)\n"),
+            c("no_colon_rejected", "Available devices:\nVulkan0 Intel Graphics (8128 MiB, 8128 MiB free)\n"),
+            c("zero_memory_accepted", "Available devices:\nCPU0: Host (0 MiB, 0 MiB free)\n"),
+            c("colon_inside_name", "Available devices:\nCUDA0: NVIDIA: Special Edition (1024 MiB, 512 MiB free)\n"),
+            c("free_larger_than_total_kept_verbatim", "Available devices:\nCUDA0: Weird (100 MiB, 200 MiB free)\n"),
+            c("extra_spaces_inside_pattern", "Available devices:\nCUDA0: NVIDIA (  8128 MiB ,  4096 MiB free )\n"),
+            c("multiple_gpus_order_preserved", "Available devices:\nCUDA1: B (2 MiB, 2 MiB free)\nCUDA0: A (1 MiB, 1 MiB free)\nVulkan0: C (3 MiB, 3 MiB free)\n"),
+            c("crlf_line_endings", "Available devices:\r\nCUDA0: NVIDIA (1024 MiB, 512 MiB free)\r\n"),
+            c("second_header_does_not_reset", "Available devices:\nCUDA0: A (1 MiB, 1 MiB free)\nAvailable devices:\nCUDA1: B (2 MiB, 2 MiB free)\n"),
+        ]
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap()
+    }
+
+    fn git_head(root: &PathBuf) -> String {
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_fixtures() {
+        let root = repo_root();
+        let out = root.join("tests/fixtures/core-contracts/devices");
+        fs::create_dir_all(&out).unwrap();
+        let commit = git_head(&root);
+        let source = "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs";
+
+        let mut names = Vec::new();
+        for case in cases() {
+            let expected = match parse_device_output(case.stdout) {
+                Ok(devices) => json!({ "devices": devices }),
+                Err(err) => json!({ "error": serde_json::to_value(&err).unwrap() }),
+            };
+            let doc = json!({
+                "name": case.name,
+                "source": { "file": source, "commit": commit, "provider": "llamacpp-upstream" },
+                "comparator": "devices-exact",
+                "input": { "stdout": case.stdout },
+                "expected": expected,
+            });
+            fs::write(
+                out.join(format!("{}.json", case.name)),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+            names.push(case.name);
+        }
+        let index = json!({
+            "source": { "file": source, "commit": commit },
+            "comparator": "devices-exact",
+            "note": "input.stdout is the raw `llama-server --list-devices` stdout. expected is either {devices:[{id,name,mem,free}]} (ordered, MiB as i32) or {error:{code,message,details?}} (serialised ServerError, e.g. DEVICE_LIST_PARSE_FAILED with the full output in details). Compare exactly.",
+            "cases": names,
+        });
+        fs::write(
+            out.join("index.json"),
+            serde_json::to_string_pretty(&index).unwrap() + "\n",
+        )
+        .unwrap();
+        eprintln!("wrote {} device fixtures to {}", names.len(), out.display());
+    }
+}

@@ -1,0 +1,77 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "x",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "tools": [
+        {
+          "function": {
+            "description": "run a shell command",
+            "name": "shell",
+            "parameters": {
+              "properties": {
+                "cmd": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "name": "bare"
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "input": {
+    "body": {
+      "input": "x",
+      "model": "m",
+      "tools": [
+        {
+          "description": "run a shell command",
+          "name": "shell",
+          "parameters": {
+            "properties": {
+              "cmd": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        },
+        {
+          "name": "bare",
+          "type": "function"
+        },
+        {
+          "type": "web_search_preview"
+        },
+        {
+          "description": "no name",
+          "type": "function"
+        }
+      ]
+    },
+    "kind": "request"
+  },
+  "name": "request_tools_flattened_builtin_and_nameless_dropped",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

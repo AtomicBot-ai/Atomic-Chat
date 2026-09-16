@@ -13,6 +13,10 @@
 
 pub mod integrations;
 
+/// Golden-fixture emitter for the agent integrations. Test-only.
+#[cfg(test)]
+mod fixture_dump;
+
 use std::path::{Path, PathBuf};
 
 use crate::core::app::commands::resolve_jan_data_folder;

@@ -1,0 +1,254 @@
+{
+  "comparator": "sse-sequence",
+  "expected": [
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [],
+          "parallel_tool_calls": true,
+          "status": "in_progress",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 0,
+        "type": "response.created"
+      },
+      "event": "response.created"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "",
+          "call_id": "call_1",
+          "id": "<fc_id_0>",
+          "name": "shell",
+          "status": "in_progress",
+          "type": "function_call"
+        },
+        "output_index": 0,
+        "sequence_number": 1,
+        "type": "response.output_item.added"
+      },
+      "event": "response.output_item.added"
+    },
+    {
+      "data": {
+        "delta": "{}",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 2,
+        "type": "response.function_call_arguments.delta"
+      },
+      "event": "response.function_call_arguments.delta"
+    },
+    {
+      "data": {
+        "item": {
+          "content": [],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "in_progress",
+          "type": "message"
+        },
+        "output_index": 1,
+        "sequence_number": 3,
+        "type": "response.output_item.added"
+      },
+      "event": "response.output_item.added"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "item_id": "<msg_id_0>",
+        "output_index": 1,
+        "part": {
+          "annotations": [],
+          "text": "",
+          "type": "output_text"
+        },
+        "sequence_number": 4,
+        "type": "response.content_part.added"
+      },
+      "event": "response.content_part.added"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "delta": "done",
+        "item_id": "<msg_id_0>",
+        "output_index": 1,
+        "sequence_number": 5,
+        "type": "response.output_text.delta"
+      },
+      "event": "response.output_text.delta"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "item_id": "<msg_id_0>",
+        "output_index": 1,
+        "sequence_number": 6,
+        "text": "done",
+        "type": "response.output_text.done"
+      },
+      "event": "response.output_text.done"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "item_id": "<msg_id_0>",
+        "output_index": 1,
+        "part": {
+          "annotations": [],
+          "text": "done",
+          "type": "output_text"
+        },
+        "sequence_number": 7,
+        "type": "response.content_part.done"
+      },
+      "event": "response.content_part.done"
+    },
+    {
+      "data": {
+        "item": {
+          "content": [
+            {
+              "annotations": [],
+              "text": "done",
+              "type": "output_text"
+            }
+          ],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        "output_index": 1,
+        "sequence_number": 8,
+        "type": "response.output_item.done"
+      },
+      "event": "response.output_item.done"
+    },
+    {
+      "data": {
+        "arguments": "{}",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 9,
+        "type": "response.function_call_arguments.done"
+      },
+      "event": "response.function_call_arguments.done"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "{}",
+          "call_id": "call_1",
+          "id": "<fc_id_0>",
+          "name": "shell",
+          "status": "completed",
+          "type": "function_call"
+        },
+        "output_index": 0,
+        "sequence_number": 10,
+        "type": "response.output_item.done"
+      },
+      "event": "response.output_item.done"
+    },
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [
+            {
+              "arguments": "{}",
+              "call_id": "call_1",
+              "id": "<fc_id_0>",
+              "name": "shell",
+              "status": "completed",
+              "type": "function_call"
+            },
+            {
+              "content": [
+                {
+                  "annotations": [],
+                  "text": "done",
+                  "type": "output_text"
+                }
+              ],
+              "id": "<msg_id_0>",
+              "role": "assistant",
+              "status": "completed",
+              "type": "message"
+            }
+          ],
+          "parallel_tool_calls": true,
+          "status": "completed",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 11,
+        "type": "response.completed"
+      },
+      "event": "response.completed"
+    }
+  ],
+  "input": {
+    "chunks": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{}",
+                    "name": "shell"
+                  },
+                  "id": "call_1",
+                  "index": 0
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "done"
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ]
+      }
+    ],
+    "kind": "stream",
+    "model": "fixture-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "stream_tool_call_then_text_output_sorted_by_index",
+  "placeholders": [
+    "<fc_id_0>",
+    "<msg_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

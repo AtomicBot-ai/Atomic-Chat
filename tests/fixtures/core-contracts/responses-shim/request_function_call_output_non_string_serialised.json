@@ -1,0 +1,58 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "{\"a\":1,\"b\":[true,null]}",
+          "role": "tool",
+          "tool_call_id": "call_1"
+        },
+        {
+          "content": "3.5",
+          "role": "tool",
+          "tool_call_id": "call_2"
+        },
+        {
+          "content": "",
+          "role": "tool",
+          "tool_call_id": ""
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "call_id": "call_1",
+          "output": {
+            "a": 1,
+            "b": [
+              true,
+              null
+            ]
+          },
+          "type": "function_call_output"
+        },
+        {
+          "call_id": "call_2",
+          "output": 3.5,
+          "type": "function_call_output"
+        },
+        {
+          "type": "function_call_output"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_function_call_output_non_string_serialised",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

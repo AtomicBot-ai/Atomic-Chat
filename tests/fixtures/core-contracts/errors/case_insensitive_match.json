@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "OUT_OF_MEMORY",
+    "details": "GGML_BACKEND: OUT OF MEMORY\n",
+    "message": "Out of memory. The model requires more RAM or VRAM than available."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "GGML_BACKEND: OUT OF MEMORY\n",
+    "stdout": ""
+  },
+  "name": "case_insensitive_match",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

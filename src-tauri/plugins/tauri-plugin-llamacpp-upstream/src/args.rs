@@ -841,7 +841,7 @@ impl ArgumentBuilder {
 mod tests {
     use super::*;
 
-    fn default_config() -> LlamacppConfig {
+    pub(super) fn default_config() -> LlamacppConfig {
         LlamacppConfig {
             version_backend: "v1.0/standard".to_string(),
             auto_unload: false,
@@ -2176,5 +2176,400 @@ mod tests {
             .build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--reasoning-format");
+    }
+}
+
+/// Contract-fixture emitter for `atomic-chat-core` (PLAN.md phase 0 there).
+///
+/// Not a test of this crate: it records what `ArgumentBuilder` emits for a curated case per
+/// emission rule and build gate, so the TypeScript port can be checked against the real output.
+/// Ignored by default; run explicitly:
+///
+/// ```text
+/// cargo test -p tauri-plugin-llamacpp-upstream --lib -- --ignored dump_fixtures
+/// ```
+///
+/// Writes `<repo>/tests/fixtures/core-contracts/args/<case>.json` and `index.json`.
+#[cfg(test)]
+mod fixture_dump {
+    use super::tests::default_config;
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+
+    struct Case {
+        name: &'static str,
+        is_embedding: bool,
+        model_id: &'static str,
+        model_path: &'static str,
+        port: u16,
+        mmproj: Option<&'static str>,
+        mutate: fn(&mut LlamacppConfig),
+    }
+
+    fn case(name: &'static str, mutate: fn(&mut LlamacppConfig)) -> Case {
+        Case {
+            name,
+            is_embedding: false,
+            model_id: "org/model/q4",
+            model_path: "/data/llamacpp/models/org/model/q4/model.gguf",
+            port: 3456,
+            mmproj: None,
+            mutate,
+        }
+    }
+
+    fn cases() -> Vec<Case> {
+        vec![
+            // ── basics ──────────────────────────────────────────────────────
+            case("basic_default", |_| {}),
+            Case {
+                is_embedding: true,
+                ..case("embedding_mode", |_| {})
+            },
+            Case {
+                mmproj: Some("/data/llamacpp/models/org/model/q4/mmproj.gguf"),
+                ..case("mmproj_offloaded", |_| {})
+            },
+            Case {
+                mmproj: Some("/data/llamacpp/models/org/model/q4/mmproj.gguf"),
+                ..case("mmproj_not_offloaded", |c| c.offload_mmproj = false)
+            },
+            Case {
+                mmproj: Some(""),
+                ..case("mmproj_empty_string_ignored", |c| c.offload_mmproj = false)
+            },
+            case("chat_template", |c| c.chat_template = "chatml".into()),
+            // ── gpu layers ──────────────────────────────────────────────────
+            case("ngl_100_means_all", |c| c.n_gpu_layers = 100),
+            case("ngl_32", |c| c.n_gpu_layers = 32),
+            case("ngl_negative", |c| c.n_gpu_layers = -5),
+            case("ngl_zero_cpu_only", |c| c.n_gpu_layers = 0),
+            // ── threads / batch / device ───────────────────────────────────
+            case("threads_8_4", |c| {
+                c.threads = 8;
+                c.threads_batch = 4;
+            }),
+            case("batch_defaults_omitted", |c| {
+                c.batch_size = 2048;
+                c.ubatch_size = 512;
+            }),
+            case("batch_custom", |c| {
+                c.batch_size = 1024;
+                c.ubatch_size = 256;
+            }),
+            case("device_split_main_gpu", |c| {
+                c.device = "CUDA0,CUDA1".into();
+                c.split_mode = "row".into();
+                c.main_gpu = 1;
+            }),
+            case("split_mode_layer_omitted", |c| {
+                c.split_mode = "layer".into()
+            }),
+            case("split_mode_none", |c| c.split_mode = "none".into()),
+            // ── flash attention ────────────────────────────────────────────
+            case("fa_legacy_v1_auto", |c| c.flash_attn = "auto".into()),
+            case("fa_legacy_v1_on", |c| c.flash_attn = "on".into()),
+            case("fa_legacy_v1_off", |c| c.flash_attn = "off".into()),
+            case("fa_string_b6325_auto", |c| {
+                c.version_backend = "b6325/macos-arm64".into();
+                c.flash_attn = "auto".into();
+            }),
+            case("fa_string_b6325_on", |c| {
+                c.version_backend = "b6325/macos-arm64".into();
+                c.flash_attn = "on".into();
+            }),
+            case("fa_string_b6325_off", |c| {
+                c.version_backend = "b6325/macos-arm64".into();
+                c.flash_attn = "off".into();
+            }),
+            case("fa_legacy_b6324_on", |c| {
+                c.version_backend = "b6324/macos-arm64".into();
+                c.flash_attn = "on".into();
+            }),
+            case("fa_turboquant_unified_tag_string_form", |c| {
+                c.version_backend = "b10018-1.3.0/macos-arm64".into();
+                c.flash_attn = "auto".into();
+            }),
+            case("fa_turboquant_prefix_string_form", |c| {
+                c.version_backend = "turboquant-1.2.0/linux-cuda-12.4-x64".into();
+                c.flash_attn = "on".into();
+            }),
+            case("fa_ik_backend_on", |c| {
+                c.version_backend = "b7000/ik-cuda-x64".into();
+                c.flash_attn = "on".into();
+            }),
+            case("fa_ik_backend_auto", |c| {
+                c.version_backend = "b7000/ik-cuda-x64".into();
+                c.flash_attn = "auto".into();
+            }),
+            case("fa_vulkan_auto_forced_off", |c| {
+                c.version_backend = "b10405/win-vulkan-x64".into();
+                c.flash_attn = "auto".into();
+                c.cache_type_v = "q8_0".into();
+            }),
+            case("fa_vulkan_explicit_on_kept", |c| {
+                c.version_backend = "b10405/win-vulkan-x64".into();
+                c.flash_attn = "on".into();
+            }),
+            // ── boolean toggles / parallel ─────────────────────────────────
+            case("toggles_all_on", |c| {
+                c.ctx_shift = true;
+                c.cont_batching = true;
+                c.no_mmap = true;
+                c.mlock = true;
+                c.no_kv_offload = true;
+            }),
+            case("parallel_1_adds_kvu", |c| c.parallel = 1),
+            case("parallel_4", |c| c.parallel = 4),
+            case("parallel_0_omitted", |c| c.parallel = 0),
+            case("concurrent_mode_slots_3", |c| {
+                c.concurrent_mode = true;
+                c.concurrent_slots = 3;
+            }),
+            case("concurrent_mode_slots_1_floor_2", |c| {
+                c.concurrent_mode = true;
+                c.concurrent_slots = 1;
+            }),
+            case("expose_metrics", |c| c.expose_metrics = true),
+            // ── speculative: mtp ───────────────────────────────────────────
+            case("mtp_qwen_builtin_b9180", |c| {
+                c.version_backend = "b9180/macos-arm64".into();
+                c.mtp = true;
+            }),
+            case("mtp_qwen_builtin_b9179_too_old", |c| {
+                c.version_backend = "b9179/macos-arm64".into();
+                c.mtp = true;
+            }),
+            case("mtp_gemma_draft_b9553", |c| {
+                c.version_backend = "b9553/macos-arm64".into();
+                c.mtp = true;
+                c.mtp_draft_path = "/data/llamacpp/models/drafts/gemma-mtp.gguf".into();
+            }),
+            case("mtp_gemma_draft_b9552_too_old", |c| {
+                c.version_backend = "b9552/macos-arm64".into();
+                c.mtp = true;
+                c.mtp_draft_path = "/data/llamacpp/models/drafts/gemma-mtp.gguf".into();
+            }),
+            case("mtp_gemma_with_quantized_cache_warns_only", |c| {
+                c.version_backend = "b9553/macos-arm64".into();
+                c.mtp = true;
+                c.mtp_draft_path = "/data/llamacpp/models/drafts/gemma-mtp.gguf".into();
+                c.cache_type_k = "q8_0".into();
+            }),
+            Case {
+                is_embedding: true,
+                ..case("mtp_ignored_for_embedding", |c| {
+                    c.version_backend = "b9180/macos-arm64".into();
+                    c.mtp = true;
+                })
+            },
+            // ── speculative: dflash ────────────────────────────────────────
+            case("dflash_supported_default_n_max", |c| {
+                c.dflash = true;
+                c.dflash_spec_supported = true;
+                c.dflash_draft_path = "/data/llamacpp/models/drafts/dflash.gguf".into();
+            }),
+            case("dflash_supported_n_max_7", |c| {
+                c.dflash = true;
+                c.dflash_spec_supported = true;
+                c.dflash_draft_path = "/data/llamacpp/models/drafts/dflash.gguf".into();
+                c.dflash_n_max = 7;
+            }),
+            case("dflash_unsupported_backend_skipped", |c| {
+                c.dflash = true;
+                c.dflash_spec_supported = false;
+                c.dflash_draft_path = "/data/llamacpp/models/drafts/dflash.gguf".into();
+            }),
+            case("dflash_empty_draft_skipped", |c| {
+                c.dflash = true;
+                c.dflash_spec_supported = true;
+            }),
+            case("dflash_wins_over_mtp", |c| {
+                c.version_backend = "b9553/macos-arm64".into();
+                c.mtp = true;
+                c.mtp_draft_path = "/data/llamacpp/models/drafts/gemma-mtp.gguf".into();
+                c.dflash = true;
+                c.dflash_spec_supported = true;
+                c.dflash_draft_path = "/data/llamacpp/models/drafts/dflash.gguf".into();
+                c.dflash_n_max = 3;
+            }),
+            // ── reasoning preserve ─────────────────────────────────────────
+            case("reasoning_preserve_on_b9837", |c| {
+                c.version_backend = "b9837/macos-arm64".into();
+                c.reasoning_preserve = true;
+            }),
+            case("reasoning_preserve_on_b9836_too_old", |c| {
+                c.version_backend = "b9836/macos-arm64".into();
+                c.reasoning_preserve = true;
+            }),
+            case("reasoning_preserve_off_b10762_emits_no_flag", |c| {
+                c.version_backend = "b10762/macos-arm64".into();
+                c.reasoning_preserve = false;
+            }),
+            case("reasoning_preserve_off_b10761_silent", |c| {
+                c.version_backend = "b10761/macos-arm64".into();
+                c.reasoning_preserve = false;
+            }),
+            Case {
+                is_embedding: true,
+                ..case("reasoning_preserve_ignored_for_embedding", |c| {
+                    c.version_backend = "b10762/macos-arm64".into();
+                    c.reasoning_preserve = true;
+                })
+            },
+            // ── text generation block ──────────────────────────────────────
+            case("ctx_size_4096_no_fit", |c| c.ctx_size = 4096),
+            case("ctx_size_zero_omitted", |c| c.ctx_size = 0),
+            case("fit_suppresses_ctx_size", |c| {
+                c.ctx_size = 4096;
+                c.fit = true;
+            }),
+            case("n_predict_512", |c| c.n_predict = 512),
+            case("cache_k_q8_0", |c| c.cache_type_k = "q8_0".into()),
+            case("cache_v_q4_0_with_fa_on", |c| {
+                c.version_backend = "b10405/macos-arm64".into();
+                c.flash_attn = "on".into();
+                c.cache_type_v = "q4_0".into();
+            }),
+            case("cache_v_dropped_when_fa_off", |c| {
+                c.flash_attn = "off".into();
+                c.cache_type_v = "q4_0".into();
+            }),
+            case("cache_v_f32_omitted", |c| {
+                c.flash_attn = "on".into();
+                c.cache_type_v = "f32".into();
+            }),
+            case("cache_turbo3_sanitised_to_q8_0_on_upstream", |c| {
+                c.version_backend = "b10018-1.3.0/macos-arm64".into();
+                c.flash_attn = "on".into();
+                c.cache_type_k = "turbo3".into();
+                c.cache_type_v = "turbo3".into();
+            }),
+            case("defrag_thold_0_5", |c| c.defrag_thold = 0.5),
+            case("rope_all_custom", |c| {
+                c.rope_scaling = "linear".into();
+                c.rope_scale = 2.0;
+                c.rope_freq_base = 10000.0;
+                c.rope_freq_scale = 0.5;
+            }),
+            // ── fit ────────────────────────────────────────────────────────
+            case("fit_on_custom_ctx_target", |c| {
+                c.fit = true;
+                c.fit_ctx = "8192".into();
+                c.fit_target = "2048".into();
+            }),
+            case("fit_on_default_ctx_target_omitted", |c| {
+                c.fit = true;
+                c.fit_ctx = "4096".into();
+                c.fit_target = "1024".into();
+            }),
+            case("fit_skipped_on_ik_backend", |c| {
+                c.version_backend = "b7000/ik-cuda-x64".into();
+                c.fit = true;
+                c.fit_ctx = "8192".into();
+            }),
+            // ── moe / tensor override ──────────────────────────────────────
+            case("cpu_moe_and_n_cpu_moe", |c| {
+                c.cpu_moe = true;
+                c.n_cpu_moe = 4;
+                c.override_tensor_buffer_t = "blk\\.[0-9]+\\.ffn.*=CPU".into();
+            }),
+            // ── extra args ─────────────────────────────────────────────────
+            case("extra_args_quoting", |c| {
+                c.extra_args =
+                    r#"--foo bar "quoted arg" 'single q' esc\ aped --ctx-size 999"#.into()
+            }),
+            case("extra_args_unterminated_quote_dropped", |c| {
+                c.extra_args = r#"--foo "unterminated"#.into()
+            }),
+            case("extra_args_empty_quotes_give_empty_arg", |c| {
+                c.extra_args = r#"--stop """#.into()
+            }),
+            // ── version parsing ────────────────────────────────────────────
+            case("version_backend_with_bom", |c| {
+                c.version_backend = "\u{FEFF}b6325/macos-arm64".into()
+            }),
+            case("version_backend_without_slash_is_error", |c| {
+                c.version_backend = "b1234".into()
+            }),
+            case("version_backend_padded_parts", |c| {
+                c.version_backend = " b6325 / macos-arm64 ".into()
+            }),
+        ]
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap()
+    }
+
+    fn git_head(root: &PathBuf) -> String {
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_fixtures() {
+        let root = repo_root();
+        let out = root.join("tests/fixtures/core-contracts/args");
+        fs::create_dir_all(&out).unwrap();
+        let commit = git_head(&root);
+        let source = "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/args.rs";
+
+        let mut names = Vec::new();
+        for c in cases() {
+            let mut config = default_config();
+            (c.mutate)(&mut config);
+            let input = json!({
+                "config": config,
+                "is_embedding": c.is_embedding,
+                "model_id": c.model_id,
+                "model_path": c.model_path,
+                "port": c.port,
+                "mmproj_path": c.mmproj,
+            });
+            let result = match ArgumentBuilder::new(config.clone(), c.is_embedding) {
+                Ok(builder) => {
+                    json!({ "argv": builder.build(c.model_id, c.model_path, c.port, c.mmproj.map(String::from)) })
+                }
+                Err(e) => json!({ "error": e }),
+            };
+            let doc = json!({
+                "name": c.name,
+                "source": { "file": source, "commit": commit, "provider": "llamacpp-upstream" },
+                "comparator": "argv-exact",
+                "input": input,
+                "expected": result,
+            });
+            fs::write(
+                out.join(format!("{}.json", c.name)),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+            names.push(c.name);
+        }
+        let index = json!({
+            "source": { "file": source, "commit": commit },
+            "comparator": "argv-exact",
+            "note": "argv compared as an ordered list; model_path/mmproj/port are literal inputs, so no normalisation is needed. Float fields (defrag_thold, rope_*) are f32 in Rust and serialise with f32 rounding (0.1 -> 0.10000000149011612); the port must compare them as f32 (Math.fround).",
+            "cases": names,
+        });
+        fs::write(
+            out.join("index.json"),
+            serde_json::to_string_pretty(&index).unwrap() + "\n",
+        )
+        .unwrap();
+        eprintln!("wrote {} args fixtures to {}", names.len(), out.display());
     }
 }

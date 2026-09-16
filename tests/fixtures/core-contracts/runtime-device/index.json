@@ -1,0 +1,41 @@
+{
+  "cases": [
+    "healthy_cuda_load",
+    "cuda_binary_silently_degraded_to_cpu",
+    "cuda_loads_but_zero_layers_offloaded",
+    "vulkan_load",
+    "metal_load",
+    "cpu_only_build",
+    "multi_gpu_split_largest_share",
+    "legacy_llm_load_tensors_prefix",
+    "repeating_layers_only",
+    "unrelated_lines_ignored",
+    "device_init_error_first_failure_kept",
+    "cuda_runtime_missing_marked_conclusive",
+    "empty_log_is_inconclusive",
+    "loaded_backends_deduped_in_order",
+    "summary_overrides_repeating_layers",
+    "repeating_layers_do_not_override_summary",
+    "equal_buffers_tie_break_smaller_label_wins",
+    "duplicate_label_keeps_max",
+    "cpu_prefixed_labels_are_not_gpu",
+    "nonzero_gpu_buffer_but_zero_offloaded",
+    "size_units_gib_kib_bytes",
+    "size_unknown_unit_treated_as_bytes",
+    "size_not_a_number_ignored",
+    "buffer_line_without_load_tensors_prefix_ignored",
+    "device_init_error_no_cuda_devices",
+    "device_init_error_failed_to_load_backend",
+    "device_init_error_vulkan_no_devices",
+    "device_init_error_no_usable_gpu",
+    "device_init_error_does_not_block_other_parsing",
+    "offload_line_malformed_ignored",
+    "blank_and_whitespace_lines_ignored"
+  ],
+  "comparator": "runtime-device-exact",
+  "note": "lines are fed one by one (trailing whitespace trimmed, as the process reader does) then snapshot() is taken; compare every RuntimeDeviceInfo field and is_inconclusive exactly. gpu_buffer_bytes is an integer truncated from f64 * unit.",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs"
+  }
+}

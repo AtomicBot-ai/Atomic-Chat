@@ -395,6 +395,30 @@ pub async fn load_llama_model_impl(
     Ok(session_info)
 }
 
+/// Tell the plugin where `<data>/atomic-core/` is, so the session table can be
+/// mirrored for a core process sharing this data folder. Called once at startup;
+/// until then publishing is a no-op.
+#[tauri::command]
+pub async fn set_core_dir<R: Runtime>(app_handle: tauri::AppHandle<R>, path: String) {
+    let state: State<LlamacppState> = app_handle.state();
+    *state.core_dir.lock().await = Some(std::path::PathBuf::from(path));
+    let map = state.llama_server_process.lock().await;
+    publish_legacy_sessions(&app_handle, &map).await;
+}
+
+/// Mirror the live sessions to `<data>/atomic-core/legacy-runtime.json`.
+/// Best effort: a failure here must never fail a load or an unload.
+async fn publish_legacy_sessions<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    map: &std::collections::HashMap<i32, LLamaBackendSession>,
+) {
+    let state: State<LlamacppState> = app_handle.state();
+    let dir = state.core_dir.lock().await.clone();
+    let Some(dir) = dir else { return };
+    let sessions: Vec<SessionInfo> = map.values().map(|s| s.info.clone()).collect();
+    crate::legacy_state::publish(&dir, &sessions);
+}
+
 /// Tauri event emitted when a llama-server child process that was running
 /// (i.e. had already loaded a model) exits unexpectedly during generation.
 /// Payload: `{ model_id, pid, error_code, message }`.
@@ -415,10 +439,18 @@ pub async fn load_llama_model<R: Runtime>(
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
-    let session_info = load_llama_model_impl(
+    let core_dir = state.core_dir.lock().await.clone();
+    let mut claim = match core_dir {
+        Some(ref dir) => Some(
+            crate::model_claim::ModelClaim::acquire(dir, "llamacpp-upstream", &model_id)
+                .map_err(ServerError::InvalidArgument)?,
+        ),
+        None => None,
+    };
+    let session_info = match load_llama_model_impl(
         state.llama_server_process.clone(),
         backend_path,
-        model_id,
+        model_id.clone(),
         model_path,
         port,
         config,
@@ -427,7 +459,30 @@ pub async fn load_llama_model<R: Runtime>(
         is_embedding,
         timeout,
     )
-    .await?;
+    .await {
+        Ok(session) => session,
+        Err(error) => {
+            if let Some(claim) = claim.take() { claim.release(); }
+            return Err(error);
+        }
+    };
+    if let Some(mut claim) = claim {
+        if let Err(error) = claim.ready() {
+            claim.release();
+            let mut map = state.llama_server_process.lock().await;
+            if let Some(mut session) = map.remove(&session_info.pid) {
+                let _ = session.child.kill().await;
+            }
+            return Err(ServerError::InvalidArgument(format!("Could not publish model claim: {error}")));
+        }
+        state.model_claims.lock().await.insert(session_info.pid, claim);
+    }
+
+    // Mirror the session table for a core sharing this data folder (double-load guard).
+    {
+        let map = state.llama_server_process.lock().await;
+        publish_legacy_sessions(&app_handle, &map).await;
+    }
 
     // Spawn a background watcher task that detects unexpected process exits
     // (crashes during generation). Without this watcher, a Vulkan or other
@@ -485,6 +540,13 @@ pub async fn load_llama_model<R: Runtime>(
                 Ok(None) => {} // Still running — continue polling
                 Err(()) => break,
                 Ok(Some((status, info))) => {
+                    if let Some(claim) = {
+                        let watcher_state: State<LlamacppState> = app_handle_watcher.state();
+                        let removed = watcher_state.model_claims.lock().await.remove(&pid);
+                        removed
+                    } {
+                        claim.release();
+                    }
                     // Unexpected exit: classify and report.
                     let error = LlamacppError::from_exit_status(&status, "");
                     // log::error! → Sentry logger bridge (ATO-244: generation-time
@@ -505,6 +567,11 @@ pub async fn load_llama_model<R: Runtime>(
                         pid: i32,
                         error_code: String,
                         message: String,
+                    }
+                    {
+                        let watcher_state: State<LlamacppState> = app_handle_watcher.state();
+                        let map = watcher_state.llama_server_process.lock().await;
+                        publish_legacy_sessions(&app_handle_watcher, &map).await;
                     }
                     let payload = SessionDiedPayload {
                         model_id: info.model_id.clone(),
@@ -548,6 +615,11 @@ pub async fn unload_llama_model<R: Runtime>(
         #[cfg(all(windows, target_arch = "x86_64"))]
         {
             force_terminate_process(&mut child).await;
+        }
+
+        publish_legacy_sessions(&app_handle, &map).await;
+        if let Some(claim) = state.model_claims.lock().await.remove(&pid) {
+            claim.release();
         }
 
         Ok(UnloadResult {

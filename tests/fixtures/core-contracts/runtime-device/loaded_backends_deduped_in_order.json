@@ -1,0 +1,34 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": null,
+      "gpu_layers_offloaded": null,
+      "loaded_backends": [
+        "CPU",
+        "CUDA",
+        "RPC"
+      ],
+      "primary_device": "",
+      "total_layers": null
+    }
+  },
+  "input": {
+    "lines": [
+      "load_backend: loaded CPU backend from a.so",
+      "load_backend: loaded CUDA backend from b.so",
+      "load_backend: loaded CPU backend from a.so",
+      "load_backend: loaded RPC backend from c.so"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "loaded_backends_deduped_in_order",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}
