@@ -9,8 +9,8 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-276 records, 2026-05-19 → 2026-09-16.
-276 records, 2026-05-19 → 2026-09-16.
+277 records, 2026-05-19 → 2026-09-16.
+277 records, 2026-05-19 → 2026-09-16.
 
 ---
 
@@ -260,7 +260,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (53)
+## UI / UX (54)
 
 - **2026-09-16** — [Confirm Full access before enabling it, every time](2026-09-16-confirm-full-access-before-enabling-it.md)
 - **2026-09-16** — [Unfold the release notes inside the update banner](2026-09-16-unfold-release-notes-inside-the-update-banner.md)
@@ -268,8 +268,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-16** — [The effort setting applies only to new messages; a stored message renders the parts it has](2026-09-16-effort-setting-applies-only-to-new-messages.md)
 - **2026-09-16** — [Let the composer's model list download: recommendations when empty, Hugging Face under the search](2026-09-16-model-selector-download-picks.md)
 - **2026-09-16** — [Show the running download first in the reply gate, arm the message on it, and share the panel's Cancel](2026-09-16-show-the-running-download-first-in-the-reply-gate.md)
-## UI / UX (53)
 - **2026-09-16** — [Stay on the Welcome screen until the download lands](2026-09-16-stay-on-the-welcome-screen-until-the-download-lands.md)
+## UI / UX (54)
+- **2026-09-16** — [Mark each recommended row with its fit, and list the picks by it](2026-09-16-mark-each-recommended-row-with-its-fit.md)
 - **2026-09-16** — [Offer the manifest's recommendation on the reminder card too, and stop waiting for it after 8 s](2026-09-16-offer-the-manifest-recommendation-on-the-reminder-card-too.md)
 - **2026-09-15** — [Ask for a model with the same rows and the same list as onboarding, and open the Hub from both](2026-09-15-ask-for-a-model-with-the-same-rows-and-list-as-onboarding.md)
 - **2026-09-15** — [Say what a project file upload is waiting on, and never hide a failed listing](2026-09-15-say-what-a-project-upload-is-waiting-on.md)

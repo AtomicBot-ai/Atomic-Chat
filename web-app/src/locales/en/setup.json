@@ -92,6 +92,9 @@
     "whyWontLoad": "{{size}} — needs more than your {{budget}} of {{pool}}.",
     "whyCpuOnly": "{{size}} — no GPU detected, so this is the fastest model your CPU can run.",
     "whyUnknown": "{{size}} — a light, fast model that runs on almost anything.",
+    "fitOk": "Fits your memory",
+    "fitWarn": "Runs, but tight on memory",
+    "fitNo": "Won't fit in memory",
     "pool": {
       "unified": "unified memory",
       "vram": "graphics memory",

@@ -36,7 +36,11 @@ import { findPinnedQuant, parseFileSizeToBytes } from '@/lib/model-card'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { judgeMemoryFit, type HardwareProfile } from '@/lib/hardware-tier'
+import {
+  judgeMemoryFit,
+  type HardwareProfile,
+  type MemoryFit,
+} from '@/lib/hardware-tier'
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -44,6 +48,8 @@ import { switchToModel } from '@/utils/switchModel'
 import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
+import { ModelFitIndicator } from './ModelFitIndicator'
+import { fitLabelKey, fitLevel, orderRowsByFit } from './SetupScreenHelpers'
 import {
   ModelSourceBadge,
   modelSourceLabel,
@@ -280,12 +286,19 @@ export function describeRecommendationFit(args: {
   sizeLabel?: string | null
   sizeBytes?: number
   profile: HardwareProfile | null
+  /**
+   * Speak of the memory fit even on a CPU-only machine. The offer's badge
+   * explains the *choice*, and there the CPU is what binds; the fit mark on
+   * every row reports what {@link judgeMemoryFit} measured, which is memory,
+   * and on such a machine that is the pool the row is judged against.
+   */
+  memoryOnly?: boolean
 }): RecommendationFitCopy | null {
-  const { sizeLabel, sizeBytes, profile } = args
+  const { sizeLabel, sizeBytes, profile, memoryOnly = false } = args
   if (!sizeLabel) return null
   const values: Record<string, string> = { size: sizeLabel }
 
-  if (profile?.memoryKind === 'system') {
+  if (profile?.memoryKind === 'system' && !memoryOnly) {
     return { key: 'setup:recommend.whyCpuOnly', values }
   }
 
@@ -686,10 +699,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
    * Nothing is hidden for size — the list is the Hub's, not a second
    * recommender.
    *
-   * The one liberty taken with the Hub's order: rows are dealt so that no two
-   * neighbours come from the same publisher (see `interleaveByPublisher`).
-   * The manifest groups a family's sizes together, which in a scrolling list
-   * reads as five Gemma rows, then five Qwen rows — a catalogue, not a choice.
+   * Two liberties are taken with the Hub's order. Rows are listed by how they
+   * fit this machine — what fits, then what is tight, then what will not load,
+   * then what could not be judged — so a 20 GB model does not head a list on
+   * a laptop that can only run the 7 GB one under it (see `orderRowsByFit`).
+   * And inside each of those groups rows are dealt so that no two neighbours
+   * come from the same publisher (see `interleaveByPublisher`): the manifest
+   * groups a family's sizes together, which in a scrolling list reads as five
+   * Gemma rows, then five Qwen rows — a catalogue, not a choice.
    */
   const popularPicks = useMemo(() => {
     const taken = new Set<string>()
@@ -700,7 +717,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       taken.add(rec.modelName.toLowerCase())
     }
 
-    const rows: Array<PendingRow & { pick: StaffPick }> = []
+    const rows: Array<PendingRow & { pick: StaffPick; fit: MemoryFit | null }> =
+      []
     for (const { pick, model } of staffPickItems) {
       const key = pick.model_name.toLowerCase()
       if (taken.has(key)) continue
@@ -715,6 +733,15 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         : false
       if (downloaded) continue
       taken.add(key)
+      // Judged on the size the row shows — quant plus projector, or every
+      // MLX shard — so the order agrees with the mark the row wears.
+      const sizeLabel = model
+        ? isMlx
+          ? getMlxTotalFileSize(model)
+          : variant
+            ? getTotalDownloadFileSize(model, variant, pickMmprojModel(model))
+            : undefined
+        : undefined
       rows.push({
         rec: {
           modelName: pick.model_name,
@@ -722,6 +749,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         },
         model,
         pick,
+        fit: judgeMemoryFit(parseFileSizeToBytes(sizeLabel), hardwareProfile),
         startId: model
           ? isMlx
             ? getMlxModelId(model)
@@ -729,13 +757,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           : undefined,
       })
     }
-    return interleaveByPublisher(
-      rows,
-      (row) => publisherKey(row.rec.modelName, row.pick.icon),
-      heroRecommendation
+    return orderRowsByFit(rows, {
+      levelOf: (row) => fitLevel(row.fit),
+      keyOf: (row) => publisherKey(row.rec.modelName, row.pick.icon),
+      interleave: interleaveByPublisher,
+      previous: heroRecommendation
         ? publisherKey(heroRecommendation.rec.modelName)
-        : undefined
-    )
+        : undefined,
+    })
   }, [
     staffPickItems,
     heroRecommendation,
@@ -743,6 +772,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     isMlxDownloaded,
     isVariantDownloaded,
     getMlxModelId,
+    hardwareProfile,
   ])
 
   // `recommended_model_shown.position` is the row's index in the painted list:
@@ -1604,6 +1634,34 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         })
       : undefined
 
+    //* Метка «влезет ли» у каждой строки: тот же размер, что показан рядом с
+    //* именем, против бюджета памяти этой машины. Нет размера или профиля —
+    //* нет метки: «не знаем» не рисуем как предупреждение.
+    const rowSizeBytes = parseFileSizeToBytes(downloadSize ?? undefined)
+    const rowFitLevel = fitLevel(judgeMemoryFit(rowSizeBytes, hardwareProfile))
+    const rowFitCopy = rowFitLevel
+      ? describeRecommendationFit({
+          sizeLabel: downloadSize,
+          sizeBytes: rowSizeBytes,
+          profile: hardwareProfile,
+          memoryOnly: true,
+        })
+      : null
+    const rowFitReason = rowFitCopy
+      ? t(rowFitCopy.key, {
+          ...rowFitCopy.values,
+          ...(rowFitCopy.poolKey ? { pool: t(rowFitCopy.poolKey) } : {}),
+        })
+      : null
+    const fitMark =
+      rowFitLevel && rowFitReason ? (
+        <ModelFitIndicator
+          level={rowFitLevel}
+          label={`${t(fitLabelKey(rowFitLevel))}. ${rowFitReason}`}
+          reason={rowFitReason}
+        />
+      ) : null
+
     // Under a pick, the Hub's own summary, falling back to its category so the
     // line is never blank. The offer has none — its badge stands in that line.
     // A card that has not resolved says so on either.
@@ -1635,6 +1693,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                   </span>
                 ) : null}
               </h2>
+              {fitMark}
               {hero && (
                 <span
                   title={fitLine}

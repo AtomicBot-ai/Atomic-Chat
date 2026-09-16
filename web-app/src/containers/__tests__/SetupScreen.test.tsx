@@ -1,5 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
 import { localStorageKey } from '@/constants/localStorage'
@@ -1193,14 +1202,19 @@ describe('SetupScreen', () => {
       rerender(<SetupScreen />)
       await act(async () => {})
 
+      // A placeholder cannot be judged, so it waits at the bottom; 697 MB on
+      // an 8 GiB card fits, so the resolved card moves up above the two
+      // yellow rows — which are reported again at their new index.
       expect(shown().map((props) => [props.position, props.section])).toEqual([
+        [1, 'pending'],
+        [2, 'pending'],
         [3, 'pending'],
       ])
 
       // Painting the same list again is not a new impression.
       rerender(<SetupScreen />)
       await act(async () => {})
-      expect(shown()).toHaveLength(1)
+      expect(shown()).toHaveLength(3)
       unmount()
     })
 
@@ -1364,6 +1378,180 @@ describe('SetupScreen', () => {
         })
       ).toBeInTheDocument()
       unmount()
+    })
+
+    describe('fit indicator', () => {
+      // An 18 GiB Mac: Metal's 85 % ceiling is a hard one, so a model past it
+      // will not load at all, not merely run slowly.
+      const unifiedMac = {
+        tier: 'unified_16',
+        memoryKind: 'unified',
+        budgetMib: 18 * 1024,
+        systemRamMib: 18 * 1024,
+        vramMib: 18 * 1024,
+        hardCeiling: true,
+      }
+      const unresolved = {
+        pick: {
+          model_name: 'unsloth/DeepSeek-V4-Flash-GGUF',
+          title: 'DeepSeek V4 Flash',
+          format: 'gguf',
+        },
+        model: null,
+      }
+      const fitMarks = () =>
+        screen.queryAllByRole('button', { name: /setup:recommend\.fit/ })
+
+      // Radix positions an open tooltip with a ResizeObserver jsdom lacks.
+      beforeAll(() => {
+        vi.stubGlobal(
+          'ResizeObserver',
+          class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+          }
+        )
+      })
+      afterAll(() => {
+        vi.unstubAllGlobals()
+      })
+
+      it('marks each row with how it fits this machine, and says why on the mark', async () => {
+        // The one badge said why the offer fits; every other row left the
+        // user to work out from a size whether it would run. Now each row
+        // wears a mark whose name is the same sentence the badge carries —
+        // and a row whose size is unknown wears none: "we don't know" is
+        // not a warning.
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [gemma, nemotron, unresolved]
+        const { unmount } = await renderPicker()
+
+        const marks = fitMarks()
+        expect(marks).toHaveLength(3)
+        // 2.52 GB and 7.3 GB on 18 GiB: under half the pool.
+        expect(marks[0]).toHaveAttribute('data-fit', 'ok')
+        expect(marks[0]).toHaveAccessibleName(
+          /setup:recommend\.fitOk.*setup:recommend\.whyComfortable/
+        )
+        expect(marks[1]).toHaveAttribute('data-fit', 'ok')
+        // 19.7 GB will not load on an 18 GiB Mac.
+        expect(marks[2]).toHaveAttribute('data-fit', 'no')
+        expect(marks[2]).toHaveAccessibleName(
+          /setup:recommend\.fitNo.*setup:recommend\.whyWontLoad/
+        )
+        // Every mark sits on the name side of its row, not in the button
+        // column, and the unresolved row has none.
+        const rows = screen.getAllByRole('heading', { level: 2 })
+        expect(rows).toHaveLength(4)
+        marks.forEach((mark, index) => {
+          expect(rows[index].parentElement).toContainElement(mark)
+        })
+        expect(rows[3].parentElement?.querySelector('[data-fit]')).toBeNull()
+        unmount()
+      })
+
+      it('paints a model that overshoots a card yellow, not red', async () => {
+        // On Windows/Linux llama.cpp spills into system RAM: slower, but it
+        // runs. Yellow for both "tight" and "spills" — one warning colour,
+        // with the sentence telling the two apart.
+        mocks.staffPicks = [gemma, nemotron]
+        const { unmount } = await renderPicker()
+
+        const marks = fitMarks()
+        // 7.3 GB on an 8 GiB card: fits, with little room.
+        expect(marks[1]).toHaveAttribute('data-fit', 'warn')
+        expect(marks[1]).toHaveAccessibleName(
+          /setup:recommend\.fitWarn.*setup:recommend\.whyTight/
+        )
+        // 19.7 GB on an 8 GiB card: spills, still runs.
+        expect(marks[2]).toHaveAttribute('data-fit', 'warn')
+        expect(marks[2]).toHaveAccessibleName(
+          /setup:recommend\.fitWarn.*setup:recommend\.whySpills/
+        )
+        unmount()
+      })
+
+      it('shows no mark at all when the machine has not been measured', async () => {
+        mocks.hardwareTier.profile = null
+        mocks.staffPicks = [gemma, nemotron]
+        const { unmount } = await renderPicker()
+
+        expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
+        expect(fitMarks()).toHaveLength(0)
+        unmount()
+      })
+
+      it('judges a CPU-only machine by its memory on the mark, while the badge still speaks of the CPU', async () => {
+        // The badge explains the offer by the constraint that binds — CPU
+        // throughput. The mark is a memory fit and says so in memory terms,
+        // because on this machine that is what it measured.
+        mocks.hardwareTier.tier = 'cpu_only'
+        mocks.hardwareTier.profile = {
+          tier: 'cpu_only',
+          memoryKind: 'system',
+          budgetMib: 128 * 1024,
+          systemRamMib: 128 * 1024,
+          vramMib: 0,
+          hardCeiling: false,
+        }
+        const { unmount } = await renderPicker()
+
+        expect(
+          screen.getByTitle(/setup:recommend\.whyCpuOnly/)
+        ).toBeInTheDocument()
+        expect(fitMarks()[0]).toHaveAccessibleName(
+          /setup:recommend\.whyComfortable/
+        )
+        unmount()
+      })
+
+      it('lists the picks by fit — green, yellow, red, unknown — with the offer still first', async () => {
+        // The Hub's order put a 20 GB model above a 7 GB one on a machine
+        // that can only run the second. Within a colour the publisher deal
+        // still applies; across colours it does not reorder.
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [
+          unresolved,
+          nemotron,
+          staffPick('AtomicChat/Qwen3.6-27B-GGUF', {
+            title: 'Qwen3.6 27B',
+            size: '14.0 GB',
+            icon: 'qwen',
+          }),
+          gemma,
+        ]
+        const { unmount } = await renderPicker()
+
+        const names = screen
+          .getAllByRole('heading', { level: 2 })
+          .map((heading) => heading.textContent?.replace(/ ·.*$/, '').trim())
+        expect(names).toEqual([
+          'Qwen3.5 4B',
+          'Gemma 4 12B',
+          'Qwen3.6 27B',
+          'Nemotron 3.5 Lightning',
+          'DeepSeek V4 Flash',
+        ])
+        expect(fitMarks().map((mark) => mark.getAttribute('data-fit'))).toEqual(
+          ['ok', 'ok', 'warn', 'no']
+        )
+        unmount()
+      })
+
+      it('opens the reason on keyboard focus, not only under the pointer', async () => {
+        mocks.staffPicks = [gemma]
+        const { unmount } = await renderPicker()
+
+        const [mark] = fitMarks()
+        act(() => mark.focus())
+        expect(mark).toHaveFocus()
+        const tip = await screen.findByRole('tooltip')
+        expect(tip).toHaveTextContent('setup:recommend.whyComfortable')
+        unmount()
+      })
     })
   })
 
