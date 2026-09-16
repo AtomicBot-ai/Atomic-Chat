@@ -17,8 +17,14 @@ export type ImageEngineState = {
   engineChoices: Array<'sd-cpp' | 'diffusers'>
   progress: EngineInstallProgress
   installing: boolean
+  /** The manifest publishes a newer tag for this host. */
+  updateAvailable: string | null
+  checkingUpdate: boolean
+  updateCheckedAt: number | null
   startInstall: () => Promise<void>
   reinstall: () => Promise<void>
+  checkForUpdate: (opts?: { force?: boolean }) => Promise<void>
+  update: () => Promise<void>
 }
 
 /**
@@ -33,6 +39,11 @@ export function useImageEngine(): ImageEngineState {
   )
   const progress = useImageGenerationStore((state) => state.engineInstall)
   const installEngine = useImageGenerationStore((state) => state.installEngine)
+  const engineUpdate = useImageGenerationStore((state) => state.engineUpdate)
+  const checkEngineUpdate = useImageGenerationStore(
+    (state) => state.checkEngineUpdate
+  )
+  const updateEngine = useImageGenerationStore((state) => state.updateEngine)
 
   const install: DiffusionEngineInstall = status?.install ?? {
     state: 'not-installed',
@@ -59,7 +70,12 @@ export function useImageEngine(): ImageEngineState {
     engineChoices,
     progress,
     installing: progress.inFlight,
+    updateAvailable: engineUpdate.availableTag,
+    checkingUpdate: engineUpdate.checking,
+    updateCheckedAt: engineUpdate.checkedAt,
     startInstall,
     reinstall,
+    checkForUpdate: checkEngineUpdate,
+    update: updateEngine,
   }
 }

@@ -28,6 +28,7 @@ import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
 import { notifyThreadCompleted } from '@/lib/notifications'
 import {
   ensureDiffusionBackend,
+  resolveSdcppManifest,
   selectDiffusionBackendForHost,
 } from '@/services/diffusion/install'
 import type {
@@ -56,6 +57,15 @@ export type EngineInstallProgress = {
   transferred: number
   total: number
   error: DiffusionError | null
+}
+
+/** What the last look at the engine manifest found. */
+export type EngineUpdateState = {
+  checking: boolean
+  /** A newer tag published for this host, or null when the install is current. */
+  availableTag: string | null
+  checkedAt: number | null
+  error: string | null
 }
 
 export type DiffusionPaths = {
@@ -97,6 +107,7 @@ type ImageGenerationState = {
   /** A `loadModel` is in flight for this artifact id. */
   loadingArtifactId: string | null
   engineInstall: EngineInstallProgress
+  engineUpdate: EngineUpdateState
 
   setupOpen: boolean
   setupStep: ImageSetupStep
@@ -110,6 +121,13 @@ type ImageGenerationState = {
   applyIdleSettings: () => Promise<void>
 
   installEngine: (opts?: { force?: boolean }) => Promise<void>
+  /**
+   * Compare the installed engine with the manifest's tag for this host.
+   * `force` bypasses the hour-long manifest cache (the user pressed the button).
+   */
+  checkEngineUpdate: (opts?: { force?: boolean }) => Promise<void>
+  /** Install the tag the last check found, unloading the model first: the old binary is retired. */
+  updateEngine: () => Promise<void>
   loadModel: (artifactId: string) => Promise<void>
   unloadModel: () => Promise<void>
   removeArtifact: (artifactId: string) => Promise<void>
@@ -160,6 +178,13 @@ const emptyInstall: EngineInstallProgress = {
   error: null,
 }
 
+const noUpdate: EngineUpdateState = {
+  checking: false,
+  availableTag: null,
+  checkedAt: null,
+  error: null,
+}
+
 const initial = {
   bound: false,
   status: null as DiffusionStatus | null,
@@ -179,6 +204,7 @@ const initial = {
   lastError: null as DiffusionError | null,
   loadingArtifactId: null as string | null,
   engineInstall: emptyInstall,
+  engineUpdate: noUpdate,
   setupOpen: false,
   setupStep: 0 as ImageSetupStep,
 }
@@ -511,6 +537,57 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
             duration_ms: Date.now() - startedAt,
             error_code: described.code,
           })
+        }
+      },
+
+      checkEngineUpdate: async ({ force } = {}) => {
+        const { status, hostBackendId, engineUpdate } = get()
+        if (engineUpdate.checking) return
+        if (status?.install.state !== 'installed' || !hostBackendId) {
+          set({ engineUpdate: noUpdate })
+          return
+        }
+        set({ engineUpdate: { ...engineUpdate, checking: true, error: null } })
+        try {
+          const { manifest, error } = await resolveSdcppManifest({ force })
+          const published = manifest.assets.some(
+            (asset) => asset.backend === hostBackendId
+          )
+          const installedTag = status.install.tag
+          set({
+            engineUpdate: {
+              checking: false,
+              availableTag:
+                published && manifest.tag_name !== installedTag
+                  ? manifest.tag_name
+                  : null,
+              checkedAt: Date.now(),
+              // A stale answer is still an answer; only note that it is stale.
+              error: error ?? null,
+            },
+          })
+        } catch (err) {
+          set({
+            engineUpdate: {
+              ...get().engineUpdate,
+              checking: false,
+              checkedAt: Date.now(),
+              error: err instanceof Error ? err.message : String(err),
+            },
+          })
+        }
+      },
+
+      updateEngine: async () => {
+        if (!get().engineUpdate.availableTag) return
+        // The new build goes in beside the old one and the old one is then
+        // removed, which the plugin refuses while its server is running.
+        if (get().status?.model.state === 'loaded') {
+          await get().unloadModel()
+        }
+        await get().installEngine()
+        if (get().engineInstall.error === null) {
+          set({ engineUpdate: { ...noUpdate, checkedAt: Date.now() } })
         }
       },
 
