@@ -139,10 +139,12 @@ export default class VectorDBExt extends VectorDBExtension {
     )
     const chunks = await this.chunkText(text, opts.chunkSize, opts.chunkOverlap)
 
-    // Get embeddings to determine dimension - use a default if no chunks
+    // Get embeddings to determine dimension - use a default if no chunks.
+    // These embeddings are reused below; chunks are never embedded twice.
     let dimension = 0
+    let embeddings: number[][] = []
     if (chunks.length > 0) {
-      const embeddings = await this.embedTexts(chunks)
+      embeddings = await this.embedTexts(chunks)
       dimension = embeddings[0]?.length || 0
     }
 
@@ -171,8 +173,6 @@ export default class VectorDBExt extends VectorDBExtension {
       return fi
     }
 
-    // Re-embed if we got dimension from createCollection
-    const embeddings = await this.embedTexts(chunks)
     const finalDimension = embeddings[0]?.length || 0
     if (finalDimension <= 0)
       throw new Error('Embedding dimension not available')
