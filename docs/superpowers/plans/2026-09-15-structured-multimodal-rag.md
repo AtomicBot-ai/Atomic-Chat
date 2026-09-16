@@ -1,6 +1,7 @@
 # Structured & Multimodal RAG — architecture plan (Phases 1–4)
 
-**Status:** design, awaiting review. No production code changes in this deliverable.
+**Status:** design. The open questions were resolved on 2026-09-16 — see §12. No production
+code changes in this deliverable; implementation starts at the §13 sequencing table.
 **Scope of this document:** the audit asked for in §21 of the brief (trace, `String` API
 inventory, vector-DB migration implications), a detailed implementation plan for
 **Phases 1–4 only**, the tests those phases need, and the backward-compatibility argument.
@@ -156,11 +157,20 @@ Findings that shape the migration design:
 4. **`files.path` is UNIQUE**, which is what makes re-ingest of the same path return the
    existing row. A `content_hash` column (Phase 20 caching) is additive next to it, not a
    replacement for it.
-5. **Metadata split (proposed for Phase 5):** a small set of first-class, indexable columns
-   on `chunks` — `document_id`, `page`, `section_path`, `element_id`, `element_type`,
-   `asset_id` — plus one open `metadata_json TEXT` column for the extensible/domain
-   metadata of §15 (`domain`, `manufacturer`, `model`, `engine`, …). Domain vocabulary never
-   becomes a column; the generic engine only ever filters `metadata_json` by key/value.
+5. **Metadata split (decided 2026-09-16, §12.2):** structural provenance is per-chunk,
+   document metadata is per-document.
+   - `chunks` gains nullable `document_id`, `page`, `section_path`, `element_id`,
+     `element_type`, `asset_id`.
+   - `files` gains one nullable `metadata_json TEXT` for the extensible/domain metadata of
+     §15 (`domain`, `manufacturer`, `model`, `engine`, …). Domain vocabulary never becomes a
+     column; the generic engine only filters `metadata_json` by key/value.
+   Per-document metadata on the chunk row would repeat `manufacturer: Volkswagen` across
+   every chunk of a manual (thousands of rows per document) and turn a correction into a
+   mass rewrite; on `files` it is one row and one `UPDATE`.
+   **Filtering reuses the existing file-id path:** a metadata filter resolves to the set of
+   matching `files.id` first, which is then passed to `search_collection` as its existing
+   `file_ids` argument. No new predicate enters the ANN query, and the already-tested filter
+   path carries the feature.
 6. **`VectorSearchResult` / `SearchResult` grow optional fields only**, so today's consumers
    (`retrieve`, `get_chunks`, `docs.*`) keep working untouched.
 7. **No automatic re-indexing.** Existing collections stay as they are; the structured
@@ -364,36 +374,74 @@ retrieval on the caption text returns a chunk carrying `page: 27`.
 
 5. Nullable metadata columns + `PRAGMA user_version` migration + opt-in re-index (§4).
 6. PDF page/layout extraction — needs a per-page library decision and sign-off.
-7. Asset store. Proposed root `<data_folder>/rag/documents/<document_id>/` with
-   `document.json` + `assets/`, mirroring the provenance-record pattern the media library
-   already uses (see "The media library lives at `<data_folder>/media/`" in
-   `docs/decisions/INDEX.md`) rather than inventing a second convention. **Needs confirmation.**
+7. Asset store at `<data_folder>/rag/documents/<document_id>/` with `document.json` +
+   `assets/` — **decided, §12.3**: its own root, not the media library. `asset_id` is opaque
+   and resolved to a path through one helper; no absolute path is ever stored.
 8. Tables as first-class objects: structured representation stored next to a searchable
    textual rendering, both pointing at the same `element_id`.
 9. Selective OCR, only for pages the native extractor could not resolve; native text wins
    on merge; OCR text stored in its own field.
 10. Visual descriptions from a multimodal model, stored **separately from OCR text** —
     never conflated.
-11. Hybrid retrieval (dense + keyword + metadata filter). Prerequisite: normalise the
-    ANN-distance vs cosine-similarity mismatch found in §2.
+11. Hybrid retrieval (dense + keyword + metadata filter). Prerequisite: the scoring
+    normalisation of §12.4, landed before Phase 5.
 12. VW manual validation, run against a local corpus, out of tree.
 
 ---
 
-## 12. Open questions for the reviewer
+## 12. Decisions (resolved 2026-09-16)
 
-1. **Asset store location** — `<data_folder>/rag/documents/<id>/` as proposed in §11.7, or
-   folded into the existing media library root? (Affects Phase 7, decide before Phase 5 lands
-   the `asset_id` column.)
-2. **New Rust dependencies** — AGENTS.md rule 6 requires explicit approval. Phase 3 wants
-   `sha2` in the rag plugin (already a workspace dep). Phases 6–9 will want a per-page PDF
-   library, an image encoder and an OCR engine. Approve per phase, not up front.
-3. **Structured chunk defaults** — 1200/2400 chars with `retrievalLimit 3` roughly triples
-   retrieved context vs today. Raise the limit only under the structured flag, or leave it to
-   the user?
-4. **Re-index of existing collections** — confirm opt-in only, never automatic.
-5. **Flag lifetime** — how long does `structured_parsing` stay default-off before it becomes
-   the default for new ingests?
+1. **Re-index of existing collections — opt-in only, never automatic.** Existing collections
+   keep their rows and their embeddings; the structured pipeline applies to newly ingested
+   files. Re-indexing a document is an explicit user action.
+
+2. **Document metadata lives on `files`, structural provenance on `chunks`.** See §4.5 for
+   the columns and for why filtering resolves through the existing `file_ids` argument
+   instead of a new predicate in the ANN query.
+
+3. **RAG assets get their own root: `<data_folder>/rag/documents/<document_id>/`**, holding
+   `document.json` and `assets/`, *not* the media library. The media library is user-facing
+   generated output with its own lifecycle; RAG assets are a derived cache keyed to an
+   ingested source file — regenerable, and garbage-collected when the file or collection is
+   deleted. Putting regenerable cache into a library people browse would tangle both
+   deletion semantics and the UI. `asset_id` stays opaque and is resolved to
+   `rag/documents/<document_id>/assets/<asset_id>.<ext>` by one helper, so the data folder
+   stays movable (see "Rename the product to Radium and move the default data folder" in
+   `docs/decisions/INDEX.md`); absolute paths are never persisted.
+
+4. **The two pre-existing defects of §2 are fixed first, as their own PRs, not folded into
+   Phase 5.**
+   - *Project-collection deletion (data loss, live today).* Attaching a file to a project
+     sizes that project's database to the embedding model's vector width. When a later
+     ingest produces a different width — which happens on an embedding-model switch, or
+     after the 384 default was used — the current recovery deletes the entire project
+     collection and recreates it, discarding every document previously ingested into that
+     project. Fix: refuse the ingest with a clear error and offer an explicit re-index,
+     never delete. This ships **first**, ahead of Phase 1, because the risk exists now and
+     is independent of this project.
+   - *Score normalisation.* The ANN path returns a distance (lower is better) and ignores
+     `threshold`; the linear path returns cosine similarity (higher is better) and applies
+     it. Same query, different ranking, and the relevance threshold silently does nothing on
+     the fast path. No data is lost, but no caller can compare the two numbers. Fix before
+     Phase 5, since metadata-aware scoring needs one comparable scale.
+
+5. **`retrieve` returns human-meaningful provenance, not plumbing.** Citations carry
+   `filename`, `page`, `section` and `element_type` when present — that is what lets an
+   answer say "from page 137" instead of quoting a bare snippet. The ids (`document_id`,
+   `element_id`, `chunk_id`, `asset_id`) stay out of the model-visible payload: they cost
+   tokens on every citation and models tend to echo them at users. They remain in the API
+   return so the UI can implement "open source → page 137 → highlight".
+
+**Still open, by nature rather than by omission**
+
+- **New Rust dependencies** need explicit per-phase approval (AGENTS.md rule 6): `sha2` into
+  the rag plugin at Phase 3, then a per-page PDF library, an image encoder and an OCR engine
+  at Phases 6–9. Each is asked for when that phase opens, never up front.
+- **Structured chunk defaults vs. `retrievalLimit`** — 1200/2400 chars against a limit of 3
+  roughly triples retrieved context. This is empirical: measure once Phase 4 exists rather
+  than guessing a number now.
+- **Flag lifetime** — `structured_parsing` stays default-off at least until Phase 5 ships a
+  re-index path, so anyone switching it on can rebuild an index that matches.
 
 ---
 
@@ -403,6 +451,8 @@ One PR per phase, each independently revertible:
 
 | PR | Contents | Risk |
 | --- | --- | --- |
+| 0a | Stop `ingestFileForProject` deleting a project collection on a dimension mismatch (§12.4) | low — replaces a destructive branch with an error |
+| 0b | Normalise ANN vs linear search scores (§12.4) | low, but changes returned `score` semantics — needs its own note |
 | 1 | Phase 1 types + tests | none — nothing imports them |
 | 2 | Phase 2 structured parsers, `flatten`, command, optional contract method, flag (off) | low — new code path, unreachable by default |
 | 3 | Phase 3 provenance + content-addressed ids | low — same |
