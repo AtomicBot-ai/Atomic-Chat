@@ -59,7 +59,7 @@
     "subscriptionTitle": "Подписка ChatGPT",
     "subscriptionHint": "Вход через аккаунт, без API-ключа",
     "providerTitle": "Облачный провайдер",
-    "providerHint": "Со своим API-ключом",
+    "providerHint": "Свой ключ OpenRouter, Anthropic, Gemini или OpenAI",
     "connect": "Подключить",
     "add": "Добавить"
   },

@@ -4,12 +4,13 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /**
- * A hover the eye can catch on a secondary row button. `secondary`'s own
- * `hover:bg-secondary/80` moves the fill by a fifth of a shade towards the
- * card behind it, which on a card is no move at all.
+ * A hover the eye can catch on a secondary row button in the dark theme:
+ * `secondary`'s own `hover:bg-secondary/80` moves the fill by a fifth of a
+ * shade towards the card behind it, which on a card is no move at all. The
+ * light theme gets its visible rest and hover fills from the variant itself.
  */
 export const ROUTE_ROW_BUTTON_HOVER =
-  'transition-colors hover:bg-neutral-200 dark:hover:bg-neutral-600'
+  'transition-colors dark:hover:bg-neutral-600'
 
 type RouteRowProps = {
   'icon': ReactNode
