@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -7,7 +8,11 @@ import {
 } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ONBOARDING_REMINDER_MODEL_HF_REPO } from '@/constants/models'
+import {
+  EMBEDDING_MODEL_ID,
+  ONBOARDING_REMINDER_MODEL_HF_REPO,
+} from '@/constants/models'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { seedServiceHub } from '@/test/service-hub'
 import type { CatalogModel } from '@/services/models/types'
@@ -17,10 +22,9 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   capture: vi.fn(),
   pullModelWithMetadata: vi.fn(),
+  abortDownload: vi.fn(() => Promise.resolve()),
   fetchHuggingFaceRepo: vi.fn(),
   convertHfRepoToCatalogModel: vi.fn(),
-  addLocalDownloadingModel: vi.fn(),
-  clearResumableDownload: vi.fn(),
   chatgptSubscriptionAvailable: true,
 }))
 
@@ -101,20 +105,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   ) => selector({ huggingfaceToken: '' }),
 }))
 
-vi.mock('@/hooks/useDownloadStore', () => {
-  const state = {
-    downloads: {},
-    localDownloadingModels: new Set<string>(),
-    resumableDownloads: new Set<string>(),
-    addLocalDownloadingModel: mocks.addLocalDownloadingModel,
-    clearResumableDownload: mocks.clearResumableDownload,
-  }
-  const useDownloadStore = (selector?: (value: typeof state) => unknown) =>
-    selector ? selector(state) : state
-  useDownloadStore.getState = () => state
-  return { useDownloadStore }
-})
-
 // The subscription button is desktop-only in production; pin it on so the
 // "offered in every branch" assertions do not depend on the test platform.
 vi.mock('@/lib/platform/const', () => ({
@@ -141,6 +131,40 @@ const catalogModel: CatalogModel = {
 } as CatalogModel
 
 const model = (id: string) => ({ id }) as Model
+
+const GB = 1024 ** 3
+
+/**
+ * A transfer part-way through, as the download panel sees it: 10 % of
+ * 1.58 GB, moving fast enough that a minute is left.
+ */
+function seedRunningDownload(id: string) {
+  const total = Math.round(1.58 * GB)
+  const current = Math.round(0.16 * GB)
+  useDownloadStore.setState((state) => ({
+    downloads: {
+      ...state.downloads,
+      [id]: {
+        id,
+        name: id,
+        progress: 0.1,
+        current,
+        total,
+        speed: {
+          bytesPerSecond: (total - current) / 60,
+          atBytes: current,
+          atTime: Date.now(),
+        },
+      },
+    },
+  }))
+}
+
+/** The rows of the recommended list, top to bottom, whatever their kind. */
+const recommendedRows = () =>
+  within(screen.getByTestId('reply-gate-recommended')).getAllByTestId(
+    /^reply-gate-recommended-/
+  )
 
 const localProvider = (models: Model[]) =>
   ({
@@ -208,6 +232,13 @@ describe('ReplyModelGate', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+      pausedDownloads: new Set(),
+      resumeParams: {},
+    })
     mocks.chatgptSubscriptionAvailable = true
     sourcesMock.sources = [catalogModel]
     sourcesMock.recommended = [
@@ -226,6 +257,7 @@ describe('ReplyModelGate', () => {
         fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
         convertHfRepoToCatalogModel: mocks.convertHfRepoToCatalogModel,
         pullModelWithMetadata: mocks.pullModelWithMetadata,
+        abortDownload: mocks.abortDownload,
       } as never,
     })
   })
@@ -532,5 +564,113 @@ describe('ReplyModelGate', () => {
       capturedEvents('reply_model_gate_outcome').map((event) => event.outcome)
     ).toEqual(['auto_start'])
     expect(onDismissed).not.toHaveBeenCalled()
+  })
+
+  describe('with a download already under way', () => {
+    const inFlight = 'LiquidAI/LFM2.5-1.2B-Q4_K_M'
+
+    it('leads with it, shows its progress, and lets it be cancelled', async () => {
+      // Started from onboarding, the Hub, anywhere: the widget used to offer
+      // other models to download and never mentioned this one.
+      seedRunningDownload(inFlight)
+      const { onResolved } = renderGate([unconnectedCloud()])
+
+      const lead = await screen.findByTestId('reply-gate-recommended-lead')
+      const rows = recommendedRows()
+      expect(rows[0]).toHaveAttribute(
+        'data-testid',
+        'reply-gate-recommended-in-flight'
+      )
+      expect(rows[0]).toHaveTextContent('LFM2.5 1.2B')
+      // The panel's readout: percent, bytes, time left.
+      expect(rows[0]).toHaveTextContent(
+        '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
+      )
+      expect(rows[1]).toBe(lead)
+
+      const cancel = within(rows[0]).getByRole('button', {
+        name: 'common:cancelDownload',
+      })
+      expect(cancel).toHaveTextContent('common:cancel')
+      // The message is armed on the transfer already running, the way it is
+      // on one started from this list.
+      expect(onResolved).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'download_in_flight',
+          branch: 'none',
+        })
+      )
+
+      fireEvent.click(cancel)
+      expect(mocks.abortDownload).toHaveBeenCalledWith(inFlight)
+      expect(useDownloadStore.getState().resumableDownloads.has(inFlight)).toBe(
+        true
+      )
+      // The downloader confirms the stop and the store drops the entry; the
+      // recommendations stay so another model can be picked.
+      act(() => useDownloadStore.getState().removeDownload(inFlight))
+      expect(
+        screen.queryByTestId('reply-gate-recommended-in-flight')
+      ).toBeNull()
+      expect(screen.getByTestId('reply-gate-recommended-lead')).toBe(lead)
+      expect(
+        within(lead).getByRole('button', {
+          name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
+        })
+      ).toBeEnabled()
+    })
+
+    it('does not list the model twice when it is also the recommendation', async () => {
+      seedRunningDownload('AtomicChat/Qwen3.5-4B-Q4_K_M')
+      renderGate([unconnectedCloud()])
+
+      const inFlightRow = await screen.findByTestId(
+        'reply-gate-recommended-in-flight'
+      )
+      expect(inFlightRow).toHaveTextContent('Qwen3.5 4B')
+      expect(screen.getAllByText('Qwen3.5 4B')).toHaveLength(1)
+      expect(screen.queryByTestId('reply-gate-recommended-lead')).toBeNull()
+      expect(
+        screen.queryByRole('button', {
+          name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
+        })
+      ).toBeNull()
+    })
+
+    it('says so before the first byte, and while paused', async () => {
+      useDownloadStore.getState().addLocalDownloadingModel(inFlight)
+      renderGate([unconnectedCloud()])
+
+      const row = await screen.findByTestId('reply-gate-recommended-in-flight')
+      expect(row).toHaveTextContent('common:downloadPanel.preparing')
+      expect(row).not.toHaveTextContent('%')
+
+      seedRunningDownload(inFlight)
+      act(() => useDownloadStore.getState().markPausedDownload(inFlight))
+      expect(row).toHaveTextContent(
+        'common:downloadPanel.paused · 0.16 / 1.58 GB'
+      )
+      expect(row).not.toHaveTextContent('common:downloadPanel.left')
+    })
+
+    it('leaves downloads that are not chat models out of the list', async () => {
+      seedRunningDownload(EMBEDDING_MODEL_ID)
+      seedRunningDownload('diffusion-model-sd15:q8')
+      seedRunningDownload('mmproj-gemma4-e4b-it-f16')
+      const { onResolved } = renderGate([unconnectedCloud()])
+
+      const rows = await waitFor(() => recommendedRows())
+      expect(rows[0]).toHaveAttribute(
+        'data-testid',
+        'reply-gate-recommended-lead'
+      )
+      expect(
+        screen.queryByTestId('reply-gate-recommended-in-flight')
+      ).toBeNull()
+      expect(
+        screen.queryByRole('button', { name: 'common:cancelDownload' })
+      ).toBeNull()
+      expect(onResolved).not.toHaveBeenCalled()
+    })
   })
 })

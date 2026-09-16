@@ -17,8 +17,6 @@
     "download": "Download",
     "downloadLabel": "Download {{name}}",
     "findingRecommendation": "Finding the best fit for your device…",
-    "downloading": "Downloading…",
-    "downloadingPercent": "Downloading… {{percent}}%",
     "queuedNotice": "Your message will be sent once the model is ready.",
     "startingNotice": "Starting",
     "addFolder": "Add a folder with models",

@@ -26,6 +26,9 @@ import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
  *  - `auto_start` — the widget found something to answer with and started it
  *    without asking.
  *  - `download` — started downloading the recommendation.
+ *  - `download_in_flight` — a download was already running when the widget
+ *    opened, and the message was armed on it without a decision, the way
+ *    `auto_start` arms it on a model already on disk.
  *  - `folder` — pointed the scanner at a folder of their own, and a model
  *    found there was imported and started.
  *  - `cloud_key` — connected a cloud provider with an API key.
@@ -37,6 +40,7 @@ import type { ReplyGateBranch, ReplyResolution } from '@/lib/reply-model-gate'
 export type ReplyGateOutcome =
   | 'auto_start'
   | 'download'
+  | 'download_in_flight'
   | 'folder'
   | 'cloud_key'
   | 'subscription'

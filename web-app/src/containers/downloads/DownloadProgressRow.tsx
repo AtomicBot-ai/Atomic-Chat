@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import {
+  downloadStatusLabel,
   formatEta,
   formatProgressPair,
   formatSpeed,
@@ -75,24 +76,7 @@ export function DownloadProgressRow({
   const known = total > 0
   const speed = paused ? null : formatSpeed(bytesPerSecond)
   const eta = paused ? null : formatEta(total - current, bytesPerSecond)
-
-  // Before the first byte the transfer has no meaningful numbers at all; saying
-  // "0%" there reads as a stalled download rather than a starting one.
-  const preparingStatus =
-    stage?.kind === 'retrying'
-      ? t('common:downloadPanel.retrying', {
-          attempt: stage.attempt,
-          maxAttempts: stage.maxAttempts,
-        })
-      : stage?.kind === 'connecting'
-        ? t('common:downloadPanel.connecting')
-        : t('common:downloadPanel.preparing')
-
-  const status = paused
-    ? t('common:downloadPanel.paused')
-    : known
-      ? `${Math.round(progress * 100)}%`
-      : preparingStatus
+  const status = downloadStatusLabel(t, { progress, total, stage, paused })
 
   return (
     <li className="rounded-lg bg-secondary p-2">
