@@ -17,7 +17,6 @@ import {
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { IconPencil, IconRefresh } from '@tabler/icons-react'
 import { AudioPlayer } from '@/containers/AudioPlayer'
 import { InlineMessageEditor } from '@/containers/InlineMessageEditor'
@@ -91,12 +90,6 @@ export const MessageItem = memo(
     const { t } = useTranslation('chat')
     const serviceHub = useServiceHub()
     const selectedModel = useModelProvider((state) => state.selectedModel)
-    // Global "Disable reasoning" toggle: some providers (e.g. MiniMax) ignore
-    // every known API flag and keep streaming chain-of-thought. Hide those
-    // parts in the UI so the experience matches the user's intent.
-    const disableReasoning = useGeneralSetting(
-      (state) => state.disableReasoning
-    )
     const [previewImage, setPreviewImage] = useState<{
       url: string
       filename?: string
@@ -479,10 +472,10 @@ export const MessageItem = memo(
 
     const traceBlocks = useMemo(
       () =>
-        buildTraceBlocks(message, disableReasoning, {
+        buildTraceBlocks(message, {
           ensureActivity: isRequestActive,
         }),
-      [message, disableReasoning, isRequestActive]
+      [message, isRequestActive]
     )
 
     // A message with only attachments has no text block to anchor the editor
