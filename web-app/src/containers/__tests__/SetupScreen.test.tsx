@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
 import { localStorageKey } from '@/constants/localStorage'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
 import { toast } from 'sonner'
 import { events } from '@janhq/core'
@@ -29,6 +30,13 @@ const mocks = vi.hoisted(() => {
     refreshRegistry: vi.fn(() => Promise.resolve()),
     refreshStaffPicks: vi.fn(() => Promise.resolve()),
     pullModelWithMetadata: vi.fn(() => Promise.resolve()),
+    // The real abort ends in `onFileDownloadStopped`, which the global
+    // download panel answers by dropping the id from the store. The panel is
+    // not rendered here, so the seed does that part itself.
+    abortDownload: vi.fn(async (id: string) => {
+      useDownloadStore.getState().removeLocalDownloadingModel(id)
+      useDownloadStore.getState().removeDownload(id)
+    }),
     // Recommendation list the picker renders; mutable so a test can offer a
     // downloadable model.
     recommended: [] as unknown[],
@@ -103,18 +111,6 @@ vi.mock('@/hooks/useChatGptAuth', () => ({
     error: null,
     connect: vi.fn(),
     cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('@/hooks/useDownloadStore', () => ({
-  useDownloadStore: () => ({
-    downloads: {},
-    localDownloadingModels: new Set(),
-    resumableDownloads: new Set(),
-    addLocalDownloadingModel: vi.fn(),
-    removeLocalDownloadingModel: vi.fn(),
-    markResumableDownload: vi.fn(),
-    clearResumableDownload: vi.fn(),
   }),
 }))
 
@@ -269,7 +265,14 @@ describe('SetupScreen', () => {
     seedServiceHub({
       models: {
         pullModelWithMetadata: mocks.pullModelWithMetadata,
+        abortDownload: mocks.abortDownload,
       } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+    })
+    // The real store, reset: the rows read their Downloading state from it.
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
     })
     mocks.recommended = []
     mocks.staffPicks = []
@@ -681,36 +684,68 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('holds the started download on screen for 3s before entering the chat', async () => {
+    const variantId = 'Qwen3.5-4B-Q4_K_M'
+
+    // What the library looks like once the download has landed: the local
+    // provider lists the model under the id the row tracks.
+    const installInLibrary = (id: string) => {
+      const provider = { provider: 'llamacpp-upstream', models: [{ id }] }
+      mocks.modelProviderState.providers = [provider as never]
+      mocks.modelProviderState.getProviderByName.mockImplementation(
+        (name: string) => (name === provider.provider ? provider : undefined)
+      )
+    }
+
+    afterEach(() => {
+      mocks.modelProviderState.getProviderByName.mockReset()
+    })
+
+    it('turns the button into a single Downloading… pill that cancels', async () => {
       const { unmount } = await renderPicker()
+      const slot = screen.getByRole('button', { name: /hub:download/ })
+        .parentElement as HTMLElement
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
 
       expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+      // One control where the button was: it reads Downloading… and cancels.
+      const cancel = screen.getByRole('button', {
+        name: 'common:cancelDownload',
+      })
+      expect(cancel).toHaveTextContent('setup:downloading')
+      expect(cancel).toBeEnabled()
       expect(
-        screen.getByText('setup:downloadStartedOpening')
-      ).toBeInTheDocument()
+        screen.queryByRole('button', { name: /hub:download/ })
+      ).not.toBeInTheDocument()
+      // Nothing stacks under it: no "starting" line, no handoff notice, so
+      // the row is as tall as it was with the Download button.
+      expect(
+        screen.queryByText('setup:downloadPreparing')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('setup:downloadStartedOpening')
+      ).not.toBeInTheDocument()
+      expect(slot.querySelectorAll('p')).toHaveLength(0)
 
+      // Progress, once known, sits on the same line as the pill.
       await act(async () => {
-        vi.advanceTimersByTime(2_999)
+        useDownloadStore
+          .getState()
+          .updateProgress(
+            variantId,
+            0.12,
+            variantId,
+            200 * 1024 ** 2,
+            1.6 * 1024 ** 3
+          )
       })
-      expect(mocks.navigate).not.toHaveBeenCalled()
-
-      await act(async () => {
-        vi.advanceTimersByTime(1)
-      })
-
-      expect(mocks.leftPanel.open).toBe(true)
-      expect(mocks.navigate.mock.calls).toHaveLength(1)
-      expect(mocks.navigate.mock.calls[0][0].search.threadModel.id).toBe(
-        'Qwen3.5-4B-Q4_K_M'
-      )
-      // A picked model is a finished setup — the reminder must stay disarmed.
-      expect(mocks.reminder.pending).toBe(false)
+      const progress = screen.getByText(/^12% · /)
+      expect(progress.parentElement).toBe(cancel.parentElement)
+      expect(slot.querySelectorAll('p')).toHaveLength(0)
       unmount()
     })
 
-    it('enters the chat exactly once, however long the download runs', async () => {
+    it('stays on the screen while the download runs, however long it takes', async () => {
       const { unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
@@ -718,12 +753,133 @@ describe('SetupScreen', () => {
         vi.advanceTimersByTime(30_000)
       })
 
+      expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'common:cancelDownload' })
+      ).toBeInTheDocument()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBeNull()
+      unmount()
+    })
+
+    it('puts the Download button back when the download is cancelled', async () => {
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'common:cancelDownload' })
+        )
+      })
+
+      expect(mocks.abortDownload).toHaveBeenCalledWith(variantId)
+      const download = screen.getByRole('button', { name: /hub:download/ })
+      expect(download).toBeEnabled()
+      expect(
+        screen.queryByRole('button', { name: 'common:cancelDownload' })
+      ).not.toBeInTheDocument()
+      // The list is still here: the same row, or another, can be started.
+      fireEvent.click(download)
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledTimes(2)
+      await act(async () => {
+        vi.advanceTimersByTime(30_000)
+      })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
+      unmount()
+    })
+
+    it('enters the chat once the model has landed in the library', async () => {
+      const { rerender, unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      await act(async () => {
+        vi.advanceTimersByTime(3_000)
+      })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+
+      // The bytes land: the panel drops the transfer, the provider lists it.
+      installInLibrary(variantId)
+      await act(async () => {
+        useDownloadStore.getState().removeLocalDownloadingModel(variantId)
+      })
+      rerender(<SetupScreen />)
+      await act(async () => {})
+
+      expect(mocks.leftPanel.open).toBe(true)
       expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toEqual({
+        id: variantId,
+        provider: 'llamacpp-upstream',
+      })
       expect(
         JSON.parse(localStorage.getItem(localStorageKey.lastUsedModel) ?? '{}')
           .model
-      ).toBe('Qwen3.5-4B-Q4_K_M')
+      ).toBe(variantId)
+      // A picked model is a finished setup — the reminder must stay disarmed.
       expect(mocks.reminder.pending).toBe(false)
+
+      // Once. Later renders with the model still in the library do nothing.
+      rerender(<SetupScreen />)
+      await act(async () => {})
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      unmount()
+    })
+
+    it('enters the chat when the import event lands before the library does', async () => {
+      seedServiceHub({
+        models: {
+          pullModelWithMetadata: mocks.pullModelWithMetadata,
+          abortDownload: mocks.abortDownload,
+        } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+        providers: {
+          getProviders: vi.fn().mockResolvedValue([]),
+        } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+      })
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      const onImported = vi
+        .mocked(events.on)
+        .mock.calls.find(([name]) => name === 'onModelImported')?.[1] as
+        | ((payload: { modelId: string }) => void)
+        | undefined
+      expect(onImported).toBeDefined()
+      await act(async () => {
+        onImported!({ modelId: variantId })
+      })
+
+      // The handler awaits the provider refresh before it navigates.
+      await act(async () => {})
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toEqual({
+        id: variantId,
+        provider: 'llamacpp-upstream',
+      })
+      // Reported as the download exit it is, not as an import of a model
+      // another app left on disk.
+      expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
+        'onboarding_completed',
+        expect.objectContaining({ exit_path: 'download_started' })
+      )
+      unmount()
+    })
+
+    it('lets a download that lands after Skip be, and leaves the chat alone', async () => {
+      const { rerender, unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'setup:skip' }))
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+
+      installInLibrary(variantId)
+      rerender(<SetupScreen />)
+      await act(async () => {})
+
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(
+        mocks.navigate.mock.calls[0][0].search?.threadModel
+      ).toBeUndefined()
       unmount()
     })
   })
@@ -970,9 +1126,15 @@ describe('SetupScreen', () => {
         expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
           'gemma-4-12B-it-GGUF-Q4_K_M'
         )
+        // That row alone turns into the Downloading… pill; the offer's
+        // button stays, so the user can still change their mind.
         expect(
-          screen.getByText('setup:downloadStartedOpening')
-        ).toBeInTheDocument()
+          screen.getByRole('button', { name: 'common:cancelDownload' })
+        ).toHaveTextContent('setup:downloading')
+        expect(downloadButtons()).toHaveLength(2)
+        expect(
+          screen.queryByText('setup:downloadStartedOpening')
+        ).not.toBeInTheDocument()
         // Position 1: the row after the offer, the same index its impression
         // carried.
         expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
@@ -984,10 +1146,9 @@ describe('SetupScreen', () => {
           vi.advanceTimersByTime(3_000)
         })
 
-        expect(mocks.navigate.mock.calls).toHaveLength(1)
-        expect(mocks.navigate.mock.calls[0][0].search.threadModel.id).toBe(
-          'gemma-4-12B-it-GGUF-Q4_K_M'
-        )
+        // No timed handoff: the list stays until the bytes land.
+        expect(mocks.navigate).not.toHaveBeenCalled()
+        expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
         unmount()
       } finally {
         vi.useRealTimers()
