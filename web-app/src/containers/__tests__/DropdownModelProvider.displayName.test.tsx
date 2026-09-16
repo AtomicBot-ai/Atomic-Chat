@@ -364,4 +364,42 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       1
     )
   })
+
+  it('keeps a long provider title on one line and leaves the gear after it', () => {
+    // "ChatGPT subscription (Codex)" is the longest title in the catalogue;
+    // unconstrained it wrapped to two lines and pushed the dot and the gear.
+    const chatgptProviders: ModelProvider[] = [
+      {
+        provider: 'chatgpt',
+        active: true,
+        models: [{ id: 'gpt-5-codex', capabilities: ['completion'] }],
+        settings: [],
+      },
+    ]
+    mockModelProvider({
+      providers: chatgptProviders,
+      selectedProvider: 'chatgpt',
+      selectedModel: chatgptProviders[0].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        chatgptProviders.find((p) => p.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    renderPicker()
+
+    const title = screen.getByText('ChatGPT subscription (Codex)')
+    expect(title).toHaveClass('truncate')
+    expect(title).toHaveAttribute('title', 'ChatGPT subscription (Codex)')
+
+    const header = title.parentElement?.parentElement
+    expect(header).not.toBeNull()
+    const gear = header!.querySelector('svg.tabler-icon-settings')
+    expect(gear).not.toBeNull()
+    expect(
+      title.compareDocumentPosition(gear!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
 })
