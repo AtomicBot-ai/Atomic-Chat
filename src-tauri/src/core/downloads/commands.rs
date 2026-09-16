@@ -1,3 +1,4 @@
+use super::disk::{free_space_report, FreeSpaceReport};
 use super::helpers::{
     _download_files_internal, create_proxy_from_config, err_to_string, should_bypass_proxy,
     validate_proxy_config,
@@ -79,6 +80,20 @@ pub async fn download_files<R: Runtime>(
     }
 
     result
+}
+
+/// Free space on the volume holding the data folder, for the frontend's
+/// check before a download starts. Until now the `disk_full` refusal in
+/// `_download_files_internal` was the first thing the user heard, and it
+/// arrived as a download error after the row had already flipped to
+/// "Downloading"; with this the web side can refuse before creating the entry.
+///
+/// Async so the volume probe (a `statfs` per mount, which can stall on an
+/// unreachable network share) runs off the main thread like the other
+/// download commands.
+#[tauri::command]
+pub async fn get_download_free_space<R: Runtime>(app: tauri::AppHandle<R>) -> FreeSpaceReport {
+    free_space_report(&get_jan_data_folder_path(app))
 }
 
 #[tauri::command]
