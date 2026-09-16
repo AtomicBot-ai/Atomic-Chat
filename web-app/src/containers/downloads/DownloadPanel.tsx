@@ -16,9 +16,9 @@ const COLLAPSED_STORAGE_KEY = 'download-panel-collapsed'
  * Height the panel currently occupies in the bottom-right corner, published as
  * a CSS variable on `<html>`.
  *
- * `PromptOnboardingModel` and `PromptVisionModel` are pinned to the same
- * corner. Rather than have each of them know the panel exists, they offset
- * themselves by this variable, which is 0 whenever the panel is not showing.
+ * `PromptOnboardingModel` is pinned to the same corner. Rather than have it
+ * know the panel exists, it offsets itself by this variable, which is 0
+ * whenever the panel is not showing.
  */
 const OFFSET_VAR = '--download-panel-offset'
 

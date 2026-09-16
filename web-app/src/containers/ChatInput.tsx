@@ -132,7 +132,7 @@ import {
 } from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
-import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { VisionModelDialog } from '@/containers/dialogs/VisionModelDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -3525,11 +3525,12 @@ const ChatInput = memo(function ChatInput({
         onCancel={handleExtensionDialogCancel}
       />
 
-      {/* Vision Model Download Prompt */}
-      <PromptVisionModel
+      {/* "This model can't see images": the vision models that run here. */}
+      <VisionModelDialog
         open={showVisionModelPrompt}
-        onClose={() => setShowVisionModelPrompt(false)}
-        onDownloadComplete={handleVisionModelDownloadComplete}
+        onOpenChange={setShowVisionModelPrompt}
+        modelName={selectedModel ? getModelDisplayName(selectedModel) : ''}
+        onModelReady={handleVisionModelDownloadComplete}
       />
     </div>
   )
