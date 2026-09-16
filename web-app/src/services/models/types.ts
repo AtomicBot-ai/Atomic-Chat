@@ -53,6 +53,20 @@ export interface CatalogModel {
 
 export type ModelCatalog = CatalogModel[]
 
+/**
+ * Why `pullModelWithMetadata` did not start a download. Returned, not thrown:
+ * most callers fire-and-forget the pull, and a refusal is not a failure to
+ * report — the choke point has already told the user and cleared the
+ * pre-download state it set.
+ */
+export interface DownloadRefusal {
+  kind: 'disk_full'
+  /** Bytes the drive would need free: the files plus the downloader's headroom. */
+  needed: number
+  /** Bytes the drive has free. */
+  available: number
+}
+
 /** Hugging Face's own orders for a listing (`sort=` on `/api/models`). */
 export type HuggingFaceFeedSort =
   | 'trending'
@@ -180,7 +194,7 @@ export interface ModelsService {
     hfToken?: string,
     skipVerification?: boolean,
     resume?: boolean
-  ): Promise<void>
+  ): Promise<DownloadRefusal | undefined>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string, provider?: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>

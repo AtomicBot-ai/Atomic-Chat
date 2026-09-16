@@ -641,6 +641,10 @@
       "title": "The drive is no longer available",
       "description": "The external or network drive holding the Atomic Chat data folder disconnected. Reconnect it and resume the download."
     },
+    "downloadWontFit": {
+      "title": "This model won't fit on your disk",
+      "description": "{{model}} needs {{needed}} free and this drive has {{available}}. Pick a smaller model or free up space."
+    },
     "downloadProxyUnreachable": {
       "title": "Could not reach the server through your proxy",
       "description": "The download never got a connection through {{proxyUrl}}. Check that the proxy address is correct and the proxy is running, or turn the proxy off in Settings.",

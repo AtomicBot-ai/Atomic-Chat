@@ -2,7 +2,11 @@
  * Default Models Service - Web implementation
  */
 
-import { sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import {
+  sanitizeModelId,
+  LOCAL_LLAMACPP_PROVIDER,
+  formatBytes,
+} from '@/lib/utils'
 import {
   ggufShardGroupKey,
   groupGgufShards,
@@ -23,6 +27,7 @@ import {
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
+  DownloadRefusal,
   ModelsService,
   ModelCatalog,
   HuggingFaceRepo,
@@ -44,6 +49,9 @@ import {
   urlHost,
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
+import { toast } from 'sonner'
+import i18n from '@/i18n/setup'
+import { preflightDownloadDiskSpace } from './downloadPreflight'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -573,7 +581,7 @@ export class DefaultModelsService implements ModelsService {
     hfToken?: string,
     skipVerification: boolean = true,
     resume: boolean = false
-  ): Promise<void> {
+  ): Promise<DownloadRefusal | undefined> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
     let mmprojSha256: string | undefined
@@ -628,6 +636,37 @@ export class DefaultModelsService implements ModelsService {
       }
     }
 
+    // Will it fit? Asked here, before anything is recorded or started, so a
+    // model that cannot fit is declined with the list still on screen instead
+    // of surfacing as a failed download a moment after the row said
+    // "Downloading". Every entry point sets `localDownloadingModels` (and the
+    // Hub its origin) before calling; on a refusal that is undone here, since
+    // most of them do not await the pull. A resume is left to the Rust check,
+    // which knows how much of the partial already counts.
+    if (!resume) {
+      const refusal = await preflightDownloadDiskSpace({
+        modelPath,
+        mmprojPath,
+        modelSize,
+        mmprojSize,
+      })
+      if (refusal) {
+        const store = useDownloadStore.getState()
+        store.removeLocalDownloadingModel(id)
+        store.clearDownloadOrigin(id)
+        toast.error(i18n.t('common:toast.downloadWontFit.title'), {
+          id: 'download-wont-fit',
+          description: i18n.t('common:toast.downloadWontFit.description', {
+            model: id,
+            needed: formatBytes(refusal.needed),
+            available: formatBytes(refusal.available) || '0 B',
+          }),
+          duration: 15000,
+        })
+        return refusal
+      }
+    }
+
     // ATO-154: record resume parameters at the single GGUF download-start
     // choke point so the global Download popover can resume a paused download
     // (it only knows the model id, not these HF paths/token). MLX downloads go
@@ -666,7 +705,7 @@ export class DefaultModelsService implements ModelsService {
 
     // Call the original pullModel with the fetched metadata
     try {
-      return await this.pullModel(
+      await this.pullModel(
         id,
         modelPath,
         modelSha256,
@@ -676,6 +715,7 @@ export class DefaultModelsService implements ModelsService {
         mmprojSize,
         resume
       )
+      return undefined
     } catch (error) {
       // ATO-154: a paused download stops the underlying transfer (which rejects
       // this promise with a cancellation error). Swallow it so the initiator's
