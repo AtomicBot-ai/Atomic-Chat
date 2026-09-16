@@ -199,6 +199,11 @@ impl<R: Runtime> EventSink for TauriSink<R> {
         if let Err(e) = self.app.emit(name, payload.clone()) {
             log::debug!("[atomic-core] could not emit {name}: {e}");
         }
+        if let Some((legacy_name, legacy_payload)) = relay::legacy_event_for(name, &payload) {
+            if let Err(e) = self.app.emit(&legacy_name, legacy_payload) {
+                log::debug!("[atomic-core] could not emit {legacy_name}: {e}");
+            }
+        }
         // Stage 3b keeps the extension/UI event surface stable while the process owner changes.
         // The core event remains available verbatim; this second emission is the compatibility
         // adapter for listeners that already handle an upstream llama-server crash.
@@ -567,6 +572,12 @@ pub async fn set_atomic_core_flags<R: Runtime>(
     // Persisted intent is committed only after the outgoing side is empty and the incoming core
     // mirror is ready. From here the resolver switch cannot fail.
     apply_ownership(&app, flags);
+    if let Err(error) = app.emit(
+        "atomic-core://ownership-changed",
+        json!({ "runtime": flags.runtime }),
+    ) {
+        log::debug!("[atomic-core] could not emit ownership change: {error}");
+    }
     if !flags.needs_core() {
         state.stop_unlocked().await;
     }

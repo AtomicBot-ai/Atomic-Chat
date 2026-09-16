@@ -410,6 +410,8 @@ test-quality:
 
 test-hardening-contracts:
 	node --test tests/capabilities.test.mjs \
+		tests/extension-surface.test.mjs \
+		tests/pre-install-tarballs.test.mjs \
 		tests/registry-contracts.test.mjs \
 		tests/hardware-profiles.test.mjs \
 		tests/upstream-backend-resolver.test.mjs \

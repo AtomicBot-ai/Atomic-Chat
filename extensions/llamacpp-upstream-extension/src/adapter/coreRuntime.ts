@@ -3,8 +3,8 @@
  *
  * When the core owns the `llamacpp-upstream` runtime, loading a model, unloading it and asking
  * where it is served all happen in another process. This module is everything the extension needs
- * to talk to it — and nothing else: the extension keeps its own model catalogue, its settings UI
- * and its backend management until stages 3c and 3d move those too.
+ * to talk to it — and nothing else: the extension keeps its own model catalogue and settings UI;
+ * backend transfers and embeddings also cross this adapter when the core owns the runtime.
  *
  * Two rules it exists to enforce.
  *
@@ -259,5 +259,172 @@ export async function sendHardwareOverride(override: {
   await call('PUT', '/hardware/override', {
     ...override,
     source: 'tauri-plugin-hardware',
+  })
+}
+
+export interface CoreBackendPack {
+  version: string
+  backend: string
+  path: string
+  active: boolean
+}
+
+export interface CoreProxyConfig {
+  url: string
+  username?: string
+  password?: string
+  no_proxy?: string[]
+  ignore_ssl?: boolean
+  verify_proxy_ssl?: boolean
+  verify_proxy_host_ssl?: boolean
+  verify_peer_ssl?: boolean
+  verify_host_ssl?: boolean
+}
+
+/** Backend packs the core has on disk. `current` marks which row is the one in use. */
+export async function listInstalledBackends(
+  current = ''
+): Promise<CoreBackendPack[]> {
+  const query = current ? `?current=${encodeURIComponent(current)}` : ''
+  const response = await call<{ backends: CoreBackendPack[] }>(
+    'GET',
+    `/backends/${CORE_PROVIDER}${query}`
+  )
+  return response?.backends ?? []
+}
+
+/**
+ * Download and unpack a backend.
+ *
+ * `taskId` is the caller's, and it is what the progress events are named after — the same id the
+ * extension already generates for its own downloads, so the bar the user is watching keeps working
+ * without knowing which side did the fetching.
+ */
+export async function installBackend(
+  version: string,
+  backend: string,
+  taskId: string,
+  force = false,
+  proxy: CoreProxyConfig | null = null
+): Promise<{ version: string; backend: string; installed: boolean; path: string }> {
+  return call('POST', `/backends/${CORE_PROVIDER}/install`, {
+    version,
+    backend,
+    task_id: taskId,
+    force,
+    proxy,
+  })
+}
+
+export async function cancelBackendDownload(taskId: string): Promise<boolean> {
+  const response = await call<{ cancelled: boolean }>('POST', `/downloads/${taskId}/cancel`)
+  return response.cancelled
+}
+
+export async function removeBackend(
+  version: string,
+  backend: string
+): Promise<boolean> {
+  const response = await call<{ removed: boolean }>(
+    'DELETE',
+    `/backends/${CORE_PROVIDER}/${version}/${backend}`
+  )
+  return response?.removed ?? false
+}
+
+/**
+ * The optimal-backend detection the core has stored, if any.
+ *
+ * Kept by the core rather than in `localStorage` so the CLI sees the same answer, and so a data
+ * a restarted app or CLI sees the same answer. Hardware-change invalidation is deliberately
+ * separate: the current cache format does not contain a reliable machine fingerprint.
+ */
+export interface CoreOptimalState<T> {
+  revision: number
+  optimal: T | null
+}
+
+export async function getOptimalCache<T>(): Promise<CoreOptimalState<T>> {
+  return call<CoreOptimalState<T>>(
+    'GET',
+    `/backends/${CORE_PROVIDER}/optimal`
+  )
+}
+
+/** Store a detection, or `null` to forget one that no longer describes this machine. */
+export async function setOptimalCache<T>(record: T | null, expectedRevision: number): Promise<CoreOptimalState<T>> {
+  const response = await call<{ status: 'updated'; current: CoreOptimalState<T> }>(
+    'PUT',
+    `/backends/${CORE_PROVIDER}/optimal`,
+    { optimal: record, expected_revision: expectedRevision }
+  )
+  return response.current
+}
+
+export async function getOptimalSnapshot<T>(): Promise<CoreOptimalState<T> | null> {
+  const response = await invoke<{ snapshot: { optimal_backends?: Record<string, CoreOptimalState<T>> } }>('atomic_core_snapshot')
+  return response.snapshot.optimal_backends?.[CORE_PROVIDER] ?? null
+}
+
+export interface CoreModelCapabilities {
+  modelId: string
+  maxCtxTrain?: number
+  mmprojExists: boolean
+  isEmbedding: boolean
+  vision: boolean
+  audio: boolean
+  gemmaMtp: boolean
+  dflash: boolean
+  dflashDrafts: string[]
+}
+
+/** What a model is and can do, answered from the data folder without loading it. */
+export async function capabilities(modelId: string): Promise<CoreModelCapabilities> {
+  return call('GET', `/models/${CORE_PROVIDER}/${modelId}/capabilities`)
+}
+
+/**
+ * Whether a file can be imported as a text-generation model.
+ *
+ * Answers rather than throws for a file that is not one — the user pointed at it, and saying so is
+ * the answer to their question.
+ */
+export async function validateGguf(
+  path: string
+): Promise<{ isValid: boolean; error?: string; metadata?: Record<string, string> }> {
+  return call('POST', '/gguf/validate', { path })
+}
+
+/** Devices the installed backend reports. Empty when no backend is installed yet. */
+export async function devices<T>(): Promise<T[]> {
+  const response = await call<{ devices: T[] }>(
+    'GET',
+    `/hardware/devices?provider=${CORE_PROVIDER}`
+  )
+  return response?.devices ?? []
+}
+
+export interface CoreSettingsStatus {
+  revision: number
+  scopes: Record<
+    string,
+    { migrated: boolean; acknowledged_revision: number | null; in_sync: boolean }
+  >
+}
+
+/**
+ * Whether this provider's settings have been handed over.
+ *
+ * The runtime flag must not be turned on for a scope that is not migrated: the core would load with
+ * its own defaults rather than the user's.
+ */
+export async function settingsStatus(): Promise<CoreSettingsStatus> {
+  return call('GET', '/settings/status')
+}
+
+export async function embed(input: string[], ubatchSize: number): Promise<unknown> {
+  return call('POST', modelPath('sentence-transformer-mini', 'embed'), {
+    input,
+    ubatch_size: ubatchSize,
   })
 }

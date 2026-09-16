@@ -11,8 +11,10 @@
 //! leaves a lock the app correctly treats as stale rather than attachable.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use serde_json::{json, Value};
 
 use super::supervisor::Supervisor;
 
@@ -20,6 +22,21 @@ struct NoopSink;
 
 impl super::relay::EventSink for NoopSink {
     fn emit(&self, _name: &str, _payload: serde_json::Value) {}
+}
+
+#[derive(Default)]
+struct RecordingSink(Mutex<Vec<(String, Value)>>);
+
+impl super::relay::EventSink for RecordingSink {
+    fn emit(&self, name: &str, payload: Value) {
+        self.0.lock().unwrap().push((name.to_string(), payload));
+    }
+}
+
+impl RecordingSink {
+    fn events(&self) -> Vec<(String, Value)> {
+        self.0.lock().unwrap().clone()
+    }
 }
 
 /// The binary under test, or `None` when this run is not a live run.
@@ -180,6 +197,43 @@ async fn a_killed_core_is_noticed_and_replaced_exactly_once() {
 }
 
 #[tokio::test]
+async fn a_fourth_real_crash_within_the_restart_window_does_not_spawn_another_owner() {
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let live = LiveCore::new(&binary);
+    let supervisor = live.supervisor();
+    let mut attached = supervisor.ensure_attached(true).await.expect("cold start");
+
+    for expected_generation in 2..=4 {
+        kill_owner(live.data.path());
+        assert!(!supervisor.heartbeat_once().await);
+        let replacement = supervisor
+            .ensure_attached(true)
+            .await
+            .expect("budgeted restart");
+        assert_eq!(replacement.generation, expected_generation);
+        assert_ne!(replacement.instance_id, attached.instance_id);
+        attached = replacement;
+    }
+
+    kill_owner(live.data.path());
+    assert!(!supervisor.heartbeat_once().await);
+    let refused = supervisor.ensure_attached(true).await.unwrap_err();
+    assert_eq!(refused.code, "CORE_START_FAILED");
+    assert!(supervisor.current().await.is_none());
+    assert!(matches!(
+        super::lock::inspect(live.data.path(), &{
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            system
+        }),
+        super::lock::LockState::Stale(_) | super::lock::LockState::Free
+    ));
+}
+
+#[tokio::test]
 async fn production_lifecycle_starts_and_replaces_a_core_without_a_manual_call() {
     let Some(binary) = core_binary() else {
         eprintln!("skipping: ATOMIC_CORE_BIN is not set");
@@ -207,6 +261,108 @@ async fn production_lifecycle_starts_and_replaces_a_core_without_a_manual_call()
         .expect("lifecycle stops after cancellation")
         .expect("lifecycle task did not panic");
     supervisor.detach().await;
+}
+
+#[tokio::test]
+async fn production_relay_delivers_one_snapshot_then_deltas_and_resnapshots_after_a_real_crash() {
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let live = LiveCore::new(&binary);
+    let supervisor = live.supervisor();
+    let sink = Arc::new(RecordingSink::default());
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(super::relay::run(
+        Arc::clone(&supervisor),
+        Arc::clone(&sink),
+        cancel_rx,
+    ));
+
+    let first = wait_for_attachment(&supervisor, 0).await;
+    wait_for_event(&sink, |(name, payload)| {
+        name == super::relay::SNAPSHOT_EVENT
+            && payload["generation"] == first.generation
+            && payload["snapshot"]["instance_id"] == first.instance_id
+    })
+    .await;
+    supervisor
+        .call(
+            "PUT",
+            "/backends/llamacpp-upstream/optimal",
+            Some(json!({"expected_revision": 0, "optimal": null})),
+            false,
+        )
+        .await
+        .expect("write optimal result through real control listener");
+    wait_for_event(&sink, |(name, payload)| {
+        name == "atomic-core://backend:optimal-changed" && payload["revision"] == 1
+    })
+    .await;
+    let before_crash = sink.events();
+    let first_snapshot = before_crash
+        .iter()
+        .position(|(name, _)| name == super::relay::SNAPSHOT_EVENT)
+        .unwrap();
+    let first_delta = before_crash
+        .iter()
+        .position(|(name, _)| name == "atomic-core://backend:optimal-changed")
+        .unwrap();
+    assert!(
+        first_snapshot < first_delta,
+        "the app must see a baseline before its delta"
+    );
+
+    kill_owner(live.data.path());
+    let replacement = wait_for_attachment(&supervisor, first.generation).await;
+    wait_for_event(&sink, |(name, payload)| {
+        name == super::relay::SNAPSHOT_EVENT
+            && payload["generation"] == replacement.generation
+            && payload["snapshot"]["instance_id"] == replacement.instance_id
+    })
+    .await;
+    let events = sink.events();
+    let detached = events
+        .iter()
+        .position(|(name, payload)| {
+            name == super::relay::DETACHED_EVENT && payload["generation"] == first.generation
+        })
+        .expect("old generation was invalidated");
+    let new_snapshot = events
+        .iter()
+        .position(|(name, payload)| {
+            name == super::relay::SNAPSHOT_EVENT && payload["generation"] == replacement.generation
+        })
+        .unwrap();
+    assert!(first_delta < detached && detached < new_snapshot);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(name, _)| name == "atomic-core://backend:optimal-changed")
+            .count(),
+        1
+    );
+
+    let _ = cancel_tx.send(());
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .expect("lifecycle stops")
+        .expect("lifecycle did not panic");
+    supervisor.detach().await;
+}
+
+async fn wait_for_event(sink: &RecordingSink, predicate: impl Fn(&(String, Value)) -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if sink.events().iter().any(&predicate) {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "relay did not deliver the event"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 async fn wait_for_attachment(

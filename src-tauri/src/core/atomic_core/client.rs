@@ -324,7 +324,10 @@ impl ControlClient {
 }
 
 fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration> {
-    if method == reqwest::Method::POST && path.starts_with("/models/") && path.ends_with("/load") {
+    if method == reqwest::Method::POST
+        && ((path.starts_with("/models/") && (path.ends_with("/load") || path.ends_with("/embed")))
+            || (path.starts_with("/backends/") && path.ends_with("/install")))
+    {
         None
     } else {
         Some(CALL_TIMEOUT)
@@ -412,13 +415,27 @@ mod tests {
     }
 
     #[test]
-    fn only_model_loads_delegate_their_deadline_to_the_core() {
+    fn long_running_load_install_and_embed_delegate_their_deadline_to_the_core() {
         assert_eq!(
             control_call_timeout(&reqwest::Method::GET, "/sessions"),
             Some(CALL_TIMEOUT)
         );
         assert_eq!(
             control_call_timeout(&reqwest::Method::POST, "/models/llamacpp-upstream/a/b/load"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(
+                &reqwest::Method::POST,
+                "/backends/llamacpp-upstream/install"
+            ),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(
+                &reqwest::Method::POST,
+                "/models/llamacpp-upstream/sentence-transformer-mini/embed"
+            ),
             None
         );
         assert_eq!(

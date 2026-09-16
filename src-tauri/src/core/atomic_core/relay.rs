@@ -795,3 +795,75 @@ mod tests {
         }
     }
 }
+
+/// The event name and payload an existing app listener expects for a core event, if any.
+///
+/// The app has listened to `download-<task id>` since before the core existed — the download
+/// extension subscribes to it by name, and so does every progress bar built on top. Renaming that
+/// would mean touching each of them, so instead the relay emits the legacy name *as well as* the
+/// core's own (PLAN.md §4 stage 3c: "слушатели не меняются").
+///
+/// Returns `None` for events with no legacy counterpart, which is most of them.
+pub fn legacy_event_for(name: &str, payload: &Value) -> Option<(String, Value)> {
+    let event = name.strip_prefix(EVENT_PREFIX)?;
+    let task_id = payload.get("taskId").and_then(Value::as_str)?;
+    if task_id.is_empty() {
+        return None;
+    }
+    match event {
+        // The payload the download extension reads: two numbers, nothing else. Extra fields would
+        // be harmless, but this is a contract older than the core and worth keeping exact.
+        "download:progress" => Some((
+            format!("download-{task_id}"),
+            json!({
+                "transferred": payload.get("transferred").cloned().unwrap_or(json!(0)),
+                "total": payload.get("total").cloned().unwrap_or(json!(0)),
+            }),
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod legacy_events {
+    use super::*;
+
+    #[test]
+    fn download_progress_is_also_emitted_under_the_name_the_app_already_listens_to() {
+        let (name, payload) = legacy_event_for(
+            "atomic-core://download:progress",
+            &json!({ "taskId": "backend-b6325", "transferred": 100, "total": 400, "percent": 25 }),
+        )
+        .expect("mapped");
+
+        assert_eq!(name, "download-backend-b6325");
+        assert_eq!(payload, json!({ "transferred": 100, "total": 400 }));
+    }
+
+    #[test]
+    fn a_progress_event_with_no_task_has_no_legacy_name_to_go_under() {
+        assert!(legacy_event_for("atomic-core://download:progress", &json!({})).is_none());
+        assert!(
+            legacy_event_for("atomic-core://download:progress", &json!({ "taskId": "" })).is_none()
+        );
+    }
+
+    #[test]
+    fn events_the_app_never_listened_for_by_task_are_not_remapped() {
+        assert!(legacy_event_for(
+            "atomic-core://session:started",
+            &json!({ "taskId": "t", "model_id": "m" })
+        )
+        .is_none());
+        assert!(legacy_event_for("download:progress", &json!({ "taskId": "t" })).is_none());
+    }
+
+    #[test]
+    fn missing_numbers_become_zero_rather_than_breaking_the_listener() {
+        // A bar that reads `undefined` renders NaN; zero is the honest "nothing yet".
+        let (_, payload) =
+            legacy_event_for("atomic-core://download:progress", &json!({ "taskId": "t" })).unwrap();
+
+        assert_eq!(payload, json!({ "transferred": 0, "total": 0 }));
+    }
+}

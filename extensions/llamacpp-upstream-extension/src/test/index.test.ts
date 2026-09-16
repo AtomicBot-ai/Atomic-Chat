@@ -21,8 +21,9 @@ import {
   listSupportedBackends,
 } from '../backend'
 import { getSystemInfo } from '../hardware'
-import { fs, joinPath } from '@janhq/core'
+import { events, fs, joinPath } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { basename } from '@tauri-apps/api/path'
 
 // Mock fetch globally
@@ -115,6 +116,140 @@ describe('llamacpp_extension', () => {
       expect(extension.provider).toBe('llamacpp-upstream')
       expect(extension.providerId).toBe('llamacpp-upstream')
       expect(extension.autoUnload).toBe(false)
+    })
+  })
+
+  describe('core-owned backend download', () => {
+    it('subscribes before install and completes the existing UI event sequence', async () => {
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      const unlisten = vi.fn()
+      let progress: ((event: { payload: { transferred: number; total: number } }) => void) | undefined
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        progress = callback as typeof progress
+        return unlisten
+      })
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_call') {
+          expect(progress, 'listener exists before POST begins').toBeDefined()
+          progress?.({ payload: { transferred: 10, total: 20 } })
+          progress?.({ payload: { transferred: 5, total: 20 } })
+          progress?.({ payload: { transferred: 20, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }
+        return undefined
+      })
+      await extension['downloadAndInstallBackend']('b1/macos-arm64')
+      const emitted = vi.mocked(events.emit).mock.calls.map(([name]) => name)
+      expect(emitted).toEqual([
+        'onBackendDownloadStarted', 'onFileDownloadUpdate', 'onFileDownloadUpdate', 'onFileDownloadUpdate',
+        'onFileDownloadAndVerificationSuccess', 'onBackendDownloadFinished',
+      ])
+      expect(vi.mocked(events.emit).mock.calls.filter(([name]) => name === 'onFileDownloadUpdate').map(([, payload]) => (payload as { size: { transferred: number } }).size.transferred)).toEqual([10, 10, 20])
+      expect(unlisten).toHaveBeenCalledOnce()
+      expect(vi.mocked(listen).mock.calls[0]?.[0]).toBe('download-llamacpp-backend-b1/macos-arm64')
+    })
+
+    it('closes the progress row and reports failure when the core install rejects', async () => {
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      const unlisten = vi.fn()
+      vi.mocked(listen).mockResolvedValue(unlisten)
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_call') throw new Error('cancelled')
+        return undefined
+      })
+      await expect(extension['downloadAndInstallBackend']('b1/macos-arm64')).rejects.toThrow('cancelled')
+      expect(vi.mocked(events.emit).mock.calls.map(([name]) => name)).toEqual([
+        'onBackendDownloadStarted', 'onFileDownloadError', 'onBackendDownloadFinished',
+      ])
+      expect(unlisten).toHaveBeenCalledOnce()
+    })
+
+    it('finishes the existing progress bar even if the last core progress frame is missing', async () => {
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      let progress: ((event: { payload: { transferred: number; total: number } }) => void) | undefined
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        progress = callback as typeof progress
+        return vi.fn()
+      })
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_call') progress?.({ payload: { transferred: 10, total: 20 } })
+        return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+      })
+      await extension['downloadAndInstallBackend']('b1/macos-arm64')
+      expect(vi.mocked(events.emit).mock.calls.filter(([name]) => name === 'onFileDownloadUpdate').map(([, payload]) => (payload as { size: { transferred: number; total: number } }).size)).toEqual([
+        { transferred: 10, total: 20 }, { transferred: 20, total: 20 },
+      ])
+    })
+  })
+
+  describe('core-owned optimal cache and embeddings', () => {
+    const optimal = {
+      schemaVersion: 1, provider: 'llamacpp-upstream', detectedAt: 1,
+      detectionKind: 'cpu-optimal', currentBackend: 'b1/macos-arm64', recommendedCategory: 'CPU',
+    }
+
+    it('adopts the snapshot before reading the synchronous UI copy', async () => {
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_snapshot') return { snapshot: { optimal_backends: { 'llamacpp-upstream': { revision: 3, optimal } } } }
+        return undefined
+      })
+      await extension['adoptOptimalFromCore']()
+      expect(localStorage.setItem).toHaveBeenCalledWith(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(optimal))
+      expect(extension['optimalRevision']).toBe(3)
+    })
+
+    it('does not restore an old snapshot after the attachment generation changes', async () => {
+      let releaseSnapshot!: (value: unknown) => void
+      const snapshot = new Promise((resolve) => { releaseSnapshot = resolve })
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_snapshot') return snapshot
+        return undefined
+      })
+      const pending = extension['adoptOptimalFromCore']()
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('atomic_core_snapshot'))
+      extension['optimalEpoch']++
+      releaseSnapshot({ snapshot: { optimal_backends: { 'llamacpp-upstream': { revision: 3, optimal } } } })
+      await pending
+      expect(localStorage.setItem).not.toHaveBeenCalled()
+      expect(extension['optimalRevision']).toBe(0)
+    })
+
+    it('does not show a new detection before the core accepts its revision', async () => {
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_call' && (args as { method?: string }).method === 'PUT') {
+          expect(localStorage.setItem).not.toHaveBeenCalled()
+          return { status: 'updated', current: { revision: 1, optimal } }
+        }
+        return undefined
+      })
+      await extension['storeOptimalRecord'](optimal as never)
+      expect(localStorage.setItem).toHaveBeenCalledWith(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(optimal))
+    })
+
+    it('delegates embeddings to the core without consulting the legacy session table', async () => {
+      extension.list = vi.fn().mockResolvedValue([{ id: 'sentence-transformer-mini' }])
+      extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+      extension['findSessionByModel'] = vi.fn()
+      extension['config'] = { ubatch_size: 64 } as never
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === 'atomic_core_status') return { active_runtime: 'llamacpp-upstream', transitioning: false }
+        if (command === 'atomic_core_call') {
+          expect(args).toMatchObject({ method: 'POST', path: '/models/llamacpp-upstream/sentence-transformer-mini/embed', body: { input: ['hello'], ubatch_size: 64 } })
+          return { model: 'sentence-transformer-mini', object: 'list', data: [{ embedding: [1], index: 0 }], usage: { prompt_tokens: 1, total_tokens: 1 } }
+        }
+        return undefined
+      })
+      expect((await extension.embed(['hello'])).data).toHaveLength(1)
+      expect(extension['findSessionByModel']).not.toHaveBeenCalled()
     })
   })
 

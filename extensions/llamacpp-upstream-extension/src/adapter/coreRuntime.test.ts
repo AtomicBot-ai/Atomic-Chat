@@ -7,6 +7,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import {
   CORE_PROVIDER,
+  cancelBackendDownload,
   coreOwnsRuntime,
   describeCoreError,
   findSession,
@@ -16,8 +17,15 @@ import {
   importSettings,
   increaseContext,
   isCoreError,
+  getOptimalCache,
+  getOptimalSnapshot,
+  embed,
+  installBackend,
+  listInstalledBackends,
   load,
   modelIdsMatch,
+  removeBackend,
+  setOptimalCache,
   sendHardwareOverride,
   unload,
 } from './coreRuntime'
@@ -295,5 +303,113 @@ describe('errors', () => {
     expect(isCoreError(error)).toBe(true)
     expect(describeCoreError(error)).toBe('busy (pid 7) [CORE_ALREADY_RUNNING]')
     expect(describeCoreError(new Error('boom'))).toContain('boom')
+  })
+})
+
+describe('backends', () => {
+  it('lists what the core has and says which is in use', async () => {
+    invoke.mockResolvedValue({
+      backends: [
+        { version: 'b6325', backend: 'macos-arm64', path: '/p', active: true },
+        { version: 'b6100', backend: 'macos-arm64', path: '/q', active: false },
+      ],
+    })
+
+    const packs = await listInstalledBackends('b6325/macos-arm64')
+
+    expect(packs).toHaveLength(2)
+    expect(lastCall()[1].path).toBe(
+      '/backends/llamacpp-upstream?current=b6325%2Fmacos-arm64'
+    )
+  })
+
+  it('asks without a current selection when there is none', async () => {
+    invoke.mockResolvedValue({ backends: [] })
+
+    await listInstalledBackends()
+
+    expect(lastCall()[1].path).toBe('/backends/llamacpp-upstream')
+  })
+
+  it('installs under the task id the caller already told the progress bar about', async () => {
+    invoke.mockResolvedValue({ version: 'b6325', backend: 'macos-arm64', installed: true, path: '/p' })
+
+    await installBackend('b6325', 'macos-arm64', 'llamacpp-upstream/backend-b6325')
+
+    expect(lastCall()[1].body).toMatchObject({
+      version: 'b6325',
+      backend: 'macos-arm64',
+      task_id: 'llamacpp-upstream/backend-b6325',
+      force: false,
+    })
+  })
+
+  it('passes the current proxy policy without persisting it in the adapter', async () => {
+    invoke.mockResolvedValue({ installed: true })
+    await installBackend('b1', 'macos-arm64', 'task', false, { url: 'http://proxy:8080', username: 'u', password: 'p' })
+    expect(lastCall()[1].body).toMatchObject({ proxy: { url: 'http://proxy:8080', username: 'u', password: 'p' } })
+  })
+
+  it('cancels the core task under its original id', async () => {
+    invoke.mockResolvedValue({ cancelled: true })
+    expect(await cancelBackendDownload('llamacpp-backend-b1/macos-arm64')).toBe(true)
+    expect(lastCall()[1]).toMatchObject({ method: 'POST', path: '/downloads/llamacpp-backend-b1/macos-arm64/cancel' })
+  })
+
+  it('removes a pack and reports whether there was one', async () => {
+    invoke.mockResolvedValue({ removed: true })
+
+    expect(await removeBackend('b6325', 'macos-arm64')).toBe(true)
+    expect(lastCall()[1]).toMatchObject({
+      method: 'DELETE',
+      path: '/backends/llamacpp-upstream/b6325/macos-arm64',
+    })
+  })
+
+  it('survives a core that answers without the field', async () => {
+    invoke.mockResolvedValue({})
+
+    expect(await listInstalledBackends()).toEqual([])
+    expect(await removeBackend('b', 'x')).toBe(false)
+  })
+})
+
+describe('the optimal-backend record', () => {
+  it('reads what the core stored', async () => {
+    invoke.mockResolvedValue({ revision: 4, optimal: { detectionKind: 'gpu', idealBackendId: 'macos-arm64' } })
+
+    expect(await getOptimalCache()).toMatchObject({ revision: 4, optimal: { detectionKind: 'gpu' } })
+    expect(lastCall()[1]).toMatchObject({
+      method: 'GET',
+      path: '/backends/llamacpp-upstream/optimal',
+    })
+  })
+
+  it('reads as absent when nothing has been detected', async () => {
+    invoke.mockResolvedValue({ revision: 0, optimal: null })
+
+    expect(await getOptimalCache()).toEqual({ revision: 0, optimal: null })
+  })
+
+  it('forgets a detection by storing null, rather than leaving a stale one', async () => {
+    invoke.mockResolvedValue({ status: 'updated', current: { revision: 5, optimal: null } })
+
+    await setOptimalCache(null, 4)
+
+    expect(lastCall()[1]).toMatchObject({ method: 'PUT', body: { optimal: null, expected_revision: 4 } })
+  })
+
+  it('reads the same revisioned cache from the attachment snapshot', async () => {
+    invoke.mockResolvedValue({ snapshot: { optimal_backends: { 'llamacpp-upstream': { revision: 2, optimal: null } } } })
+    expect(await getOptimalSnapshot()).toEqual({ revision: 2, optimal: null })
+    expect(lastCall()[0]).toBe('atomic_core_snapshot')
+  })
+})
+
+describe('embeddings', () => {
+  it('sends the whole input through Rust to the core', async () => {
+    invoke.mockResolvedValue({ object: 'list', data: [] })
+    await embed(['first', 'second'], 64)
+    expect(lastCall()[1]).toMatchObject({ method: 'POST', path: '/models/llamacpp-upstream/sentence-transformer-mini/embed', body: { input: ['first', 'second'], ubatch_size: 64 } })
   })
 })

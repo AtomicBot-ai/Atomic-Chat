@@ -571,6 +571,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenSessionDied?: () => void
   private unlistenCoreSettingsChanged?: () => void
+  private unlistenCoreOptimalChanged?: () => void
+  private unlistenCoreSnapshot?: () => void
+  private unlistenCoreOwnershipChanged?: () => void
+  private unlistenCoreDetached?: () => void
+  private optimalRevision = 0
+  private optimalEpoch = 0
+  private optimalCoreActive = false
   /// `<version>/<backend>` the last load actually launched. Diverges from the
   /// persisted `version_backend` when `resolveBackendFallback` tier 3 degrades
   /// to an installed backend without persisting the swap — the case where the
@@ -635,11 +642,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
-  private persistOptimalBackendCache(
+  private async persistOptimalBackendCache(
     detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }>,
     currentBackend: string,
     recommendedBackend?: string | null
-  ): OptimalBackendCacheRecord {
+  ): Promise<OptimalBackendCacheRecord> {
     const record: OptimalBackendCacheRecord =
       detection.kind === 'cpu-optimal'
         ? {
@@ -663,8 +670,64 @@ export default class llamacpp_upstream_extension extends AIEngine {
             ),
           }
 
-    localStorage.setItem(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(record))
+    await this.storeOptimalRecord(record)
     return record
+  }
+
+  private applyOptimalState(state: coreRuntime.CoreOptimalState<OptimalBackendCacheRecord>): void {
+    if (state.revision < this.optimalRevision) return
+    this.optimalCoreActive = true
+    this.optimalRevision = state.revision
+    if (state.optimal) localStorage.setItem(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(state.optimal))
+    else localStorage.removeItem(OPTIMAL_BACKEND_CACHE_KEY)
+  }
+
+  /** The core commit precedes the synchronous rollback/UI copy. Never show an uncommitted result. */
+  private async storeOptimalRecord(
+    record: OptimalBackendCacheRecord | null
+  ): Promise<void> {
+    if (!(await this.coreOwnsRuntime())) {
+      if (record) localStorage.setItem(OPTIMAL_BACKEND_CACHE_KEY, JSON.stringify(record))
+      else localStorage.removeItem(OPTIMAL_BACKEND_CACHE_KEY)
+      return
+    }
+    const epoch = this.optimalEpoch
+    try {
+      const state = await coreRuntime.setOptimalCache(record, this.optimalRevision)
+      if (epoch === this.optimalEpoch) this.applyOptimalState(state)
+    } catch (error) {
+      // A CLI may have won the revision race; take its answer, never retry an obsolete detection.
+      const state = await coreRuntime.getOptimalCache<OptimalBackendCacheRecord>()
+      if (epoch === this.optimalEpoch) this.applyOptimalState(state)
+      throw error
+    }
+  }
+
+  /**
+   * Take the core's stored detection as this process's own.
+   *
+   * Run once at startup, before anything reads the cache: the core may hold a detection made by the
+   * CLI or by a previous run of the app, and `localStorage` may hold one made on different
+   * hardware. The core's copy sits beside the data folder it describes, so it wins.
+   */
+  private async adoptOptimalFromCore(): Promise<void> {
+    const epoch = this.optimalEpoch
+    try {
+      if (!(await this.coreOwnsRuntime())) return
+      if (epoch !== this.optimalEpoch) return
+      this.optimalCoreActive = true
+      const stored = await coreRuntime.getOptimalSnapshot<OptimalBackendCacheRecord>()
+        ?? await coreRuntime.getOptimalCache<OptimalBackendCacheRecord>()
+      if (epoch === this.optimalEpoch) this.applyOptimalState(stored)
+    } catch (error) {
+      logger.warn(
+        `[atomic-core] could not read the optimal-backend record: ${coreRuntime.describeCoreError(error)}`
+      )
+    }
+  }
+
+  private async clearOptimalBackendCache(): Promise<void> {
+    await this.storeOptimalRecord(null)
   }
 
   override async onLoad(): Promise<void> {
@@ -853,6 +916,53 @@ export default class llamacpp_upstream_extension extends AIEngine {
           })
       }
     )
+
+    this.unlistenCoreOptimalChanged = await listen(
+      'atomic-core://backend:optimal-changed',
+      (event: { payload?: { provider?: string; revision?: number; optimal?: OptimalBackendCacheRecord | null } }) => {
+        const epoch = this.optimalEpoch
+        const state = event.payload
+        if (state?.provider !== this.provider || typeof state.revision !== 'number') return
+        void this.coreOwnsRuntime().then((owned) => {
+          if (owned && epoch === this.optimalEpoch) this.applyOptimalState({ revision: state.revision as number, optimal: state.optimal ?? null })
+        }).catch((error) => logger.warn(`[atomic-core] optimal event: ${coreRuntime.describeCoreError(error)}`))
+      }
+    )
+    this.unlistenCoreSnapshot = await listen(
+      'atomic-core://snapshot',
+      (event: { payload?: { snapshot?: { optimal_backends?: Record<string, coreRuntime.CoreOptimalState<OptimalBackendCacheRecord>> } } }) => {
+        // A snapshot is the new baseline. Invalidate checks still pending from the old stream.
+        this.optimalEpoch++
+        const epoch = this.optimalEpoch
+        const state = event.payload?.snapshot?.optimal_backends?.[this.provider]
+        void this.coreOwnsRuntime().then((owned) => {
+          if (owned && epoch === this.optimalEpoch) this.applyOptimalState(state ?? { revision: 0, optimal: null })
+        }).catch((error) => logger.warn(`[atomic-core] optimal snapshot: ${coreRuntime.describeCoreError(error)}`))
+      }
+    )
+    this.unlistenCoreOwnershipChanged = await listen(
+      'atomic-core://ownership-changed',
+      (event: { payload?: { runtime?: string | null } }) => {
+        this.optimalEpoch++
+        if (event.payload?.runtime === this.provider) {
+          this.optimalCoreActive = true
+          this.optimalRevision = 0
+          localStorage.removeItem(OPTIMAL_BACKEND_CACHE_KEY)
+          void this.adoptOptimalFromCore()
+        } else {
+          this.optimalCoreActive = false
+        }
+      }
+    )
+    this.unlistenCoreDetached = await listen('atomic-core://detached', () => {
+      this.optimalEpoch++
+      if (this.optimalCoreActive) {
+        this.optimalCoreActive = false
+        this.optimalRevision = 0
+        localStorage.removeItem(OPTIMAL_BACKEND_CACHE_KEY)
+      }
+    })
+    await this.adoptOptimalFromCore()
 
     //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
     this.configureBackendsPromise = this.configureBackends()
@@ -2520,7 +2630,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     const currentBackend = stripBom(this.config.version_backend || '')
     if (detection.kind === 'cpu-optimal') {
-      return this.persistOptimalBackendCache(detection, currentBackend)
+      return await this.persistOptimalBackendCache(detection, currentBackend)
     }
 
     let recommendedBackend: string | null = null
@@ -2536,7 +2646,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         err
       )
     }
-    return this.persistOptimalBackendCache(
+    return await this.persistOptimalBackendCache(
       detection,
       currentBackend,
       recommendedBackend
@@ -2631,7 +2741,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         logger.info(
           'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
-        this.persistOptimalBackendCache(detection, currentBackend)
+        await this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         this.lastRecheckOutcome = 'cpu_optimal'
         return null
@@ -2648,7 +2758,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         logger.info(
           `recheckOptimalBackend: already on optimal backend ${currentBackend}`
         )
-        this.persistOptimalBackendCache(
+        await this.persistOptimalBackendCache(
           detection,
           currentBackend,
           currentBackend
@@ -2667,18 +2777,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
         currentBackend,
         'recheckOptimalBackend'
       )
-      this.persistOptimalBackendCache(
-        detection,
-        currentBackend,
-        recommendedBackend
-      )
       if (!recommendedBackend) {
+        await this.clearOptimalBackendCache()
         // The catalog has nothing for the type detection picked — a gap on our
         // side, not a property of the machine.
         this.lastRecheckOutcome = 'no_catalog_entry'
         localStorage.removeItem('llama_cpp_better_backend_recommendation')
         return null
       }
+      await this.persistOptimalBackendCache(
+        detection,
+        currentBackend,
+        recommendedBackend
+      )
       if (recommendedBackend === currentBackend) {
         logger.info(
           `recheckOptimalBackend: latest resolved backend is already active (${currentBackend})`
@@ -2814,13 +2925,22 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   async listInstalledBackends(): Promise<InstalledBackendPack[]> {
-    return listInstalledBackendPacks(
-      this.providerId,
-      stripBom(this.config.version_backend || '')
-    )
+    const current = stripBom(this.config.version_backend || '')
+    // Whoever owns the data folder owns the answer: the core may have installed a pack this
+    // process never saw, and scanning the directory ourselves would race its staging move.
+    if (await this.coreOwnsRuntime()) {
+      return (await coreRuntime.listInstalledBackends(
+        current
+      )) as unknown as InstalledBackendPack[]
+    }
+    return listInstalledBackendPacks(this.providerId, current)
   }
 
   async deleteBackend(version: string, backend: string): Promise<void> {
+    if (await this.coreOwnsRuntime()) {
+      await coreRuntime.removeBackend(version, backend)
+      return
+    }
     await deleteBackendPack(
       this.providerId,
       stripBom(this.config.version_backend || ''),
@@ -2911,6 +3031,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
     if (this.unlistenCoreSettingsChanged) {
       this.unlistenCoreSettingsChanged()
     }
+    this.unlistenCoreOptimalChanged?.()
+    this.unlistenCoreSnapshot?.()
+    this.unlistenCoreOwnershipChanged?.()
+    this.unlistenCoreDetached?.()
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -5461,6 +5585,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
   async getMaxCtxTrain(modelId: string): Promise<number | undefined> {
     const cached = this.modelMaxCtxTrain.get(modelId)
     if (typeof cached === 'number') return cached
+    if (await this.coreOwnsRuntime()) {
+      try {
+        const caps = await coreRuntime.capabilities(modelId)
+        if (typeof caps.maxCtxTrain === 'number') {
+          this.modelMaxCtxTrain.set(modelId, caps.maxCtxTrain)
+          return caps.maxCtxTrain
+        }
+        return undefined
+      } catch (error) {
+        logger.warn(
+          `[atomic-core] could not read capabilities for ${modelId}: ${coreRuntime.describeCoreError(error)}`
+        )
+        return undefined
+      }
+    }
     try {
       const janDataFolderPath = await getJanDataFolderPath()
       const modelConfigPath = await joinPath([
@@ -6154,6 +6293,90 @@ export default class llamacpp_upstream_extension extends AIEngine {
       logger.info(
         `Backend ${backendString} is already installed, skipping download`
       )
+      return
+    }
+
+    // The core owns the data folder these packs live in, so it does the fetching and unpacking.
+    // The task id is built the same way either side does it, because the progress bar the user is
+    // already watching listens on a name derived from it.
+    if (await this.coreOwnsRuntime()) {
+      const taskId = `llamacpp-backend-${this.sanitizeForTauriEvent(
+        version
+      )}/${this.sanitizeForTauriEvent(backend)}`
+      logger.info(`downloadAndInstallBackend: handing ${backendString} to the core (${taskId})`)
+      let highestTransferred = 0
+      let knownTotal = 0
+      let completedProgress = false
+      const reportProgress = (transferred: number, total: number) => {
+        // A resumed transfer can restart at byte zero after a range mismatch. The UI represents
+        // task completion, so it must never move its bar backwards during that retry.
+        highestTransferred = Math.max(highestTransferred, transferred)
+        knownTotal = Math.max(knownTotal, total)
+        const displayedTotal = knownTotal > 0 ? Math.max(knownTotal, highestTransferred) : 0
+        completedProgress = displayedTotal > 0 && highestTransferred >= displayedTotal
+        events.emit(DownloadEvent.onFileDownloadUpdate, {
+          modelId: taskId,
+          percent: displayedTotal > 0 ? highestTransferred / displayedTotal : 0,
+          size: { transferred: highestTransferred, total: displayedTotal },
+          downloadType: 'Backend',
+        })
+      }
+      // Register before starting the transfer: the core can emit its first progress frame before
+      // the POST returns. This is the callback download-extension used to install for legacy tasks.
+      const unlisten = await listen<{ transferred: number; total: number }>(
+        `download-${taskId}`,
+        (event) => {
+          reportProgress(event.payload.transferred, event.payload.total)
+        }
+      )
+      events.emit(AppEvent.onBackendDownloadStarted, {
+        backend: backendString,
+        status: 'downloading',
+        provider: this.providerId,
+        version,
+        backendId: backend,
+      })
+      try {
+        await coreRuntime.installBackend(
+          version,
+          backend,
+          taskId,
+          false,
+          getProxyConfig() as unknown as coreRuntime.CoreProxyConfig | null
+        )
+        if (!completedProgress && (knownTotal > 0 || highestTransferred > 0)) {
+          reportProgress(Math.max(knownTotal, highestTransferred), Math.max(knownTotal, highestTransferred))
+        }
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+          modelId: taskId,
+          downloadType: 'Backend',
+        })
+        events.emit(AppEvent.onBackendDownloadFinished, {
+          backend: backendString,
+          status: 'completed',
+          provider: this.providerId,
+          version,
+          backendId: backend,
+        })
+      } catch (error) {
+        const message = coreRuntime.describeCoreError(error)
+        events.emit(DownloadEvent.onFileDownloadError, {
+          modelId: taskId,
+          error: message,
+          downloadType: 'Backend',
+        })
+        events.emit(AppEvent.onBackendDownloadFinished, {
+          backend: backendString,
+          status: 'failed',
+          error: message,
+          provider: this.providerId,
+          version,
+          backendId: backend,
+        })
+        throw new Error(message)
+      } finally {
+        unlisten()
+      }
       return
     }
 
@@ -7164,6 +7387,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * @returns Promise<boolean> - true if mmproj.gguf exists, false otherwise
    */
   async checkMmprojExists(modelId: string): Promise<boolean> {
+    if (await this.coreOwnsRuntime()) {
+      try {
+        return (await coreRuntime.capabilities(modelId)).mmprojExists
+      } catch {
+        return false
+      }
+    }
     try {
       const modelConfigPath = await joinPath([
         await this.getModelsRootPath(),
@@ -7193,6 +7423,19 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   async getDevices(): Promise<DeviceList[]> {
+    // The core resolves its own backend and asks it; with none installed it answers an empty list
+    // rather than the "backend is not configured" error the legacy path raises, because there is
+    // nothing for the user to fix in Settings yet.
+    if (await this.coreOwnsRuntime()) {
+      try {
+        return await coreRuntime.devices<DeviceList>()
+      } catch (error) {
+        logger.warn(
+          `[atomic-core] could not list devices: ${coreRuntime.describeCoreError(error)}`
+        )
+        return []
+      }
+    }
     if (this.configureBackendsPromise) {
       const vb = this.config.version_backend || ''
       if (!vb || vb === 'none' || !vb.includes('/')) {
@@ -7311,6 +7554,21 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
+    if (await this.coreOwnsRuntime()) {
+      const modelId = 'sentence-transformer-mini'
+      const installed = await this.list()
+      if (!installed.some((model) => model.id === modelId)) {
+        await this.import(modelId, {
+          modelPath: 'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+        })
+      }
+      await this.ensureCoreIsReady()
+      try {
+        return await coreRuntime.embed(text, this.config?.ubatch_size > 0 ? this.config.ubatch_size : 512) as EmbeddingResponse
+      } catch (error) {
+        throw new Error(coreRuntime.describeCoreError(error))
+      }
+    }
     // Ensure the sentence-transformer model is present
     let sInfo = await this.findSessionByModel('sentence-transformer-mini')
     if (!sInfo) {
@@ -7485,6 +7743,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
     error?: string
     metadata?: any
   }> {
+    // The file lives in the data folder the core owns, and the core already refuses a CLIP
+    // projector by name — the one rejection that matters, because those parse perfectly.
+    if (await this.coreOwnsRuntime()) {
+      try {
+        return await coreRuntime.validateGguf(filePath)
+      } catch (error) {
+        return { isValid: false, error: coreRuntime.describeCoreError(error) }
+      }
+    }
     try {
       logger.info(`Validating GGUF file: ${filePath}`)
       const metadata = await readGgufMetadata(filePath)

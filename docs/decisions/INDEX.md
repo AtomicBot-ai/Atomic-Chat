@@ -296,8 +296,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (12)
+## Inference core extraction — atomic-chat-core (13)
 
+- **2026-09-16** — [Bridge core-owned backend work into existing app events](2026-09-16-bridge-core-owned-backend-progress-and-cache.md)
 - **2026-09-16** — [Change the inference runtime owner only while it is idle](2026-09-16-change-runtime-owner-only-while-idle.md)
 - **2026-09-16** — [Retry only read-only core calls and resume events after the snapshot cursor](2026-09-16-retry-only-read-only-core-calls-and-resume-after-snapshot.md)
 - **2026-09-16** — [The webview reaches the core only through Rust](2026-09-16-the-webview-reaches-the-core-only-through-rust.md)

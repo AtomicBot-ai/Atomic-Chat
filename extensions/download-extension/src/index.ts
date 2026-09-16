@@ -60,6 +60,7 @@ export function buildAuthHeaders(
 
 export default class DownloadManager extends BaseExtension {
   hfToken?: string
+  private activeLegacyTasks?: Set<string>
 
   async onLoad() {
     this.registerSettings(SETTINGS)
@@ -94,18 +95,22 @@ export default class DownloadManager extends BaseExtension {
     onProgress?: (transferred: number, total: number) => void,
     resume: boolean = false
   ) {
-    // relay tauri events to onProgress callback
-    const unlisten = await listen<DownloadEvent>(
-      `download-${taskId}`,
-      (event) => {
-        if (onProgress) {
-          let payload = event.payload
-          onProgress(payload.transferred, payload.total)
-        }
-      }
-    )
-
+    // A task that began on the legacy downloader stays its task even if runtime ownership changes
+    // before the user presses Cancel.
+    if (!this.activeLegacyTasks) this.activeLegacyTasks = new Set()
+    this.activeLegacyTasks.add(taskId)
+    let unlisten: (() => void) | undefined
     try {
+      // relay tauri events to onProgress callback
+      unlisten = await listen<DownloadEvent>(
+        `download-${taskId}`,
+        (event) => {
+          if (onProgress) {
+            let payload = event.payload
+            onProgress(payload.transferred, payload.total)
+          }
+        }
+      )
       await invoke<void>('download_files', {
         items,
         taskId,
@@ -116,12 +121,30 @@ export default class DownloadManager extends BaseExtension {
       console.error('Error downloading task', taskId, error)
       throw error
     } finally {
-      unlisten()
+      unlisten?.()
+      this.activeLegacyTasks.delete(taskId)
     }
   }
 
   async cancelDownload(taskId: string) {
     try {
+      if (taskId.startsWith('llamacpp-backend-') && !this.activeLegacyTasks?.has(taskId)) {
+        let status: { active_runtime?: string | null } | null = null
+        try {
+          status = await invoke<{ active_runtime?: string | null }>('atomic_core_status')
+        } catch (error) {
+          // An older app binary has no core command; its backend task is necessarily legacy.
+          if (!/unknown command|command .* not found/i.test(String(error))) throw error
+        }
+        if (status?.active_runtime === 'llamacpp-upstream') {
+          await invoke('atomic_core_call', {
+            method: 'POST',
+            path: `/downloads/${taskId}/cancel`,
+            body: null,
+          })
+          return
+        }
+      }
       await invoke<void>('cancel_download_task', { taskId })
     } catch (error) {
       console.error('Error cancelling download:', error)
