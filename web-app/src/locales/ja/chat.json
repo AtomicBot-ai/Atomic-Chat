@@ -50,10 +50,10 @@
   "agentApprovals": {
     "manualSelected": "承認を求める",
     "manual": "承認を求める",
-    "manualDescription": "外部ファイルの編集やインターネットの使用前に必ず確認します",
+    "manualDescription": "ツールがファイルを編集したりインターネットを使用したりする前に必ず確認します",
     "skipSelected": "フルアクセス",
     "skip": "フルアクセス",
-    "skipDescription": "承認の確認なし：ツールはインターネットとコンピューター上のすべてのファイルを使用できます",
+    "skipDescription": "制限なし：インターネットやコンピューター上のあらゆるファイルを含め、どのツール呼び出しにも承認の確認はありません",
     "menuTitle": "ツール呼び出しをどのように承認しますか？"
   },
   "agentApproval": {
