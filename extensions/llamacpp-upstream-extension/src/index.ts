@@ -520,6 +520,13 @@ export type OptimalBackendCacheRecord =
  */
 export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 
+/// How long a model load waits for a backend configuration pass that is
+/// still running before going ahead with what is on disk. The pass's local
+/// phase (bundled build, disk recovery) finishes in moments; everything after
+/// it is catalog work routed through the Tauri HTTP layer, where a stalled
+/// connection can leave the promise pending forever (see `withTimeout`).
+export const BACKEND_CONFIG_LOAD_WAIT_MS = 20_000
+
 /// Smallest GPU worth moving a host off the CPU build for. Below this the
 /// KV cache of even the lightest recommended model does not fit beside the
 /// weights, and the GPU backend would spill straight back to RAM.
@@ -4699,7 +4706,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         logger.info(
           `Waiting for backend configuration to complete before loading model "${modelId}"...`
         )
-        await this.configureBackendsPromise
+        await this.waitForBackendConfiguration(modelId)
       } else {
         // ATO-233: also wait when the backend string is concrete but the exe
         // is NOT locally installed yet. configureBackends may swap version_backend
@@ -4717,7 +4724,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
           logger.info(
             `Backend ${vb} not installed locally; waiting for configureBackends before loading model "${modelId}"`
           )
-          await this.configureBackendsPromise
+          await this.waitForBackendConfiguration(modelId)
         } else {
           logger.info(
             `Backend already configured (${vb}), loading model "${modelId}" without waiting for full backend list`
@@ -4764,6 +4771,32 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return result
     } finally {
       this.loadingModels.delete(modelId)
+    }
+  }
+
+  /**
+   * Waits for the backend configuration pass a load depends on, but never
+   * past `BACKEND_CONFIG_LOAD_WAIT_MS`. The pass can stall for good on the
+   * catalog fetch (see `withTimeout`), and a load that outwaits it leaves the
+   * spinner up forever — in a project file ingest, the embedding load never
+   * comes back. Past the bound the load goes ahead with what is on disk:
+   * `performLoad` resolves a leftover `latest/<backend>` sentinel itself
+   * (ATO-124), and `ensureBackendReady` prefers an installed build of the same
+   * variant before any download (ATO-233), so the bound trades an endless wait
+   * for the slower, finite path those two already handle.
+   */
+  private async waitForBackendConfiguration(modelId: string): Promise<void> {
+    const pending = this.configureBackendsPromise
+    if (!pending) return
+    const outcome = await this.withTimeout(
+      pending.then(() => 'configured' as const),
+      BACKEND_CONFIG_LOAD_WAIT_MS,
+      'timed-out' as const
+    )
+    if (outcome === 'timed-out') {
+      logger.warn(
+        `Backend configuration has not finished after ${BACKEND_CONFIG_LOAD_WAIT_MS}ms; loading model "${modelId}" with the backend on disk (${this.config.version_backend || 'none'})`
+      )
     }
   }
 

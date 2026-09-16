@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-263 records, 2026-05-19 → 2026-09-15.
+264 records, 2026-05-19 → 2026-09-16.
 
 ---
 
@@ -146,8 +146,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (53)
+## llama.cpp providers & backend selection (54)
 
+- **2026-09-16** — [Bound the model load's wait on backend configuration, then load from disk](2026-09-16-bound-the-model-load-wait-on-backend-configuration.md)
 - **2026-09-14** — [Ask before updating an inference engine](2026-09-14-ask-before-updating-an-inference-engine.md)
 - **2026-09-14** — [One GPU VRAM floor for every OS](2026-09-14-one-gpu-vram-floor-for-every-os.md)
 - **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
