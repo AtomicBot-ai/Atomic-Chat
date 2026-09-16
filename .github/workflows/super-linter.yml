@@ -11,9 +11,18 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+permissions:
+  contents: read
+
 jobs:
   run-lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # super-linter reports each linter's outcome as a commit status. Without
+      # this the run still lints, but every status POST fails with a 403.
+      statuses: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,3 +36,8 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
           DEFAULT_BRANCH: "main"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # textlint's terminology preset cannot tell prose from identifiers or
+          # from quoted document titles, so it rejects "id", "api" and "ids"
+          # wherever they appear. Markdown style is covered by markdownlint
+          # (.github/linters/.markdownlint.json).
+          VALIDATE_NATURAL_LANGUAGE: false
