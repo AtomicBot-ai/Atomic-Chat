@@ -3168,6 +3168,14 @@ const ChatInput = memo(function ChatInput({
                     skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
                     skipLabel={t('chat:agentApprovals.skip')}
                     skipDescription={t('chat:agentApprovals.skipDescription')}
+                    skipConfirmTitle={t('chat:agentApprovals.skipConfirmTitle')}
+                    skipConfirmBody={t('chat:agentApprovals.skipConfirmBody')}
+                    skipConfirmCancel={t(
+                      'chat:agentApprovals.skipConfirmCancel'
+                    )}
+                    skipConfirmAccept={t(
+                      'chat:agentApprovals.skipConfirmAccept'
+                    )}
                   />
                   {/* //! Кнопка Browse (Chrome) — временно скрыта
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
