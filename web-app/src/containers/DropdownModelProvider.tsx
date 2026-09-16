@@ -875,9 +875,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       >
                         {/* Provider header */}
                         <div className="flex items-center justify-between px-2 py-1">
-                          <div className="flex items-center gap-1.5">
-                            <ProvidersAvatar provider={providerInfo} />
-                            <span className="text-sm font-medium text-muted-foreground">
+                          {/* `min-w-0` on the group and the span is what lets
+                              a long title ("ChatGPT subscription (Codex)")
+                              ellipsise instead of wrapping and pushing the
+                              dot and the gear off their line. */}
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <ProvidersAvatar
+                              provider={providerInfo}
+                              className="size-4.5 shrink-0"
+                            />
+                            <span
+                              className="text-sm font-medium text-muted-foreground min-w-0 truncate"
+                              title={getProviderTitle(providerInfo.provider)}
+                            >
                               {getProviderTitle(providerInfo.provider)}
                             </span>
                             {providerInfo.provider === selectedProvider && (
@@ -886,7 +896,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           </div>
 
                           <div
-                            className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                            className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
                             onClick={(e) => {
                               e.stopPropagation()
                               // Cloud providers are set up on `/cloud`; local
