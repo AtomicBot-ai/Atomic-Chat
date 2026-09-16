@@ -32,14 +32,21 @@ export function activityHasDetails(
   )
 }
 
+/**
+ * Projects a message's parts into render blocks. A message renders the parts
+ * it actually has: whether reasoning was requested is decided per request
+ * (see `custom-chat-transport.ts` and `buildAgentReasoningRequest`), never
+ * here, so the transcript on screen does not move when the effort setting
+ * changes.
+ */
 export function buildTraceBlocks(
   message: UIMessage,
-  disableReasoning: boolean,
   options: { ensureActivity?: boolean } = {}
 ): TraceBlock[] {
   const blocks: TraceBlock[] = []
   const metadata = message.metadata as
-    { agent_run?: AgentRunSummary; activityDurationMs?: number } | undefined
+    | { agent_run?: AgentRunSummary; activityDurationMs?: number }
+    | undefined
   const agentRun = metadata?.agent_run
   const reasoning: Array<{ key: string; text: string }> = []
   const tools: ActivityTraceBlock['tools'] = []
@@ -69,7 +76,7 @@ export function buildTraceBlocks(
     }
 
     if (part.type === 'reasoning') {
-      if (!disableReasoning && part.text?.trim()) {
+      if (part.text?.trim()) {
         if (reasoningIndex < 0) reasoningIndex = blocks.length
         reasoningState = part.state
         answeredAfterReasoning = false
