@@ -214,9 +214,11 @@ export type OnboardingReminderModel = {
 }
 
 /**
- * The reminder and the composer's "what do I reply with?" widget must offer the
- * same model the first screen did — a second opinion that drifts from it is
- * worse than no second surface. Both read this, and it is the ladder.
+ * Every rung's offer, so the reminder can tell that "the recommended model" is
+ * already on disk whatever tier the machine reads as today. The offer itself —
+ * on the reminder card and in the composer's "what do I reply with?" widget —
+ * comes from the manifest through `useRecommendedDownloads`, whose bundled
+ * fallback is this same ladder, so the two cannot drift apart.
  */
 export const ONBOARDING_REMINDER_MODELS: Record<
   HardwareTier,
