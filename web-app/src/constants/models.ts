@@ -670,9 +670,6 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
   },
 ]
 
-export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
-export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']
-
 /**
  * Provider model capabilities - copied from token.js package
  */

@@ -146,8 +146,8 @@ vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
   default: () => null,
 }))
 
-vi.mock('@/containers/PromptVisionModel', () => ({
-  PromptVisionModel: () => null,
+vi.mock('@/containers/dialogs/VisionModelDialog', () => ({
+  VisionModelDialog: () => null,
 }))
 
 // Stubbed to a marker that also hands the composer's callbacks back to the

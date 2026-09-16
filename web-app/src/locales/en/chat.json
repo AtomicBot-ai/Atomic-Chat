@@ -25,6 +25,26 @@
     "folderScanning": "Looking for models…",
     "folderEmpty": "No compatible models found in that folder."
   },
+  "visionGate": {
+    "title": "{{model}} can't see images",
+    "titleNoModel": "This model can't see images",
+    "description": "The model you're chatting with is text-only, so images can't be attached. Download a model with vision and the app will switch to it.",
+    "sectionLabel": "Vision models for your device",
+    "rowHint": "{{size}} · {{reason}}",
+    "installedHint": "Already on this device",
+    "download": "Download",
+    "downloadLabel": "Download {{name}}",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "use": "Use",
+    "useLabel": "Use {{name}}",
+    "finding": "Finding vision models for your device…",
+    "empty": "None of the vision models we know fit this device. Browse Hugging Face for a smaller one.",
+    "huggingFaceTitle": "Any vision model from Hugging Face",
+    "huggingFaceHint": "Browse GGUF builds in Models",
+    "huggingFaceLabel": "Browse vision models on Hugging Face",
+    "browse": "Browse"
+  },
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",
   "activity": {

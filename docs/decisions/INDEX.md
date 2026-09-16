@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-266 records, 2026-05-19 → 2026-09-16.
+267 records, 2026-05-19 → 2026-09-16.
 
 ---
 
@@ -204,8 +204,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-19** — [Use `AtomicBot-ai/atomic-llama-cpp-turboquant` as the LLM backend](2026-05-19-use-atomicbot-ai-atomic-llama-cpp-turboquant-as-the-llm-backend.md)
 - **2026-05-19** — [Ship upstream `ggml-org/llama.cpp` as a second macOS provider, no fork](2026-05-19-ship-upstream-ggml-org-llama-cpp-as-a-second-macos-provider-no.md)
 
-## Models, Hub & downloads (29)
+## Models, Hub & downloads (30)
 
+- **2026-09-16** — [Explain why images need a vision model, and offer the ones that run here](2026-09-16-explain-why-images-need-a-vision-model.md)
 - **2026-09-15** — [List the rest of Hugging Face under the picks, in its trending order, a page at a time](2026-09-15-list-the-rest-of-hugging-face-under-the-picks.md)
 - **2026-09-11** — [One rule keeps speculative-decoding heads out of both model import paths (ATO-523)](2026-09-11-one-rule-keeps-speculative-heads-out-of-both-model-import-paths.md)
 - **2026-08-19** — [Do not preload a model on startup](2026-08-19-do-not-preload-a-model-on-startup.md)
