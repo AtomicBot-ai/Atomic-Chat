@@ -15,8 +15,6 @@
     "emptyDescription": "この端末に合うモデルをダウンロードするか、クラウドのモデルを接続してください。メッセージはどちらの場合も保持されます。",
     "recommendedForDevice": "お使いの端末におすすめ",
     "download": "ダウンロード",
-    "downloading": "ダウンロード中…",
-    "downloadingPercent": "ダウンロード中… {{percent}}%",
     "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。",
     "startingNotice": "起動中",
     "addFolder": "モデルのフォルダを追加",

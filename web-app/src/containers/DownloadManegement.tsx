@@ -12,8 +12,8 @@ import { DownloadPanel } from '@/containers/downloads/DownloadPanel'
 import type { DownloadRowProps } from '@/containers/downloads/DownloadProgressRow'
 import { advanceSpeedSample, newSpeedSample } from '@/lib/downloadFormat'
 import {
+  cancelDownload,
   clearDownloadCancellationRequested,
-  markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import {
@@ -410,9 +410,12 @@ export function DownloadManagement() {
         if (viaProxy) {
           toast.error(t('common:toast.downloadProxyUnreachable.title'), {
             id: 'download-failed',
-            description: t('common:toast.downloadProxyUnreachable.description', {
-              proxyUrl: useProxyConfig.getState().proxyUrl,
-            }),
+            description: t(
+              'common:toast.downloadProxyUnreachable.description',
+              {
+                proxyUrl: useProxyConfig.getState().proxyUrl,
+              }
+            ),
             duration: 30000,
             action: {
               label: t('common:toast.downloadProxyUnreachable.action'),
@@ -422,7 +425,9 @@ export function DownloadManagement() {
         } else {
           toast.error(t('common:toast.downloadNetworkUnreachable.title'), {
             id: 'download-failed',
-            description: t('common:toast.downloadNetworkUnreachable.description'),
+            description: t(
+              'common:toast.downloadNetworkUnreachable.description'
+            ),
             duration: 30000,
           })
         }
@@ -744,28 +749,12 @@ export function DownloadManagement() {
     [resumeParams, clearPausedDownload, markResumableDownload, serviceHub, t]
   )
 
+  // Shared with the composer's reply widget, which offers the same Cancel on
+  // the download it lists.
   const handleCancelDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      markDownloadCancellationRequested(download.name)
-      markResumableDownload(download.name)
-      clearPausedDownload(download.name)
-      clearResumeParams(download.name)
-      if (download.id !== download.name) {
-        markDownloadCancellationRequested(download.id)
-        markResumableDownload(download.id)
-        clearPausedDownload(download.id)
-        clearResumeParams(download.id)
-      }
-      if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
-        const downloadManager = window.core.extensionManager.getByName(
-          '@janhq/download-extension'
-        )
-        downloadManager.cancelDownload(download.id)
-      } else {
-        serviceHub.models().abortDownload(download.name)
-      }
-    },
-    [markResumableDownload, clearPausedDownload, clearResumeParams, serviceHub]
+    (download: { id: string; name: string }) =>
+      cancelDownload(download, serviceHub),
+    [serviceHub]
   )
 
   const panelItems = useMemo<DownloadRowProps[]>(() => {

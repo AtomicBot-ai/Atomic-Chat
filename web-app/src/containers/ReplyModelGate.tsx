@@ -12,7 +12,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { route } from '@/constants/routes'
+import { VOICE_MODEL_ID } from '@/constants/voice'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { RouteRow } from '@/containers/RouteRow'
 import {
@@ -20,7 +22,7 @@ import {
   selectCloudGalleryProviders,
   type CloudProviderSaveResult,
 } from '@/containers/dialogs/AddCloudProviderDialog'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -28,6 +30,13 @@ import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
+import { cancelDownload } from '@/lib/downloadCancellation'
+import {
+  downloadStatusLabel,
+  formatEta,
+  formatProgressPair,
+} from '@/lib/downloadFormat'
+import { prettyModelName } from '@/lib/model-display-name'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
@@ -54,6 +63,7 @@ import {
   collectImportedModelPaths,
   scanLocalModels,
 } from '@/services/models/localScan'
+import { downloadKind } from '@/lib/telemetry'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
@@ -377,7 +387,10 @@ function ReplyModelGateBody({
       )}
 
       {branch === 'none' && (
-        <RecommendedDownloads onStarted={() => onResolve('download')} />
+        <RecommendedDownloads
+          onStarted={() => onResolve('download')}
+          onInFlight={() => onResolve('download_in_flight')}
+        />
       )}
 
       <ModelRoutes
@@ -397,16 +410,114 @@ function ReplyModelGateBody({
   )
 }
 
+type InFlightDownload = {
+  id: string
+  progress: number
+  current: number
+  total: number
+  bytesPerSecond: number
+  stage?: DownloadStage
+  paused: boolean
+}
+
+/**
+ * Is this transfer a model the composer could answer with once it lands?
+ *
+ * The panel lists every download; this widget lists only the ones that would
+ * settle the question it asks. So no embedding model, no projector on its
+ * own, no diffusion checkpoint, no backend binary — and not the voice model,
+ * whose import is silent and never becomes the selected model.
+ */
+function isChatModelDownload(id: string): boolean {
+  if (id === EMBEDDING_MODEL_ID || id === VOICE_MODEL_ID) return false
+  if (id.startsWith('mmproj') || id.startsWith('llamacpp')) return false
+  return downloadKind(id) === 'model'
+}
+
+/**
+ * The chat-model downloads under way, as the bottom-right panel would list
+ * them: the transfers with progress, plus the ones started and not yet
+ * reporting a byte. Keyed on the store's key — the entries carry no `id` of
+ * their own.
+ */
+function useInFlightChatDownloads(): InFlightDownload[] {
+  const downloads = useDownloadStore((state) => state.downloads)
+  const localDownloadingModels = useDownloadStore(
+    (state) => state.localDownloadingModels
+  )
+  const pausedDownloads = useDownloadStore((state) => state.pausedDownloads)
+
+  return useMemo(() => {
+    const rows: InFlightDownload[] = Object.entries(downloads).map(
+      ([id, download]) => ({
+        id,
+        progress: download.progress ?? 0,
+        current: download.current,
+        total: download.total,
+        bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
+        stage: download.stage,
+        paused: pausedDownloads.has(id),
+      })
+    )
+    for (const id of localDownloadingModels) {
+      if (downloads[id]) continue
+      rows.push({
+        id,
+        progress: 0,
+        current: 0,
+        total: 0,
+        bytesPerSecond: 0,
+        paused: pausedDownloads.has(id),
+      })
+    }
+    return rows.filter((row) => isChatModelDownload(row.id))
+  }, [downloads, localDownloadingModels, pausedDownloads])
+}
+
+/**
+ * The panel's readout on one line: `10% · 0.16 / 1.58 GB · 1m 00s left`,
+ * `Paused · 0.16 / 1.58 GB`, or what the downloader is doing before the
+ * first byte.
+ */
+function inFlightHint(
+  t: (key: string, vars?: Record<string, unknown>) => string,
+  download: InFlightDownload
+): string {
+  const eta = download.paused
+    ? null
+    : formatEta(download.total - download.current, download.bytesPerSecond)
+  return [
+    downloadStatusLabel(t, download),
+    download.total > 0 && formatProgressPair(download.current, download.total),
+    eta && t('common:downloadPanel.left', { eta }),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 /**
  * Branch 2: nothing on the device. The list is the one onboarding leads with
  * — see `useRecommendedDownloads` — so the user is never offered two different
  * "recommended" models by the same app. The first row is the best fit and
  * carries the filled button; the rest are the tier's other options.
+ *
+ * A chat model already downloading — from onboarding, the Hub, anywhere —
+ * sits above them as the first row, with the panel's readout and a Cancel: it
+ * is the answer to the widget's question, and offering other models to fetch
+ * while saying nothing about it read as if the app had forgotten.
  */
-function RecommendedDownloads({ onStarted }: { onStarted: () => void }) {
+function RecommendedDownloads({
+  onStarted,
+  onInFlight,
+}: {
+  onStarted: () => void
+  /** A chat model was already downloading when the list came up. */
+  onInFlight: () => void
+}) {
   const { t } = useTranslation()
-  const { items, isLoading } = useRecommendedDownloads()
-  const downloads = useDownloadStore((state) => state.downloads)
+  const serviceHub = useServiceHub()
+  const { items: recommended, isLoading } = useRecommendedDownloads()
+  const inFlight = useInFlightChatDownloads()
   // The card lookup has no failure state of its own; past this the routes
   // below are the offer, and a spinner with nothing behind it comes down.
   const [gaveUp, setGaveUp] = useState(false)
@@ -416,14 +527,27 @@ function RecommendedDownloads({ onStarted }: { onStarted: () => void }) {
     return () => clearTimeout(timer)
   }, [isLoading, gaveUp])
 
-  const progressFor = (modelId: string | undefined) => {
-    if (!modelId) return null
-    const entry = Object.values(downloads).find((d) => d.id === modelId)
-    if (!entry || entry.total <= 0) return null
-    return Math.round((entry.progress ?? 0) * 100)
-  }
+  // A transfer already running is a model on its way, exactly what a click on
+  // a Download button below would start — so the message is armed on it the
+  // same way, once, without a decision to record a time for.
+  const armedRef = useRef(false)
+  const hasInFlight = inFlight.length > 0
+  useEffect(() => {
+    if (!hasInFlight || armedRef.current) return
+    armedRef.current = true
+    onInFlight()
+  }, [hasInFlight, onInFlight])
 
-  if (items.length === 0) {
+  // The running download is its own row at the top; the recommendation for
+  // the same file must not appear a second time beneath it. The lead stays
+  // the lead only while it is still on offer — with it downloading, no other
+  // row is "best fit".
+  const inFlightIds = new Set(inFlight.map((d) => d.id))
+  const items = recommended.filter(
+    (item) => !inFlightIds.has(item.variant.model_id)
+  )
+
+  if (items.length === 0 && inFlight.length === 0) {
     if (!isLoading || gaveUp) return null
     return (
       <div
@@ -444,16 +568,31 @@ function RecommendedDownloads({ onStarted }: { onStarted: () => void }) {
       data-testid="reply-gate-recommended"
     >
       <div className="flex flex-col divide-y divide-border/60">
-        {items.map((item, index) => {
-          const hero = index === 0
-          const progress = progressFor(item.variant.model_id)
-          const hint = item.isDownloading
-            ? progress !== null
-              ? t('chat:replyGate.downloadingPercent', { percent: progress })
-              : t('chat:replyGate.downloading')
-            : hero
-              ? t('chat:replyGate.recommendedForDevice')
-              : t(item.descriptionKey)
+        {inFlight.map((download) => (
+          <RouteRow
+            key={download.id}
+            icon={
+              <ModelLogo
+                name={download.id}
+                fallback="huggingface"
+                className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
+              />
+            }
+            title={prettyModelName(download.id)}
+            hint={inFlightHint(t, download)}
+            action={t('common:cancel')}
+            label={t('common:cancelDownload')}
+            onClick={() =>
+              cancelDownload({ id: download.id, name: download.id }, serviceHub)
+            }
+            data-testid="reply-gate-recommended-in-flight"
+          />
+        ))}
+        {items.map((item) => {
+          const hero = item === recommended[0]
+          const hint = hero
+            ? t('chat:replyGate.recommendedForDevice')
+            : t(item.descriptionKey)
           return (
             <RouteRow
               key={item.repo}
