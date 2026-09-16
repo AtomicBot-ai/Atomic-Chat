@@ -103,6 +103,26 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     },
   },
   {
+    serverKey: 'youcom',
+    name: 'You.com',
+    author: 'You.com',
+    descriptionKey: 'mcp-connectors:descriptions.youcom',
+    icon: { bg: '#0F1724', src: '/images/connectors/youcom.svg' },
+    docsUrl: 'https://docs.you.com/docs/build-with-agents/mcp-server',
+    matchUrls: ['api.you.com/mcp'],
+    // Keyless hosted search MCP: the `?profile=free` profile needs no signup
+    // (about 100 searches/day). For more tools and higher limits, drop the
+    // query param and add a Bearer Authorization header with a you.com/platform
+    // API key — reachable afterwards via Edit JSON.
+    config: {
+      type: 'http',
+      url: 'https://api.you.com/mcp?profile=free',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
+  {
     serverKey: 'atomicmail',
     name: 'Atomic Mail',
     author: 'Atomic Mail',
