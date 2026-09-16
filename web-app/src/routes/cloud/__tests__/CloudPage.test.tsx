@@ -74,10 +74,9 @@ vi.mock('@/containers/FavoriteModelAction', () => ({
 }))
 
 vi.mock('@/lib/provider-api-key', async () => {
-  const actual =
-    await vi.importActual<typeof import('@/lib/provider-api-key')>(
-      '@/lib/provider-api-key'
-    )
+  const actual = await vi.importActual<typeof import('@/lib/provider-api-key')>(
+    '@/lib/provider-api-key'
+  )
   return { ...actual, saveProviderApiKey }
 })
 
@@ -107,7 +106,12 @@ vi.mock('@/lib/platform/const', () => ({
 vi.mock('@/stores/provider-registry-store', () => ({
   useProviderRegistryStore: Object.assign(
     (selector?: (s: unknown) => unknown) => {
-      const state = { status: 'idle', fetchedAt: null, refresh: vi.fn(), error: null }
+      const state = {
+        status: 'idle',
+        fetchedAt: null,
+        refresh: vi.fn(),
+        error: null,
+      }
       return selector ? selector(state) : state
     },
     { getState: () => ({ error: null }) }
@@ -144,7 +148,13 @@ const baseUrlSetting: ProviderSetting = {
 }
 
 const providers: ProviderObject[] = [
-  { provider: 'llamacpp-upstream', active: true, models: [], settings: [], persist: true },
+  {
+    provider: 'llamacpp-upstream',
+    active: true,
+    models: [],
+    settings: [],
+    persist: true,
+  },
   {
     // Signed in with a ChatGPT account: no key, no settings, models arrive on
     // sign-in. Its card only renders while it is the selected provider.
@@ -243,9 +253,7 @@ describe('CloudPage', () => {
     expect(
       await screen.findByText('user@example.test (Plus)')
     ).toBeInTheDocument()
-    expect(
-      screen.getByText('cloud:connection.disconnect')
-    ).toBeInTheDocument()
+    expect(screen.getByText('cloud:connection.disconnect')).toBeInTheDocument()
   })
 
   it('surfaces the backend message when sign-in fails', async () => {
@@ -267,15 +275,6 @@ describe('CloudPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows no models card while nothing is connected', () => {
-    // Nothing here has a key, and the keyless Ollama has never answered.
-    mockStore()
-    render(<CloudPage />)
-
-    expect(screen.getByText('cloud:connection.placeholder')).toBeInTheDocument()
-    expect(screen.queryByText('providers:models')).not.toBeInTheDocument()
-  })
-
   it('opens on an already-connected provider when the URL names none', () => {
     // `ollama` needs no key, but only a served model list proves the daemon is
     // actually there — an empty one is not a connection to open on.
@@ -292,6 +291,46 @@ describe('CloudPage', () => {
     expect(
       screen.queryByText('cloud:connection.placeholder')
     ).not.toBeInTheDocument()
+  })
+
+  it('opens on OpenRouter when nothing is connected and the URL names none', () => {
+    // A blank picker on arrival is a dead page. With no connection to open
+    // on, the page still lands on a provider the user can set up right away.
+    mockStore([
+      ...providers,
+      {
+        provider: 'openrouter',
+        active: true,
+        models: [],
+        settings: [apiKeySetting, baseUrlSetting],
+        api_key: '',
+        base_url: 'https://openrouter.ai/api/v1',
+      },
+    ])
+    render(<CloudPage />)
+
+    expect(
+      screen.queryByText('cloud:connection.placeholder')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('cloud:connection.notConnected')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByDisplayValue('https://openrouter.ai/api/v1')
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to the first cloud provider when OpenRouter is not in the catalog', () => {
+    // Nothing here has a key, and the keyless Ollama has never answered.
+    mockStore()
+    render(<CloudPage />)
+
+    expect(
+      screen.queryByText('cloud:connection.placeholder')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('cloud:connection.notConnected')
+    ).toBeInTheDocument()
   })
 
   it('opens on the provider named in the URL', () => {
@@ -320,10 +359,9 @@ describe('CloudPage', () => {
     searchState.current = { provider: 'openai' }
     render(<CloudPage />)
 
-    fireEvent.change(
-      screen.getByDisplayValue('https://api.openai.com/v1'),
-      { target: { value: ' https://proxy.test/v1 ' } }
-    )
+    fireEvent.change(screen.getByDisplayValue('https://api.openai.com/v1'), {
+      target: { value: ' https://proxy.test/v1 ' },
+    })
 
     const [name, patch] = updateProvider.mock.calls[0]
     expect(name).toBe('openai')

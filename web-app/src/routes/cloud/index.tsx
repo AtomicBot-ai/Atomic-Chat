@@ -45,6 +45,9 @@ export const Route = createFileRoute(route.cloud.index as any)({
  * gear in the model picker and any future onboarding link all land on the right
  * connection.
  */
+/// Opened by default when no provider is connected and the URL names none.
+const DEFAULT_CLOUD_PROVIDER = 'openrouter'
+
 export function CloudPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -60,7 +63,9 @@ export function CloudPage() {
 
   // The provider catalog is a cloud concern, so its refresh moved here from
   // Settings along with the providers it describes.
-  const registryLoading = useProviderRegistryStore((s) => s.status === 'loading')
+  const registryLoading = useProviderRegistryStore(
+    (s) => s.status === 'loading'
+  )
   const registryFetchedAt = useProviderRegistryStore((s) => s.fetchedAt)
   const refreshRegistry = useProviderRegistryStore((s) => s.refresh)
 
@@ -74,8 +79,15 @@ export function CloudPage() {
       return cloudProviders.find((p) => p.provider === search.provider)
     }
     // No explicit selection: open on something the user already set up, so the
-    // page is useful on arrival rather than an empty picker.
-    return cloudProviders.find(isProviderConnected)
+    // page is useful on arrival rather than an empty picker. With nothing
+    // connected yet, land on OpenRouter — one key there unlocks most of the
+    // catalog — and failing that on whatever comes first, so the page never
+    // opens blank.
+    return (
+      cloudProviders.find(isProviderConnected) ??
+      cloudProviders.find((p) => p.provider === DEFAULT_CLOUD_PROVIDER) ??
+      cloudProviders[0]
+    )
   }, [cloudProviders, search.provider])
 
   const selectProvider = useCallback(
@@ -219,7 +231,7 @@ export function CloudPage() {
               onConnectBrowser={() => void subscription.connect()}
               onCancel={() => void subscription.cancel()}
               onDisconnect={() => void subscription.disconnect()}
-    surface="settings"
+              surface="settings"
             />
           )}
 
