@@ -8,6 +8,7 @@ import {
   buildConnectorConfig,
 } from '../mcp-connectors'
 import type { MCPServers } from '@/hooks/useMCPServers'
+import en from '@/locales/en/mcp-connectors.json'
 
 const exa = MCP_CONNECTORS.find((c) => c.serverKey === 'exa')!
 const serper = MCP_CONNECTORS.find((c) => c.serverKey === 'serper')!
@@ -154,6 +155,32 @@ describe('catalog hygiene', () => {
   it('hides only entries whose sign-in cannot work yet', () => {
     for (const connector of MCP_CONNECTORS.filter((c) => c.hidden)) {
       expect(connector.auth).toBe('oauth-soon')
+    }
+  })
+})
+
+describe('taglines', () => {
+  const taglines = (en as { taglines?: Record<string, string> }).taglines ?? {}
+
+  it('gives every catalog connector a short tagline that exists in the English locale', () => {
+    for (const connector of MCP_CONNECTORS) {
+      expect(connector.taglineKey, connector.serverKey).toBe(
+        `mcp-connectors:taglines.${connector.serverKey}`
+      )
+      const text = taglines[connector.serverKey]
+      expect(text, connector.serverKey).toMatch(/^\S(.*\S)?$/)
+      expect(text, connector.serverKey).not.toMatch(/\.$/)
+      // "Two or three words"; an ampersand counts as one.
+      expect(text.split(/\s+/).length, connector.serverKey).toBeLessThanOrEqual(
+        4
+      )
+    }
+  })
+
+  it('leaves no tagline for a connector that is not in the catalog', () => {
+    const known = new Set(MCP_CONNECTORS.map((c) => c.serverKey))
+    for (const key of Object.keys(taglines)) {
+      expect(known.has(key), key).toBe(true)
     }
   })
 })
