@@ -324,6 +324,7 @@ __metadata:
     run-script-os: "npm:1.1.6"
     ts-loader: "npm:^9.5.0"
     typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
   languageName: unknown
   linkType: soft
 

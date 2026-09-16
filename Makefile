@@ -336,6 +336,7 @@ test-web:
 
 test-extensions:
 	yarn --cwd extensions workspaces foreach -A \
+		--include '@janhq/assistant-extension' \
 		--include '@janhq/llamacpp-extension' \
 		--include '@janhq/llamacpp-upstream-extension' \
 		--include '@janhq/mlx-extension' \
