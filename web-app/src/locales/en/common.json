@@ -617,23 +617,23 @@
     },
     "downloadDiskFull": {
       "title": "Not enough disk space",
-      "description": "Free up space on the drive holding your Jan data folder, then start the download again."
+      "description": "Free up space on the drive holding your Atomic Chat data folder, then start the download again."
     },
     "downloadDiskPermission": {
       "title": "No permission to write the model",
-      "description": "The app cannot write to the Jan data folder. Check the folder permissions, or move the data folder somewhere writable."
+      "description": "The app cannot write to the Atomic Chat data folder. Check the folder permissions, or move the data folder somewhere writable."
     },
     "downloadDiskLocked": {
       "title": "The file is in use by another program",
-      "description": "Antivirus or backup software is holding the file while it is being written. Add the Jan data folder to its exclusions and retry."
+      "description": "Antivirus or backup software is holding the file while it is being written. Add the Atomic Chat data folder to its exclusions and retry."
     },
     "downloadDiskPathTooLong": {
       "title": "File path is too long",
-      "description": "Windows limits paths to 260 characters. Move the Jan data folder closer to the drive root and retry."
+      "description": "Windows limits paths to 260 characters. Move the Atomic Chat data folder closer to the drive root and retry."
     },
     "downloadDiskDeviceLost": {
       "title": "The drive is no longer available",
-      "description": "The external or network drive holding the Jan data folder disconnected. Reconnect it and resume the download."
+      "description": "The external or network drive holding the Atomic Chat data folder disconnected. Reconnect it and resume the download."
     },
     "downloadProxyUnreachable": {
       "title": "Could not reach the server through your proxy",
