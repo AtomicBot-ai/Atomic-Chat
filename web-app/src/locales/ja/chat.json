@@ -99,7 +99,9 @@
     "advancedSettings": "詳細設定",
     "advancedSettingsHint": "読み込み時のオプションです。変更すると実行中のモデルが再起動します。",
     "reset": "リセット",
-    "resetSampling": "サンプリングをリセット",
+    "resetSampling": "デフォルトに戻す",
+    "resetSuccess": "モデル設定をリセットしました",
+    "resetSuccessDescription": "サンプリング設定をデフォルト値に戻しました。",
     "resetModel": "モデル設定をデフォルトにリセット"
   },
   "agentErrors": {

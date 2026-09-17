@@ -188,7 +188,9 @@
     "advancedSettings": "Advanced settings",
     "advancedSettingsHint": "Load-time options. Changing them restarts a running model.",
     "reset": "Reset",
-    "resetSampling": "Reset sampling",
+    "resetSampling": "Reset to defaults",
+    "resetSuccess": "Model settings reset",
+    "resetSuccessDescription": "Sampling settings were restored to their defaults.",
     "resetModel": "Reset model settings to defaults"
   },
   "agentErrors": {
