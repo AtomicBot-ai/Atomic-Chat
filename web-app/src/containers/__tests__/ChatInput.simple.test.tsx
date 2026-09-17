@@ -956,6 +956,39 @@ describe('ChatInput local model auto-start', () => {
     })
   })
 
+  it.each([false, true])(
+    'does not load or start after Skip clears selection (installed model: %s)',
+    async (installed) => {
+      const startModel = vi.fn()
+      seedServiceHub({
+        models: {
+          getActiveModels: vi.fn().mockResolvedValue([]),
+          startModel,
+        } as unknown as ReturnType<ServiceHub['models']>,
+      })
+      useModelProvider.setState({
+        providers: installed ? [upstream] : [],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      useAppState.setState({
+        activeModels: [],
+        loadingModel: false,
+        serverStatus: 'stopped',
+      })
+      const { unmount } = render(<ChatInput />)
+      await act(async () => {})
+
+      expect(screen.getByTestId('chat-input')).toBeVisible()
+      expect(useModelProvider.getState().selectedModel).toBeNull()
+      expect(useAppState.getState().activeModels).toEqual([])
+      expect(useAppState.getState().serverStatus).toBe('stopped')
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      expect(startModel).not.toHaveBeenCalled()
+      unmount()
+    }
+  )
+
   it('drops a stray copy in another engine instead of switching', async () => {
     const { stopAllModelsExcept } = seedModels({
       'llamacpp-upstream': ['shared-model'],

@@ -5,6 +5,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import {
@@ -277,6 +278,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         }
         return
       }
+
+      // Skip is an explicit choice to enter with no model this session. An
+      // explicit selection above still wins; startup defaults must not undo Skip.
+      if (useModelLoad.getState().modelSelectionDeferred) return
 
       const { preloadModelOnStartup } = useGeneralSetting.getState()
       if (!preloadModelOnStartup) {

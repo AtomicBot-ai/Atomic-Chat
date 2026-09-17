@@ -24,6 +24,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
 import { toast } from 'sonner'
 import { events } from '@janhq/core'
+import { isOnboardingPending, resetForcedOnboardingRun } from '@/lib/onboarding'
 
 const mocks = vi.hoisted(() => {
   // Mirrors of the two persisted stores SetupScreen writes to, so tests can
@@ -40,6 +41,7 @@ const mocks = vi.hoisted(() => {
       leftPanel.open = value
     }),
     setOnboardingActive: vi.fn(),
+    deferModelSelection: vi.fn(),
     reminder,
     setReminderPending: vi.fn((value: boolean) => {
       reminder.pending = value
@@ -59,7 +61,8 @@ const mocks = vi.hoisted(() => {
     recommended: [] as unknown[],
     // The Hub's curated picks, listed under the offer; mutable per test.
     staffPicks: [] as unknown[],
-    engine: { import: vi.fn() },
+    engine: { import: vi.fn(), load: vi.fn() },
+    startModel: vi.fn(),
     // Mutable so a test can move the machine to another rung of the ladder.
     // `profile` is what the "why this one" line reads its memory figure from.
     hardwareTier: {
@@ -78,6 +81,8 @@ const mocks = vi.hoisted(() => {
     // Live provider list, mutable so a test can seed cloud providers.
     modelProviderState: {
       providers: [] as ModelProvider[],
+      selectedProvider: '',
+      selectedModel: null as Model | null,
       getProviderByName: vi.fn(),
       selectModelProvider: vi.fn(),
       setProviders: vi.fn(),
@@ -208,6 +213,7 @@ vi.mock('@/hooks/useModelLoad', () => {
   const useModelLoad = {
     getState: () => ({
       setOnboardingActive: mocks.setOnboardingActive,
+      deferModelSelection: mocks.deferModelSelection,
     }),
   }
   return { useModelLoad }
@@ -301,6 +307,7 @@ describe('SetupScreen', () => {
       models: {
         pullModelWithMetadata: mocks.pullModelWithMetadata,
         abortDownload: mocks.abortDownload,
+        startModel: mocks.startModel,
       } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
     })
     // The real store, reset: the rows read their Downloading state from it.
@@ -324,6 +331,19 @@ describe('SetupScreen', () => {
     }
     mocks.hardwareTier.ready = true
     mocks.modelProviderState.providers = []
+    mocks.modelProviderState.selectedProvider = ''
+    mocks.modelProviderState.selectedModel = null
+    mocks.modelProviderState.selectModelProvider.mockImplementation(
+      (provider: string, id: string) => {
+        const state = mocks.modelProviderState
+        state.selectedProvider = provider
+        state.selectedModel =
+          state.providers
+            .find((p) => p.provider === provider)
+            ?.models.find((m) => m.id === id) ?? null
+        return state.selectedModel
+      }
+    )
     // Onboarding imports never settle by default, so a test can assert on the
     // in-flight state without racing the import event handler.
     mocks.engine.import.mockReturnValue(new Promise(() => {}))
@@ -2002,6 +2022,7 @@ describe('SetupScreen', () => {
 
     afterEach(() => {
       vi.useRealTimers()
+      vi.unstubAllGlobals()
     })
 
     const renderPastLocalScan = async (found: unknown[] = []) => {
@@ -2044,6 +2065,66 @@ describe('SetupScreen', () => {
       ])
       unmount()
     })
+
+    it.each([false, true])(
+      'Skip clears selection without starting a model (returning user: %s)',
+      async (returning) => {
+        const model = {
+          id: 'installed.gguf',
+          settings: { ctx_len: { controller_props: { value: 4096 } } },
+        } as Model
+        const providers = returning
+          ? [
+              {
+                provider: 'llamacpp-upstream',
+                active: true,
+                models: [model],
+                settings: [],
+              } as ModelProvider,
+            ]
+          : []
+        mocks.modelProviderState.providers = providers
+        vi.stubGlobal('FORCE_ONBOARDING', returning)
+        if (returning)
+          localStorage.setItem(localStorageKey.setupCompleted, 'true')
+        resetForcedOnboardingRun()
+        expect(isOnboardingPending(providers)).toBe(true)
+        mocks.modelProviderState.selectedProvider = returning
+          ? 'llamacpp-upstream'
+          : ''
+        mocks.modelProviderState.selectedModel = returning ? model : null
+        if (returning)
+          localStorage.setItem(
+            localStorageKey.lastUsedModel,
+            JSON.stringify({ provider: 'llamacpp-upstream', model: model.id })
+          )
+        const { unmount } = await renderPastLocalScan()
+        expect(screen.getByRole('button', { name: 'setup:skip' })).toBeVisible()
+
+        fireEvent.click(screen.getByRole('button', { name: 'setup:skip' }))
+        await act(async () => {})
+
+        expect(mocks.modelProviderState.selectedModel).toBeNull()
+        expect(mocks.modelProviderState.selectedProvider).toBe('')
+        expect(mocks.modelProviderState.providers).toEqual(providers)
+        expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+        expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe(
+          'true'
+        )
+        expect(mocks.deferModelSelection).toHaveBeenCalled()
+        expect(mocks.switchToModel).not.toHaveBeenCalled()
+        expect(mocks.engine.import).not.toHaveBeenCalled()
+        expect(mocks.engine.load).not.toHaveBeenCalled()
+        expect(mocks.startModel).not.toHaveBeenCalled()
+        expect(isOnboardingPending(providers)).toBe(false)
+        expect(mocks.navigate).toHaveBeenCalledWith({
+          to: '/',
+          replace: true,
+          search: {},
+        })
+        unmount()
+      }
+    )
 
     it('exits only once when the user connects a provider first', async () => {
       mocks.modelProviderState.providers = [

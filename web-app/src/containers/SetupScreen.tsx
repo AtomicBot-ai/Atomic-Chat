@@ -1240,6 +1240,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
 
+      // Clear the persisted choice before mounting ChatInput, whose effect starts
+      // a selected local model. Keep the picker from replacing it with the first
+      // installed model when preload is enabled, including after library refresh.
+      useModelLoad.getState().deferModelSelection()
+      selectModelProvider('', '')
+
       // Still import every detected model (no launch) before leaving onboarding.
       importCandidatesInBackground(localCandidates ?? [])
       // Legacy predicate, kept verbatim so `had_any_model` stays comparable
@@ -1276,6 +1282,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [
       navigate,
       onSkipped,
+      selectModelProvider,
       providers,
       importCandidatesInBackground,
       localCandidates,
