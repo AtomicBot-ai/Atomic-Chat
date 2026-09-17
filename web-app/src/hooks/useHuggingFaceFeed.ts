@@ -9,7 +9,7 @@ import type {
   HuggingFaceFeedSort,
 } from '@/services/models/types'
 
-type FeedKey = `${HuggingFaceFeedFormat}:${HuggingFaceFeedSort}`
+type FeedKey = string
 
 type FeedState = {
   models: CatalogModel[]
@@ -68,11 +68,13 @@ export type HuggingFaceFeed = {
 export function useHuggingFaceFeed(
   format: HuggingFaceFeedFormat,
   sort: HuggingFaceFeedSort,
-  enabled: boolean
+  enabled: boolean,
+  search = ''
 ): HuggingFaceFeed {
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
-  const key: FeedKey = `${format}:${sort}`
+  const normalizedSearch = search.trim().toLowerCase()
+  const key: FeedKey = `${format}:${sort}:${normalizedSearch}`
   const [version, bump] = useState(0)
   const rerender = useCallback(() => bump((n) => n + 1), [])
   const [loading, setLoading] = useState(false)
@@ -93,6 +95,7 @@ export function useHuggingFaceFeed(
         const page = await serviceHub.models().listHuggingFaceFeed({
           format,
           sort,
+          search: normalizedSearch || undefined,
           cursor,
           hfToken: huggingfaceToken,
         })
@@ -121,7 +124,7 @@ export function useHuggingFaceFeed(
         rerender()
       }
     },
-    [key, format, sort, huggingfaceToken, serviceHub, rerender]
+    [key, format, sort, normalizedSearch, huggingfaceToken, serviceHub, rerender]
   )
 
   // First page, once per key, or again after the cache has gone stale.

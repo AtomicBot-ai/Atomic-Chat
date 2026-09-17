@@ -252,6 +252,22 @@ function HubContent() {
     FEED_SORT_FOR[filters.sort],
     !isSearchMode
   )
+  const uncensoredQueries = useMemo(
+    () => huggingFaceQueries(debouncedSearchValue, true),
+    [debouncedSearchValue]
+  )
+  const uncensoredFeed = useHuggingFaceFeed(
+    picksFormat,
+    FEED_SORT_FOR[filters.sort],
+    filters.uncensored,
+    uncensoredQueries[0] ?? ''
+  )
+  const abliteratedFeed = useHuggingFaceFeed(
+    picksFormat,
+    FEED_SORT_FOR[filters.sort],
+    filters.uncensored && uncensoredQueries.length > 1,
+    uncensoredQueries[1] ?? ''
+  )
 
   // ---- Staff picks mode -------------------------------------------------
 
@@ -344,28 +360,31 @@ function HubContent() {
 
   // Long-tail Hugging Face fallback (Path B): fan out to HF's public search
   // when the curated catalog returns sparse hits for a non-trivial query.
-  // Uncensored builds are almost all long tail, so with that filter on HF is
-  // always asked, the filter's terms appended out of sight.
+  // Uncensored has cursor-based feeds of its own above; keeping it out of this
+  // one-shot path removes the old 20-results-per-term ceiling.
   useEffect(() => {
     if (showOnlyDownloaded) {
       setHfCandidates([])
       hfCandidatesFetchedForRef.current = ''
       return
     }
+    if (filters.uncensored) {
+      setHfCandidates((current) => (current.length > 0 ? [] : current))
+      hfCandidatesFetchedForRef.current = ''
+      setHfSearching(false)
+      return
+    }
     const query = debouncedSearchValue.trim()
-    if (
-      !filters.uncensored &&
-      (query.length < 3 || catalogResults.length >= 5)
-    ) {
+    if (query.length < 3 || catalogResults.length >= 5) {
       if (catalogResults.length >= 5) setHfCandidates([])
       return
     }
-    const queries = huggingFaceQueries(query, filters.uncensored)
+    const queries = huggingFaceQueries(query, false)
     const cacheKey = queries.join('\n').toLowerCase()
     if (hfCandidatesFetchedForRef.current === cacheKey) return
     hfCandidatesFetchedForRef.current = cacheKey
 
-    const limit = filters.uncensored ? 20 : 10
+    const limit = 10
     let cancelled = false
     let settled = false
     setHfSearching(true)
@@ -485,9 +504,22 @@ function HubContent() {
         : []
     for (const model of head) seen.add(model.model_name)
 
-    const tail = hfCandidates.filter(
-      (c) => !seen.has(c.model_name) && !isUnsupportedBaseGemmaMlx(c)
-    )
+    const pagedUncensored = filters.uncensored
+      ? [...uncensoredFeed.models, ...abliteratedFeed.models].map(
+          (model) => uncensoredFeed.details.get(model.model_name) ?? model
+        )
+      : []
+    const tailSource = filters.uncensored ? pagedUncensored : hfCandidates
+    const tail = tailSource.filter((candidate) => {
+      if (
+        seen.has(candidate.model_name) ||
+        isUnsupportedBaseGemmaMlx(candidate)
+      ) {
+        return false
+      }
+      seen.add(candidate.model_name)
+      return true
+    })
 
     const hfNames = new Set([
       ...head.map((m) => m.model_name),
@@ -500,9 +532,11 @@ function HubContent() {
       { budgetBytes, applyFitFilter: true }
     )
 
-    return filtered.map((model) => ({
+    return filtered.map((model, index) => ({
       model,
       fromHuggingFace: hfNames.has(model.model_name),
+      sectionLabel:
+        filters.uncensored && index === 0 ? t('hub:uncensored') : undefined,
     }))
   }, [
     isSearchMode,
@@ -513,6 +547,11 @@ function HubContent() {
     catalogResults,
     huggingFaceRepo,
     hfCandidates,
+    uncensoredFeed.models,
+    uncensoredFeed.details,
+    uncensoredFeed.detailsVersion,
+    abliteratedFeed.models,
+    abliteratedFeed.detailsVersion,
     filters,
     budgetBytes,
     sources,
@@ -703,12 +742,34 @@ function HubContent() {
     [lastVisibleIndex, listItems]
   )
   useEffect(() => {
-    if (isSearchMode || listItems.length === 0) return
+    if (listItems.length === 0) return
+    if (filters.uncensored) {
+      if (lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS) {
+        uncensoredFeed.loadMore()
+        abliteratedFeed.loadMore()
+      }
+      if (visibleFeedRepos) {
+        const repos = visibleFeedRepos.split('\n')
+        uncensoredFeed.ensureDetails(repos)
+        abliteratedFeed.ensureDetails(repos)
+      }
+      return
+    }
+    if (isSearchMode) return
     if (lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS) {
       feed.loadMore()
     }
     if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
-  }, [isSearchMode, listItems.length, lastVisibleIndex, visibleFeedRepos, feed])
+  }, [
+    isSearchMode,
+    filters.uncensored,
+    listItems.length,
+    lastVisibleIndex,
+    visibleFeedRepos,
+    feed,
+    uncensoredFeed,
+    abliteratedFeed,
+  ])
 
   // A selected feed row needs its card whether or not it is still on screen:
   // the detail panel's download options come from it.
@@ -721,7 +782,11 @@ function HubContent() {
   }, [selectedItem, feed])
 
   const isEmpty = listItems.length === 0
-  const showSkeleton = isEmpty && ((loading && !isSearchMode) || hfSearching)
+  const uncensoredLoading =
+    filters.uncensored &&
+    (uncensoredFeed.loading || abliteratedFeed.loading)
+  const showSkeleton =
+    isEmpty && ((loading && !isSearchMode) || hfSearching || uncensoredLoading)
 
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
@@ -824,6 +889,15 @@ function HubContent() {
             </div>
           )}
           {!isSearchMode && !isEmpty && feed.loading && (
+            <p
+              className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground"
+              role="status"
+            >
+              <Loader className="size-3 animate-spin" />
+              {t('hub:feedLoading')}
+            </p>
+          )}
+          {filters.uncensored && !isEmpty && uncensoredLoading && (
             <p
               className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground"
               role="status"
