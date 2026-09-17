@@ -138,6 +138,11 @@ const SUPPORTED_EXTENSIONS = [
   'patch',
 ]
 
+const PROJECT_FILE_LOAD_RETRY_DELAYS_MS = [0, 120, 300] as const
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+
 async function getFilesFromPaths(paths: string[]): Promise<string[]> {
   const files: string[] = []
   const { fs } = await import('@janhq/core')
@@ -214,13 +219,31 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
+    if (!attachmentsEnabled) {
+      setFiles([])
+      setLoadError(null)
+      setLoading(false)
+      return
+    }
+
     try {
       const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
         ExtensionTypeEnum.VectorDB
       )
       if (ext?.listAttachmentsForProject) {
-        const projectFiles = await ext.listAttachmentsForProject(projectId)
-        setFiles(projectFiles)
+        let lastError: unknown
+        for (const delay of PROJECT_FILE_LOAD_RETRY_DELAYS_MS) {
+          if (delay) await wait(delay)
+          try {
+            const projectFiles = await ext.listAttachmentsForProject(projectId)
+            setFiles(projectFiles)
+            lastError = undefined
+            break
+          } catch (error) {
+            lastError = error
+          }
+        }
+        if (lastError) throw lastError
       } else {
         setFiles([])
       }
@@ -230,11 +253,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       // the upload the user just made may well be in there.
       console.error('Failed to load project files:', error)
       setFiles([])
-      setLoadError(error instanceof Error ? error.message : String(error))
+      setLoadError(formatAttachmentError(error))
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [attachmentsEnabled, projectId])
 
   useEffect(() => {
     loadProjectFiles()
