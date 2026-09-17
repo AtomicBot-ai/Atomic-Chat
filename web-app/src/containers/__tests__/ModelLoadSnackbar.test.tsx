@@ -1,19 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Toaster } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import i18n from '@/i18n/setup'
+import { ToasterProvider } from '@/providers/ToasterProvider'
 import { cancelModelLoad } from '@/utils/switchModel'
 import { LOADED_SNACKBAR_MS, ModelLoadSnackbar } from '../ModelLoadSnackbar'
-
-vi.mock('@/i18n/setup', () => ({
-  default: {
-    t: (key: string, options?: Record<string, string>) =>
-      options?.model ? `${key}:${options.model}` : key,
-  },
-}))
 
 vi.mock('@/utils/switchModel', () => ({
   cancelModelLoad: vi.fn(),
@@ -38,10 +32,8 @@ const seed = (
   })
 }
 
-const startLoad = (kind: 'start' | 'restart' = 'start') =>
-  act(() =>
-    useAppState.getState().updateLoadingModel(true, { modelId: MODEL, kind })
-  )
+const startLoad = (kind: 'start' | 'restart' = 'start', modelId = MODEL) =>
+  act(() => useAppState.getState().updateLoadingModel(true, { modelId, kind }))
 
 const finishLoad = () =>
   act(() => {
@@ -54,7 +46,7 @@ const snackbar = () => screen.queryByTestId('model-load-snackbar')
 const renderSnackbar = () =>
   render(
     <>
-      <Toaster />
+      <ToasterProvider />
       <ModelLoadSnackbar />
     </>
   )
@@ -62,6 +54,10 @@ const renderSnackbar = () =>
 describe('ModelLoadSnackbar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    i18n.changeLanguage('en')
+    vi.mocked(cancelModelLoad).mockImplementation(async () => {
+      useAppState.getState().setLoadingModelCancelling(true)
+    })
     act(() => {
       useModelLoad.setState({
         modelLoadError: undefined,
@@ -78,47 +74,68 @@ describe('ModelLoadSnackbar', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    document.documentElement.style.removeProperty('--font-size-base')
   })
 
-  it('names the model, the step it is on, and offers a Cancel', async () => {
-    renderSnackbar()
-    startLoad()
-    act(() =>
-      useAppState
-        .getState()
-        .setLoadingModelProgress({ kind: 'loadingWeights', cachedFraction: 1 })
-    )
+  it.each([
+    ['start', '18px'],
+    ['start', '20px'],
+    ['restart', '18px'],
+    ['restart', '20px'],
+  ] as const)(
+    'shows concise cached %s copy at font size %s',
+    async (kind, fontSize) => {
+      document.documentElement.style.setProperty('--font-size-base', fontSize)
+      renderSnackbar()
+      startLoad(kind, 'org/' + 'VeryLongModelName'.repeat(20) + '-Q4_K_M.gguf')
+      act(() =>
+        useAppState.getState().setLoadingModelProgress({
+          kind: 'loadingWeights',
+          cachedFraction: 1,
+        })
+      )
 
-    await waitFor(() =>
-      expect(snackbar()).toHaveAttribute('data-face', 'loading')
-    )
-    expect(
-      screen.getByText('common:inferenceStatus.starting:Qwen3 8B')
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('common:modelLoad.stage.loadingCachedWeights')
-    ).toBeInTheDocument()
+      await waitFor(() =>
+        expect(snackbar()).toHaveAttribute('data-face', 'loading')
+      )
+      expect(
+        screen.getByText('Starting Model', { exact: true })
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Loading cached model into memory', { exact: true })
+      ).toBeInTheDocument()
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'common:modelLoad.cancel' })
-    )
-    expect(cancelModelLoad).toHaveBeenCalled()
-  })
+      expect(screen.getAllByRole('status')).toHaveLength(1)
+      expect(snackbar()).toHaveTextContent(
+        /^Starting ModelLoading cached model into memoryCancel$/
+      )
+      expect(snackbar()?.querySelectorAll('.animate-spin')).toHaveLength(1)
+      expect(screen.getAllByRole('button')).toHaveLength(2)
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Cancel', exact: true })
+      )
+      expect(
+        await screen.findByRole('button', { name: 'Cancelling…' })
+      ).toBeDisabled()
+    }
+  )
 
   it('tells a cold read off the disk apart from a load from cache', async () => {
     renderSnackbar()
     startLoad()
     act(() =>
-      useAppState
-        .getState()
-        .setLoadingModelProgress({
-          kind: 'loadingWeights',
-          cachedFraction: 0.1,
-        })
+      useAppState.getState().setLoadingModelProgress({
+        kind: 'loadingWeights',
+        cachedFraction: 0.1,
+      })
     )
 
     expect(
-      await screen.findByText('common:modelLoad.stage.readingWeightsFromDisk')
+      await screen.findByText(
+        'Reading the model from disk. The first load after a restart takes longer.'
+      )
     ).toBeInTheDocument()
   })
 
@@ -128,7 +145,7 @@ describe('ModelLoadSnackbar', () => {
     act(() => useAppState.getState().setLoadingModelCancelling(true))
 
     expect(
-      await screen.findByRole('button', { name: 'common:modelLoad.cancelling' })
+      await screen.findByRole('button', { name: 'Cancelling…' })
     ).toBeDisabled()
   })
 
@@ -143,9 +160,7 @@ describe('ModelLoadSnackbar', () => {
     await waitFor(() =>
       expect(snackbar()).toHaveAttribute('data-face', 'loaded')
     )
-    expect(
-      screen.getByText('common:inferenceStatus.ready:Qwen3 8B')
-    ).toBeInTheDocument()
+    expect(screen.getByText('Qwen3 8B is loaded')).toBeInTheDocument()
 
     act(() => vi.advanceTimersByTime(LOADED_SNACKBAR_MS + 1000))
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
@@ -156,9 +171,7 @@ describe('ModelLoadSnackbar', () => {
     startLoad()
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'common:modelLoad.dismiss' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
 
     act(() =>
@@ -193,18 +206,14 @@ describe('ModelLoadSnackbar', () => {
     renderSnackbar()
     startLoad()
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
-    fireEvent.click(
-      screen.getByRole('button', { name: 'common:modelLoad.dismiss' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
     act(() => useAppState.getState().updateLoadingModel(false))
 
     startLoad('restart')
 
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
-    expect(
-      screen.getByText('common:inferenceStatus.restarting:Qwen3 8B')
-    ).toBeInTheDocument()
+    expect(screen.getByText('Starting Model')).toBeInTheDocument()
   })
 
   it('says nothing about a remote provider', async () => {

@@ -728,6 +728,7 @@
     "retry": "Try again"
   },
   "modelLoad": {
+    "starting": "Starting Model",
     "cancel": "Cancel",
     "cancelling": "Cancelling…",
     "dismiss": "Dismiss",
@@ -736,7 +737,7 @@
       "unloadingPrevious": "Unloading the previous model to free memory.",
       "installingEngine": "Downloading the engine first. This happens once per engine version.",
       "loadingWeights": "Loading the model into memory.",
-      "loadingCachedWeights": "Loading cached model into memory.",
+      "loadingCachedWeights": "Loading cached model into memory",
       "readingWeightsFromDisk": "Reading the model from disk. The first load after a restart takes longer.",
       "startingServer": "Starting the local API server.",
       "retry_ctx": "Not enough memory. Retrying with a smaller context.",
