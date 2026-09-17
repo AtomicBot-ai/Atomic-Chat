@@ -156,7 +156,8 @@ const pill = () =>
   document.querySelector('[data-test-id="model-picker-trigger"]') as HTMLElement
 const modelRow = () =>
   screen.queryByRole('button', { name: 'common:changeModel' })
-const searchField = () => screen.queryByPlaceholderText('common:searchModels')
+const searchField = () =>
+  screen.queryByPlaceholderText('common:searchModelsHuggingFace')
 
 describe('DropdownModelProvider - the composer pill', () => {
   beforeAll(() => {
@@ -252,7 +253,7 @@ describe('DropdownModelProvider - the composer pill', () => {
       'common:reasoningEffort.medium'
     )
     expect(searchField()).toBeNull()
-    expect(screen.queryByText('other.gguf')).toBeNull()
+    expect(screen.queryByText('Other')).toBeNull()
   })
 
   it('gives settings a bounded reading column and exposes the full model title', () => {
@@ -263,8 +264,7 @@ describe('DropdownModelProvider - the composer pill', () => {
     render(<DropdownModelProvider />)
 
     expect(screen.getByTestId('popover-content')).toHaveClass(
-      'w-[28rem]',
-      'max-w-[calc(100vw-2rem)]'
+      'w-[min(22rem,calc(100dvw-2rem))]'
     )
     expect(
       within(modelRow()!).getByText('Qwen 3 with a very long model name')
@@ -282,7 +282,7 @@ describe('DropdownModelProvider - the composer pill', () => {
     fireEvent.click(modelRow()!)
 
     expect(searchField()).toBeInTheDocument()
-    expect(screen.getByText('other.gguf')).toBeInTheDocument()
+    expect(screen.getByText('Other')).toBeInTheDocument()
     expect(screen.queryByRole('slider')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'common:back' }))

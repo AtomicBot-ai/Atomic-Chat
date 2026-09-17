@@ -34,7 +34,6 @@ import {
 } from '@/lib/downloadFormat'
 import { getMemoryBudgetBytes, pickDownloadQuant } from '@/lib/model-card'
 import { prettyModelName } from '@/lib/model-display-name'
-import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { getPreferredMmprojModel } from '@/lib/models'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -582,14 +581,16 @@ function PickerDownloadRow({
       <Button
         type="button"
         variant="secondary"
-        size="xs"
+        size="sm"
         aria-label={label}
         disabled={disabled || busy}
         onClick={onDownload}
-        className="w-[8rem] max-w-[35%] shrink-0 rounded-full"
+        className="w-[6.75rem] max-w-[32%] shrink-0 rounded-full px-2 text-xs"
       >
         {busy ? (
-          <IconLoader2 className="animate-spin" aria-hidden />
+          <span className="flex size-4 items-center justify-center bg-transparent">
+            <IconLoader2 className="size-3.5 animate-spin" aria-hidden />
+          </span>
         ) : (
           t('chat:replyGate.download')
         )}
@@ -831,11 +832,9 @@ function HuggingFaceResults({ query }: { query: string }) {
  * account is already signed in. The Hub route is always there.
  */
 function PickerRoutes({
-  onBrowseHub,
   onConnectCloud,
   onConnectSubscription,
 }: {
-  onBrowseHub: () => void
   onConnectCloud: () => void
   onConnectSubscription: () => void
 }) {
@@ -859,20 +858,6 @@ function PickerRoutes({
       data-testid="model-picker-routes"
     >
       <div className="flex flex-col divide-y divide-border/60">
-        <RouteRow
-          layout="onboarding"
-          icon={<img src={HUGGINGFACE_LOGO_SRC} alt="" />}
-          title={t('setup:cloudStep.huggingFaceTitle')}
-          hint={t(
-            IS_MACOS
-              ? 'setup:cloudStep.huggingFaceHint'
-              : 'setup:cloudStep.huggingFaceHintGguf'
-          )}
-          action={t('setup:cloudStep.browse')}
-          label={t('setup:cloudStep.huggingFaceTrigger')}
-          onClick={onBrowseHub}
-          data-testid="model-picker-browse-hub"
-        />
         {subscriptionOffered && (
           <RouteRow
             layout="onboarding"
@@ -912,12 +897,10 @@ function PickerRoutes({
  */
 export function ModelPickerEmptyState({
   query,
-  onBrowseHub,
   onConnectCloud,
   onConnectSubscription,
 }: {
   query: string
-  onBrowseHub: () => void
   onConnectCloud: () => void
   onConnectSubscription: () => void
 }) {
@@ -926,7 +909,6 @@ export function ModelPickerEmptyState({
     <div className="flex flex-col gap-2 p-2" data-testid="model-picker-empty">
       {searching ? <HuggingFaceResults query={query} /> : <RecommendedModels />}
       <PickerRoutes
-        onBrowseHub={onBrowseHub}
         onConnectCloud={onConnectCloud}
         onConnectSubscription={onConnectSubscription}
       />

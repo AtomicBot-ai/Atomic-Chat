@@ -23,6 +23,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconDownload,
+  IconLoader2,
   IconSettings,
   IconX,
 } from '@tabler/icons-react'
@@ -51,6 +52,8 @@ import { compactModelDisplayName } from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { quantFromModelId } from '@/lib/telemetry'
 import {
   HuggingFacePicks,
   ModelPickerEmptyState,
@@ -68,8 +71,8 @@ const SUBSCRIPTION_PROVIDER = 'chatgpt'
  * owns its own scrollbar, like Welcome, so a short list never leaves a blank
  * floor while a long list never pushes the routes out of view.
  */
-const EMPTY_PANEL_CLASS = 'max-h-[min(36rem,calc(100dvh-8rem))]'
-const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(36rem,calc(100dvh-8rem))]'
+const EMPTY_PANEL_CLASS = 'max-h-[min(32rem,calc(100dvh-12rem))]'
+const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(32rem,calc(100dvh-12rem))]'
 
 /**
  * Which providers may list models in the picker.
@@ -143,6 +146,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
+  const downloads = useDownloadStore((state) => state.downloads)
+  const localDownloadingModels = useDownloadStore(
+    (state) => state.localDownloadingModels
+  )
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -532,6 +539,24 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Hugging Face instead.
   const pickerEmpty = searchableItems.length === 0
 
+  const activeDownloads = useMemo(() => {
+    const rows = new Map<
+      string,
+      { id: string; progress: number; total: number }
+    >()
+    for (const download of Object.values(downloads)) {
+      rows.set(download.id, {
+        id: download.id,
+        progress: download.progress ?? 0,
+        total: download.total ?? 0,
+      })
+    }
+    for (const id of localDownloadingModels) {
+      if (!rows.has(id)) rows.set(id, { id, progress: 0, total: 0 })
+    }
+    return [...rows.values()]
+  }, [downloads, localDownloadingModels])
+
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
@@ -743,7 +768,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             title={selectedModel?.id ?? displayModel}
             aria-label={compact ? displayModel : undefined}
             data-test-id="model-picker-trigger"
-            className="inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2 pl-1.5"
+            className={cn(
+              'inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2',
+              selectedModel?.id ? 'pl-1.5' : 'pl-2.5'
+            )}
           >
             {provider && (
               <div className="shrink-0">
@@ -780,25 +808,25 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         className={cn(
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
           view === 'main' &&
-            'w-[28rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
+            'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
             cn(
-              'w-[40rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
+              'w-[min(36rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
               pickerEmpty
                 ? searchValue.trim()
                   ? EMPTY_SEARCH_PANEL_CLASS
                   : EMPTY_PANEL_CLASS
-                : 'h-[min(32rem,calc(100dvh-8rem))]'
+                : 'h-[min(24rem,calc(100dvh-12rem))]'
             )
         )}
         align="end"
         side="top"
         sideOffset={8}
         avoidCollisions
-        collisionPadding={16}
+        collisionPadding={32}
       >
         {view === 'main' ? (
-          <div className="flex min-w-0 flex-col p-4">
+          <div className="flex min-w-0 flex-col p-3">
             {/* The model row: what is selected, and the way into the list. */}
             <button
               type="button"
@@ -861,7 +889,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 ref={searchInputRef}
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
-                placeholder={t('common:searchModels')}
+                placeholder={t('common:searchModelsHuggingFace')}
                 className="min-w-0 flex-1 pr-6 text-sm font-normal outline-0"
               />
               {searchValue.length > 0 && (
@@ -879,6 +907,38 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 height and scrolls inside it. */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className={cn(!pickerEmpty && 'py-1')}>
+                {activeDownloads.length > 0 && (
+                  <div
+                    className="m-1.5 rounded-sm bg-secondary/30 py-1"
+                    data-testid="model-picker-downloading"
+                  >
+                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                      {t('common:downloading')}
+                    </div>
+                    {activeDownloads.map((download) => {
+                      const quant = quantFromModelId(download.id)
+                      return (
+                        <div
+                          key={download.id}
+                          className="mx-1 flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5"
+                        >
+                          <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm" title={download.id}>
+                              {compactModelDisplayName({ id: download.id } as Model)}
+                            </div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {download.total > 0
+                                ? `${Math.round(download.progress * 100)}%`
+                                : t('common:downloadPanel.preparing')}
+                              {quant ? ` · ${quant}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
                   <div className="bg-secondary/30 rounded-sm m-2 py-1">
@@ -927,6 +987,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 className="shrink-0"
                               />
                             )}
+                            <span
+                              aria-hidden="true"
+                              className={cn(
+                                'ml-auto flex size-3.5 shrink-0 items-center justify-center rounded-full border',
+                                isSelected
+                                  ? 'border-blue-500'
+                                  : 'border-muted-foreground/40'
+                              )}
+                              data-testid={`model-selection-${searchableModel.value}`}
+                            >
+                              {isSelected && (
+                                <span className="size-2 rounded-full bg-blue-500" />
+                              )}
+                            </span>
                           </div>
                         </div>
                       )
@@ -1044,6 +1118,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                   className="shrink-0"
                                 />
                               )}
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  'ml-auto flex size-3.5 shrink-0 items-center justify-center rounded-full border',
+                                  isSelected
+                                    ? 'border-blue-500'
+                                    : 'border-muted-foreground/40'
+                                )}
+                                data-testid={`model-selection-${searchableModel.value}`}
+                              >
+                                {isSelected && (
+                                  <span className="size-2 rounded-full bg-blue-500" />
+                                )}
+                              </span>
                             </div>
                           </div>
                         )
@@ -1062,7 +1150,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 {pickerEmpty ? (
                   <ModelPickerEmptyState
                     query={searchValue}
-                    onBrowseHub={onDownloadModel}
                     onConnectCloud={() => openCloudDialog()}
                     onConnectSubscription={() =>
                       openCloudDialog(SUBSCRIPTION_PROVIDER)
