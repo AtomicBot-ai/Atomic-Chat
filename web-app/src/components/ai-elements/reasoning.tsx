@@ -56,6 +56,31 @@ const STREAMING_REASONING_VISIBLE_CHARS = 4_000
 const STREAMING_REASONING_TRUNCATED_PREFIX =
   '… earlier reasoning will appear when generation completes …\n\n'
 
+function normalizeReasoningMarkdown(value: string): string {
+  // Some local chat templates concatenate separately-bolded status lines as
+  // `**First****Second**`. Markdown treats that boundary inconsistently while
+  // streaming. Preserve the words, but make each status a real paragraph.
+  return value.replace(/\*\*\*\*/g, '**\n\n**')
+}
+
+function StreamingReasoningText({ children }: { children: string }) {
+  const pieces: ReactNode[] = []
+  const pattern = /\*\*([^*]+)\*\*/g
+  let cursor = 0
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(children))) {
+    if (match.index > cursor) pieces.push(children.slice(cursor, match.index))
+    pieces.push(
+      <strong key={`${match.index}-${match[1]}`} className="font-semibold">
+        {match[1]}
+      </strong>
+    )
+    cursor = match.index + match[0].length
+  }
+  if (cursor < children.length) pieces.push(children.slice(cursor))
+  return <>{pieces}</>
+}
+
 export const Reasoning = memo(
   ({
     className,
@@ -157,7 +182,7 @@ export const ReasoningViewport = ({
       className={cn(
         'relative w-full min-w-0 text-sm',
         bounded
-          ? 'h-[calc(6lh+1rem)] mt-2 overflow-x-hidden overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden transition-[height,margin] duration-150 ease-out motion-reduce:transition-none data-[state=closed]:h-0 data-[state=closed]:mt-0 data-[state=closed]:overflow-hidden [&>[data-slot=collapsible-content]]:mt-0 [&>[data-slot=collapsible-content]]:py-2 [--reasoning-fade-top:0px] [--reasoning-fade-bottom:0px] data-[overflow-top=true]:[--reasoning-fade-top:1rem] data-[overflow-bottom=true]:[--reasoning-fade-bottom:1rem] [mask-image:linear-gradient(to_bottom,transparent,black_var(--reasoning-fade-top),black_calc(100%_-_var(--reasoning-fade-bottom)),transparent_100%)]'
+          ? 'max-h-[calc(6lh+1rem)] mt-2 overflow-x-hidden overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden transition-[max-height,margin] duration-150 ease-out motion-reduce:transition-none data-[state=closed]:max-h-0 data-[state=closed]:mt-0 data-[state=closed]:overflow-hidden [&>[data-slot=collapsible-content]]:mt-0 [&>[data-slot=collapsible-content]]:py-2 [--reasoning-fade-top:0px] [--reasoning-fade-bottom:0px] data-[overflow-top=true]:[--reasoning-fade-top:1rem] data-[overflow-bottom=true]:[--reasoning-fade-bottom:1rem] [mask-image:linear-gradient(to_bottom,transparent,black_var(--reasoning-fade-top),black_calc(100%_-_var(--reasoning-fade-bottom)),transparent_100%)]'
           : 'h-auto overflow-x-hidden',
         className
       )}
@@ -234,11 +259,14 @@ export const ReasoningContent = memo(
     // that is on its way closed would still pay for the full Markdown parse.
     // Only a panel a reader can actually read is worth parsing.
     const showMarkdown = !isStreaming && isOpen
+    const normalizedChildren = normalizeReasoningMarkdown(children)
+    const streamingTruncated =
+      normalizedChildren.length > STREAMING_REASONING_VISIBLE_CHARS
     const plainText =
-      children.length > STREAMING_REASONING_VISIBLE_CHARS
+      streamingTruncated
         ? STREAMING_REASONING_TRUNCATED_PREFIX +
-          children.slice(-STREAMING_REASONING_VISIBLE_CHARS)
-        : children
+          normalizedChildren.slice(-STREAMING_REASONING_VISIBLE_CHARS)
+        : normalizedChildren
 
     return (
       <CollapsibleContent
@@ -254,10 +282,10 @@ export const ReasoningContent = memo(
         here must be styled by the app's `.markdown` stylesheet — without it,
         list markers fall back to `outside` with zero padding and overlap the
         dotted border. */}
-        <div className="markdown ml-2 pl-4 border-l-2 border-dotted">
+        <div className="markdown ml-2 border-l border-border/60 pl-4">
           {showMarkdown ? (
             <Streamdown animate={false} {...props}>
-              {children}
+              {normalizedChildren}
             </Streamdown>
           ) : (
             <div
@@ -265,7 +293,11 @@ export const ReasoningContent = memo(
               data-streaming-reasoning
               dir="auto"
             >
-              {plainText}
+              {streamingTruncated ? (
+                plainText
+              ) : (
+                <StreamingReasoningText>{plainText}</StreamingReasoningText>
+              )}
             </div>
           )}
         </div>

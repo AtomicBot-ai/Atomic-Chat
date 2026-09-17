@@ -822,7 +822,7 @@ mod tests {
         let out = to_responses(&json!({"messages": [], "reasoning_effort": "high"}));
         assert_eq!(
             out["reasoning"],
-            json!({"effort": "high", "summary": "auto"})
+            json!({"effort": "high", "summary": "detailed"})
         );
         assert!(to_responses(&json!({"messages": []}))
             .get("reasoning")

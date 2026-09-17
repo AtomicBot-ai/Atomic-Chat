@@ -184,13 +184,6 @@ export default function AgentApprovalInline({
               <span className="font-medium">
                 {t('agentFolderAccess.title')}
               </span>
-              <span className="text-muted-foreground">
-                {' '}
-                ·{' '}
-                {t('agentFolderAccess.description', {
-                  tool: folderAccess.tool,
-                })}
-              </span>
             </div>
           </div>
           <div className="rounded-md border bg-secondary px-2 py-1.5 text-xs break-all">
