@@ -1,6 +1,5 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { InferenceServerStatusStrip } from '@/containers/InferenceServerStatus'
 import {
   cn,
   formatBytes,
@@ -2688,10 +2687,6 @@ const ChatInput = memo(function ChatInput({
       data-composer-anchor
       className={cn('relative mx-auto w-full max-w-3xl', containerClassName)}
     >
-      {/* ATO-535: why the chat is not answering — a model still loading, an
-          engine being swapped, or a load that failed (including an auto-start
-          one, which raises no toast). Renders nothing in a steady state. */}
-      <InferenceServerStatusStrip />
       <div className="relative">
         <div
           className={cn(
