@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import {
   afterAll,
   afterEach,
@@ -11,6 +18,7 @@ import {
 } from 'vitest'
 import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
+import { ROUTE_ROW_ACTION_CLASS } from '@/containers/RouteRow'
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
@@ -407,9 +415,12 @@ describe('SetupScreen', () => {
       await finishLocalScan()
 
       expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: /setup:localStep\.run/ })
-      ).toBeInTheDocument()
+      const run = screen.getByRole('button', { name: /setup:localStep\.run/ })
+      expect(run).toBeInTheDocument()
+      // Its button stands in the same column as every Download and Browse
+      // under it, and carries no hidden width-reserving labels.
+      expect(run).toHaveClass(ROUTE_ROW_ACTION_CLASS)
+      expect(run).toHaveTextContent(/^setup:localStep\.run$/)
       unmount()
     })
   })
@@ -711,8 +722,10 @@ describe('SetupScreen', () => {
 
     it('turns the button into a single Downloading… pill that cancels', async () => {
       const { unmount } = await renderPicker()
-      const slot = screen.getByRole('button', { name: /hub:download/ })
-        .parentElement as HTMLElement
+      const row = screen.getByTestId('setup-recommended-row')
+      // The offer's line under the name is there, empty, so a readout can
+      // take it later without adding a line.
+      expect(row.querySelector('p')).toBeEmptyDOMElement()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
 
@@ -726,17 +739,20 @@ describe('SetupScreen', () => {
       expect(
         screen.queryByRole('button', { name: /hub:download/ })
       ).not.toBeInTheDocument()
-      // Nothing stacks under it: no "starting" line, no handoff notice, so
-      // the row is as tall as it was with the Download button.
+      // Nothing stacks under it and nothing sits beside it: no "starting"
+      // line, no handoff notice — the pill is the row's last child, alone in
+      // the button column, so the row is as tall and as wide as it was.
       expect(
         screen.queryByText('setup:downloadPreparing')
       ).not.toBeInTheDocument()
       expect(
         screen.queryByText('setup:downloadStartedOpening')
       ).not.toBeInTheDocument()
-      expect(slot.querySelectorAll('p')).toHaveLength(0)
+      expect(row.children).toHaveLength(2)
+      expect(row.lastElementChild).toBe(cancel)
 
-      // Progress, once known, sits on the same line as the pill.
+      // Progress, once known, goes on the line under the name, so the
+      // button never moves.
       await act(async () => {
         useDownloadStore
           .getState()
@@ -749,8 +765,10 @@ describe('SetupScreen', () => {
           )
       })
       const progress = screen.getByText(/^12% · /)
-      expect(progress.parentElement).toBe(cancel.parentElement)
-      expect(slot.querySelectorAll('p')).toHaveLength(0)
+      expect(progress).toHaveAttribute('aria-live', 'polite')
+      expect(row.firstElementChild).toContainElement(progress)
+      expect(row.children).toHaveLength(2)
+      expect(row.lastElementChild).toBe(cancel)
       unmount()
     })
 
@@ -980,6 +998,25 @@ describe('SetupScreen', () => {
         icon: 'nvidia',
       }
     )
+    // A pick whose catalog card has not resolved: no size, no fit, and a
+    // button that cannot start anything yet.
+    const unresolved = {
+      pick: {
+        model_name: 'unsloth/DeepSeek-V4-Flash-GGUF',
+        title: 'DeepSeek V4 Flash',
+        format: 'gguf',
+      },
+      model: null,
+    }
+    // The ChatGPT subscription, offered but not yet connected.
+    const subscriptionProvider = {
+      active: true,
+      provider: 'chatgpt',
+      api_key: '',
+      base_url: 'https://chatgpt.com/backend-api/codex',
+      settings: [],
+      models: [],
+    }
 
     const renderPicker = async () => {
       mocks.scanLocalModels.mockResolvedValue([])
@@ -1380,6 +1417,134 @@ describe('SetupScreen', () => {
       unmount()
     })
 
+    describe('row layout', () => {
+      // What Danny saw on a 64 GB M5 Max: fit marks drifting out of line
+      // from row to row, a size hanging off the name, buttons padded to the
+      // width of "Downloading…", and a progress readout shoving the button
+      // aside. Every row is now mark · name + badge · one line · one button,
+      // and the buttons of every list on the screen stand in one column.
+      it('puts the size inside the Download button, and only the name and its badge on the name line', async () => {
+        mocks.staffPicks = [gemma, nemotron, unresolved]
+        const { unmount } = await renderPicker()
+
+        const headings = screen.getAllByRole('heading', { level: 2 })
+        expect(headings.map((heading) => heading.textContent)).toEqual([
+          'Qwen3.5 4B',
+          'Gemma 4 12B',
+          'Nemotron 3.5 Lightning',
+          'DeepSeek V4 Flash',
+        ])
+        // The verb and the size, nothing hidden for width; a row whose size
+        // is unknown says Download alone.
+        const buttons = downloadButtons()
+        expect(buttons.map((button) => button.textContent)).toEqual([
+          'hub:download 2.5 GB',
+          'hub:download 7.3 GB',
+          'hub:download 19.7 GB',
+          'hub:download',
+        ])
+        expect(buttons[3]).toBeDisabled()
+        unmount()
+      })
+
+      it('holds one button per row while a pick downloads, with the readout on the summary line', async () => {
+        const { unmount } = await renderPicker()
+        const row = screen.getAllByTestId('setup-recommended-row')[1]
+        const summary = 'Mid-size Gemma 4 with vision and long-context support.'
+        expect(row).toHaveTextContent(summary)
+
+        fireEvent.click(
+          within(row).getByRole('button', { name: /hub:download/ })
+        )
+
+        const cancel = within(row).getByRole('button', {
+          name: 'common:cancelDownload',
+        })
+        expect(row.children).toHaveLength(2)
+        expect(row.lastElementChild).toBe(cancel)
+        await act(async () => {
+          useDownloadStore
+            .getState()
+            .updateProgress(
+              'gemma-4-12B-it-GGUF-Q4_K_M',
+              0.12,
+              'gemma-4-12B-it-GGUF-Q4_K_M',
+              200 * 1024 ** 2,
+              1.6 * 1024 ** 3
+            )
+        })
+        // The readout takes the summary's line rather than adding one or
+        // sitting beside the button.
+        const readout = within(row).getByText(/^12% · /)
+        expect(readout).toHaveAttribute('aria-live', 'polite')
+        expect(row.firstElementChild).toContainElement(readout)
+        expect(row).not.toHaveTextContent(summary)
+        expect(row.children).toHaveLength(2)
+        expect(row.lastElementChild).toBe(cancel)
+
+        // Cancelled: the summary is back under the name, the Download button
+        // back in its place.
+        await act(async () => {
+          fireEvent.click(cancel)
+        })
+        expect(row).toHaveTextContent(summary)
+        expect(within(row).queryByText(/^12% · /)).not.toBeInTheDocument()
+        expect(row.lastElementChild).toBe(
+          within(row).getByRole('button', { name: /hub:download/ })
+        )
+        unmount()
+      })
+
+      it('draws every action button in one column, without ghost labels', async () => {
+        mocks.modelProviderState.providers = [
+          subscriptionProvider,
+        ] as unknown as ModelProvider[]
+        const { unmount } = await renderPicker()
+
+        const browse = screen.getByRole('button', {
+          name: /setup:cloudStep\.huggingFaceTrigger/,
+        })
+        const connect = screen.getByRole('button', {
+          name: /setup:cloudStep\.subscriptionTrigger/,
+        })
+        for (const button of [...downloadButtons(), browse, connect]) {
+          expect(button).toHaveClass(ROUTE_ROW_ACTION_CLASS)
+        }
+        // A route button shows its verb and nothing else: no invisible copy
+        // of every other label padding it out.
+        expect(browse).toHaveTextContent(/^setup:cloudStep\.browse$/)
+        expect(connect).toHaveTextContent(/^setup:cloudStep\.connect$/)
+        // And the lists have the room for a name, its badge and a button
+        // that says "Download 19.7 GB", on one line.
+        expect(
+          document.querySelector('[class~="max-w-[640px]"]')
+        ).not.toBeNull()
+        unmount()
+      })
+
+      it('draws the route marks at the size of the model logos', async () => {
+        mocks.modelProviderState.providers = [
+          subscriptionProvider,
+        ] as unknown as ModelProvider[]
+        const { unmount } = await renderPicker()
+
+        // jsdom lays nothing out; the classes are what it can see of a size.
+        // A model row's mark is 32 px. A route row's circle is 32 px too,
+        // holding a 20 px glyph or an image that fills it — not a 16 px
+        // glyph lost in the middle.
+        const hfMark = screen
+          .getByTestId('setup-browse-hub')
+          .querySelector('img')
+        expect(hfMark?.parentElement).toHaveClass('size-8 [&>img]:size-full')
+        const subscriptionRow = screen.getByRole('button', {
+          name: /setup:cloudStep\.subscriptionTrigger/,
+        }).parentElement
+        const chatGptMark = subscriptionRow?.querySelector('svg')
+        expect(chatGptMark?.parentElement).toHaveClass('size-8 [&>svg]:size-5')
+        unmount()
+      })
+    })
+
     describe('fit indicator', () => {
       // An 18 GiB Mac: Metal's 85 % ceiling is a hard one, so a model past it
       // will not load at all, not merely run slowly.
@@ -1390,14 +1555,6 @@ describe('SetupScreen', () => {
         systemRamMib: 18 * 1024,
         vramMib: 18 * 1024,
         hardCeiling: true,
-      }
-      const unresolved = {
-        pick: {
-          model_name: 'unsloth/DeepSeek-V4-Flash-GGUF',
-          title: 'DeepSeek V4 Flash',
-          format: 'gguf',
-        },
-        model: null,
       }
       const fitMarks = () =>
         screen.queryAllByRole('button', { name: /setup:recommend\.fit/ })
@@ -1462,6 +1619,7 @@ describe('SetupScreen', () => {
         const marks = fitMarks()
         // 7.3 GB on an 8 GiB card: fits, with little room.
         expect(marks[1]).toHaveAttribute('data-fit', 'warn')
+        expect(marks[1]).toHaveTextContent('setup:recommend.fitBadgeWarn')
         expect(marks[1]).toHaveAccessibleName(
           /setup:recommend\.fitWarn.*setup:recommend\.whyTight/
         )
@@ -1470,6 +1628,37 @@ describe('SetupScreen', () => {
         expect(marks[2]).toHaveAccessibleName(
           /setup:recommend\.fitWarn.*setup:recommend\.whySpills/
         )
+        unmount()
+      })
+
+      it('says the verdict in a word on the name line, never under it', async () => {
+        // The circled glyph drifted out of line from row to row and said
+        // nothing without a hover. A word does — Fits, Tight, Won't fit —
+        // beside the name on the name's own line, where the name truncates
+        // before the badge wraps.
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [gemma, nemotron]
+        const { unmount } = await renderPicker()
+
+        const marks = fitMarks()
+        expect(marks.map((mark) => mark.textContent)).toEqual([
+          'setup:recommend.fitBadgeOk',
+          'setup:recommend.fitBadgeOk',
+          'setup:recommend.fitBadgeNo',
+        ])
+        // The word is what the eye gets; assistive tech still gets the level
+        // and the reason, and the tooltip is unchanged.
+        expect(marks[2]).toHaveAccessibleName(
+          /setup:recommend\.fitNo.*setup:recommend\.whyWontLoad/
+        )
+        const headings = screen.getAllByRole('heading', { level: 2 })
+        marks.forEach((mark, index) => {
+          const line = headings[index].parentElement as HTMLElement
+          expect(mark.parentElement).toBe(line)
+          expect(line).not.toHaveClass('flex-wrap')
+          expect(headings[index]).toHaveClass('truncate')
+        })
         unmount()
       })
 

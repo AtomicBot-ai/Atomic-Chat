@@ -95,6 +95,9 @@
     "fitOk": "Fits your memory",
     "fitWarn": "Runs, but tight on memory",
     "fitNo": "Won't fit in memory",
+    "fitBadgeOk": "Fits",
+    "fitBadgeWarn": "Tight",
+    "fitBadgeNo": "Won't fit",
     "pool": {
       "unified": "unified memory",
       "vram": "graphics memory",

@@ -68,7 +68,11 @@ import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useStaffPicksStore } from '@/stores/staff-picks-store'
 import type { StaffPick } from '@/services/staff-picks-registry'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
-import { RouteRow, ROUTE_ROW_BUTTON_HOVER } from '@/containers/RouteRow'
+import {
+  RouteRow,
+  ROUTE_ROW_ACTION_CLASS,
+  ROUTE_ROW_BUTTON_HOVER,
+} from '@/containers/RouteRow'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { prettyModelName } from '@/lib/model-display-name'
 import {
@@ -217,34 +221,6 @@ const SUBSCRIPTION_PROVIDER = 'chatgpt'
 /// `hover:bg-secondary/80` moves the fill by a fifth of a shade towards the
 /// card behind it, which on this screen is no move at all.
 const ROW_BUTTON_HOVER = ROUTE_ROW_BUTTON_HOVER
-
-/// Every row on this screen ends in one button, and the buttons read as a
-/// column only if they are one width. Each reserves room for the widest label
-/// any of them can wear — measured in the current language, not guessed as a
-/// fixed width — and shows its own on top. It also keeps a button from
-/// reflowing when its state flips between Download / Downloading… / Downloaded.
-function RowActionLabel({
-  label,
-  reserve,
-}: {
-  label: string
-  reserve: readonly string[]
-}) {
-  return (
-    <span className="grid">
-      {reserve.map((text, i) => (
-        <span
-          key={i}
-          aria-hidden="true"
-          className="invisible col-start-1 row-start-1"
-        >
-          {text}
-        </span>
-      ))}
-      <span className="col-start-1 row-start-1">{label}</span>
-    </span>
-  )
-}
 
 /// Neither the on-disk scan nor the hardware enumeration may hold the picker
 /// hostage. Both are raced against this deadline; whatever has not answered by
@@ -1601,12 +1577,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         ? prettyModelName(model.model_name)
         : prettyModelName(rec.modelName))
 
-    const buttonLabel = rowDownloaded ? t('hub:downloaded') : t('hub:download')
+    // "Download 2.5 GB": the size rides inside the button, not beside the
+    // name, so the name line is the name and its badges and nothing else.
+    const buttonLabel = rowDownloaded
+      ? t('hub:downloaded')
+      : downloadSize
+        ? `${t('hub:download')} ${downloadSize}`
+        : t('hub:download')
 
     // While the bytes come in, the button's slot holds one pill — the same
-    // height, on the same line — reading Downloading… with an × to cancel;
-    // the figures sit beside it once the size is known. Nothing under the
-    // row, so it stays as tall as it was with the Download button.
+    // width, in the same place — reading Downloading… with an × to cancel;
+    // the figures take the line under the name once the size is known, so
+    // nothing is added beside the pill or under the row.
     const progressText =
       rowDownloading && rowDownloadProgress && rowDownloadProgress.total > 0
         ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
@@ -1663,8 +1645,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       ) : null
 
     // Under a pick, the Hub's own summary, falling back to its category so the
-    // line is never blank. The offer has none — its badge stands in that line.
-    // A card that has not resolved says so on either.
+    // line is never blank. The offer has none — its badge says why it is here
+    // — but keeps the line, empty, so the readout can take it when a download
+    // starts without the row growing under the button. A card that has not
+    // resolved says so on either.
     const summary = !model
       ? sourcesLoading
         ? t('hub:loadingModels')
@@ -1677,21 +1661,16 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       <div
         key={`${rec.modelName}-${rec.descriptionKey}`}
         className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+        data-testid="setup-recommended-row"
       >
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {icon}
           <div className="min-w-0 flex-1">
-            {/* The badge wraps under the name when the two do not fit on one
-                line; the name is what has to survive. */}
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <h2 className="min-w-0 max-w-full truncate text-sm font-medium leading-tight">
+            {/* One line: the name truncates, and the badges after it never
+                wrap under it, so the badges of every row stand in line. */}
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="min-w-0 truncate text-sm font-medium leading-tight">
                 {title}
-                {downloadSize ? (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {' '}
-                    · {downloadSize}
-                  </span>
-                ) : null}
               </h2>
               {fitMark}
               {hero && (
@@ -1703,69 +1682,45 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                 </span>
               )}
             </div>
-            {summary ? (
-              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                {summary}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {progressText ? (
-            <span
-              className="text-xs text-muted-foreground tabular-nums"
+            {/* The one line under the name: the summary, or the progress
+                readout in its place while the download runs — announced as
+                it changes, since nothing else on the row says so. */}
+            <p
+              className="mt-0.5 line-clamp-1 min-h-4 text-xs text-muted-foreground tabular-nums"
               aria-live="polite"
             >
-              {progressText}
-            </span>
-          ) : null}
-          {rowDownloading && rowTrackId ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => cancelRowDownload(rowTrackId)}
-              title={t('common:cancelDownload')}
-              aria-label={t('common:cancelDownload')}
-              className={cn('shrink-0 rounded-full px-4', ROW_BUTTON_HOVER)}
-            >
-              <RowActionLabel
-                label={t('setup:downloading')}
-                reserve={rowActionLabels}
-              />
-              <X className="size-3.5" aria-hidden="true" />
-            </Button>
-          ) : (
-            /* The offer keeps the primary fill, not a bigger pill: a taller
-               button broke the column of buttons it heads. */
-            <Button
-              variant={hero ? 'default' : 'secondary'}
-              size="sm"
-              disabled={disabled}
-              onClick={onDownload}
-              className={cn(
-                'shrink-0 rounded-full px-4',
-                !hero && ROW_BUTTON_HOVER
-              )}
-            >
-              <RowActionLabel label={buttonLabel} reserve={rowActionLabels} />
-            </Button>
-          )}
+              {progressText ?? summary}
+            </p>
+          </div>
         </div>
+        {rowDownloading && rowTrackId ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => cancelRowDownload(rowTrackId)}
+            title={t('common:cancelDownload')}
+            aria-label={t('common:cancelDownload')}
+            className={cn(ROUTE_ROW_ACTION_CLASS, ROW_BUTTON_HOVER)}
+          >
+            {t('setup:downloading')}
+            <X className="size-3.5" aria-hidden="true" />
+          </Button>
+        ) : (
+          /* The offer keeps the primary fill, not a bigger pill: a taller
+             button broke the column of buttons it heads. */
+          <Button
+            variant={hero ? 'default' : 'secondary'}
+            size="sm"
+            disabled={disabled}
+            onClick={onDownload}
+            className={cn(ROUTE_ROW_ACTION_CLASS, !hero && ROW_BUTTON_HOVER)}
+          >
+            {buttonLabel}
+          </Button>
+        )}
       </div>
     )
   }
-
-  // Every label a row button on this screen can wear; see RowActionLabel.
-  const rowActionLabels = [
-    t('hub:download'),
-    t('setup:downloading'),
-    t('hub:downloaded'),
-    t('setup:localStep.run'),
-    t('setup:localStep.running'),
-    t('setup:cloudStep.connect'),
-    t('setup:cloudStep.add'),
-    t('setup:cloudStep.browse'),
-  ]
 
   /**
    * A cloud route, laid out as a model row — mark, name, one line, button —
@@ -1794,7 +1749,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       icon={icon}
       title={title}
       hint={hint}
-      action={<RowActionLabel label={action} reserve={rowActionLabels} />}
+      action={action}
       label={label}
       onClick={onClick}
       data-testid={testId}
@@ -1807,7 +1762,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         <HeaderPage />
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[520px] flex-col px-6 py-8 sm:py-10">
+          {/* Wide enough for a row to hold a name, its fit badge and a
+              "Download 19.7 GB" button on one line; narrow enough for the
+              1024 px minimum window beside the sidebar. */}
+          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[640px] flex-col px-6 py-8 sm:py-10">
             {/* No logo over the title: the sidebar already wears the lockup a
                 hand's width away, and two of them read as a splash screen. */}
             <div className="mb-6 flex shrink-0 flex-col items-center text-center">
@@ -1892,16 +1850,11 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   })
                                   void onRunLocalModel(cand)
                                 }}
-                                className="shrink-0 rounded-full px-4"
+                                className={ROUTE_ROW_ACTION_CLASS}
                               >
-                                <RowActionLabel
-                                  label={
-                                    isImporting
-                                      ? t('setup:localStep.running')
-                                      : t('setup:localStep.run')
-                                  }
-                                  reserve={rowActionLabels}
-                                />
+                                {isImporting
+                                  ? t('setup:localStep.running')
+                                  : t('setup:localStep.run')}
                               </Button>
                             </div>
                           </div>
@@ -1969,12 +1922,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     )
                                     enterChatForDownload(startId, provider)
                                   }}
-                                  className="shrink-0 rounded-full px-4"
+                                  className={ROUTE_ROW_ACTION_CLASS}
                                 >
-                                  <RowActionLabel
-                                    label={t('setup:localStep.run')}
-                                    reserve={rowActionLabels}
-                                  />
+                                  {t('setup:localStep.run')}
                                 </Button>
                               </div>
                             </div>

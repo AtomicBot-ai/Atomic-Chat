@@ -16,8 +16,15 @@ export const ROUTE_ROW_BUTTON_HOVER =
  * The classes every action button in a model or route list shares, so the
  * buttons of one list read as one column whatever their labels say. A row
  * that draws its own button (the onboarding's model rows) uses this too.
+ *
+ * One column means one width: the pill is at least as wide as the widest
+ * label it wears — "Download 19.7 GB" is 118 px in Inter Medium at 14 px,
+ * plus the size's normal 12 px of padding a side — and a shorter label
+ * ("Browse", "Add") centres in that width rather than shrinking the button.
+ * A longer label widens its own button; nothing is clipped.
  */
-export const ROUTE_ROW_ACTION_CLASS = 'shrink-0 rounded-full px-4'
+export const ROUTE_ROW_ACTION_CLASS =
+  'min-w-[9.25rem] shrink-0 rounded-full px-3'
 
 type RouteRowProps = {
   'icon': ReactNode
@@ -25,7 +32,7 @@ type RouteRowProps = {
   /** Optional mark beside the title: a recommended model's fit badge. */
   'meta'?: ReactNode
   'hint': string
-  /** What the button shows: the verb alone, or a width-reserving label. */
+  /** What the button shows: the verb, with the size when there is one. */
   'action': ReactNode
   /**
    * The whole action, for assistive tech. The button shows only the verb, and
@@ -67,11 +74,14 @@ export function RouteRow({
       data-testid={testId}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        {/* Direct children only: a `ModelLogo` in this slot sizes its own
-            image, and an inherited 16 px would shrink its mark to a dot. */}
+        {/* The footprint of a model row's 32 px mark: a glyph (lucide's
+            Cloud, the ChatGPT blossom) draws at 20 px and a brand image (the
+            Hugging Face face) fills the circle, so the marks of the two lists
+            read as one size. Direct children only: a `ModelLogo` in this
+            slot sizes its own image. */}
         <span
           aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&>svg]:size-4 [&>img]:size-4"
+          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&>svg]:size-5 [&>img]:size-full"
         >
           {icon}
         </span>
@@ -94,7 +104,10 @@ export function RouteRow({
         aria-label={label}
         disabled={disabled}
         onClick={onClick}
-        className={cn(ROUTE_ROW_ACTION_CLASS, !primary && ROUTE_ROW_BUTTON_HOVER)}
+        className={cn(
+          ROUTE_ROW_ACTION_CLASS,
+          !primary && ROUTE_ROW_BUTTON_HOVER
+        )}
       >
         {action}
       </Button>
