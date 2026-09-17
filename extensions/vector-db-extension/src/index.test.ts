@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const failures = vi.hoisted(() => ({ listAttachments: undefined as unknown }))
+
 // In-memory stand-in for the vector-db Tauri plugin so the assertions are
 // about what ends up stored and what the caller gets back.
 type StoredChunk = { text: string; embedding: number[] }
@@ -25,11 +27,13 @@ vi.mock(
       store.files.delete(name)
       store.chunks.delete(name)
     },
-    listAttachments: async (name: string) =>
-      (store.files.get(name) ?? []).map((f) => ({
+    listAttachments: async (name: string) => {
+      if (failures.listAttachments) throw failures.listAttachments
+      return (store.files.get(name) ?? []).map((f) => ({
         ...f,
         chunk_count: store.chunks.get(name)?.get(f.id)?.length ?? 0,
-      })),
+      }))
+    },
     createFile: async (name: string, file: { path: string; name?: string }) => {
       const files = store.files.get(name) ?? []
       const fi = { id: `file-${files.length + 1}`, ...file }
@@ -71,6 +75,7 @@ let embeddedTexts: string[] = []
 beforeEach(() => {
   store.reset()
   embeddedTexts = []
+  failures.listAttachments = undefined
   ;(globalThis as any).window.core = {
     extensionManager: {
       getByName: (name: string) =>
@@ -117,5 +122,27 @@ describe('ingestFileForProject', () => {
       { text: 'beta', embedding: vectorFor('beta') },
       { text: 'gamma', embedding: vectorFor('gamma') },
     ])
+  })
+})
+
+describe('listAttachmentsForProject', () => {
+  it('treats a new collection without a files table as empty', async () => {
+    failures.listAttachments = {
+      DatabaseError: 'no such table: files',
+    }
+    const ext = new VectorDBExt('vector-db', '@janhq/vector-db-extension')
+
+    await expect(ext.listAttachmentsForProject('new-project')).resolves.toEqual(
+      []
+    )
+  })
+
+  it('keeps real database failures visible', async () => {
+    failures.listAttachments = { DatabaseError: 'database is locked' }
+    const ext = new VectorDBExt('vector-db', '@janhq/vector-db-extension')
+
+    await expect(ext.listAttachmentsForProject('p1')).rejects.toEqual({
+      DatabaseError: 'database is locked',
+    })
   })
 })
