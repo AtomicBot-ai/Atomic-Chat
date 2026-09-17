@@ -479,7 +479,7 @@ function ConnectorsPage() {
                   {t('mcp-connectors:connectSectionDesc')}
                 </p>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2">
                 {gridItems.map(({ key, connector, installed }) => (
                   <ConnectorCard
                     key={key}

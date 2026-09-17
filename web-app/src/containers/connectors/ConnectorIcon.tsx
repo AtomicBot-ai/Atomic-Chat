@@ -3,8 +3,8 @@ import { cn } from '@/lib/utils'
 
 /**
  * Brand tile for a catalog connector: image asset when one exists, otherwise a
- * monogram on the connector's brand color. 32px on the Connectors page, smaller
- * where it sits in a menu row — pass `className` to size it.
+ * monogram on the connector's brand color. 32px by default (the plugins menu rows);
+ * the Connectors card sizes it to 40px — pass `className` to size it.
  */
 export function ConnectorIcon({
   connector,

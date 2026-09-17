@@ -10,6 +10,7 @@
   "connected": "Connected",
   "statusError": "Error",
   "statusInactive": "Inactive",
+  "statusNotSetUp": "Not set up",
   "by": "By {{name}}",
   "featuredBadge": "Featured",
   "serverActions": "Server actions",
