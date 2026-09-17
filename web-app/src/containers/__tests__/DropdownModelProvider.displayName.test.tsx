@@ -227,7 +227,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.queryByDisplayValue('model1.gguf')).not.toBeInTheDocument()
   })
 
-  it('should fall back to model ID when no displayName is set', () => {
+  it('uses a compact label and keeps the full ID in the tooltip when no displayName is set', () => {
     mockModelProvider({
       providers: mockProviders,
       selectedProvider: 'llamacpp',
@@ -244,7 +244,8 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
     renderPicker()
 
-    expect(screen.getAllByText('model3.gguf')).toHaveLength(2) // Trigger and dropdown
+    expect(screen.getAllByText('Model3')).toHaveLength(2) // Trigger and dropdown
+    expect(screen.getAllByTitle('model3.gguf').length).toBeGreaterThanOrEqual(2)
   })
 
   it('should show display names in the model list items', () => {
@@ -253,7 +254,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     // Check if the display names are shown in the options
     expect(screen.getAllByText('Custom Model 1')).toHaveLength(2) // Selected: Trigger + dropdown
     expect(screen.getByText('Short Name')).toBeInTheDocument() // Only in dropdown
-    expect(screen.getByText('model3.gguf')).toBeInTheDocument() // Only in dropdown
+    expect(screen.getByText('Model3')).toBeInTheDocument() // Only in dropdown
   })
 
   it('deduplicates favorites by model id and prefers the nicknamed copy', () => {
@@ -304,8 +305,11 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
     renderPicker()
 
-    expect(screen.getAllByText('Shared Model')).toHaveLength(1)
-    expect(screen.getAllByText('shared-model.gguf')).toHaveLength(1)
+    // One favorite and one provider row remain, but both now use the same
+    // compact human label instead of exposing the raw filename.
+    expect(screen.getAllByText('Shared Model')).toHaveLength(2)
+    expect(screen.queryByText('shared-model.gguf')).toBeNull()
+    expect(screen.getAllByTitle('shared-model.gguf')).toHaveLength(2)
   })
 
   it('should use getModelDisplayName utility correctly', () => {

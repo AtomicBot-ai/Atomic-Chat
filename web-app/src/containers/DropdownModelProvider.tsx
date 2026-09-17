@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/popover'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import {
   isCloudProvider,
   isLocalEngineProvider,
@@ -47,6 +47,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
+import { compactModelDisplayName } from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
@@ -364,7 +365,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Update display model when selection changes
   useEffect(() => {
     if (selectedProvider && selectedModel) {
-      setDisplayModel(getModelDisplayName(selectedModel))
+      setDisplayModel(compactModelDisplayName(selectedModel))
     } else {
       setDisplayModel(t('common:selectAModel'))
     }
@@ -535,7 +536,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
       selector: (item) =>
-        `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
+        `${compactModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
     })
   }, [searchableItems])
 
@@ -656,7 +657,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
       // Immediately update display to prevent double-click issues
-      setDisplayModel(getModelDisplayName(searchableModel.model))
+      setDisplayModel(compactModelDisplayName(searchableModel.model))
       setSearchValue('')
       setOpen(false)
 
@@ -912,7 +913,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               />
                             </div>
                             <span className="text-sm truncate">
-                              {getModelDisplayName(searchableModel.model)}
+                              {compactModelDisplayName(searchableModel.model)}
                             </span>
                             {searchableModel.model.source && (
                               <ModelSourceBadge
@@ -1029,7 +1030,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 className="text-sm truncate"
                                 title={searchableModel.model.id}
                               >
-                                {getModelDisplayName(searchableModel.model)}
+                                {compactModelDisplayName(searchableModel.model)}
                               </span>
                               {searchableModel.model.source && (
                                 <ModelSourceBadge
