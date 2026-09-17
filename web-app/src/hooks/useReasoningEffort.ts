@@ -4,6 +4,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   ALL_LEVELS,
   availableReasoningLevels,
+  canDisableReasoning,
   resolveReasoningLevel,
   usesTemplateReasoningKwargs,
   type ReasoningEffortLevel,
@@ -24,7 +25,11 @@ export const useReasoningEffort = () => {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
 
-  const enabled = !disableReasoning
+  const canDisable = canDisableReasoning(
+    selectedProvider,
+    selectedModel?.reasoning
+  )
+  const enabled = !disableReasoning || !canDisable
 
   // No model picked yet, or one without a thinking phase: no scale, so no
   // level on the pill. The stored preference is kept for the next pick.
@@ -54,5 +59,5 @@ export const useReasoningEffort = () => {
     ? t(`common:reasoningEffort.${shownLevel}`)
     : undefined
 
-  return { enabled, levels, level, shownLevel, levelLabel }
+  return { enabled, canDisable, levels, level, shownLevel, levelLabel }
 }

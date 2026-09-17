@@ -53,6 +53,7 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
   )
   const {
     enabled,
+    canDisable,
     levels: modelLevels,
     level: storedLevel,
   } = useReasoningEffort()
@@ -60,13 +61,20 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
   // "Off" leads the scale: the fastest answer is one with no thinking phase
   // at all. A model without one has no scale to offer.
   const levels = useMemo<ReasoningBudgetLevel[]>(
-    () => (modelLevels.length ? ['off', ...modelLevels] : []),
-    [modelLevels]
+    () =>
+      modelLevels.length
+        ? canDisable
+          ? ['off', ...modelLevels]
+          : modelLevels
+        : [],
+    [canDisable, modelLevels]
   )
   const level: ReasoningBudgetLevel | undefined = modelLevels.length
     ? enabled && storedLevel
       ? storedLevel
-      : 'off'
+      : canDisable
+        ? 'off'
+        : modelLevels[0]
     : undefined
   const levelLabel = level ? t(`common:reasoningEffort.${level}`) : undefined
 

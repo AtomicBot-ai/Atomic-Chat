@@ -535,6 +535,21 @@ describe('CustomChatTransport reasoning override', () => {
     expect(override?.reasoning_effort).toBe('high')
   })
 
+  it('sends a declared Codex subscription effort even when global reasoning was off', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'chatgpt',
+      reasoning: {
+        supportsThinking: true,
+        effortKwarg: 'reasoning_effort',
+        effortValues: ['low', 'medium', 'high', 'xhigh'],
+      },
+      disableReasoning: true,
+      reasoningBudget: 'high',
+    })
+
+    expect(override).toEqual({ reasoning_effort: 'high' })
+  })
+
   it('passes no override at all when the model has no thinking phase', async () => {
     const override = await captureReasoningOverride({
       provider: 'llamacpp',

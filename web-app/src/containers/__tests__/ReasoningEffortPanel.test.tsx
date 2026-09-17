@@ -157,6 +157,27 @@ describe('ReasoningEffortPanel', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('uses only declared Codex effort levels when the API has no off value', () => {
+    selectedModel.current = {
+      id: 'gpt-6-astra',
+      reasoning: {
+        supportsThinking: true,
+        effortKwarg: 'reasoning_effort',
+        effortValues: ['low', 'medium', 'high', 'xhigh'],
+      },
+    }
+    selectedProvider.current = 'chatgpt'
+    useGeneralSetting.setState({ disableReasoning: true })
+
+    render(<ReasoningEffortPanel />)
+
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.medium')
+    expect(
+      screen.queryByText('common:reasoningEffort.off')
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '3')
+  })
+
   it('renders nothing while no model is selected', () => {
     // Nothing to think with yet, so no level to set either.
     selectedModel.current = undefined

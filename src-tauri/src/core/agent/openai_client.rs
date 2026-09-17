@@ -504,10 +504,9 @@ impl OpenAiCompatibleClient {
 /// Turns the resolved intent into request fields.
 ///
 /// mlx-vlm reads a top-level `reasoning_effort` / `thinking_budget` and hands
-/// them to the chat template. Cloud targets get nothing when thinking is on —
-/// they think by default and we have no template to tell us which values are
-/// legal — and only a suppression hint when it is off, which is what the chat
-/// transport does for the same providers.
+/// them to the chat template. A proxied cloud model gets a top-level effort
+/// only when its catalogue declared one; the proxy then translates it for the
+/// provider (including the ChatGPT subscription Responses shim).
 fn insert_reasoning_fields(
     body: &mut Map<String, Value>,
     target: &OpenAiTarget,
@@ -530,14 +529,17 @@ fn insert_reasoning_fields(
             effort_value,
             ..
         } => {
+            if let Some(effort) = effort_value {
+                body.insert("reasoning_effort".into(), json!(effort));
+            }
             if !is_mlx {
                 return;
             }
             body.insert("enable_thinking".into(), json!(true));
-            if let Some(effort) = effort_value {
-                body.insert("reasoning_effort".into(), json!(effort));
-            } else if let Some(tokens) = budget_tokens {
-                body.insert("thinking_budget".into(), json!(tokens));
+            if effort_value.is_none() {
+                if let Some(tokens) = budget_tokens {
+                    body.insert("thinking_budget".into(), json!(tokens));
+                }
             }
         }
     }
@@ -1316,34 +1318,47 @@ mod tests {
     }
 
     #[test]
-    fn cloud_targets_get_no_reasoning_fields() {
+    fn cloud_targets_get_only_a_catalogue_declared_effort() {
         let client =
             OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
-        for reasoning in [
-            CompletionReasoning::Off,
-            CompletionReasoning::On {
+        let off = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::Off),
+            false,
+        );
+        assert!(off.get("reasoning_effort").is_none());
+
+        let declared = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
                 tags: ReasoningTags {
                     open: "<think>",
                     close: "</think>",
                 },
                 budget_tokens: Some(1_024),
                 effort_value: Some("high".into()),
-            },
-        ] {
-            let payload =
-                client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
-
-            // We have no chat template for a cloud model, so any value we could
-            // send would be a guess — and strict schemas 400 on a wrong one.
-            for field in [
-                "reasoning_effort",
-                "thinking_budget",
-                "enable_thinking",
-                "chat_template_kwargs",
-            ] {
-                assert!(payload.get(field).is_none(), "unexpected {field}");
-            }
+            }),
+            false,
+        );
+        assert_eq!(declared["reasoning_effort"], json!("high"));
+        for field in ["thinking_budget", "enable_thinking", "chat_template_kwargs"] {
+            assert!(declared.get(field).is_none(), "unexpected {field}");
         }
+
+        let budget_only = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(1_024),
+                effort_value: None,
+            }),
+            false,
+        );
+        assert!(budget_only.get("reasoning_effort").is_none());
+        assert!(budget_only.get("thinking_budget").is_none());
     }
 
     #[test]
