@@ -105,7 +105,11 @@ export function AgentApprovalModeSelect({
             <ChevronDown className="size-3.5 opacity-60" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-80 p-1">
+        <DropdownMenuContent
+          align="start"
+          collisionPadding={16}
+          className="w-[26rem] max-w-[calc(100vw-2rem)] p-1"
+        >
           <DropdownMenuLabel className="px-2 pt-1.5 pb-1 text-xs font-normal text-muted-foreground">
             {menuTitle}
           </DropdownMenuLabel>

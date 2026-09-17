@@ -23,8 +23,7 @@ const COPY = {
     'Always ask before tool calls edit files or use the internet',
   skipSelectedLabel: 'Full access',
   skipLabel: 'Full access',
-  skipDescription:
-    'Unrestricted: no approval prompts for any tool call, including the internet and any file on your computer',
+  skipDescription: chat.agentApprovals.skipDescription,
   skipConfirmTitle: 'Enable Full access?',
   skipConfirmBody:
     'No approval prompts: tool calls can modify or delete files, run commands, and use the internet. Enable it only for a task you trust.',
@@ -75,7 +74,12 @@ describe('AgentApprovalModeSelect', () => {
     ).toHaveTextContent(COPY.manualDescription)
     expect(
       screen.getByRole('menuitem', { name: /Full access/ })
-    ).toHaveTextContent(COPY.skipDescription)
+    ).toHaveTextContent(
+      'Runs every tool call without asking, including access to files and the internet.'
+    )
+    expect(chat.agentApprovals.skipDescription).toBe(
+      'Runs every tool call without asking, including access to files and the internet.'
+    )
     expect(screen.queryByText(/sandbox/i)).not.toBeInTheDocument()
   })
 
