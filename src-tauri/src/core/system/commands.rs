@@ -215,6 +215,15 @@ fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::proces
 
 /// Restart without leaking AppRun's environment into host launchers.
 fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
+    // A restart does not go through `RunEvent::Exit`. The remote-access tunnel
+    // is normally recovered from its pid journal on the next launch, but a
+    // factory reset has just deleted that journal along with the data folder,
+    // and a public URL must not be left running with nothing able to find it.
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(state) = app.try_state::<AppState>() {
+        state.remote_access.kill_now(&state.dynamic_trusted_hosts);
+    }
+
     #[cfg(target_os = "linux")]
     if let Some(appimage) = std::env::var_os("APPIMAGE") {
         app.cleanup_before_exit();

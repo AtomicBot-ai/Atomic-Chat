@@ -174,6 +174,13 @@ pub struct AppState {
     /// Lives here rather than inside the running server so the log survives a
     /// server restart and the read commands work while the server is stopped.
     pub api_request_inspector: Arc<crate::core::server::request_inspector::RequestInspector>,
+    /// `Host` names the proxy accepts beyond the configured Trusted Hosts: the
+    /// live tunnel's public name. Shared with every proxy run, so a tunnel that
+    /// outlives a request is seen by the next one.
+    pub dynamic_trusted_hosts: crate::core::server::dynamic_hosts::DynamicTrustedHosts,
+    /// Cloudflare quick tunnel in front of the Local API Server (desktop only).
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub remote_access: Arc<crate::core::server::remote_access::RemoteAccessManager>,
     /// Handles to the dynamic rows in the system tray menu (desktop only).
     /// Populated by `setup::setup_tray` when the tray is installed, consumed by
     /// `tray_status::update_tray_status` to re-render server / model / RAM.
