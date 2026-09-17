@@ -47,10 +47,12 @@ export function ToolRenderer({
   toolName,
   presentation,
   state,
+  onRetry,
 }: {
   toolName: string
   presentation: ToolPresentation
   state: ToolUIPart['state']
+  onRetry?: () => void
 }) {
   const { t } = useTranslation('chat')
   const resultCountId = useId()
@@ -111,7 +113,10 @@ export function ToolRenderer({
 
       <ToolContent>
         {presentation.kind === 'web_search_exa' && (
-          <WebSearchToolRenderer presentation={presentation} />
+          <WebSearchToolRenderer
+            presentation={presentation}
+            onRetry={onRetry}
+          />
         )}
 
         {presentation.kind === 'web_fetch_exa' && (

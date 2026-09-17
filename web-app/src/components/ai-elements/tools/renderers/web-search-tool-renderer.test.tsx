@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 import { WebSearchToolRenderer } from './web-search-tool-renderer'
 
 describe('WebSearchToolRenderer', () => {
@@ -19,6 +20,31 @@ describe('WebSearchToolRenderer', () => {
     )
 
     expect(screen.getAllByText(/^Result \d$/)).toHaveLength(6)
+    expect(screen.getAllByRole('link')).toHaveLength(6)
+    expect(screen.getAllByText('example.com')).toHaveLength(6)
     expect(container.querySelector('.max-h-80.overflow-y-auto')).not.toBeNull()
+  })
+
+  it('shows a compact clean error with a retry action', async () => {
+    const retry = vi.fn()
+    const { container } = render(
+      <WebSearchToolRenderer
+        presentation={{
+          kind: 'web_search_exa',
+          title: 'Web search failed',
+          results: [],
+          errorText:
+            'Error: "Web search is temporarily unavailable. Try again."',
+        }}
+        onRetry={retry}
+      />
+    )
+
+    expect(
+      screen.getByText('Web search is temporarily unavailable. Try again.')
+    ).toBeInTheDocument()
+    expect(container.innerHTML).not.toContain('bg-destructive/10')
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+    expect(retry).toHaveBeenCalledOnce()
   })
 })
