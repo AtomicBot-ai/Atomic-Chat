@@ -129,7 +129,7 @@ const DialogAppUpdater = () => {
   return (
     <UpdateBanner
       testId="app-update-banner"
-      className="w-[min(28rem,calc(100vw-1.5rem))]"
+      className="w-[min(27rem,calc(100vw-1rem))]"
       title={t('updater:app.title')}
       fromVersion={updateState.currentVersion || null}
       toVersion={newVersion}
