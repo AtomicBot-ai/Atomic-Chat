@@ -7,6 +7,7 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
@@ -51,7 +52,7 @@ const finishLoad = () =>
     useAppState.getState().updateLoadingModel(false)
   })
 
-const snackbar = () => screen.queryByTestId('model-load-snackbar')
+const snackbar = () => document.querySelector('.model-load-snackbar')
 
 const renderSnackbar = () =>
   render(
@@ -106,29 +107,28 @@ describe('ModelLoadSnackbar', () => {
       )
 
       await waitFor(() =>
-        expect(snackbar()).toHaveAttribute('data-face', 'loading')
+        expect(snackbar()).toHaveAttribute('data-type', 'loading')
       )
       expect(
         screen.getByText('Starting Model', { exact: true })
       ).toBeInTheDocument()
       expect(
-        screen.getByText('Loading model into memory', { exact: true })
+        screen.getByText('Loading into memory', { exact: true })
       ).toBeInTheDocument()
 
-      expect(screen.getAllByRole('status')).toHaveLength(1)
       expect(snackbar()).toHaveTextContent(
-        /^Starting ModelLoading model into memoryCancel$/
+        /^Starting ModelLoading into memoryCancel$/
       )
-      expect(snackbar()?.querySelectorAll('.animate-spin')).toHaveLength(1)
-      expect(screen.getAllByRole('button')).toHaveLength(2)
-      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+      expect(snackbar()?.querySelectorAll('.sonner-spinner')).toHaveLength(1)
 
       fireEvent.click(
         screen.getByRole('button', { name: 'Cancel', exact: true })
       )
-      expect(
-        await screen.findByRole('button', { name: 'Cancelling…' })
-      ).toBeDisabled()
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: 'Cancel' })
+        ).not.toBeInTheDocument()
+      )
     }
   )
 
@@ -142,18 +142,17 @@ describe('ModelLoadSnackbar', () => {
         act(() => useAppState.getState().setLoadingModelProgress(progress))
 
         await waitFor(() =>
-          expect(snackbar()).toHaveAttribute('data-face', 'loading')
+          expect(snackbar()).toHaveAttribute('data-type', 'loading')
         )
         expect(
           screen.getByText('Starting Model', { exact: true })
         ).toBeInTheDocument()
         expect(
-          screen.getByText('Loading model into memory', { exact: true })
+          screen.getByText('Loading into memory', { exact: true })
         ).toBeInTheDocument()
         expect(snackbar()).toHaveTextContent(
-          /^Starting ModelLoading model into memoryCancel$/
+          /^Starting ModelLoading into memoryCancel$/
         )
-        expect(snackbar()).toHaveAttribute('data-stage', progress.kind)
         expect(useAppState.getState().loadingModelProgress).toEqual(progress)
         expect(result.current).toMatchObject({
           phase: kind === 'start' ? 'starting' : 'restarting',
@@ -169,9 +168,11 @@ describe('ModelLoadSnackbar', () => {
     startLoad()
     act(() => useAppState.getState().setLoadingModelCancelling(true))
 
-    expect(
-      await screen.findByRole('button', { name: 'Cancelling…' })
-    ).toBeDisabled()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Cancel' })
+      ).not.toBeInTheDocument()
+    )
   })
 
   it('turns into "loaded" when the model is up, then clears itself', async () => {
@@ -183,7 +184,7 @@ describe('ModelLoadSnackbar', () => {
     finishLoad()
 
     await waitFor(() =>
-      expect(snackbar()).toHaveAttribute('data-face', 'loaded')
+      expect(snackbar()).toHaveAttribute('data-type', 'success')
     )
     expect(screen.getByText('Model ready', { exact: true })).toBeInTheDocument()
     expect(
@@ -193,7 +194,7 @@ describe('ModelLoadSnackbar', () => {
     expect(
       screen.queryByRole('button', { name: 'Cancel' })
     ).not.toBeInTheDocument()
-    expect(snackbar()?.querySelector('.animate-spin')).toBeNull()
+    expect(snackbar()?.querySelector('.sonner-spinner')).toBeNull()
 
     act(() => vi.advanceTimersByTime(LOADED_SNACKBAR_MS - 100))
     expect(snackbar()).toBeInTheDocument()
@@ -210,11 +211,11 @@ describe('ModelLoadSnackbar', () => {
     finishLoad()
     await screen.findByText('Model ready')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    act(() => toast.dismiss())
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
     startLoad('restart')
     await waitFor(() =>
-      expect(snackbar()).toHaveAttribute('data-face', 'loading')
+      expect(snackbar()).toHaveAttribute('data-type', 'loading')
     )
     expect(screen.getByText('Starting Model')).toBeInTheDocument()
   })
@@ -224,7 +225,7 @@ describe('ModelLoadSnackbar', () => {
     startLoad()
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    act(() => toast.dismiss())
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
 
     act(() =>
@@ -243,7 +244,7 @@ describe('ModelLoadSnackbar', () => {
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
 
     // A failure (or a cancel) leaves nothing in memory; the failure has its
-    // own toast and the strip above the composer.
+    // own standard toast.
     act(() => {
       useModelLoad.setState({
         modelLoadError: { message: 'boom' } as never,
@@ -259,7 +260,7 @@ describe('ModelLoadSnackbar', () => {
     renderSnackbar()
     startLoad()
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    act(() => toast.dismiss())
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
     act(() => useAppState.getState().updateLoadingModel(false))
 

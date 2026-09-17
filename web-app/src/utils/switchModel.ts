@@ -1433,10 +1433,8 @@ function unsupportedDescription(
  * went wrong, and where the copy has one, the next thing to try. `details`
  * carries the raw engine output for the "Show details" toggle.
  *
- * Pure, and separate from the toast, because a failure has to be readable in
- * two places (ATO-535): the toast that fires on a user-initiated load, and the
- * status line above the composer — which is the only surface an *auto-started*
- * failure ever reaches, since those deliberately fire no toast.
+ * Pure, and separate from the toast, because the compact picker status and the
+ * standard failure toast must classify the same engine error the same way.
  */
 export type ModelLoadFailure = {
   title: string
@@ -1536,25 +1534,13 @@ export function describeModelLoadFailure(
 function reportModelLoadError(
   rawError: unknown,
   providerName?: string,
-  isAutoStart?: boolean,
+  _isAutoStart?: boolean,
   modelId?: string
 ): void {
   const err = toErrorObject(rawError)
   useModelLoad.getState().setModelLoadError(err, modelId)
 
   const failure = describeModelLoadFailure(err, providerName)
-
-  // ATO-270: a startup watchdog timeout must surface even on auto-start —
-  // the alternative is an infinite "Starting Server" spinner with zero
-  // feedback and no way for the user to know anything went wrong, let alone
-  // retry. This is the one exception to the "auto-start fails silently"
-  // policy below.
-  //
-  // Every other automatic/background load (startup auto-start, ChatInput
-  // auto-start, onboarding launches, post-import auto-switch) passes
-  // `isAutoStart` and raises no toast. The error is still stored above, and
-  // the status line above the composer reads it (ATO-535).
-  if (isAutoStart && err.code !== LOCAL_API_SERVER_START_TIMEOUT_CODE) return
 
   showModelLoadErrorToast({
     title: failure.title,

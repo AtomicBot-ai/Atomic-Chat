@@ -184,12 +184,17 @@ describe('switchToModel', () => {
         modelId: 'broken-model',
         providerName: 'mlx',
         serviceHub,
+        isAutoStart: true,
       })
     ).rejects.toThrow('missing vision weights')
 
     expect(stopServer).toHaveBeenCalledOnce()
     expect(startServer).toHaveBeenCalledOnce()
     expect(appState.setServerStatus).toHaveBeenLastCalledWith('running')
+    expect(toast.error).toHaveBeenCalledWith(
+      'model-errors:modelLoadFailedTitle',
+      expect.any(Object)
+    )
   })
 
   it('keeps the target engine running and only unloads copies in other providers', async () => {
@@ -628,10 +633,9 @@ describe('splitModelLoadError', () => {
 })
 
 /**
- * ATO-535: the toast and the status line above the composer read the same
- * classification, and the status line is the *only* surface an auto-started
- * failure ever reaches. `@/i18n/setup` is mocked to echo the key, so these
- * pin which copy a given engine error resolves to.
+ * The toast and compact picker status read the same classification.
+ * `@/i18n/setup` is mocked to echo the key, so these pin which copy a given
+ * engine error resolves to.
  */
 describe('describeModelLoadFailure', () => {
   it('keeps a failure the user has to act on from expiring', () => {
