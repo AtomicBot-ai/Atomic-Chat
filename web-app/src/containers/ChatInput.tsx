@@ -223,12 +223,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
-  // The connectors button can be unpinned from the toolbar for a quieter
-  // composer; the "+" menu keeps the switch and pins it back.
-  const connectorsPinned = useGeneralSetting((state) => state.connectorsPinned)
-  const setConnectorsPinned = useGeneralSetting(
-    (state) => state.setConnectorsPinned
-  )
   const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
@@ -1153,7 +1147,9 @@ const ChatInput = memo(function ChatInput({
           )
         }
 
-        useAgentMode.getState().transferThreadState(composerThreadKey, newThread.id)
+        useAgentMode
+          .getState()
+          .transferThreadState(composerThreadKey, newThread.id)
 
         useInitialMessage.getState().set(newThread.id, messagePayload)
 
@@ -1190,7 +1186,6 @@ const ChatInput = memo(function ChatInput({
   // depending on it would re-fire the queued send on any unrelated keystroke.
   const sendMessageRef = useRef(handleSendMessage)
   sendMessageRef.current = handleSendMessage
-
 
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
@@ -2685,10 +2680,7 @@ const ChatInput = memo(function ChatInput({
     // sitting at the bottom of the screen, so a running download never covers
     // the send button. Writing to a model that is still downloading is the
     // whole point of ATO-460, so the composer has to stay reachable.
-    <div
-      data-composer-anchor
-      className="relative mx-auto w-full max-w-3xl"
-    >
+    <div data-composer-anchor className="relative mx-auto w-full max-w-3xl">
       {/* Pending approvals dock above the composer. Outside the streaming-
           disabled toolbar cluster: a run awaiting approval reports
           `submitted`, and an unclickable Approve button would deadlock it. */}
@@ -3089,12 +3081,15 @@ const ChatInput = memo(function ChatInput({
                             : 'Add documents or files'}
                         </span>
                       </DropdownMenuItem>
-                      {/* Global Agent mode toggle. Like the connectors pin it
-                          lives here and surfaces as a toolbar chip; routing
-                          guards at send time, so it stays togglable even when
-                          the current provider can't serve the agent loop —
-                          the chip's tooltip carries that explanation, so this
-                          row stays a single line like its neighbours. */}
+                      {/* Global Agent mode toggle. It lives here and surfaces
+                          as a toolbar chip; routing guards at send time, so
+                          it stays togglable even when the current provider
+                          can't serve the agent loop — the chip's tooltip
+                          carries that explanation, so this row stays a single
+                          line like its neighbours. (Plugins is not in this
+                          menu: its button is a toolbar fixture like the
+                          web-search globe, with each connector's on/off
+                          switch inside its dropdown.) */}
                       <DropdownMenuItem
                         onClick={() => setAgentModeEnabled(!agentModeEnabled)}
                       >
@@ -3110,26 +3105,6 @@ const ChatInput = memo(function ChatInput({
                           />
                         )}
                       </DropdownMenuItem>
-                      {/* Pin/unpin the plugins button. Unpinning only hides
-                          it: whatever is connected keeps running, and this
-                          stays the way back to the button. */}
-                      {(supportsTools || agentRouteActive) && (
-                        <DropdownMenuItem
-                          onClick={() => setConnectorsPinned(!connectorsPinned)}
-                        >
-                          <PuzzleIcon
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          <span>{t('plugins')}</span>
-                          {connectorsPinned && (
-                            <IconCheck
-                              size={16}
-                              className="ml-auto text-primary"
-                            />
-                          )}
-                        </DropdownMenuItem>
-                      )}
                       {/* Workspace folders ride in the same attach menu: for
                           the agent they are just another kind of context. The
                           project composer hides it — that page has no files
@@ -3160,7 +3135,9 @@ const ChatInput = memo(function ChatInput({
                     mode={approvalMode}
                     onChange={handleApprovalModeChange}
                     menuTitle={t('chat:agentApprovals.menuTitle')}
-                    manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
+                    manualSelectedLabel={t(
+                      'chat:agentApprovals.manualSelected'
+                    )}
                     manualLabel={t('chat:agentApprovals.manual')}
                     manualDescription={t(
                       'chat:agentApprovals.manualDescription'
@@ -3222,29 +3199,29 @@ const ChatInput = memo(function ChatInput({
                 */}
 
                   {selectedModel?.capabilities?.includes('embeddings') && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon-xs">
-                            <IconCodeCircle2
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{t('embeddings')}</p>
-                        </TooltipContent>
-                      </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconCodeCircle2
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('embeddings')}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   )}
 
                   {/* Servers and their tools live behind this one menu, which
-                      is also where a server gets (dis)connected. It stays put
-                      even with every MCP server switched off — the dropdown
-                      says so itself, and an icon that vanishes when web search
-                      goes off reads as a bug. Only unpinning from the "+" menu
-                      takes it out of the toolbar. */}
+                      is also where a server gets (dis)connected. Like the
+                      web-search globe beside it, the button is a fixture of
+                      the toolbar: no setting hides it, and it stays put even
+                      with every MCP server switched off — the dropdown says
+                      so itself, and an icon that vanishes when web search
+                      goes off reads as a bug. */}
                   {(supportsTools || agentRouteActive) &&
-                    connectorsPinned &&
                     (MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
@@ -3267,6 +3244,7 @@ const ChatInput = memo(function ChatInput({
                           <Button
                             variant="ghost"
                             size="icon-xs"
+                            aria-label={t('plugins')}
                             onClick={(e) => {
                               setDropdownToolsAvailable(false)
                               e.stopPropagation()
@@ -3327,7 +3305,7 @@ const ChatInput = memo(function ChatInput({
                     <WebSearchToggle initialMessage={initialMessage} />
                   )}
                   {/* Agent mode chip — the toolbar face of the global toggle,
-                      like the pinned connectors button. Last in the cluster on
+                      beside the connectors button. Last in the cluster on
                       purpose: turning the mode on then appends the chip instead
                       of shifting every control the user was aiming at. The X
                       (or unchecking in the "+" menu) turns it off everywhere.
