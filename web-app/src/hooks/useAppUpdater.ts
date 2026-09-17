@@ -106,6 +106,20 @@ export const useAppUpdater = () => {
     async (resetRemindMeLater = false) => {
       console.log('Checking for updates...')
 
+      // A local QA build deliberately owns the updater state: the normal
+      // startup check must not immediately replace its preview with "nothing
+      // available" before the tester can inspect the banner.
+      if (FORCE_UPDATE_PREVIEW) {
+        const previewState = {
+          isUpdateAvailable: true,
+          remindMeLater: false,
+          updateInfo: PREVIEW_UPDATE_INFO,
+        }
+        setUpdateState((prev) => ({ ...prev, ...previewState }))
+        syncStateToOtherInstances(previewState)
+        return PREVIEW_UPDATE_INFO
+      }
+
       try {
         // Reset remindMeLater if requested (e.g., when called from settings)
         if (resetRemindMeLater && !AUTO_UPDATER_DISABLED) {
