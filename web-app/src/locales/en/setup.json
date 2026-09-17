@@ -100,5 +100,10 @@
       "vram": "graphics memory",
       "system": "system memory"
     }
+  },
+  "wontFitDialog": {
+    "title": "This model won't fit in memory",
+    "body": "It will download, but it will not load. Download anyway?",
+    "confirm": "Download anyway"
   }
 }

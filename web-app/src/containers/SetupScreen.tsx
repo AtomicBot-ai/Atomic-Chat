@@ -49,6 +49,8 @@ import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
 import { ModelFitIndicator } from './ModelFitIndicator'
+import { ConfirmWontFitDownload } from './ConfirmWontFitDownload'
+import { useConfirmWontFitDownload } from '@/hooks/useConfirmWontFitDownload'
 import { fitLabelKey, fitLevel, orderRowsByFit } from './SetupScreenHelpers'
 import {
   ModelSourceBadge,
@@ -520,6 +522,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     profile: hardwareProfile,
     ready: hardwareTierReady,
   } = useHardwareTier()
+  // A red row's Download asks first; see ConfirmWontFitDownload.
+  const { guardWontFit, confirmation: wontFit } = useConfirmWontFitDownload()
   const recommendedItems = useResolvedRecommendedModels(
     sources,
     hardwareTier,
@@ -1549,7 +1553,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       ? downloadProcesses.find((p) => p.id === rowTrackId)
       : undefined
 
-    const onDownload = () => {
+    const startRowDownload = () => {
       if (!model) return
       // Detected-on-disk models still land in the library even when the user
       // downloads a catalog model instead of running them.
@@ -1579,6 +1583,15 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         )
       }
     }
+
+    // A red row asks first — see ConfirmWontFitDownload — with the mark's own
+    // verdict and sentence, computed below and read at click time. The memory
+    // question comes before the disk one pullModelWithMetadata asks on start.
+    const onDownload = () =>
+      guardWontFit(
+        { level: rowFitLevel, name: title, reason: rowFitReason },
+        startRowDownload
+      )
 
     // Raster marks (Ornith's, say) arrive as full squares; the corner radius
     // is what keeps them in step with the vector marks around them.
@@ -2086,6 +2099,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         </div>
       </div>
 
+      <ConfirmWontFitDownload {...wontFit} />
       <AddCloudProviderDialog
         open={cloudDialogOpen}
         onOpenChange={setCloudDialogOpen}

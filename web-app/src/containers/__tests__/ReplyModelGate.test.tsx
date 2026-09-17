@@ -42,6 +42,14 @@ vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
   useResolvedRecommendedModels: () => sourcesMock.recommended,
 }))
 
+// The fit copy comes from SetupScreen, whose imports reach this store; the
+// stub keeps its import-time background fetch out of the tests.
+vi.mock('@/stores/recommended-models-registry-store', () => ({
+  useRecommendedModelsRegistryStore: {
+    getState: () => ({ refresh: () => Promise.resolve() }),
+  },
+}))
+
 const folderMocks = vi.hoisted(() => ({
   pickScanFolder: vi.fn(),
   scanLocalModels: vi.fn(),
@@ -94,9 +102,16 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
-// Unmocked, the real store reports no RAM and no GPU on a test host.
+// Unmocked, the real store reports no RAM and no GPU on a test host. Mutable
+// so a test can measure the machine: `profile` is what the fit is judged on.
+const hardwareMock = vi.hoisted(() => ({
+  tier: 'vram_8' as string,
+  profile: null as Record<string, unknown> | null,
+  ready: true,
+}))
+
 vi.mock('@/hooks/useHardwareTier', () => ({
-  useHardwareTier: () => ({ tier: 'vram_8', profile: null, ready: true }),
+  useHardwareTier: () => hardwareMock,
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
@@ -240,6 +255,8 @@ describe('ReplyModelGate', () => {
       resumeParams: {},
     })
     mocks.chatgptSubscriptionAvailable = true
+    hardwareMock.tier = 'vram_8'
+    hardwareMock.profile = null
     sourcesMock.sources = [catalogModel]
     sourcesMock.recommended = [
       {
@@ -671,6 +688,134 @@ describe('ReplyModelGate', () => {
         screen.queryByRole('button', { name: 'common:cancelDownload' })
       ).toBeNull()
       expect(onResolved).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("a recommendation that won't fit", () => {
+    // The ladder steps the lead down as far as it goes and never drops it
+    // for not fitting, so on an 18 GiB Mac a 19.7 GB lead is a red row —
+    // the same verdict the onboarding row wears.
+    const unifiedMac = {
+      tier: 'unified_16',
+      memoryKind: 'unified',
+      budgetMib: 18 * 1024,
+      systemRamMib: 18 * 1024,
+      vramMib: 18 * 1024,
+      hardCeiling: true,
+    }
+    const nemotron: CatalogModel = {
+      ...catalogModel,
+      model_name: 'AtomicChat/Nemotron-3.5-Lightning-30B-A3B-GGUF',
+      quants: [
+        {
+          model_id: 'AtomicChat/Nemotron-3.5-Lightning-Q4_K_M',
+          path: 'https://example.test/Nemotron-3.5-Lightning-Q4_K_M.gguf',
+          file_size: '19.7 GB',
+        },
+      ],
+    } as CatalogModel
+    const recommend = (model: CatalogModel) => {
+      sourcesMock.sources = [model]
+      sourcesMock.recommended = [
+        {
+          rec: {
+            modelName: model.model_name,
+            descriptionKey: 'hub:recEverydayUse',
+          },
+          model,
+        },
+      ]
+    }
+    const confirmDialog = () =>
+      screen.queryByRole('dialog', { name: 'setup:wontFitDialog.title' })
+    const clickLead = async () => {
+      const lead = await screen.findByTestId('reply-gate-recommended-lead')
+      fireEvent.click(within(lead).getByRole('button'))
+    }
+
+    beforeEach(() => {
+      hardwareMock.tier = 'unified_16'
+      hardwareMock.profile = unifiedMac
+      recommend(nemotron)
+    })
+
+    it('asks before starting it, with the reason, and keeps the widget up', async () => {
+      const { onResolved } = renderGate([unconnectedCloud()])
+      await clickLead()
+
+      const dialog = confirmDialog()
+      expect(dialog).not.toBeNull()
+      expect(dialog).toHaveTextContent(/Nemotron/)
+      // The row's own sentence, in this machine's figures.
+      expect(dialog).toHaveTextContent(
+        'setup:recommend.whyWontLoad:{"size":"19.7 GB","budget":"18 GB","pool":"setup:recommend.pool.unified"}'
+      )
+      expect(dialog).toHaveTextContent('setup:wontFitDialog.body')
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().localDownloadingModels.size).toBe(0)
+      expect(onResolved).not.toHaveBeenCalled()
+    })
+
+    it('starts it, and resolves on that, once the user says so anyway', async () => {
+      const { onResolved } = renderGate([unconnectedCloud()])
+      await clickLead()
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'setup:wontFitDialog.confirm' })
+      )
+
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+        'AtomicChat/Nemotron-3.5-Lightning-Q4_K_M',
+        'https://example.test/Nemotron-3.5-Lightning-Q4_K_M.gguf',
+        undefined,
+        '',
+        true,
+        false
+      )
+      expect(
+        useDownloadStore
+          .getState()
+          .localDownloadingModels.has(
+            'AtomicChat/Nemotron-3.5-Lightning-Q4_K_M'
+          )
+      ).toBe(true)
+      expect(onResolved).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'download', branch: 'none' })
+      )
+    })
+
+    it('leaves the offer standing when the user cancels', async () => {
+      const { onResolved, onDismissed } = renderGate([unconnectedCloud()])
+      await clickLead()
+
+      fireEvent.click(screen.getByRole('button', { name: 'common:cancel' }))
+
+      await waitFor(() => expect(confirmDialog()).toBeNull())
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().localDownloadingModels.size).toBe(0)
+      expect(onResolved).not.toHaveBeenCalled()
+      expect(onDismissed).not.toHaveBeenCalled()
+      expect(
+        within(screen.getByTestId('reply-gate-recommended-lead')).getByRole(
+          'button'
+        )
+      ).toBeEnabled()
+    })
+
+    it('does not ask for a lead that merely runs tight', async () => {
+      // 12 GB on 18 GiB: past half the pool, under the ceiling — yellow.
+      recommend({
+        ...nemotron,
+        quants: [{ ...nemotron.quants[0], file_size: '12.0 GB' }],
+      } as CatalogModel)
+      const { onResolved } = renderGate([unconnectedCloud()])
+      await clickLead()
+
+      expect(confirmDialog()).toBeNull()
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+      expect(onResolved).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'download', branch: 'none' })
+      )
     })
   })
 })

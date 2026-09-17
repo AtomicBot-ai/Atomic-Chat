@@ -15,13 +15,17 @@ import { ChatGptMark } from '@/components/icons/chatgpt-mark'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { VOICE_MODEL_ID } from '@/constants/voice'
+import { ConfirmWontFitDownload } from '@/containers/ConfirmWontFitDownload'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { RouteRow } from '@/containers/RouteRow'
+import { describeRecommendationFit } from '@/containers/SetupScreen'
+import { fitLevel } from '@/containers/SetupScreenHelpers'
 import {
   AddCloudProviderDialog,
   selectCloudGalleryProviders,
   type CloudProviderSaveResult,
 } from '@/containers/dialogs/AddCloudProviderDialog'
+import { useConfirmWontFitDownload } from '@/hooks/useConfirmWontFitDownload'
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
@@ -36,6 +40,8 @@ import {
   formatEta,
   formatProgressPair,
 } from '@/lib/downloadFormat'
+import { judgeMemoryFit } from '@/lib/hardware-tier'
+import { parseFileSizeToBytes } from '@/lib/model-card'
 import { prettyModelName } from '@/lib/model-display-name'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
@@ -516,6 +522,9 @@ function RecommendedDownloads({
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
+  const { profile } = useHardwareTier()
+  // A red row's Download asks first; see ConfirmWontFitDownload.
+  const { guardWontFit, confirmation: wontFit } = useConfirmWontFitDownload()
   const { items: recommended, isLoading } = useRecommendedDownloads()
   const inFlight = useInFlightChatDownloads()
   // The card lookup has no failure state of its own; past this the routes
@@ -612,8 +621,31 @@ function RecommendedDownloads({
               primary={hero}
               disabled={item.isDownloading}
               onClick={() => {
-                if (!item.start()) return
-                onStarted()
+                // The verdict and sentence the onboarding row wears, judged
+                // on the file this row would fetch; only red asks.
+                const sizeBytes = parseFileSizeToBytes(item.variant.file_size)
+                const copy = describeRecommendationFit({
+                  sizeLabel: item.variant.file_size,
+                  sizeBytes,
+                  profile,
+                  memoryOnly: true,
+                })
+                guardWontFit(
+                  {
+                    level: fitLevel(judgeMemoryFit(sizeBytes, profile)),
+                    name: item.title,
+                    reason: copy
+                      ? t(copy.key, {
+                          ...copy.values,
+                          ...(copy.poolKey ? { pool: t(copy.poolKey) } : {}),
+                        })
+                      : null,
+                  },
+                  () => {
+                    if (!item.start()) return
+                    onStarted()
+                  }
+                )
               }}
               data-testid={
                 hero
@@ -624,6 +656,7 @@ function RecommendedDownloads({
           )
         })}
       </div>
+      <ConfirmWontFitDownload {...wontFit} />
     </div>
   )
 }

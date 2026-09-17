@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-277 records, 2026-05-19 → 2026-09-16.
+278 records, 2026-05-19 → 2026-09-17.
 277 records, 2026-05-19 → 2026-09-16.
 
 ---
@@ -260,8 +260,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (54)
+## UI / UX (55)
 
+- **2026-09-17** — [Warn before a download that won't fit in memory; red rows only](2026-09-17-warn-before-a-download-that-wont-fit-in-memory.md)
 - **2026-09-16** — [Confirm Full access before enabling it, every time](2026-09-16-confirm-full-access-before-enabling-it.md)
 - **2026-09-16** — [Unfold the release notes inside the update banner](2026-09-16-unfold-release-notes-inside-the-update-banner.md)
 - **2026-09-16** — [Name connectors in the plugins menu by what they do, not by how many tools they have](2026-09-16-name-connectors-by-what-they-do.md)
