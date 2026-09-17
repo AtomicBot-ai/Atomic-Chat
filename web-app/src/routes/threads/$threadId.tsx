@@ -143,7 +143,7 @@ import {
 import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { useMCPServers } from '@/hooks/useMCPServers'
-import { findWebSearchServer } from '@/lib/web-search'
+import { findWebSearchServer, isWebSearchEnabled } from '@/lib/web-search'
 import type {
   AgentAttachment as AgentIpcAttachment,
   AgentEvent,
@@ -1130,7 +1130,8 @@ function ThreadDetail() {
       const sampling = getSamplingParamsForThread(threadId)
       // The composer's globe drives the same web-search state for both
       // engines: MCP server activation for the chat transport, this per-turn
-      // flag for the agent's built-in web tools. No configured server means
+      // flag for the agent's built-in web tools. Require discovered search
+      // tools so a failed startup cannot promise web access. No server means
       // no globe to turn it off with, so web access stays off — an existing
       // chat setup without a search server never made web requests.
       const webSearchServer = findWebSearchServer(
@@ -1159,7 +1160,12 @@ function ThreadDetail() {
             assistant_instructions: systemMessage,
             sampling: sampling.params,
             sampling_overridden: sampling.overridden,
-            web_search: Boolean(webSearchServer?.config.active),
+            web_search: isWebSearchEnabled(
+              webSearchServer,
+              useAppState.getState().tools,
+              useToolAvailable.getState().getDisabledToolsForThread(threadId),
+              useToolAvailable.getState().getMutedServersForThread(threadId)
+            ),
             mcp_enabled: true,
             auto_approve_mcp: resolveMcpAutoApprove(threadId),
             disabled_mcp_tools: useToolAvailable

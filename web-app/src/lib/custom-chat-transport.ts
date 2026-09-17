@@ -1,3 +1,5 @@
+import { useMCPServers } from '@/hooks/useMCPServers'
+import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
@@ -508,6 +510,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       modelSupportsTools,
       disabledToolKeys.join(','),
       muted,
+      Object.entries(useMCPServers.getState().mcpServers)
+        .filter(([key, config]) => isWebSearchServer(key, config))
+        .map(([key, config]) => `${key}:${Boolean(config.active)}`)
+        .sort()
+        .join(','),
       ctxLen ?? '',
       mcp,
       rag,
@@ -624,7 +631,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ...this.mutedServersForThread(),
       ...SYSTEM_SERVER_KEYS,
     ])
-    const audibleMcpTools = mcpTools.filter((tool) => !muted.has(tool.server))
+    const searchConfigs = useMCPServers.getState().mcpServers
+    const audibleMcpTools = mcpTools.filter((tool) => {
+      if (muted.has(tool.server)) return false
+      const config = searchConfigs[tool.server]
+      // Turning the globe off takes effect before asynchronous discovery catches up.
+      return (
+        !config ||
+        !isWebSearchServer(tool.server, config) ||
+        Boolean(config.active)
+      )
+    })
 
     this.tools = buildToolsRecord(ragTools, audibleMcpTools, disabledToolKeys)
     this.toolsCacheKey = cacheKey

@@ -3,6 +3,7 @@ import type { LanguageModel } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { localStorageKey } from '@/constants/localStorage'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -96,6 +97,7 @@ async function readChunks(
 // Shared by every describe below: a seeded service hub plus a default MLX
 // provider/model, so each test only has to state what it changes.
 beforeEach(() => {
+  useMCPServers.setState({ mcpServers: {} })
   seedServiceHub({
     rag: { getTools: vi.fn().mockResolvedValue([]) } as never,
   })
@@ -840,6 +842,9 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
   }
 
   beforeEach(() => {
+    useMCPServers.setState({
+      mcpServers: { exa: { command: '', args: [], env: {}, active: true } },
+    })
     useAppState.setState({
       tools: [...linearTools, exaTool],
       mcpToolNames: new Set([...linearTools.map((t) => t.name), exaTool.name]),
@@ -855,7 +860,7 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     }))
   })
 
-  const sendAndCaptureTools = async () => {
+  const sendAndCaptureTools = async (transport = new CustomChatTransport()) => {
     const doStream = vi.fn(async () => ({
       stream: new ReadableStream({
         start(controller) {
@@ -877,7 +882,6 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
       doGenerate: vi.fn(),
       doStream,
     } as unknown as LanguageModel)
-    const transport = new CustomChatTransport()
     await readChunks(
       (await transport.sendMessages({
         chatId: 'chat-1',
@@ -906,6 +910,31 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     // 5 verbose tools on a 2k window: Linear is heavy, the total is too.
     expect(report.heavyServers).toEqual(['linear'])
     expect(report.tooHeavy).toBe(true)
+  })
+
+  it('sends no search tool after startup failed despite an active config', async () => {
+    useAppState.setState({ tools: [], mcpToolNames: new Set() })
+    expect(await sendAndCaptureTools()).toEqual([])
+  })
+
+  it('excludes a disabled search backend even before the tool snapshot refreshes', async () => {
+    useMCPServers
+      .getState()
+      .editServer('exa', { command: '', args: [], env: {}, active: false })
+    expect(await sendAndCaptureTools()).toEqual(
+      linearTools.map((t) => t.name).sort()
+    )
+  })
+
+  it('removes search on the next turn of an already cached transport', async () => {
+    const transport = new CustomChatTransport()
+    expect(await sendAndCaptureTools(transport)).toContain(exaTool.name)
+    useMCPServers
+      .getState()
+      .editServer('exa', { command: '', args: [], env: {}, active: false })
+    expect(await sendAndCaptureTools(transport)).toEqual(
+      linearTools.map((t) => t.name).sort()
+    )
   })
 
   it('drops a muted connector from the request but keeps the others', async () => {
