@@ -1678,6 +1678,139 @@ describe('SetupScreen', () => {
         unmount()
       })
     })
+
+    describe("a download that won't fit", () => {
+      // The 18 GiB Mac again: Nemotron at 19.7 GB is past Metal's ceiling
+      // and wears the red mark; Gemma at 7.3 GB fits.
+      const unifiedMac = {
+        tier: 'unified_16',
+        memoryKind: 'unified',
+        budgetMib: 18 * 1024,
+        systemRamMib: 18 * 1024,
+        vramMib: 18 * 1024,
+        hardCeiling: true,
+      }
+      const nemotronVariant =
+        'NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF-Q4_K_M'
+
+      beforeEach(() => {
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [gemma, nemotron]
+      })
+
+      const expectNothingStarted = () => {
+        expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+        expect(useDownloadStore.getState().localDownloadingModels.size).toBe(0)
+      }
+
+      it("asks before downloading a red row, and says why in the machine's own figures", async () => {
+        // Danny clicked Download on a red row of a 64 GB M5 Max and the
+        // transfer simply began: nothing said the file would never load.
+        const { unmount } = await renderPicker()
+        // Offer, Gemma, Nemotron — the red one is last.
+        fireEvent.click(downloadButtons()[2])
+
+        const dialog = screen.getByRole('dialog')
+        expect(dialog).toHaveTextContent('setup:wontFitDialog.title')
+        expect(dialog).toHaveTextContent('Nemotron 3.5 Lightning')
+        expect(dialog).toHaveTextContent('setup:recommend.whyWontLoad')
+        expect(dialog).toHaveTextContent('setup:wontFitDialog.body')
+        // Cancel is the default answer: Enter does the safe thing.
+        expect(
+          within(dialog).getByRole('button', { name: 'common:cancel' })
+        ).toHaveFocus()
+        expectNothingStarted()
+        unmount()
+      })
+
+      it('starts the download, as before, once the user says so anyway', async () => {
+        const { unmount } = await renderPicker()
+        fireEvent.click(downloadButtons()[2])
+
+        fireEvent.click(
+          screen.getByRole('button', { name: 'setup:wontFitDialog.confirm' })
+        )
+
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        )
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          nemotronVariant
+        )
+        // The row reads Downloading… as a green row's would; the other two
+        // still offer.
+        expect(
+          screen.getByRole('button', { name: 'common:cancelDownload' })
+        ).toHaveTextContent('setup:downloading')
+        expect(downloadButtons()).toHaveLength(2)
+        unmount()
+      })
+
+      it('leaves the row as it was when the user cancels', async () => {
+        const { unmount } = await renderPicker()
+        fireEvent.click(downloadButtons()[2])
+
+        fireEvent.click(screen.getByRole('button', { name: 'common:cancel' }))
+
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        )
+        expectNothingStarted()
+        expect(downloadButtons()).toHaveLength(3)
+        expect(
+          screen.queryByRole('button', { name: 'common:cancelDownload' })
+        ).not.toBeInTheDocument()
+        unmount()
+      })
+
+      it('starts a row that fits at once, with no question', async () => {
+        const { unmount } = await renderPicker()
+        // Gemma, 7.3 GB on 18 GiB: green.
+        fireEvent.click(downloadButtons()[1])
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          'gemma-4-12B-it-GGUF-Q4_K_M'
+        )
+        expect(
+          screen.getByRole('button', { name: 'common:cancelDownload' })
+        ).toBeInTheDocument()
+        unmount()
+      })
+
+      it('starts a yellow row at once too: it will run, and the mark already says how', async () => {
+        // On an 8 GiB card Nemotron spills into system RAM — slower, not
+        // refused — and a question there would cry wolf.
+        mocks.hardwareTier.tier = 'vram_8'
+        mocks.hardwareTier.profile = {
+          tier: 'vram_8',
+          memoryKind: 'vram',
+          budgetMib: 8 * 1024,
+          systemRamMib: 32 * 1024,
+          vramMib: 8 * 1024,
+          hardCeiling: false,
+        }
+        const { unmount } = await renderPicker()
+        expect(
+          screen.getAllByRole('button', { name: /setup:recommend\.fit/ })[2]
+        ).toHaveAttribute('data-fit', 'warn')
+
+        fireEvent.click(downloadButtons()[2])
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          nemotronVariant
+        )
+        expect(
+          screen.getByRole('button', { name: 'common:cancelDownload' })
+        ).toBeInTheDocument()
+        unmount()
+      })
+    })
   })
 
   describe('leaving without a model', () => {
