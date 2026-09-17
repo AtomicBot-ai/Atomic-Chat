@@ -31,6 +31,12 @@ vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
   useResolvedRecommendedModels: () => sourcesMock.recommended,
 }))
 
+// The card reads only the lead; the Hub's picks behind the widget's full list
+// share the hook module, and their store fetches at import time too.
+vi.mock('@/hooks/useStaffPicks', () => ({
+  useStaffPicks: () => [],
+}))
+
 // The catalog the recommendations resolve against.
 vi.mock('@/hooks/useModelSources', () => ({
   useModelSources: () => ({
