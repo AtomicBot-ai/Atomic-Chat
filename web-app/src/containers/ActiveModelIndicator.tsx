@@ -57,14 +57,15 @@ export function ActiveModelIndicator({ className }: { className?: string }) {
             className
           )}
         >
-          <span
-            className={cn(
-              'size-2 rounded-full',
-              status.phase === 'failed'
-                ? 'bg-destructive'
-                : 'border border-muted-foreground'
-            )}
-          />
+          {status.phase === 'failed' ? (
+            <IconCircleX
+              size={14}
+              stroke={1.75}
+              className="text-destructive"
+            />
+          ) : (
+            <span className="size-2 rounded-full border border-muted-foreground" />
+          )}
         </span>
       </Hint>
     )
@@ -103,10 +104,10 @@ export function ActiveModelIndicator({ className }: { className?: string }) {
   }
 
   return (
-    <Hint label={busy ? summary : `${summary} · ${action}`}>
+    <Hint label={busy ? summary : action}>
       <button
         type="button"
-        aria-label={busy ? summary : `${summary}. ${action}`}
+        aria-label={busy ? summary : action}
         data-testid="active-model-indicator"
         data-status={state}
         disabled={busy}
@@ -149,7 +150,7 @@ function Hint({ label, children }: { label: string; children: ReactElement }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>{children}</TooltipTrigger>
-        <TooltipContent>
+        <TooltipContent className="max-w-44 px-2.5 text-left text-pretty">
           <p>{label}</p>
         </TooltipContent>
       </Tooltip>

@@ -69,6 +69,7 @@ describe('ActiveModelIndicator', () => {
       'hidden',
       'text-destructive'
     )
+    expect(indicator()).toHaveAccessibleName('common:modelLoad.indicator.unload')
     fireEvent.click(indicator()!)
 
     await waitFor(() =>
@@ -110,6 +111,9 @@ describe('ActiveModelIndicator', () => {
     render(<ActiveModelIndicator />)
 
     expect(indicator()).toHaveAttribute('data-status', 'loading')
+    expect(indicator()).toHaveAccessibleName(
+      'common:modelLoad.indicator.stopLoading'
+    )
     fireEvent.click(indicator()!)
 
     expect(cancelModelLoad).toHaveBeenCalledWith(serviceHub)
@@ -144,6 +148,9 @@ describe('ActiveModelIndicator', () => {
     render(<ActiveModelIndicator />)
 
     expect(indicator()).toHaveAttribute('data-status', 'failed')
+    expect(indicator()?.querySelector('.tabler-icon-circle-x')).toHaveClass(
+      'text-destructive'
+    )
   })
 
   it('is absent for a remote model, which holds nothing in memory', () => {
