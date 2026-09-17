@@ -176,7 +176,7 @@ const WebSearchToggle = memo(function WebSearchToggle({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>{label}</p>
+          <p>{t('common:webSearchToggleTooltip')}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

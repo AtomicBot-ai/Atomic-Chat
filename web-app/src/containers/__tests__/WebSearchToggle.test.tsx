@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import common from '@/locales/en/common.json'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) =>
+      common[key.replace('common:', '') as keyof typeof common] ?? key,
+  }),
 }))
 
 const activateMCPServer = vi.hoisted(() => vi.fn(async () => {}))
@@ -100,13 +104,52 @@ describe('WebSearchToggle', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  describe.each(['hover', 'focus'] as const)('%s tooltip', (interaction) => {
+    it.each([
+      { state: 'enabled', active: true, tools: [SEARCH_TOOL], pressed: true },
+      {
+        state: 'disabled',
+        active: false,
+        tools: [SEARCH_TOOL],
+        pressed: false,
+      },
+      { state: 'unavailable', active: true, tools: [], pressed: false },
+    ])(
+      'shows exactly "Web search" when $state',
+      async ({ active, tools, pressed }) => {
+        useMCPServers.setState({ mcpServers: { exa: { ...EXA, active } } })
+        useAppState.setState({ tools })
+        const user = userEvent.setup()
+        render(<WebSearchToggle />)
+        const button = screen.getByRole('button')
+
+        if (interaction === 'hover') {
+          await user.hover(button)
+        } else {
+          await user.tab()
+          expect(button).toHaveFocus()
+        }
+
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(
+          /^Web search$/
+        )
+        expect(button).toHaveAttribute('aria-pressed', String(pressed))
+        if (pressed) {
+          expect(button).toHaveClass('text-blue-500')
+        } else {
+          expect(button).not.toHaveClass('text-blue-500')
+        }
+      }
+    )
+  })
+
   it('does not promise search after startup fails with persisted active=true', () => {
     useMCPServers.setState({ mcpServers: { exa: { ...EXA, active: true } } })
     // get_tools returns no tools when the Exa handshake returns HTTP 403.
     useAppState.setState({ tools: [] })
     render(<WebSearchToggle />)
     expect(
-      screen.getByRole('button', { name: 'common:webSearchToggleUnavailable' })
+      screen.getByRole('button', { name: common.webSearchToggleUnavailable })
     ).toHaveAttribute('aria-pressed', 'false')
   })
 
@@ -123,7 +166,7 @@ describe('WebSearchToggle', () => {
     render(<StartupComposer />)
     expect(
       await screen.findByRole('button', {
-        name: 'common:webSearchToggleUnavailable',
+        name: common.webSearchToggleUnavailable,
       })
     ).toHaveAttribute('aria-pressed', 'false')
     expect(useAppState.getState().tools).toEqual([])
@@ -134,11 +177,11 @@ describe('WebSearchToggle', () => {
     useAppState.setState({ tools: [] })
     render(<WebSearchToggle />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleUnavailable' })
+      screen.getByRole('button', { name: common.webSearchToggleUnavailable })
     )
     expect(
       await screen.findByRole('button', {
-        name: 'common:webSearchToggleEnabled',
+        name: common.webSearchToggleEnabled,
       })
     ).toHaveAttribute('aria-pressed', 'true')
   })
@@ -149,11 +192,11 @@ describe('WebSearchToggle', () => {
     activateMCPServer.mockRejectedValueOnce(new Error('HTTP 403 Forbidden'))
     render(<WebSearchToggle />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleUnavailable' })
+      screen.getByRole('button', { name: common.webSearchToggleUnavailable })
     )
     expect(
       await screen.findByRole('button', {
-        name: 'common:webSearchToggleUnavailable',
+        name: common.webSearchToggleUnavailable,
       })
     ).toHaveAttribute('aria-pressed', 'false')
   })
@@ -164,11 +207,11 @@ describe('WebSearchToggle', () => {
     activateMCPServer.mockResolvedValueOnce(undefined)
     render(<WebSearchToggle />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+      screen.getByRole('button', { name: common.webSearchToggleDisabled })
     )
     expect(
       await screen.findByRole('button', {
-        name: 'common:webSearchToggleUnavailable',
+        name: common.webSearchToggleUnavailable,
       })
     ).toHaveAttribute('aria-pressed', 'false')
   })
@@ -178,7 +221,7 @@ describe('WebSearchToggle', () => {
     useAppState.setState({ tools: [{ ...SEARCH_TOOL, name: 'web_fetch_exa' }] })
     render(<WebSearchToggle />)
     expect(
-      screen.getByRole('button', { name: 'common:webSearchToggleUnavailable' })
+      screen.getByRole('button', { name: common.webSearchToggleUnavailable })
     ).toHaveAttribute('aria-pressed', 'false')
   })
 
@@ -187,11 +230,11 @@ describe('WebSearchToggle', () => {
     useToolAvailable.setState({ mutedServers: { 'thread-1': ['exa'] } })
     render(<WebSearchToggle />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+      screen.getByRole('button', { name: common.webSearchToggleDisabled })
     )
     expect(
       await screen.findByRole('button', {
-        name: 'common:webSearchToggleEnabled',
+        name: common.webSearchToggleEnabled,
       })
     ).toHaveAttribute('aria-pressed', 'true')
     expect(
@@ -207,7 +250,7 @@ describe('WebSearchToggle', () => {
 
     render(<WebSearchToggle />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+      screen.getByRole('button', { name: common.webSearchToggleDisabled })
     )
 
     await waitFor(() =>
@@ -222,7 +265,7 @@ describe('WebSearchToggle', () => {
       'fetch::fetch',
     ])
     await screen.findByRole('button', {
-      name: 'common:webSearchToggleEnabled',
+      name: common.webSearchToggleEnabled,
     })
   })
 
@@ -231,7 +274,7 @@ describe('WebSearchToggle', () => {
 
     render(<WebSearchToggle />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleEnabled' })
+      screen.getByRole('button', { name: common.webSearchToggleEnabled })
     )
 
     await waitFor(() => expect(deactivateMCPServer).toHaveBeenCalledWith('exa'))
@@ -246,7 +289,7 @@ describe('WebSearchToggle', () => {
     render(<WebSearchToggle />)
     await act(async () => {
       await userEvent.click(
-        screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+        screen.getByRole('button', { name: common.webSearchToggleDisabled })
       )
     })
 
@@ -263,7 +306,7 @@ describe('WebSearchToggle', () => {
 
     render(<WebSearchToggle initialMessage />)
     await userEvent.click(
-      screen.getByRole('button', { name: 'common:webSearchToggleDisabled' })
+      screen.getByRole('button', { name: common.webSearchToggleDisabled })
     )
 
     await waitFor(() =>
