@@ -9,7 +9,7 @@
  * the loading snackbar never takes the Cancel away with it.
  *
  * An unload is recorded like a Stop, so the composer does not load the model
- * straight back; sending to it, or picking it again, does.
+ * straight back. Its selection is cleared; picking it again loads it.
  */
 import { useState, type ReactElement } from 'react'
 

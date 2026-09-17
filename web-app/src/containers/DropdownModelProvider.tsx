@@ -32,6 +32,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ActiveModelIndicator } from '@/containers/ActiveModelIndicator'
+import { useAppState } from '@/hooks/useAppState'
 import { InferenceServerStatusLine } from '@/containers/InferenceServerStatus'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
@@ -277,6 +278,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         }
         return
       }
+
+      // A deliberate unload leaves the composer empty, including on remount
+      // or provider refresh. Last-used/preload must not undo that user choice.
+      if (useAppState.getState().userStoppedModels.length > 0) return
 
       const { preloadModelOnStartup } = useGeneralSetting.getState()
       if (!preloadModelOnStartup) {
