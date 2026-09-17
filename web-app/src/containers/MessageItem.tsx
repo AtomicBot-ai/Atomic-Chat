@@ -442,6 +442,7 @@ export const MessageItem = memo(
               toolName={tool.toolName}
               presentation={tool.presentation}
               state={tool.state}
+              onRetry={onRegenerate ? handleRegenerate : undefined}
             />
           ))}
           {loops.map((loop, loopIndex) => (
