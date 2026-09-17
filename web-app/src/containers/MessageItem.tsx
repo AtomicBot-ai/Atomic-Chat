@@ -8,11 +8,11 @@ import {
 import type { UIMessage, ChatStatus } from 'ai'
 import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
-import { twMerge } from 'tailwind-merge'
 import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
+  ReasoningViewport,
 } from '@/components/ai-elements/reasoning'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { CopyButton } from './CopyButton'
@@ -382,22 +382,16 @@ export const MessageItem = memo(
           defaultOpen={streaming}
         >
           <ReasoningTrigger getThinkingMessage={getThinkingMessage} />
-          <div
+          <ReasoningViewport
             ref={streaming ? reasoningContainerRef : null}
             onScroll={streaming ? onReasoningScroll : undefined}
-            className={twMerge(
-              'relative w-full overflow-auto',
-              streaming
-                ? 'mt-2 max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]'
-                : 'h-auto opacity-100'
-            )}
           >
             {block.items.map((item) => (
               <ReasoningContent key={item.key} isStreaming={streaming}>
                 {item.text}
               </ReasoningContent>
             ))}
-          </div>
+          </ReasoningViewport>
         </Reasoning>
       )
     }

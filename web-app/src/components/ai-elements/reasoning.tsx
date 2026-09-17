@@ -47,7 +47,7 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
 }
 
 const MS_IN_S = 1000
-// While a turn runs the panel is 128px tall — about eight lines — so the
+// While a turn runs the panel shows six lines, so the
 // window only has to cover scroll-back, not the trace. Cost of one streamed
 // delta at a 60k-character trace, measured in WebKit: 314ms for live
 // Markdown against 1ms for a plain-text window. Any bounded window fixes the
@@ -138,6 +138,32 @@ export const Reasoning = memo(
     )
   }
 )
+
+/** Own the viewport geometry with the same closed state Radix receives.
+ * A finished, closing panel must never spend a frame at its trace's height.
+ */
+export const ReasoningViewport = ({
+  className,
+  ...props
+}: ComponentProps<'div'>) => {
+  const { isStreaming, isOpen } = useReasoning()
+  const bounded = isStreaming || !isOpen
+  return (
+    <div
+      {...props}
+      data-reasoning-viewport
+      data-state={isOpen ? 'open' : 'closed'}
+      data-bounded={bounded}
+      className={cn(
+        'relative w-full min-w-0 text-sm',
+        bounded
+          ? 'h-[calc(6lh+1rem)] mt-2 overflow-x-hidden overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden transition-[height,margin] duration-150 ease-out motion-reduce:transition-none data-[state=closed]:h-0 data-[state=closed]:mt-0 data-[state=closed]:overflow-hidden [&>[data-slot=collapsible-content]]:mt-0 [&>[data-slot=collapsible-content]]:py-2 [--reasoning-fade-top:0px] [--reasoning-fade-bottom:0px] data-[overflow-top=true]:[--reasoning-fade-top:1rem] data-[overflow-bottom=true]:[--reasoning-fade-bottom:1rem] [mask-image:linear-gradient(to_bottom,transparent,black_var(--reasoning-fade-top),black_calc(100%_-_var(--reasoning-fade-bottom)),transparent_100%)]'
+          : 'h-auto overflow-x-hidden',
+        className
+      )}
+    />
+  )
+}
 
 export type ReasoningTriggerProps = ComponentProps<
   typeof CollapsibleTrigger
