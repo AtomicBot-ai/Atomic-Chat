@@ -162,18 +162,41 @@ export function ConnectorCard({
               </div>
             )}
           </div>
-          {connector ? (
-            <p className="truncate text-xs text-muted-foreground">
-              {t('mcp-connectors:by', { name: connector.author })}
-            </p>
-          ) : (
-            <p
-              className="truncate text-xs text-muted-foreground"
-              title={summary}
-            >
-              {summary}
-            </p>
-          )}
+          {/* One stable secondary slot: authorship before setup, runtime state
+              after setup. Showing both made Error grow a third text line and
+              pushed otherwise identical cards out of alignment. */}
+          <div className="mt-0.5 flex h-4 min-w-0 items-start">
+            {installed ? (
+              <span
+                className={cn(
+                  'inline-flex max-w-full shrink-0 items-center truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  isConnected
+                    ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                    : isError
+                      ? 'bg-red-500/12 text-red-700 dark:text-red-300'
+                      : 'bg-muted text-muted-foreground'
+                )}
+                title={isError ? status?.error : undefined}
+                aria-label={
+                  isError ? `MCP server error: ${status?.error}` : statusLabel
+                }
+                data-testid="connector-status"
+              >
+                {statusLabel}
+              </span>
+            ) : connector ? (
+              <p className="truncate text-xs text-muted-foreground">
+                {t('mcp-connectors:by', { name: connector.author })}
+              </p>
+            ) : (
+              <p
+                className="truncate text-xs text-muted-foreground"
+                title={summary}
+              >
+                {summary}
+              </p>
+            )}
+          </div>
         </div>
         {/* Configured controls share one stable slot at the right edge. */}
         <div className="flex shrink-0 items-center gap-3">
@@ -225,26 +248,6 @@ export function ConnectorCard({
               loading={busy}
               onCheckedChange={onToggle}
             />
-          )}
-        </div>
-        <div className="col-start-2 min-w-0 h-[1.5em] text-xs leading-normal">
-          {installed && (
-            <span
-              className={cn(
-                'block truncate',
-                isConnected
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : isError
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-muted-foreground'
-              )}
-              title={isError ? status?.error : undefined}
-              aria-label={
-                isError ? `MCP server error: ${status?.error}` : undefined
-              }
-            >
-              {statusLabel}
-            </span>
           )}
         </div>
       </div>

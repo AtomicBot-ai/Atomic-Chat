@@ -119,7 +119,7 @@ describe('ConnectorCard anatomy', () => {
     { active: true, state: 'error', label: 'statusError' },
     { active: true, state: undefined, label: 'statusInactive' },
   ] as const)(
-    'configured Exa: active=$active runtime=$state keeps status under its identity and controls together',
+    'configured Exa: active=$active runtime=$state replaces the byline with a status badge',
     ({ active, state, label }) => {
       render(
         <ConnectorCard
@@ -135,10 +135,11 @@ describe('ConnectorCard anatomy', () => {
       )
       const { header } = bandsOf('Exa')
       const title = screen.getByRole('heading', { name: 'Exa' })
-      const byline = screen.getByText('mcp-connectors:by:Exa')
       const status = screen.getByText(`mcp-connectors:${label}`)
       expect(header).toContainElement(status)
-      expect(follows(title, byline) && follows(byline, status)).toBe(true)
+      expect(follows(title, status)).toBe(true)
+      expect(status).toHaveAttribute('data-testid', 'connector-status')
+      expect(screen.queryByText('mcp-connectors:by:Exa')).toBeNull()
       const actions = screen.getByTitle('mcp-connectors:serverActions')
         .parentElement as HTMLElement
       expect(

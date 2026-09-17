@@ -29,7 +29,7 @@ for (const width of [1024, 1280]) {
   for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
     for (const theme of ['light', 'dark'] as const) {
       describe(`${width}px / ${font} / ${theme}`, () => {
-        it('keeps state controls at the top-right, status under the byline, and both columns equal', async () => {
+        it('keeps state controls at the top-right, status in the byline slot, and both columns equal', async () => {
           await page.viewport(width, 900)
           setFontSize(font)
           setTheme(theme)
@@ -123,12 +123,22 @@ for (const width of [1024, 1280]) {
             const status = query.getByText(
               index === 2 ? 'Inactive' : index === 3 ? 'Connected' : 'Error'
             )
-            const byline = query.getByText(/^By /)
-            expect(status.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-              byline.getBoundingClientRect().bottom
+            expect(query.queryByText(/^By /)).toBeNull()
+            const referenceByline = within(cards[0]).getByText(/^By /)
+            expect(
+              status.getBoundingClientRect().top -
+                card.getBoundingClientRect().top
+            ).toBeCloseTo(
+              referenceByline.getBoundingClientRect().top -
+                cards[0].getBoundingClientRect().top,
+              1
             )
-            expect(status.getBoundingClientRect().left).toBeCloseTo(
-              byline.getBoundingClientRect().left,
+            expect(
+              status.getBoundingClientRect().left -
+                card.getBoundingClientRect().left
+            ).toBeCloseTo(
+              referenceByline.getBoundingClientRect().left -
+                cards[0].getBoundingClientRect().left,
               0
             )
             expect(status.getBoundingClientRect().bottom).toBeLessThanOrEqual(
