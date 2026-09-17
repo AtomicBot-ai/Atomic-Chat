@@ -50,6 +50,17 @@ install-ios-rust-targets:
 	@rustup target list --installed | grep -q "x86_64-apple-ios" || rustup target add x86_64-apple-ios
 	@echo "iOS Rust targets ready!"
 
+# Download the pinned cloudflared sidecar (Settings → Remote & LAN) into
+# src-tauri/resources/bin, verified by sha256. Only downloads when it has to:
+# a verified install already in place is left alone, and a verified archive in
+# scripts/dist is reused offline. Version and hashes: scripts/download-bin.mjs.
+#
+# Every dev target below gets this for free: `yarn download:bin`, their first
+# step, runs the same install, so `make dev` on a checkout that has no
+# cloudflared yet fetches it before Tauri looks for the externalBin.
+download-cloudflared:
+	yarn download:cloudflared
+
 dev: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -354,6 +365,7 @@ ifeq ($(OS),Windows_NT)
 			'src-tauri/resources/bin/jan-cli.exe', \
 			'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/bin/uv-x86_64-pc-windows-msvc.exe', \
+			'src-tauri/resources/bin/cloudflared-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/llamacpp-backend/test-placeholder', \
 			'src-tauri/resources/llamacpp-backend-upstream/test-placeholder' \
 		); \
@@ -375,6 +387,8 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/bin/bun-x86_64-apple-darwin ] || touch src-tauri/resources/bin/bun-x86_64-apple-darwin
 	@[ -e src-tauri/resources/bin/uv-aarch64-apple-darwin ] || touch src-tauri/resources/bin/uv-aarch64-apple-darwin
 	@[ -e src-tauri/resources/bin/uv-x86_64-apple-darwin ] || touch src-tauri/resources/bin/uv-x86_64-apple-darwin
+	@[ -e src-tauri/resources/bin/cloudflared-aarch64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-aarch64-apple-darwin
+	@[ -e src-tauri/resources/bin/cloudflared-x86_64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-x86_64-apple-darwin
 else
 	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
@@ -382,6 +396,7 @@ else
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
 	@[ -e src-tauri/resources/bin/sqlite-vec.so ] || touch src-tauri/resources/bin/sqlite-vec.so
 	@[ -e src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu
+	@[ -e src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu
 	@[ -e src-tauri/resources/llamacpp-backend/test-placeholder ] || touch src-tauri/resources/llamacpp-backend/test-placeholder
 	@[ -e src-tauri/resources/llamacpp-backend-upstream/test-placeholder ] || touch src-tauri/resources/llamacpp-backend-upstream/test-placeholder
 endif
