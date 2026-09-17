@@ -264,7 +264,8 @@
     "huggingFace": "Hugging Face",
     "searchingHuggingFace": "Searching Hugging Face…",
     "huggingFaceUnavailable": "Couldn't reach Hugging Face. Check your connection and try again.",
-    "noGgufFile": "No GGUF file in this repo"
+    "noGgufFile": "No GGUF file in this repo",
+    "downloadSize": "Download {{size}}"
   },
   "failedToLoadModels": "Failed to load models",
   "failedToLoadModelsTimeout": "Couldn't load models (timed out)",
