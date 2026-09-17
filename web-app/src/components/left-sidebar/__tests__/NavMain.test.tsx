@@ -11,10 +11,10 @@ vi.mock('@tanstack/react-router', () => ({
     to,
     ...props
   }: {
-    children: React.ReactNode
-    to: string
+    'children': React.ReactNode
+    'to': string
     'aria-disabled'?: boolean
-    onClick?: (event: React.MouseEvent) => void
+    'onClick'?: (event: React.MouseEvent) => void
   }) => (
     <a href={to} {...props}>
       {children}
@@ -46,7 +46,7 @@ vi.mock('@/components/ui/sidebar', async () => {
       children,
       ...props
     }: {
-      children: React.ReactNode
+      'children': React.ReactNode
       'data-testid'?: string
     }) => (
       <ul data-testid="plugins-submenu" {...props}>
@@ -120,11 +120,14 @@ vi.mock('@/hooks/useThreadManagement', () => ({
 }))
 
 // What the loaded image model can do; `null` means nothing is loaded.
-const imageWorkflows = vi.hoisted(() => ({ supported: null as string[] | null }))
+const imageWorkflows = vi.hoisted(() => ({
+  supported: null as string[] | null,
+}))
 vi.mock('@/hooks/useImageWorkflowAvailability', () => ({
   useImageWorkflowAvailability: () => ({
     isAvailable: (id: string) =>
-      imageWorkflows.supported === null || imageWorkflows.supported.includes(id),
+      imageWorkflows.supported === null ||
+      imageWorkflows.supported.includes(id),
   }),
 }))
 
@@ -152,12 +155,12 @@ describe('NavMain', () => {
     const labels = screen
       .getAllByRole('listitem')
       .map((item) => item.textContent?.trim())
-    const models = labels.indexOf('common:models')
+    const models = labels.indexOf('common:modelHub')
     expect(models).toBeGreaterThanOrEqual(0)
     expect(labels[models + 1]).toBe('common:images')
-    expect(screen.getByText('common:images').closest('a')).toHaveAttribute(
-      'href',
-      '/images/'
+    expect(screen.getByTestId('images-disclosure')).toHaveAttribute(
+      'aria-expanded',
+      'false'
     )
   })
 
@@ -166,7 +169,7 @@ describe('NavMain', () => {
     render(<NavMain />)
 
     expect(screen.queryByText('common:images')).not.toBeInTheDocument()
-    expect(screen.getByText('common:models')).toBeInTheDocument()
+    expect(screen.getByText('common:modelHub')).toBeInTheDocument()
   })
 
   it('keeps the workflow list folded off the images page until the chevron is clicked', async () => {
@@ -184,6 +187,19 @@ describe('NavMain', () => {
       expect(link).toHaveAttribute('href', href)
     }
     expect(useLeftPanel.getState().imagesExpanded).toBe(true)
+  })
+
+  it('toggles Images from the whole row, not only the chevron glyph', async () => {
+    const user = userEvent.setup()
+    render(<NavMain />)
+
+    await user.click(screen.getByText('common:images'))
+    expect(screen.getByTestId('images-submenu')).toBeInTheDocument()
+    expect(useLeftPanel.getState().imagesExpanded).toBe(true)
+
+    await user.click(screen.getByText('common:images'))
+    expect(screen.queryByTestId('images-submenu')).not.toBeInTheDocument()
+    expect(useLeftPanel.getState().imagesExpanded).toBe(false)
   })
 
   it('opens the workflow list on the images route and highlights the current workflow', () => {
@@ -214,7 +230,9 @@ describe('NavMain', () => {
       screen.getByText('images:workflow.create.label').closest('[data-active]')
     ).toHaveAttribute('data-active', 'true')
     expect(
-      screen.getByText('images:workflow.transform.label').closest('[data-active]')
+      screen
+        .getByText('images:workflow.transform.label')
+        .closest('[data-active]')
     ).toHaveAttribute('data-active', 'false')
   })
 
@@ -227,7 +245,9 @@ describe('NavMain', () => {
     expect(
       screen.getByText('images:workflow.transform.label').closest('a')
     ).not.toHaveAttribute('aria-disabled')
-    const inpaint = screen.getByText('images:workflow.inpaint.label').closest('a')
+    const inpaint = screen
+      .getByText('images:workflow.inpaint.label')
+      .closest('a')
     expect(inpaint).toHaveAttribute('aria-disabled', 'true')
     const click = new MouseEvent('click', { bubbles: true, cancelable: true })
     inpaint?.dispatchEvent(click)
@@ -238,7 +258,7 @@ describe('NavMain', () => {
     render(<NavMain />)
 
     expect(screen.getByText('common:newChat')).toBeInTheDocument()
-    expect(screen.getByText('common:models')).toBeInTheDocument()
+    expect(screen.getByText('common:modelHub')).toBeInTheDocument()
     expect(screen.getByText('common:cloud')).toBeInTheDocument()
     expect(screen.getByText('common:plugins')).toBeInTheDocument()
     expect(screen.getByText('common:projects.new')).toBeInTheDocument()
