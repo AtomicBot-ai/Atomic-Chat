@@ -400,7 +400,7 @@ describe('ConnectorsPage', () => {
     expect(screen.queryByTestId('log-viewer')).not.toBeInTheDocument()
   })
 
-  it('lays the cards out in equal-height rows, each ending in a status + toggle footer', () => {
+  it('lays cards out in equal-height rows with controls only for configured servers', () => {
     seedServers({
       exa: {
         command: '',
@@ -413,16 +413,23 @@ describe('ConnectorsPage', () => {
     })
     render(<ConnectorsPage />)
 
-    const grid = screen.getByText('Exa').closest('div.grid')!
+    const grid = screen.getByText('Exa').closest('div.bg-card')!.parentElement!
     expect(grid).toHaveClass('auto-rows-fr')
-    // Set up or not, every card carries the footer toggle, so the footers sit
-    // in one band across the grid.
     const cards = Array.from(grid.children)
     expect(cards.length).toBeGreaterThan(1)
     for (const card of cards) {
-      expect(
-        within(card as HTMLElement).getByRole('switch')
-      ).toBeInTheDocument()
+      const query = within(card as HTMLElement)
+      if (query.queryByRole('heading', { name: 'Exa' })) {
+        expect(query.getByRole('switch')).toBeInTheDocument()
+        expect(
+          query.getByTitle('mcp-connectors:serverActions')
+        ).toBeInTheDocument()
+      } else {
+        expect(query.queryByRole('switch')).not.toBeInTheDocument()
+        expect(
+          query.queryByText('mcp-connectors:statusNotSetUp')
+        ).not.toBeInTheDocument()
+      }
     }
   })
 })

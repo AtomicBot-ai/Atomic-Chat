@@ -10,10 +10,10 @@
   "connected": "Connected",
   "statusError": "Error",
   "statusInactive": "Inactive",
-  "statusNotSetUp": "Not set up",
   "by": "By {{name}}",
   "featuredBadge": "Featured",
   "serverActions": "Server actions",
+  "enableConnector": "Enable {{name}}",
   "editJson": "Edit JSON",
   "tools": "Tools",
   "logs": {
