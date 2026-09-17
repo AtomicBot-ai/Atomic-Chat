@@ -9,9 +9,9 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-281 records, 2026-05-19 → 2026-09-17.
-281 records, 2026-05-19 → 2026-09-17.
-281 records, 2026-05-19 → 2026-09-17.
+282 records, 2026-05-19 → 2026-09-17.
+282 records, 2026-05-19 → 2026-09-17.
+282 records, 2026-05-19 → 2026-09-17.
 
 ---
 
@@ -323,8 +323,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (12)
+## Other (13)
 
+- **2026-09-17** — [Re-point the web-app test storage globals at jsdom on Node ≥ 25](2026-09-17-repoint-web-app-test-storage-globals-at-jsdom-on-node-25.md)
 - **2026-09-16** — [Migrate Jan-branded assistant prompts to the Atomic Chat default by signature, not by version](2026-09-16-migrate-jan-branded-assistant-prompts.md)
 - **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
