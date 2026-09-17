@@ -1,12 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import {
-  downloadStatusLabel,
-  formatEta,
-  formatProgressPair,
-  formatSpeed,
-  shortModelName,
-} from '@/lib/downloadFormat'
+import { formatDownloadReadout, shortModelName } from '@/lib/downloadFormat'
 import { quantFromModelId } from '@/lib/telemetry'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
@@ -73,10 +67,14 @@ export function DownloadProgressRow({
 
   const label = name || id
   const quant = quantFromModelId(id)
-  const known = total > 0
-  const speed = paused ? null : formatSpeed(bytesPerSecond)
-  const eta = paused ? null : formatEta(total - current, bytesPerSecond)
-  const status = downloadStatusLabel(t, { progress, total, stage, paused })
+  const readout = formatDownloadReadout(t, {
+    progress,
+    current,
+    total,
+    bytesPerSecond,
+    stage,
+    paused,
+  })
 
   return (
     <li className="rounded-lg bg-secondary p-2">
@@ -133,19 +131,15 @@ export function DownloadProgressRow({
         className="my-2 h-1.5 rounded-full bg-muted-foreground/15 dark:bg-muted-foreground/20"
       />
 
-      <div className="flex items-center justify-between gap-2 text-xs tabular-nums text-muted-foreground">
-        <span>
-          {status}
-          {known && ` · ${formatProgressPair(current, total)}`}
-        </span>
-        {/* `aria-live` is deliberately absent: this text changes every few
-            seconds and would otherwise talk over everything else. */}
-        <span className="truncate">
-          {[speed, eta && t('common:downloadPanel.left', { eta })]
-            .filter(Boolean)
-            .join(' · ')}
-        </span>
-      </div>
+      {/* One line that never wraps: it used to be two flex spans, and past the
+          row's width the first one broke at its spaces, so the size pair
+          dropped to a second line and the bottom-anchored card grew upwards.
+          `truncate` cuts an overlong line at its end — the estimate, the part
+          that matters least — instead. `aria-live` is deliberately absent: this
+          text changes every few seconds and would talk over everything else. */}
+      <p className="truncate text-xs tabular-nums text-muted-foreground">
+        {readout}
+      </p>
     </li>
   )
 }
