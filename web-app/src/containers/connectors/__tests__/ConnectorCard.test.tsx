@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { render, screen, within } from '@testing-library/react'
@@ -5,7 +6,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ConnectorCard } from '../ConnectorCard'
 import { MCP_CONNECTORS } from '@/constants/mcp-connectors'
-import type { MCPServerStatus } from '@/services/mcp/types'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -18,7 +18,7 @@ const exa = MCP_CONNECTORS.find((c) => c.serverKey === 'exa')!
 const linear = MCP_CONNECTORS.find((c) => c.serverKey === 'linear')!
 const github = MCP_CONNECTORS.find((c) => c.serverKey === 'github')!
 
-/** The card's three bands, top to bottom: header row, description, footer. */
+/** The card header contains identity and state-specific actions. */
 const bandsOf = (name: string) => {
   const card = screen
     .getByRole('heading', { name })
@@ -26,7 +26,6 @@ const bandsOf = (name: string) => {
   return {
     card,
     header: card.firstElementChild as HTMLElement,
-    footer: card.lastElementChild as HTMLElement,
   }
 }
 
@@ -45,9 +44,7 @@ describe('ConnectorCard anatomy', () => {
       screen.getByRole('heading', { name: 'Exa' })
     )
     expect(header).toContainElement(setUp)
-    // Right edge: the action cluster is the last thing in the header row...
-    expect(header.lastElementChild).toContainElement(setUp)
-    // ...and the description reads after it, never above it.
+    // The description reads after the primary action, never above it.
     expect(
       follows(setUp, screen.getByText('mcp-connectors:descriptions.exa'))
     ).toBe(true)
@@ -100,52 +97,169 @@ describe('ConnectorCard anatomy', () => {
     expect(bandsOf('GitHub').header).toContainElement(signIn)
   })
 
-  it('gives a card that is not set up the same footer as an installed one: a muted "Not set up" pill and a toggle that is off and disabled', () => {
-    render(<ConnectorCard connector={exa} busy={false} onSetUp={vi.fn()} />)
+  it.each([exa, linear, github])(
+    'shows only the primary action before $name is configured',
+    (connector) => {
+      render(<ConnectorCard connector={connector} busy={false} />)
+      expect(screen.getAllByRole('button')).toHaveLength(1)
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('mcp-connectors:statusNotSetUp')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByTitle('mcp-connectors:serverActions')
+      ).not.toBeInTheDocument()
+    }
+  )
 
-    const { footer } = bandsOf('Exa')
-    expect(
-      within(footer).getByText('mcp-connectors:statusNotSetUp')
-    ).toBeInTheDocument()
-    const toggle = within(footer).getByRole('switch')
-    expect(toggle).toBeDisabled()
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
-    expect(footer).toHaveClass('min-h-8')
-    // Nothing dangles bottom-right: the footer holds no action button.
-    expect(within(footer).queryByRole('button')).not.toBeInTheDocument()
+  it.each([
+    { active: true, state: 'connected', label: 'connected' },
+    { active: false, state: 'connected', label: 'statusInactive' },
+    { active: false, state: 'error', label: 'statusInactive' },
+    { active: true, state: 'error', label: 'statusError' },
+    { active: true, state: undefined, label: 'statusInactive' },
+  ] as const)(
+    'configured Exa: active=$active runtime=$state keeps status under its identity and controls together',
+    ({ active, state, label }) => {
+      render(
+        <ConnectorCard
+          connector={exa}
+          installed={{ key: 'exa', config: { ...exa.config, active } }}
+          status={
+            state
+              ? { name: 'exa', status: state, error: 'Connection refused' }
+              : undefined
+          }
+          busy={false}
+        />
+      )
+      const { header } = bandsOf('Exa')
+      const title = screen.getByRole('heading', { name: 'Exa' })
+      const byline = screen.getByText('mcp-connectors:by:Exa')
+      const status = screen.getByText(`mcp-connectors:${label}`)
+      expect(header).toContainElement(status)
+      expect(follows(title, byline) && follows(byline, status)).toBe(true)
+      const actions = screen.getByTitle('mcp-connectors:serverActions')
+        .parentElement as HTMLElement
+      expect(
+        within(actions).getByTitle('mcp-connectors:serverActions')
+      ).toBeEnabled()
+      const toggle = within(actions).getByRole('switch')
+      expect(toggle).toBeEnabled()
+      expect(toggle).toHaveAttribute('aria-checked', String(active))
+      expect(screen.queryByText('mcp-connectors:setUp')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('mcp-connectors:statusNotSetUp')
+      ).not.toBeInTheDocument()
+      if (active && state === 'error')
+        expect(status).toHaveAttribute('title', 'Connection refused')
+    }
+  )
+
+  it('toggles a configured inactive connector and retains its management menu', async () => {
+    function StatefulCard() {
+      const [active, setActive] = useState(false)
+      return (
+        <ConnectorCard
+          connector={exa}
+          installed={{ key: 'exa', config: { ...exa.config, active } }}
+          busy={false}
+          onToggle={setActive}
+          onTools={() => {}}
+        />
+      )
+    }
+    const user = userEvent.setup()
+    render(<StatefulCard />)
+    await user.click(screen.getByRole('switch'))
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+    await user.click(screen.getByTitle('mcp-connectors:serverActions'))
+    for (const name of [
+      'mcp-servers:editServer',
+      'mcp-connectors:editJson',
+      'mcp-connectors:tools',
+      'mcp-servers:deleteServer.title',
+    ]) {
+      expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+    }
   })
 
-  it('keeps the menu at the top-right and the status + live toggle in the footer once installed', () => {
-    render(
+  it('preserves setup busy state and configured loading state', () => {
+    const { rerender } = render(<ConnectorCard connector={exa} busy />)
+    expect(
+      screen.getByRole('button', { name: 'mcp-connectors:setUp' })
+    ).toBeDisabled()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    rerender(
       <ConnectorCard
         connector={exa}
-        installed={{ key: 'exa', config: { ...exa.config, active: true } }}
-        status={{ status: 'connected' } as MCPServerStatus}
-        busy={false}
-        onToggle={vi.fn()}
-        onEdit={vi.fn()}
-        onEditJson={vi.fn()}
-        onDelete={vi.fn()}
+        installed={{ key: 'exa', config: { ...exa.config, active: false } }}
+        busy
       />
     )
-
-    const { header, footer } = bandsOf('Exa')
-    expect(header).toContainElement(
-      screen.getByTitle('mcp-connectors:serverActions')
-    )
-    expect(
-      screen.queryByRole('button', { name: 'mcp-connectors:setUp' })
-    ).not.toBeInTheDocument()
-    expect(
-      within(footer).getByText('mcp-connectors:connected')
-    ).toBeInTheDocument()
-    const toggle = within(footer).getByRole('switch')
-    expect(toggle).toBeEnabled()
-    expect(toggle).toHaveAttribute('aria-checked', 'true')
-    expect(footer).toHaveClass('min-h-8')
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('switch')).toBeDisabled()
   })
 
-  it('fills its grid cell so footers line up across a row', () => {
+  it.each([exa, linear])(
+    'preserves the $name setup flow into a configured card',
+    async (connector) => {
+      function SetupFlow() {
+        const [configured, setConfigured] = useState(false)
+        return (
+          <ConnectorCard
+            connector={connector}
+            installed={
+              configured
+                ? {
+                    key: connector.serverKey,
+                    config: { ...connector.config, active: true },
+                  }
+                : undefined
+            }
+            busy={false}
+            onSetUp={() => setConfigured(true)}
+          />
+        )
+      }
+      render(<SetupFlow />)
+      await userEvent.setup().click(screen.getByRole('button'))
+      expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+      expect(
+        screen.getByTitle('mcp-connectors:serverActions')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('mcp-connectors:oauth.signIn')
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText('mcp-connectors:setUp')).not.toBeInTheDocument()
+    }
+  )
+
+  it('keeps hand-added servers configured and masks their URL credentials', () => {
+    render(
+      <ConnectorCard
+        installed={{
+          key: 'private-search',
+          config: {
+            type: 'http',
+            url: 'https://example.com/mcp?api_key=secret',
+            active: false,
+          },
+        }}
+        busy={false}
+      />
+    )
+    expect(
+      screen.getByRole('heading', { name: 'private-search' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    expect(
+      screen.getByText('mcp-connectors:statusInactive')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/secret/)).not.toBeInTheDocument()
+  })
+
+  it('fills its grid cell across a row', () => {
     render(<ConnectorCard connector={exa} busy={false} />)
 
     expect(bandsOf('Exa').card).toHaveClass('h-full', 'flex', 'flex-col')

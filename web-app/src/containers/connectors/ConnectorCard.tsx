@@ -25,15 +25,9 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 
 /**
- * One card for every server in the grid, installed or not: a catalog
- * connector renders its brand and description, a hand-added server its
- * command/URL. Every card has the same anatomy — a header row (tile, name and
- * attribution, then the primary action and/or the actions menu at the right
- * edge), the description, and a footer row (status pill, toggle) — so the
- * grid reads as one band of headers and one band of footers. A card that is
- * not set up yet shows Set Up (or Sign in; a disabled Sign in for
- * oauth-soon) in the header and "Not set up" with a disabled toggle in the
- * footer; an installed one shows the menu, its status and a live toggle.
+ * Catalog cards offer setup until a configuration exists. Configured cards
+ * put their menu and toggle together, with status below the identity. Reserve
+ * that status line and the description area so state changes keep the grid stable.
  */
 export function ConnectorCard({
   connector,
@@ -91,7 +85,7 @@ export function ConnectorCard({
         <Button
           size="sm"
           variant="secondary"
-          className="w-[88px] justify-center gap-1.5"
+          className="min-w-[88px] justify-center gap-1.5"
           disabled
         >
           {t('mcp-connectors:oauth.signIn')}
@@ -104,7 +98,7 @@ export function ConnectorCard({
         <Button
           size="sm"
           variant="secondary"
-          className="w-[88px] justify-center gap-1.5"
+          className="min-w-[88px] justify-center gap-1.5"
           onClick={onCancelSignIn}
         >
           <IconLoader2 size={14} className="animate-spin" />
@@ -113,7 +107,7 @@ export function ConnectorCard({
       ) : (
         <Button
           size="sm"
-          className="w-[88px] justify-center gap-1.5"
+          className="min-w-[88px] justify-center gap-1.5"
           onClick={onSetUp}
         >
           {t('mcp-connectors:oauth.signIn')}
@@ -122,7 +116,7 @@ export function ConnectorCard({
     ) : (
       <Button
         size="sm"
-        className="w-[88px] justify-center gap-1.5"
+        className="min-w-[88px] justify-center gap-1.5"
         onClick={onSetUp}
         disabled={busy}
       >
@@ -131,23 +125,19 @@ export function ConnectorCard({
       </Button>
     ))
 
-  const statusLabel = !installed
-    ? t('mcp-connectors:statusNotSetUp')
-    : isConnected
-      ? t('mcp-connectors:connected')
-      : isError
-        ? t('mcp-connectors:statusError')
-        : t('mcp-connectors:statusInactive')
+  const statusLabel = isConnected
+    ? t('mcp-connectors:connected')
+    : isError
+      ? t('mcp-connectors:statusError')
+      : t('mcp-connectors:statusInactive')
 
   return (
-    // h-full: the card fills its grid row (the page grid is auto-rows-fr) so
-    // footers line up across a row even where the engine (WebKit) is lax
-    // about stretching grid items.
+    // The page grid uses auto-rows-fr; fill it even in the desktop webview.
     <Card className="bg-card rounded-lg p-4 text-muted-foreground flex h-full flex-col gap-3">
-      <div className="flex items-center gap-3">
+      <div className="grid min-w-0 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-x-3">
         <ServerIcon connector={connector} name={name} className="size-10" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <h2
               className={cn(
                 'font-studio truncate text-base font-medium text-foreground',
@@ -173,7 +163,7 @@ export function ConnectorCard({
             )}
           </div>
           {connector ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {t('mcp-connectors:by', { name: connector.author })}
             </p>
           ) : (
@@ -185,8 +175,8 @@ export function ConnectorCard({
             </p>
           )}
         </div>
-        {/* Right edge of the header: the action first, then the menu. */}
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Configured controls share one stable slot at the right edge. */}
+        <div className="flex shrink-0 items-center gap-3">
           {action}
           {installed && (
             <DropdownMenu>
@@ -195,6 +185,7 @@ export function ConnectorCard({
                   size="icon-xs"
                   variant="ghost"
                   title={t('mcp-connectors:serverActions')}
+                  aria-label={t('mcp-connectors:serverActions')}
                 >
                   <IconDotsVertical
                     size={18}
@@ -225,48 +216,44 @@ export function ConnectorCard({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          {installed && (
+            <Switch
+              className="w-8.5 [&>div]:overflow-hidden [&_svg]:size-3.5"
+              aria-label={t('mcp-connectors:enableConnector', { name })}
+              checked={isActive}
+              disabled={busy}
+              loading={busy}
+              onCheckedChange={onToggle}
+            />
+          )}
+        </div>
+        <div className="col-start-2 min-w-0 h-[1.5em] text-xs leading-normal">
+          {installed && (
+            <span
+              className={cn(
+                'block truncate',
+                isConnected
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : isError
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-muted-foreground'
+              )}
+              title={isError ? status?.error : undefined}
+              aria-label={
+                isError ? `MCP server error: ${status?.error}` : undefined
+              }
+            >
+              {statusLabel}
+            </span>
+          )}
         </div>
       </div>
-      <p className="text-sm leading-normal text-muted-foreground flex-1">
+      <p
+        className="h-[4.5em] shrink-0 line-clamp-3 text-sm leading-normal text-muted-foreground"
+        title={connector ? t(connector.descriptionKey) : undefined}
+      >
         {connector ? t(connector.descriptionKey) : ''}
       </p>
-      {/* The same footer on every card, min-h-8 so the band keeps one height:
-          the status pill on the left, the toggle on the right (disabled until
-          the connector is set up). */}
-      <div className="flex min-h-8 items-center justify-between gap-2">
-        <span
-          className={cn(
-            'flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
-            isConnected
-              ? 'bg-emerald-500/10 text-emerald-600'
-              : isError
-                ? 'bg-red-500/10 text-red-600'
-                : 'bg-muted text-muted-foreground'
-          )}
-          title={isError ? status?.error : undefined}
-          aria-label={
-            isError ? `MCP server error: ${status?.error}` : undefined
-          }
-        >
-          <span
-            className={cn(
-              'size-2 rounded-full',
-              isConnected
-                ? 'bg-green-600'
-                : isError
-                  ? 'bg-red-600'
-                  : 'bg-muted-foreground/40'
-            )}
-          />
-          {statusLabel}
-        </span>
-        <Switch
-          checked={isActive}
-          disabled={!installed}
-          loading={busy && Boolean(installed)}
-          onCheckedChange={onToggle}
-        />
-      </div>
     </Card>
   )
 }
