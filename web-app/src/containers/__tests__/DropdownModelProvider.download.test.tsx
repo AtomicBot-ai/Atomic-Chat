@@ -20,7 +20,7 @@ import { useNavigate } from '@tanstack/react-router'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
+import { useRecommendedListDownloads } from '@/hooks/useRecommendedDownloads'
 import { resetModelPickerDownloadsForTest } from '../ModelPickerDownloads'
 import type { AuthService } from '@/services/auth/types'
 import type { CatalogModel, ModelsService } from '@/services/models/types'
@@ -56,7 +56,7 @@ vi.mock('@/hooks/useFavoriteModel', () => ({
 // The recommendation itself is the hook's business (ReplyModelGate covers
 // it); here it is a fixture so the tests are about what the list does with it.
 vi.mock('@/hooks/useRecommendedDownloads', () => ({
-  useRecommendedDownloads: vi.fn(),
+  useRecommendedListDownloads: vi.fn(),
 }))
 
 vi.mock('@/components/ui/popover', () => ({
@@ -134,6 +134,9 @@ const recommended = (
     path: 'https://example.test/q4.gguf',
     file_size: '2.5 GB',
   },
+  sizeLabel: '2.5 GB',
+  sizeBytes: 2.5 * GB,
+  fit: 'comfortable' as const,
   isDownloading: false,
   start: vi.fn(() => 'AtomicChat/Qwen3_5-4B-Q4_K_M'),
   ...overrides,
@@ -239,7 +242,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     mocks.fetchHuggingFaceRepo.mockResolvedValue({ id: 'repo' })
     mocks.convertHfRepoToCatalogModel.mockReturnValue(resolvedRepo)
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
-    vi.mocked(useRecommendedDownloads).mockReturnValue({
+    vi.mocked(useRecommendedListDownloads).mockReturnValue({
       items: [],
       isLoading: false,
     })
@@ -270,7 +273,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
   it('offers the best fit for this device when nothing is downloaded', () => {
     const lead = recommended()
-    vi.mocked(useRecommendedDownloads).mockReturnValue({
+    vi.mocked(useRecommendedListDownloads).mockReturnValue({
       items: [lead],
       isLoading: false,
     })
@@ -279,7 +282,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     // The list opens straight away with nothing to pick; instead of a blank
     // panel it shows the reply gate's list: the recommended models under
-    // their label, each with its mark and the size on its button.
+    // their label, each with its mark and the size beside its fit badge.
     expect(list()).toHaveTextContent('setup:recommend.title')
     const row = screen.getByTestId('model-picker-recommended-lead')
     expect(row.querySelector('img')).toHaveAttribute(
@@ -289,9 +292,8 @@ describe('DropdownModelProvider - downloading from the list', () => {
     const button = within(row).getByRole('button', {
       name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
     })
-    expect(button).toHaveTextContent(
-      'common:modelPicker.downloadSize:{"size":"2.5 GB"}'
-    )
+    expect(row).toHaveTextContent('2.5 GB')
+    expect(button).toHaveTextContent(/^hub:download$/)
 
     fireEvent.click(button)
 
@@ -304,7 +306,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
   })
 
   it('shows a recommended row as downloading while its download runs', () => {
-    vi.mocked(useRecommendedDownloads).mockReturnValue({
+    vi.mocked(useRecommendedListDownloads).mockReturnValue({
       items: [recommended({ isDownloading: true })],
       isLoading: false,
     })
@@ -318,31 +320,18 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     render(<DropdownModelProvider />)
 
-    // The panel's readout in the row's hint, and Cancel where Download was.
+    // The panel's readout replaces the subtitle; cancellation stays in the
+    // global download panel so this row keeps Welcome's stable geometry.
     const row = screen.getByTestId('model-picker-recommended-lead')
     expect(row).toHaveTextContent(
       '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
     )
-    const cancel = within(row).getByRole('button', {
-      name: 'common:cancelDownload',
-    })
-    expect(cancel).toHaveTextContent('common:cancel')
-    expect(
-      within(row).queryByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
-      })
-    ).toBeNull()
-
-    fireEvent.click(cancel)
-
-    expect(mocks.abortDownload).toHaveBeenCalledWith(
-      'AtomicChat/Qwen3_5-4B-Q4_K_M'
-    )
-    expect(
-      useDownloadStore
-        .getState()
-        .resumableDownloads.has('AtomicChat/Qwen3_5-4B-Q4_K_M')
-    ).toBe(true)
+    const loading = within(row)
+      .getByText('setup:downloading')
+      .closest('button')!
+    expect(loading).toBeDisabled()
+    expect(loading).toHaveTextContent('setup:downloading')
+    expect(mocks.abortDownload).not.toHaveBeenCalled()
   })
 
   it('finds GGUF builds on Hugging Face when the search has no local match', async () => {

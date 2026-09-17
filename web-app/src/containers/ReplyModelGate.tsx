@@ -22,12 +22,11 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { VOICE_MODEL_ID } from '@/constants/voice'
 import { ConfirmWontFitDownload } from '@/containers/ConfirmWontFitDownload'
-import { ModelFitIndicator } from '@/containers/ModelFitIndicator'
 import { ModelLogo } from '@/containers/ModelLogo'
+import { RecommendedDownloadRow } from '@/containers/RecommendedDownloadRow'
 import { RouteRow } from '@/containers/RouteRow'
 import {
   describeRecommendationFit,
-  fitLabelKey,
   fitLevel,
 } from '@/containers/SetupScreenHelpers'
 import {
@@ -40,10 +39,7 @@ import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import {
-  useRecommendedListDownloads,
-  type RecommendedDownload,
-} from '@/hooks/useRecommendedDownloads'
+import { useRecommendedListDownloads } from '@/hooks/useRecommendedDownloads'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -287,7 +283,7 @@ export function ReplyModelGate({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
+        <DialogContent className="overflow-x-hidden sm:max-w-[42rem] lg:max-w-[42rem] xl:max-w-[42rem]">
           {session && (
             <ReplyModelGateBody
               branch={session.branch}
@@ -570,32 +566,6 @@ function RecommendedDownloads({
     (item) => !inFlightIds.has(item.variant.model_id)
   )
 
-  // The mark beside a row's name: the same verdict, level label and sentence
-  // onboarding's rows carry, judged on the size the button shows. No size or
-  // no machine — no mark: "we don't know" is not a warning.
-  const fitMark = (item: RecommendedDownload): ReactNode => {
-    const level = fitLevel(item.fit)
-    if (!level) return null
-    const copy = describeRecommendationFit({
-      sizeLabel: item.sizeLabel,
-      sizeBytes: item.sizeBytes,
-      profile,
-      memoryOnly: true,
-    })
-    if (!copy) return null
-    const reason = t(copy.key, {
-      ...copy.values,
-      ...(copy.poolKey ? { pool: t(copy.poolKey) } : {}),
-    })
-    return (
-      <ModelFitIndicator
-        level={level}
-        label={`${t(fitLabelKey(level))}. ${reason}`}
-        reason={reason}
-      />
-    )
-  }
-
   // The section label onboarding gives the same list, so the block is named.
   const heading = (
     <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
@@ -627,6 +597,7 @@ function RecommendedDownloads({
         <div className="flex flex-col divide-y divide-border/60">
           {inFlight.map((download) => (
             <RouteRow
+              layout="onboarding"
               key={download.id}
               icon={
                 <ModelLogo
@@ -650,34 +621,13 @@ function RecommendedDownloads({
           ))}
           {items.map((item) => {
             const hero = item === recommended[0]
-            // Under a pick, the Hub's own summary, as onboarding shows it.
-            const hint = hero
-              ? t('chat:replyGate.recommendedForDevice')
-              : (item.summary ?? t(item.descriptionKey))
             return (
-              <RouteRow
+              <RecommendedDownloadRow
                 key={item.repo}
-                icon={
-                  // Through `ModelLogo` so single-color marks (Liquid's LFM among
-                  // them) are tinted and survive a dark background.
-                  <ModelLogo
-                    name={item.repo}
-                    fallback="huggingface"
-                    className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
-                  />
-                }
-                title={item.title}
-                meta={fitMark(item)}
-                hint={hint}
-                action={
-                  item.sizeLabel
-                    ? t('chat:replyGate.downloadSize', { size: item.sizeLabel })
-                    : t('chat:replyGate.download')
-                }
-                label={t('chat:replyGate.downloadLabel', { name: item.title })}
-                primary={hero}
+                item={item}
+                hero={hero}
                 disabled={item.isDownloading}
-                onClick={() => {
+                onDownload={() => {
                   const copy = describeRecommendationFit({
                     sizeLabel: item.sizeLabel,
                     sizeBytes: item.sizeBytes,
@@ -781,6 +731,7 @@ function AddFolderRoute({
 
   return (
     <RouteRow
+      layout="onboarding"
       icon={scanning ? <Loader2 className="animate-spin" /> : <FolderPlus />}
       title={t('chat:replyGate.folderTitle')}
       hint={t('chat:replyGate.folderHint')}
@@ -847,6 +798,7 @@ function ModelRoutes({
     >
       <div className="flex flex-col divide-y divide-border/60">
         <RouteRow
+          layout="onboarding"
           icon={<img src={HUGGINGFACE_LOGO_SRC} alt="" />}
           title={t('setup:cloudStep.huggingFaceTitle')}
           hint={t(
@@ -861,6 +813,7 @@ function ModelRoutes({
         />
         {subscriptionOffered && (
           <RouteRow
+            layout="onboarding"
             icon={<ChatGptMark />}
             title={t('setup:cloudStep.subscriptionTitle')}
             hint={t('setup:cloudStep.subscriptionHint')}
@@ -872,10 +825,11 @@ function ModelRoutes({
         )}
         {hasCloudProviders && (
           <RouteRow
+            layout="onboarding"
             icon={<Cloud />}
             title={t('setup:cloudStep.providerTitle')}
             hint={t('setup:cloudStep.providerHint')}
-            action={t('setup:cloudStep.add')}
+            action={t('setup:cloudStep.addApiKey')}
             label={t('setup:cloudStep.trigger')}
             onClick={onConnectCloud}
             data-testid="reply-gate-cloud-key"

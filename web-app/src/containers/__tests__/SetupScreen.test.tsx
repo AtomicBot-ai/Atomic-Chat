@@ -1101,6 +1101,27 @@ describe('SetupScreen', () => {
       unmount()
     })
 
+    it('never exposes a generated Hugging Face tag dump as row copy', async () => {
+      locale.english = true
+      mocks.recommended = [
+        {
+          ...ladderModel,
+          model: {
+            ...ladderModel.model,
+            description:
+              '**Tags**: gguf, atomic-chat, qwen3.6, qwen, llama.cpp, quantized',
+          },
+        },
+      ]
+      const { unmount } = await renderPicker()
+      const row = screen.getAllByTestId('setup-recommended-row')[0]
+      expect(row).not.toHaveTextContent('**Tags**')
+      expect(row.querySelector('p')).toHaveTextContent(
+        'Balanced speed and quality'
+      )
+      unmount()
+    })
+
     it('leads with the offer and lists the Hub picks under it, plainly secondary', async () => {
       // The offer alone (d29b99b85) left a user who wanted anything else with
       // Skip and an empty chat. The Hub's picks come back under it — but as
@@ -1691,8 +1712,8 @@ describe('SetupScreen', () => {
         // of every other label padding it out.
         expect(browse).toHaveTextContent(/^setup:cloudStep\.browse$/)
         expect(connect).toHaveTextContent(/^setup:cloudStep\.connect$/)
-        // And the lists have the room for a name, its badge and a button
-        // that says "Download 19.7 GB", on one line.
+        // And the lists have room for a name, badge and one compact action
+        // column; sizes belong beside the model, never inside the button.
         expect(
           document.querySelector('[class~="max-w-[640px]"]')
         ).not.toBeNull()

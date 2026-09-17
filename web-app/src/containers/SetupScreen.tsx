@@ -1481,12 +1481,20 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       />
     ) : null
 
+    const catalogDescription = model?.description?.trim()
+    // Hugging Face's generated catalog description can be only a Markdown
+    // dump of repository tags. It is useful for search relevance, but it is
+    // not product copy and must never leak into the onboarding row.
+    const readableCatalogDescription =
+      catalogDescription && !/^\*\*Tags\*\*\s*:/i.test(catalogDescription)
+        ? catalogDescription
+        : null
     const summary = !model
       ? sourcesLoading
         ? t('hub:loadingModels')
         : t('setup:modelUnavailable')
       : pick?.summary?.trim() ||
-        model.description?.trim() ||
+        readableCatalogDescription ||
         t('setup:recommend.defaultSummary')
 
     return (

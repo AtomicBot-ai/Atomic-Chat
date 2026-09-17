@@ -33,6 +33,8 @@ export type RecommendedDownload = {
    * carry only `descriptionKey`.
    */
   summary?: string
+  /** Bundled logo key from the staff-picks manifest. */
+  icon?: string
   /** Resolved catalog card. */
   model: CatalogModel
   /** The exact file a download would fetch. */
@@ -56,6 +58,7 @@ type DownloadSpec = {
   title: string
   descriptionKey: string
   summary?: string
+  icon?: string
   model: CatalogModel
   variant: ModelQuant
   /** Pinned multimodal projector quant, for vision entries. */
@@ -90,6 +93,7 @@ function useDownloadBuilder() {
         title: spec.title,
         descriptionKey: spec.descriptionKey,
         summary: spec.summary,
+        icon: spec.icon,
         model,
         variant,
         // A size the catalog cannot state as a figure is no size at all.
@@ -266,6 +270,7 @@ export function useRecommendedListDownloads(): {
           title: pick.title ?? prettyModelName(model.model_name),
           descriptionKey: pick.description_key ?? 'hub:recEverydayUse',
           summary: pick.summary,
+          icon: pick.icon,
           model,
           variant,
         }),

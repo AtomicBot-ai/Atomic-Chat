@@ -30,7 +30,7 @@ import {
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => () => {} }))
 vi.mock('@/hooks/useRecommendedDownloads', () => ({
-  useRecommendedDownloads: () => ({ items: [], isLoading: false }),
+  useRecommendedListDownloads: () => ({ items: [], isLoading: false }),
 }))
 vi.mock('@/containers/SetupScreen', () => ({
   describeRecommendationFit: () => null,
@@ -294,9 +294,17 @@ for (const width of [1024, 390]) {
       const panel = input.closest(
         '[data-slot="popover-content"]'
       ) as HTMLElement
-      await settle(panel)
+      await new Promise<void>((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => done()))
+      )
       await settle(panel)
       fireEvent.change(input, { target: { value: 'qwen' } })
+      // Switching from the content-sized recommendation view to the reserved
+      // search geometry is one deliberate transition. Measure stability from
+      // its settled loading frame through the arriving results.
+      await new Promise<void>((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => done()))
+      )
       const card = screen.getByTestId('model-picker-hugging-face')
       const routes = screen.getByTestId('model-picker-routes')
       const before = card.getBoundingClientRect()

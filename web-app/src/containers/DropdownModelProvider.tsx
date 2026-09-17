@@ -63,13 +63,12 @@ import {
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
 
 /**
- * The panel with nothing to pick: the reply gate's list, so it takes the
- * reply gate's width, and a height that does not follow its contents. The
- * panel hangs off the composer pill by its bottom edge, so a height that
- * changed with the rows — a status line, then six results, then the
- * recommendations again — moved its top edge with every keystroke.
+ * The empty panel is content-sized up to a hard viewport cap. The model card
+ * owns its own scrollbar, like Welcome, so a short list never leaves a blank
+ * floor while a long list never pushes the routes out of view.
  */
-const EMPTY_PANEL_CLASS = 'h-[min(36rem,calc(100dvh-8rem))]'
+const EMPTY_PANEL_CLASS = 'max-h-[min(36rem,calc(100dvh-8rem))]'
+const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(36rem,calc(100dvh-8rem))]'
 
 /**
  * Which providers may list models in the picker.
@@ -783,9 +782,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             'w-[28rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
             cn(
-              'w-[42rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
+              'w-[40rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
               pickerEmpty
-                ? EMPTY_PANEL_CLASS
+                ? searchValue.trim()
+                  ? EMPTY_SEARCH_PANEL_CLASS
+                  : EMPTY_PANEL_CLASS
                 : 'h-[min(32rem,calc(100dvh-8rem))]'
             )
         )}
@@ -838,7 +839,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             <ReasoningEffortPanel className="mt-3 min-w-0 border-t pt-3" />
           </div>
         ) : (
-          <div className="flex min-h-0 flex-col size-full">
+          <div
+            className={cn(
+              'flex min-h-0 flex-col',
+              pickerEmpty && !searchValue.trim() ? 'w-full' : 'size-full'
+            )}
+          >
             {/* Search input, with the way back to the model row. */}
             <div className="relative flex shrink-0 items-center gap-1 p-1.5 border-b">
               <Button

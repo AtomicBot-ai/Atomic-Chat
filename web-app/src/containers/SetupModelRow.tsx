@@ -5,17 +5,19 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ONBOARDING_ROW_ACTION_CLASS, ROUTE_ROW_BUTTON_HOVER } from './RouteRow'
 
 type SetupModelRowProps = {
-  icon: ReactNode
-  title: string
-  fitMark: ReactNode
-  hero: boolean
-  downloadSize?: string
-  progressText: string | null
-  summary: string | null
-  rowDownloading: boolean
-  disabled: boolean
-  onDownload: () => void
-  buttonLabel: string
+  'icon': ReactNode
+  'title': string
+  'fitMark': ReactNode
+  'hero': boolean
+  'downloadSize'?: string
+  'progressText': string | null
+  'summary': string | null
+  'rowDownloading': boolean
+  'disabled': boolean
+  'onDownload': () => void
+  'buttonLabel': string
+  'buttonAriaLabel'?: string
+  'data-testid'?: string
 }
 
 /** The onboarding model row, isolated so its actual geometry can be tested. */
@@ -31,12 +33,14 @@ export function SetupModelRow({
   disabled,
   onDownload,
   buttonLabel,
+  buttonAriaLabel,
+  'data-testid': testId = 'setup-recommended-row',
 }: SetupModelRowProps) {
   const { t } = useTranslation()
   return (
     <div
       className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-      data-testid="setup-recommended-row"
+      data-testid={testId}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         {icon}
@@ -85,6 +89,7 @@ export function SetupModelRow({
           variant={hero ? 'default' : 'secondary'}
           size="sm"
           disabled={disabled}
+          aria-label={buttonAriaLabel}
           onClick={onDownload}
           className={cn(
             ONBOARDING_ROW_ACTION_CLASS,
