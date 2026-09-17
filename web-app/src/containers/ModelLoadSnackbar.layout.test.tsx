@@ -18,6 +18,7 @@ import {
   setTheme,
   settle,
 } from '@/test/layout'
+import { modelLoadStages } from '@/test/model-load-stages'
 import { ModelLoadSnackbar } from './ModelLoadSnackbar'
 
 vi.mock('@/utils/switchModel', () => ({ cancelModelLoad: vi.fn() }))
@@ -37,11 +38,15 @@ vi.mock('@/hooks/useInferenceStatus', async () => {
 const status = useInferenceStatus as UseBoundStore<StoreApi<InferenceStatus>>
 
 const MODEL = 'org/' + 'VeryLongModelName'.repeat(20) + '-Q4_K_M.gguf'
+const CANCEL = 'Ladevorgang abbrechen'
 
-afterEach(() => toast.dismiss())
+afterEach(() => {
+  toast.dismiss()
+  vi.restoreAllMocks()
+})
 
 describe.each(['light', 'dark'] as const)(
-  'loaded snackbar in %s theme',
+  'loading and loaded snackbar in %s theme',
   (theme) => {
     it.each(
       [1024, 1280].flatMap((width) =>
@@ -54,6 +59,10 @@ describe.each(['light', 'dark'] as const)(
         setTheme(theme)
         setFontSize(fontSize)
         await i18n.changeLanguage('en')
+        const translate = i18n.t
+        vi.spyOn(i18n, 't').mockImplementation((key, options) =>
+          key === 'common:modelLoad.cancel' ? CANCEL : translate(key, options)
+        )
         act(() => status.setState({ phase: 'idle', modelId: MODEL }))
         render(
           <>
@@ -73,9 +82,34 @@ describe.each(['light', 'dark'] as const)(
         })
         const card = await screen.findByTestId('model-load-snackbar')
         expect(card.textContent).toBe(
-          'Starting ModelLoading cached model into memoryCancel'
+          `Starting ModelLoading model into memory${CANCEL}`
         )
         expect(card.getBoundingClientRect().width).toBe(480)
+        await settle(screen.getByText('Starting Model'))
+        const initialHeight = card.getBoundingClientRect().height
+        const cancel = screen.getByRole('button', {
+          name: CANCEL,
+          exact: true,
+        })
+        const initialCancelLeft = cancel.getBoundingClientRect().left
+        for (const phase of ['starting', 'restarting'] as const) {
+          for (const { progress } of modelLoadStages) {
+            act(() => status.setState({ phase, progress }))
+            expect(card.textContent).toBe(
+              `Starting ModelLoading model into memory${CANCEL}`
+            )
+            expect(card.dataset.stage).toBe(progress.kind)
+            expect(card.getBoundingClientRect().width).toBe(480)
+            expect(card.getBoundingClientRect().height).toBe(initialHeight)
+            expect(cancel.getBoundingClientRect().left).toBe(initialCancelLeft)
+            expectOneLine(screen.getByText('Starting Model', { exact: true }))
+            expectOneLine(
+              screen.getByText('Loading model into memory', { exact: true })
+            )
+            expectNoHorizontalOverflow(card)
+            expectNoHorizontalOverflow(document.body)
+          }
+        }
         act(() => status.setState({ phase: 'ready' }))
         await waitFor(() => expect(card.dataset.face).toBe('loaded'))
         await settle(card)

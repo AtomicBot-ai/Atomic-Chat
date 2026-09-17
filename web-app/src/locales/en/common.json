@@ -735,21 +735,10 @@
     "starting": "Starting Model",
     "ready": "Model ready",
     "loadedIntoMemory": "Loaded into memory",
+    "loadingIntoMemory": "Loading model into memory",
     "cancel": "Cancel",
     "cancelling": "Cancelling…",
     "dismiss": "Dismiss",
-    "stage": {
-      "preparing": "Getting the engine ready.",
-      "unloadingPrevious": "Unloading the previous model to free memory.",
-      "installingEngine": "Downloading the engine first. This happens once per engine version.",
-      "loadingWeights": "Loading the model into memory.",
-      "loadingCachedWeights": "Loading cached model into memory",
-      "readingWeightsFromDisk": "Reading the model from disk. The first load after a restart takes longer.",
-      "startingServer": "Starting the local API server.",
-      "retry_ctx": "Not enough memory. Retrying with a smaller context.",
-      "retry_ngl": "Not enough GPU memory. Retrying on the CPU.",
-      "retry_fit_target": "Not enough memory. Retrying with more headroom."
-    },
     "indicator": {
       "loaded": "{{model}} is loaded",
       "unload": "Unload from memory",
