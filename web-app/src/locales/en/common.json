@@ -730,6 +730,8 @@
   },
   "modelLoad": {
     "starting": "Starting Model",
+    "ready": "Model ready",
+    "loadedIntoMemory": "Loaded into memory",
     "cancel": "Cancel",
     "cancelling": "Cancelling…",
     "dismiss": "Dismiss",
