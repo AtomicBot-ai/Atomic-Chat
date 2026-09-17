@@ -43,6 +43,7 @@ import {
 } from '@/lib/sampling-defaults'
 import { cn } from '@/lib/utils'
 import { restartLocalModel } from '@/utils/restartLocalModel'
+import { isLocalEngineProvider } from '@/lib/cloud-providers'
 
 type RunSettingsPanelProps = {
   onClose: () => void
@@ -139,6 +140,9 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   const context = useModelContextLength()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [createAssistantOpen, setCreateAssistantOpen] = useState(false)
+  const exposesLocalSampling = Boolean(
+    context.provider && isLocalEngineProvider(context.provider)
+  )
 
   // A new assistant made from here is meant for the chat at hand, so it
   // becomes the active one straight away instead of only landing in Settings.
@@ -225,15 +229,17 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
             </div>
             {/* In words, and on its own row: a circular-arrow icon here read
                 as "refresh", and the label does not fit beside the title. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-full border-secondary bg-secondary/30 text-xs"
-              disabled={!canResetSampling}
-              onClick={handleResetSampling}
-            >
-              {t('chat:runSettings.resetSampling')}
-            </Button>
+            {exposesLocalSampling && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-full border-secondary bg-secondary/30 text-xs"
+                disabled={!canResetSampling}
+                onClick={handleResetSampling}
+              >
+                {t('chat:runSettings.resetSampling')}
+              </Button>
+            )}
           </div>
 
           {/* Assistant: whose persona and sampling this chat uses. */}
@@ -427,18 +433,22 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
               </Section>
             )}
 
-          {/* Sampling of the active assistant. */}
-          <Section title={t('assistants:paramCategory.sampling')}>
-            <ParametersSection
-              parameters={activeAssistant?.parameters ?? {}}
-              onChange={updateParam}
-              paramKeys={RUN_SETTINGS_SAMPLING_KEYS}
-              className={cn(
-                '[&>div:first-child>div:first-child]:hidden',
-                !activeAssistant && 'pointer-events-none opacity-50'
-              )}
-            />
-          </Section>
+          {/* Sampling is a local-engine control. Cloud and subscription APIs
+              own or ignore these values, so showing sliders there promised a
+              request contract the provider never received. */}
+          {exposesLocalSampling && (
+            <Section title={t('assistants:paramCategory.sampling')}>
+              <ParametersSection
+                parameters={activeAssistant?.parameters ?? {}}
+                onChange={updateParam}
+                paramKeys={RUN_SETTINGS_SAMPLING_KEYS}
+                className={cn(
+                  '[&>div:first-child>div:first-child]:hidden',
+                  !activeAssistant && 'pointer-events-none opacity-50'
+                )}
+              />
+            </Section>
+          )}
         </div>
       </aside>
     </div>

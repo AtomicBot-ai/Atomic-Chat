@@ -1,11 +1,5 @@
 import { DEFAULT_CTX_LEN } from '@janhq/core'
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -213,15 +207,32 @@ describe('RunSettingsPanel', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('hides the model section for providers without a context knob', () => {
-    seedModel('openai')
-    render(<RunSettingsPanel onClose={onClose} />)
+  it.each(['openai', 'chatgpt'])(
+    'shows only assistant and system prompt controls for cloud provider %s',
+    (provider) => {
+      seedModel(provider)
+      render(<RunSettingsPanel onClose={onClose} />)
 
-    expect(screen.queryByText('chat:runSettings.model')).not.toBeInTheDocument()
-    expect(
-      screen.getByText('assistants:paramCategory.penalties')
-    ).toBeInTheDocument()
-  })
+      expect(screen.getByText('Writer')).toBeInTheDocument()
+      expect(
+        screen.getByLabelText('assistants:instructions')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('chat:runSettings.model')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('assistants:paramCategory.sampling')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('assistants:paramCategory.penalties')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', {
+          name: 'chat:runSettings.resetSampling',
+        })
+      ).not.toBeInTheDocument()
+    }
+  )
 
   it('puts dragged sliders back on the defaults in one click', () => {
     const createAssistant = vi.fn().mockResolvedValue(undefined)
@@ -242,7 +253,12 @@ describe('RunSettingsPanel', () => {
           name: 'Writer',
           avatar: '✍️',
           instructions: 'Be terse.',
-          parameters: { temperature: 1.5, top_p: 0.35, min_p: 0.83, stream: false },
+          parameters: {
+            temperature: 1.5,
+            top_p: 0.35,
+            min_p: 0.83,
+            stream: false,
+          },
           sampling_overridden: true,
         } as unknown as Assistant,
       ],
