@@ -72,7 +72,9 @@ describe('DialogAppUpdater', () => {
     render(<DialogAppUpdater />)
 
     expect(screen.getByTestId('app-update-banner')).toHaveClass(
-      'w-[min(28rem,calc(100vw-1.5rem))]'
+      'w-[min(28rem,calc(100vw-1.5rem))]',
+      'bottom-[calc(1rem+var(--download-panel-offset,0px))]',
+      'transition-[bottom]'
     )
     expect(screen.getByText('updater:app.title')).toBeInTheDocument()
     expect(screen.getByText('2.0.37')).toBeInTheDocument()
