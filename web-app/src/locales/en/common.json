@@ -171,7 +171,7 @@
   "webSearchToggleDisabled": "Web search disabled",
   "webSearchToggleConnecting": "Connecting web search…",
   "webSearchToggleUnavailable": "Web search unavailable. Click to retry; if it still fails, check your search provider connection and MCP configuration.",
-  "webSearchToggleFailed": "Couldn't start web search ({{server}})",
+  "webSearchTemporarilyUnavailable": "Web search is temporarily unavailable. Try again.",
   "reasoningToggleEnabled": "Reasoning enabled",
   "reasoningToggleDisabled": "Reasoning disabled",
   "reasoningEffort": {

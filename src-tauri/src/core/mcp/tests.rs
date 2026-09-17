@@ -779,3 +779,31 @@ fn migration_4_drops_the_serper_default_from_the_config_file_once() {
     // this constant afterwards; bump both together when adding a step.
     assert_eq!(MCP_CONFIG_VERSION, 4);
 }
+
+#[tokio::test]
+async fn bundled_search_is_discoverable_after_exa_startup_403() {
+    let app = mock_app();
+    app.manage(AppState::default());
+    let state = app.state::<AppState>();
+    state.mcp_active_servers.lock().await.insert(
+        "exa".into(),
+        serde_json::json!({
+            "type": "http", "url": "https://mcp.exa.ai/mcp", "active": true
+        }),
+    );
+    state.mcp_server_errors.lock().await.insert(
+        "exa".into(),
+        "HTTP 403 rmcp::transport https://mcp.exa.ai/mcp".into(),
+    );
+    let response = super::commands::get_tools(app.handle().clone(), state)
+        .await
+        .unwrap();
+    let tool = response
+        .tools
+        .iter()
+        .find(|tool| tool.name == "web_search_exa")
+        .expect("bundled fallback search must be available");
+    assert_eq!(tool.server, "exa");
+    assert_eq!(tool.description.as_deref(), Some("Web search"));
+    assert_eq!(tool.input_schema["required"], serde_json::json!(["query"]));
+}

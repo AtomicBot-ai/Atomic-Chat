@@ -359,6 +359,12 @@ pub async fn get_tools(
         }
     }
 
+    if super::web_search::enabled(&app).await {
+        all_tools
+            .retain(|tool| !(tool.server == "exa" && tool.name == super::web_search::TOOL_NAME));
+        all_tools.push(super::web_search::tool());
+    }
+
     let servers = collect_mcp_server_statuses(&state).await;
     if let Err(e) = app.emit("mcp-status-update", &servers) {
         log::error!("Failed to emit mcp-status-update event: {e}");
@@ -435,6 +441,29 @@ pub async fn call_tool<R: Runtime>(
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
     let timeout_duration = tool_call_timeout(&state).await;
+    if tool_name == super::web_search::TOOL_NAME
+        && server_name.as_deref().is_none_or(|name| name == "exa")
+        && super::web_search::enabled(&app).await
+    {
+        let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+        if let Some(token) = &cancellation_token {
+            state
+                .tool_call_cancellations
+                .lock()
+                .await
+                .insert(token.clone(), cancel_tx);
+        }
+        let result = tokio::select! {
+            result = timeout(timeout_duration, super::web_search::call(arguments)) => {
+                result.unwrap_or_else(|_| Err(super::web_search::UNAVAILABLE.into()))
+            }
+            _ = cancel_rx, if cancellation_token.is_some() => Err("Web search was cancelled.".into()),
+        };
+        if let Some(token) = &cancellation_token {
+            state.tool_call_cancellations.lock().await.remove(token);
+        }
+        return result;
+    }
     let data_dir = get_jan_data_folder_path(app.clone());
     match server_name.as_deref() {
         Some(server) => log::info!(
