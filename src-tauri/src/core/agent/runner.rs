@@ -403,8 +403,9 @@ pub async fn run_turn(
                 return finish_cancelled(step_index, usage.finish(), &mut emit);
             }
             Err(error) => {
+                let message = completion_error_message(&error);
                 emit(AgentEvent::StepError {
-                    message: error.to_string(),
+                    message: message.clone(),
                     category: completion_error_category(&error).into(),
                 })?;
                 emit(AgentEvent::TurnFinished {
@@ -413,7 +414,7 @@ pub async fn run_turn(
                     usage: usage.finish(),
                 })?;
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                return Err(error.to_string());
+                return Err(message);
             }
         };
         if let Some(reasoning) = parsed.reasoning.filter(|value| !value.is_empty()) {
@@ -1156,7 +1157,42 @@ fn completion_error_category(error: &LlmClientError) -> &'static str {
         LlmClientError::ContextOverflow(_) => "context",
         LlmClientError::LocalServerUnavailable => "server",
         LlmClientError::SessionNotFound(_) => "session",
+        LlmClientError::Transport(detail) if is_interrupted_stream(detail) => "server",
         _ => "llm",
+    }
+}
+
+fn is_interrupted_stream(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    detail.contains("unexpected eof")
+        || detail.contains("error reading a body")
+        || detail.contains("connection reset")
+        || detail.contains("connection closed")
+}
+
+fn completion_error_message(error: &LlmClientError) -> String {
+    match error {
+        LlmClientError::Transport(detail) if is_interrupted_stream(detail) => {
+            "The active model stopped while generating. Retry the request.".into()
+        }
+        _ => error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod completion_error_message_tests {
+    use super::*;
+
+    #[test]
+    fn interrupted_stream_is_explained_without_transport_internals() {
+        let error = LlmClientError::Transport(
+            "request or response body error: error reading a body from connection: unexpected EOF during chunk size line".into(),
+        );
+        assert_eq!(completion_error_category(&error), "server");
+        assert_eq!(
+            completion_error_message(&error),
+            "The active model stopped while generating. Retry the request."
+        );
     }
 }
 
