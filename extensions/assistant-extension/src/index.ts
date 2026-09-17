@@ -1,10 +1,11 @@
 import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
+import { priorDefaultInstructions } from './legacy-default-instructions'
 /**
  * JanAssistantExtension is an AssistantExtension implementation that provides
  * functionality for managing assistants.
  */
 export default class JanAssistantExtension extends AssistantExtension {
-  private readonly CURRENT_MIGRATION_VERSION = 3
+  private readonly CURRENT_MIGRATION_VERSION = 4
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
 
   /**
@@ -67,211 +68,37 @@ export default class JanAssistantExtension extends AssistantExtension {
   private async runMigrations(): Promise<void> {
     const currentVersion = await this.getCurrentMigrationVersion()
 
-    if (currentVersion < 1) {
-      console.log('Running migration v1: Update assistant instructions')
-      await this.migrateAssistantInstructions()
-      await this.saveMigrationVersion(1)
-    }
-
-    if (currentVersion < 2) {
-      console.log('Running migration v2: Update to Atomic Chat instructions')
-      await this.migrateToAtomicChatInstructions()
-      await this.saveMigrationVersion(2)
-    }
-
-    if (currentVersion < 3) {
-      console.log(
-        'Running migration v3: Replace Jan-branded prompts with Atomic Chat instructions'
-      )
-      await this.migrateJanBrandedAssistants()
-      await this.saveMigrationVersion(3)
-    }
-
-    console.log(
-      `Migrations complete. Current version: ${this.CURRENT_MIGRATION_VERSION}`
-    )
-  }
-
-  /**
-   * Migration v1: Update assistant instructions from old format to new format
-   */
-  private async migrateAssistantInstructions(): Promise<void> {
-    const OLD_INSTRUCTION = 'You are a helpful AI assistant.'
-    const NEW_INSTRUCTION = 'You are Atomic Chat, a helpful AI assistant.'
-
-    if (!(await fs.existsSync('file://assistants'))) {
-      return
-    }
-
-    const assistants = await this.getAssistants()
-
-    for (const assistant of assistants) {
-      // Check if this assistant has the old instruction format
-      if (assistant.instructions?.startsWith(OLD_INSTRUCTION)) {
-        // Replace old instruction with new one, preserving the rest of the content
-        const restOfInstructions = assistant.instructions.substring(
-          OLD_INSTRUCTION.length
-        )
-        assistant.instructions = NEW_INSTRUCTION + restOfInstructions
-
-        // Save the updated assistant
-        const assistantPath = await joinPath([
-          'file://assistants',
-          assistant.id,
-          'assistant.json',
-        ])
-
-        try {
-          await fs.writeFileSync(
-            assistantPath,
-            JSON.stringify(assistant, null, 2)
-          )
-          console.log(`Migrated instructions for assistant: ${assistant.id}`)
-        } catch (error) {
-          console.error(`Failed to migrate assistant ${assistant.id}:`, error)
-        }
-      }
+    if (currentVersion < this.CURRENT_MIGRATION_VERSION) {
+      // v4 supersedes v1–v3. Running their broad matches first could destroy
+      // customized prompts before the exact-match migration gets to see them.
+      await this.migrateDefaultInstructions()
+      await this.saveMigrationVersion(this.CURRENT_MIGRATION_VERSION)
     }
   }
 
-  /**
-   * Migration v2: Update assistant instructions to Atomic Chat format and set default parameters
-   */
-  private async migrateToAtomicChatInstructions(): Promise<void> {
-    const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
-    const NEW_INSTRUCTION = `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Atomic Chat (https://atomic.chat).
-
-You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
-
-When handling user queries:
-
-1. Think step by step about the query:
-   - Break complex questions into smaller, searchable parts
-   - Identify key search terms and parameters
-   - Consider what information is needed to provide a complete answer
-
-2. Mandatory logical analysis:
-   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a "professional tool caller," demonstrating rigorous logic.
-   - Analyze the information gap: explicitly state what data is missing.
-   - Derive the strategy: explain why a specific tool is the logical next step.
-   - Justify parameters: explain why you chose those specific search keywords or that specific URL.
-
-You have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.
-
-Current date: {{current_date}}`
-
-    const DEFAULT_PARAMETERS = {
-      temperature: 0.7,
-      top_k: 20,
-      top_p: 0.8,
-      repeat_penalty: 1.12,
-    }
-
-    if (!(await fs.existsSync('file://assistants'))) {
-      return
-    }
-
+  private async migrateDefaultInstructions(): Promise<void> {
     const assistants = await this.getAssistants()
-
     for (const assistant of assistants) {
-      // Check if this assistant has the old instruction format
-      if (assistant.instructions?.startsWith(OLD_INSTRUCTION_PREFIX)) {
-        assistant.instructions = NEW_INSTRUCTION
-
-        // Add default parameters to the assistant
-        const assistantWithParams = {
-          ...assistant,
-          parameters: DEFAULT_PARAMETERS,
-        }
-
-        // Save the updated assistant
-        const assistantPath = await joinPath([
-          'file://assistants',
-          assistant.id,
-          'assistant.json',
-        ])
-
-        try {
-          await fs.writeFileSync(
-            assistantPath,
-            JSON.stringify(assistantWithParams, null, 2)
-          )
-          console.log(
-            `Migrated to Atomic Chat instructions for assistant: ${assistant.id}`
-          )
-        } catch (error) {
-          console.error(`Failed to migrate assistant ${assistant.id}:`, error)
-        }
-      }
-    }
-  }
-
-  /**
-   * Migration v3: Replace Jan-branded default prompts with the Atomic Chat default.
-   *
-   * Installs that ran upstream Jan's own migration v2 carry Jan's default prompt
-   * ("You are Jan, a helpful AI assistant who assists users ... Menlo Research")
-   * at migration version 2, so the rebranded v2 above never ran for them, and
-   * its prefix ("You are Jan, a helpful AI assistant." with a period) would not
-   * have matched that text anyway. Only the two Jan default signatures are
-   * replaced; a user-authored prompt that merely mentions Jan is left alone.
-   * The Jan default name and description are fixed with it; every other field
-   * (parameters, avatar, tools, ...) is preserved.
-   */
-  private async migrateJanBrandedAssistants(): Promise<void> {
-    const JAN_DEFAULT_NAME = 'Jan'
-    const JAN_DEFAULT_DESCRIPTION_PREFIX = 'Jan is a helpful desktop assistant'
-
-    if (!(await fs.existsSync('file://assistants'))) {
-      return
-    }
-
-    const assistants = await this.getAssistants()
-
-    for (const assistant of assistants) {
-      if (!this.hasJanDefaultPrompt(assistant.instructions)) continue
+      if (!priorDefaultInstructions.has(assistant.instructions)) continue
 
       const migrated: Assistant = {
         ...assistant,
         instructions: this.defaultAssistant.instructions,
       }
-      if (assistant.name?.trim() === JAN_DEFAULT_NAME) {
+      if (assistant.name === 'Jan') {
         migrated.name = this.defaultAssistant.name
       }
       if (
-        assistant.description?.trim().startsWith(JAN_DEFAULT_DESCRIPTION_PREFIX)
+        assistant.description ===
+        'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.'
       ) {
         migrated.description = this.defaultAssistant.description
       }
 
-      const assistantPath = await joinPath([
-        'file://assistants',
-        assistant.id,
-        'assistant.json',
-      ])
-
-      try {
-        await fs.writeFileSync(assistantPath, JSON.stringify(migrated, null, 2))
-        console.log(
-          `Replaced Jan-branded prompt with Atomic Chat instructions for assistant: ${assistant.id}`
-        )
-      } catch (error) {
-        console.error(`Failed to migrate assistant ${assistant.id}:`, error)
-      }
+      // Propagate write failures so the version is not advanced; successfully
+      // migrated assistants no longer match, making the next launch safe to retry.
+      await this.createAssistant(migrated)
     }
-  }
-
-  /**
-   * True only for the two Jan default prompts: the v1 text that starts with
-   * "You are Jan" and the Menlo Research prompt upstream's v2 wrote.
-   */
-  private hasJanDefaultPrompt(instructions: string | undefined): boolean {
-    if (!instructions) return false
-    return (
-      instructions.trim().startsWith('You are Jan') ||
-      instructions.includes('Menlo Research') ||
-      instructions.includes('menlo.ai')
-    )
   }
 
   /**
@@ -336,26 +163,8 @@ Current date: {{current_date}}`
     description:
       'Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions: `You are Atomic Chat, a helpful AI assistant who assists users with their requests. Atomic Chat is trained by Atomic Chat (https://atomic.chat).
-
-You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
-
-When handling user queries:
-
-1. Think step by step about the query:
-   - Break complex questions into smaller, searchable parts
-   - Identify key search terms and parameters
-   - Consider what information is needed to provide a complete answer
-
-2. Mandatory logical analysis:
-   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a "professional tool caller," demonstrating rigorous logic.
-   - Analyze the information gap: explicitly state what data is missing.
-   - Derive the strategy: explain why a specific tool is the logical next step.
-   - Justify parameters: explain why you chose those specific search keywords or that specific URL.
-
-You have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.
-
-Current date: {{current_date}}`,
+    instructions:
+      'You are Atomic Chat, a helpful AI assistant.\n\nCurrent date: {{current_date}}',
     tools: [
       {
         type: 'retrieval',
