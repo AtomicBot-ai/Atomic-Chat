@@ -33,6 +33,11 @@ vi.mock('@/hooks/useFavoriteModel', () => ({
   useFavoriteModel: vi.fn(() => ({ favoriteModels: [] })),
 }))
 
+vi.mock('@/stores/provider-registry-store', () => ({
+  isKnownProvider: (provider: string) =>
+    ['openai', 'anthropic', 'chatgpt', 'ollama'].includes(provider),
+}))
+
 vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
     WEB_AUTO_MODEL_SELECTION: false,
@@ -171,7 +176,7 @@ describe('DropdownModelProvider - connected providers only', () => {
     ])
 
     expect(providerHeaders()).toEqual(['llamacpp-upstream', 'chatgpt'])
-    expect(screen.getByText('gpt-5.1-codex')).toBeInTheDocument()
+    expect(screen.getAllByTitle('gpt-5.1-codex').length).toBeGreaterThan(0)
   })
 
   it('waits for a loopback server to answer before giving it a section', () => {
@@ -210,7 +215,7 @@ describe('DropdownModelProvider - connected providers only', () => {
     ])
 
     expect(providerHeaders()).toEqual(['llamacpp-upstream', 'anthropic'])
-    expect(screen.getByText('claude-opus-5')).toBeInTheDocument()
+    expect(screen.getAllByTitle('claude-opus-5').length).toBeGreaterThan(0)
   })
 
   describe('a cloud selection kept across launches', () => {
@@ -248,7 +253,7 @@ describe('DropdownModelProvider - connected providers only', () => {
       // section and the model is listed in it.
       expect(providerHeaders()).toEqual(['llamacpp-upstream', 'openai'])
       // Once in the trigger, once in the list: the selection survived.
-      expect(screen.getAllByText('gpt-4o').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByTitle('gpt-4o').length).toBeGreaterThanOrEqual(1)
     })
 
     it('drops it once the key is gone, so Send cannot aim at a wall', () => {

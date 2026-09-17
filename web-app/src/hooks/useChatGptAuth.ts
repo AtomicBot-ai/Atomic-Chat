@@ -28,7 +28,7 @@ const OFF_LIKE_EFFORTS = new Set(['none', 'off', 'disabled'])
 
 /** Preserve the subscription catalogue's real effort contract on the model. */
 export function subscriptionModelToProviderModel(model: ChatGptModel): Model {
-  const declaredEfforts = model.reasoning_efforts
+  const declaredEfforts = (model.reasoning_efforts ?? [])
     .map((effort) => effort.trim().toLowerCase())
     .filter(Boolean)
   const offValue = declaredEfforts.find((effort) =>

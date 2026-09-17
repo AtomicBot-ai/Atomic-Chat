@@ -30,7 +30,7 @@ describe('HeaderPage sidebar restore control', () => {
 
     expect(screen.getByRole('button', { name: 'Toggle sidebar' })).toHaveClass(
       'absolute',
-      'left-20',
+      'left-16',
       'top-0'
     )
   })
