@@ -68,13 +68,16 @@ describe('DialogAppUpdater', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows the version transition and a changelog preview', () => {
+  it('shows a wider version transition and changelog without a redundant subtitle', () => {
     render(<DialogAppUpdater />)
 
+    expect(screen.getByTestId('app-update-banner')).toHaveClass(
+      'w-[min(28rem,calc(100vw-1.5rem))]'
+    )
     expect(screen.getByText('updater:app.title')).toBeInTheDocument()
     expect(screen.getByText('2.0.37')).toBeInTheDocument()
     expect(screen.getByText('2.0.38')).toBeInTheDocument()
-    expect(screen.getByText('updater:app.subtitle')).toBeInTheDocument()
+    expect(screen.queryByText('updater:app.subtitle')).not.toBeInTheDocument()
 
     // Four bullets fit; the fifth collapses into the "+N more" line.
     expect(screen.getByText('Windows support')).toBeInTheDocument()
