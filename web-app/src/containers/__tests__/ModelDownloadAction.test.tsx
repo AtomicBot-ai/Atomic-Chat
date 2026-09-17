@@ -7,7 +7,10 @@ import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   pullModelWithMetadata: vi.fn(() => Promise.resolve()),
+  toastError: vi.fn(),
 }))
+
+vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }))
 
 vi.mock('@/i18n', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -65,6 +68,7 @@ const downloadButton = () =>
 describe('ModelDownloadAction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.pullModelWithMetadata.mockResolvedValue(undefined)
     useModelProvider.setState({ providers: [] })
     seedServiceHub({
       models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
@@ -88,7 +92,12 @@ describe('ModelDownloadAction', () => {
 
   it('warns before downloading a variant too large for the device', async () => {
     render(
-      <ModelDownloadAction variant={variant} model={model} asButton warnTooLarge />
+      <ModelDownloadAction
+        variant={variant}
+        model={model}
+        asButton
+        warnTooLarge
+      />
     )
 
     // The button is live, not disabled: the fit estimate is a guess.
@@ -114,7 +123,12 @@ describe('ModelDownloadAction', () => {
 
   it('downloads nothing when the warning is cancelled', async () => {
     render(
-      <ModelDownloadAction variant={variant} model={model} asButton warnTooLarge />
+      <ModelDownloadAction
+        variant={variant}
+        model={model}
+        asButton
+        warnTooLarge
+      />
     )
 
     fireEvent.click(downloadButton())
@@ -123,5 +137,18 @@ describe('ModelDownloadAction', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+  })
+
+  it('does not show a failure toast when an intentional cancel rejects the pull', async () => {
+    mocks.pullModelWithMetadata.mockRejectedValueOnce(
+      new Error('Download cancelled')
+    )
+    render(<ModelDownloadAction variant={variant} model={model} asButton />)
+
+    fireEvent.click(downloadButton())
+
+    await waitFor(() => expect(mocks.pullModelWithMetadata).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.toastError).not.toHaveBeenCalled()
   })
 })

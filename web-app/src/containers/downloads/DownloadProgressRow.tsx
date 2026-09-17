@@ -5,9 +5,8 @@ import { quantFromModelId } from '@/lib/telemetry'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 
-//* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
-export const DOWNLOAD_PROGRESS_INDICATOR =
-  'bg-emerald-400/50 dark:bg-emerald-400/45'
+//* Product blue: downloading is activity, not the green "ready" state.
+export const DOWNLOAD_PROGRESS_INDICATOR = 'bg-blue-500/60 dark:bg-blue-400/55'
 
 /** Status while a transfer has no bytes to report — see `useDownloadStore`. */
 export type DownloadRowStage = {

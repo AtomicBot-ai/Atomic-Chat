@@ -14,6 +14,7 @@ import { advanceSpeedSample, newSpeedSample } from '@/lib/downloadFormat'
 import {
   cancelDownload,
   clearDownloadCancellationRequested,
+  isDownloadCancellationError,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import {
@@ -30,13 +31,6 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
-
-function isCancellationLikeError(error?: string): boolean {
-  if (!error) return false
-  return /abort|aborted|cancel|cancelled|canceled|stop|stopped|interrupt/i.test(
-    error
-  )
-}
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -304,7 +298,7 @@ export function DownloadManagement() {
 
       const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
-        isCancellationLikeError(err)
+        isDownloadCancellationError(err)
       captureDownloadTerminal(
         cancelled ? 'cancelled' : 'failed',
         state.modelId,

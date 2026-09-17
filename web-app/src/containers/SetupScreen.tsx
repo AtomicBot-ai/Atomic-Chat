@@ -100,6 +100,10 @@ import {
 } from '@/lib/onboarding-telemetry'
 import { describeProviderState } from '@/lib/onboarding'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import {
+  isDownloadCancellationError,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 //* Формат прогресса общий с панелью закачек (ATO-462), чтобы не разъезжался
 import { formatProgressPair } from '@/lib/downloadFormat'
 
@@ -778,6 +782,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         trackedImportIdsRef.current.delete(mlxId)
         markResumableDownload(mlxId)
         removeLocalDownloadingModel(mlxId)
+        if (
+          wasDownloadCancellationRequested(mlxId) ||
+          isDownloadCancellationError(error)
+        ) {
+          return
+        }
         toast.error('Failed to download MLX model', {
           description: extractModelErrorMessage(error),
         })

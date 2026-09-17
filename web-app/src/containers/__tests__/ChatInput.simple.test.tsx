@@ -346,7 +346,7 @@ describe('ChatInput', () => {
       })
     })
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(screen.getByTestId('reply-gate-queued-notice')).toBeVisible()
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
 
     // …and now it is. The message goes out unchanged, with nobody pressing
     // anything, and the widget gets out of the way.
@@ -496,11 +496,10 @@ describe('ChatInput', () => {
       document.querySelector('[data-test-id="send-message-button"]')!
     )
 
-    // No modal: the status lives in the composer, and says which model.
+    // No modal and no extra line under the composer: the queued send remains
+    // internal until the selected model is ready.
     expect(screen.queryByTestId('reply-model-gate')).toBeNull()
-    expect(screen.getByTestId('reply-gate-queued-notice')).toHaveTextContent(
-      'chat:replyGate.startingNotice'
-    )
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
     expect(onSubmit).not.toHaveBeenCalled()
     expect(useModelProvider.getState().selectedModel?.id).toBe(model.id)
 
@@ -564,9 +563,7 @@ describe('ChatInput', () => {
     )
     // An explicit start, like a pick in the dropdown — not a silent auto-start.
     expect(mocks.switchToModel.mock.calls[0][0].isAutoStart).toBeUndefined()
-    expect(screen.getByTestId('reply-gate-queued-notice')).toHaveTextContent(
-      'chat:replyGate.startingNotice'
-    )
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
     expect(onSubmit).not.toHaveBeenCalled()
 
     act(() => {
@@ -617,9 +614,8 @@ describe('ChatInput', () => {
     fireEvent.click(
       document.querySelector('[data-test-id="send-message-button"]')!
     )
-    await waitFor(() =>
-      expect(screen.getByTestId('reply-gate-queued-notice')).toBeInTheDocument()
-    )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
 
     // The real switch lifts the stop as the load starts; the Cancel sets it
     // again once the load is gone.
@@ -788,7 +784,9 @@ describe('ChatInput', () => {
     expect(
       plugins.querySelector('[data-test-id="connectors-dropdown"]')
     ).toBeInTheDocument()
-    const globe = screen.getByLabelText('common:webSearchToggleEnabled')
+    const globe = screen.getByLabelText(
+      /common:webSearchToggle(?:Enabled|Unavailable)/
+    )
     expect(plugins.parentElement).toBe(globe.parentElement)
     expect(
       plugins.compareDocumentPosition(globe) & Node.DOCUMENT_POSITION_FOLLOWING

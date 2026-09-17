@@ -5,6 +5,14 @@ const CANCEL_TTL_MS = 15000
 
 const requestedCancellations = new Map<string, number>()
 
+/** Backend and extension transports do not share one cancellation error type. */
+export function isDownloadCancellationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /abort|aborted|cancel|cancelled|canceled|stop|stopped|interrupt/i.test(
+    message
+  )
+}
+
 export function markDownloadCancellationRequested(id: string) {
   requestedCancellations.set(id, Date.now())
 }

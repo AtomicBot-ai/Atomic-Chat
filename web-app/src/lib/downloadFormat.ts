@@ -106,7 +106,7 @@ export function downloadStatusLabel(
       attempt: stage.attempt,
       maxAttempts: stage.maxAttempts,
     })
-  if (stage?.kind === 'connecting') return t('common:downloadPanel.connecting')
+  if (stage?.kind === 'connecting') return t('common:downloadPanel.preparing')
   return t('common:downloadPanel.preparing')
 }
 

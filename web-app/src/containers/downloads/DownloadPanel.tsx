@@ -168,7 +168,7 @@ export function DownloadPanel({
           aria-expanded={false}
         >
           <DownloadIcon className="size-4 text-muted-foreground" />
-          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-semibold tabular-nums text-white">
+          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-semibold tabular-nums text-white">
             {count}
           </span>
         </Button>

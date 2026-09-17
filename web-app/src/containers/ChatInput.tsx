@@ -3463,24 +3463,6 @@ const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      {/* The promise the widget made, kept visible after it closes: the message
-          in the field is not lost, and nobody has to sit and watch a modal.
-          Out of the flow on purpose: the composer is pinned to the bottom of
-          the page, so a line added under it would lift the whole input. It
-          names no model either — the pill already does. */}
-      {queuedSend && (
-        <div
-          className="pointer-events-none absolute inset-x-0 top-full flex items-center gap-1.5 px-5 pt-0.5 text-[11px] leading-3.5 text-muted-foreground"
-          data-testid="reply-gate-queued-notice"
-          aria-live="polite"
-        >
-          <IconLoader2 className="size-3 shrink-0 animate-spin" />
-          {queuedSend.modelLabel
-            ? t('chat:replyGate.startingNotice')
-            : t('chat:replyGate.queuedNotice')}
-        </div>
-      )}
-
       <ReplyModelGate
         open={replyGateOpen}
         onOpenChange={setReplyGateOpen}
