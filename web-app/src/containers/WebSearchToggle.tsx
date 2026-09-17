@@ -128,13 +128,11 @@ const WebSearchToggle = memo(function WebSearchToggle({
         enableServerTools(key)
         await syncServers()
       }
-    } catch (error) {
+    } catch {
       // The activation failed, so leave the stored config off to match reality.
       editServer(key, { ...config, active: false })
       setFailed(true)
-      toast.error(t('common:webSearchToggleFailed', { server: key }), {
-        description: error instanceof Error ? error.message : String(error),
-      })
+      toast.error(t('common:webSearchTemporarilyUnavailable'))
     } finally {
       setPending(false)
     }

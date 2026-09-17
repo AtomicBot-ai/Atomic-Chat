@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import common from '@/locales/en/common.json'
+import { Toaster } from 'sonner'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -199,6 +200,29 @@ describe('WebSearchToggle', () => {
         name: common.webSearchToggleUnavailable,
       })
     ).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('shows one friendly message when search cannot initialize, without transport details', async () => {
+    useMCPServers.setState({ mcpServers: { exa: { ...EXA, active: false } } })
+    useAppState.setState({ tools: [] })
+    activateMCPServer.mockRejectedValueOnce(
+      new Error('rmcp::transport HTTP 403 https://mcp.exa.ai/mcp stack trace')
+    )
+    render(
+      <>
+        <Toaster />
+        <WebSearchToggle />
+      </>
+    )
+    await userEvent.click(screen.getByRole('button'))
+    expect(
+      await screen.findByText(
+        'Web search is temporarily unavailable. Try again.'
+      )
+    ).toBeVisible()
+    expect(document.body).not.toHaveTextContent(
+      /rmcp::|HTTP 403|https:\/\/mcp.exa.ai|stack trace/
+    )
   })
 
   it('keeps search unavailable when activation succeeds but exposes no tools', async () => {

@@ -241,7 +241,13 @@ pub async fn start_mcp_server<R: Runtime>(
             // same failure travelling back up.
             log::warn!("Failed to start MCP server {name} on first attempt: {e}");
             emit_mcp_status_update_event(&app, &name);
-            Err(e)
+            // The bundled search adapter is local and stateless: its query path
+            // retries Exa and falls back to the already bundled DuckDuckGo path.
+            if name == "exa" && super::web_search::enabled(&app).await {
+                Ok(())
+            } else {
+                Err(e)
+            }
         }
     }
 }
