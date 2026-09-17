@@ -662,7 +662,7 @@ describe('DropdownPlugins connector row anatomy', () => {
 
   // The fresh-install menu showed a 20 px icon, an 11 px tagline and nothing
   // level with anything. The row follows the model rows' anatomy instead: a
-  // 32 px round mark, a title line, a tagline line, one fixed action slot.
+  // 32 px rounded-square mark, a title line, a tagline line, one fixed action slot.
   it('lays a connector out as a 32 px mark, a title, a tagline and one action slot', () => {
     useMCPServers.setState({
       mcpServers: {
@@ -674,12 +674,17 @@ describe('DropdownPlugins connector row anatomy', () => {
 
     renderDropdown()
 
-    // The mark is the model rows' 32 px round slot: a catalog connector's
+    // The mark is a 32 px rounded-square slot: a catalog connector's
     // brand tile fills it, a hand-added server gets its initial in it.
     const mark = screen.getByTestId('connector-mark-exa')
-    expect(mark).toHaveClass('size-8', 'rounded-full', 'bg-secondary')
+    expect(mark).toHaveClass('size-8', 'rounded-md', 'bg-secondary')
     expect(mark).toHaveAttribute('aria-hidden', 'true')
-    expect(mark.firstElementChild).toHaveClass('size-full', 'rounded-full')
+    expect(mark.firstElementChild).toHaveClass('size-full', 'rounded-md')
+    expect(mark.firstElementChild).toHaveStyle({ backgroundColor: '#1741f6' })
+    expect(mark.querySelector('img')).toHaveClass('object-contain')
+    const customMark = screen.getByTestId('connector-mark-my-tools')
+    expect(customMark).toHaveClass('size-8', 'rounded-md')
+    expect(customMark.firstElementChild).toHaveClass('size-full', 'rounded-md')
     expect(mark.querySelector('img')).toHaveAttribute(
       'src',
       '/images/connectors/exa.svg'
