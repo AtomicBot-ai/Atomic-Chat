@@ -171,11 +171,28 @@ describe('ReasoningEffortPanel', () => {
 
     render(<ReasoningEffortPanel />)
 
-    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.medium')
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
     expect(
       screen.queryByText('common:reasoningEffort.off')
     ).not.toBeInTheDocument()
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '3')
+  })
+
+  it('starts an always-thinking local model at Low instead of lying about Off', () => {
+    selectedModel.current = {
+      id: 'lfm-always-thinks',
+      reasoning: { supportsThinking: true, canDisable: false },
+    }
+    selectedProvider.current = 'llamacpp'
+    useGeneralSetting.setState({ disableReasoning: true })
+
+    render(<ReasoningEffortPanel />)
+
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
+    expect(
+      screen.queryByText('common:reasoningEffort.off')
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '4')
   })
 
   it('renders nothing while no model is selected', () => {

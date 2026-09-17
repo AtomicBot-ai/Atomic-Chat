@@ -52,6 +52,7 @@ export function subscriptionModelToProviderModel(model: ChatGptModel): Model {
       ? {
           reasoning: {
             supportsThinking: true,
+            canDisable: Boolean(offValue),
             effortKwarg: 'reasoning_effort' as const,
             effortValues,
             ...(offValue ? { offValue } : {}),

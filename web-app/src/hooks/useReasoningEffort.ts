@@ -47,10 +47,12 @@ export const useReasoningEffort = () => {
       : usesTemplateReasoningKwargs(selectedProvider)
         ? ALL_LEVELS
         : []
+  const effectiveBudget =
+    !canDisable && disableReasoning ? levels[0] : reasoningBudget
   const level =
-    reasoningBudget === 'off'
+    effectiveBudget === 'off'
       ? undefined
-      : resolveReasoningLevel(reasoningBudget, levels)
+      : resolveReasoningLevel(effectiveBudget, levels)
 
   // The level is only worth showing while reasoning is on: off, the model
   // answers without a thinking phase whatever the slider says.

@@ -113,7 +113,10 @@ const usesNativeEffort = (
 export const canDisableReasoning = (
   provider: string | undefined,
   controls?: ReasoningControls
-): boolean => provider !== 'chatgpt' || Boolean(controls?.offValue)
+): boolean => {
+  if (controls?.canDisable !== undefined) return controls.canDisable
+  return provider !== 'chatgpt' || Boolean(controls?.offValue)
+}
 
 /**
  * Levels the model can express: everything for a budget model, and only the
@@ -292,10 +295,16 @@ export const buildAgentReasoningRequest = (
   if (!supportsThinking) return off
   if (allowDisable && (disableReasoning || level === 'off')) return off
 
-  const requestedLevel = level === 'off' ? 'low' : level
+  const available = availableReasoningLevels(controls)
+  const requestedLevel =
+    !allowDisable && (disableReasoning || level === 'off')
+      ? (available[0] ?? 'low')
+      : level === 'off'
+        ? 'low'
+        : level
   const resolved = resolveReasoningLevel(
     requestedLevel,
-    availableReasoningLevels(controls)
+    available
   )
   if (!resolved) return off
 

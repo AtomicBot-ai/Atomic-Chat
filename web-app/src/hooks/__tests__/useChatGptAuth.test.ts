@@ -15,6 +15,7 @@ describe('subscriptionModelToProviderModel', () => {
 
     expect(model.reasoning).toEqual({
       supportsThinking: true,
+      canDisable: false,
       effortKwarg: 'reasoning_effort',
       effortValues: ['low', 'medium', 'high', 'xhigh'],
     })
@@ -31,6 +32,7 @@ describe('subscriptionModelToProviderModel', () => {
 
     expect(model.reasoning).toEqual({
       supportsThinking: true,
+      canDisable: true,
       effortKwarg: 'reasoning_effort',
       effortValues: ['low', 'high'],
       offValue: 'none',
