@@ -2,6 +2,7 @@ pub mod api_request_analytics;
 pub(crate) mod chat_to_responses_shim;
 pub(crate) mod chatgpt_route;
 pub mod commands;
+pub mod ownership;
 pub(crate) mod context_expansion;
 #[cfg(test)]
 pub mod integration_tests;

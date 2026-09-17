@@ -45,7 +45,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const CLIENT_VERSION: &str = "0.156.0";
 
 /// One model the subscription offers.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SubscriptionModel {
     pub id: String,
     pub display_name: String,
@@ -378,3 +378,7 @@ pub fn client() -> Result<Client, String> {
         .build()
         .map_err(|e| format!("cannot build the ChatGPT HTTP client: {e}"))
 }
+
+#[cfg(test)]
+#[path = "chatgpt_route_fixture_dump.rs"]
+mod fixture_dump;

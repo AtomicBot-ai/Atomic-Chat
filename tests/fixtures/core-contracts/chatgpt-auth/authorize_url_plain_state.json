@@ -1,0 +1,16 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "url": "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access&code_challenge=cVMQVm2H8XMxPRXw9UHXSB6YQh7gQ203LPX3xMfwRfo&code_challenge_method=S256&state=state-123&originator=atomic_chat&codex_cli_simplified_flow=true&id_token_add_organizations=true"
+  },
+  "input": {
+    "challenge": "cVMQVm2H8XMxPRXw9UHXSB6YQh7gQ203LPX3xMfwRfo",
+    "kind": "authorize_url",
+    "state": "state-123"
+  },
+  "name": "authorize_url_plain_state",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

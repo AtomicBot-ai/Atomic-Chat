@@ -34,6 +34,8 @@ pub const RESTART_DELAYS: [Duration; 3] = [
     Duration::from_secs(15),
 ];
 pub const RESTART_WINDOW: Duration = Duration::from_secs(300);
+/// A crashed app's client lease lasts 45 seconds; leave time for expiry and shutdown.
+const PREVIOUS_APP_RECLAIM_TIMEOUT: Duration = Duration::from_secs(55);
 
 /// The version of the core this app ships, stamped by `build.rs` from
 /// `package.json`. `None` in a tree with no pin, which disables the version
@@ -261,7 +263,25 @@ impl Supervisor {
         system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
         match lock::inspect(&self.data_folder, &system) {
             LockState::Owned(record) if record.is_ready() => {
-                self.connect(&record.control_base_url()).await
+                if (record.owner_scope.as_deref() == Some("app") || self.expected_version.is_none())
+                    && self.expected_version.as_deref().is_none_or(|v| v == record.version) {
+                    if !self.ever_attached.load(Ordering::SeqCst) && self.expected_version.is_some() {
+                        if !allow_launch {
+                            return Err(CoreError::new("CORE_NOT_RUNNING", "The previous app core has not been retired.", None));
+                        }
+                        self.replace_previous_owner(&record, &system).await?;
+                        self.launch().await
+                    } else {
+                        self.connect(&record.control_base_url()).await
+                    }
+                } else if allow_launch && record.owner_scope.as_deref() != Some("cli") {
+                    self.replace_previous_owner(&record, &system).await?;
+                    self.launch().await
+                } else {
+                    Err(CoreError::new("CORE_VERSION_MISMATCH",
+                        "Another core scope or version owns the application data folder.",
+                        Some(format!("pid {}, version {}, scope {:?}", record.pid, record.version, record.owner_scope))))
+                }
             }
             LockState::Owned(record) => {
                 // Someone is starting a core right now. Waiting for it is not
@@ -272,7 +292,25 @@ impl Supervisor {
                     record.instance_id
                 );
                 let record = self.wait_for_ready().await?;
-                self.connect(&record.control_base_url()).await
+                if record.owner_scope.as_deref() == Some("app")
+                    && self.expected_version.as_deref().is_some_and(|v| v == record.version) {
+                    if !self.ever_attached.load(Ordering::SeqCst) {
+                        if !allow_launch {
+                            return Err(CoreError::new("CORE_NOT_RUNNING", "The previous app core has not been retired.", None));
+                        }
+                        self.replace_previous_owner(&record, &system).await?;
+                        self.launch().await
+                    } else {
+                        self.connect(&record.control_base_url()).await
+                    }
+                } else if self.expected_version.is_none() {
+                    self.connect(&record.control_base_url()).await
+                } else if allow_launch && record.owner_scope.as_deref() != Some("cli") {
+                    self.replace_previous_owner(&record, &system).await?;
+                    self.launch().await
+                } else {
+                    Err(CoreError::new("CORE_VERSION_MISMATCH", "Different core owns the application folder.", None))
+                }
             }
             LockState::Free | LockState::Stale(_) | LockState::Corrupt if allow_launch => {
                 self.launch().await
@@ -282,6 +320,68 @@ impl Supervisor {
                 "No Atomic Chat core is running for this data folder.",
                 Some(self.data_folder.to_string_lossy().to_string()),
             )),
+        }
+    }
+
+    async fn replace_previous_owner(
+        &self, record: &lock::LockRecord, system: &sysinfo::System,
+    ) -> Result<(), CoreError> {
+        if !lock::owner_identity_confirmed(record, system) {
+            return Err(CoreError::new("CORE_ALREADY_RUNNING",
+                "Cannot prove the previous owner's process identity; it will not be stopped.",
+                Some(format!("pid {}", record.pid))));
+        }
+        let token = lock::read_control_token(&self.data_folder).ok_or_else(||
+            CoreError::new("CORE_UNREACHABLE", "Previous core has no readable control token.", None))?;
+        let client = ControlClient::new(record.control_base_url(), token)?;
+        let health = client.health().await?;
+        if health.instance_id != record.instance_id || health.pid != record.pid
+            || health.owner_scope.as_deref() == Some("cli") {
+            return Err(CoreError::new("CORE_PROTOCOL_MISMATCH",
+                "Previous core does not match its app lock; refusing to stop it.", None));
+        }
+        let deadline = Instant::now() + PREVIOUS_APP_RECLAIM_TIMEOUT;
+        let mut shutdown_requested = false;
+        loop {
+            launch::reap_finished();
+            let mut fresh = sysinfo::System::new();
+            fresh.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            match lock::inspect(&self.data_folder, &fresh) {
+                LockState::Free | LockState::Stale(_) => return Ok(()),
+                LockState::Owned(current) if current.instance_id == record.instance_id => {
+                    if !lock::owner_identity_confirmed(&current, &fresh) {
+                        return Err(CoreError::new("CORE_ALREADY_RUNNING", "Previous core identity can no longer be proven.", None));
+                    }
+                    if !shutdown_requested {
+                        match client.call("POST", "/shutdown", Some(serde_json::json!({}))).await {
+                            Ok(_) => shutdown_requested = true,
+                            Err(error) if error.code == "CORE_ALREADY_RUNNING" => {},
+                            Err(error) => return Err(error),
+                        }
+                    }
+                }
+                LockState::Owned(_) | LockState::Corrupt => return Err(CoreError::new(
+                    "CORE_ALREADY_RUNNING", "The app core changed while retiring its previous owner.", None)),
+            }
+            if Instant::now() >= deadline {
+                return Err(CoreError::new("CORE_ALREADY_RUNNING",
+                    "Previous app core still has a live client or did not release its lock.", None));
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    /// Full-off startup still retires an orphaned app core, but never launches one.
+    pub async fn retire_previous_owner_if_any(&self) -> Result<(), CoreError> {
+        let _attachment = self.attachment.lock().await;
+        if self.ever_attached.load(Ordering::SeqCst) { return Ok(()); }
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        match lock::inspect(&self.data_folder, &system) {
+            LockState::Owned(record) if record.owner_scope.as_deref() == Some("app") =>
+                self.replace_previous_owner(&record, &system).await,
+            LockState::Owned(_) => Err(CoreError::new("CORE_ALREADY_RUNNING", "Another scope owns the app folder.", None)),
+            _ => Ok(()),
         }
     }
 
@@ -440,17 +540,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn attaches_to_the_core_that_already_owns_the_folder() {
+    async fn a_new_app_does_not_adopt_an_existing_owner_without_retirement() {
         let core = FakeCore::start().await;
         let dir = tempfile::tempdir().unwrap();
         let supervisor = supervisor(&core, &dir, Some("9.9.9"));
 
-        let attached = supervisor.ensure_attached(false).await.unwrap();
-
-        assert_eq!(attached.instance_id, "instance-a");
-        assert_eq!(attached.generation, 1);
-        assert_eq!(core.registered_clients(), 1);
-        assert!(attached.snapshot.get("cursor").is_some());
+        assert_eq!(supervisor.ensure_attached(false).await.unwrap_err().code, "CORE_NOT_RUNNING");
+        assert_eq!(core.registered_clients(), 0);
     }
 
     #[tokio::test]

@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "parses": false
+  },
+  "input": {
+    "kind": "parse_token_response",
+    "response": {
+      "access_token": "a",
+      "expires_in": 1.5,
+      "refresh_token": "r"
+    }
+  },
+  "name": "token_response_non_integer_lifetime_rejected",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

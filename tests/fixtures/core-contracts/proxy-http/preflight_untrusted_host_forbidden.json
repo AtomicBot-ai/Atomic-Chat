@@ -1,0 +1,52 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "text": "Host 'evil.example' is not in Trusted Hosts. Add this server's address (e.g. its LAN IP or hostname) in Settings → Local API Server → Trusted Hosts, or use '*' to allow all."
+      },
+      "headers": {},
+      "status": 403
+    },
+    "upstream_calls": []
+  },
+  "input": {
+    "request": {
+      "body": null,
+      "headers": [
+        [
+          "Host",
+          "evil.example"
+        ],
+        [
+          "Access-Control-Request-Method",
+          "POST"
+        ]
+      ],
+      "method": "OPTIONS",
+      "path": "/v1/chat/completions"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": []
+  },
+  "name": "preflight_untrusted_host_forbidden",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

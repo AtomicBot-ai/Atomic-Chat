@@ -1,0 +1,38 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "doc body",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "doc body",
+              "type": "document"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_user_unknown_block_with_text_kept",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

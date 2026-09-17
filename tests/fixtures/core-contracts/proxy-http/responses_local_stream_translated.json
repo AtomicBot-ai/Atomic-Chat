@@ -1,0 +1,220 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "sse": [
+          {
+            "data": {
+              "response": {
+                "id": "<resp_id>",
+                "model": "local.model-7b",
+                "object": "response",
+                "output": [],
+                "parallel_tool_calls": true,
+                "status": "in_progress",
+                "tool_choice": "auto",
+                "tools": [],
+                "usage": null
+              },
+              "sequence_number": 0,
+              "type": "response.created"
+            },
+            "event": "response.created"
+          },
+          {
+            "data": {
+              "item": {
+                "content": [],
+                "id": "<msg_id>",
+                "role": "assistant",
+                "status": "in_progress",
+                "type": "message"
+              },
+              "output_index": 0,
+              "sequence_number": 1,
+              "type": "response.output_item.added"
+            },
+            "event": "response.output_item.added"
+          },
+          {
+            "data": {
+              "content_index": 0,
+              "item_id": "<msg_id>",
+              "output_index": 0,
+              "part": {
+                "annotations": [],
+                "text": "",
+                "type": "output_text"
+              },
+              "sequence_number": 2,
+              "type": "response.content_part.added"
+            },
+            "event": "response.content_part.added"
+          },
+          {
+            "data": {
+              "content_index": 0,
+              "delta": "hi",
+              "item_id": "<msg_id>",
+              "output_index": 0,
+              "sequence_number": 3,
+              "type": "response.output_text.delta"
+            },
+            "event": "response.output_text.delta"
+          },
+          {
+            "data": {
+              "content_index": 0,
+              "item_id": "<msg_id>",
+              "output_index": 0,
+              "sequence_number": 4,
+              "text": "hi",
+              "type": "response.output_text.done"
+            },
+            "event": "response.output_text.done"
+          },
+          {
+            "data": {
+              "content_index": 0,
+              "item_id": "<msg_id>",
+              "output_index": 0,
+              "part": {
+                "annotations": [],
+                "text": "hi",
+                "type": "output_text"
+              },
+              "sequence_number": 5,
+              "type": "response.content_part.done"
+            },
+            "event": "response.content_part.done"
+          },
+          {
+            "data": {
+              "item": {
+                "content": [
+                  {
+                    "annotations": [],
+                    "text": "hi",
+                    "type": "output_text"
+                  }
+                ],
+                "id": "<msg_id>",
+                "role": "assistant",
+                "status": "completed",
+                "type": "message"
+              },
+              "output_index": 0,
+              "sequence_number": 6,
+              "type": "response.output_item.done"
+            },
+            "event": "response.output_item.done"
+          },
+          {
+            "data": {
+              "response": {
+                "id": "<resp_id>",
+                "model": "local.model-7b",
+                "object": "response",
+                "output": [
+                  {
+                    "content": [
+                      {
+                        "annotations": [],
+                        "text": "hi",
+                        "type": "output_text"
+                      }
+                    ],
+                    "id": "<msg_id>",
+                    "role": "assistant",
+                    "status": "completed",
+                    "type": "message"
+                  }
+                ],
+                "parallel_tool_calls": true,
+                "status": "completed",
+                "tool_choice": "auto",
+                "tools": [],
+                "usage": null
+              },
+              "sequence_number": 7,
+              "type": "response.completed"
+            },
+            "event": "response.completed"
+          }
+        ]
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "text/event-stream",
+        "vary": "Origin"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b",
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"input\":\"hi\",\"model\":\"local.model-7b\",\"stream\":true}",
+      "headers": [],
+      "method": "POST",
+      "path": "/v1/responses"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/chat/completions",
+        "replies": [
+          {
+            "body": "data: {\"choices\":[{\"delta\":{\"content\":\"hi\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"c\",\"model\":\"local.model-7b\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"c\",\"model\":\"local.model-7b\",\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n",
+            "content_type": "text/event-stream",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "responses_local_stream_translated",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

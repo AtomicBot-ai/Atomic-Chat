@@ -1,0 +1,15 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "err": "callback carried no state"
+  },
+  "input": {
+    "kind": "parse_callback_query",
+    "query": "code=abc&state="
+  },
+  "name": "callback_empty_state",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

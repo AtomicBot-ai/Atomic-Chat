@@ -1,0 +1,88 @@
+{
+  "comparator": "sse-sequence",
+  "expected": [
+    {
+      "data": {
+        "message": {
+          "content": [],
+          "id": "c5",
+          "model": "m",
+          "role": "assistant",
+          "stop_reason": null,
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          }
+        },
+        "type": "message_start"
+      },
+      "event": "message_start"
+    },
+    {
+      "data": {
+        "content_block": {
+          "text": "",
+          "type": "text"
+        },
+        "index": 0,
+        "type": "content_block_start"
+      },
+      "event": "content_block_start"
+    },
+    {
+      "data": {
+        "delta": {
+          "text": "x",
+          "type": "text_delta"
+        },
+        "index": 0,
+        "type": "content_block_delta"
+      },
+      "event": "content_block_delta"
+    },
+    {
+      "data": {
+        "index": 0,
+        "type": "content_block_stop"
+      },
+      "event": "content_block_stop"
+    },
+    {
+      "data": {
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "type": "message_delta",
+        "usage": {
+          "output_tokens": 1
+        }
+      },
+      "event": "message_delta"
+    },
+    {
+      "data": {
+        "type": "message_stop"
+      },
+      "event": "message_stop"
+    }
+  ],
+  "input": {
+    "chunks": [
+      ": keep-alive\n\n",
+      "data: not json\n\n",
+      "data: {\"id\":\"c5\",\"choices\":[]}\n\n",
+      "event: ping\ndata: {\"id\":\"c5\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"x\"},\"finish_reason\":null}]}\n\n",
+      "data: [DONE]\n\n"
+    ],
+    "kind": "stream"
+  },
+  "name": "stream_ignores_comments_invalid_json_and_chunks_without_delta",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

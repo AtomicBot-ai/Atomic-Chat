@@ -1,0 +1,33 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_minimal_string_content",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

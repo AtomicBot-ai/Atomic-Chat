@@ -1,0 +1,107 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "message": {
+                "content": "hi",
+                "role": "assistant"
+              }
+            }
+          ],
+          "created": 1,
+          "id": "chatcmpl-1",
+          "model": "local.model-7b",
+          "object": "chat.completion",
+          "usage": {
+            "completion_tokens": 1,
+            "prompt_tokens": 3,
+            "total_tokens": 4
+          }
+        }
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "application/json",
+        "vary": "Origin"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b"
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json",
+          "x-client-trace": "t-1"
+        },
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}],\"model\":\"local.model-7b\"}",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer client-key-is-not-forwarded"
+        ],
+        [
+          "X-Client-Trace",
+          "t-1"
+        ]
+      ],
+      "method": "POST",
+      "path": "/v1/chat/completions"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/chat/completions",
+        "replies": [
+          {
+            "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"hi\",\"role\":\"assistant\"}}],\"created\":1,\"id\":\"chatcmpl-1\",\"model\":\"local.model-7b\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":1,\"prompt_tokens\":3,\"total_tokens\":4}}",
+            "content_type": "application/json",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "chat_local_non_stream_forwards_with_session_key",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

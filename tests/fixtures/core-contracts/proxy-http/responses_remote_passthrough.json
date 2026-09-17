@@ -1,0 +1,77 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "id": "resp_remote",
+          "object": "response",
+          "output": []
+        }
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "x-upstream-trace": "stub"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "input": "hi",
+          "model": "cloud-model"
+        },
+        "headers": {
+          "authorization": "Bearer sk-remote",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/responses"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"input\":\"hi\",\"model\":\"cloud-model\"}",
+      "headers": [],
+      "method": "POST",
+      "path": "/v1/responses"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/responses",
+        "replies": [
+          {
+            "body": "{\"id\":\"resp_remote\",\"object\":\"response\",\"output\":[]}",
+            "content_type": "application/json",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "responses_remote_passthrough",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::core::state::{AppState, ProviderConfig};
 
@@ -22,10 +22,17 @@ pub struct RegisterProviderRequest {
 
 /// Register a remote provider configuration
 #[tauri::command]
-pub async fn register_provider_config(
+pub async fn register_provider_config<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     request: RegisterProviderRequest,
 ) -> Result<(), String> {
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    let _gate = if let Some(owner) = owner.as_ref() { Some(owner.owner_gate().await) } else { None };
+    // The core learns every registration while attached, so taking over the server later loses
+    // no cloud model; while it owns the server this is the registration that counts.
+    crate::core::atomic_core::cloud::mirror_provider(&app, &request).await?;
+
     let provider_configs = state.provider_configs.clone();
     let mut configs = provider_configs.lock().await;
 
@@ -52,10 +59,15 @@ pub async fn register_provider_config(
 
 /// Unregister a provider configuration
 #[tauri::command]
-pub async fn unregister_provider_config(
+pub async fn unregister_provider_config<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     provider: String,
 ) -> Result<(), String> {
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    let _gate = if let Some(owner) = owner.as_ref() { Some(owner.owner_gate().await) } else { None };
+    crate::core::atomic_core::cloud::unmirror_provider(&app, &provider).await?;
+
     let provider_configs = state.provider_configs.clone();
     let mut configs = provider_configs.lock().await;
 

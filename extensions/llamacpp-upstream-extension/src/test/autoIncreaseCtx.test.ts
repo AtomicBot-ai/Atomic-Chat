@@ -184,6 +184,34 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
     )
   })
 
+  it('asks the core to restart a poisoned engine it owns instead of reloading it here', async () => {
+    const unloadSpy = vi.spyOn(ext, 'unload')
+    const loadSpy = vi.spyOn(ext, 'load')
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === 'atomic_core_status')
+        return { active_runtime: 'llamacpp-upstream', transitioning: false }
+      if (command === 'atomic_core_call')
+        return (args as { path: string }).path.endsWith('/recreate') ? { ok: true } : undefined
+      return undefined
+    })
+
+    await invokeHandler({
+      request_id: 'req-compute',
+      backend: 'llamacpp-upstream',
+      model_id: 'm',
+      trigger: 'compute_error_recovery',
+    } as unknown as AutoIncreaseRequest)
+
+    expect(unloadSpy).not.toHaveBeenCalled()
+    expect(loadSpy).not.toHaveBeenCalled()
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('atomic_core_call', {
+      method: 'POST',
+      path: '/models/llamacpp-upstream/m/recreate',
+      body: null,
+    })
+    expect(emitMock).toHaveBeenCalledWith('local_backend://auto_increase_ctx_done/req-compute', { ok: true })
+  })
+
   it('grows 8192 → 32768 and emits done(ok:true) with new_ctx_len', async () => {
     const unloadSpy = vi
       .spyOn(ext, 'unload')

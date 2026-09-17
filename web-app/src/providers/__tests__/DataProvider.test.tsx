@@ -1,6 +1,6 @@
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DataProvider } from '../DataProvider'
+import { DataProvider, applyAtomicCoreServerState } from '../DataProvider'
 import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   setProviders: vi.fn(),
   clearDeletedModel: vi.fn(),
   setServerStatus: vi.fn(),
+  setServerPort: vi.fn(),
   setServers: vi.fn(),
   setSettings: vi.fn(),
   setThreads: vi.fn(),
@@ -107,7 +108,7 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
       corsEnabled: false,
       verboseLogs: false,
       proxyTimeout: 120,
-      setServerPort: vi.fn(),
+      setServerPort: mocks.setServerPort,
     }),
   },
 }))
@@ -242,6 +243,25 @@ describe('DataProvider', () => {
       expect(getServerStatus).toHaveBeenCalledOnce()
       expect(getActiveModels).toHaveBeenCalledOnce()
     })
+    unmount()
+  })
+
+  it('uses the confirmed fallback port and listener state from the core', async () => {
+    applyAtomicCoreServerState({ running: true, port: 6768 })
+    expect(mocks.setServerPort).toHaveBeenCalledWith(6768)
+    expect(mocks.setServerStatus).toHaveBeenCalledWith('running')
+    applyAtomicCoreServerState({ running: false, port: null })
+    expect(mocks.setServerStatus).toHaveBeenCalledWith('stopped')
+  })
+
+  it('reconciles the real port when opening a window onto an existing listener', async () => {
+    getServerStatus.mockResolvedValue(true)
+    const startServer = vi.fn().mockResolvedValue(6768)
+    const previous = window.core?.api?.startServer
+    if (window.core?.api) window.core.api.startServer = startServer
+    const { unmount } = render(<DataProvider />)
+    await waitFor(() => expect(mocks.setServerPort).toHaveBeenCalledWith(6768))
+    if (window.core?.api) window.core.api.startServer = previous
     unmount()
   })
 

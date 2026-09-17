@@ -1,0 +1,26 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "rewritten": {
+      "stream": true,
+      "stream_options": {
+        "include_usage": true,
+        "other": 1
+      }
+    }
+  },
+  "input": {
+    "body": {
+      "stream": true,
+      "stream_options": {
+        "other": 1
+      }
+    },
+    "kind": "maybe_inject_stream_usage"
+  },
+  "name": "inject_usage_into_existing_options",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

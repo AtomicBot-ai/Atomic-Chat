@@ -1,0 +1,36 @@
+{
+  "comparator": "sse-sequence",
+  "expected": [
+    {
+      "data": {
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "type": "message_delta",
+        "usage": {
+          "output_tokens": 0
+        }
+      },
+      "event": "message_delta"
+    },
+    {
+      "data": {
+        "type": "message_stop"
+      },
+      "event": "message_stop"
+    }
+  ],
+  "input": {
+    "chunks": [
+      "data: [DONE]\n\n"
+    ],
+    "kind": "stream"
+  },
+  "name": "stream_done_only",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

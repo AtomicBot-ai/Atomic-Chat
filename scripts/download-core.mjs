@@ -1,7 +1,7 @@
 // Fetch the compiled `atomic-chat-core` binary this app version is pinned to.
 //
 // The core is built and released from its own repository (`atomic-chat-core`), which publishes one
-// binary per target plus a `SHA256SUMS` file. This script downloads what the current platform
+// CLI and app binaries per target plus a `SHA256SUMS` file. This script downloads what the current platform
 // needs, verifies it against that file, and leaves it at
 // `src-tauri/resources/bin/atomic-chat-core[.exe]`, where `make build-cli` copies it to `jan-cli`
 // and signs it. On macOS both architectures are fetched and `lipo`'d into one universal binary, so
@@ -9,7 +9,7 @@
 //
 //   node scripts/download-core.mjs                 # the version pinned in package.json
 //   node scripts/download-core.mjs --version 0.2.0 # an explicit one
-//   ATOMIC_CORE_LOCAL=/path/to/binary node scripts/download-core.mjs   # use a local build instead
+//   ATOMIC_CORE_LOCAL=/path/to/cli ATOMIC_APP_CORE_LOCAL=/path/to/app-core node scripts/download-core.mjs
 //
 // `SKIP_BINARIES=1` skips it, matching `download-bin.mjs`.
 import { createHash } from 'node:crypto'
@@ -37,7 +37,15 @@ function targetsFor(platform, arch) {
   throw new Error(`Unsupported platform: ${platform}`)
 }
 
-const outputName = () => (process.platform === 'win32' ? 'atomic-chat-core.exe' : 'atomic-chat-core')
+const names = ['atomic-chat-core', 'atomic-chat-app-core']
+const outputName = (name) => (process.platform === 'win32' ? `${name}.exe` : name)
+
+function verifyBinaryVersion(binary) {
+  if (!VERSION) throw new Error('No pinned core version in package.json')
+  const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 15_000 })
+  if (result.error || result.status !== 0 || result.stdout.trim() !== VERSION)
+    throw new Error(`Bundled core version mismatch: expected ${VERSION}, got ${result.stdout?.trim() || result.error?.message || result.stderr?.trim() || 'no answer'}`)
+}
 
 async function download(url, dest) {
   console.log(`Downloading ${url}`)
@@ -64,20 +72,28 @@ function lipo(inputs, output) {
 }
 
 async function main() {
+  if (process.argv.includes('--verify-only')) {
+    for (const name of names) verifyBinaryVersion(path.join(BIN_DIR, outputName(name)))
+    return
+  }
   if (process.env.SKIP_BINARIES) {
     console.log('Skipping atomic-chat-core download.')
     return
   }
   mkdirSync(BIN_DIR, { recursive: true })
-  const output = path.join(BIN_DIR, outputName())
-
-  // A local build wins, so the app can be run against an unreleased core during development.
-  const local = process.env.ATOMIC_CORE_LOCAL
-  if (local) {
-    if (!existsSync(local)) throw new Error(`ATOMIC_CORE_LOCAL points at ${local}, which does not exist`)
-    copyFileSync(local, output)
-    if (process.platform !== 'win32') chmodSync(output, 0o755)
-    console.log(`Using local core build: ${local} -> ${output}`)
+  // Both binaries are one compatible pair: a local override must supply both.
+  const locals = [process.env.ATOMIC_CORE_LOCAL, process.env.ATOMIC_APP_CORE_LOCAL]
+  if (locals.some(Boolean)) {
+    if (locals.some((path) => !path)) throw new Error('Set ATOMIC_CORE_LOCAL and ATOMIC_APP_CORE_LOCAL together')
+    for (const [index, name] of names.entries()) {
+      const local = locals[index]
+      const output = path.join(BIN_DIR, outputName(name))
+      if (!existsSync(local)) throw new Error(`Local core binary does not exist: ${local}`)
+      copyFileSync(local, output)
+      if (process.platform !== 'win32') chmodSync(output, 0o755)
+      verifyBinaryVersion(output)
+      console.log(`Using local core build: ${local} -> ${output}`)
+    }
     return
   }
 
@@ -90,33 +106,36 @@ async function main() {
   if (!existsSync(sumsPath)) await download(`${BASE}/SHA256SUMS`, sumsPath)
   const checksums = parseChecksums(readFileSync(sumsPath, 'utf8'))
 
-  const downloaded = []
-  for (const triple of targetsFor(process.platform, os.arch())) {
-    const asset = `atomic-chat-core-${VERSION}-${triple}`
-    const cached = path.join(CACHE_DIR, asset)
-    if (!existsSync(cached)) await download(`${BASE}/${asset}`, cached)
+  for (const name of names) {
+    const output = path.join(BIN_DIR, outputName(name))
+    const downloaded = []
+    for (const triple of targetsFor(process.platform, os.arch())) {
+      const asset = `${name}-${VERSION}-${triple}`
+      const cached = path.join(CACHE_DIR, asset)
+      if (!existsSync(cached)) await download(`${BASE}/${asset}`, cached)
 
-    const expected = checksums.get(asset)
-    if (!expected) throw new Error(`${asset} is not listed in SHA256SUMS — refusing to ship it`)
-    const actual = sha256(cached)
-    if (actual !== expected) {
-      throw new Error(`${asset} failed its checksum:\n  expected ${expected}\n  actual   ${actual}`)
+      const expected = checksums.get(asset)
+      if (!expected) throw new Error(`${asset} is not listed in SHA256SUMS — refusing to ship it`)
+      const actual = sha256(cached)
+      if (actual !== expected) {
+        throw new Error(`${asset} failed its checksum:\n  expected ${expected}\n  actual   ${actual}`)
+      }
+      console.log(`Verified ${asset}`)
+      downloaded.push(cached)
     }
-    console.log(`Verified ${asset}`)
-    downloaded.push(cached)
+    if (process.platform === 'darwin' && downloaded.length > 1) {
+      lipo(downloaded, output)
+      console.log(`Built a universal binary at ${output}`)
+    } else {
+      copyFileSync(downloaded[0], output)
+    }
+    if (process.platform !== 'win32') chmodSync(output, 0o755)
+    verifyBinaryVersion(output)
   }
-
-  if (process.platform === 'darwin' && downloaded.length > 1) {
-    lipo(downloaded, output)
-    console.log(`Built a universal binary at ${output}`)
-  } else {
-    copyFileSync(downloaded[0], output)
-  }
-  if (process.platform !== 'win32') chmodSync(output, 0o755)
 
   // Record what is on disk so `make build-cli` and a developer can tell at a glance.
   writeFileSync(path.join(BIN_DIR, 'atomic-chat-core-version.txt'), `${VERSION}\n`)
-  console.log(`atomic-chat-core ${VERSION} ready at ${output}`)
+  console.log(`atomic-chat-core ${VERSION} binary pair ready in ${BIN_DIR}`)
 }
 
 main().catch((e) => {

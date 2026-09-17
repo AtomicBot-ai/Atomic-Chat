@@ -5718,6 +5718,17 @@ export default class llamacpp_upstream_extension extends AIEngine {
       // Reload the model with its existing settings to drop the broken ggml
       // backend and spin up a fresh one — do NOT grow the context window (that
       // would only make an OOM worse), and do not emit the ctx-grow UI notify.
+      if (trigger === COMPUTE_ERROR_RECOVERY_TRIGGER && (await this.coreOwnsRuntime())) {
+        // The core owns the process: unloading and reloading it from here would take a model this
+        // extension does not own. Ask the owner to restart it at the same context instead.
+        const outcome = await coreRuntime.recreateSession(model_id)
+        await sendDone(outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason })
+        logger.info(
+          `compute_error_recovery (core): recreate model=${model_id} ok=${outcome.ok}`
+        )
+        return
+      }
+
       if (trigger === COMPUTE_ERROR_RECOVERY_TRIGGER) {
         logger.info(
           `compute_error_recovery (llamacpp-upstream): recreating backend for model=${model_id}`

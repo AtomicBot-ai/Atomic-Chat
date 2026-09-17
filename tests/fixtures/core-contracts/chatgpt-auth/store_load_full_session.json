@@ -1,0 +1,24 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "tokens": {
+      "access_token": "access-abc",
+      "account_id": "acct_1",
+      "email": "user@example.test",
+      "expires_at": 1750003600,
+      "id_token": "id.token.value",
+      "plan_type": "plus",
+      "refresh_token": "refresh-xyz",
+      "version": 1
+    }
+  },
+  "input": {
+    "file": "{\n  \"version\": 1,\n  \"access_token\": \"access-abc\",\n  \"refresh_token\": \"refresh-xyz\",\n  \"id_token\": \"id.token.value\",\n  \"account_id\": \"acct_1\",\n  \"plan_type\": \"plus\",\n  \"email\": \"user@example.test\",\n  \"expires_at\": 1750003600\n}",
+    "kind": "load"
+  },
+  "name": "store_load_full_session",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/store.rs"
+  }
+}

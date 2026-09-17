@@ -1,10 +1,7 @@
 //! Starting a core process when no one owns the data folder yet.
 //!
-//! The core is not a child of the app in any meaningful sense. It is spawned
-//! detached — its own session on Unix, `DETACHED_PROCESS` on Windows — because
-//! a model the user loaded has to survive the app quitting, and because the app
-//! may equally well attach to a core the CLI started. We spawn it and then let
-//! go of it.
+//! The app-owned core is spawned detached to survive a window closing into the
+//! tray; full app exit instead explicitly shuts it down.
 //!
 //! Readiness is read from the lock file, not from the child's stdout. Two
 //! starters can race for one data folder; the one that loses the lock exits,
@@ -31,7 +28,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 pub const CORE_COMMAND_ENV: &str = "ATOMIC_CORE_CMD";
 
 /// The bundled core, under the app's resource directory.
-pub const BUNDLED_CORE_RELATIVE: &str = "resources/bin/atomic-chat-core";
+pub const BUNDLED_CORE_RELATIVE: &str = "resources/bin/atomic-chat-app-core";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreCommand {

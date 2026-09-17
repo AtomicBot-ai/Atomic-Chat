@@ -1,0 +1,75 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "data": [
+            {
+              "created": 1,
+              "id": "cloud-model",
+              "object": "model",
+              "owned_by": "remote"
+            },
+            {
+              "created": 1,
+              "id": "embed-model",
+              "object": "model",
+              "owned_by": "llama.cpp-upstream"
+            },
+            {
+              "created": 1,
+              "id": "local.model-7b",
+              "object": "model",
+              "owned_by": "llama.cpp-upstream"
+            }
+          ],
+          "object": "list"
+        }
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "application/json",
+        "vary": "Origin"
+      },
+      "status": 200
+    },
+    "upstream_calls": []
+  },
+  "input": {
+    "request": {
+      "body": null,
+      "headers": [
+        [
+          "Authorization",
+          "Bearer secret"
+        ]
+      ],
+      "method": "GET",
+      "path": "/v1/models"
+    },
+    "setup": {
+      "api_key": "secret",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": []
+  },
+  "name": "auth_bearer_accepted",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

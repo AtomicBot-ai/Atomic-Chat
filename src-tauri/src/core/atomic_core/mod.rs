@@ -20,8 +20,11 @@
 //! Nothing here runs unless the app's `atomic_core` flags ask for it; with them
 //! off (the default) no core is started and no behaviour changes.
 
+pub mod api_requests;
 pub mod client;
+pub mod cloud;
 pub mod commands;
+pub mod external;
 pub mod launch;
 #[cfg(test)]
 mod live_tests;

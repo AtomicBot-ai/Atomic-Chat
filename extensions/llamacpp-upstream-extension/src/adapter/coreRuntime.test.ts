@@ -16,6 +16,7 @@ import {
   getLoadedModels,
   importSettings,
   increaseContext,
+  recreateSession,
   isCoreError,
   getOptimalCache,
   getOptimalSnapshot,
@@ -411,5 +412,16 @@ describe('embeddings', () => {
     invoke.mockResolvedValue({ object: 'list', data: [] })
     await embed(['first', 'second'], 64)
     expect(lastCall()[1]).toMatchObject({ method: 'POST', path: '/models/llamacpp-upstream/sentence-transformer-mini/embed', body: { input: ['first', 'second'], ubatch_size: 64 } })
+  })
+})
+
+describe('recreateSession', () => {
+  it('asks the core to restart the model at its current context', async () => {
+    invoke.mockResolvedValue({ ok: true })
+
+    const result = await recreateSession('m')
+
+    expect(lastCall()[1]).toMatchObject({ method: 'POST', path: '/models/llamacpp-upstream/m/recreate' })
+    expect(result).toEqual({ ok: true })
   })
 })

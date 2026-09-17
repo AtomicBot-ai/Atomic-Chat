@@ -696,11 +696,8 @@ pub fn run() {
                     }
                 }
 
-                // Leave the core's client registry cleanly. Not a shutdown: the
-                // core and the models it loaded go on running, so a model the
-                // CLI is using survives the app closing. Waiting for it is one
-                // loopback request, and skipping it would leave the core
-                // counting a client that is gone until the registration expires.
+                // Full exit stops only this app's isolated core and its models;
+                // hiding the window in the tray does not reach RunEvent::Exit.
                 #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 {
                     let handle = app_handle.clone();

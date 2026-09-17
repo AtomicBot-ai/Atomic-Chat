@@ -1,0 +1,57 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "look",
+              "type": "text"
+            },
+            {
+              "image_url": {
+                "url": "data:image/png;base64,AAAA"
+              },
+              "type": "image_url"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "look",
+              "type": "text"
+            },
+            {
+              "source": {
+                "data": "AAAA",
+                "media_type": "image/png",
+                "type": "base64"
+              },
+              "type": "image"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_user_text_and_image_become_parts",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

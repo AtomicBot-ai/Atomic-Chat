@@ -1,0 +1,44 @@
+{
+  "cases": [
+    "upstream_request_simple_chat",
+    "upstream_request_without_account",
+    "upstream_request_with_tools_and_reasoning",
+    "model_full_entry",
+    "model_minimal_entry",
+    "model_empty_display_name_falls_back_to_slug",
+    "model_hidden_visibility_not_listed",
+    "model_boolean_context_window_ignored",
+    "model_negative_context_window_ignored",
+    "model_text_only_modalities",
+    "model_reasoning_levels_without_effort_skipped",
+    "model_missing_slug_dropped",
+    "model_empty_slug_dropped",
+    "model_non_string_slug_dropped",
+    "model_slug_at_length_limit_kept",
+    "model_slug_over_length_limit_dropped",
+    "subscription_provider_chatgpt",
+    "subscription_provider_other",
+    "subscription_provider_none"
+  ],
+  "comparator_notes": {
+    "behaviour_not_captured": "respond(): one forced token refresh on an upstream 401 then retry; no session → 401 with the auth error text; transport failure → 502 `ChatGPT subscription request failed: <error>`; non-2xx → the upstream status and body verbatim; stream=false → the stream is aggregated into one chat.completion (converter error → 502 with its message); stream=true → `data: <chunk>` frames, then the converter's finish chunks and `data: [DONE]` whatever ended the stream; session_id is a fresh UUID per request and doubles as prompt_cache_key; x-client-request-id is a fresh simple UUID. list_models(): GET <base>/models?client_version=…, one forced refresh on 401, non-2xx → `Could not list ChatGPT models (<status>): <body>`, first occurrence of a slug wins.",
+    "constants": {
+      "base_url": "https://chatgpt.com/backend-api/codex",
+      "client_version": "0.156.0",
+      "originator": "atomic_chat",
+      "provider": "chatgpt",
+      "request_timeout_secs": 600,
+      "user_agent": "atomic-chat/1"
+    },
+    "json-exact": "Call the function named by input.kind and compare with expected as a JSON tree.",
+    "normalize_model": "expected.model is the normalised picker entry, or null when the item is dropped.",
+    "upstream_request": "input.chat_body goes through chat_request_to_responses(body, session_id) and the result is the request body; expected.headers are every header reqwest would send before connection-level ones (sorted by name), expected.url is the exact URL."
+  },
+  "comparators": [
+    "json-exact"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/chatgpt_route.rs"
+  }
+}

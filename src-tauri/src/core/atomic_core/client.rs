@@ -77,6 +77,8 @@ impl std::error::Error for CoreError {}
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Health {
     pub ok: bool,
+    #[serde(default)]
+    pub owner_scope: Option<String>,
     pub pid: u32,
     pub version: String,
     pub instance_id: String,
@@ -148,6 +150,13 @@ impl ControlClient {
     /// and the running owner disagree about behaviour the wire cannot express.
     pub async fn handshake(&self, expected_version: Option<&str>) -> Result<Health, CoreError> {
         let health = self.health().await?;
+        if expected_version.is_some() && health.owner_scope.as_deref() != Some("app") {
+            return Err(CoreError::new(
+                "CORE_PROTOCOL_MISMATCH",
+                "This core does not belong to the Atomic Chat application.",
+                Some(format!("scope {:?} at {}", health.owner_scope, self.base_url)),
+            ));
+        }
         if health.protocol != CONTROL_PROTOCOL_VERSION {
             return Err(CoreError::new(
                 "CORE_PROTOCOL_MISMATCH",

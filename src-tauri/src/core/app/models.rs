@@ -45,13 +45,20 @@ pub enum CoreRuntimeOwner {
 #[serde(rename_all = "snake_case")]
 pub enum CoreServerOwner {
     Core,
+    /// The explicit rollback: the app's own proxy serves, as with no flag at all.
+    Legacy,
 }
 
 impl AtomicCoreFlags {
     /// A core is needed as soon as anything is delegated to it — delegating a
     /// runtime without the transport would silently do nothing.
+    /// Whether the core serves the public API. `legacy` and no flag both mean the app does.
+    pub fn core_serves(&self) -> bool {
+        self.server == Some(CoreServerOwner::Core)
+    }
+
     pub fn needs_core(&self) -> bool {
-        self.attach || self.runtime.is_some() || self.server.is_some()
+        self.attach || self.runtime.is_some() || self.core_serves()
     }
 }
 
@@ -167,5 +174,15 @@ mod tests {
             serde_json::from_str::<AtomicCoreFlags>(&json).unwrap(),
             flags
         );
+    }
+
+    #[test]
+    fn the_legacy_server_flag_is_the_rollback_and_needs_no_core() {
+        let flags: AtomicCoreFlags = serde_json::from_str(r#"{"server":"legacy"}"#).unwrap();
+
+        assert_eq!(flags.server, Some(CoreServerOwner::Legacy));
+        assert!(!flags.core_serves());
+        assert!(!flags.needs_core());
+        assert!(AtomicCoreFlags { server: Some(CoreServerOwner::Core), ..flags }.core_serves());
     }
 }

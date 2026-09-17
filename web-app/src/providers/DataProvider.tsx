@@ -58,6 +58,15 @@ import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 import { ModelFactory } from '@/lib/model-factory'
 
+export function applyAtomicCoreServerState(payload: { running: boolean; port: number | null }) {
+  if (payload.running && typeof payload.port === 'number' && payload.port > 0) {
+    useLocalApiServer.getState().setServerPort(payload.port)
+    useAppState.getState().setServerStatus('running')
+  } else if (!payload.running) {
+    useAppState.getState().setServerStatus('stopped')
+  }
+}
+
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
     await registerRemoteProvider(provider)
@@ -689,6 +698,7 @@ export function DataProvider() {
 
     let unlistenSessionDied: (() => void) | undefined
     let unlistenCoreSessionEvents: Array<() => void> = []
+    let coreServerWasRunning = false
     let cancelled = false
     ;(async () => {
       try {
@@ -758,7 +768,18 @@ export function DataProvider() {
           listen('atomic-core://session:died', invalidateCoreSession),
           listen('atomic-core://detached', () => {
             ModelFactory.invalidateLocalSessionCache('llamacpp-upstream')
+            if (coreServerWasRunning) {
+              useAppState.getState().setServerStatus('stopped')
+              coreServerWasRunning = false
+            }
           }),
+          listen<{ running: boolean; owner: string; port: number | null; generation: number | null }>(
+            'atomic-core://server-state-changed',
+            (event) => {
+              coreServerWasRunning = event.payload.owner === 'core' && event.payload.running
+              applyAtomicCoreServerState(event.payload)
+            }
+          ),
         ])
         const safeCoreUnsubs = coreUnsubs.map(createSafeUnlisten)
         if (cancelled) {
@@ -789,22 +810,34 @@ export function DataProvider() {
     const autoStartServer = async () => {
       try {
         const { enableOnStartup } = useLocalApiServer.getState()
-        if (!enableOnStartup) {
-          console.log(
-            '[LocalAPI:startup] Local API server auto-start disabled in settings; skipping auto-start'
-          )
-          return
-        }
-
         const isRunning = await serviceHub.app().getServerStatus()
         if (isRunning) {
           console.log('[LocalAPI:startup] Server already running')
+          // `startServer` is idempotent for an existing listener and returns
+          // the port it actually bound, including a fallback port.
+          const current = useLocalApiServer.getState()
+          const actualPort = await window.core?.api?.startServer({
+            host: current.serverHost,
+            port: current.serverPort,
+            prefix: current.apiPrefix,
+            apiKey: current.apiKey,
+            trustedHosts: current.trustedHosts,
+            isCorsEnabled: current.corsEnabled,
+            isVerboseEnabled: current.verboseLogs,
+            proxyTimeout: current.proxyTimeout,
+          })
+          if (actualPort && actualPort !== current.serverPort) current.setServerPort(actualPort)
           setServerStatus('running')
           // `activeModels` is in-memory only; without this the provider UI
           // would render "Start" for the cloud model the proxy is already
           // routing, until the user manually re-selects it. See issue where
           // navigating between tabs appears to "forget" the running model.
           await hydrateActiveModelsForRunningServer(serviceHub.models())
+          return
+        }
+
+        if (!enableOnStartup) {
+          console.log('[LocalAPI:startup] Local API server auto-start disabled in settings')
           return
         }
 

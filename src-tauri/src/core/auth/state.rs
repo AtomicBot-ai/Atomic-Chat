@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{oneshot, Mutex};
 
 use crate::core::auth::chatgpt;
@@ -27,7 +27,7 @@ pub fn now_unix() -> i64 {
 }
 
 /// What the frontend is allowed to know. Deliberately carries no token.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatGptStatus {
     pub connected: bool,
     pub email: Option<String>,
@@ -161,6 +161,16 @@ impl ChatGptAuthState {
             }
         }
         rx
+    }
+
+    /// Forget what is in memory so the next use reads the file again. Used when the
+    /// app takes the session back from the core, which may have refreshed (and so
+    /// rotated) the tokens meanwhile: refreshing with the old in-memory refresh
+    /// token would be refused and sign the user out.
+    pub async fn invalidate(&self) {
+        let mut slot = self.slot.lock().await;
+        slot.hydrated = false;
+        slot.tokens = None;
     }
 
     pub fn cancel_login(&self) {

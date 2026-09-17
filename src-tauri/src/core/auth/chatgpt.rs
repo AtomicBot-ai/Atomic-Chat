@@ -443,3 +443,7 @@ pub async fn refresh_tokens(refresh_token: &str, now_unix: i64) -> Result<Stored
     .await?;
     to_stored(response, now_unix, Some(refresh_token))
 }
+
+#[cfg(test)]
+#[path = "chatgpt_fixture_dump.rs"]
+mod fixture_dump;

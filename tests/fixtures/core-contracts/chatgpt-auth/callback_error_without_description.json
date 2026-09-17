@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "ok": {
+      "description": null,
+      "error": "invalid_request",
+      "kind": "error"
+    }
+  },
+  "input": {
+    "kind": "parse_callback_query",
+    "query": "error=invalid_request"
+  },
+  "name": "callback_error_without_description",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

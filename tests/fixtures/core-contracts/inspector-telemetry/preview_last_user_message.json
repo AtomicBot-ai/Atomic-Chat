@@ -1,0 +1,37 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chars": 6,
+    "has_non_text_parts": false,
+    "message_count": 4,
+    "text": "second"
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": "s",
+          "role": "system"
+        },
+        {
+          "content": "first",
+          "role": "user"
+        },
+        {
+          "content": "a",
+          "role": "assistant"
+        },
+        {
+          "content": "second",
+          "role": "user"
+        }
+      ]
+    },
+    "kind": "prompt_preview"
+  },
+  "name": "preview_last_user_message",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

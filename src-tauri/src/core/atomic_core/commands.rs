@@ -10,7 +10,7 @@
 //! `settings.json`, so they can be read (and turned off) before the data folder
 //! is opened.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
@@ -38,6 +38,10 @@ pub struct AtomicCoreClient {
     /// The extension reads this through `atomic_core_status` and refuses to start a legacy/core
     /// operation across the handover boundary.
     transitioning: AtomicBool,
+    /// A failed compensating handover leaves the persisted owner untrustworthy.
+    reconciliation_required: AtomicBool,
+    server_running_intent: AtomicBool,
+    last_server_recovery: AtomicU64,
     /// Serialises settings writes and lifecycle transitions.
     transition: tokio::sync::Mutex<()>,
     /// Calls hold a read permit; disabling first closes the atomic gate, then
@@ -61,6 +65,44 @@ impl Drop for TransitionMarker<'_> {
 }
 
 impl AtomicCoreClient {
+    #[cfg(test)]
+    pub(super) fn for_live_test(supervisor: Arc<Supervisor>) -> Self {
+        Self {
+            supervisor,
+            sessions: Arc::new(CoreSessions::new()),
+            enabled: AtomicBool::new(false),
+            transitioning: AtomicBool::new(false),
+            reconciliation_required: AtomicBool::new(false),
+            server_running_intent: AtomicBool::new(false),
+            last_server_recovery: AtomicU64::new(0),
+            transition: tokio::sync::Mutex::new(()),
+            operations: tokio::sync::RwLock::new(()),
+            background: Mutex::new(None),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) async fn stop_for_live_test(&self) {
+        self.stop().await;
+    }
+
+    pub(crate) async fn owner_gate(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.transition.lock().await
+    }
+
+    /// A legacy extension holds the plugin gate while it may make a core call.
+    /// Taking the operations writer first would deadlock that in-flight call.
+    async fn lock_ownership<'a>(
+        &'a self,
+        plugin_gate: &'a tokio::sync::RwLock<()>,
+    ) -> (
+        tokio::sync::RwLockWriteGuard<'a, ()>,
+        tokio::sync::RwLockWriteGuard<'a, ()>,
+    ) {
+        let ownership = plugin_gate.write().await;
+        let operations = self.operations.write().await;
+        (ownership, operations)
+    }
     fn mark_transitioning(&self) -> TransitionMarker<'_> {
         self.transitioning.store(true, Ordering::SeqCst);
         TransitionMarker(&self.transitioning)
@@ -74,6 +116,34 @@ impl AtomicCoreClient {
     /// "where is this model served?" when the core owns the runtime.
     pub fn sessions(&self) -> Arc<CoreSessions> {
         Arc::clone(&self.sessions)
+    }
+
+    /// Whether the app is attached to a core at all (the transport flag is on).
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn ensure_reconciled(&self) -> Result<(), String> {
+        if self.reconciliation_required.load(Ordering::SeqCst) {
+            Err("The Local API Server owner is uncertain after a failed rollback; restart Atomic Chat to reconcile it.".into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn set_server_running_intent(&self, running: bool) {
+        self.server_running_intent.store(running, Ordering::SeqCst);
+    }
+
+    fn claim_server_recovery(&self, generation: u64) -> bool {
+        let mut observed = self.last_server_recovery.load(Ordering::SeqCst);
+        loop {
+            if generation <= observed { return false; }
+            match self.last_server_recovery.compare_exchange(observed, generation, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return true,
+                Err(current) => observed = current,
+            }
+        }
     }
 
     fn is_running(&self) -> bool {
@@ -106,25 +176,37 @@ impl AtomicCoreClient {
             app: app.clone(),
             sessions: Arc::clone(&self.sessions),
         });
-        let handle = tokio::spawn(relay::run(Arc::clone(&self.supervisor), sink, cancel_rx));
+        let relay = relay::run(Arc::clone(&self.supervisor), sink, cancel_rx);
+        let external = super::external::run(app.clone());
+        // One lifecycle: when the relay is cancelled or ends, publishing the app's own engines to
+        // this attachment ends with it, and the core expires the registration.
+        let handle = tokio::spawn(async move {
+            tokio::select! {
+                _ = relay => {}
+                _ = external => {}
+            }
+        });
         *background = Some(BackgroundTask {
             cancel: cancel_tx,
             handle,
         });
     }
 
-    /// Stop relaying and detach. The core keeps running with its models — this
-    /// is the app stepping back, not a shutdown.
+    /// Drain control calls and stop this app's core. Closing only the window to
+    /// the tray never calls this; full exit and disabling every flag do.
     async fn stop(&self) {
+        self.set_server_running_intent(false);
         self.enabled.store(false, Ordering::SeqCst);
         // A queued writer also prevents later readers from cutting in: calls
         // already holding a permit finish, while calls arriving after the
         // transition observe `enabled = false` once this permit is released.
         let _exclusive = self.operations.write().await;
-        self.stop_unlocked().await;
+        if let Err(error) = self.stop_unlocked().await {
+            log::warn!("[atomic-core] could not shut down app-owned core: {error}");
+        }
     }
 
-    async fn stop_unlocked(&self) {
+    async fn stop_unlocked(&self) -> Result<(), CoreError> {
         self.enabled.store(false, Ordering::SeqCst);
         let task = self.background.lock().unwrap().take();
         if let Some(task) = task {
@@ -135,7 +217,62 @@ impl AtomicCoreClient {
                 }
             }
         }
+        let mut shutdown = Ok(());
+        let attachment = match self.supervisor.current().await {
+            Some(attached) => Some(attached),
+            None => match self.supervisor.ensure_attached(false).await {
+                Ok(attached) => Some(attached),
+                Err(error) if error.code == "CORE_NOT_RUNNING" => {
+                    self.supervisor.retire_previous_owner_if_any().await?;
+                    None
+                },
+                // A foreign or unprovable owner must not be stopped. Waiting
+                // for its lock to vanish would only stall app exit for 20 s.
+                Err(error) => return Err(error),
+            },
+        };
+        if let Some(attached) = attachment {
+            // No request after the write gate closes can re-launch this owner.
+            let _ = attached
+                .client
+                .call(
+                    "DELETE",
+                    "/external-sessions/atomic-chat-app",
+                    Some(json!({"generation": super::external::generation()})),
+                )
+                .await;
+            shutdown = attached
+                .client
+                .call(
+                    "POST",
+                    "/shutdown",
+                    Some(json!({"client_id": attached.client_id})),
+                )
+                .await
+                .map(|_| ());
+        }
         self.supervisor.detach().await;
+        if shutdown.is_ok() {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while std::time::Instant::now() < deadline {
+                super::launch::reap_finished();
+                let mut system = sysinfo::System::new();
+                system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+                if !matches!(
+                    super::lock::inspect(self.supervisor.data_folder(), &system),
+                    super::lock::LockState::Owned(_)
+                ) {
+                    return Ok(());
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            return Err(CoreError::new(
+                "CORE_ALREADY_RUNNING",
+                "App-owned core did not release its lock after shutdown.",
+                None,
+            ));
+        }
+        shutdown
     }
 
     fn disabled_error() -> CoreError {
@@ -146,7 +283,7 @@ impl AtomicCoreClient {
         )
     }
 
-    async fn call(
+    pub(crate) async fn call(
         &self,
         method: &str,
         path: &str,
@@ -163,6 +300,7 @@ impl AtomicCoreClient {
                 Some("retry after the ownership transition completes".into()),
             ));
         }
+        self.ensure_reconciled().map_err(|message| CoreError::new("CORE_TRANSITIONING", message, None))?;
         self.supervisor.call(method, path, body, true).await
     }
 
@@ -171,6 +309,7 @@ impl AtomicCoreClient {
         if !self.enabled.load(Ordering::SeqCst) {
             return Err(Self::disabled_error());
         }
+        self.ensure_reconciled().map_err(|message| CoreError::new("CORE_TRANSITIONING", message, None))?;
         self.snapshot_unlocked().await
     }
 
@@ -192,6 +331,22 @@ struct TauriSink<R: Runtime> {
 
 impl<R: Runtime> EventSink for TauriSink<R> {
     fn emit(&self, name: &str, payload: Value) {
+        // Request telemetry goes to analytics and the API screen only: it can carry prompt text,
+        // which must not reach the webview on any channel but the inspector's own.
+        if super::api_requests::ingest(&self.app, name, &payload) {
+            return;
+        }
+        if name == super::external::CTX_REQUESTED_EVENT {
+            super::external::on_ctx_requested(&self.app, &payload);
+        }
+        if name == relay::SNAPSHOT_EVENT {
+            // A (re)attached core starts with previews off; restate what the API screen wants.
+            super::api_requests::push_inspecting(&self.app);
+            if let Some(generation) = payload.get("generation").and_then(Value::as_u64) {
+                let app = self.app.clone();
+                tauri::async_runtime::spawn(async move { recover_public_server(&app, generation).await; });
+            }
+        }
         // Update the app's own mirror before the webview hears about it: a listener that reacts by
         // asking "where is that model served?" must not be answered from a table that has not
         // caught up with the event it is reacting to.
@@ -287,6 +442,9 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
         sessions: Arc::new(CoreSessions::new()),
         enabled: AtomicBool::new(false),
         transitioning: AtomicBool::new(false),
+        reconciliation_required: AtomicBool::new(false),
+        server_running_intent: AtomicBool::new(false),
+        last_server_recovery: AtomicU64::new(0),
         transition: tokio::sync::Mutex::new(()),
         operations: tokio::sync::RwLock::new(()),
         background: Mutex::new(None),
@@ -305,12 +463,12 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
                 let current = get_app_configurations(handle.clone()).atomic_core;
                 if current.needs_core() {
                     let plugin = handle.state::<tauri_plugin_llamacpp_upstream::LlamacppState>();
-                    let _ownership = plugin.ownership_gate.write().await;
+                    let (_ownership, _operations) =
+                        client.lock_ownership(&plugin.ownership_gate).await;
                     client.start(&handle).await;
                     if current.runtime.is_none() {
                         apply_ownership(&handle, current);
                     } else {
-                        let _operations = client.operations.write().await;
                         match client.snapshot_unlocked().await {
                             Ok(_) => apply_ownership(&handle, current),
                             Err(error) => log::warn!(
@@ -319,6 +477,15 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
                         }
                     }
                 }
+            }
+        });
+    } else {
+        // A previous app process may have crashed while its core was still
+        // alive. Full-off must clean up that owner without ever starting one.
+        let supervisor = app.state::<AtomicCoreClient>().supervisor();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = supervisor.retire_previous_owner_if_any().await {
+                log::warn!("[atomic-core] could not retire previous app owner while disabled: {error}");
             }
         });
     }
@@ -495,7 +662,7 @@ pub async fn atomic_core_status<R: Runtime>(
     Ok(json!({
         "flags": flags,
         "active_runtime": active_runtime(&app),
-        "transitioning": state.transitioning.load(Ordering::SeqCst),
+        "transitioning": state.transitioning.load(Ordering::SeqCst) || state.reconciliation_required.load(Ordering::SeqCst),
         "running": state.is_running(),
         "expected_version": supervisor::expected_core_version(),
         "command": command.as_ref().ok(),
@@ -534,15 +701,27 @@ pub async fn set_atomic_core_flags<R: Runtime>(
     state: State<'_, AtomicCoreClient>,
     flags: AtomicCoreFlags,
 ) -> Result<AtomicCoreFlags, String> {
+    // Cancellation bypasses the gate: login may be holding it while waiting
+    // for a browser callback. A pre-gate flags read is racy with another queued
+    // transition, so cancel a pending login for every flags request, then read
+    // the actual previous flags only after acquiring the gate.
+    app.state::<crate::core::state::AppState>()
+        .chatgpt_auth
+        .cancel_login();
+    if let Some(attached) = state.supervisor.current().await {
+        let _ = attached.client.call("POST", "/auth/chatgpt/login/cancel", None).await;
+    }
     let _transition = state.transition.lock().await;
     let _marker = state.mark_transitioning();
+    state.ensure_reconciled()?;
+    // Another flags command may have committed while this one waited on the gate.
+    let previous = get_app_configurations(app.clone()).atomic_core;
     let was_enabled = state.enabled.load(Ordering::SeqCst);
     // Drain calls that already chose the old owner. New core calls wait on this permit and then
     // observe either the committed owner or a disabled client; the webview also sees
     // `transitioning` and does not begin a legacy operation in the middle.
-    let _operations = state.operations.write().await;
     let plugin = app.state::<tauri_plugin_llamacpp_upstream::LlamacppState>();
-    let _ownership = plugin.ownership_gate.write().await;
+    let (_ownership, _operations) = state.lock_ownership(&plugin.ownership_gate).await;
 
     ensure_outgoing_runtime_is_empty(&app, &state, flags.runtime).await?;
 
@@ -554,17 +733,63 @@ pub async fn set_atomic_core_flags<R: Runtime>(
     if flags.runtime.is_some() {
         if let Err(error) = state.snapshot_unlocked().await {
             if !was_enabled {
-                state.stop_unlocked().await;
+                let _ = state.stop_unlocked().await;
             }
             return Err(format!("Could not prepare core runtime ownership: {error}"));
         }
     }
 
+    let handover = if previous.core_serves() != flags.core_serves() {
+        match hand_over_server(&app, &state, flags.core_serves()).await {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                if !error.confirmed {
+                    state.reconciliation_required.store(true, Ordering::SeqCst);
+                } else {
+                    if !error.restored {
+                        state.set_server_running_intent(false);
+                        crate::core::server::commands::emit_server_state(
+                            &app,
+                            if previous.core_serves() { "core" } else { "legacy" },
+                            None,
+                            None,
+                        );
+                    }
+                    if !was_enabled && state.enabled.load(Ordering::SeqCst) {
+                        let _ = state.stop_unlocked().await;
+                    }
+                }
+                return Err(error.to_string());
+            }
+        }
+    } else { None };
+
     let mut configuration = get_app_configurations(app.clone());
     configuration.atomic_core = flags;
     if let Err(error) = update_app_configuration(app.clone(), configuration) {
+        if matches!(handover, Some(crate::core::server::ownership::Handover::Moved(_))) {
+            match hand_over_server(&app, &state, previous.core_serves()).await {
+                Ok(crate::core::server::ownership::Handover::Moved(port)) => {
+                    state.set_server_running_intent(true);
+                    crate::core::server::commands::emit_server_state(
+                        &app,
+                        if previous.core_serves() { "core" } else { "legacy" },
+                        Some(port),
+                        None,
+                    );
+                }
+                Ok(crate::core::server::ownership::Handover::NotRunning) => {
+                    state.reconciliation_required.store(true, Ordering::SeqCst);
+                    return Err(format!("Could not save ownership settings: {error}; reverse handover found no running server."));
+                }
+                Err(rollback) => {
+                    state.reconciliation_required.store(true, Ordering::SeqCst);
+                    return Err(format!("Could not save ownership settings: {error}; reverse handover failed: {rollback}"));
+                }
+            }
+        }
         if !was_enabled && state.enabled.load(Ordering::SeqCst) {
-            state.stop_unlocked().await;
+            let _ = state.stop_unlocked().await;
         }
         return Err(error);
     }
@@ -572,18 +797,153 @@ pub async fn set_atomic_core_flags<R: Runtime>(
     // Persisted intent is committed only after the outgoing side is empty and the incoming core
     // mirror is ready. From here the resolver switch cannot fail.
     apply_ownership(&app, flags);
+    if let Some(outcome) = &handover {
+        use crate::core::server::ownership::Handover;
+        let port = match outcome { Handover::Moved(port) => Some(*port), Handover::NotRunning => None };
+        state.set_server_running_intent(port.is_some());
+        crate::core::server::commands::emit_server_state(
+            &app, if flags.core_serves() { "core" } else { "legacy" }, port, None,
+        );
+    }
     if let Err(error) = app.emit(
         "atomic-core://ownership-changed",
-        json!({ "runtime": flags.runtime }),
+        json!({ "runtime": flags.runtime, "server": flags.server }),
     ) {
         log::debug!("[atomic-core] could not emit ownership change: {error}");
     }
     if !flags.needs_core() {
-        state.stop_unlocked().await;
+        state.stop_unlocked().await.map_err(|e| e.message)?;
     }
     drop(_operations);
     drop(_marker);
     Ok(flags)
+}
+
+/// Control calls made while a transition holds the operations permit: straight
+/// to the supervisor, past the gates that would otherwise wait on this very
+/// transition.
+struct TransitionCaller(Arc<Supervisor>);
+
+#[async_trait::async_trait]
+impl crate::core::server::ownership::ControlCaller for TransitionCaller {
+    async fn call(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value, CoreError> {
+        self.0.call(method, path, body, true).await
+    }
+}
+
+/// Move the public API between the app's proxy and the core (PLAN.md §4 stage
+/// 4e). The ChatGPT session moves with it: the side that serves is the one that
+/// refreshes, so the other must not hold a stale copy of the tokens.
+async fn hand_over_server<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AtomicCoreClient,
+    to_core: bool,
+) -> Result<crate::core::server::ownership::Handover, crate::core::server::ownership::HandoverError> {
+    use crate::core::server::commands::{core_owner, LegacyOwner};
+    use crate::core::server::ownership::{hand_over, last_config, Handover};
+    use crate::core::state::AppState;
+
+    let legacy = LegacyOwner { app: app.clone() };
+    let core = core_owner(app, TransitionCaller(state.supervisor())).await;
+    let config = last_config();
+    let outcome = if to_core {
+        hand_over(&legacy, &core, config.as_ref()).await
+    } else {
+        hand_over(&core, &legacy, config.as_ref()).await
+    };
+    let app_state = app.state::<AppState>();
+    match &outcome {
+        Ok(Handover::Moved(port)) => {
+            log::info!(
+                "[atomic-core] Local API Server moved to the {} on port {port}",
+                if to_core { "core" } else { "app" }
+            );
+            if to_core {
+                if let Some(config) = &config {
+                    *app_state.local_server_endpoint.lock().await =
+                        Some(crate::core::state::LocalServerEndpoint::new(
+                            &config.host,
+                            *port,
+                            &config.prefix,
+                            &config.api_key,
+                        ));
+                }
+            }
+        }
+        Ok(Handover::NotRunning) => {}
+        Err(error) => {
+            log::warn!("[atomic-core] Local API Server handover failed: {error}");
+            if !error.restored {
+                app_state.local_server_endpoint.lock().await.take();
+            }
+            return Err(error.clone());
+        }
+    }
+    if to_core {
+        app_state.chatgpt_auth.cancel_login();
+    } else {
+        app_state.chatgpt_auth.invalidate().await;
+    }
+    Ok(outcome.expect("successful handover has an outcome"))
+}
+
+/// A new core process has no public listener. Rebuild only a listener that this
+/// app had explicitly kept running, and only once for this generation.
+async fn recover_public_server<R: Runtime>(app: &AppHandle<R>, generation: u64) {
+    use crate::core::server::commands::{core_owner, emit_server_state};
+    use crate::core::server::ownership::{last_config, PublicApiOwner};
+    use crate::core::state::{AppState, LocalServerEndpoint};
+
+    let Some(state) = app.try_state::<AtomicCoreClient>() else { return; };
+    let _transition = state.transition.lock().await;
+    if !state.is_enabled() || state.reconciliation_required.load(Ordering::SeqCst)
+        || !state.server_running_intent.load(Ordering::SeqCst)
+        || !get_app_configurations(app.clone()).atomic_core.core_serves() {
+        return;
+    }
+    let Some(attached) = state.supervisor.current().await else { return; };
+    if attached.generation != generation || !state.claim_server_recovery(generation) { return; }
+    let plugin = app.state::<tauri_plugin_llamacpp_upstream::LlamacppState>();
+    let (_ownership, _operations) = state.lock_ownership(&plugin.ownership_gate).await;
+    let owner = core_owner(app, TransitionCaller(state.supervisor())).await;
+    match owner.running_port().await {
+        Ok(Some(port)) => {
+            emit_server_state(app, "core", Some(port), Some(generation));
+            return;
+        }
+        Ok(None) => {},
+        Err(error) => {
+            log::warn!("[atomic-core] could not determine public server state after reattach: {error}");
+            return;
+        }
+    }
+    let Some(config) = last_config() else {
+        log::warn!("[atomic-core] cannot restore public API: its last successful configuration is unknown");
+        emit_server_state(app, "core", None, Some(generation));
+        return;
+    };
+    match owner.start(&config).await {
+        Ok(port) => {
+            if state.supervisor.current().await.as_ref().map(|attached| attached.generation) != Some(generation) {
+                return;
+            }
+            *app.state::<AppState>().local_server_endpoint.lock().await =
+                Some(LocalServerEndpoint::new(&config.host, port, &config.prefix, &config.api_key));
+            emit_server_state(app, "core", Some(port), Some(generation));
+        }
+        Err(error) => {
+            log::warn!("[atomic-core] could not restore public API in generation {generation}: {error}");
+            match owner.running_port().await {
+                Ok(port) => emit_server_state(app, "core", port, Some(generation)),
+                Err(status) => log::warn!("[atomic-core] restored server status is unknown: {status}"),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -600,6 +960,9 @@ mod tests {
             sessions: Arc::new(CoreSessions::new()),
             enabled: AtomicBool::new(false),
             transitioning: AtomicBool::new(false),
+            reconciliation_required: AtomicBool::new(false),
+            server_running_intent: AtomicBool::new(false),
+            last_server_recovery: AtomicU64::new(0),
             transition: tokio::sync::Mutex::new(()),
             operations: tokio::sync::RwLock::new(()),
             background: Mutex::new(None),
@@ -714,5 +1077,34 @@ mod tests {
         stopping.await.unwrap();
         let error = late_call.await.unwrap().unwrap_err();
         assert_eq!(error.code, "CORE_NOT_RUNNING");
+    }
+
+    #[tokio::test]
+    async fn transition_waits_for_the_plugin_before_blocking_its_in_flight_core_call() {
+        let data = tempfile::tempdir().unwrap();
+        let client = Arc::new(disabled_client(data.path()));
+        let plugin_gate = Arc::new(tokio::sync::RwLock::new(()));
+        let extension_operation = plugin_gate.read().await;
+
+        let transition = {
+            let client = Arc::clone(&client);
+            let plugin_gate = Arc::clone(&plugin_gate);
+            tokio::spawn(async move {
+                let (_plugin, _calls) = client.lock_ownership(&plugin_gate).await;
+            })
+        };
+        tokio::task::yield_now().await;
+        let call = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client.call("GET", "/health", None),
+        )
+        .await
+        .expect("an extension holding the plugin gate must be able to finish its core call");
+        assert_eq!(call.unwrap_err().code, "CORE_NOT_RUNNING");
+        drop(extension_operation);
+        tokio::time::timeout(std::time::Duration::from_secs(1), transition)
+            .await
+            .expect("handover proceeds after the extension finishes")
+            .unwrap();
     }
 }

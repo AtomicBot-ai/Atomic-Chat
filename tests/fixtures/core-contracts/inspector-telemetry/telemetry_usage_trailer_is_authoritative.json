@@ -1,0 +1,63 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion_tokens": 22,
+    "finish_reason": null,
+    "predicted_per_second": null,
+    "prompt_per_second": null,
+    "prompt_tokens": 11,
+    "reply_chars": 2,
+    "reply_preview": "ab",
+    "tokens_estimated": false,
+    "total_tokens": 33,
+    "ttft_ms": 3
+  },
+  "input": {
+    "frames": [
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "content": "a"
+              },
+              "finish_reason": null
+            }
+          ]
+        },
+        "offset_ms": 3
+      },
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "content": "b"
+              },
+              "finish_reason": null
+            }
+          ]
+        },
+        "offset_ms": 4
+      },
+      {
+        "json": {
+          "choices": [],
+          "usage": {
+            "completion_tokens": 22,
+            "prompt_tokens": 11,
+            "total_tokens": 33
+          }
+        },
+        "offset_ms": 9
+      }
+    ],
+    "kind": "stream_telemetry",
+    "whole_response": false
+  },
+  "name": "telemetry_usage_trailer_is_authoritative",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

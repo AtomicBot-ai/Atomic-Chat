@@ -210,6 +210,15 @@ export async function increaseContext(
 }
 
 /**
+ * Restart a model at the context it already has, because its engine is poisoned (a compute failure
+ * such as a Metal out-of-memory). The core owns the process, so it does the restart; growing the
+ * context here would only make an out-of-memory failure more likely.
+ */
+export async function recreateSession(modelId: string): Promise<{ ok: boolean; reason?: string }> {
+  return call('POST', modelPath(modelId, 'recreate'))
+}
+
+/**
  * Hand the app's settings for this provider to the core.
  *
  * Runs before the first core-owned load (PLAN.md §3.4): until a provider's settings are imported,

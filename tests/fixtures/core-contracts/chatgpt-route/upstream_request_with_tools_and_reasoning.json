@@ -1,0 +1,130 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": [
+            {
+              "text": "find",
+              "type": "input_text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "model": "gpt-5-codex",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "11111111-2222-3333-4444-555555555555",
+      "reasoning": {
+        "effort": "high",
+        "summary": "auto"
+      },
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "d",
+          "name": "lookup",
+          "parameters": {
+            "properties": {
+              "q": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "headers": [
+      [
+        "accept",
+        "text/event-stream"
+      ],
+      [
+        "authorization",
+        "Bearer access-token-xyz"
+      ],
+      [
+        "chatgpt-account-id",
+        "acct_2"
+      ],
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "openai-beta",
+        "responses=experimental"
+      ],
+      [
+        "originator",
+        "atomic_chat"
+      ],
+      [
+        "session-id",
+        "11111111-2222-3333-4444-555555555555"
+      ],
+      [
+        "user-agent",
+        "atomic-chat/1"
+      ],
+      [
+        "x-client-request-id",
+        "0123456789abcdef0123456789abcdef"
+      ]
+    ],
+    "method": "POST",
+    "url": "https://chatgpt.com/backend-api/codex/responses"
+  },
+  "input": {
+    "access_token": "access-token-xyz",
+    "account_id": "acct_2",
+    "chat_body": {
+      "messages": [
+        {
+          "content": "find",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-codex",
+      "reasoning_effort": "high",
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "d",
+            "name": "lookup",
+            "parameters": {
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "kind": "upstream_request",
+    "request_id": "0123456789abcdef0123456789abcdef",
+    "session_id": "11111111-2222-3333-4444-555555555555"
+  },
+  "name": "upstream_request_with_tools_and_reasoning",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/chatgpt_route.rs"
+  }
+}

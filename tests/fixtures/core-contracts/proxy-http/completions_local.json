@@ -1,0 +1,82 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "index": 0,
+              "text": "yo"
+            }
+          ],
+          "id": "cmpl-1",
+          "object": "text_completion"
+        }
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "application/json",
+        "vary": "Origin"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "model": "local.model-7b",
+          "prompt": "hi"
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/completions"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"model\":\"local.model-7b\",\"prompt\":\"hi\"}",
+      "headers": [],
+      "method": "POST",
+      "path": "/v1/completions"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/completions",
+        "replies": [
+          {
+            "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"text\":\"yo\"}],\"id\":\"cmpl-1\",\"object\":\"text_completion\"}",
+            "content_type": "application/json",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "completions_local",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

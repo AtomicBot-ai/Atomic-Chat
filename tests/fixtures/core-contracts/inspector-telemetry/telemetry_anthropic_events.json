@@ -1,0 +1,69 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion_tokens": 3,
+    "finish_reason": "end_turn",
+    "predicted_per_second": null,
+    "prompt_per_second": null,
+    "prompt_tokens": 12,
+    "reply_chars": 4,
+    "reply_preview": "Hi",
+    "tokens_estimated": false,
+    "total_tokens": 15,
+    "ttft_ms": 5
+  },
+  "input": {
+    "frames": [
+      {
+        "json": {
+          "message": {
+            "usage": {
+              "input_tokens": 12
+            }
+          },
+          "type": "message_start"
+        },
+        "offset_ms": 1
+      },
+      {
+        "json": {
+          "delta": {
+            "text": "Hi",
+            "type": "text_delta"
+          },
+          "type": "content_block_delta"
+        },
+        "offset_ms": 5
+      },
+      {
+        "json": {
+          "delta": {
+            "thinking": "hm",
+            "type": "thinking_delta"
+          },
+          "type": "content_block_delta"
+        },
+        "offset_ms": 6
+      },
+      {
+        "json": {
+          "delta": {
+            "stop_reason": "end_turn"
+          },
+          "type": "message_delta",
+          "usage": {
+            "output_tokens": 3
+          }
+        },
+        "offset_ms": 9
+      }
+    ],
+    "kind": "stream_telemetry",
+    "whole_response": false
+  },
+  "name": "telemetry_anthropic_events",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

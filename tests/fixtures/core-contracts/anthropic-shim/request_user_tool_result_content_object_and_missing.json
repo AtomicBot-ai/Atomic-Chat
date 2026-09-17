@@ -1,0 +1,62 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "{\"a\":[true],\"k\":1}",
+          "role": "tool",
+          "tool_call_id": "t1"
+        },
+        {
+          "content": "null",
+          "role": "tool",
+          "tool_call_id": ""
+        },
+        {
+          "content": "",
+          "role": "tool",
+          "tool_call_id": ""
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "content": {
+                "a": [
+                  true
+                ],
+                "k": 1
+              },
+              "tool_use_id": "t1",
+              "type": "tool_result"
+            },
+            {
+              "content": null,
+              "type": "tool_result"
+            },
+            {
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_user_tool_result_content_object_and_missing",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

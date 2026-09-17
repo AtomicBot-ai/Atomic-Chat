@@ -1,0 +1,15 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "exists_after_clear": false,
+    "second_clear_ok": true
+  },
+  "input": {
+    "kind": "clear"
+  },
+  "name": "store_clear_removes_and_missing_is_success",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/store.rs"
+  }
+}

@@ -3,8 +3,9 @@
 //! Nothing here ever returns a token. `chatgpt_status` is the only read, and it
 //! carries the account label and the expiry so the card can render itself.
 
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 
+use crate::core::atomic_core::cloud;
 use crate::core::auth::chatgpt;
 use crate::core::auth::state::{data_dir_for, now_unix, ChatGptStatus};
 use crate::core::state::AppState;
@@ -14,6 +15,11 @@ pub async fn chatgpt_status<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<ChatGptStatus, String> {
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    let _gate = if let Some(owner) = owner.as_ref() { Some(owner.owner_gate().await) } else { None };
+    if let Some(answer) = cloud::chatgpt_status(&app).await {
+        return answer;
+    }
     let data_dir = data_dir_for(&app);
     Ok(state.chatgpt_auth.status(&data_dir).await)
 }
@@ -28,6 +34,15 @@ pub async fn chatgpt_login<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<ChatGptStatus, String> {
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    let _gate = if let Some(owner) = owner.as_ref() { Some(owner.owner_gate().await) } else { None };
+    if let Some(answer) = cloud::chatgpt_login(&app, |url| {
+        tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+    })
+    .await
+    {
+        return answer;
+    }
     let data_dir = data_dir_for(&app);
     let auth = state.chatgpt_auth.clone();
 
@@ -62,7 +77,13 @@ pub async fn chatgpt_login<R: Runtime>(
 
 /// Abandon a sign-in that is still waiting on the browser.
 #[tauri::command]
-pub async fn chatgpt_cancel_login(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn chatgpt_cancel_login<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if let Some(answer) = cloud::chatgpt_cancel_login(&app).await {
+        return answer;
+    }
     state.chatgpt_auth.cancel_login();
     Ok(())
 }
@@ -76,6 +97,11 @@ pub async fn chatgpt_models<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::core::server::chatgpt_route::SubscriptionModel>, String> {
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    let _gate = if let Some(owner) = owner.as_ref() { Some(owner.owner_gate().await) } else { None };
+    if let Some(answer) = cloud::chatgpt_models(&app).await {
+        return answer;
+    }
     let data_dir = data_dir_for(&app);
     let client = crate::core::server::chatgpt_route::client()?;
     crate::core::server::chatgpt_route::list_models(&client, &state.chatgpt_auth, &data_dir).await
@@ -86,6 +112,11 @@ pub async fn chatgpt_logout<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<ChatGptStatus, String> {
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    let _gate = if let Some(owner) = owner.as_ref() { Some(owner.owner_gate().await) } else { None };
+    if let Some(answer) = cloud::chatgpt_logout(&app).await {
+        return answer;
+    }
     let data_dir = data_dir_for(&app);
     state.chatgpt_auth.logout(&data_dir).await?;
     Ok(state.chatgpt_auth.status(&data_dir).await)

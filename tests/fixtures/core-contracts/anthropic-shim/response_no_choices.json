@@ -1,0 +1,31 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "anthropic": {
+      "content": [],
+      "id": "x",
+      "model": "m",
+      "role": "assistant",
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      }
+    }
+  },
+  "input": {
+    "chat": {
+      "id": "x",
+      "model": "m"
+    },
+    "kind": "response"
+  },
+  "name": "response_no_choices",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

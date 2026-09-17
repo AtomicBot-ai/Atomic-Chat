@@ -1,0 +1,25 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "model": {
+      "context_length": null,
+      "display_name": "x",
+      "id": "x",
+      "listed": false,
+      "reasoning_efforts": [],
+      "vision": false
+    }
+  },
+  "input": {
+    "item": {
+      "context_window": true,
+      "slug": "x"
+    },
+    "kind": "normalize_model"
+  },
+  "name": "model_boolean_context_window_ignored",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/chatgpt_route.rs"
+  }
+}

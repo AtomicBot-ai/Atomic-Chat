@@ -1,0 +1,75 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion_tokens": 2,
+    "finish_reason": "stop",
+    "predicted_per_second": null,
+    "prompt_per_second": null,
+    "prompt_tokens": null,
+    "reply_chars": 5,
+    "reply_preview": "Hello",
+    "tokens_estimated": true,
+    "total_tokens": null,
+    "ttft_ms": 12
+  },
+  "input": {
+    "frames": [
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "role": "assistant"
+              }
+            }
+          ]
+        },
+        "offset_ms": 5
+      },
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "content": "Hel"
+              },
+              "finish_reason": null
+            }
+          ]
+        },
+        "offset_ms": 12
+      },
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "content": "lo"
+              },
+              "finish_reason": null
+            }
+          ]
+        },
+        "offset_ms": 15
+      },
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ]
+        },
+        "offset_ms": 20
+      }
+    ],
+    "kind": "stream_telemetry",
+    "whole_response": false
+  },
+  "name": "telemetry_openai_deltas_estimate_tokens",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

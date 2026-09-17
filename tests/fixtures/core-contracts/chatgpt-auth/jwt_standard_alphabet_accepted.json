@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "claims": {
+      "account_id": "acct_std",
+      "email": "~~~>>>???",
+      "plan_type": null
+    }
+  },
+  "input": {
+    "kind": "decode_jwt_claims",
+    "token": "h.eyJlbWFpbCI6In5+fj4+Pj8/PyIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiJhY2N0X3N0ZCJ9fQ.s"
+  },
+  "name": "jwt_standard_alphabet_accepted",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

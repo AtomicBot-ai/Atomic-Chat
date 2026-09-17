@@ -1,0 +1,70 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "calling",
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{}",
+                "name": "a"
+              },
+              "id": "t1",
+              "type": "function"
+            },
+            {
+              "function": {
+                "arguments": "{\"q\":\"x\"}",
+                "name": "b"
+              },
+              "id": "t2",
+              "type": "function"
+            }
+          ]
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "calling",
+              "type": "text"
+            },
+            {
+              "id": "t1",
+              "input": {},
+              "name": "a",
+              "type": "tool_use"
+            },
+            {
+              "id": "t2",
+              "input": {
+                "q": "x"
+              },
+              "name": "b",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_assistant_text_and_two_tool_uses",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

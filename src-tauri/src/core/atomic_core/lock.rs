@@ -34,6 +34,8 @@ pub const CONTROL_TOKEN_FILE: &str = "control-token";
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct LockRecord {
     pub instance_id: String,
+    #[serde(default)]
+    pub owner_scope: Option<String>,
     pub pid: u32,
     /// Older core builds published only this platform-specific identity.
     #[serde(default)]
@@ -112,6 +114,18 @@ pub fn owner_is_live(record: &LockRecord, system: &sysinfo::System) -> bool {
                 })
                 .unwrap_or(true)
         }
+    }
+}
+
+/// A destructive replacement requires positive identity proof, not merely the
+/// fail-closed liveness verdict used to prevent a second owner.
+pub fn owner_identity_confirmed(record: &LockRecord, system: &sysinfo::System) -> bool {
+    let Some(process) = system.process(sysinfo::Pid::from_u32(record.pid)) else { return false; };
+    match record.owner_started_at.as_deref() {
+        Some(expected) => format!("epoch:{}", process.start_time()) == expected,
+        None => record.process_start_id.as_deref()
+            .and_then(|id| legacy_identity_matches(id, sysinfo::System::boot_time(), process.start_time()))
+            == Some(true),
     }
 }
 
@@ -302,6 +316,7 @@ mod tests {
         // the only thing separating it from the core that once had this number.
         let live = LockRecord {
             instance_id: "i".into(),
+            owner_scope: None,
             pid: std::process::id(),
             process_start_id: None,
             owner_started_at: None,
@@ -318,6 +333,8 @@ mod tests {
             owner_is_live(&live, &system),
             "a record with no identity cannot be disproved, so it counts as live"
         );
+        assert!(!owner_identity_confirmed(&live, &system),
+            "liveness without start identity never authorizes a replacement shutdown");
 
         let recycled = LockRecord {
             owner_started_at: Some("epoch:1".into()),

@@ -198,6 +198,7 @@ impl FakeCore {
         std::fs::create_dir_all(&dir).expect("create core dir");
         let record = json!({
             "instance_id": *self.state.instance_id.lock().unwrap(),
+            "owner_scope": "app",
             "pid": self.state.pid,
             "process_start_id": "test:0",
             "owner_started_at": null,
@@ -353,6 +354,7 @@ fn health(state: &CoreState) -> Value {
         "ok": true,
         "pid": state.pid,
         "version": *state.version.lock().unwrap(),
+        "owner_scope": "app",
         "instance_id": *state.instance_id.lock().unwrap(),
         "protocol": *state.protocol.lock().unwrap(),
         "dataFolder": "/fake",

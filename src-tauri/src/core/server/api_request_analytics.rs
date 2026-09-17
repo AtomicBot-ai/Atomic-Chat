@@ -216,6 +216,78 @@ impl ApiRequestAggregator {
     }
 }
 
+/// The closed set of endpoint labels analytics may carry; anything else is `other`.
+///
+/// When the core serves the Local API its observations arrive as strings over the event stream.
+/// Mapping them back onto the labels the proxy itself uses keeps the PostHog dimensions a closed
+/// set: a core that sent something new, or a path, can never widen them.
+pub fn endpoint_label(value: &str) -> &'static str {
+    match value {
+        "chat/completions" => "chat/completions",
+        "chat_completions" => "chat_completions",
+        "responses" => "responses",
+        "messages" => "messages",
+        "completions" => "completions",
+        "embeddings" => "embeddings",
+        "messages/count_tokens" => "messages/count_tokens",
+        "models" => "models",
+        "muse-code/models" => "muse-code/models",
+        "metrics" => "metrics",
+        _ => "other",
+    }
+}
+
+pub fn backend_label(value: &str) -> &'static str {
+    match value {
+        "llamacpp" => "llamacpp",
+        "llamacpp-upstream" => "llamacpp-upstream",
+        "mlx" => "mlx",
+        "remote" => "remote",
+        _ => "unknown",
+    }
+}
+
+pub fn error_kind_label(value: &str) -> &'static str {
+    match value {
+        "auth" => "auth",
+        "bad_request" => "bad_request",
+        "host" => "host",
+        "method_not_allowed" => "method_not_allowed",
+        "not_found" => "not_found",
+        "proxy_internal" => "proxy_internal",
+        "remote_provider_error" => "remote_provider_error",
+        "upstream_error" => "upstream_error",
+        "local_model_error" => "local_model_error",
+        "local_model_unreachable" => "local_model_unreachable",
+        _ => "other",
+    }
+}
+
+/// An observation from the core's `api:request` event (`observation` field), or `None` when the
+/// event carries none or it is malformed.
+pub fn observation_from_core(value: &serde_json::Value) -> Option<ApiRequestObservation> {
+    let o = value.as_object()?;
+    let text = |key: &str| o.get(key).and_then(|v| v.as_str());
+    Some(ApiRequestObservation {
+        endpoint: endpoint_label(text("endpoint")?),
+        method: text("method")?.to_string(),
+        model_id: text("model_id").map(str::to_string),
+        backend: backend_label(text("backend").unwrap_or("unknown")),
+        provider: text("provider").map(str::to_string),
+        stream: o.get("stream").and_then(|v| v.as_bool()).unwrap_or(false),
+        status: o.get("status").and_then(|v| v.as_u64()).and_then(|v| u16::try_from(v).ok())?,
+        latency_ms: o.get("latency_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+        is_anthropic_fallback: o.get("is_anthropic_fallback").and_then(|v| v.as_bool()).unwrap_or(false),
+        error_kind: text("error_kind").map(error_kind_label),
+        upstream_status: o
+            .get("upstream_status")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u16::try_from(v).ok()),
+        oom_detected: o.get("oom_detected").and_then(|v| v.as_bool()).unwrap_or(false),
+        ctx_overflow_detected: o.get("ctx_overflow_detected").and_then(|v| v.as_bool()).unwrap_or(false),
+    })
+}
+
 fn increment<K>(counts: &mut BTreeMap<K, u64>, key: K)
 where
     K: Ord,
@@ -311,6 +383,43 @@ mod tests {
             vec!["atomic/model".to_string(), "atomic/other".to_string()]
         );
         assert_eq!(summary.window_duration_ms, 180_000);
+    }
+
+    #[test]
+    fn a_core_observation_maps_onto_the_closed_label_sets() {
+        let observation = observation_from_core(&serde_json::json!({
+            "endpoint": "chat/completions",
+            "method": "POST",
+            "model_id": "demo",
+            "backend": "llamacpp-upstream",
+            "provider": null,
+            "stream": true,
+            "status": 500,
+            "latency_ms": 12,
+            "is_anthropic_fallback": false,
+            "error_kind": "local_model_error",
+            "upstream_status": 500,
+            "oom_detected": true,
+            "ctx_overflow_detected": false
+        }))
+        .expect("observation");
+        assert_eq!(observation.endpoint, "chat/completions");
+        assert_eq!(observation.backend, "llamacpp-upstream");
+        assert_eq!(observation.error_kind, Some("local_model_error"));
+        assert_eq!(observation.upstream_status, Some(500));
+        assert!(observation.oom_detected);
+
+        let odd = observation_from_core(&serde_json::json!({
+            "endpoint": "/v1/secret/path",
+            "method": "GET",
+            "backend": "gpu-cluster",
+            "status": 200,
+            "error_kind": "something new"
+        }))
+        .expect("observation");
+        assert_eq!((odd.endpoint, odd.backend, odd.error_kind), ("other", "unknown", Some("other")));
+        assert!(observation_from_core(&serde_json::json!({"method": "GET"})).is_none());
+        assert!(observation_from_core(&serde_json::json!(null)).is_none());
     }
 
     #[test]

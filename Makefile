@@ -353,6 +353,7 @@ ifeq ($(OS),Windows_NT)
 			'src-tauri/resources/pre-install/test-placeholder', \
 			'src-tauri/resources/bin/jan-cli.exe', \
 			'src-tauri/resources/bin/atomic-chat-core.exe', \
+			'src-tauri/resources/bin/atomic-chat-app-core.exe', \
 			'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/bin/uv-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/llamacpp-backend/test-placeholder', \
@@ -369,6 +370,7 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
 	@[ -e src-tauri/resources/bin/atomic-chat-core ] || touch src-tauri/resources/bin/atomic-chat-core
+	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
 	@[ -e src-tauri/resources/bin/mlx-server-version.txt ] || touch src-tauri/resources/bin/mlx-server-version.txt
 	@[ -e src-tauri/resources/bin/mlx-server-backend.txt ] || touch src-tauri/resources/bin/mlx-server-backend.txt
@@ -382,6 +384,7 @@ else
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/sqlite-vec.so ] || touch src-tauri/resources/bin/sqlite-vec.so
 	@[ -e src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu
 	@[ -e src-tauri/resources/llamacpp-backend/test-placeholder ] || touch src-tauri/resources/llamacpp-backend/test-placeholder
@@ -486,7 +489,7 @@ test-live-cloud:
 # tests proves the app's half only. Point ATOMIC_CORE_BIN at a built core
 # (`npm run build:bin` in atomic-chat-core writes one to dist/bin/), or at the
 # one this app bundles after `make download-core`.
-ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-core
+ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-app-core
 test-core-live:
 	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" cargo test --manifest-path src-tauri/Cargo.toml \
 		-p Atomic-Chat --features test-tauri,cli --lib core::atomic_core::live_tests -- --test-threads=1
@@ -1202,6 +1205,7 @@ download-core:
 # Copy the core into place as `jan-cli` and sign it. The file name is the contract the installer,
 # the Settings → Install CLI action and every doc already use; only its contents change.
 build-cli-core: download-core
+	@node ./scripts/download-core.mjs --verify-only
 ifeq ($(shell uname -s),Darwin)
 	cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
 	chmod +x src-tauri/resources/bin/jan-cli
@@ -1209,9 +1213,11 @@ ifeq ($(shell uname -s),Darwin)
 	@echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing jan-cli (core) with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.sidecar.plist --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
-		codesign --verify --strict --verbose=2 src-tauri/resources/bin/jan-cli; \
+		for binary in jan-cli atomic-chat-core atomic-chat-app-core; do \
+			echo "Signing $$binary with identity: $$SIGNING_IDENTITY"; \
+			codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.sidecar.plist --sign "$$SIGNING_IDENTITY" "src-tauri/resources/bin/$$binary" || exit 1; \
+			codesign --verify --strict --verbose=2 "src-tauri/resources/bin/$$binary" || exit 1; \
+		done; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
 	fi

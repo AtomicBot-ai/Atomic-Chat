@@ -1,0 +1,181 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "data": [
+            {
+              "created": 1,
+              "id": "cloud-model",
+              "metadata": {
+                "muse-code": {
+                  "attachment": false,
+                  "cost": {
+                    "cached": "0",
+                    "currency": "USD",
+                    "input": "0",
+                    "output": "0"
+                  },
+                  "description": "cloud-model via Atomic Chat",
+                  "family": "remote",
+                  "is_hidden": false,
+                  "limit": {
+                    "context": 200000,
+                    "output": 32768
+                  },
+                  "modalities": {
+                    "input": [
+                      "text"
+                    ],
+                    "output": [
+                      "text"
+                    ]
+                  },
+                  "name": "cloud-model",
+                  "options": {
+                    "include": [],
+                    "temperature": 0.9,
+                    "top_p": 0.9
+                  },
+                  "reasoning": false,
+                  "release_date": "2026-01-01",
+                  "temperature": false,
+                  "tool_call": true,
+                  "variants": {}
+                }
+              },
+              "object": "model",
+              "owned_by": "remote"
+            },
+            {
+              "created": 1,
+              "id": "embed-model",
+              "metadata": {
+                "muse-code": {
+                  "attachment": false,
+                  "cost": {
+                    "cached": "0",
+                    "currency": "USD",
+                    "input": "0",
+                    "output": "0"
+                  },
+                  "description": "embed-model via Atomic Chat",
+                  "family": "llama.cpp-upstream",
+                  "is_hidden": false,
+                  "limit": {
+                    "context": 32768,
+                    "output": 32768
+                  },
+                  "modalities": {
+                    "input": [
+                      "text"
+                    ],
+                    "output": [
+                      "text"
+                    ]
+                  },
+                  "name": "embed-model",
+                  "options": {
+                    "include": [],
+                    "temperature": 0.9,
+                    "top_p": 0.9
+                  },
+                  "reasoning": false,
+                  "release_date": "2026-01-01",
+                  "temperature": false,
+                  "tool_call": true,
+                  "variants": {}
+                }
+              },
+              "object": "model",
+              "owned_by": "llama.cpp-upstream"
+            },
+            {
+              "created": 1,
+              "id": "local.model-7b",
+              "metadata": {
+                "muse-code": {
+                  "attachment": false,
+                  "cost": {
+                    "cached": "0",
+                    "currency": "USD",
+                    "input": "0",
+                    "output": "0"
+                  },
+                  "description": "local.model-7b via Atomic Chat",
+                  "family": "llama.cpp-upstream",
+                  "is_hidden": false,
+                  "limit": {
+                    "context": 32768,
+                    "output": 32768
+                  },
+                  "modalities": {
+                    "input": [
+                      "text"
+                    ],
+                    "output": [
+                      "text"
+                    ]
+                  },
+                  "name": "local.model-7b",
+                  "options": {
+                    "include": [],
+                    "temperature": 0.9,
+                    "top_p": 0.9
+                  },
+                  "reasoning": false,
+                  "release_date": "2026-01-01",
+                  "temperature": false,
+                  "tool_call": true,
+                  "variants": {}
+                }
+              },
+              "object": "model",
+              "owned_by": "llama.cpp-upstream"
+            }
+          ],
+          "object": "list"
+        }
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "application/json",
+        "vary": "Origin"
+      },
+      "status": 200
+    },
+    "upstream_calls": []
+  },
+  "input": {
+    "request": {
+      "body": null,
+      "headers": [],
+      "method": "GET",
+      "path": "/v1/muse-code/models"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": []
+  },
+  "name": "muse_code_catalog",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

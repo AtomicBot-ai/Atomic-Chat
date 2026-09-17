@@ -4015,6 +4015,10 @@ pub async fn stop_server(
             log::warn!("Local API Server analytics flush task failed: {e}");
         }
         handle.server_task.abort();
+        // Wait for the aborted task to be dropped, which is what closes the listener: whoever
+        // starts next on this port (the core, in a handover) must find it free, not still bound
+        // for a few milliseconds and silently fall back to another port.
+        let _ = handle.server_task.await;
         log::info!("Atomic Chat API server stopped");
     } else {
         log::debug!("stop_server: Local API Server was not running; nothing to stop");
@@ -4825,3 +4829,11 @@ mod muse_catalogue_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "proxy_anthropic_fixture_dump.rs"]
+mod anthropic_fixture_dump;
+
+#[cfg(test)]
+#[path = "proxy_http_fixture_dump.rs"]
+mod http_fixture_dump;

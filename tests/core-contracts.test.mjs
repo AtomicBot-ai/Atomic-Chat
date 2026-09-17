@@ -17,6 +17,7 @@ const COMPARATORS = new Set([
   'sse-sequence',
   'state-file-schema',
   'agent-config-files',
+  'http-exchange',
 ])
 
 function* walk(dir) {
