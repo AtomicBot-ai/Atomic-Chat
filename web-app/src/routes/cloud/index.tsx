@@ -210,7 +210,13 @@ export function CloudPage() {
           </div>
         </div>
       </HeaderPage>
-      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
+      {/* Classic (non-overlay) scrollbars — macOS with a mouse connected or
+          "Show scroll bars: Always", Windows, Linux — take layout width, so
+          a provider whose model list scrolls and one whose list does not
+          gave the centred column two different widths: every switch between
+          them nudged the whole block sideways. Reserving the gutter keeps
+          the geometry constant; same rule the onboarding picker applies. */}
+      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0 [scrollbar-gutter:stable]">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
           <CloudConnectionCard
             providers={providers}

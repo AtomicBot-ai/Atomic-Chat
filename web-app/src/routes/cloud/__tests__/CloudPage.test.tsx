@@ -420,4 +420,71 @@ describe('CloudPage', () => {
 
     expect(screen.getByText('cloud:models.noResults')).toBeInTheDocument()
   })
+
+  /**
+   * The horizontal geometry of the page for one selected provider, as
+   * rendered class strings: the scroll container, the centred column and
+   * every card in it. jsdom does no layout, so the classes are the closest
+   * thing to "where the content sits" a component test can pin down.
+   */
+  const renderedGeometry = (providerName: string) => {
+    searchState.current = { provider: providerName }
+    const { unmount } = render(<CloudPage />)
+    const column = screen
+      .getByText('cloud:connection.title')
+      .closest('.max-w-3xl') as HTMLElement
+    const scroller = column.parentElement as HTMLElement
+    const geometry = {
+      scroller: scroller.className,
+      column: column.className,
+      cards: Array.from(column.children, (card) => card.className),
+    }
+    unmount()
+    return geometry
+  }
+
+  it('reserves the scrollbar gutter so the column stays put when the list overflows', () => {
+    // A long model list scrolls and a short one does not, so every switch
+    // between two such providers grew or shrank the scroll container by one
+    // scrollbar and re-centred the column a few pixels sideways.
+    const { scroller } = renderedGeometry('openai')
+
+    expect(scroller).toContain('overflow-y-auto')
+    expect(scroller).toContain('[scrollbar-gutter:stable]')
+  })
+
+  it('renders every provider kind in one column with identical card geometry', () => {
+    mockStore([
+      ...providers,
+      ...['openrouter', 'anthropic', 'gemini'].map((provider) => ({
+        provider,
+        active: true,
+        models: [],
+        settings: [apiKeySetting, baseUrlSetting],
+        api_key: '',
+        base_url: `https://${provider}.test/v1`,
+      })),
+    ])
+    const kinds = [
+      'openrouter',
+      'anthropic',
+      'openai',
+      'gemini',
+      'ollama',
+      'chatgpt',
+    ]
+    const [reference, ...others] = kinds.map(renderedGeometry)
+
+    expect(reference.column).toContain('mx-auto')
+    expect(reference.column).toContain('max-w-3xl')
+    // Every card is the same full-width Card — nothing is `w-fit`, nothing
+    // carries a per-provider margin — so only heights may differ.
+    expect(new Set(reference.cards).size).toBe(1)
+    expect(reference.cards[0]).toContain('w-full')
+    for (const geometry of others) {
+      expect(geometry.scroller).toBe(reference.scroller)
+      expect(geometry.column).toBe(reference.column)
+      expect(new Set(geometry.cards)).toEqual(new Set(reference.cards))
+    }
+  })
 })
