@@ -399,4 +399,30 @@ describe('ConnectorsPage', () => {
     )
     expect(screen.queryByTestId('log-viewer')).not.toBeInTheDocument()
   })
+
+  it('lays the cards out in equal-height rows, each ending in a status + toggle footer', () => {
+    seedServers({
+      exa: {
+        command: '',
+        args: [],
+        env: {},
+        type: 'http',
+        url: 'https://mcp.exa.ai/mcp',
+        active: true,
+      },
+    })
+    render(<ConnectorsPage />)
+
+    const grid = screen.getByText('Exa').closest('div.grid')!
+    expect(grid).toHaveClass('auto-rows-fr')
+    // Set up or not, every card carries the footer toggle, so the footers sit
+    // in one band across the grid.
+    const cards = Array.from(grid.children)
+    expect(cards.length).toBeGreaterThan(1)
+    for (const card of cards) {
+      expect(
+        within(card as HTMLElement).getByRole('switch')
+      ).toBeInTheDocument()
+    }
+  })
 })

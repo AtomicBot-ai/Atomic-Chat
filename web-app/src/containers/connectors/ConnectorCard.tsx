@@ -27,8 +27,13 @@ import { cn } from '@/lib/utils'
 /**
  * One card for every server in the grid, installed or not: a catalog
  * connector renders its brand and description, a hand-added server its
- * command/URL. Installed cards carry the toggle, status and actions menu;
- * available ones a Set Up (or a disabled Sign in for oauth connectors).
+ * command/URL. Every card has the same anatomy — a header row (tile, name and
+ * attribution, then the primary action and/or the actions menu at the right
+ * edge), the description, and a footer row (status pill, toggle) — so the
+ * grid reads as one band of headers and one band of footers. A card that is
+ * not set up yet shows Set Up (or Sign in; a disabled Sign in for
+ * oauth-soon) in the header and "Not set up" with a disabled toggle in the
+ * footer; an installed one shows the menu, its status and a live toggle.
  */
 export function ConnectorCard({
   connector,
@@ -75,12 +80,72 @@ export function ConnectorCard({
 
   const name = connector?.name ?? installed?.key ?? ''
 
+  // The primary action of a card that is not set up yet. It sits in the
+  // header, where an installed card keeps its menu.
+  const action =
+    !installed &&
+    (connector?.auth === 'oauth-soon' ? (
+      // The provider does not accept our automatic registration yet —
+      // an honest disabled button beats a flow that always fails.
+      <span title={t('mcp-connectors:oauth.comingSoon')}>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="w-[88px] justify-center gap-1.5"
+          disabled
+        >
+          {t('mcp-connectors:oauth.signIn')}
+        </Button>
+      </span>
+    ) : connector?.auth === 'oauth' ? (
+      busy ? (
+        // The sign-in is waiting on the browser; the button becomes the
+        // way out.
+        <Button
+          size="sm"
+          variant="secondary"
+          className="w-[88px] justify-center gap-1.5"
+          onClick={onCancelSignIn}
+        >
+          <IconLoader2 size={14} className="animate-spin" />
+          {t('mcp-connectors:oauth.cancel')}
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          className="w-[88px] justify-center gap-1.5"
+          onClick={onSetUp}
+        >
+          {t('mcp-connectors:oauth.signIn')}
+        </Button>
+      )
+    ) : (
+      <Button
+        size="sm"
+        className="w-[88px] justify-center gap-1.5"
+        onClick={onSetUp}
+        disabled={busy}
+      >
+        {busy && <IconLoader2 size={14} className="animate-spin" />}
+        {t('mcp-connectors:setUp')}
+      </Button>
+    ))
+
+  const statusLabel = !installed
+    ? t('mcp-connectors:statusNotSetUp')
+    : isConnected
+      ? t('mcp-connectors:connected')
+      : isError
+        ? t('mcp-connectors:statusError')
+        : t('mcp-connectors:statusInactive')
+
   return (
-    // h-full: the card must fill its grid row so footers align across a row
-    // even where the engine (WebKit) is lax about stretching grid items.
+    // h-full: the card fills its grid row (the page grid is auto-rows-fr) so
+    // footers line up across a row even where the engine (WebKit) is lax
+    // about stretching grid items.
     <Card className="bg-card rounded-lg p-4 text-muted-foreground flex h-full flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <ServerIcon connector={connector} name={name} />
+      <div className="flex items-center gap-3">
+        <ServerIcon connector={connector} name={name} className="size-10" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2
@@ -120,134 +185,88 @@ export function ConnectorCard({
             </p>
           )}
         </div>
-        {installed && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                title={t('mcp-connectors:serverActions')}
-              >
-                <IconDotsVertical size={18} className="text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onEdit}>
-                <IconPencil size={16} />
-                {t('mcp-servers:editServer')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onEditJson}>
-                <IconCodeCircle size={16} />
-                {t('mcp-connectors:editJson')}
-              </DropdownMenuItem>
-              {onTools && (
-                <DropdownMenuItem onSelect={onTools}>
-                  <IconTool size={16} />
-                  {t('mcp-connectors:tools')}
+        {/* Right edge of the header: the action first, then the menu. */}
+        <div className="flex shrink-0 items-center gap-1">
+          {action}
+          {installed && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  title={t('mcp-connectors:serverActions')}
+                >
+                  <IconDotsVertical
+                    size={18}
+                    className="text-muted-foreground"
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onEdit}>
+                  <IconPencil size={16} />
+                  {t('mcp-servers:editServer')}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-                <IconTrash size={16} />
-                {t('mcp-servers:deleteServer.title')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+                <DropdownMenuItem onSelect={onEditJson}>
+                  <IconCodeCircle size={16} />
+                  {t('mcp-connectors:editJson')}
+                </DropdownMenuItem>
+                {onTools && (
+                  <DropdownMenuItem onSelect={onTools}>
+                    <IconTool size={16} />
+                    {t('mcp-connectors:tools')}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                  <IconTrash size={16} />
+                  {t('mcp-servers:deleteServer.title')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
       <p className="text-sm leading-normal text-muted-foreground flex-1">
         {connector ? t(connector.descriptionKey) : ''}
       </p>
-      {installed ? (
-        // min-h-8 on both footer variants: the switch row and the button row
-        // occupy the same band, so mixed rows stay level.
-        <div className="flex min-h-8 items-center justify-between gap-2">
+      {/* The same footer on every card, min-h-8 so the band keeps one height:
+          the status pill on the left, the toggle on the right (disabled until
+          the connector is set up). */}
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        <span
+          className={cn(
+            'flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+            isConnected
+              ? 'bg-emerald-500/10 text-emerald-600'
+              : isError
+                ? 'bg-red-500/10 text-red-600'
+                : 'bg-muted text-muted-foreground'
+          )}
+          title={isError ? status?.error : undefined}
+          aria-label={
+            isError ? `MCP server error: ${status?.error}` : undefined
+          }
+        >
           <span
             className={cn(
-              'flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+              'size-2 rounded-full',
               isConnected
-                ? 'bg-emerald-500/10 text-emerald-600'
+                ? 'bg-green-600'
                 : isError
-                  ? 'bg-red-500/10 text-red-600'
-                  : 'bg-muted text-muted-foreground'
+                  ? 'bg-red-600'
+                  : 'bg-muted-foreground/40'
             )}
-            title={isError ? status?.error : undefined}
-            aria-label={
-              isError ? `MCP server error: ${status?.error}` : undefined
-            }
-          >
-            <span
-              className={cn(
-                'size-2 rounded-full',
-                isConnected
-                  ? 'bg-green-600'
-                  : isError
-                    ? 'bg-red-600'
-                    : 'bg-muted-foreground/40'
-              )}
-            />
-            {isConnected
-              ? t('mcp-connectors:connected')
-              : isError
-                ? t('mcp-connectors:statusError')
-                : t('mcp-connectors:statusInactive')}
-          </span>
-          <Switch
-            checked={config?.active}
-            loading={busy}
-            onCheckedChange={onToggle}
           />
-        </div>
-      ) : (
-        <div className="flex min-h-8 items-center justify-end gap-2">
-          {connector?.auth === 'oauth-soon' ? (
-            // The provider does not accept our automatic registration yet —
-            // an honest disabled button beats a flow that always fails.
-            <span title={t('mcp-connectors:oauth.comingSoon')}>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="w-[88px] justify-center gap-1.5"
-                disabled
-              >
-                {t('mcp-connectors:oauth.signIn')}
-              </Button>
-            </span>
-          ) : connector?.auth === 'oauth' ? (
-            busy ? (
-              // The sign-in is waiting on the browser; the button becomes the
-              // way out.
-              <Button
-                size="sm"
-                variant="secondary"
-                className="w-[88px] justify-center gap-1.5"
-                onClick={onCancelSignIn}
-              >
-                <IconLoader2 size={14} className="animate-spin" />
-                {t('mcp-connectors:oauth.cancel')}
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                className="w-[88px] justify-center gap-1.5"
-                onClick={onSetUp}
-              >
-                {t('mcp-connectors:oauth.signIn')}
-              </Button>
-            )
-          ) : (
-            <Button
-              size="sm"
-              className="w-[88px] justify-center gap-1.5"
-              onClick={onSetUp}
-              disabled={busy}
-            >
-              {busy && <IconLoader2 size={14} className="animate-spin" />}
-              {t('mcp-connectors:setUp')}
-            </Button>
-          )}
-        </div>
-      )}
+          {statusLabel}
+        </span>
+        <Switch
+          checked={isActive}
+          disabled={!installed}
+          loading={busy && Boolean(installed)}
+          onCheckedChange={onToggle}
+        />
+      </div>
     </Card>
   )
 }

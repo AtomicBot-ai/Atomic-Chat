@@ -9,9 +9,9 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-280 records, 2026-05-19 → 2026-09-17.
-280 records, 2026-05-19 → 2026-09-17.
-280 records, 2026-05-19 → 2026-09-17.
+281 records, 2026-05-19 → 2026-09-17.
+281 records, 2026-05-19 → 2026-09-17.
+281 records, 2026-05-19 → 2026-09-17.
 
 ---
 
@@ -261,11 +261,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (57)
+## UI / UX (58)
 
+- **2026-09-17** — [Give every connector card one anatomy: the action at the top-right, a status + toggle footer on every card](2026-09-17-one-anatomy-for-every-connector-card.md)
 - **2026-09-17** — [Keep the download panel's readout on one fixed line](2026-09-17-keep-the-download-panel-readout-on-one-line.md)
 - **2026-09-17** — [Warn before a download that won't fit in memory; red rows only](2026-09-17-warn-before-a-download-that-wont-fit-in-memory.md)
-## UI / UX (57)
+## UI / UX (58)
 - **2026-09-17** — [Lay the onboarding rows out as one column: a fit badge with a word, the size inside the button, one button width](2026-09-17-one-button-column-and-a-fit-badge-on-the-onboarding-rows.md)
 - **2026-09-16** — [Confirm Full access before enabling it, every time](2026-09-16-confirm-full-access-before-enabling-it.md)
 - **2026-09-16** — [Unfold the release notes inside the update banner](2026-09-16-unfold-release-notes-inside-the-update-banner.md)
