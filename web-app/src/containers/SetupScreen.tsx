@@ -8,7 +8,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
-import { Cloud, X } from 'lucide-react'
+import { Cloud } from 'lucide-react'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,7 @@ import { switchToModel } from '@/utils/switchModel'
 import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
+import { SetupModelRow } from './SetupModelRow'
 import { ModelFitIndicator } from './ModelFitIndicator'
 import { ConfirmWontFitDownload } from './ConfirmWontFitDownload'
 import { useConfirmWontFitDownload } from '@/hooks/useConfirmWontFitDownload'
@@ -82,11 +83,7 @@ import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useStaffPicksStore } from '@/stores/staff-picks-store'
 import type { StaffPick } from '@/services/staff-picks-registry'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
-import {
-  RouteRow,
-  ROUTE_ROW_ACTION_CLASS,
-  ROUTE_ROW_BUTTON_HOVER,
-} from '@/containers/RouteRow'
+import { RouteRow, ONBOARDING_ROW_ACTION_CLASS } from '@/containers/RouteRow'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { prettyModelName } from '@/lib/model-display-name'
 import {
@@ -105,7 +102,6 @@ import { describeProviderState } from '@/lib/onboarding'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 //* Формат прогресса общий с панелью закачек (ATO-462), чтобы не разъезжался
 import { formatProgressPair } from '@/lib/downloadFormat'
-import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
 
 //* Размер найденной на диске модели (байты → "4.50 GB" / "850 MB")
 export function formatDetectedSize(bytes?: number): string | null {
@@ -156,11 +152,6 @@ type SetupScreenProps = {
 /// Signing in is not "a cloud provider whose key happens to be a login" — it is
 /// the shortest exit from onboarding there is, so it gets its own button.
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
-
-/// A hover the eye can catch on the secondary row buttons. `secondary`'s own
-/// `hover:bg-secondary/80` moves the fill by a fifth of a shade towards the
-/// card behind it, which on this screen is no move at all.
-const ROW_BUTTON_HOVER = ROUTE_ROW_BUTTON_HOVER
 
 /// Neither the on-disk scan nor the hardware enumeration may hold the picker
 /// hostage. Both are raced against this deadline; whatever has not answered by
@@ -990,21 +981,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
   }, [isVariantDownloaded, isMlxDownloaded, enterChatForDownload])
 
-  // Same three steps as the Hub's cancel: resumable, flagged as the user's
-  // own stop (so the panel does not report a failure), then aborted. The
-  // stop event clears the store, which is what turns the row back into a
-  // Download button.
-  const cancelRowDownload = useCallback(
-    (modelId: string) => {
-      pendingDownloadHandoffsRef.current.delete(modelId)
-      trackedImportIdsRef.current.delete(modelId)
-      markResumableDownload(modelId)
-      markDownloadCancellationRequested(modelId)
-      void serviceHub.models().abortDownload(modelId)
-    },
-    [markResumableDownload, serviceHub]
-  )
-
   // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
   const providerForCandidate = useCallback(
     (cand: LocalModelCandidate): LocalLlamacppProvider | 'mlx' =>
@@ -1345,10 +1321,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
    * One downloadable row: the offer, or a Hub pick under it. Same layout for
    * both — mark, name, one line, button — so the list reads as one list.
    *
-   * `hero` is the offer: it wears the "best fit" badge, its line says why it
-   * fits this machine rather than what the model is for, and its button is
-   * the primary one, a size up. A pick brings the Hub's own title, summary
-   * and mark, and gets a secondary button.
+   * `hero` uses the primary button. Every row shares the same geometry and
+   * shows a model summary below its title, memory badge and download size.
    *
    * `index` is the row's position in the painted list, which is what
    * `recommended_model_shown` reports, so clicks and impressions divide.
@@ -1465,44 +1439,15 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         ? prettyModelName(model.model_name)
         : prettyModelName(rec.modelName))
 
-    // "Download 2.5 GB": the size rides inside the button, not beside the
-    // name, so the name line is the name and its badges and nothing else.
-    const buttonLabel = rowDownloaded
-      ? t('hub:downloaded')
-      : downloadSize
-        ? `${t('hub:download')} ${downloadSize}`
-        : t('hub:download')
+    const buttonLabel = rowDownloaded ? t('hub:downloaded') : t('hub:download')
 
-    // While the bytes come in, the button's slot holds one pill — the same
-    // width, in the same place — reading Downloading… with an × to cancel;
-    // the figures take the line under the name once the size is known, so
-    // nothing is added beside the pill or under the row.
+    // Progress replaces the subtitle; cancellation lives in the download panel.
     const progressText =
       rowDownloading && rowDownloadProgress && rowDownloadProgress.total > 0
         ? `${Math.round((rowDownloadProgress.progress ?? 0) * 100)}% · ${formatProgressPair(rowDownloadProgress.current, rowDownloadProgress.total)}`
         : null
 
     const disabled = !model || (!isMlx && !variant) || rowDownloaded
-
-    //* «Почему эта»: размер против бюджета памяти этой машины, а не
-    //* абстрактное «рекомендуем» — см. describeRecommendationFit.
-    const fit = hero
-      ? describeRecommendationFit({
-          sizeLabel: downloadSize,
-          sizeBytes: parseFileSizeToBytes(downloadSize ?? undefined),
-          profile: hardwareProfile,
-        })
-      : null
-
-    // The offer's reason, in full, is its badge's tooltip. As a line under the
-    // name it pushed the offer's row taller than every row under it and said
-    // again what the badge already says.
-    const fitLine = fit
-      ? t(fit.key, {
-          ...fit.values,
-          ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
-        })
-      : undefined
 
     //* Метка «влезет ли» у каждой строки: тот же размер, что показан рядом с
     //* именем, против бюджета памяти этой машины. Нет размера или профиля —
@@ -1523,90 +1468,42 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           ...(rowFitCopy.poolKey ? { pool: t(rowFitCopy.poolKey) } : {}),
         })
       : null
-    const fitMark =
-      rowFitLevel && rowFitReason ? (
-        <ModelFitIndicator
-          level={rowFitLevel}
-          label={`${t(fitLabelKey(rowFitLevel))}. ${rowFitReason}`}
-          reason={rowFitReason}
-        />
-      ) : null
+    const rowFitTip = rowFitLevel
+      ? t(
+          `setup:recommend.${{ ok: 'fitTipOk', warn: 'fitTipWarn', no: 'fitTipNo' }[rowFitLevel]}`
+        )
+      : ''
+    const fitMark = rowFitLevel ? (
+      <ModelFitIndicator
+        level={rowFitLevel}
+        label={`${t(fitLabelKey(rowFitLevel))}. ${rowFitTip}`}
+        reason={rowFitTip}
+      />
+    ) : null
 
-    // Under a pick, the Hub's own summary, falling back to its category so the
-    // line is never blank. The offer has none — its badge says why it is here
-    // — but keeps the line, empty, so the readout can take it when a download
-    // starts without the row growing under the button. A card that has not
-    // resolved says so on either.
     const summary = !model
       ? sourcesLoading
         ? t('hub:loadingModels')
         : t('setup:modelUnavailable')
-      : hero
-        ? null
-        : (pick?.summary ?? t(rec.descriptionKey))
+      : pick?.summary?.trim() ||
+        model.description?.trim() ||
+        t('setup:recommend.defaultSummary')
 
     return (
-      <div
+      <SetupModelRow
         key={`${rec.modelName}-${rec.descriptionKey}`}
-        className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-        data-testid="setup-recommended-row"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          {icon}
-          <div className="min-w-0 flex-1">
-            {/* One line: the name truncates, and the badges after it never
-                wrap under it, so the badges of every row stand in line. */}
-            <div className="flex min-w-0 items-center gap-2">
-              <h2 className="min-w-0 truncate text-sm font-medium leading-tight">
-                {title}
-              </h2>
-              {fitMark}
-              {hero && (
-                <span
-                  title={fitLine}
-                  className="shrink-0 rounded-[5px] border border-emerald-200 bg-emerald-50 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/45 dark:text-emerald-200"
-                >
-                  {t('setup:recommend.badge')}
-                </span>
-              )}
-            </div>
-            {/* The one line under the name: the summary, or the progress
-                readout in its place while the download runs — announced as
-                it changes, since nothing else on the row says so. */}
-            <p
-              className="mt-0.5 line-clamp-1 min-h-4 text-xs text-muted-foreground tabular-nums"
-              aria-live="polite"
-            >
-              {progressText ?? summary}
-            </p>
-          </div>
-        </div>
-        {rowDownloading && rowTrackId ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => cancelRowDownload(rowTrackId)}
-            title={t('common:cancelDownload')}
-            aria-label={t('common:cancelDownload')}
-            className={cn(ROUTE_ROW_ACTION_CLASS, ROW_BUTTON_HOVER)}
-          >
-            {t('setup:downloading')}
-            <X className="size-3.5" aria-hidden="true" />
-          </Button>
-        ) : (
-          /* The offer keeps the primary fill, not a bigger pill: a taller
-             button broke the column of buttons it heads. */
-          <Button
-            variant={hero ? 'default' : 'secondary'}
-            size="sm"
-            disabled={disabled}
-            onClick={onDownload}
-            className={cn(ROUTE_ROW_ACTION_CLASS, !hero && ROW_BUTTON_HOVER)}
-          >
-            {buttonLabel}
-          </Button>
-        )}
-      </div>
+        icon={icon}
+        title={title}
+        fitMark={fitMark}
+        hero={hero}
+        downloadSize={downloadSize}
+        progressText={progressText}
+        summary={summary}
+        rowDownloading={rowDownloading}
+        disabled={disabled}
+        onDownload={onDownload}
+        buttonLabel={buttonLabel}
+      />
     )
   }
 
@@ -1634,6 +1531,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     testId?: string
   }) => (
     <RouteRow
+      layout="onboarding"
       icon={icon}
       title={title}
       hint={hint}
@@ -1651,7 +1549,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* Wide enough for a row to hold a name, its fit badge and a
-              "Download 19.7 GB" button on one line; narrow enough for the
+              compact Download button on one line; narrow enough for the
               1024 px minimum window beside the sidebar. */}
           <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[640px] flex-col px-6 py-8 sm:py-10">
             {/* No logo over the title: the sidebar already wears the lockup a
@@ -1738,7 +1636,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   })
                                   void onRunLocalModel(cand)
                                 }}
-                                className={ROUTE_ROW_ACTION_CLASS}
+                                className={ONBOARDING_ROW_ACTION_CLASS}
                               >
                                 {isImporting
                                   ? t('setup:localStep.running')
@@ -1810,7 +1708,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     )
                                     enterChatForDownload(startId, provider)
                                   }}
-                                  className={ROUTE_ROW_ACTION_CLASS}
+                                  className={ONBOARDING_ROW_ACTION_CLASS}
                                 >
                                   {t('setup:localStep.run')}
                                 </Button>
@@ -1895,7 +1793,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                           icon: <Cloud />,
                           title: t('setup:cloudStep.providerTitle'),
                           hint: t('setup:cloudStep.providerHint'),
-                          action: t('setup:cloudStep.add'),
+                          action: t('setup:cloudStep.addApiKey'),
                           label: t('setup:cloudStep.trigger'),
                           onClick: openCloudGallery,
                         })}
