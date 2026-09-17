@@ -570,6 +570,10 @@ pub fn get_mlx_server_version<R: Runtime>(
 }
 
 #[cfg(test)]
+#[path = "commands_fixture_dump.rs"]
+mod fixture_dump;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

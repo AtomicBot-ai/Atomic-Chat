@@ -278,6 +278,7 @@ describe('ModelFactory', () => {
     it('should create a model when available and session exists', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
+        .mockResolvedValueOnce(null) // resolve_local_session: the app, not the core, runs it
         .mockResolvedValueOnce({
           // find_foundation_models_session
           pid: 12345,

@@ -646,6 +646,10 @@ impl ArgumentBuilder {
 }
 // -- Tests
 #[cfg(test)]
+#[path = "args_fixture_dump.rs"]
+mod fixture_dump;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

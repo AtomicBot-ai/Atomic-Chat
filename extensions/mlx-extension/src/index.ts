@@ -33,18 +33,26 @@ import {
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
-import {
-  loadMlxModel,
-  unloadMlxModel,
-} from '@janhq/tauri-plugin-mlx-api'
+import { loadMlxModel, unloadMlxModel } from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 import { resolveMtpDraft } from './mtpRegistry'
 import { resolveEagle3Draft } from './eagle3Registry'
 import { classifyMlxVisionCapability } from './visionCapability'
-import { asNumber, buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
+import {
+  asNumber,
+  buildMlxConfig,
+  selectMlxDraftSettings,
+} from './buildMlxConfig'
 import { mlxMainWeightFileName } from './weightFileName'
 import { planMlxShardRepair, repointLegacyWeightPath } from './shardRepair'
+import {
+  createCoreRuntime,
+  describeCoreError,
+} from '../../shared/atomicCoreRuntime'
+import type { Invoke } from '../../shared/atomicCoreRuntime'
+import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
 /// The three mutually-exclusive speculative-decoding families surfaced by
 /// the MLX extension. Maps 1:1 onto mlx-vlm's `--draft-kind` choices
@@ -68,6 +76,8 @@ const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
 /// window further). The web-app uses this to show a one-shot toast and
 /// stop driving further regeneration attempts.
 const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
+/** Written when a CLI (or anyone else) changes core-owned settings. */
+const CORE_SETTINGS_CHANGED_EVENT = 'atomic-core://settings:changed'
 
 interface AutoIncreaseCtxRequest {
   request_id: string
@@ -141,6 +151,47 @@ export default class mlx_extension extends AIEngine {
   private static readonly BLOCK_RELOAD_DEBOUNCE_MS = 800
 
   private unlistenAutoIncreaseCtx?: () => void
+  private unlistenCoreSettingsChanged?: () => void
+
+  /// MLX in `atomic-chat-core` (PLAN.md §4, stage 5). When the core owns the MLX runtime
+  /// (`atomic_core.runtime = all`) it starts, stops and grows the mlx-server processes; the model
+  /// catalogue, downloads (drafters included) and settings UI stay here. Read per call.
+  private readonly core = createCoreRuntime('mlx', ((command, args) =>
+    args === undefined ? invoke(command) : invoke(command, args)) as Invoke)
+  private isMirroringCoreSettings = false
+  private readonly coreSettings = createCoreSettingsSync({
+    core: this.core,
+    readSettings: async () =>
+      (await this.getSettings()) as unknown as PersistedSetting[],
+    writeSettings: (settings) => this.updateSettings(settings as never),
+    setMirroring: (active) => {
+      this.isMirroringCoreSettings = active
+    },
+  })
+
+  private async coreOwnsRuntime(): Promise<boolean> {
+    return this.core.coreOwnsRuntime()
+  }
+
+  /**
+   * Keep the rollback copy of the settings current when the core's copy changes elsewhere (a CLI);
+   * only this provider's values, only while the core owns the runtime.
+   */
+  private async listenForCoreSettings(): Promise<void> {
+    this.unlistenCoreSettingsChanged = await listen(
+      CORE_SETTINGS_CHANGED_EVENT,
+      (event: { payload?: { provider?: string } }) => {
+        if (event.payload?.provider !== this.provider) return
+        void this.coreOwnsRuntime()
+          .then((owned) => (owned ? this.coreSettings.mirror() : undefined))
+          .catch((e) =>
+            logger.warn(
+              `[atomic-core] could not mirror changed settings: ${describeCoreError(e)}`
+            )
+          )
+      }
+    )
+  }
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -178,6 +229,7 @@ export default class mlx_extension extends AIEngine {
         void this.handleAutoIncreaseCtx(event.payload)
       }
     )
+    await this.listenForCoreSettings()
 
     this.getProviderPath()
   }
@@ -217,6 +269,8 @@ export default class mlx_extension extends AIEngine {
   }
 
   override async onUnload(): Promise<void> {
+    this.unlistenCoreSettingsChanged?.()
+    this.unlistenCoreSettingsChanged = undefined
     if (this.unlistenAutoIncreaseCtx) {
       this.unlistenAutoIncreaseCtx()
       this.unlistenAutoIncreaseCtx = undefined
@@ -231,6 +285,14 @@ export default class mlx_extension extends AIEngine {
 
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
+    if (this.isMirroringCoreSettings) {
+      // A mirror of the core's values refreshes the rollback copy; restarting a live session for a
+      // changed block size is the owner's business, not this copy's.
+      if (key === 'timeout') this.timeout = asNumber(value) ?? 600
+      if (key === 'auto_unload')
+        this.autoUnload = value === true || value === 'true'
+      return
+    }
 
     if (key === 'timeout') {
       this.timeout = asNumber(value) ?? 600
@@ -380,7 +442,9 @@ export default class mlx_extension extends AIEngine {
       const modelConfigPath = await joinPath([currentDir, 'model.yml'])
       if (await fs.existsSync(modelConfigPath)) {
         // Normalize Windows '\' to '/' so the id matches the catalog
-        modelIds.push(currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/'))
+        modelIds.push(
+          currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+        )
         continue
       }
 
@@ -521,6 +585,22 @@ export default class mlx_extension extends AIEngine {
     isEmbedding: boolean = false,
     bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
+    return this.core.withRuntimeLoad(() =>
+      this.performLoadWithOwner(
+        modelId,
+        overrideSettings,
+        isEmbedding,
+        bypassAutoUnload
+      )
+    )
+  }
+
+  private async performLoadWithOwner(
+    modelId: string,
+    overrideSettings?: any,
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
+  ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
     // Auto-unload other models if needed
@@ -556,8 +636,11 @@ export default class mlx_extension extends AIEngine {
     const modelConfig = await invoke<ModelConfig>('read_yaml', {
       path: modelConfigPath,
     })
-    await this.repairLegacyShardName(modelConfig, modelConfigPath)
-    const port = await this.getRandomPort()
+    const coreOwned = await this.coreOwnsRuntime()
+    // The core repairs the shard name and picks the port itself when it owns the runtime.
+    if (!coreOwned)
+      await this.repairLegacyShardName(modelConfig, modelConfigPath)
+    const port = coreOwned ? 0 : await this.getRandomPort()
 
     // mlx-vlm has no auth layer; we bind the server to 127.0.0.1 in the
     // tauri-plugin-mlx Rust shim instead. `envs` stays around so we can
@@ -673,15 +756,21 @@ export default class mlx_extension extends AIEngine {
     )
 
     try {
-      const sInfo = await loadMlxModel(
-        modelId,
-        modelPath,
-        port,
-        mlxConfig,
-        envs,
-        isEmbedding,
-        Number(this.timeout)
-      )
+      const sInfo = coreOwned
+        ? await this.loadThroughCore(
+            modelId,
+            { ...cfg, draft_model_path: draftPath },
+            isEmbedding
+          )
+        : await loadMlxModel(
+            modelId,
+            modelPath,
+            port,
+            mlxConfig,
+            envs,
+            isEmbedding,
+            Number(this.timeout)
+          )
       this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
       this.lastActiveModelId = modelId
       return sInfo
@@ -851,6 +940,42 @@ export default class mlx_extension extends AIEngine {
     }
 
     try {
+      if (await this.coreOwnsRuntime()) {
+        // The core owns the process and the ladder, keeping the drafter and quantization it loaded
+        // with; it answers `at_max` itself.
+        const outcome = await this.core.increaseContext(model_id, trigger)
+        if (!outcome.ok) {
+          await sendDone({ ok: false, reason: outcome.reason })
+          if (outcome.reason === 'at_max') {
+            await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
+              provider: this.provider,
+              modelId: model_id,
+              maxCtxLen: outcome.max_ctx_len ?? outcome.current_ctx_len,
+              currentCtxLen: outcome.current_ctx_len,
+            }).catch((e) =>
+              logger.warn(
+                `Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`
+              )
+            )
+          }
+          return
+        }
+        this.modelCtxSize.set(model_id, outcome.new_ctx_len)
+        const notifyPayload = {
+          provider: this.provider,
+          modelId: model_id,
+          newCtxLen: outcome.new_ctx_len,
+        }
+        if (events && typeof events.emit === 'function') {
+          events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+        }
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload).catch((e) =>
+          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
+        )
+        await sendDone({ ok: true, new_ctx_len: outcome.new_ctx_len })
+        return
+      }
+
       const currentCtxLen =
         this.modelCtxSize.get(model_id) ??
         this.config?.ctx_size ??
@@ -924,7 +1049,41 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
+  /**
+   * Hand the load to the core, with the settings this load resolved — including a drafter this
+   * extension just restored or downloaded — so the core starts the server this extension would have.
+   * The auto-unload already happened above, through the core.
+   */
+  private async loadThroughCore(
+    modelId: string,
+    settings: Record<string, unknown>,
+    isEmbedding: boolean
+  ): Promise<SessionInfo> {
+    try {
+      await this.coreSettings.ensureReady()
+      return (await this.core.load(modelId, {
+        settings,
+        isEmbedding,
+        bypassAutoUnload: true,
+      })) as SessionInfo
+    } catch (error) {
+      throw new Error(describeCoreError(error))
+    }
+  }
+
   override async unload(modelId: string): Promise<UnloadResult> {
+    if (await this.coreOwnsRuntime()) {
+      if (!(await this.findSessionByModel(modelId)))
+        throw new Error(`No active MLX session found for model: ${modelId}`)
+      try {
+        return await this.core.unload(modelId)
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to unload model: ${describeCoreError(error)}`,
+        }
+      }
+    }
     const sInfo = await this.findSessionByModel(modelId)
     if (!sInfo) {
       throw new Error(`No active MLX session found for model: ${modelId}`)
@@ -948,6 +1107,8 @@ export default class mlx_extension extends AIEngine {
   }
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
+    if (await this.coreOwnsRuntime())
+      return ((await this.core.findSession(modelId)) ?? null) as SessionInfo
     try {
       return await invoke<SessionInfo>('plugin:mlx|find_mlx_session_by_model', {
         modelId,
@@ -968,10 +1129,13 @@ export default class mlx_extension extends AIEngine {
     }
     this.lastActiveModelId = opts.model
 
-    // Check if the process is alive
-    const isAlive = await invoke<boolean>('plugin:mlx|is_mlx_process_running', {
-      pid: sessionInfo.pid,
-    })
+    // Check if the process is alive. A core-owned process is not in the plugin's table; the core
+    // removes a dead one itself, so a session it still reports is alive as far as it knows.
+    const isAlive =
+      (await this.coreOwnsRuntime()) ||
+      (await invoke<boolean>('plugin:mlx|is_mlx_process_running', {
+        pid: sessionInfo.pid,
+      }))
 
     if (isAlive) {
       try {
@@ -1471,6 +1635,7 @@ export default class mlx_extension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
+    if (await this.coreOwnsRuntime()) return this.core.getLoadedModels()
     try {
       return await invoke<string[]>('plugin:mlx|get_mlx_loaded_models')
     } catch (e) {
@@ -2378,7 +2543,9 @@ export default class mlx_extension extends AIEngine {
     local?: boolean
     localPath?: string
   }> {
-    logger.info(`checkEagle3Support: resolving EAGLE-3 speculator for ${modelId}`)
+    logger.info(
+      `checkEagle3Support: resolving EAGLE-3 speculator for ${modelId}`
+    )
     try {
       const resolution = resolveEagle3Draft(modelId)
       if (!resolution) {

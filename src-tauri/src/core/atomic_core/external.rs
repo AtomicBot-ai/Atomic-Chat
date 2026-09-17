@@ -1,7 +1,8 @@
 //! Engines the app still runs itself — TurboQuant (`llamacpp`), MLX, and
-//! llama.cpp upstream while that runtime is not the core's — registered with
+//! llama.cpp upstream while those runtimes are not the core's — registered with
 //! the core so the Local API Server it serves can route to them (PLAN.md §4,
-//! stage 4d).
+//! stage 4d). With `atomic_core.runtime = all` (stage 5) the app runs none of
+//! them and the registration is withdrawn.
 //!
 //! The app publishes its whole list as one snapshot and keeps it alive with
 //! heartbeats; a registration that stops beating expires in the core, so an app
@@ -28,6 +29,7 @@ use super::commands::AtomicCoreClient;
 use crate::core::sessions::resolver::{
     PROVIDER_LLAMACPP, PROVIDER_LLAMACPP_UPSTREAM, PROVIDER_MLX,
 };
+use crate::core::app::models::CoreRuntimeOwner;
 use crate::core::state::AppState;
 
 /// How this app names itself as an owner of external sessions.
@@ -46,7 +48,22 @@ pub fn generation() -> u64 {
     })
 }
 
-/// The app-owned sessions, as the core's registration expects them.
+/// Whether the core owns every local runtime (`atomic_core.runtime = all`). Then the app runs no
+/// engine of its own, and there is nothing to register: the registration is withdrawn, not kept
+/// alive empty (PLAN.md §4, stage 5).
+pub fn every_runtime_in_core<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<AppState>()
+        .and_then(|state| state.session_resolver.get().cloned())
+        .is_some_and(|resolver| {
+            CoreRuntimeOwner::All
+                .providers()
+                .iter()
+                .all(|provider| resolver.core_owns(provider))
+        })
+}
+
+/// The app-owned sessions, as the core's registration expects them: every provider the core does
+/// not own yet.
 pub async fn legacy_sessions<R: Runtime>(app: &AppHandle<R>) -> Vec<Value> {
     let Some(resolver) = app
         .try_state::<AppState>()
@@ -54,12 +71,11 @@ pub async fn legacy_sessions<R: Runtime>(app: &AppHandle<R>) -> Vec<Value> {
     else {
         return Vec::new();
     };
-    let mut providers = vec![PROVIDER_LLAMACPP, PROVIDER_MLX];
-    if !resolver.core_owns(PROVIDER_LLAMACPP_UPSTREAM) {
-        providers.push(PROVIDER_LLAMACPP_UPSTREAM);
-    }
     let mut out = Vec::new();
-    for provider in providers {
+    for provider in [PROVIDER_LLAMACPP, PROVIDER_MLX, PROVIDER_LLAMACPP_UPSTREAM] {
+        if resolver.core_owns(provider) {
+            continue;
+        }
         for session in resolver.list_legacy_in(provider).await {
             out.push(session_json(provider, &session));
         }
@@ -105,6 +121,9 @@ async fn publish<R: Runtime>(app: &AppHandle<R>, sessions: &[Value]) -> bool {
 
 /// Publish before opening the core's public listener, not at the next five-second tick.
 pub async fn publish_before_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    if every_runtime_in_core(app) {
+        return Ok(());
+    }
     let sessions = legacy_sessions(app).await;
     if publish(app, &sessions).await { Ok(()) }
     else { Err("Could not register the app's models with the core before opening the API.".into()) }
@@ -128,7 +147,7 @@ pub async fn run<R: Runtime>(app: AppHandle<R>) {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         interval.tick().await;
-        if !core_owns_server(&app) {
+        if !core_owns_server(&app) || every_runtime_in_core(&app) {
             if published.take().is_some() {
                 call(&app, "DELETE", &format!("/external-sessions/{OWNER}"),
                     Some(json!({"generation": generation()}))).await;

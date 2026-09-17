@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/core', async () => {
   return { ...actual, invoke: (...args: unknown[]) => invoke(...args) }
 })
 
-import { findLocalSession } from '../model-factory'
+import { findFoundationModelsSession, findLocalSession } from '../model-factory'
 
 beforeEach(() => invoke.mockReset())
 
@@ -60,6 +60,34 @@ describe('findLocalSession ownership boundary', () => {
     }
     expect(caught).toBeInstanceOf(Error)
     expect((caught as Error).message).toBe('owner is changing')
+    expect(invoke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('findFoundationModelsSession', () => {
+  it('answers from the resolver when the core runs the server', async () => {
+    invoke.mockResolvedValueOnce({ model_id: 'apple/on-device', port: 3007 })
+    await expect(findFoundationModelsSession('apple/on-device')).resolves.toMatchObject({ port: 3007 })
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith('resolve_local_session', {
+      provider: 'foundation-models',
+      modelId: 'apple/on-device',
+    })
+  })
+
+  it('reads the plugin table when the resolver has nothing, or on an old shell without it', async () => {
+    invoke.mockResolvedValueOnce(null).mockResolvedValueOnce({ port: 3008 })
+    await expect(findFoundationModelsSession('apple/on-device')).resolves.toEqual({ port: 3008 })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'plugin:foundation-models|find_foundation_models_session', {})
+
+    invoke.mockReset()
+    invoke.mockRejectedValueOnce(new Error('unknown command resolve_local_session')).mockResolvedValueOnce(null)
+    await expect(findFoundationModelsSession('apple/on-device')).resolves.toBeNull()
+  })
+
+  it('does not fall back to the plugin after an operational resolver failure', async () => {
+    invoke.mockRejectedValueOnce(new Error('owner is changing'))
+    await expect(findFoundationModelsSession('apple/on-device')).rejects.toThrow('owner is changing')
     expect(invoke).toHaveBeenCalledTimes(1)
   })
 })

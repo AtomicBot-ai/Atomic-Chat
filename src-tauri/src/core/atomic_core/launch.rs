@@ -35,6 +35,9 @@ pub struct CoreCommand {
     pub program: String,
     /// Arguments that come before the subcommand (`run …/main.ts`).
     pub prefix: Vec<String>,
+    /// The app's bundled sidecar binaries (`<resources>/resources/bin`): where the core finds
+    /// `mlx-server` and `foundation-models-server` once it owns those runtimes.
+    pub resources_dir: Option<String>,
 }
 
 impl CoreCommand {
@@ -48,6 +51,10 @@ impl CoreCommand {
         args.push(data_folder.to_string_lossy().to_string());
         args.push("--control-port".into());
         args.push("0".into());
+        if let Some(resources) = &self.resources_dir {
+            args.push("--resources-dir".into());
+            args.push(resources.clone());
+        }
         args
     }
 
@@ -112,6 +119,7 @@ pub fn resolve_core_command(
         return Ok(CoreCommand {
             program,
             prefix: parts.collect(),
+            resources_dir: Some(sidecar_resources_dir(resource_dir)),
         });
     }
 
@@ -129,7 +137,15 @@ pub fn resolve_core_command(
     Ok(CoreCommand {
         program: bundled.to_string_lossy().to_string(),
         prefix: Vec::new(),
+        resources_dir: Some(sidecar_resources_dir(resource_dir)),
     })
+}
+
+/// Where the MLX and Foundation Models plugins looked for their servers: `<resources>/resources/bin`.
+/// Passed even when those binaries are absent (Windows, Linux, a dev build without them): the core
+/// then reports `BINARY_NOT_FOUND` for that provider, as the plugins did.
+pub fn sidecar_resources_dir(resource_dir: &Path) -> String {
+    resource_dir.join("resources").join("bin").to_string_lossy().to_string()
 }
 
 pub fn bundled_core_path(resource_dir: &Path) -> PathBuf {
@@ -398,10 +414,29 @@ mod tests {
     }
 
     #[test]
+    fn the_daemon_argv_names_the_sidecar_resources_when_known() {
+        let command = CoreCommand {
+            program: "core".into(),
+            prefix: vec![],
+            resources_dir: Some("/app/resources/bin".into()),
+        };
+
+        assert_eq!(
+            command.daemon_args(Path::new("/data")),
+            vec!["daemon", "--data-folder", "/data", "--control-port", "0", "--resources-dir", "/app/resources/bin"]
+        );
+        assert_eq!(
+            sidecar_resources_dir(Path::new("/app")),
+            Path::new("/app").join("resources").join("bin").to_string_lossy()
+        );
+    }
+
+    #[test]
     fn the_daemon_argv_pins_the_folder_and_lets_the_os_pick_the_port() {
         let command = CoreCommand {
             program: "core".into(),
             prefix: vec!["run".into()],
+            resources_dir: None,
         };
 
         assert_eq!(
@@ -423,6 +458,7 @@ mod tests {
         let command = CoreCommand {
             program: "atomic-core-that-does-not-exist".into(),
             prefix: Vec::new(),
+            resources_dir: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(200))
@@ -439,6 +475,7 @@ mod tests {
         let command = CoreCommand {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "exit 3".into(), "sh".into()],
+            resources_dir: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(500))
@@ -464,6 +501,7 @@ mod tests {
         let command = CoreCommand {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "exit 0".into(), "sh".into()],
+            resources_dir: None,
         };
         let _ = launch_and_wait(&command, dir.path(), Duration::from_millis(300)).await;
         let child = std::process::Command::new("/bin/sh")
@@ -489,6 +527,7 @@ mod tests {
                 "echo 'CORE_ALREADY_RUNNING: another core owns this folder' >&2; exit 1".into(),
                 "sh".into(),
             ],
+            resources_dir: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(500))
@@ -508,6 +547,7 @@ mod tests {
         let command = CoreCommand {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "sleep 30".into(), "sh".into()],
+            resources_dir: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(300))

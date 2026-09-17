@@ -1,0 +1,33 @@
+{
+  "comparator": "argv-exact",
+  "expected": {
+    "argv": [
+      "--model",
+      "<tmp>/target",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "3999",
+      "--max-kv-size",
+      "8192"
+    ]
+  },
+  "input": {
+    "config": {
+      "block_size": 0,
+      "ctx_size": 8192,
+      "draft_kind": "",
+      "draft_model_path": "",
+      "kv_bits": 0.0,
+      "kv_quant_scheme": ""
+    },
+    "model_path": "<tmp>/target/model.safetensors",
+    "port": 3999
+  },
+  "name": "weight_file_collapses_to_directory",
+  "source": {
+    "commit": "5881e0bf3a955fcc5e9803555940d1f038eadf14",
+    "file": "src-tauri/plugins/tauri-plugin-mlx/src/commands.rs",
+    "provider": "mlx"
+  }
+}

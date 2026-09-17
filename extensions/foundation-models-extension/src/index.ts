@@ -37,6 +37,11 @@ import {
   findFoundationModelsSession,
   checkFoundationModelsAvailability,
 } from '@janhq/tauri-plugin-foundation-models-api'
+import {
+  createCoreRuntime,
+  describeCoreError,
+} from '../../shared/atomicCoreRuntime'
+import type { Invoke } from '../../shared/atomicCoreRuntime'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -78,6 +83,29 @@ export default class FoundationModelsExtension extends AIEngine {
   /** Seconds before a streaming request is considered timed out. */
   timeout: number = 300
 
+  /**
+   * Foundation Models in `atomic-chat-core` (PLAN.md §4, stage 5). When the core owns this runtime
+   * (`atomic_core.runtime = all`) it starts and stops the server; there are no settings to hand
+   * over. The availability check stays with the plugin: it only runs `--check`, owns no process.
+   */
+  private readonly core = createCoreRuntime('foundation-models', ((
+    command,
+    args
+  ) =>
+    args === undefined ? invoke(command) : invoke(command, args)) as Invoke)
+
+  /** The running server, from whoever owns it. */
+  private async findSession(): Promise<{
+    pid: number
+    port: number
+    model_id: string
+    api_key: string
+  } | null> {
+    if (await this.core.coreOwnsRuntime())
+      return (await this.core.findSession(APPLE_MODEL_ID)) ?? null
+    return findFoundationModelsSession()
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   override async onLoad(): Promise<void> {
@@ -90,12 +118,15 @@ export default class FoundationModelsExtension extends AIEngine {
       if (availability !== 'available') {
         logger.warn(
           `Foundation Models not available on this device (status: ${availability}). ` +
-          'Hiding provider.'
+            'Hiding provider.'
         )
         EngineManager.instance().engines.delete(this.provider)
       }
     } catch (err) {
-      logger.warn('Could not determine Foundation Models availability — hiding provider.', err)
+      logger.warn(
+        'Could not determine Foundation Models availability — hiding provider.',
+        err
+      )
       EngineManager.instance().engines.delete(this.provider)
     }
   }
@@ -135,6 +166,10 @@ export default class FoundationModelsExtension extends AIEngine {
     _isEmbedding: boolean = false,
     _bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
+    return this.core.withRuntimeLoad(() => this.loadWithOwner(modelId))
+  }
+
+  private async loadWithOwner(modelId: string): Promise<SessionInfo> {
     if (modelId !== APPLE_MODEL_ID) {
       throw new Error(
         `Foundation Models extension only supports model '${APPLE_MODEL_ID}', got '${modelId}'`
@@ -142,10 +177,25 @@ export default class FoundationModelsExtension extends AIEngine {
     }
 
     // Return existing session if already running
-    const existing = await findFoundationModelsSession()
+    const existing = await this.findSession()
     if (existing) {
-      logger.info('Foundation Models server already running on port', existing.port)
+      logger.info(
+        'Foundation Models server already running on port',
+        existing.port
+      )
       return this.toSessionInfo(existing)
+    }
+
+    if (await this.core.coreOwnsRuntime()) {
+      try {
+        return this.toSessionInfo(await this.core.load(APPLE_MODEL_ID))
+      } catch (err) {
+        logger.error(
+          'Failed to start Foundation Models server in the core:',
+          err
+        )
+        throw new Error(describeCoreError(err))
+      }
     }
 
     const port = await getFoundationModelsRandomPort()
@@ -169,10 +219,18 @@ export default class FoundationModelsExtension extends AIEngine {
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const session = await findFoundationModelsSession()
+    const session = await this.findSession()
     if (!session) {
       logger.warn('No active Foundation Models session to unload')
       return { success: false, error: 'No active session found' }
+    }
+
+    if (await this.core.coreOwnsRuntime()) {
+      try {
+        return await this.core.unload(APPLE_MODEL_ID)
+      } catch (err) {
+        return { success: false, error: describeCoreError(err) }
+      }
     }
 
     try {
@@ -195,15 +253,18 @@ export default class FoundationModelsExtension extends AIEngine {
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const session = await findFoundationModelsSession()
+    const session = await this.findSession()
     if (!session) {
       throw new Error(
         'Apple Foundation Model is not loaded. Please load the model first.'
       )
     }
 
-    // Verify the server process is still alive
-    const alive = await isFoundationModelsProcessRunning(session.pid)
+    // Verify the server process is still alive. A core-owned server is not in the plugin's table;
+    // the core drops a dead one itself, so a session it still reports is alive as far as it knows.
+    const alive =
+      (await this.core.coreOwnsRuntime()) ||
+      (await isFoundationModelsProcessRunning(session.pid))
     if (!alive) {
       throw new Error(
         'Apple Foundation Model server has crashed. Please reload the model.'
@@ -222,7 +283,7 @@ export default class FoundationModelsExtension extends AIEngine {
     const url = `http://localhost:${session.port}/v1/chat/completions`
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.api_key}`,
+      'Authorization': `Bearer ${session.api_key}`,
     }
     const body = JSON.stringify(opts)
 
@@ -334,7 +395,10 @@ export default class FoundationModelsExtension extends AIEngine {
     )
   }
 
-  override async update(_modelId: string, _model: Partial<modelInfo>): Promise<void> {
+  override async update(
+    _modelId: string,
+    _model: Partial<modelInfo>
+  ): Promise<void> {
     throw new Error(
       'Apple Foundation Models are managed by the OS and cannot be updated from Jan.'
     )
@@ -351,7 +415,7 @@ export default class FoundationModelsExtension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
-    const session = await findFoundationModelsSession()
+    const session = await this.findSession()
     return session ? [APPLE_MODEL_ID] : []
   }
 

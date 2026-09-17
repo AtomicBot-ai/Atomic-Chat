@@ -11,6 +11,7 @@
 //! is opened.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
@@ -42,6 +43,8 @@ pub struct AtomicCoreClient {
     reconciliation_required: AtomicBool,
     server_running_intent: AtomicBool,
     last_server_recovery: AtomicU64,
+    next_runtime_load: AtomicU64,
+    runtime_loads: Mutex<HashMap<u64, String>>,
     /// Serialises settings writes and lifecycle transitions.
     transition: tokio::sync::Mutex<()>,
     /// Calls hold a read permit; disabling first closes the atomic gate, then
@@ -75,6 +78,8 @@ impl AtomicCoreClient {
             reconciliation_required: AtomicBool::new(false),
             server_running_intent: AtomicBool::new(false),
             last_server_recovery: AtomicU64::new(0),
+            next_runtime_load: AtomicU64::new(0),
+            runtime_loads: Mutex::new(HashMap::new()),
             transition: tokio::sync::Mutex::new(()),
             operations: tokio::sync::RwLock::new(()),
             background: Mutex::new(None),
@@ -88,6 +93,27 @@ impl AtomicCoreClient {
 
     pub(crate) async fn owner_gate(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.transition.lock().await
+    }
+
+    async fn begin_runtime_load(&self, provider: String) -> Result<u64, String> {
+        let _transition = self.transition.lock().await;
+        self.ensure_reconciled()?;
+        if !crate::core::app::models::CoreRuntimeOwner::All.providers().contains(&provider.as_str()) {
+            return Err(format!("Unknown runtime provider: {provider}"));
+        }
+        let id = self.next_runtime_load.fetch_add(1, Ordering::SeqCst) + 1;
+        self.runtime_loads.lock().unwrap().insert(id, provider);
+        Ok(id)
+    }
+
+    fn end_runtime_load(&self, id: u64) {
+        self.runtime_loads.lock().unwrap().remove(&id);
+    }
+
+    fn loading_runtime_providers(&self, changing: &[(&str, bool)]) -> Vec<String> {
+        let active = self.runtime_loads.lock().unwrap();
+        active.values().filter(|provider| changing.iter().any(|(name, _)| *name == provider.as_str()))
+            .cloned().collect()
     }
 
     /// A legacy extension holds the plugin gate while it may make a core call.
@@ -445,6 +471,8 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
         reconciliation_required: AtomicBool::new(false),
         server_running_intent: AtomicBool::new(false),
         last_server_recovery: AtomicU64::new(0),
+        next_runtime_load: AtomicU64::new(0),
+        runtime_loads: Mutex::new(HashMap::new()),
         transition: tokio::sync::Mutex::new(()),
         operations: tokio::sync::RwLock::new(()),
         background: Mutex::new(None),
@@ -554,37 +582,82 @@ fn active_runtime<R: Runtime>(
     use crate::core::sessions::resolver::PROVIDER_LLAMACPP_UPSTREAM;
 
     session_resolver(app).and_then(|resolver| {
-        resolver
-            .core_owns(PROVIDER_LLAMACPP_UPSTREAM)
-            .then_some(CoreRuntimeOwner::LlamacppUpstream)
+        if CoreRuntimeOwner::All
+            .providers()
+            .iter()
+            .all(|provider| resolver.core_owns(provider))
+        {
+            Some(CoreRuntimeOwner::All)
+        } else {
+            resolver
+                .core_owns(PROVIDER_LLAMACPP_UPSTREAM)
+                .then_some(CoreRuntimeOwner::LlamacppUpstream)
+        }
     })
 }
 
-fn apply_ownership<R: Runtime>(app: &AppHandle<R>, flags: AtomicCoreFlags) {
-    use crate::core::sessions::resolver::PROVIDER_LLAMACPP_UPSTREAM;
+/// Providers a runtime flag hands to the core.
+fn owned_providers(
+    runtime: Option<crate::core::app::models::CoreRuntimeOwner>,
+) -> &'static [&'static str] {
+    runtime.map(|owner| owner.providers()).unwrap_or(&[])
+}
 
+fn apply_ownership<R: Runtime>(app: &AppHandle<R>, flags: AtomicCoreFlags) {
     let Some(resolver) = session_resolver(app) else {
         return;
     };
-    let owned: Vec<String> = match flags.runtime {
-        Some(crate::core::app::models::CoreRuntimeOwner::LlamacppUpstream) => {
-            vec![PROVIDER_LLAMACPP_UPSTREAM.to_string()]
-        }
-        None => Vec::new(),
-    };
+    let owned: Vec<String> = owned_providers(flags.runtime)
+        .iter()
+        .map(|provider| provider.to_string())
+        .collect();
     log::info!("[atomic-core] providers owned by the core: {owned:?}");
     resolver.set_core_owned(owned);
+    // Only the upstream plugin has a load gate; every runtime flag includes upstream.
     app.state::<tauri_plugin_llamacpp_upstream::LlamacppState>()
         .core_owns_runtime
         .store(flags.runtime.is_some(), Ordering::SeqCst);
 }
 
+/// Model ids the Foundation Models plugin runs itself. The resolver has no table for this provider:
+/// the app's proxy never routed to it, so only a handover needs to look.
+#[cfg(feature = "foundation-models")]
+async fn legacy_foundation_models_sessions<R: Runtime>(app: &AppHandle<R>) -> Vec<String> {
+    let Some(state) = app.try_state::<tauri_plugin_foundation_models::FoundationModelsState>() else {
+        return Vec::new();
+    };
+    let sessions = state.sessions.lock().await;
+    sessions.values().map(|session| session.info.model_id.clone()).collect()
+}
+
+#[cfg(not(feature = "foundation-models"))]
+async fn legacy_foundation_models_sessions<R: Runtime>(_app: &AppHandle<R>) -> Vec<String> {
+    Vec::new()
+}
+
+/// Providers whose owner changes between two runtime flags, in a stable order.
+fn changing_providers(
+    current: Option<crate::core::app::models::CoreRuntimeOwner>,
+    target: Option<crate::core::app::models::CoreRuntimeOwner>,
+) -> Vec<(&'static str, bool)> {
+    let now = owned_providers(current);
+    let next = owned_providers(target);
+    crate::core::app::models::CoreRuntimeOwner::All
+        .providers()
+        .iter()
+        .filter(|provider| now.contains(provider) != next.contains(provider))
+        .map(|provider| (*provider, now.contains(provider)))
+        .collect()
+}
+
+/// A runtime moves only when nothing is loaded on the side it leaves: a loaded model would keep its
+/// process under an owner that no longer answers for it. Checked per provider whose owner changes.
 async fn ensure_outgoing_runtime_is_empty<R: Runtime>(
     app: &AppHandle<R>,
     state: &AtomicCoreClient,
     target: Option<crate::core::app::models::CoreRuntimeOwner>,
 ) -> Result<(), String> {
-    use crate::core::sessions::resolver::PROVIDER_LLAMACPP_UPSTREAM;
+    use crate::core::sessions::resolver::PROVIDER_FOUNDATION_MODELS;
 
     let Some(resolver) = session_resolver(app) else {
         return Err("The session resolver is not installed.".to_string());
@@ -594,31 +667,50 @@ async fn ensure_outgoing_runtime_is_empty<R: Runtime>(
         return Ok(());
     }
 
-    let sessions = if current.is_some() {
+    let changing = changing_providers(current, target);
+    let loading = state.loading_runtime_providers(&changing);
+    if !loading.is_empty() {
+        return Err(format!("Cannot change runtime ownership while {} model loads are in progress.", loading.join(", ")));
+    }
+    if changing.iter().any(|(_, core_owned)| *core_owned) {
         state
             .snapshot_unlocked()
             .await
             .map_err(|error| format!("Could not verify core sessions before handover: {error}"))?;
-        state
-            .sessions
-            .list()
-            .into_iter()
-            .filter(|session| session.provider == PROVIDER_LLAMACPP_UPSTREAM)
-            .collect::<Vec<_>>()
-    } else {
-        resolver.list_legacy_in(PROVIDER_LLAMACPP_UPSTREAM).await
-    };
-    if sessions.is_empty() {
+    }
+    let mut busy: Vec<&str> = Vec::new();
+    let mut models: Vec<String> = Vec::new();
+    for (provider, core_owned) in &changing {
+        let loaded: Vec<String> = if *core_owned {
+            state
+                .sessions
+                .list()
+                .into_iter()
+                .filter(|session| session.provider == *provider)
+                .map(|session| session.model_id)
+                .collect()
+        } else if *provider == PROVIDER_FOUNDATION_MODELS {
+            legacy_foundation_models_sessions(app).await
+        } else {
+            resolver
+                .list_legacy_in(provider)
+                .await
+                .into_iter()
+                .map(|session| session.model_id)
+                .collect()
+        };
+        if !loaded.is_empty() {
+            busy.push(provider);
+            models.extend(loaded);
+        }
+    }
+    if busy.is_empty() {
         return Ok(());
     }
-
-    let models = sessions
-        .into_iter()
-        .map(|session| session.model_id)
-        .collect::<Vec<_>>()
-        .join(", ");
     Err(format!(
-        "Cannot change the llamacpp-upstream runtime owner while models are loaded: {models}. Unload them first."
+        "Cannot change the {} runtime owner while models are loaded: {}. Unload them first.",
+        busy.join(", "),
+        models.join(", ")
     ))
 }
 
@@ -684,6 +776,20 @@ pub async fn atomic_core_status<R: Runtime>(
 #[tauri::command]
 pub async fn atomic_core_snapshot(state: State<'_, AtomicCoreClient>) -> Result<Value, CoreError> {
     state.snapshot().await
+}
+
+/// A webview extension reserves its runtime owner before asynchronous model preparation starts.
+/// The lease is short-lived and released by the extension in `finally`; handover rejects while it exists.
+#[tauri::command]
+pub async fn atomic_core_begin_runtime_load(
+    state: State<'_, AtomicCoreClient>, provider: String,
+) -> Result<u64, String> {
+    state.begin_runtime_load(provider).await
+}
+
+#[tauri::command]
+pub fn atomic_core_end_runtime_load(state: State<'_, AtomicCoreClient>, id: u64) {
+    state.end_runtime_load(id);
 }
 
 #[tauri::command]
@@ -950,6 +1056,34 @@ async fn recover_public_server<R: Runtime>(app: &AppHandle<R>, generation: u64) 
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_handover_checks_exactly_the_providers_whose_owner_changes() {
+        use crate::core::app::models::CoreRuntimeOwner::{All, LlamacppUpstream};
+
+        // Off → all: every provider leaves the app, so every legacy table must be empty.
+        assert_eq!(
+            changing_providers(None, Some(All)),
+            vec![
+                ("llamacpp-upstream", false),
+                ("llamacpp", false),
+                ("mlx", false),
+                ("foundation-models", false)
+            ]
+        );
+        // Upstream → all: upstream stays in the core; the other three move in.
+        assert_eq!(
+            changing_providers(Some(LlamacppUpstream), Some(All)),
+            vec![("llamacpp", false), ("mlx", false), ("foundation-models", false)]
+        );
+        // The rollback: all → upstream hands three back, whose core sessions must be gone.
+        assert_eq!(
+            changing_providers(Some(All), Some(LlamacppUpstream)),
+            vec![("llamacpp", true), ("mlx", true), ("foundation-models", true)]
+        );
+        assert!(changing_providers(Some(All), Some(All)).is_empty());
+        assert_eq!(owned_providers(None), &[] as &[&str]);
+    }
+
     fn disabled_client(data_folder: &std::path::Path) -> AtomicCoreClient {
         AtomicCoreClient {
             supervisor: Arc::new(Supervisor::new(
@@ -963,10 +1097,34 @@ mod tests {
             reconciliation_required: AtomicBool::new(false),
             server_running_intent: AtomicBool::new(false),
             last_server_recovery: AtomicU64::new(0),
+            next_runtime_load: AtomicU64::new(0),
+            runtime_loads: Mutex::new(HashMap::new()),
             transition: tokio::sync::Mutex::new(()),
             operations: tokio::sync::RwLock::new(()),
             background: Mutex::new(None),
         }
+    }
+
+    #[tokio::test]
+    async fn runtime_load_lease_blocks_only_a_handover_of_its_provider() {
+        let data = tempfile::tempdir().unwrap();
+        let client = Arc::new(disabled_client(data.path()));
+        let lease = client.begin_runtime_load("mlx".into()).await.unwrap();
+        assert_eq!(client.loading_runtime_providers(&[("mlx", false)]), vec!["mlx"]);
+        assert!(client.loading_runtime_providers(&[("foundation-models", false)]).is_empty());
+
+        let guard = client.transition.lock().await;
+        let waiting = {
+            let client = Arc::clone(&client);
+            tokio::spawn(async move { client.begin_runtime_load("foundation-models".into()).await })
+        };
+        tokio::task::yield_now().await;
+        assert_eq!(client.runtime_loads.lock().unwrap().len(), 1, "a new load waits for flag handover");
+        drop(guard);
+        let second = waiting.await.unwrap().unwrap();
+        client.end_runtime_load(lease);
+        client.end_runtime_load(second);
+        assert!(client.loading_runtime_providers(&[("mlx", false), ("foundation-models", false)]).is_empty());
     }
 
     /// `build.rs` stamps the version from `package.json`; the supervisor refuses

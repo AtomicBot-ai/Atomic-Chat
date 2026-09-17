@@ -1,0 +1,30 @@
+{
+  "cases": [
+    "oom_out_of_memory",
+    "oom_failed_to_allocate",
+    "oom_insufficient_memory",
+    "oom_metal_malloc",
+    "oom_maximum_allowed_buffer_size",
+    "oom_recommended_max_working_set",
+    "oom_recommended_working_set",
+    "oom_metal_command_buffer",
+    "oom_device_memory",
+    "arch_model_type_not_supported",
+    "arch_model_type_without_not_supported",
+    "arch_unknown_model_type",
+    "arch_missing_mlx_vlm_module",
+    "arch_missing_drafter_module",
+    "arch_missing_mlx_lm_module",
+    "arch_switch_mlp_key",
+    "precedence_oom_before_arch",
+    "case_insensitive",
+    "generic_traceback",
+    "generic_empty"
+  ],
+  "comparator": "error-exact",
+  "note": "expected = serialised MlxError::from_stderr(stderr) {code, message, details?}; details is the raw stderr.",
+  "source": {
+    "commit": "5881e0bf3a955fcc5e9803555940d1f038eadf14",
+    "file": "src-tauri/plugins/tauri-plugin-mlx/src/error.rs"
+  }
+}

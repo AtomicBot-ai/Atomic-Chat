@@ -70,24 +70,33 @@ test('the extension implements every method the backend updater calls', () => {
   assert.deepEqual(missing, [], `the app calls these, the extension does not define them: ${missing}`)
 })
 
+const SHARED_ADAPTER = join(REPO_ROOT, 'extensions', 'shared')
+
 test('the core adapter exists and never opens an HTTP connection of its own', () => {
   // The control token lives in Rust. A URL here would mean the webview held a credential that can
   // load models and start processes.
   const adapter = join(EXTENSION, 'adapter', 'coreRuntime.ts')
   assert.ok(existsSync(adapter), 'the adapter is what the migrated methods route through')
 
-  const source = readFileSync(adapter, 'utf8')
-  assert.ok(
-    !/fetch\s*\(|http:\/\/|https:\/\//.test(source.replace(/^\s*\*.*$/gm, '')),
-    'the adapter must go through the atomic_core_call command, not over HTTP'
-  )
+  for (const path of [
+    adapter,
+    join(SHARED_ADAPTER, 'atomicCoreRuntime.ts'),
+    join(SHARED_ADAPTER, 'atomicCoreSettingsSync.ts'),
+  ]) {
+    const source = readFileSync(path, 'utf8')
+    assert.ok(
+      !/fetch\s*\(|http:\/\/|https:\/\//.test(source.replace(/^\s*\*.*$/gm, '')),
+      `${path} must go through the atomic_core_call command, not over HTTP`
+    )
+  }
 })
 
-test('every core call the adapter makes goes through the one Rust command', () => {
-  const source = readFileSync(join(EXTENSION, 'adapter', 'coreRuntime.ts'), 'utf8')
+test('every core call the adapter makes goes through the Rust core commands', () => {
+  const source = readFileSync(join(SHARED_ADAPTER, 'atomicCoreRuntime.ts'), 'utf8')
   const invoked = [...source.matchAll(/invoke<[^>]*>\(\s*'([^']+)'/g)].map((m) => m[1])
+  assert.ok(invoked.includes('atomic_core_call'), 'the shared adapter is the one that invokes')
 
-  const allowed = new Set(['atomic_core_call', 'atomic_core_status', 'get_atomic_core_flags'])
+  const allowed = new Set(['atomic_core_call', 'atomic_core_status', 'atomic_core_snapshot', 'get_atomic_core_flags'])
   const unexpected = invoked.filter((name) => !allowed.has(name))
 
   assert.deepEqual(unexpected, [], `unexpected commands: ${unexpected.join(', ')}`)
@@ -121,4 +130,48 @@ test('the migrated methods ask who owns the runtime before choosing a path', () 
     [],
     `these methods do not consult the ownership flag: ${withoutCheck.join(', ')}`
   )
+})
+
+test('the TurboQuant, MLX and Foundation Models methods that need a process ask who owns it', () => {
+  // Stage 5: the same handover as upstream. A method that never reads the flag keeps talking to
+  // its plugin after `atomic_core.runtime = all`, where the plugin no longer holds the process.
+  const extensions = {
+    'llamacpp-extension': [
+      'override async load(',
+      'override async unload(',
+      'override async getLoadedModels(',
+      'private async findSessionByModel(',
+      'override async chat(',
+      'async getDevices(',
+      'private async downloadAndInstallBackend(',
+      'private async handleAutoIncreaseCtx(',
+      'private async listenForCoreSettings(',
+    ],
+    'mlx-extension': [
+      'private async performLoad(',
+      'override async unload(',
+      'override async getLoadedModels(',
+      'private async findSessionByModel(',
+      'override async chat(',
+      'private async handleAutoIncreaseCtx(',
+      'private async listenForCoreSettings(',
+    ],
+    'foundation-models-extension': [
+      'private async findSession(',
+      'override async load(',
+      'override async unload(',
+      'override async chat(',
+    ],
+  }
+  const withoutCheck = []
+  for (const [extension, signatures] of Object.entries(extensions)) {
+    const source = readFileSync(join(REPO_ROOT, 'extensions', extension, 'src', 'index.ts'), 'utf8')
+    assert.ok(source.includes("'../../shared/atomicCoreRuntime'"), `${extension} binds the shared adapter`)
+    for (const signature of signatures) {
+      const start = source.indexOf(signature)
+      if (start === -1 || !source.slice(start, start + 4000).includes('coreOwnsRuntime()'))
+        withoutCheck.push(`${extension}: ${signature}`)
+    }
+  }
+  assert.deepEqual(withoutCheck, [], `these methods do not consult the ownership flag: ${withoutCheck.join(', ')}`)
 })

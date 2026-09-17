@@ -98,6 +98,15 @@ import {
   copyBackendDlls,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 import type { RuntimeDeviceInfo } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/types'
+import { createCoreRuntime, describeCoreError } from '../../shared/atomicCoreRuntime'
+import type { CoreProxyConfig, Invoke } from '../../shared/atomicCoreRuntime'
+import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
+
+/** Written when a CLI (or anyone else) changes core-owned settings; see `onLoad`. */
+const CORE_SETTINGS_CHANGED_EVENT = 'atomic-core://settings:changed'
+/** The proxy's trigger for restarting a poisoned engine at the same context. */
+const COMPUTE_ERROR_RECOVERY_TRIGGER = 'compute_error_recovery'
 
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -474,6 +483,27 @@ export default class llamacpp_extension extends AIEngine {
   /// backend from bundled resources without persisting the swap — the case
   /// where the settings dropdown keeps showing a backend that is not running.
   private effectiveVersionBackend: string | null = null
+  /// This provider in `atomic-chat-core` (PLAN.md §4, stage 5). When the core owns the TurboQuant
+  /// runtime (`atomic_core.runtime = all`), loading, unloading, finding a session, growing the
+  /// context and installing a backend happen there; the catalogue, settings UI and backend
+  /// selection stay here. Ownership is read per call: the flag can change while the app runs.
+  private readonly core = createCoreRuntime(
+    'llamacpp',
+    ((command, args) =>
+      args === undefined ? invoke(command) : invoke(command, args)) as Invoke
+  )
+  private isMirroringCoreSettings = false
+  private readonly coreSettings = createCoreSettingsSync({
+    core: this.core,
+    readSettings: async () =>
+      (await this.getSettings()) as unknown as PersistedSetting[],
+    writeSettings: (settings) => this.updateSettings(settings as never),
+    setMirroring: (active) => {
+      this.isMirroringCoreSettings = active
+    },
+    systemInfo: async () => (await getSystemInfo()) as never,
+  })
+  private unlistenCoreSettingsChanged?: () => void
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -603,6 +633,8 @@ export default class llamacpp_extension extends AIEngine {
         void this.handleAutoIncreaseCtx(event.payload)
       }
     )
+
+    await this.listenForCoreSettings()
 
     //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
     this.configureBackendsPromise = this.configureBackends()
@@ -2501,9 +2533,44 @@ export default class llamacpp_extension extends AIEngine {
     if (this.unlistenAutoIncreaseCtx) {
       this.unlistenAutoIncreaseCtx()
     }
+    this.unlistenCoreSettingsChanged?.()
+  }
+
+  /**
+   * Keep the rollback copy of the settings current when the core's copy changes elsewhere (a CLI).
+   * Only this provider's values: import and acknowledge also change migration bookkeeping, and
+   * mirroring those would acknowledge forever.
+   */
+  private async listenForCoreSettings(): Promise<void> {
+    this.unlistenCoreSettingsChanged = await listen(
+      CORE_SETTINGS_CHANGED_EVENT,
+      (event: { payload?: { provider?: string } }) => {
+        if (event.payload?.provider !== this.provider) return
+        void this.coreOwnsRuntime()
+          .then((owned) => (owned ? this.coreSettings.mirror() : undefined))
+          .catch((e) =>
+            logger.warn(
+              `[atomic-core] could not mirror changed settings: ${describeCoreError(e)}`
+            )
+          )
+      }
+    )
+  }
+
+  /** Whether the core owns this provider's runtime right now. */
+  private async coreOwnsRuntime(): Promise<boolean> {
+    return this.core.coreOwnsRuntime()
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
+    if (this.isMirroringCoreSettings) {
+      // A mirror of the core's values refreshes the rollback copy and in-memory config; it must not
+      // start a backend download or any other owner-side work.
+      this.config[key] = value
+      if (key === 'llamacpp_env') this.llamacpp_env = value as string
+      if (key === 'timeout') this.timeout = value as number
+      return
+    }
     if (key === 'version_backend') {
       // Skip entirely if updateBackend() is already handling it —
       // updateBackend() will commit to in-memory config itself after all
@@ -3420,6 +3487,22 @@ export default class llamacpp_extension extends AIEngine {
     isEmbedding: boolean = false,
     bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
+    return this.core.withRuntimeLoad(() =>
+      this.loadWithOwner(
+        modelId,
+        overrideSettings,
+        isEmbedding,
+        bypassAutoUnload
+      )
+    )
+  }
+
+  private async loadWithOwner(
+    modelId: string,
+    overrideSettings?: Partial<LlamacppConfig>,
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
+  ): Promise<SessionInfo> {
     if (this.configureBackendsPromise) {
       const vb = this.config.version_backend || ''
       if (!vb || vb === 'none' || !vb.includes('/')) {
@@ -3445,12 +3528,19 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Create the loading promise
-    const loadingPromise = this.performLoad(
-      modelId,
-      overrideSettings,
-      isEmbedding,
-      bypassAutoUnload
-    )
+    const loadingPromise = (await this.coreOwnsRuntime())
+      ? this.loadThroughCore(
+          modelId,
+          overrideSettings,
+          isEmbedding,
+          bypassAutoUnload
+        )
+      : this.performLoad(
+          modelId,
+          overrideSettings,
+          isEmbedding,
+          bypassAutoUnload
+        )
     this.loadingModels.set(modelId, loadingPromise)
 
     try {
@@ -4049,6 +4139,17 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
+      const coreOwned = await this.coreOwnsRuntime()
+      if (coreOwned && trigger === COMPUTE_ERROR_RECOVERY_TRIGGER) {
+        // The core owns the process: restarting it from here would take a model this extension does
+        // not own. The owner restarts it at the same context.
+        const outcome = await this.core.recreateSession(model_id)
+        await sendDone(
+          outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason }
+        )
+        return
+      }
+
       // With fit on, the context is what llama.cpp found room for at load.
       // Reloading with a bigger `ctx_size` would be dropped by the argument
       // builder (`--ctx-size` is not emitted under fit) and fit would size it
@@ -4058,6 +4159,39 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(
           `auto_increase_ctx: fit is on for ${model_id}; the engine sizes the context itself`
         )
+        return
+      }
+
+      if (coreOwned) {
+        // The core owns the process and the ladder; it answers `at_max` itself.
+        const outcome = await this.core.increaseContext(model_id, trigger)
+        if (!outcome.ok) {
+          await sendDone({ ok: false, reason: outcome.reason })
+          if (outcome.reason === 'at_max') {
+            await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
+              provider: this.provider,
+              modelId: model_id,
+              maxCtxLen: outcome.max_ctx_len ?? outcome.current_ctx_len,
+              currentCtxLen: outcome.current_ctx_len,
+            }).catch((e) =>
+              logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+            )
+          }
+          return
+        }
+        this.modelCtxSize.set(model_id, outcome.new_ctx_len)
+        const notifyPayload = {
+          provider: this.provider,
+          modelId: model_id,
+          newCtxLen: outcome.new_ctx_len,
+        }
+        if (events && typeof events.emit === 'function') {
+          events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+        }
+        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload).catch((e) =>
+          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
+        )
+        await sendDone({ ok: true, new_ctx_len: outcome.new_ctx_len })
         return
       }
 
@@ -4145,6 +4279,18 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
+    if (await this.coreOwnsRuntime()) {
+      this.sessionCache.delete(modelId)
+      this.modelCtxSize.delete(modelId)
+      try {
+        return await this.core.unload(modelId)
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to unload model: ${describeCoreError(error)}`,
+        }
+      }
+    }
     const sInfo: SessionInfo =
       this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
     if (!sInfo) {
@@ -4493,6 +4639,86 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+   * A backend install the core performs, reported through the same events the extension's own
+   * install emits, so the download manager and the backend updater cannot tell the difference.
+   */
+  private async installBackendThroughCore(
+    backendString: string,
+    version: string,
+    backend: string
+  ): Promise<void> {
+    const taskId = `llamacpp-backend-${this.sanitizeForTauriEvent(
+      version
+    )}/${this.sanitizeForTauriEvent(backend)}`
+    let highestTransferred = 0
+    let knownTotal = 0
+    const reportProgress = (transferred: number, total: number) => {
+      // A resumed transfer can restart at byte zero; the bar must never move backwards.
+      highestTransferred = Math.max(highestTransferred, transferred)
+      knownTotal = Math.max(knownTotal, total)
+      const displayedTotal =
+        knownTotal > 0 ? Math.max(knownTotal, highestTransferred) : 0
+      events.emit(DownloadEvent.onFileDownloadUpdate, {
+        modelId: taskId,
+        percent: displayedTotal > 0 ? highestTransferred / displayedTotal : 0,
+        size: { transferred: highestTransferred, total: displayedTotal },
+        downloadType: 'Backend',
+      })
+    }
+    // Registered before the transfer starts: the core can report progress before the POST returns.
+    const unlisten = await listen<{ transferred: number; total: number }>(
+      `download-${taskId}`,
+      (event) => reportProgress(event.payload.transferred, event.payload.total)
+    )
+    events.emit(AppEvent.onBackendDownloadStarted, {
+      backend: backendString,
+      status: 'downloading',
+      provider: this.providerId,
+      version,
+      backendId: backend,
+    })
+    try {
+      await this.core.installBackend(
+        version,
+        backend,
+        taskId,
+        false,
+        getProxyConfig() as unknown as CoreProxyConfig | null,
+        getIndexedAssetName(version, backend)
+      )
+      events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+        modelId: taskId,
+        downloadType: 'Backend',
+      })
+      events.emit(AppEvent.onBackendDownloadFinished, {
+        backend: backendString,
+        status: 'completed',
+        provider: this.providerId,
+        version,
+        backendId: backend,
+      })
+    } catch (error) {
+      const message = describeCoreError(error)
+      events.emit(DownloadEvent.onFileDownloadError, {
+        modelId: taskId,
+        error: message,
+        downloadType: 'Backend',
+      })
+      events.emit(AppEvent.onBackendDownloadFinished, {
+        backend: backendString,
+        status: 'failed',
+        error: message,
+        provider: this.providerId,
+        version,
+        backendId: backend,
+      })
+      throw new Error(message)
+    } finally {
+      unlisten()
+    }
+  }
+
+  /**
    * Downloads a backend archive from janhq/llama.cpp GitHub releases and
    * extracts it into the local backends directory.
    */
@@ -4525,6 +4751,14 @@ export default class llamacpp_extension extends AIEngine {
           }`
         )
       }
+      return
+    }
+
+    // The core owns the data folder these packs live in, so it fetches, unpacks and repairs the
+    // CUDA runtime. The task id is built the same way either side does it: the progress bar the
+    // user is already watching listens on a name derived from it.
+    if (await this.coreOwnsRuntime()) {
+      await this.installBackendThroughCore(backendString, version, backend)
       return
     }
 
@@ -4887,6 +5121,44 @@ export default class llamacpp_extension extends AIEngine {
   ///
   /// Parsed from the llama-server startup log by the plugin and, until now,
   /// used only to warn about a backend mismatch. The web-app needs it for
+  /**
+   * Load through the core, which owns the process: the settings are handed over first (once per
+   * core attachment and settings state), then the core plans and starts the load with the same
+   * per-model overrides this extension's own load would have used.
+   */
+  private async loadThroughCore(
+    modelId: string,
+    overrideSettings: Partial<LlamacppConfig> | undefined,
+    isEmbedding: boolean,
+    bypassAutoUnload: boolean
+  ): Promise<SessionInfo> {
+    try {
+      await this.coreSettings.ensureReady()
+      const session = (await this.core.load(modelId, {
+        ...(overrideSettings
+          ? { settings: overrideSettings as Record<string, unknown> }
+          : {}),
+        isEmbedding,
+        bypassAutoUnload,
+      })) as SessionInfo
+      const ctx = overrideSettings?.ctx_size ?? this.config?.ctx_size
+      if (typeof ctx === 'number' && ctx > 0) this.modelCtxSize.set(modelId, ctx)
+      return session
+    } catch (error) {
+      throw new Error(describeCoreError(error))
+    }
+  }
+
+  /**
+   * Where a model is served, from whoever owns it. When the core owns the runtime the session cache
+   * is never consulted: the core reloads a model on its own when a prompt overflows the context, and
+   * the port changes without this extension being asked.
+   */
+  private async resolveSession(modelId: string): Promise<SessionInfo> {
+    if (await this.coreOwnsRuntime()) return this.findSessionByModel(modelId)
+    return this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
+  }
+
   /// `model_load`: `n_gpu_layers` there is the requested value — the "offload
   /// everything" sentinel on 98.3% of events — so how many layers reached the
   /// GPU, and whether a CUDA build quietly ran on CPU, was recorded nowhere.
@@ -4908,6 +5180,8 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
+    if (await this.coreOwnsRuntime())
+      return ((await this.core.findSession(modelId)) ?? null) as SessionInfo
     try {
       let sInfo = await invoke<SessionInfo>(
         'plugin:llamacpp|find_session_by_model',
@@ -4926,15 +5200,16 @@ export default class llamacpp_extension extends AIEngine {
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo =
-      this.sessionCache.get(opts.model) ??
-      (await this.findSessionByModel(opts.model))
+    const sessionInfo = await this.resolveSession(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
+    // A core-owned process is not in the plugin's table; the core removes a dead one itself.
+    const result =
+      (await this.coreOwnsRuntime()) ||
+      (await invoke<boolean>('plugin:llamacpp|is_process_running', {
+        pid: sessionInfo.pid,
+      }))
     if (result) {
       try {
         await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
@@ -5008,6 +5283,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
+    if (await this.coreOwnsRuntime()) return this.core.getLoadedModels()
     try {
       let models: string[] = await invoke<string[]>(
         'plugin:llamacpp|get_loaded_models'
@@ -5074,16 +5350,21 @@ export default class llamacpp_extension extends AIEngine {
     const envs: Record<string, string> = {}
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
+    // When the core owns the runtime it lists devices with the backend it would load with, and
+    // downloads nothing; the AMD memory correction below still applies to its answer.
+    const coreOwned = await this.coreOwnsRuntime()
     // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
+    if (!coreOwned) await this.ensureBackendReady(backend, version)
     logger.info('Calling Tauri command getDevices with arg --list-devices')
-    const backendPath = await getBackendExePath(backend, version)
+    const backendPath = coreOwned ? '' : await getBackendExePath(backend, version)
 
     try {
-      const dList = await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
-        backendPath,
-        envs,
-      })
+      const dList = coreOwned
+        ? await this.core.devices<DeviceList>()
+        : await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
+            backendPath,
+            envs,
+          })
       // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
       // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
       try {
@@ -5406,9 +5687,7 @@ export default class llamacpp_extension extends AIEngine {
       return 0
     }
 
-    const sessionInfo =
-      this.sessionCache.get(opts.model) ??
-      (await this.findSessionByModel(opts.model))
+    const sessionInfo = await this.resolveSession(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }

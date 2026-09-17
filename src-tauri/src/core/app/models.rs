@@ -39,6 +39,20 @@ pub struct AtomicCoreFlags {
 #[serde(rename_all = "kebab-case")]
 pub enum CoreRuntimeOwner {
     LlamacppUpstream,
+    /// Every local runtime — llama.cpp upstream, TurboQuant, MLX and Foundation
+    /// Models (PLAN.md §4, stage 5). There is deliberately no flag per provider:
+    /// the rollback is one coordinated handover back to `llamacpp-upstream` or off.
+    All,
+}
+
+impl CoreRuntimeOwner {
+    /// The providers whose sessions the core owns under this flag.
+    pub fn providers(self) -> &'static [&'static str] {
+        match self {
+            CoreRuntimeOwner::LlamacppUpstream => &["llamacpp-upstream"],
+            CoreRuntimeOwner::All => &["llamacpp-upstream", "llamacpp", "mlx", "foundation-models"],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,6 +188,20 @@ mod tests {
             serde_json::from_str::<AtomicCoreFlags>(&json).unwrap(),
             flags
         );
+    }
+
+    #[test]
+    fn handing_every_runtime_over_is_one_flag_value_covering_four_providers() {
+        let flags: AtomicCoreFlags = serde_json::from_str(r#"{"runtime":"all"}"#).unwrap();
+
+        assert_eq!(flags.runtime, Some(CoreRuntimeOwner::All));
+        assert!(flags.needs_core());
+        assert_eq!(
+            CoreRuntimeOwner::All.providers(),
+            &["llamacpp-upstream", "llamacpp", "mlx", "foundation-models"]
+        );
+        assert_eq!(CoreRuntimeOwner::LlamacppUpstream.providers(), &["llamacpp-upstream"]);
+        assert_eq!(serde_json::to_string(&CoreRuntimeOwner::All).unwrap(), r#""all""#);
     }
 
     #[test]

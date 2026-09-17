@@ -136,7 +136,10 @@ export default class DownloadManager extends BaseExtension {
           // An older app binary has no core command; its backend task is necessarily legacy.
           if (!/unknown command|command .* not found/i.test(String(error))) throw error
         }
-        if (status?.active_runtime === 'llamacpp-upstream') {
+        // Both llama.cpp providers name backend tasks `llamacpp-backend-*`. A task this extension did
+        // not start was started by the core, which runs installs for upstream alone or, with
+        // `all`, for TurboQuant too.
+        if (status?.active_runtime === 'llamacpp-upstream' || status?.active_runtime === 'all') {
           await invoke('atomic_core_call', {
             method: 'POST',
             path: `/downloads/${taskId}/cancel`,

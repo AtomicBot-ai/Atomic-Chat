@@ -102,6 +102,8 @@ import {
 import { basename } from '@tauri-apps/api/path'
 import { getSystemUsage, getSystemInfo } from './hardware'
 import * as coreRuntime from './adapter/coreRuntime'
+import { CORE_PROVIDER } from './adapter/coreRuntime'
+import { runtimeCovers } from '../../shared/atomicCoreRuntime'
 import {
   loadLlamaModel,
   readGgufMetadata,
@@ -944,7 +946,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       'atomic-core://ownership-changed',
       (event: { payload?: { runtime?: string | null } }) => {
         this.optimalEpoch++
-        if (event.payload?.runtime === this.provider) {
+        if (runtimeCovers(event.payload?.runtime, CORE_PROVIDER)) {
           this.optimalCoreActive = true
           this.optimalRevision = 0
           localStorage.removeItem(OPTIMAL_BACKEND_CACHE_KEY)

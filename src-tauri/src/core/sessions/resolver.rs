@@ -30,6 +30,9 @@ use crate::core::server::proxy::model_ids_match;
 pub const PROVIDER_LLAMACPP: &str = "llamacpp";
 pub const PROVIDER_LLAMACPP_UPSTREAM: &str = "llamacpp-upstream";
 pub const PROVIDER_MLX: &str = "mlx";
+/// Never searched by default — the proxy does not route to it — but the core can own its sessions,
+/// and the webview then asks the resolver for them by this name.
+pub const PROVIDER_FOUNDATION_MODELS: &str = "foundation-models";
 
 /// Search order for a request that does not name a provider.
 ///

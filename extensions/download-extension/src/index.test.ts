@@ -88,6 +88,17 @@ describe('cancelDownload', () => {
     expect(invoke).not.toHaveBeenCalledWith('cancel_download_task', expect.anything())
   })
 
+  it('cancels a core-owned TurboQuant backend install when the core owns every runtime', async () => {
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === 'atomic_core_status' ? { active_runtime: 'all' } : { cancelled: true }
+    )
+    await expect(manager.cancelDownload('llamacpp-backend-b10018-1_3_0/linux-x64-rocm')).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
+      method: 'POST', path: '/downloads/llamacpp-backend-b10018-1_3_0/linux-x64-rocm/cancel', body: null,
+    })
+    expect(invoke).not.toHaveBeenCalledWith('cancel_download_task', expect.anything())
+  })
+
   it('keeps legacy cancellation on its original Rust command', async () => {
     vi.mocked(invoke).mockResolvedValue({ active_runtime: null })
     await expect(manager.cancelDownload('llamacpp-backend-b1/macos-arm64')).resolves.toBeUndefined()

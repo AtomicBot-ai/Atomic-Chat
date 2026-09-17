@@ -147,6 +147,35 @@ async fn starts_a_real_core_and_attaches_to_it() {
     supervisor.detach().await;
 }
 
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn the_core_finds_the_sidecar_servers_the_app_bundles() {
+    // Stage 5: MLX and Foundation Models binaries ship in the app's `resources/bin`, not with the
+    // core. The launcher names that folder; a Foundation Models server placed there must be the one
+    // the core asks, which a script answering `--check` proves without Apple Intelligence.
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let live = LiveCore::new(&binary);
+    let server = live.resources.path().join("resources/bin/foundation-models-server");
+    std::fs::write(&server, "#!/bin/sh\necho modelNotReady\n").expect("server script");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    let supervisor = live.supervisor();
+    supervisor.ensure_attached(true).await.expect("attach");
+
+    let answer = supervisor
+        .call("GET", "/runtimes/foundation-models/availability", None, false)
+        .await
+        .expect("availability");
+
+    assert_eq!(answer["status"], "modelNotReady");
+    supervisor.detach().await;
+}
+
 #[tokio::test]
 async fn full_app_exit_shuts_down_its_owner_and_releases_the_lock() {
     let Some(binary) = core_binary() else {

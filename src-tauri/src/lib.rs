@@ -268,6 +268,8 @@ pub fn run() {
         core::atomic_core::commands::atomic_core_call,
         core::atomic_core::commands::atomic_core_status,
         core::atomic_core::commands::atomic_core_snapshot,
+        core::atomic_core::commands::atomic_core_begin_runtime_load,
+        core::atomic_core::commands::atomic_core_end_runtime_load,
         core::atomic_core::commands::get_atomic_core_flags,
         core::atomic_core::commands::set_atomic_core_flags,
     ]);

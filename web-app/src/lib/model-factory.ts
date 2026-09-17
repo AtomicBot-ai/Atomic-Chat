@@ -354,6 +354,29 @@ function isUnknownCommandError(error: unknown): boolean {
   return /unknown command|command .* not found/i.test(message)
 }
 
+/**
+ * The Foundation Models session, from whoever owns it. With `atomic_core.runtime = all` the core
+ * runs the server and the Rust resolver answers from its mirror; otherwise the resolver has nothing
+ * for this provider and the plugin's own table is the answer, as it always was.
+ */
+export async function findFoundationModelsSession(
+  modelId: string
+): Promise<SessionInfo | null> {
+  try {
+    const owned = await invoke<SessionInfo | null>('resolve_local_session', {
+      provider: 'foundation-models',
+      modelId,
+    })
+    if (owned) return owned
+  } catch (error) {
+    if (!isUnknownCommandError(error)) throw error
+  }
+  return invoke<SessionInfo | null>(
+    'plugin:foundation-models|find_foundation_models_session',
+    {}
+  )
+}
+
 export async function findLocalSession(
   providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
   modelId: string
@@ -1166,10 +1189,7 @@ export class ModelFactory {
       }
     }
 
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:foundation-models|find_foundation_models_session',
-      {}
-    )
+    const sessionInfo = await findFoundationModelsSession(modelId)
 
     if (!sessionInfo) {
       throw new Error(

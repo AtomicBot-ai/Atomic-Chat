@@ -103,3 +103,7 @@ impl serde::Serialize for ServerError {
 }
 
 pub type ServerResult<T> = Result<T, ServerError>;
+
+#[cfg(test)]
+#[path = "error_fixture_dump.rs"]
+mod fixture_dump;

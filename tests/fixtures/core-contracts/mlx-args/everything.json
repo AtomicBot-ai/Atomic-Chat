@@ -1,0 +1,43 @@
+{
+  "comparator": "argv-exact",
+  "expected": {
+    "argv": [
+      "--model",
+      "/models/qwen",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "3500",
+      "--max-kv-size",
+      "65536",
+      "--draft-model",
+      "/drafts/mtp",
+      "--draft-kind",
+      "mtp",
+      "--draft-block-size",
+      "4",
+      "--kv-bits",
+      "3.5",
+      "--kv-quant-scheme",
+      "turboquant"
+    ]
+  },
+  "input": {
+    "config": {
+      "block_size": 4,
+      "ctx_size": 65536,
+      "draft_kind": "mtp",
+      "draft_model_path": "/drafts/mtp",
+      "kv_bits": 3.5,
+      "kv_quant_scheme": "turboquant"
+    },
+    "model_path": "/models/qwen",
+    "port": 3500
+  },
+  "name": "everything",
+  "source": {
+    "commit": "5881e0bf3a955fcc5e9803555940d1f038eadf14",
+    "file": "src-tauri/plugins/tauri-plugin-mlx/src/commands.rs",
+    "provider": "mlx"
+  }
+}
