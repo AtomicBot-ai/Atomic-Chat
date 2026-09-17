@@ -4708,26 +4708,25 @@ export default class llamacpp_upstream_extension extends AIEngine {
         )
         await this.waitForBackendConfiguration(modelId)
       } else {
-        // ATO-233: also wait when the backend string is concrete but the exe
-        // is NOT locally installed yet. configureBackends may swap version_backend
-        // to an already-installed build (e.g. a bundled CPU backend after an
-        // app update that changed the bundled tag, or after a local compatible
-        // backend was found during startup). Without this check the load
-        // races ahead with a stale tag that is guaranteed to 404, causing the
-        // spinner to hang until resolveBackendFallback finishes.
-        const [vbVer, vbBack] = vb.split('/')
-        const vbIsInstalled =
-          !!vbVer?.trim() &&
-          !!vbBack?.trim() &&
-          (await isBackendInstalled(vbBack.trim(), vbVer.trim()))
+        // Reconcile a stale persisted tag from disk before depending on the
+        // catalog pass. A usable same-variant build needs no network wait.
+        const vbIsInstalled = await this.reconcileInstalledBackendForLoad()
         if (!vbIsInstalled) {
           logger.info(
             `Backend ${vb} not installed locally; waiting for configureBackends before loading model "${modelId}"`
           )
-          await this.waitForBackendConfiguration(modelId)
+          const configured = await this.waitForBackendConfiguration(modelId)
+          if (!configured && !(await this.reconcileInstalledBackendForLoad())) {
+            this.throwIfLoadCancelled(modelId)
+            throw new Error(
+              `Backend configuration timed out after ${BACKEND_CONFIG_LOAD_WAIT_MS / 1000}s: ` +
+                `${this.config.version_backend || vb} is not installed and no compatible local backend is available. ` +
+                'Open Settings → Llama.cpp — Version & Backend to install or select a backend, then retry loading the model.'
+            )
+          }
         } else {
           logger.info(
-            `Backend already configured (${vb}), loading model "${modelId}" without waiting for full backend list`
+            `Backend already configured (${this.config.version_backend}), loading model "${modelId}" without waiting for full backend list`
           )
         }
       }
@@ -4774,20 +4773,40 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
+  /** Resolve only missing selections, keeping the provider/platform/GPU variant. */
+  private async reconcileInstalledBackendForLoad(): Promise<boolean> {
+    const selected = stripBom(this.config.version_backend || '')
+    if (!isConcreteVersionBackend(selected)) return false
+    const [version, backend] = selected.split('/')
+    if (await isBackendInstalled(backend, version)) return true
+
+    const installed = await findCompatibleInstalledBackend(backend)
+    if (
+      !installed ||
+      !(await isBackendInstalled(installed.backend, installed.version))
+    ) {
+      return false
+    }
+    // Configuration or a user selection may have changed while disk was read.
+    if (stripBom(this.config.version_backend || '') !== selected) return false
+
+    const recovered = `${installed.version}/${installed.backend}`
+    logger.info(
+      `Recovering missing backend ${selected} from installed ${recovered} before loading`
+    )
+    await this.persistVersionBackend(recovered)
+    return true
+  }
+
   /**
-   * Waits for the backend configuration pass a load depends on, but never
-   * past `BACKEND_CONFIG_LOAD_WAIT_MS`. The pass can stall for good on the
-   * catalog fetch (see `withTimeout`), and a load that outwaits it leaves the
-   * spinner up forever — in a project file ingest, the embedding load never
-   * comes back. Past the bound the load goes ahead with what is on disk:
-   * `performLoad` resolves a leftover `latest/<backend>` sentinel itself
-   * (ATO-124), and `ensureBackendReady` prefers an installed build of the same
-   * variant before any download (ATO-233), so the bound trades an endless wait
-   * for the slower, finite path those two already handle.
+   * Bound a load's dependency on the background catalog/configuration pass.
+   * On timeout, concrete selections must be recovered from disk or fail;
+   * starting another network download here could leave the load pending again.
+   * Unresolved sentinels retain the resolution path in `performLoad`.
    */
-  private async waitForBackendConfiguration(modelId: string): Promise<void> {
+  private async waitForBackendConfiguration(modelId: string): Promise<boolean> {
     const pending = this.configureBackendsPromise
-    if (!pending) return
+    if (!pending) return true
     const outcome = await this.withTimeout(
       pending.then(() => 'configured' as const),
       BACKEND_CONFIG_LOAD_WAIT_MS,
@@ -4795,9 +4814,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
     )
     if (outcome === 'timed-out') {
       logger.warn(
-        `Backend configuration has not finished after ${BACKEND_CONFIG_LOAD_WAIT_MS}ms; loading model "${modelId}" with the backend on disk (${this.config.version_backend || 'none'})`
+        `Backend configuration has not finished after ${BACKEND_CONFIG_LOAD_WAIT_MS}ms; checking the backend on disk for model "${modelId}" (${this.config.version_backend || 'none'})`
       )
     }
+    return outcome === 'configured'
   }
 
   /// Backend the last successful load actually launched, as
