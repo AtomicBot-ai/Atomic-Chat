@@ -46,6 +46,18 @@ const plugins = (app.plugins ?? [])
 export default defineConfig({
   plugins,
   resolve: app.resolve,
+  // Worktrees share the root node_modules through wt-bootstrap. Keeping the
+  // browser optimizer under node_modules/.vite therefore lets concurrent
+  // layout runs replace one another's React graph mid-test. A worktree-local
+  // cache makes those runs independent.
+  cacheDir: '.vite/vitest-layout',
+  // `path` is pulled through the app's browser polyfill. Pre-optimize it before
+  // Chromium starts so Vite never reloads the page after the first tests have
+  // mounted React (which otherwise surfaces as spurious invalid-hook errors).
+  optimizeDeps: {
+    ...app.optimizeDeps,
+    include: [...new Set([...(app.optimizeDeps?.include ?? []), 'path'])],
+  },
   // The app's defines read Tauri's env, which is not set here; the jsdom
   // suite's test-time values (`IS_MACOS: false`, `VERSION: 'test'`, ...)
   // are what a component sees in a test either way.
