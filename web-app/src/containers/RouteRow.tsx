@@ -12,9 +12,18 @@ import { cn } from '@/lib/utils'
 export const ROUTE_ROW_BUTTON_HOVER =
   'transition-colors dark:hover:bg-neutral-600'
 
+/**
+ * The classes every action button in a model or route list shares, so the
+ * buttons of one list read as one column whatever their labels say. A row
+ * that draws its own button (the onboarding's model rows) uses this too.
+ */
+export const ROUTE_ROW_ACTION_CLASS = 'shrink-0 rounded-full px-4'
+
 type RouteRowProps = {
   'icon': ReactNode
   'title': string
+  /** Optional mark beside the title: a recommended model's fit badge. */
+  'meta'?: ReactNode
   'hint': string
   /** What the button shows: the verb alone, or a width-reserving label. */
   'action': ReactNode
@@ -43,6 +52,7 @@ type RouteRowProps = {
 export function RouteRow({
   icon,
   title,
+  meta,
   hint,
   action,
   label,
@@ -66,8 +76,11 @@ export function RouteRow({
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium leading-tight">
-            {title}
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="block min-w-0 truncate text-sm font-medium leading-tight">
+              {title}
+            </span>
+            {meta}
           </span>
           <span className="mt-0.5 line-clamp-1 block text-xs text-muted-foreground">
             {hint}
@@ -81,10 +94,7 @@ export function RouteRow({
         aria-label={label}
         disabled={disabled}
         onClick={onClick}
-        className={cn(
-          'shrink-0 rounded-full px-4',
-          !primary && ROUTE_ROW_BUTTON_HOVER
-        )}
+        className={cn(ROUTE_ROW_ACTION_CLASS, !primary && ROUTE_ROW_BUTTON_HOVER)}
       >
         {action}
       </Button>
