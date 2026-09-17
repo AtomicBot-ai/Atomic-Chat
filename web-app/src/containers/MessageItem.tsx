@@ -455,7 +455,7 @@ export const MessageItem = memo(
           ))}
           {error && (
             <div className="py-1 text-xs text-destructive">
-              {error.category}: {error.message}
+              {error.message}
             </div>
           )}
           {showWorking && (

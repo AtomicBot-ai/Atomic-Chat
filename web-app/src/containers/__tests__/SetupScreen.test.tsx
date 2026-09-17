@@ -911,8 +911,8 @@ describe('SetupScreen', () => {
         onImported!({ modelId: variantId })
       })
 
-      // The handler awaits the provider refresh before it navigates.
-      await act(async () => {})
+      // Navigation and the success toast happen immediately; provider refresh
+      // and loading are handed to the root DataProvider.
       expect(mocks.navigate.mock.calls).toHaveLength(1)
       expect(mocks.navigate.mock.calls[0][0].search.threadModel).toEqual({
         id: variantId,
@@ -923,6 +923,10 @@ describe('SetupScreen', () => {
       expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
         'onboarding_completed',
         expect.objectContaining({ exit_path: 'download_started' })
+      )
+      expect(toast.success).toHaveBeenCalledWith(
+        'common:toast.downloadAndVerificationComplete.title',
+        expect.objectContaining({ id: 'download-complete' })
       )
       unmount()
     })

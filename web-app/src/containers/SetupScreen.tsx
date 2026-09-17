@@ -835,18 +835,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       })
       trackedImportIdsRef.current.delete(importedId)
 
-      const providers = await serviceHub.providers().getProviders()
-      setProviders(providers)
-
-      const catalogId = importedId
-      const backslashId = catalogId.replace(/\//g, '\\')
-
-      // Select up-front so the dropdown "first local" fallback can't override it.
-      const prov = providers.find((p) => p.provider === providerName)
-      const found = prov?.models.find(
-        (m) => m.id === catalogId || m.id === backslashId
-      )
-      const modelId = found ? found.id : catalogId
+      const modelId = importedId
+      // Exit as soon as the import event says the model is on disk. Importing
+      // is library-only; the first Send (or an explicit Use) loads the model.
       selectModelProvider(providerName, modelId)
 
       // A model another app left on disk was picked up and started without a
@@ -862,7 +853,17 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         )
       }
 
-      toast.dismiss(`model-validation-started-${catalogId}`)
+      if (startedHere) {
+        toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
+          id: 'download-complete',
+          description: t(
+            'common:toast.downloadAndVerificationComplete.description',
+            { item: modelId }
+          ),
+        })
+      }
+
+      toast.dismiss(`model-validation-started-${modelId}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
       // Lets the root layout mount the global BackendUpdater now onboarding is done.
@@ -881,15 +882,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       pendingBackgroundImportsRef.current = []
       if (rest.length) importCandidatesInBackgroundRef.current(rest)
 
-      // Explicit user pick (not an auto-start) so a load error surfaces on the
-      // model they clicked. Fire-and-forget so nav isn't blocked on weights.
-      void switchToModel({
-        modelId,
-        providerName,
-        serviceHub,
-      }).catch(() => {})
-
-      navigate({
+      void navigate({
         to: route.home,
         replace: true,
         search: {
@@ -924,7 +917,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         onMlxDownloadSuccess
       )
     }
-  }, [navigate, selectModelProvider, serviceHub, setProviders])
+  }, [navigate, selectModelProvider, t])
 
   const enterChatForDownload = useCallback(
     (modelId: string, providerName: LocalLlamacppProvider | 'mlx') => {

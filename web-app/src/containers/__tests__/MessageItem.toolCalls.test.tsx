@@ -136,7 +136,7 @@ describe('MessageItem tool calls', () => {
     )
 
     expect(
-      screen.getByText('llm: model server returned 400')
+      screen.getByText('model server returned 400')
     ).toBeInTheDocument()
   })
 })
