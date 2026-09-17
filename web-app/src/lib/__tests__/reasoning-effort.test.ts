@@ -235,8 +235,8 @@ describe('buildAgentReasoningRequest', () => {
   it('keeps a native API at a declared effort when it has no off value', () => {
     expect(buildAgentReasoningRequest('medium', true, GPT_OSS, false)).toEqual({
       enabled: true,
-      effort: 'medium',
-      effort_value: 'medium',
+      effort: 'low',
+      effort_value: 'low',
       supports_thinking: true,
     })
     expect(buildAgentReasoningRequest('off', false, GPT_OSS, false)).toEqual({

@@ -547,7 +547,19 @@ describe('CustomChatTransport reasoning override', () => {
       reasoningBudget: 'high',
     })
 
-    expect(override).toEqual({ reasoning_effort: 'high' })
+    expect(override).toEqual({ reasoning_effort: 'low' })
+  })
+
+  it('caps an always-thinking local model at Low when global reasoning is off', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'llamacpp',
+      reasoning: { supportsThinking: true, canDisable: false },
+      disableReasoning: true,
+      reasoningBudget: 'high',
+    })
+
+    expect(override?.reasoning_budget_tokens).toBe(256)
+    expect(override?.chat_template_kwargs).toBeUndefined()
   })
 
   it('passes no override at all when the model has no thinking phase', async () => {

@@ -60,6 +60,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
 import {
+  availableReasoningLevels,
   buildReasoningRequestFields,
   canDisableReasoning,
   buildRemoteReasoningRequestFields,
@@ -852,8 +853,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           effectiveProviderName,
           reasoningControls
         )
+        const firstReasoningLevel =
+          availableReasoningLevels(reasoningControls)[0] ?? 'low'
         const activeReasoningBudget =
-          reasoningBudget === 'off' ? 'low' : reasoningBudget
+          !allowReasoningDisable &&
+          (disableReasoning || reasoningBudget === 'off')
+            ? firstReasoningLevel
+            : reasoningBudget === 'off'
+              ? 'low'
+              : reasoningBudget
         if (
           allowReasoningDisable &&
           (disableReasoning || reasoningBudget === 'off')
