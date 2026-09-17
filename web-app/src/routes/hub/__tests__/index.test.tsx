@@ -45,8 +45,13 @@ vi.mock('@tanstack/react-virtual', () => ({
   }),
 }))
 
+// Interpolation options ride along in the output so a test can see what a
+// string would have carried — the feed heading must carry nothing.
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      options ? `${key} ${JSON.stringify(options)}` : key,
+  }),
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -143,6 +148,7 @@ import { Route } from '../index'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
+import en from '@/locales/en/hub.json'
 
 const model = (name: string, extra: Partial<CatalogModel> = {}): CatalogModel =>
   ({
@@ -270,9 +276,18 @@ describe('/hub route', () => {
     expect(rows.findIndex((r) => r.includes('Gemma 4 12B'))).toBeLessThan(
       rows.findIndex((r) => r.includes('Llama-4-8B-GGUF'))
     )
-    expect(screen.getByTestId('hub-section-label')).toHaveTextContent(
-      'hub:feedTitle'
-    )
+    // Two sections, two headings of the same rank and weight: the feed's is
+    // not a caption under the picks, and it carries no sort — that lives in
+    // the sort dropdown.
+    const headings = screen.getAllByRole('heading', { level: 2 })
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      'hub:staffPicks',
+      'hub:feedTitle',
+    ])
+    expect(headings[1].className).toBe(headings[0].className)
+    expect(headings[1]).not.toHaveClass('text-xs')
+    expect(headings[1].nextElementSibling).toHaveTextContent('Llama-4-8B-GGUF')
+    expect(en.feedTitle).toBe('More from Hugging Face')
     expect(screen.getAllByText('Qwen3.5 4B')).toHaveLength(1)
 
     // jsdom paints every row, so the end of the list is on screen at once:
@@ -295,7 +310,9 @@ describe('/hub route', () => {
   it('opens on staff picks with an empty query', () => {
     render(<HubPage />)
 
-    expect(screen.queryByText('hub:staffPicks')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'hub:staffPicks' })
+    ).toBeInTheDocument()
     expect(screen.queryByText('hub:searchResults')).not.toBeInTheDocument()
     expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
     expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
@@ -315,7 +332,9 @@ describe('/hub route', () => {
     await waitFor(() =>
       expect(screen.getByText('Llama-4-8B-GGUF')).toBeInTheDocument()
     )
+    // Search results are one flat list: no section headings.
     expect(screen.queryByText('hub:searchResults')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument()
     expect(mocks.search_).toHaveBeenCalledWith('llama', { limit: 500 })
     expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
   })

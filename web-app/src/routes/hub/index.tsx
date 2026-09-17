@@ -433,9 +433,10 @@ function HubContent() {
         budgetBytes,
         applyFitFilter: true,
       })
-      const picks: HubListItem[] = filtered.map((model) => ({
+      const picks: HubListItem[] = filtered.map((model, index) => ({
         model,
         pick: pickByRepo.get(model.model_name),
+        sectionLabel: index === 0 ? t('hub:staffPicks') : undefined,
       }))
 
       // The feed is already in Hugging Face's order for this sort, so it is
@@ -469,12 +470,7 @@ function HubContent() {
         feedRows.push({
           model,
           fromHuggingFace: true,
-          sectionLabel:
-            feedRows.length === 0
-              ? t('hub:feedTitle', {
-                  sort: t(`hub:feedSort.${FEED_SORT_FOR[filters.sort]}`),
-                })
-              : undefined,
+          sectionLabel: feedRows.length === 0 ? t('hub:feedTitle') : undefined,
         })
       }
       return [...picks, ...feedRows]
@@ -811,12 +807,9 @@ function HubContent() {
                     }}
                   >
                     {item.sectionLabel && (
-                      <p
-                        className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground"
-                        data-testid="hub-section-label"
-                      >
+                      <h2 className="px-2 pb-2 pt-4 text-base font-semibold text-foreground">
                         {item.sectionLabel}
-                      </p>
+                      </h2>
                     )}
                     <ModelListRow
                       model={item.model}
