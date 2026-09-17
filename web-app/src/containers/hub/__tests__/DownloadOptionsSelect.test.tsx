@@ -151,7 +151,7 @@ describe('DownloadOptionsSelect', () => {
     expect(screen.getByText('download Bonsai-27B-Q1_0')).toBeInTheDocument()
     expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
     expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
-    expect(screen.queryByText('Too large')).not.toBeInTheDocument()
+    expect(screen.queryByText('Won’t fit')).not.toBeInTheDocument()
   })
 
   it('steps down from a default the device cannot hold', () => {
@@ -209,7 +209,7 @@ describe('DownloadOptionsSelect', () => {
     const download = screen.getByText('download Qwen3.5-4B-Q8_0')
     expect(download).toBeEnabled()
     expect(download).toHaveAttribute('data-warn-too-large', 'true')
-    expect(screen.getByLabelText('Too large')).toBeInTheDocument()
+    expect(screen.getByLabelText('Won’t fit')).toBeInTheDocument()
   })
 
   it('shows only the fit dot for a comfortably small quant', () => {
@@ -227,16 +227,16 @@ describe('DownloadOptionsSelect', () => {
     // 2.50 GB against a 3 GB budget is past the 70% comfort threshold.
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={3 * GB} />)
 
-    expect(screen.getByLabelText('Should run')).toBeInTheDocument()
-    expect(screen.queryByText('Should run')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Tight fit')).toBeInTheDocument()
+    expect(screen.queryByText('Tight fit')).not.toBeInTheDocument()
   })
 
   it('hides the fit verdict while the memory budget is unknown', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={0} />)
 
     expect(screen.queryByLabelText('Good fit')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Should run')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Too large')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Tight fit')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Won’t fit')).not.toBeInTheDocument()
   })
 
   it('sends an MLX repo straight to the MLX download action', () => {
@@ -258,7 +258,7 @@ describe('DownloadOptionsSelect', () => {
     // 5 GB of safetensors against a 4 GB budget.
     render(<DownloadOptionsSelect model={mlxModel()} budgetBytes={4 * GB} />)
 
-    expect(screen.getByLabelText('Too large')).toBeInTheDocument()
+    expect(screen.getByLabelText('Won’t fit')).toBeInTheDocument()
     expect(screen.getByText('download mlx')).toHaveAttribute(
       'data-warn-too-large',
       'true'

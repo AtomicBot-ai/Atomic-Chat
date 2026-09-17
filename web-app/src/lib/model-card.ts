@@ -23,11 +23,11 @@ export const HARDWARE_FIT: Record<
     tip: 'This model is likely to run on your hardware',
   },
   maybe: {
-    label: 'Should run',
+    label: 'Tight fit',
     tip: 'This model can probably run on your hardware',
   },
   no: {
-    label: 'Too large',
+    label: 'Won’t fit',
     tip: 'This model is probably too large for your hardware',
   },
 }
