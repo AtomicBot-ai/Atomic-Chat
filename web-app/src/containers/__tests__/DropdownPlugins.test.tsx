@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 
@@ -160,7 +160,7 @@ describe('DropdownPlugins', () => {
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
-        serper: { command: 'npx', args: [], env: {}, active: false },
+        resend: { command: 'npx', args: [], env: {}, active: false },
       },
     })
     useAppState.setState({
@@ -170,7 +170,7 @@ describe('DropdownPlugins', () => {
     renderDropdown()
 
     expect(screen.getByRole('switch', { name: 'Exa' })).toBeChecked()
-    expect(screen.getByRole('switch', { name: 'Serper' })).not.toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Resend' })).not.toBeChecked()
     // The connector is the only switch there is — its tools are counted, not
     // listed, and none of them can be toggled on its own.
     expect(screen.getAllByRole('switch')).toHaveLength(2)
@@ -192,7 +192,7 @@ describe('DropdownPlugins', () => {
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
-        serper: { command: 'npx', args: [], env: {}, active: false },
+        resend: { command: 'npx', args: [], env: {}, active: false },
       },
     })
     useAppState.setState({
@@ -209,8 +209,8 @@ describe('DropdownPlugins', () => {
       'common:connectorsMenu.toolCount'
     )
     // A connector that is off has no tools to count, but still says what it is for.
-    expect(screen.getByTestId('connector-cost-serper')).toHaveTextContent(
-      'Google search'
+    expect(screen.getByTestId('connector-cost-resend')).toHaveTextContent(
+      'Transactional email'
     )
   })
 
@@ -311,25 +311,25 @@ describe('DropdownPlugins', () => {
 
   it('connects a server and keeps its per-tool switches', async () => {
     const config = { command: 'npx', args: ['x'], env: {}, active: false }
-    useMCPServers.setState({ mcpServers: { serper: config } })
+    useMCPServers.setState({ mcpServers: { resend: config } })
     useToolAvailable.setState({
-      disabledTools: { 'thread-1': ['serper::google_search', 'exa::search'] },
+      disabledTools: { 'thread-1': ['resend::send_email', 'exa::search'] },
     })
 
     renderDropdown()
-    await userEvent.click(screen.getByRole('switch', { name: 'Serper' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Resend' }))
 
     await waitFor(() =>
-      expect(activateMCPServer).toHaveBeenCalledWith('serper', {
+      expect(activateMCPServer).toHaveBeenCalledWith('resend', {
         ...config,
         active: true,
       })
     )
-    expect(useMCPServers.getState().mcpServers.serper.active).toBe(true)
+    expect(useMCPServers.getState().mcpServers.resend.active).toBe(true)
     // A tool the user switched off stays off across a restart; the tools
     // dialog is where that shows and where it is undone.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
-      'serper::google_search',
+      'resend::send_email',
       'exa::search',
     ])
   })
@@ -351,15 +351,15 @@ describe('DropdownPlugins', () => {
     activateMCPServer.mockRejectedValueOnce(new Error('spawn failed') as never)
     useMCPServers.setState({
       mcpServers: {
-        serper: { command: 'npx', args: [], env: {}, active: false },
+        resend: { command: 'npx', args: [], env: {}, active: false },
       },
     })
 
     renderDropdown()
-    await userEvent.click(screen.getByRole('switch', { name: 'Serper' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Resend' }))
 
     await waitFor(() =>
-      expect(useMCPServers.getState().mcpServers.serper.active).toBe(false)
+      expect(useMCPServers.getState().mcpServers.resend.active).toBe(false)
     )
   })
 
@@ -367,7 +367,7 @@ describe('DropdownPlugins', () => {
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
-        serper: { command: 'npx', args: [], env: {}, active: false },
+        resend: { command: 'npx', args: [], env: {}, active: false },
       },
     })
     useAppState.setState({
@@ -375,7 +375,7 @@ describe('DropdownPlugins', () => {
     })
     useToolAvailable.setState({
       disabledTools: {
-        'thread-1': ['exa::web_search_exa', 'serper::google_search'],
+        'thread-1': ['exa::web_search_exa', 'resend::send_email'],
       },
     })
 
@@ -384,7 +384,7 @@ describe('DropdownPlugins', () => {
     // Nothing sweeps the keys: they are the user's switches now.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
       'exa::web_search_exa',
-      'serper::google_search',
+      'resend::send_email',
     ])
     expect(
       screen.getByTestId('connector-cost-exa').getAttribute('title')
@@ -640,5 +640,103 @@ describe('DropdownPlugins system default servers', () => {
     expect(screen.getByText('common:connectorsMenu.empty')).toBeInTheDocument()
     // Nothing rides the chat, so the trigger counts none.
     expect(screen.getByText('connectors:0')).toBeInTheDocument()
+  })
+})
+
+describe('DropdownPlugins connector row anatomy', () => {
+  beforeAll(() => {
+    global.ResizeObserver = MockResizeObserver as never
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAppState.setState({ tools: [], toolCostReports: {} })
+    useGeneralSetting.setState({ agentModeEnabled: false })
+    useToolAvailable.setState({
+      disabledTools: {},
+      defaultDisabledTools: [],
+      mutedServers: {},
+      defaultMutedServers: [],
+    })
+  })
+
+  // The fresh-install menu showed a 20 px icon, an 11 px tagline and nothing
+  // level with anything. The row follows the model rows' anatomy instead: a
+  // 32 px round mark, a title line, a tagline line, one fixed action slot.
+  it('lays a connector out as a 32 px mark, a title, a tagline and one action slot', () => {
+    useMCPServers.setState({
+      mcpServers: {
+        'exa': { command: '', args: [], env: {}, active: true },
+        'my-tools': { command: 'npx', args: [], env: {}, active: false },
+      },
+    })
+    useAppState.setState({ tools: [tool('exa', 'web_search_exa')] })
+
+    renderDropdown()
+
+    // The mark is the model rows' 32 px round slot: a catalog connector's
+    // brand tile fills it, a hand-added server gets its initial in it.
+    const mark = screen.getByTestId('connector-mark-exa')
+    expect(mark).toHaveClass('size-8', 'rounded-full', 'bg-secondary')
+    expect(mark).toHaveAttribute('aria-hidden', 'true')
+    expect(mark.firstElementChild).toHaveClass('size-full', 'rounded-full')
+    expect(mark.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/connectors/exa.svg'
+    )
+    expect(screen.getByTestId('connector-mark-my-tools')).toHaveTextContent(
+      /^m$/
+    )
+
+    // Title and tagline: one line each, cut with an ellipsis, the pair
+    // centred against the mark at a height every row shares.
+    const title = screen.getByTestId('connector-name-exa')
+    expect(title).toHaveTextContent('Exa')
+    expect(title).toHaveClass('truncate', 'text-sm', 'font-medium')
+    const tagline = screen.getByTestId('connector-cost-exa')
+    expect(tagline).toHaveTextContent('Web search')
+    expect(tagline).toHaveClass('truncate', 'text-xs', 'text-muted-foreground')
+    expect(tagline).not.toHaveClass('text-[11px]')
+    expect(mark.parentElement).toHaveClass('items-center', 'min-h-9')
+    expect(
+      screen.getByTestId('connector-mark-my-tools').parentElement
+    ).toHaveClass('items-center', 'min-h-9')
+
+    // The switch — and the tools button once the connector is on — sit in
+    // one fixed-width slot, so the switches of every row line up.
+    const exaActions = screen.getByTestId('connector-actions-exa')
+    expect(exaActions).toHaveClass('w-16', 'justify-end')
+    expect(
+      within(exaActions).getByRole('switch', { name: 'Exa' })
+    ).toBeChecked()
+    expect(
+      within(exaActions).getByTestId('connector-tools-exa')
+    ).toBeInTheDocument()
+    const otherActions = screen.getByTestId('connector-actions-my-tools')
+    expect(otherActions).toHaveClass('w-16', 'justify-end')
+    expect(
+      within(otherActions).getByRole('switch', { name: 'my-tools' })
+    ).not.toBeChecked()
+    expect(
+      within(otherActions).queryByTestId('connector-tools-my-tools')
+    ).toBeNull()
+  })
+
+  it('greys the title of a connector muted for this chat, on the same row shape', () => {
+    useMCPServers.setState({
+      mcpServers: { exa: { command: '', args: [], env: {}, active: true } },
+    })
+    useAppState.setState({ tools: [tool('exa', 'web_search_exa')] })
+    useToolAvailable.setState({ mutedServers: { 'thread-1': ['exa'] } })
+
+    renderDropdown()
+
+    expect(screen.getByTestId('connector-name-exa')).toHaveClass(
+      'text-muted-foreground'
+    )
+    expect(screen.getByTestId('connector-cost-exa')).toHaveTextContent(
+      'common:connectorsMenu.mutedForChat'
+    )
+    expect(screen.getByTestId('connector-mark-exa')).toHaveClass('size-8')
   })
 })

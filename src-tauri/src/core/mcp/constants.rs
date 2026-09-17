@@ -100,12 +100,6 @@ const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
       "env": {},
       "active": false
     },
-    "serper": {
-      "command": "npx",
-      "args": ["-y", "serper-search-scrape-mcp-server"],
-      "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
-      "active": false
-    },
     "filesystem": {
       "command": "npx",
       "args": [

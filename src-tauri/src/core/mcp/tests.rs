@@ -2,7 +2,8 @@ use super::commands::{
     collect_mcp_server_statuses, is_extension_not_connected_error, repin_filesystem_mcp_servers,
 };
 use super::constants::{
-    filesystem_mcp_pinned_spec, APP_WRITTEN_FILESYSTEM_MCP_VERSIONS, FILESYSTEM_MCP_PACKAGE,
+    default_mcp_config, filesystem_mcp_pinned_spec, APP_WRITTEN_FILESYSTEM_MCP_VERSIONS,
+    FILESYSTEM_MCP_PACKAGE,
 };
 use super::helpers::{
     add_server_config, add_server_config_with_path, append_bounded_stderr,
@@ -285,6 +286,43 @@ fn test_ensure_mcp_config_exists_bootstraps_clean_install() {
         result.is_ok(),
         "Migration should succeed on a clean install: {result:?}"
     );
+}
+
+/// Servers the composer's plugins menu never lists (`BROWSER_SERVER_KEYS` and
+/// `SYSTEM_SERVER_KEYS` in `web-app/src/constants/mcp-connectors.ts`). Any
+/// other server the template ships switched off renders as an off row in a
+/// fresh install's menu — which is how the Serper duplicate of Exa got noticed.
+const MENU_HIDDEN_SERVER_KEYS: &[&str] = &[
+    "Jan Browser MCP",
+    "browsermcp",
+    "fetch",
+    "filesystem",
+    "sequential-thinking",
+];
+
+#[test]
+fn fresh_default_config_seeds_one_web_search_and_no_off_row() {
+    let config: serde_json::Value =
+        serde_json::from_str(&default_mcp_config()).expect("default MCP config is JSON");
+    let servers = config["mcpServers"]
+        .as_object()
+        .expect("default MCP config has an mcpServers object");
+
+    // Exa is the web search a fresh install ships switched on; Serper did the
+    // same job behind an API key and is not seeded any more.
+    assert_eq!(servers["exa"]["active"], serde_json::json!(true));
+    assert!(
+        !servers.contains_key("serper"),
+        "default config still seeds the serper duplicate of exa"
+    );
+
+    for (key, server) in servers {
+        let active = server["active"].as_bool().unwrap_or(false);
+        assert!(
+            active || MENU_HIDDEN_SERVER_KEYS.contains(&key.as_str()),
+            "default server `{key}` is off and would render as an off row in the plugins menu"
+        );
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
