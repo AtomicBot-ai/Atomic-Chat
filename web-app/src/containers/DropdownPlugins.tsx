@@ -522,7 +522,7 @@ export default memo(function DropdownPlugins({
                           </div>
                         }
                       >
-                        {/* The model rows' anatomy (`RouteRow`): a 32 px round
+                        {/* The model rows' anatomy (`RouteRow`): a 32 px brand
                           mark, then title over tagline, both cut to one line
                           and centred on the mark. `min-h-9` keeps a row with
                           no second line as tall as its neighbours; the action
@@ -530,15 +530,15 @@ export default memo(function DropdownPlugins({
                         <div className="flex min-h-9 min-w-0 flex-1 items-center gap-3 pr-2">
                           <span
                             aria-hidden="true"
-                            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary"
+                            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-secondary"
                             data-testid={`connector-mark-${entry.key}`}
                           >
-                            {/* A catalog brand tile fills the circle; a
+                            {/* A catalog brand tile fills the square; a
                               hand-added server shows its initial on it. */}
                             <ServerIcon
                               connector={entry.connector}
                               name={name}
-                              className="size-full rounded-full bg-transparent"
+                              className="size-full bg-transparent"
                             />
                           </span>
                           <div className="min-w-0 flex-1">
