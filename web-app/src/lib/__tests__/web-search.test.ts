@@ -42,4 +42,20 @@ describe('findWebSearchServer', () => {
 
     expect(found?.key).toBe('my-search')
   })
+
+  it('recognizes the catalog You.com key', () => {
+    const found = findWebSearchServer({
+      youcom: http('https://api.you.com/mcp?profile=free'),
+    })
+
+    expect(found?.key).toBe('youcom')
+  })
+
+  it('recognizes a hand-added You.com endpoint by its url', () => {
+    const found = findWebSearchServer({
+      'my-research': http('https://api.you.com/mcp', true),
+    })
+
+    expect(found?.key).toBe('my-research')
+  })
 })

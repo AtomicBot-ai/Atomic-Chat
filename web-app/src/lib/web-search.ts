@@ -14,6 +14,7 @@ const KNOWN_WEB_SEARCH_KEYS = [
   'tavily',
   'brave-search',
   'brave_search',
+  'youcom',
   'web-search',
   'websearch',
 ]
@@ -27,7 +28,8 @@ const knownKeyRank = (key: string) => {
 
 const isWebSearchServer = (key: string, config: MCPServerConfig) =>
   KNOWN_WEB_SEARCH_KEYS.includes(normalizeKey(key)) ||
-  (config.url ?? '').includes('exa.ai')
+  (config.url ?? '').includes('exa.ai') ||
+  (config.url ?? '').includes('api.you.com/mcp')
 
 /**
  * Pick the server the globe button in the composer drives. An already active

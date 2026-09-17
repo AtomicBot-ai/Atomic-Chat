@@ -214,6 +214,28 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       helpUrl: 'https://serper.dev/api-key',
     },
   },
+  {
+    serverKey: 'youcom',
+    name: 'You.com',
+    author: 'You.com',
+    descriptionKey: 'mcp-connectors:descriptions.youcom',
+    // No official mark bundled yet, so the tile falls back to the monogram
+    // ("Y" on the bg colour) instead of shipping an unlicensed asset.
+    icon: { bg: '#0F1724' },
+    docsUrl: 'https://docs.you.com/docs/build-with-agents/mcp-server',
+    matchUrls: ['api.you.com/mcp'],
+    // Keyless hosted search MCP: the `?profile=free` profile needs no signup
+    // (about 100 searches/day). For more tools and higher limits, drop the
+    // query param and add a Bearer Authorization header with a you.com/platform
+    // API key — reachable afterwards via Edit JSON.
+    config: {
+      type: 'http',
+      url: 'https://api.you.com/mcp?profile=free',
+      command: '',
+      args: [],
+      env: {},
+    },
+  },
   // Remote OAuth connectors below were probed for MCP OAuth discovery +
   // Dynamic Client Registration before landing here. Probed and left out:
   // Figma (registration endpoint answers 403), Stack Overflow (no
