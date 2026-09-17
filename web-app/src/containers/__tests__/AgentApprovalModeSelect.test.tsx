@@ -4,6 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 import type { AgentApprovalMode } from '@/hooks/useAgentMode'
+import chat from '@/locales/en/chat.json'
+
+// The confirm dialog is sm:max-w-xl, which leaves 526 px per line of text
+// after the padding. Two lines of 14 px Inter hold about 150 characters; at
+// the "Large" font setting (15.75 px) about 135, measured with the app's
+// Inter: the current body, 132 characters, is 940 px of the 1052 px two
+// lines give, with the longest word (90 px) still fitting on either line.
+const BODY_BUDGET = 135
 
 // The copy Danny signed off on (en/chat.json → agentApprovals); the component
 // takes it as props, so the test pins the words the user reads.
@@ -19,7 +27,7 @@ const COPY = {
     'Unrestricted: no approval prompts for any tool call, including the internet and any file on your computer',
   skipConfirmTitle: 'Enable Full access?',
   skipConfirmBody:
-    'Full access lets tool calls run without approval prompts. They can modify or delete files, run commands, and make network requests. Enable it only when you trust the current task.',
+    'No approval prompts: tool calls can modify or delete files, run commands, and use the internet. Enable it only for a task you trust.',
   skipConfirmCancel: 'Cancel',
   skipConfirmAccept: 'I understand',
 }
@@ -181,5 +189,47 @@ describe('AgentApprovalModeSelect', () => {
     expect(
       screen.getByRole('button', { name: 'Ask for approval' })
     ).toBeInTheDocument()
+  })
+
+  it('centres the mode icon and the checkmark on each row', async () => {
+    const user = userEvent.setup()
+    render(<Harness onChange={vi.fn()} />)
+
+    await openMenu(user)
+
+    const rows = screen.getAllByRole('menuitem')
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      // The row centres the icon and the checkmark on the whole title +
+      // description block. Pinned to the first line, they sat at the top of
+      // the three-line Full access row and read as "flown up".
+      expect(row).toHaveClass('items-center')
+      expect(row).not.toHaveClass('items-start')
+      const icons = row.querySelectorAll('svg')
+      expect(icons).toHaveLength(2) // the mode icon and the checkmark
+      for (const icon of icons) expect(icon).not.toHaveClass('mt-0.5')
+    }
+  })
+
+  it('shows the Full access warning in a wider dialog that holds it in two lines', async () => {
+    const user = userEvent.setup()
+    render(<Harness onChange={vi.fn()} />)
+
+    await pickFullAccess(user)
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveClass('sm:max-w-xl', 'lg:max-w-xl', 'xl:max-w-xl')
+    expect(dialog).not.toHaveClass('sm:max-w-md', 'lg:max-w-md', 'xl:max-w-md')
+
+    // The shipped words are the pinned ones, they render, and they still
+    // carry the whole warning within the two-line budget.
+    const body = chat.agentApprovals.skipConfirmBody
+    expect(body).toBe(COPY.skipConfirmBody)
+    expect(dialog).toHaveTextContent(body)
+    expect(body).toMatch(/modify or delete files/)
+    expect(body).toMatch(/run commands/)
+    expect(body).toMatch(/use the internet/)
+    expect(body).toMatch(/only for a task you trust/)
+    expect(body.length).toBeLessThanOrEqual(BODY_BUDGET)
   })
 })
