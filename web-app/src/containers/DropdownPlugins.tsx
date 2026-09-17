@@ -300,7 +300,12 @@ export default memo(function DropdownPlugins({
     }
     if (isServerPending(entry.key)) {
       return (
-        <IconLoader2 size={16} className="animate-spin text-muted-foreground" />
+        <span className="inline-flex w-8.5 justify-center">
+          <IconLoader2
+            size={16}
+            className="animate-spin text-muted-foreground"
+          />
+        </span>
       )
     }
     return (
@@ -408,7 +413,7 @@ export default memo(function DropdownPlugins({
     return (
       <span
         className={cn(
-          'truncate text-[11px] text-muted-foreground',
+          'mt-0.5 block truncate text-xs text-muted-foreground',
           heavy && 'text-amber-600 dark:text-amber-400',
           muted && measured && 'line-through opacity-70'
         )}
@@ -508,33 +513,52 @@ export default memo(function DropdownPlugins({
                         onSelect={(e) => e.preventDefault()}
                         onClick={(e) => e.preventDefault()}
                         icon={
-                          <div className="flex shrink-0 items-center gap-1">
+                          <div
+                            className="flex w-16 shrink-0 items-center justify-end gap-1"
+                            data-testid={`connector-actions-${entry.key}`}
+                          >
                             {renderToolsButton(entry, muted)}
                             {renderServerSwitch(entry)}
                           </div>
                         }
                       >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <ServerIcon
-                            connector={entry.connector}
-                            name={name}
-                            className="size-5 rounded-sm [&>span]:text-[10px]"
-                          />
-                          <div className="flex min-w-0 flex-col">
-                            <span
-                              className={cn(
-                                'truncate text-sm',
-                                muted && 'text-muted-foreground'
+                        {/* The model rows' anatomy (`RouteRow`): a 32 px round
+                          mark, then title over tagline, both cut to one line
+                          and centred on the mark. `min-h-9` keeps a row with
+                          no second line as tall as its neighbours; the action
+                          slot above is a fixed width so the switches line up. */}
+                        <div className="flex min-h-9 min-w-0 flex-1 items-center gap-3 pr-2">
+                          <span
+                            aria-hidden="true"
+                            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary"
+                            data-testid={`connector-mark-${entry.key}`}
+                          >
+                            {/* A catalog brand tile fills the circle; a
+                              hand-added server shows its initial on it. */}
+                            <ServerIcon
+                              connector={entry.connector}
+                              name={name}
+                              className="size-full rounded-full bg-transparent"
+                            />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span
+                                className={cn(
+                                  'block min-w-0 truncate text-sm font-medium leading-tight',
+                                  muted && 'text-muted-foreground'
+                                )}
+                                title={isError ? status?.error : undefined}
+                                data-testid={`connector-name-${entry.key}`}
+                              >
+                                {name}
+                              </span>
+                              {isError && (
+                                <span className="size-1.5 shrink-0 rounded-full bg-red-500" />
                               )}
-                              title={isError ? status?.error : undefined}
-                            >
-                              {name}
                             </span>
                             {renderCost(entry, muted)}
                           </div>
-                          {isError && (
-                            <span className="size-1.5 shrink-0 rounded-full bg-red-500" />
-                          )}
                         </div>
                       </DropDrawerItem>
                     )

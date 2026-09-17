@@ -11,7 +11,7 @@ import type { MCPServerConfig, MCPServers } from '@/hooks/useMCPServers'
 
 export type ConnectorSecret = {
   kind: 'env' | 'header'
-  /** Env var name (SERPER_API_KEY) or header name (Authorization). */
+  /** Env var name (RESEND_API_KEY) or header name (Authorization). */
   key: string
   /** i18n key under mcp-connectors for the input label. */
   labelKey: string
@@ -153,7 +153,8 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     descriptionKey: 'mcp-connectors:descriptions.notion',
     taglineKey: 'mcp-connectors:taglines.notion',
     // Notion's mark is black on a white page, so the tile is white too
-    // (the same treatment as Serper) instead of an inverted black tile.
+    // (the same treatment as Cloudflare and Airtable) instead of an inverted
+    // black tile.
     icon: { bg: '#ffffff', src: '/images/connectors/notion.svg' },
     docsUrl: 'https://developers.notion.com/docs/mcp',
     matchUrls: ['mcp.notion.com'],
@@ -203,28 +204,6 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       command: '',
       args: [],
       env: {},
-    },
-  },
-  {
-    serverKey: 'serper',
-    name: 'Serper',
-    author: 'Serper',
-    descriptionKey: 'mcp-connectors:descriptions.serper',
-    taglineKey: 'mcp-connectors:taglines.serper',
-    // The mark ships on its own white tile, so the bg matches it.
-    icon: { bg: '#ffffff', src: '/images/connectors/serper.png' },
-    docsUrl: 'https://serper.dev',
-    config: {
-      command: 'npx',
-      args: ['-y', 'serper-search-scrape-mcp-server'],
-      env: {},
-    },
-    secret: {
-      kind: 'env',
-      key: 'SERPER_API_KEY',
-      labelKey: 'mcp-connectors:secrets.serperApiKey',
-      placeholder: 'sk-...',
-      helpUrl: 'https://serper.dev/api-key',
     },
   },
   // Remote OAuth connectors below were probed for MCP OAuth discovery +

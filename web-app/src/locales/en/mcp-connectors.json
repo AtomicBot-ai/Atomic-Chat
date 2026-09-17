@@ -32,7 +32,6 @@
     "getKey": "Get your API key"
   },
   "secrets": {
-    "serperApiKey": "Serper API key",
     "firecrawlApiKey": "Firecrawl API key",
     "perplexityApiKey": "Perplexity API key",
     "zapierToken": "Zapier MCP token",
@@ -48,7 +47,6 @@
     "notion": "Search, read, and update pages and databases in your workspace.",
     "sentry": "Investigate errors, traces, and application performance.",
     "atlassian": "Work with Jira issues, Confluence pages, and team knowledge.",
-    "serper": "Google search results via the Serper API.",
     "atomicmail": "Give your agent its own inbox: read, send, and manage email. No key needed.",
     "stripe": "Read and manage customers, payments, subscriptions, and invoices.",
     "supabase": "Query your database, manage projects, and read Supabase docs.",
@@ -73,7 +71,6 @@
     "notion": "Pages & databases",
     "sentry": "Error monitoring",
     "atlassian": "Jira & Confluence",
-    "serper": "Google search",
     "stripe": "Payments",
     "supabase": "Database",
     "cloudflare": "Edge & DNS",

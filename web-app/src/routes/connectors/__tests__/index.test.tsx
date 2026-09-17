@@ -136,7 +136,7 @@ describe('ConnectorsPage', () => {
     render(<ConnectorsPage />)
 
     const visible = MCP_CONNECTORS.filter((c) => !c.hidden)
-    expect(visible.length).toBeGreaterThanOrEqual(22)
+    expect(visible.length).toBeGreaterThanOrEqual(21)
     for (const connector of visible) {
       expect(screen.getByText(connector.name)).toBeInTheDocument()
     }
@@ -333,9 +333,9 @@ describe('ConnectorsPage', () => {
     const user = userEvent.setup()
     render(<ConnectorsPage />)
 
-    const serperCard = screen.getByText('Serper').closest('div.bg-card')!
+    const resendCard = screen.getByText('Resend').closest('div.bg-card')!
     await user.click(
-      within(serperCard as HTMLElement).getByRole('button', {
+      within(resendCard as HTMLElement).getByRole('button', {
         name: 'mcp-connectors:setUp',
       })
     )
@@ -346,14 +346,14 @@ describe('ConnectorsPage', () => {
     expect(connect).toBeDisabled()
     expect(activateMCPServer).not.toHaveBeenCalled()
 
-    await user.type(screen.getByPlaceholderText('sk-...'), 'my-serper-key')
+    await user.type(screen.getByPlaceholderText('re_...'), 'my-resend-key')
     await user.click(connect)
 
     await waitFor(() =>
       expect(activateMCPServer).toHaveBeenCalledWith(
-        'serper',
+        'resend',
         expect.objectContaining({
-          env: { SERPER_API_KEY: 'my-serper-key' },
+          env: { RESEND_API_KEY: 'my-resend-key' },
           active: true,
         })
       )
