@@ -1,24 +1,40 @@
-import { CircleAlert, Info } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import type { FitLevel } from '@/containers/SetupScreenHelpers'
 
 /**
- * The small circled mark next to a model's name that says whether it fits
- * this machine's memory: green for "comfortably", yellow for "it will run,
- * expect less of it", red for "it will not load". The colour is never the
- * only signal — the warning colours change the glyph too, and the mark is a
- * button whose name reads the level and the reason, so it is reachable from
- * the keyboard and by a screen reader; the same sentence is its tooltip.
+ * The small badge beside a model's name that says whether it fits this
+ * machine's memory: a word — Fits, Tight, Won't fit — on a green, amber or
+ * red pill, in the style of the source badges the rows found on disk wear.
+ * The colour is never the only signal, since the word changes with it. The
+ * badge is a button whose accessible name reads the level's full label and
+ * the reason, so it is reachable from the keyboard and by a screen reader;
+ * the reason alone is its tooltip.
+ *
+ * It was a circled glyph. The marks drifted out of line from row to row, and
+ * a glyph says nothing until it is hovered.
  */
-const FIT_STYLE: Record<FitLevel, { Icon: typeof Info; className: string }> = {
-  ok: { Icon: Info, className: 'text-emerald-600 dark:text-emerald-400' },
-  warn: { Icon: CircleAlert, className: 'text-amber-500 dark:text-amber-400' },
-  no: { Icon: CircleAlert, className: 'text-red-600 dark:text-red-400' },
+const FIT_STYLE: Record<FitLevel, { textKey: string; className: string }> = {
+  ok: {
+    textKey: 'setup:recommend.fitBadgeOk',
+    className:
+      'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/45 dark:text-emerald-200',
+  },
+  warn: {
+    textKey: 'setup:recommend.fitBadgeWarn',
+    className:
+      'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/45 dark:text-amber-200',
+  },
+  no: {
+    textKey: 'setup:recommend.fitBadgeNo',
+    className:
+      'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/45 dark:text-red-300',
+  },
 }
 
 export function ModelFitIndicator({
@@ -34,7 +50,8 @@ export function ModelFitIndicator({
   reason: string
   className?: string
 }) {
-  const { Icon, className: colour } = FIT_STYLE[level]
+  const { t } = useTranslation()
+  const { textKey, className: colour } = FIT_STYLE[level]
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -43,13 +60,13 @@ export function ModelFitIndicator({
           aria-label={label}
           data-fit={level}
           className={cn(
-            'inline-flex size-4 shrink-0 cursor-default items-center justify-center rounded-full',
+            'inline-block shrink-0 cursor-default whitespace-nowrap rounded-[6px] border px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wider',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             colour,
             className
           )}
         >
-          <Icon className="size-3.5" aria-hidden="true" />
+          {t(textKey)}
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">
