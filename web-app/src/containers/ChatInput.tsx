@@ -2681,10 +2681,6 @@ const ChatInput = memo(function ChatInput({
     // the send button. Writing to a model that is still downloading is the
     // whole point of ATO-460, so the composer has to stay reachable.
     <div data-composer-anchor className="relative mx-auto w-full max-w-3xl">
-      {/* Pending approvals dock above the composer. Outside the streaming-
-          disabled toolbar cluster: a run awaiting approval reports
-          `submitted`, and an unclickable Approve button would deadlock it. */}
-      {!initialMessage && <AgentApprovalInline threadId={composerThreadKey} />}
       {/* ATO-535: why the chat is not answering — a model still loading, an
           engine being swapped, or a load that failed (including an auto-start
           one, which raises no toast). Renders nothing in a steady state. */}
@@ -2695,14 +2691,19 @@ const ChatInput = memo(function ChatInput({
             'relative p-0.5 rounded-3xl',
             // Always visible: the skills slash menu pops above the composer
             // in both modes and would be clipped by overflow-hidden.
-            'overflow-visible',
-            isStreaming && 'opacity-70'
+            'overflow-visible'
           )}
         >
-          <div className="relative z-20">
+          <div className="group/approval relative z-20">
+            {/* Share the input's inset width, outside its streaming opacity
+                and disabled toolbar. Absolute docking preserves scroll position. */}
+            {!initialMessage && (
+              <AgentApprovalInline threadId={composerThreadKey} />
+            )}
             <div
               className={cn(
-                'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+                'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30 group-has-[[data-slot=composer-approval]]/approval:rounded-t-none',
+                isStreaming && 'opacity-70',
                 isFocused && 'ring-1 ring-ring/50',
                 isDragOver && 'ring-2 ring-ring/50 border-primary'
               )}
@@ -3002,7 +3003,12 @@ const ChatInput = memo(function ChatInput({
               placed at the static position overhangs the right edge by that
               much — enough for the page's scroll container to let the whole
               composer be dragged sideways. */}
-          <div className="absolute z-20 bg-transparent bottom-0 inset-x-0.5 p-2">
+          <div
+            className={cn(
+              'absolute z-20 bg-transparent bottom-0 inset-x-0.5 p-2',
+              isStreaming && 'opacity-70'
+            )}
+          >
             <div className="flex justify-between items-center w-full">
               <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
                 <div
