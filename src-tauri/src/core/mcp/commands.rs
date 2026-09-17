@@ -8,8 +8,9 @@ use tokio::time::timeout;
 use super::{
     constants::{
         default_filesystem_root, default_mcp_config, filesystem_mcp_pinned_spec,
-        APP_WRITTEN_FILESYSTEM_MCP_VERSIONS, DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS,
-        FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
+        retired_serper_default_server, APP_WRITTEN_FILESYSTEM_MCP_VERSIONS,
+        DEFAULT_MCP_TOOL_LIST_TIMEOUT_SECS, FILESYSTEM_MCP_PACKAGE, LEGACY_FILESYSTEM_PLACEHOLDER,
+        RETIRED_SERPER_SERVER_KEY,
     },
     helpers::{kill_process_tree_by_pid, restart_active_mcp_servers, start_mcp_server},
 };
@@ -58,7 +59,9 @@ pub(crate) fn repin_filesystem_mcp_servers(servers: &mut Map<String, Value>) -> 
             continue;
         };
         for arg in args.iter_mut() {
-            let Some(current) = arg.as_str() else { continue };
+            let Some(current) = arg.as_str() else {
+                continue;
+            };
             let needs_repin = current == FILESYSTEM_MCP_PACKAGE
                 || app_written_specs.iter().any(|spec| spec == current);
             if !needs_repin {
@@ -70,6 +73,29 @@ pub(crate) fn repin_filesystem_mcp_servers(servers: &mut Map<String, Value>) -> 
         }
     }
     mutated
+}
+
+/// Remove the `serper` entry the default template used to seed, and only
+/// that: the entry must equal `retired_serper_default_server()` exactly.
+/// Returns true when it was removed.
+///
+/// The template shipped Serper switched off behind a `YOUR_SERPER_API_KEY_HERE`
+/// placeholder next to an always-on Exa doing the same job, so as seeded it
+/// could never be switched on, and it was the only off row a fresh install's
+/// plugins menu showed. Fresh installs stopped seeding it; this reaches the
+/// installs that already have it. The web app saves the server map verbatim,
+/// so an entry the user never touched still matches, while any edit —
+/// switching it on, a real key, other args, an extra field — makes it the
+/// user's and it stays. Idempotent: once removed there is nothing to match.
+pub(crate) fn drop_retired_serper_default(servers: &mut Map<String, Value>) -> bool {
+    if servers.get(RETIRED_SERPER_SERVER_KEY) != Some(&retired_serper_default_server()) {
+        return false;
+    }
+    servers.remove(RETIRED_SERPER_SERVER_KEY);
+    log::info!(
+        "Migrating config: dropped the retired default {RETIRED_SERPER_SERVER_KEY} MCP server"
+    );
+    true
 }
 
 #[tauri::command]

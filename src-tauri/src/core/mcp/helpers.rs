@@ -29,6 +29,7 @@ const MCP_STDERR_CONTEXT_MAX_BYTES: usize = 16 * 1024;
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::{
+        commands::drop_retired_serper_default,
         constants::{default_mcp_config, DEFAULT_MCP_HANDSHAKE_TIMEOUT_SECS},
         models::{McpServerConfig, McpSettings},
     },
@@ -1383,6 +1384,40 @@ pub fn ensure_mcp_config_exists<R: Runtime>(
         .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
 
     Ok(config_path)
+}
+
+/// Remove the untouched Serper entry from an existing MCP config.
+///
+/// The in-memory matcher deliberately recognizes only the exact default the
+/// app used to write. A user-edited Serper server is preserved. The file is
+/// rewritten only when that sentinel was actually removed, making repeated
+/// startup migrations a no-op.
+pub fn drop_retired_serper_default_from_config<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<bool, String> {
+    let config_path = ensure_mcp_config_exists(app_handle)?;
+    let mut config: Value = serde_json::from_str(
+        &std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read MCP config: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
+
+    let servers = config
+        .get_mut("mcpServers")
+        .and_then(Value::as_object_mut)
+        .ok_or("No mcpServers found in config")?;
+    if !drop_retired_serper_default(servers) {
+        return Ok(false);
+    }
+
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to write MCP config: {e}"))?;
+
+    Ok(true)
 }
 
 // Add a new server configuration to the MCP config file

@@ -1,14 +1,16 @@
 use super::commands::{
-    collect_mcp_server_statuses, is_extension_not_connected_error, repin_filesystem_mcp_servers,
+    collect_mcp_server_statuses, drop_retired_serper_default, is_extension_not_connected_error,
+    repin_filesystem_mcp_servers,
 };
 use super::constants::{
-    default_mcp_config, filesystem_mcp_pinned_spec, APP_WRITTEN_FILESYSTEM_MCP_VERSIONS,
-    FILESYSTEM_MCP_PACKAGE,
+    default_mcp_config, filesystem_mcp_pinned_spec, retired_serper_default_server,
+    APP_WRITTEN_FILESYSTEM_MCP_VERSIONS, FILESYSTEM_MCP_PACKAGE, MCP_CONFIG_VERSION,
+    RETIRED_SERPER_SERVER_KEY,
 };
 use super::helpers::{
     add_server_config, add_server_config_with_path, append_bounded_stderr,
-    ensure_mcp_config_exists, extract_command_args, format_mcp_start_error,
-    is_process_already_gone, run_mcp_commands,
+    drop_retired_serper_default_from_config, ensure_mcp_config_exists, extract_command_args,
+    format_mcp_start_error, is_process_already_gone, run_mcp_commands,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
@@ -618,4 +620,162 @@ fn repin_leaves_user_pins_alone_and_is_idempotent() {
     let before = servers.clone();
     assert!(!repin_filesystem_mcp_servers(&mut servers));
     assert_eq!(servers, before);
+}
+
+/// Servers as an upgrader's `mcp_config.json` holds them: the Exa the app
+/// ships switched on, plus whatever `serper` entry the fixture passes in.
+fn servers_with_serper(serper: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    serde_json::json!({
+        "exa": {
+            "type": "http",
+            "url": "https://mcp.exa.ai/mcp",
+            "command": "",
+            "args": [],
+            "env": {},
+            "active": true
+        },
+        RETIRED_SERPER_SERVER_KEY: serper,
+    })
+    .as_object()
+    .expect("fixture is an object")
+    .clone()
+}
+
+/// Every install that got the default template between its introduction and
+/// its removal carries the Serper entry it seeded: switched off, behind a
+/// placeholder key, doing Exa's job. The upgrade migration drops exactly that
+/// entry and leaves every other server alone.
+#[test]
+fn drop_serper_removes_only_the_untouched_template_entry() {
+    let mut servers = servers_with_serper(retired_serper_default_server());
+    let exa_before = servers["exa"].clone();
+
+    assert!(drop_retired_serper_default(&mut servers));
+
+    assert!(
+        !servers.contains_key(RETIRED_SERPER_SERVER_KEY),
+        "the untouched serper default is still in the config"
+    );
+    assert_eq!(servers["exa"], exa_before);
+}
+
+/// A `serper` the user did anything to is theirs: switched on, given a real
+/// key, pointed at another package, or extended with a field the template
+/// never wrote. None of those match the sentinel, so nothing is removed.
+#[test]
+fn drop_serper_keeps_an_entry_the_user_changed() {
+    let sentinel = retired_serper_default_server();
+    let mut activated = sentinel.clone();
+    activated["active"] = serde_json::json!(true);
+    let mut keyed = sentinel.clone();
+    keyed["env"]["SERPER_API_KEY"] = serde_json::json!("sk-real-key");
+    let mut other_package = sentinel.clone();
+    other_package["args"] = serde_json::json!(["-y", "my-serper-fork"]);
+    let mut extended = sentinel.clone();
+    extended["cwd"] = serde_json::json!("/home/u/serper");
+    let mut without_env = sentinel.clone();
+    without_env.as_object_mut().unwrap().remove("env");
+
+    for (label, changed) in [
+        ("activated", activated),
+        ("real API key", keyed),
+        ("other package", other_package),
+        ("extra field", extended),
+        ("env removed", without_env),
+    ] {
+        let mut servers = servers_with_serper(changed);
+        let before = servers.clone();
+
+        assert!(
+            !drop_retired_serper_default(&mut servers),
+            "a serper the user changed ({label}) was reported as migrated"
+        );
+        assert_eq!(
+            servers, before,
+            "a serper the user changed ({label}) was touched"
+        );
+    }
+}
+
+/// A fresh install never had the entry, and a config that already went through
+/// the migration no longer has it: both are no-ops that report nothing changed,
+/// so a second run never rewrites the file.
+#[test]
+fn drop_serper_is_a_no_op_on_a_fresh_or_migrated_config() {
+    let fresh: serde_json::Value =
+        serde_json::from_str(&default_mcp_config()).expect("default MCP config is JSON");
+    let mut servers = fresh["mcpServers"]
+        .as_object()
+        .expect("default MCP config has an mcpServers object")
+        .clone();
+    let before = servers.clone();
+    assert!(!drop_retired_serper_default(&mut servers));
+    assert_eq!(servers, before);
+
+    let mut migrated = servers_with_serper(retired_serper_default_server());
+    assert!(drop_retired_serper_default(&mut migrated));
+    let once = migrated.clone();
+    assert!(!drop_retired_serper_default(&mut migrated));
+    assert_eq!(migrated, once);
+}
+
+/// The startup migration works on the file: the sentinel disappears from
+/// `mcp_config.json`, the other servers and the settings block survive, and
+/// the step is gated on schema version 4 so it runs once per install.
+#[test]
+fn migration_4_drops_the_serper_default_from_the_config_file_once() {
+    let app = mock_app();
+    let data_root = tempfile::tempdir().expect("Failed to create temp data root");
+    app.manage(crate::test_support::TestDataRoot(
+        data_root.path().to_path_buf(),
+    ));
+    let config_path = data_root.path().join("mcp_config.json");
+    let config = serde_json::json!({
+        "mcpServers": servers_with_serper(retired_serper_default_server()),
+        "mcpSettings": { "toolCallTimeoutSeconds": 45 }
+    });
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config).expect("fixture serializes"),
+    )
+    .expect("Failed to write config fixture");
+
+    assert_eq!(
+        drop_retired_serper_default_from_config(app.handle().clone()),
+        Ok(true)
+    );
+
+    let written: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&config_path).expect("Failed to read migrated config"),
+    )
+    .expect("migrated config is JSON");
+    assert!(
+        written["mcpServers"]
+            .get(RETIRED_SERPER_SERVER_KEY)
+            .is_none(),
+        "serper survived the migration: {written}"
+    );
+    assert_eq!(
+        written["mcpServers"]["exa"]["active"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        written["mcpSettings"]["toolCallTimeoutSeconds"],
+        serde_json::json!(45)
+    );
+
+    let after_first_run = std::fs::read_to_string(&config_path).expect("read once-migrated");
+    assert_eq!(
+        drop_retired_serper_default_from_config(app.handle().clone()),
+        Ok(false)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&config_path).expect("read twice-migrated"),
+        after_first_run,
+        "an already-migrated config was rewritten"
+    );
+
+    // `migrate_mcp_servers` gates this step on `mcp_version < 4` and stores
+    // this constant afterwards; bump both together when adding a step.
+    assert_eq!(MCP_CONFIG_VERSION, 4);
 }
