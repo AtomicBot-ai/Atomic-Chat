@@ -195,9 +195,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (32)
-
-- **2026-09-17** — [Distinguish nominal 128 GiB and larger recommendation tiers](2026-09-17-distinguish-128-gib-recommendation-tiers.md)
+## Models, Hub & downloads (31)
 
 - **2026-09-16** — [Check disk space before a download starts](2026-09-16-check-disk-space-before-a-download-starts.md)
 - **2026-09-16** — [Explain why images need a vision model, and offer the ones that run here](2026-09-16-explain-why-images-need-a-vision-model.md)

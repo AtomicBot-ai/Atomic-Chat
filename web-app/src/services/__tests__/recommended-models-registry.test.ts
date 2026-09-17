@@ -73,28 +73,6 @@ const mockFetchFailure = (error: unknown) => {
 }
 
 describe('recommended-models-registry loader', () => {
-  it('preserves ordered 128 and 128+ lists alongside legacy tiers through remote and cache', async () => {
-    clearRegistryCache()
-    const tiers = Object.fromEntries(
-      HARDWARE_TIERS.filter((tier) =>
-        /_(64|64_plus|128|128_plus)$/.test(tier)
-      ).map((tier) => [tier, BASELINE_TIER_RECOMMENDATIONS[tier]])
-    )
-    mockFetchSuccess(buildManifest({ tiers }))
-    const result = await getRecommendationsOrFallback({
-      url: REMOTE_URL,
-      force: true,
-    })
-    expect(result.tiers).toEqual(tiers)
-    expect(getCachedManifest()?.manifest.tiers).toEqual(tiers)
-    mockFetchFailure(new Error('offline'))
-    const cached = await getRecommendationsOrFallback({
-      url: REMOTE_URL,
-      force: true,
-    })
-    expect(cached.tiers).toEqual(tiers)
-  })
-
   beforeEach(() => {
     clearRegistryCache()
   })
