@@ -168,6 +168,8 @@
   "reasoning": "Reasoning",
   "webSearchToggleEnabled": "Web search enabled",
   "webSearchToggleDisabled": "Web search disabled",
+  "webSearchToggleConnecting": "Connecting web search…",
+  "webSearchToggleUnavailable": "Web search unavailable. Click to retry; if it still fails, check your search provider connection and MCP configuration.",
   "webSearchToggleFailed": "Couldn't start web search ({{server}})",
   "reasoningToggleEnabled": "Reasoning enabled",
   "reasoningToggleDisabled": "Reasoning disabled",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { findWebSearchServer } from '../web-search'
+import { findWebSearchServer, isWebSearchEnabled } from '../web-search'
 
 const http = (url: string, active = false) => ({
   command: '',
@@ -41,5 +41,38 @@ describe('findWebSearchServer', () => {
     })
 
     expect(found?.key).toBe('my-search')
+  })
+})
+
+describe('web search availability shared with agent requests', () => {
+  const server = { key: 'exa', config: http('https://mcp.exa.ai/mcp', true) }
+  const tool = {
+    server: 'exa',
+    name: 'web_search_exa',
+    description: '',
+    inputSchema: {},
+  }
+
+  it('keeps the per-turn flag off when startup returned no search tools', () => {
+    expect(isWebSearchEnabled(server, [], [], [])).toBe(false)
+    expect(
+      isWebSearchEnabled(server, [{ ...tool, name: 'web_fetch_exa' }], [], [])
+    ).toBe(false)
+  })
+
+  it('enables the flag only for an active, discovered, unmuted search tool', () => {
+    expect(isWebSearchEnabled(server, [tool], [], [])).toBe(true)
+    expect(
+      isWebSearchEnabled(server, [tool], ['exa::web_search_exa'], [])
+    ).toBe(false)
+    expect(isWebSearchEnabled(server, [tool], [], ['exa'])).toBe(false)
+    expect(
+      isWebSearchEnabled(
+        { ...server, config: { ...server.config, active: false } },
+        [tool],
+        [],
+        []
+      )
+    ).toBe(false)
   })
 })
