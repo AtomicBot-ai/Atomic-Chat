@@ -1,10 +1,26 @@
 /**
- * Pure helpers behind the first-run screen's per-row fit mark: the colour a
+ * Pure helpers behind the first-run screen's model list: which file a row
+ * downloads, who a row is "from", why a model fits this machine, the colour a
  * memory verdict maps onto, and the order the picks are listed in. Kept free
- * of React and of `SetupScreen` itself so they are testable without a render
- * and so the screen can import them without a cycle.
+ * of React and of `SetupScreen` itself so they are testable without a render,
+ * so the screen can import them without a cycle, and so the composer's
+ * reply-model gate can list the same rows in the same order without pulling
+ * the whole screen in.
  */
-import type { MemoryFit } from '@/lib/hardware-tier'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import {
+  judgeMemoryFit,
+  type HardwareProfile,
+  type MemoryFit,
+} from '@/lib/hardware-tier'
+import { findPinnedQuant } from '@/lib/model-card'
+import { iconKeyLogoSrc, modelFamilyLogoSrc } from '@/lib/model-logo'
+import { getPreferredMmprojModel } from '@/lib/models'
+import type {
+  CatalogModel,
+  MMProjModel,
+  ModelQuant,
+} from '@/services/models/types'
 
 /**
  * The three colours a row can wear. `ok` is green, `warn` yellow, `no` red.
@@ -84,4 +100,148 @@ export function orderRowsByFit<T>(
     last = keyOf(dealt[dealt.length - 1])
   }
   return out
+}
+
+//* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
+//! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
+//! который матчится DEFAULT_MODEL_QUANTIZATIONS — без пина скачается рабочий,
+//! но не тот файл, и ошибка не всплывёт нигде.
+export function pickPreferredVariant(
+  model: CatalogModel,
+  quantPin?: string
+): ModelQuant | null {
+  const pinned = findPinnedQuant(model.quants, quantPin)
+  if (pinned) return pinned
+  const preferred =
+    model.quants?.find((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
+        m.model_id.toLowerCase().includes(e)
+      )
+    ) ?? null
+  return preferred ?? model.quants?.[0] ?? null
+}
+
+//* Проектор для vision-моделей: пин из манифеста, иначе обычный выбор.
+//! getPreferredMmprojModel ищет буквальный id 'mmproj-f16'. У LiquidAI id —
+//! 'mmproj-LFM2_5-VL-450m-F16', совпадения нет, и он падает на mmproj_models[0]
+//! = BF16 (181 MB) вместо Q8_0 (98 MB).
+export function pickMmprojModel(
+  model: CatalogModel,
+  quantPin?: string
+): MMProjModel | undefined {
+  return (
+    findPinnedQuant(model.mmproj_models, quantPin) ??
+    getPreferredMmprojModel(model)
+  )
+}
+
+/**
+ * Who a row is "from", for the purpose of not seating two of them together:
+ * the brand mark the row wears (so `gemma`/`google` and `llama`/`meta`/`muse`
+ * are one publisher each), else the repo owner. The repo owner alone would
+ * not do — most picks are our own `AtomicChat/…` repacks of other people's
+ * models.
+ */
+export function publisherKey(modelName: string, iconKey?: string): string {
+  return (
+    iconKeyLogoSrc(iconKey) ??
+    modelFamilyLogoSrc(modelName) ??
+    modelName.split('/')[0]?.toLowerCase() ??
+    modelName.toLowerCase()
+  )
+}
+
+/**
+ * Reorders rows so no two neighbours share a publisher, and otherwise keeps
+ * the order it was given: each slot takes the earliest remaining row whose
+ * publisher differs from the previous slot's — starting from `previous`, the
+ * publisher of whatever row sits above the list. When only one publisher is
+ * left its rows follow each other, which is the best any order can do.
+ * Deterministic on purpose: the list must not reshuffle between renders.
+ */
+export function interleaveByPublisher<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+  previous?: string
+): T[] {
+  const remaining = [...rows]
+  const out: T[] = []
+  let last = previous
+  while (remaining.length > 0) {
+    const index = remaining.findIndex((row) => keyOf(row) !== last)
+    const [next] = remaining.splice(index === -1 ? 0 : index, 1)
+    out.push(next)
+    last = keyOf(next)
+  }
+  return out
+}
+
+/// Whole-GB rendering of a MiB figure, for the "why this one" line. Rounded to
+/// what the user would call their machine ("16 GB"), not to a decimal place
+/// nobody reads off a spec sheet.
+export function formatMemoryGb(mib?: number): string | null {
+  if (!mib || mib <= 0) return null
+  return `${Math.round(mib / 1024)} GB`
+}
+
+/**
+ * The one line under the recommendation that says why it is this model.
+ *
+ * Returns the i18n key and its interpolation values rather than a string, so
+ * the component stays a single `t()` call and the wording lives in the locale
+ * files with the rest.
+ *
+ * The tiers deliberately say different things: a machine with no accelerator is
+ * not memory-bound at all — it is bound by CPU throughput, and telling its owner
+ * "fits your 64 GB" would explain the wrong constraint. Everything else is
+ * judged by {@link judgeMemoryFit}, whose macOS ceiling is a hard one.
+ */
+export type RecommendationFitCopy = {
+  key: string
+  values: Record<string, string>
+  /**
+   * Name of the memory pool, as its own key so the caller resolves it before
+   * interpolating. "16 GB" on a Mac and "16 GB" on a graphics card are not the
+   * same 16 GB, and a line that omits which one reads as a claim about RAM.
+   */
+  poolKey?: string
+}
+
+export function describeRecommendationFit(args: {
+  sizeLabel?: string | null
+  sizeBytes?: number
+  profile: HardwareProfile | null
+  /**
+   * Speak of the memory fit even on a CPU-only machine. The offer's badge
+   * explains the *choice*, and there the CPU is what binds; the fit mark on
+   * every row reports what {@link judgeMemoryFit} measured, which is memory,
+   * and on such a machine that is the pool the row is judged against.
+   */
+  memoryOnly?: boolean
+}): RecommendationFitCopy | null {
+  const { sizeLabel, sizeBytes, profile, memoryOnly = false } = args
+  if (!sizeLabel) return null
+  const values: Record<string, string> = { size: sizeLabel }
+
+  if (profile?.memoryKind === 'system' && !memoryOnly) {
+    return { key: 'setup:recommend.whyCpuOnly', values }
+  }
+
+  const budget = formatMemoryGb(profile?.budgetMib)
+  const fit = judgeMemoryFit(sizeBytes, profile)
+  if (!budget || !fit || !profile) {
+    return { key: 'setup:recommend.whyUnknown', values }
+  }
+
+  const key = {
+    comfortable: 'setup:recommend.whyComfortable',
+    tight: 'setup:recommend.whyTight',
+    spills: 'setup:recommend.whySpills',
+    wont_load: 'setup:recommend.whyWontLoad',
+  }[fit]
+  return {
+    key,
+    values: { ...values, budget },
+    poolKey: `setup:recommend.pool.${profile.memoryKind}`,
+  }
 }

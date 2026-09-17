@@ -6,7 +6,15 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
 import {
   EMBEDDING_MODEL_ID,
@@ -15,6 +23,7 @@ import {
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { seedServiceHub } from '@/test/service-hub'
+import type { HardwareProfile } from '@/lib/hardware-tier'
 import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +45,18 @@ const sourcesMock = vi.hoisted(() => ({
     rec: { modelName: string; descriptionKey: string; quant?: string }
     model: CatalogModel | null
   }>,
+  // The Hub's curated picks as `useStaffPicks` resolves them — the rows
+  // onboarding lists under its offer. Mocked for the same reason.
+  staffPicks: [] as Array<{
+    pick: {
+      model_name: string
+      title?: string
+      summary?: string
+      icon?: string
+      format?: 'gguf' | 'mlx'
+    }
+    model: CatalogModel | null
+  }>,
 }))
 
 vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
@@ -48,6 +69,10 @@ vi.mock('@/stores/recommended-models-registry-store', () => ({
   useRecommendedModelsRegistryStore: {
     getState: () => ({ refresh: () => Promise.resolve() }),
   },
+}))
+
+vi.mock('@/hooks/useStaffPicks', () => ({
+  useStaffPicks: () => sourcesMock.staffPicks,
 }))
 
 const folderMocks = vi.hoisted(() => ({
@@ -124,10 +149,9 @@ vi.mock('@/i18n/react-i18next-compat', async () => {
 // so a test can measure the machine: `profile` is what the fit is judged on.
 const hardwareMock = vi.hoisted(() => ({
   tier: 'vram_8' as string,
-  profile: null as Record<string, unknown> | null,
+  profile: null as HardwareProfile | null,
   ready: true,
 }))
-
 vi.mock('@/hooks/useHardwareTier', () => ({
   useHardwareTier: () => hardwareMock,
 }))
@@ -166,6 +190,50 @@ const catalogModel: CatalogModel = {
 const model = (id: string) => ({ id }) as Model
 
 const GB = 1024 ** 3
+
+/** An 18 GiB Mac: Metal refuses anything past 0.85 of the pool. */
+const unifiedMac: HardwareProfile = {
+  tier: 'unified_16',
+  memoryKind: 'unified',
+  budgetMib: 18 * 1024,
+  systemRamMib: 18 * 1024,
+  vramMib: 0,
+  hardCeiling: true,
+}
+
+/**
+ * A Hub staff pick as `useStaffPicks` resolves it: the manifest entry plus
+ * the catalog card, with one quant.
+ */
+const staffPick = (
+  repo: string,
+  card: { title: string; size: string; summary?: string; icon?: string }
+) => {
+  const [developer, name] = repo.split('/')
+  const stem = name.replace(/-GGUF$/, '')
+  return {
+    pick: {
+      model_name: repo,
+      title: card.title,
+      summary: card.summary,
+      icon: card.icon,
+      format: 'gguf' as const,
+    },
+    model: {
+      model_name: repo,
+      developer,
+      downloads: 0,
+      quants: [
+        {
+          model_id: `${developer}/${stem}-Q4_K_M`,
+          path: `https://example.test/${stem}-Q4_K_M.gguf`,
+          file_size: card.size,
+        },
+      ],
+      mmproj_models: [],
+    } as CatalogModel,
+  }
+}
 
 /**
  * A transfer part-way through, as the download panel sees it: 10 % of
@@ -262,6 +330,21 @@ const capturedEvents = (name: string) =>
     .map(([, props]) => props)
 
 describe('ReplyModelGate', () => {
+  beforeAll(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    )
+  })
+
+  afterAll(() => {
+    vi.unstubAllGlobals()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
@@ -275,6 +358,7 @@ describe('ReplyModelGate', () => {
     mocks.chatgptSubscriptionAvailable = true
     hardwareMock.tier = 'vram_8'
     hardwareMock.profile = null
+    sourcesMock.staffPicks = []
     sourcesMock.sources = [catalogModel]
     sourcesMock.recommended = [
       {
@@ -357,31 +441,34 @@ describe('ReplyModelGate', () => {
     })
   })
 
+  it('offers the folder as a row like the other routes, with a visible Add', async () => {
+    // It was a bare text link under the routes: no fill, no title, and
+    // wording nobody read as "point the app at my models".
+    renderGate([unconnectedCloud()])
+
+    const routes = await screen.findByTestId('reply-gate-routes')
+    const row = within(routes).getByTestId('reply-gate-add-folder')
+    expect(row).toHaveTextContent('chat:replyGate.folderTitle')
+    expect(row).toHaveTextContent('chat:replyGate.folderHint')
+    const button = within(row).getByRole('button', {
+      name: 'chat:replyGate.addFolder',
+    })
+    expect(button).toBeVisible()
+    expect(button).toHaveTextContent('setup:cloudStep.add')
+  })
+
   it('lets the empty-handed point the scanner at their own folder', async () => {
     // A third of onboarding exits are imports of models other apps left on
     // disk. The scanner only knows those apps' default stores; the folder the
     // user actually keeps weights in was reachable only from Settings.
     folderMocks.pickScanFolder.mockResolvedValue('/Volumes/models')
-    folderMocks.scanLocalModels.mockResolvedValue([
-      {
-        id: 'big',
-        displayName: 'big.gguf',
-        path: '/Volumes/models/big.gguf',
-        format: 'gguf',
-        source: 'local',
-        runnable: true,
-        sizeBytes: 9e9,
-      },
-      {
-        id: 'small',
-        displayName: 'small.gguf',
-        path: '/Volumes/models/small.gguf',
-        format: 'gguf',
-        source: 'local',
-        runnable: true,
-        sizeBytes: 1e9,
-      },
-    ])
+    let finishScan: (found: unknown[]) => void = () => {}
+    folderMocks.scanLocalModels.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishScan = resolve
+        })
+    )
     folderMocks.importScannedModel.mockResolvedValue({
       providerName: 'llamacpp-upstream',
       modelId: 'small',
@@ -389,7 +476,41 @@ describe('ReplyModelGate', () => {
     mocks.switchToModel.mockResolvedValue(undefined)
     const { onResolved } = renderGate([unconnectedCloud()])
 
-    fireEvent.click(await screen.findByTestId('reply-gate-add-folder'))
+    const row = await screen.findByTestId('reply-gate-add-folder')
+    const button = within(row).getByRole('button', {
+      name: 'chat:replyGate.addFolder',
+    })
+    fireEvent.click(button)
+
+    // While the scanner reads the folder the button says so and takes no
+    // second click.
+    await waitFor(() =>
+      expect(button).toHaveTextContent('chat:replyGate.folderScanning')
+    )
+    expect(button).toBeDisabled()
+
+    await act(async () => {
+      finishScan([
+        {
+          id: 'big',
+          displayName: 'big.gguf',
+          path: '/Volumes/models/big.gguf',
+          format: 'gguf',
+          source: 'local',
+          runnable: true,
+          sizeBytes: 9e9,
+        },
+        {
+          id: 'small',
+          displayName: 'small.gguf',
+          path: '/Volumes/models/small.gguf',
+          format: 'gguf',
+          source: 'local',
+          runnable: true,
+          sizeBytes: 1e9,
+        },
+      ])
+    })
 
     // Scanned where the user pointed, and the lightest model found was the
     // one imported and started — the rule onboarding applies.
@@ -417,15 +538,16 @@ describe('ReplyModelGate', () => {
     folderMocks.scanLocalModels.mockResolvedValue([])
     const { onResolved } = renderGate([unconnectedCloud()])
 
-    const button = await screen.findByTestId('reply-gate-add-folder')
+    const row = await screen.findByTestId('reply-gate-add-folder')
+    const button = within(row).getByRole('button', {
+      name: 'chat:replyGate.addFolder',
+    })
     fireEvent.click(button)
 
     await waitFor(() => expect(folderMocks.scanLocalModels).toHaveBeenCalled())
     // The widget stays open on its empty branch, and the button is back to
     // its idle label so the user can try another folder.
-    await waitFor(() =>
-      expect(button).toHaveTextContent('chat:replyGate.addFolder')
-    )
+    await waitFor(() => expect(button).toHaveTextContent('setup:cloudStep.add'))
     expect(button).toBeEnabled()
     expect(screen.getByText('chat:replyGate.emptyTitle')).toBeInTheDocument()
     expect(folderMocks.importScannedModel).not.toHaveBeenCalled()
@@ -477,79 +599,41 @@ describe('ReplyModelGate', () => {
     })
   })
 
-  describe('in the words the user reads', () => {
-    // A hint is one clamped line: some 40 characters of 12 px Inter is what a
-    // row leaves beside its mark and button, and onboarding's narrower column
-    // renders these same keys (see SetupScreen.test.tsx).
-    const HINT_BUDGET = 40
+  it('names the list the way onboarding does', async () => {
+    renderGate([unconnectedCloud()])
 
-    beforeEach(() => {
-      locale.english = true
-    })
-
-    afterEach(() => {
-      locale.english = false
-      ;(globalThis as Record<string, unknown>).IS_MACOS = false
-    })
-
-    it('leads the Hugging Face row with the name and keeps its line plain', async () => {
-      renderGate([unconnectedCloud()])
-      const row = await screen.findByTestId('reply-gate-browse-hub')
-
-      // "Hugging Face" is what the eye scans for, so the title opens with it.
-      expect(within(row).getByText(/^Hugging Face/)).toHaveTextContent(
-        'Hugging Face models'
-      )
-      // Plain words: no GGUF, no MLX, nothing to know before pressing Browse.
-      expect(within(row).getByText('Add any model')).toBeInTheDocument()
-      expect(row).not.toHaveTextContent(/GGUF|MLX/)
-      // The button shows the verb; assistive tech hears the whole action.
-      expect(
-        within(row).getByRole('button', { name: 'Browse Hugging Face models' })
-      ).toHaveTextContent('Browse')
-    })
-
-    it('keeps the Hugging Face line plain on macOS too, where MLX builds also run', async () => {
-      ;(globalThis as Record<string, unknown>).IS_MACOS = true
-      renderGate([unconnectedCloud()])
-      const row = await screen.findByTestId('reply-gate-browse-hub')
-
-      expect(within(row).getByText('Add any model')).toBeInTheDocument()
-      expect(row).not.toHaveTextContent(/GGUF|MLX/)
-    })
-
-    it('names the cloud providers on one short line, like every hint in the list', async () => {
-      renderGate([unconnectedCloud(), subscriptionProvider()])
-      const routes = await screen.findByTestId('reply-gate-routes')
-
-      const cloud = within(routes).getByTestId('reply-gate-cloud-key')
-      expect(within(cloud).getByText('Cloud provider')).toBeInTheDocument()
-      expect(
-        within(cloud).getByRole('button', { name: 'Add a cloud provider' })
-      ).toHaveTextContent('Add')
-      const subscription = within(routes).getByTestId('reply-gate-subscription')
-      expect(
-        within(subscription).getByText('ChatGPT subscription')
-      ).toBeInTheDocument()
-      expect(
-        within(subscription).getByRole('button', {
-          name: 'Connect ChatGPT subscription',
-        })
-      ).toHaveTextContent('Connect')
-
-      for (const hint of [
-        'Add any model',
-        'Sign in, no API key needed',
-        'OpenRouter, Anthropic, Gemini, OpenAI',
-      ]) {
-        const line = within(routes).getByText(hint)
-        expect(line.textContent?.length).toBeLessThanOrEqual(HINT_BUDGET)
-      }
-    })
+    const block = await screen.findByTestId('reply-gate-recommended')
+    expect(within(block).getByText('setup:recommend.title')).toBeVisible()
   })
 
-  it("lists the tier's other options behind the best fit, without sizes", async () => {
-    const other: CatalogModel = {
+  describe('the recommended list', () => {
+    // The Hub's picks in manifest order: a family's sizes together, the
+    // largest first — the order that on an 18 GiB Mac would head the list
+    // with a model that does not load on it.
+    const nemotron = staffPick(
+      'AtomicChat/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF',
+      { title: 'Nemotron 3.5 Lightning', size: '19.7 GB', icon: 'nvidia' }
+    )
+    const qwen9b = staffPick('AtomicChat/Qwen3.5-9B-GGUF', {
+      title: 'Qwen3.5 9B',
+      size: '5.2 GB',
+      summary: 'The 9B for longer answers.',
+      icon: 'qwen',
+    })
+    const gemma12b = staffPick('AtomicChat/gemma-4-12B-it-GGUF', {
+      title: 'Gemma 4 12B',
+      size: '7.3 GB',
+      summary: 'Mid-size Gemma 4 with vision.',
+      icon: 'gemma',
+    })
+    const gemma26b = staffPick('AtomicChat/gemma-4-26B-it-GGUF', {
+      title: 'Gemma 4 26B',
+      size: '14.0 GB',
+      icon: 'gemma',
+    })
+
+    /** A manifest row that is not a Hub pick: onboarding never lists it. */
+    const manifestTail: CatalogModel = {
       ...catalogModel,
       model_name: 'LiquidAI/LFM2.5-2.6B-GGUF',
       quants: [
@@ -560,45 +644,129 @@ describe('ReplyModelGate', () => {
         },
       ],
     } as CatalogModel
-    sourcesMock.sources = [catalogModel, other]
-    sourcesMock.recommended = [
-      {
-        rec: {
-          modelName: catalogModel.model_name,
-          descriptionKey: 'hub:recEverydayUse',
+
+    beforeEach(() => {
+      sourcesMock.recommended = [
+        {
+          rec: {
+            modelName: catalogModel.model_name,
+            descriptionKey: 'hub:recEverydayUse',
+          },
+          model: catalogModel,
         },
-        model: catalogModel,
-      },
-      {
-        rec: { modelName: other.model_name, descriptionKey: 'hub:recCompact' },
-        model: other,
-      },
-    ]
+        {
+          rec: {
+            modelName: manifestTail.model_name,
+            descriptionKey: 'hub:recCompact',
+          },
+          model: manifestTail,
+        },
+      ]
+      sourcesMock.staffPicks = [nemotron, qwen9b, gemma12b, gemma26b]
+    })
 
-    renderGate([unconnectedCloud()])
+    it('lists every Hub pick under the lead, by fit, publishers dealt', async () => {
+      // Three rows from the manifest's tail is not the list onboarding
+      // shows. The same rows in the same order: the offer, then the Hub's
+      // picks — what fits, then what is tight, then what will not load —
+      // with no two neighbours from one publisher.
+      hardwareMock.profile = unifiedMac
+      renderGate([unconnectedCloud()])
 
-    const lead = await screen.findByTestId('reply-gate-recommended-lead')
-    expect(lead).toHaveTextContent('chat:replyGate.recommendedForDevice')
-    const others = screen.getAllByTestId('reply-gate-recommended-other')
-    expect(others).toHaveLength(1)
-    expect(others[0]).toHaveTextContent('LFM2.5 2.6B')
-    expect(others[0]).toHaveTextContent('hub:recCompact')
-    // The size belongs on the download, not on the choice.
-    expect(screen.queryByText(/GB/)).toBeNull()
+      const lead = await screen.findByTestId('reply-gate-recommended-lead')
+      expect(lead).toHaveTextContent('Qwen3.5 4B')
+      expect(lead).toHaveTextContent('chat:replyGate.recommendedForDevice')
+      const rows = recommendedRows()
+      expect(rows).toHaveLength(5)
+      expect(
+        screen.getAllByTestId('reply-gate-recommended-other')
+      ).toHaveLength(4)
+      // Gemma before the second Qwen, although the manifest lists Qwen first:
+      // the lead is a Qwen. Then the tight 26B, then the one that will not load.
+      expect(rows[1]).toHaveTextContent('Gemma 4 12B')
+      expect(rows[2]).toHaveTextContent('Qwen3.5 9B')
+      expect(rows[3]).toHaveTextContent('Gemma 4 26B')
+      expect(rows[4]).toHaveTextContent('Nemotron 3.5 Lightning')
+      // A pick's line is the Hub's own summary; the manifest's tail is not a
+      // row here any more than it is on onboarding.
+      expect(rows[1]).toHaveTextContent('Mid-size Gemma 4 with vision.')
+      expect(screen.queryByText('LFM2.5 2.6B')).toBeNull()
 
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"LFM2.5 2.6B"}',
-      })
-    )
-    expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
-      'LiquidAI/LFM2.5-2.6B-Q4_K_M',
-      'https://example.test/LFM2.5-2.6B-Q4_K_M.gguf',
-      undefined,
-      '',
-      true,
-      false
-    )
+      fireEvent.click(
+        within(rows[1]).getByRole('button', {
+          name: 'chat:replyGate.downloadLabel:{"name":"Gemma 4 12B"}',
+        })
+      )
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+        'AtomicChat/gemma-4-12B-it-Q4_K_M',
+        'https://example.test/gemma-4-12B-it-Q4_K_M.gguf',
+        undefined,
+        '',
+        true,
+        false
+      )
+    })
+
+    it('marks each row with how it fits this machine, and says why on the mark', async () => {
+      hardwareMock.profile = unifiedMac
+      renderGate([unconnectedCloud()])
+
+      await screen.findByTestId('reply-gate-recommended-lead')
+      const marks = recommendedRows().map((row) =>
+        row.querySelector('[data-fit]')
+      )
+      expect(marks.map((mark) => mark?.getAttribute('data-fit'))).toEqual([
+        'ok',
+        'ok',
+        'ok',
+        'warn',
+        'no',
+      ])
+      // The same sentence onboarding's mark carries, in the machine's figures.
+      expect(marks[0]).toHaveAccessibleName(
+        /setup:recommend\.fitOk.*setup:recommend\.whyComfortable.*"size":"2\.5 GB".*"budget":"18 GB"/
+      )
+      expect(marks[3]).toHaveAccessibleName(
+        /setup:recommend\.fitWarn.*setup:recommend\.whyTight/
+      )
+      expect(marks[4]).toHaveAccessibleName(
+        /setup:recommend\.fitNo.*setup:recommend\.whyWontLoad/
+      )
+    })
+
+    it('wears no mark while the machine is unknown, and still lists everything', async () => {
+      // "We don't know" is never drawn as a warning; the rows stay, dealt by
+      // publisher alone.
+      renderGate([unconnectedCloud()])
+
+      await screen.findByTestId('reply-gate-recommended-lead')
+      const rows = recommendedRows()
+      expect(rows).toHaveLength(5)
+      expect(document.querySelector('[data-fit]')).toBeNull()
+      expect(rows[1]).toHaveTextContent('Nemotron 3.5 Lightning')
+      expect(rows[2]).toHaveTextContent('Qwen3.5 9B')
+    })
+
+    it('puts the size on each Download, and the verb alone when the card has none', async () => {
+      sourcesMock.staffPicks = [
+        staffPick('SomeLab/Foo-7B-GGUF', { title: 'Foo 7B', size: '' }),
+      ]
+      renderGate([unconnectedCloud()])
+
+      const lead = await screen.findByTestId('reply-gate-recommended-lead')
+      expect(
+        within(lead).getByRole('button', {
+          name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
+        })
+      ).toHaveTextContent('chat:replyGate.downloadSize:{"size":"2.5 GB"}')
+      const other = screen.getByTestId('reply-gate-recommended-other')
+      expect(
+        within(other).getByRole('button', {
+          name: 'chat:replyGate.downloadLabel:{"name":"Foo 7B"}',
+        })
+      ).toHaveTextContent(/^chat:replyGate\.download$/)
+      expect(other.querySelector('[data-fit]')).toBeNull()
+    })
   })
 
   it('hides the subscription route where the sign-in cannot run', async () => {
@@ -819,7 +987,11 @@ describe('ReplyModelGate', () => {
       screen.queryByRole('dialog', { name: 'setup:wontFitDialog.title' })
     const clickLead = async () => {
       const lead = await screen.findByTestId('reply-gate-recommended-lead')
-      fireEvent.click(within(lead).getByRole('button'))
+      fireEvent.click(
+        within(lead).getByRole('button', {
+          name: /chat:replyGate\.downloadLabel/,
+        })
+      )
     }
 
     beforeEach(() => {
@@ -886,7 +1058,8 @@ describe('ReplyModelGate', () => {
       expect(onDismissed).not.toHaveBeenCalled()
       expect(
         within(screen.getByTestId('reply-gate-recommended-lead')).getByRole(
-          'button'
+          'button',
+          { name: /chat:replyGate\.downloadLabel/ }
         )
       ).toBeEnabled()
     })

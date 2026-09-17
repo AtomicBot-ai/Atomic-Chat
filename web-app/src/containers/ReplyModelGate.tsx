@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Cloud, FolderPlus, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -16,10 +22,14 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { VOICE_MODEL_ID } from '@/constants/voice'
 import { ConfirmWontFitDownload } from '@/containers/ConfirmWontFitDownload'
+import { ModelFitIndicator } from '@/containers/ModelFitIndicator'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { RouteRow } from '@/containers/RouteRow'
-import { describeRecommendationFit } from '@/containers/SetupScreen'
-import { fitLevel } from '@/containers/SetupScreenHelpers'
+import {
+  describeRecommendationFit,
+  fitLabelKey,
+  fitLevel,
+} from '@/containers/SetupScreenHelpers'
 import {
   AddCloudProviderDialog,
   selectCloudGalleryProviders,
@@ -30,7 +40,10 @@ import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
+import {
+  useRecommendedListDownloads,
+  type RecommendedDownload,
+} from '@/hooks/useRecommendedDownloads'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -40,8 +53,6 @@ import {
   formatEta,
   formatProgressPair,
 } from '@/lib/downloadFormat'
-import { judgeMemoryFit } from '@/lib/hardware-tier'
-import { parseFileSizeToBytes } from '@/lib/model-card'
 import { prettyModelName } from '@/lib/model-display-name'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
@@ -404,14 +415,15 @@ function ReplyModelGateBody({
         onConnectCloud={onConnectCloud}
         onConnectSubscription={onConnectSubscription}
         onBrowseHub={onBrowseHub}
+        folderRoute={
+          branch === 'none' ? (
+            <AddFolderRoute
+              onStarted={(option) => start(option, 'folder')}
+              disabled={startingKey !== null}
+            />
+          ) : null
+        }
       />
-
-      {branch === 'none' && (
-        <AddFolderRoute
-          onStarted={(option) => start(option, 'folder')}
-          disabled={startingKey !== null}
-        />
-      )}
     </>
   )
 }
@@ -502,10 +514,12 @@ function inFlightHint(
 }
 
 /**
- * Branch 2: nothing on the device. The list is the one onboarding leads with
- * — see `useRecommendedDownloads` — so the user is never offered two different
- * "recommended" models by the same app. The first row is the best fit and
- * carries the filled button; the rest are the tier's other options.
+ * Branch 2: nothing on the device. The list is onboarding's "Recommended
+ * models" section, row for row — see `useRecommendedListDownloads` — so the
+ * user is never shown two different lists by the same app: the best fit
+ * leads with the filled button, and the Hub's picks follow it by how they
+ * fit this machine, each wearing the mark onboarding's rows wear. The size
+ * rides on the Download button, as it does there.
  *
  * A chat model already downloading — from onboarding, the Hub, anywhere —
  * sits above them as the first row, with the panel's readout and a Cancel: it
@@ -525,7 +539,7 @@ function RecommendedDownloads({
   const { profile } = useHardwareTier()
   // A red row's Download asks first; see ConfirmWontFitDownload.
   const { guardWontFit, confirmation: wontFit } = useConfirmWontFitDownload()
-  const { items: recommended, isLoading } = useRecommendedDownloads()
+  const { items: recommended, isLoading } = useRecommendedListDownloads()
   const inFlight = useInFlightChatDownloads()
   // The card lookup has no failure state of its own; past this the routes
   // below are the offer, and a spinner with nothing behind it comes down.
@@ -556,105 +570,146 @@ function RecommendedDownloads({
     (item) => !inFlightIds.has(item.variant.model_id)
   )
 
+  // The mark beside a row's name: the same verdict, level label and sentence
+  // onboarding's rows carry, judged on the size the button shows. No size or
+  // no machine — no mark: "we don't know" is not a warning.
+  const fitMark = (item: RecommendedDownload): ReactNode => {
+    const level = fitLevel(item.fit)
+    if (!level) return null
+    const copy = describeRecommendationFit({
+      sizeLabel: item.sizeLabel,
+      sizeBytes: item.sizeBytes,
+      profile,
+      memoryOnly: true,
+    })
+    if (!copy) return null
+    const reason = t(copy.key, {
+      ...copy.values,
+      ...(copy.poolKey ? { pool: t(copy.poolKey) } : {}),
+    })
+    return (
+      <ModelFitIndicator
+        level={level}
+        label={`${t(fitLabelKey(level))}. ${reason}`}
+        reason={reason}
+      />
+    )
+  }
+
+  // The section label onboarding gives the same list, so the block is named.
+  const heading = (
+    <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+      {t('setup:recommend.title')}
+    </span>
+  )
+
   if (items.length === 0 && inFlight.length === 0) {
     if (!isLoading || gaveUp) return null
     return (
-      <div
-        className="flex items-center gap-3 rounded-lg border bg-secondary/50 p-3"
-        data-testid="reply-gate-recommended"
-      >
-        <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
-        <span className="text-muted-foreground truncate text-sm">
-          {t('chat:replyGate.findingRecommendation')}
-        </span>
+      <div className="flex flex-col gap-2" data-testid="reply-gate-recommended">
+        {heading}
+        <div className="flex items-center gap-3 rounded-lg border bg-secondary/50 p-3">
+          <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
+          <span className="text-muted-foreground truncate text-sm">
+            {t('chat:replyGate.findingRecommendation')}
+          </span>
+        </div>
       </div>
     )
   }
 
   return (
-    <div
-      className="rounded-lg border bg-secondary/50 px-3 py-2"
-      data-testid="reply-gate-recommended"
-    >
-      <div className="flex flex-col divide-y divide-border/60">
-        {inFlight.map((download) => (
-          <RouteRow
-            key={download.id}
-            icon={
-              <ModelLogo
-                name={download.id}
-                fallback="huggingface"
-                className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
-              />
-            }
-            title={prettyModelName(download.id)}
-            hint={inFlightHint(t, download)}
-            action={t('common:cancel')}
-            label={t('common:cancelDownload')}
-            onClick={() =>
-              cancelDownload({ id: download.id, name: download.id }, serviceHub)
-            }
-            data-testid="reply-gate-recommended-in-flight"
-          />
-        ))}
-        {items.map((item) => {
-          const hero = item === recommended[0]
-          const hint = hero
-            ? t('chat:replyGate.recommendedForDevice')
-            : t(item.descriptionKey)
-          return (
+    <div className="flex flex-col gap-2" data-testid="reply-gate-recommended">
+      {heading}
+      {/* The box scrolls, not the dialog, so the routes under it stay put
+          however long the list is — the onboarding rule, at a dialog's height. */}
+      <div className="max-h-[min(40vh,22rem)] overflow-y-auto overscroll-y-contain rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]">
+        <div className="flex flex-col divide-y divide-border/60">
+          {inFlight.map((download) => (
             <RouteRow
-              key={item.repo}
+              key={download.id}
               icon={
-                // Through `ModelLogo` so single-color marks (Liquid's LFM among
-                // them) are tinted and survive a dark background.
                 <ModelLogo
-                  name={item.repo}
+                  name={download.id}
                   fallback="huggingface"
                   className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
                 />
               }
-              title={item.title}
-              hint={hint}
-              action={t('chat:replyGate.download')}
-              label={t('chat:replyGate.downloadLabel', { name: item.title })}
-              primary={hero}
-              disabled={item.isDownloading}
-              onClick={() => {
-                // The verdict and sentence the onboarding row wears, judged
-                // on the file this row would fetch; only red asks.
-                const sizeBytes = parseFileSizeToBytes(item.variant.file_size)
-                const copy = describeRecommendationFit({
-                  sizeLabel: item.variant.file_size,
-                  sizeBytes,
-                  profile,
-                  memoryOnly: true,
-                })
-                guardWontFit(
-                  {
-                    level: fitLevel(judgeMemoryFit(sizeBytes, profile)),
-                    name: item.title,
-                    reason: copy
-                      ? t(copy.key, {
-                          ...copy.values,
-                          ...(copy.poolKey ? { pool: t(copy.poolKey) } : {}),
-                        })
-                      : null,
-                  },
-                  () => {
-                    if (!item.start()) return
-                    onStarted()
-                  }
+              title={prettyModelName(download.id)}
+              hint={inFlightHint(t, download)}
+              action={t('common:cancel')}
+              label={t('common:cancelDownload')}
+              onClick={() =>
+                cancelDownload(
+                  { id: download.id, name: download.id },
+                  serviceHub
                 )
-              }}
-              data-testid={
-                hero
-                  ? 'reply-gate-recommended-lead'
-                  : 'reply-gate-recommended-other'
               }
+              data-testid="reply-gate-recommended-in-flight"
             />
-          )
-        })}
+          ))}
+          {items.map((item) => {
+            const hero = item === recommended[0]
+            // Under a pick, the Hub's own summary, as onboarding shows it.
+            const hint = hero
+              ? t('chat:replyGate.recommendedForDevice')
+              : (item.summary ?? t(item.descriptionKey))
+            return (
+              <RouteRow
+                key={item.repo}
+                icon={
+                  // Through `ModelLogo` so single-color marks (Liquid's LFM among
+                  // them) are tinted and survive a dark background.
+                  <ModelLogo
+                    name={item.repo}
+                    fallback="huggingface"
+                    className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
+                  />
+                }
+                title={item.title}
+                meta={fitMark(item)}
+                hint={hint}
+                action={
+                  item.sizeLabel
+                    ? t('chat:replyGate.downloadSize', { size: item.sizeLabel })
+                    : t('chat:replyGate.download')
+                }
+                label={t('chat:replyGate.downloadLabel', { name: item.title })}
+                primary={hero}
+                disabled={item.isDownloading}
+                onClick={() => {
+                  const copy = describeRecommendationFit({
+                    sizeLabel: item.sizeLabel,
+                    sizeBytes: item.sizeBytes,
+                    profile,
+                    memoryOnly: true,
+                  })
+                  guardWontFit(
+                    {
+                      level: fitLevel(item.fit),
+                      name: item.title,
+                      reason: copy
+                        ? t(copy.key, {
+                            ...copy.values,
+                            ...(copy.poolKey ? { pool: t(copy.poolKey) } : {}),
+                          })
+                        : null,
+                    },
+                    () => {
+                      if (!item.start()) return
+                      onStarted()
+                    }
+                  )
+                }}
+                data-testid={
+                  hero
+                    ? 'reply-gate-recommended-lead'
+                    : 'reply-gate-recommended-other'
+                }
+              />
+            )
+          })}
+        </div>
       </div>
       <ConfirmWontFitDownload {...wontFit} />
     </div>
@@ -670,6 +725,11 @@ function RecommendedDownloads({
  * folder in Settings, if they knew to look. Here the offer is made at the
  * moment it matters: pick a folder, the scanner reads it, and the lightest
  * model found is imported and started — the same rule onboarding applies.
+ *
+ * A row among the other routes, not a link under them: as a text button with
+ * no fill it went unseen, and "Add a folder with models" named the gesture
+ * rather than what the user has. While the scanner reads the folder the
+ * button says so and takes no second click.
  */
 function AddFolderRoute({
   onStarted,
@@ -720,24 +780,18 @@ function AddFolderRoute({
   }
 
   return (
-    <Button
-      type="button"
-      variant="link"
-      size="sm"
-      className="text-muted-foreground hover:text-foreground h-auto self-center py-1 text-xs hover:no-underline"
+    <RouteRow
+      icon={scanning ? <Loader2 className="animate-spin" /> : <FolderPlus />}
+      title={t('chat:replyGate.folderTitle')}
+      hint={t('chat:replyGate.folderHint')}
+      action={
+        scanning ? t('chat:replyGate.folderScanning') : t('setup:cloudStep.add')
+      }
+      label={t('chat:replyGate.addFolder')}
       disabled={disabled || scanning}
       onClick={() => void handlePick()}
       data-testid="reply-gate-add-folder"
-    >
-      {scanning ? (
-        <Loader2 className="size-4 animate-spin" />
-      ) : (
-        <FolderPlus className="size-4" />
-      )}
-      {scanning
-        ? t('chat:replyGate.folderScanning')
-        : t('chat:replyGate.addFolder')}
-    </Button>
+    />
   )
 }
 
@@ -755,17 +809,23 @@ function AddFolderRoute({
  * with nothing, and the point of showing it in every branch is that it is a
  * peer of the local model. SetupScreen dropped the same divider for the same
  * reason (ATO-454).
+ *
+ * `folderRoute` is the user's own folder as the last row, when the widget
+ * offers it: it belongs in this list, with the same fill and width as the
+ * rows above it, not under the list as a link.
  */
 function ModelRoutes({
   providers,
   onConnectCloud,
   onConnectSubscription,
   onBrowseHub,
+  folderRoute,
 }: {
   providers: ModelProvider[]
   onConnectCloud: () => void
   onConnectSubscription: () => void
   onBrowseHub: () => void
+  folderRoute?: ReactNode
 }) {
   const { t } = useTranslation()
 
@@ -821,6 +881,7 @@ function ModelRoutes({
             data-testid="reply-gate-cloud-key"
           />
         )}
+        {folderRoute}
       </div>
     </div>
   )
