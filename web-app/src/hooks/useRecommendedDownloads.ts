@@ -254,6 +254,19 @@ export function useRecommendedListDownloads(): {
     const leadRepo = lead?.repo.toLowerCase()
     if (lead) seen.add(lead.variant.model_id.toLowerCase())
 
+    const leadPick = leadRepo
+      ? picks.find(({ pick }) => pick.model_name.toLowerCase() === leadRepo)
+          ?.pick
+      : undefined
+    const presentedLead = lead
+      ? {
+          ...lead,
+          ...(leadPick?.title ? { title: leadPick.title } : {}),
+          ...(leadPick?.summary ? { summary: leadPick.summary } : {}),
+          ...(leadPick?.icon ? { icon: leadPick.icon } : {}),
+        }
+      : undefined
+
     const rows: Array<{ item: RecommendedDownload; icon?: string }> = []
     for (const { pick, model } of picks) {
       if (!model || model.is_mlx) continue
@@ -283,7 +296,10 @@ export function useRecommendedListDownloads(): {
       interleave: interleaveByPublisher,
       previous: lead ? publisherKey(lead.repo) : undefined,
     })
-    return [...(lead ? [lead] : []), ...ordered.map((row) => row.item)]
+    return [
+      ...(presentedLead ? [presentedLead] : []),
+      ...ordered.map((row) => row.item),
+    ]
   }, [isLoading, lead, picks, build])
 
   return { items, isLoading }

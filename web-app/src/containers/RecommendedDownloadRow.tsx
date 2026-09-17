@@ -67,10 +67,7 @@ export function RecommendedDownloadRow({
     catalogDescription && !/^\*\*Tags\*\*\s*:/i.test(catalogDescription)
       ? catalogDescription
       : null
-  const summary =
-    item.summary?.trim() ||
-    readableCatalogDescription ||
-    t('setup:recommend.defaultSummary')
+  const summary = item.summary?.trim() || readableCatalogDescription || null
 
   return (
     <SetupModelRow

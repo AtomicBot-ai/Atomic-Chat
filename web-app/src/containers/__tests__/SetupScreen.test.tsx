@@ -762,7 +762,7 @@ describe('SetupScreen', () => {
     it('turns the button into a stable disabled Downloading… state', async () => {
       const { unmount } = await renderPicker()
       const row = screen.getByTestId('setup-recommended-row')
-      expect(row.querySelector('p')).not.toBeEmptyDOMElement()
+      expect(row.querySelector('p')).toBeEmptyDOMElement()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
 
@@ -1068,13 +1068,21 @@ describe('SetupScreen', () => {
       mocks.staffPicks = [gemma, nemotron]
     })
 
-    it('uses plain memory copy, a useful lead subtitle and size outside the action', async () => {
+    it('uses the lead model staff-pick summary and keeps size outside the action', async () => {
       locale.english = true
+      mocks.staffPicks = [
+        staffPick('AtomicChat/Qwen3.5-4B-GGUF', {
+          title: 'Qwen3.5 4B',
+          size: '2.52 GB',
+          summary: 'Compact Qwen for coding and everyday questions.',
+          icon: 'qwen',
+        }),
+      ]
       const { unmount } = await renderPicker()
       const row = screen.getAllByTestId('setup-recommended-row')[0]
       expect(row).not.toHaveTextContent('Best fit for your device')
       expect(row.querySelector('p')).toHaveTextContent(
-        'Balanced speed and quality'
+        'Compact Qwen for coding and everyday questions.'
       )
       expect(
         within(row).getByRole('button', { name: /Runs well/ })
@@ -1116,9 +1124,7 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
       const row = screen.getAllByTestId('setup-recommended-row')[0]
       expect(row).not.toHaveTextContent('**Tags**')
-      expect(row.querySelector('p')).toHaveTextContent(
-        'Balanced speed and quality'
-      )
+      expect(row.querySelector('p')).toBeEmptyDOMElement()
       unmount()
     })
 

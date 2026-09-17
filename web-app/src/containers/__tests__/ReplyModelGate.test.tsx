@@ -685,7 +685,7 @@ describe('ReplyModelGate', () => {
 
       const lead = await screen.findByTestId('reply-gate-recommended-lead')
       expect(lead).toHaveTextContent('Qwen3.5 4B')
-      expect(lead).toHaveTextContent('setup:recommend.defaultSummary')
+      expect(lead).not.toHaveTextContent('setup:recommend.defaultSummary')
       const rows = recommendedRows()
       expect(rows).toHaveLength(5)
       expect(

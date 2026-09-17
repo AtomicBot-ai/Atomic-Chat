@@ -364,8 +364,8 @@ describe('ModelPickerEmptyState', () => {
       'model-picker-recommended-lead'
     )
     expect(rows[0]).toHaveTextContent('Qwen3.5 4B')
-    expect(rows[0]).toHaveTextContent('setup:recommend.defaultSummary')
-    expect(rows[1]).toHaveTextContent('setup:recommend.defaultSummary')
+    expect(rows[0]).not.toHaveTextContent('setup:recommend.defaultSummary')
+    expect(rows[1]).not.toHaveTextContent('setup:recommend.defaultSummary')
 
     // A mark on every row: the family's logo, Hugging Face's for the rest.
     expect(
