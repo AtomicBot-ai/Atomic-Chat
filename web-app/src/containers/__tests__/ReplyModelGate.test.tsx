@@ -22,6 +22,7 @@ import {
 } from '@/constants/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { ONBOARDING_ROW_ACTION_CLASS } from '@/containers/RouteRow'
 import { seedServiceHub } from '@/test/service-hub'
 import type { HardwareProfile } from '@/lib/hardware-tier'
 import type { CatalogModel } from '@/services/models/types'
@@ -604,6 +605,15 @@ describe('ReplyModelGate', () => {
 
     const block = await screen.findByTestId('reply-gate-recommended')
     expect(within(block).getByText('setup:recommend.title')).toBeVisible()
+    expect(screen.getByRole('dialog')).toHaveClass(
+      'overflow-x-hidden',
+      'sm:max-w-[42rem]'
+    )
+    expect(
+      within(block).getByRole('button', {
+        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
+      })
+    ).toHaveClass(ONBOARDING_ROW_ACTION_CLASS)
   })
 
   describe('the recommended list', () => {
@@ -675,7 +685,7 @@ describe('ReplyModelGate', () => {
 
       const lead = await screen.findByTestId('reply-gate-recommended-lead')
       expect(lead).toHaveTextContent('Qwen3.5 4B')
-      expect(lead).toHaveTextContent('chat:replyGate.recommendedForDevice')
+      expect(lead).toHaveTextContent('setup:recommend.defaultSummary')
       const rows = recommendedRows()
       expect(rows).toHaveLength(5)
       expect(
@@ -722,15 +732,15 @@ describe('ReplyModelGate', () => {
         'warn',
         'no',
       ])
-      // The same sentence onboarding's mark carries, in the machine's figures.
+      // The same short, beginner-friendly tooltip onboarding's mark carries.
       expect(marks[0]).toHaveAccessibleName(
-        /setup:recommend\.fitOk.*setup:recommend\.whyComfortable.*"size":"2\.5 GB".*"budget":"18 GB"/
+        /setup:recommend\.fitOk.*setup:recommend\.fitTipOk/
       )
       expect(marks[3]).toHaveAccessibleName(
-        /setup:recommend\.fitWarn.*setup:recommend\.whyTight/
+        /setup:recommend\.fitWarn.*setup:recommend\.fitTipWarn/
       )
       expect(marks[4]).toHaveAccessibleName(
-        /setup:recommend\.fitNo.*setup:recommend\.whyWontLoad/
+        /setup:recommend\.fitNo.*setup:recommend\.fitTipNo/
       )
     })
 
@@ -747,24 +757,21 @@ describe('ReplyModelGate', () => {
       expect(rows[2]).toHaveTextContent('Qwen3.5 9B')
     })
 
-    it('puts the size on each Download, and the verb alone when the card has none', async () => {
+    it('puts the size beside the badge and keeps Download as the compact verb', async () => {
       sourcesMock.staffPicks = [
         staffPick('SomeLab/Foo-7B-GGUF', { title: 'Foo 7B', size: '' }),
       ]
       renderGate([unconnectedCloud()])
 
       const lead = await screen.findByTestId('reply-gate-recommended-lead')
-      expect(
-        within(lead).getByRole('button', {
-          name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
-        })
-      ).toHaveTextContent('chat:replyGate.downloadSize:{"size":"2.5 GB"}')
+      expect(lead).toHaveTextContent('2.5 GB')
+      expect(within(lead).getByRole('button')).toHaveTextContent(
+        /^hub:download$/
+      )
       const other = screen.getByTestId('reply-gate-recommended-other')
-      expect(
-        within(other).getByRole('button', {
-          name: 'chat:replyGate.downloadLabel:{"name":"Foo 7B"}',
-        })
-      ).toHaveTextContent(/^chat:replyGate\.download$/)
+      expect(within(other).getByRole('button')).toHaveTextContent(
+        /^hub:download$/
+      )
       expect(other.querySelector('[data-fit]')).toBeNull()
     })
   })

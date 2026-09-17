@@ -12,7 +12,7 @@ import { EngineManager } from '@janhq/core'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
-  useRecommendedDownloads,
+  useRecommendedListDownloads,
   type RecommendedDownload,
 } from '@/hooks/useRecommendedDownloads'
 import type { CatalogModel, ModelsService } from '@/services/models/types'
@@ -28,7 +28,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 // The recommendation itself is the hook's business (its own tests cover it);
 // here it is a fixture so the tests are about what the panel does with it.
 vi.mock('@/hooks/useRecommendedDownloads', () => ({
-  useRecommendedDownloads: vi.fn(),
+  useRecommendedListDownloads: vi.fn(),
 }))
 
 // A Mac with 8 GB of unified memory: 2.5 GB fits, 6 GB is tight, 12 GB will
@@ -99,13 +99,22 @@ const recommended = (
     path: `https://example.test/${title}.gguf`,
     file_size: fileSize as string,
   },
+  sizeLabel: fileSize,
+  sizeBytes: fileSize ? Number.parseFloat(fileSize) * GB : undefined,
+  fit: fileSize
+    ? Number.parseFloat(fileSize) >= 12
+      ? 'wont_load'
+      : Number.parseFloat(fileSize) >= 6
+        ? 'tight'
+        : 'comfortable'
+    : null,
   isDownloading: false,
   start: vi.fn(() => `${repo}:Q4_K_M`),
   ...overrides,
 })
 
 const withRecommended = (items: RecommendedDownload[], isLoading = false) =>
-  vi.mocked(useRecommendedDownloads).mockReturnValue({ items, isLoading })
+  vi.mocked(useRecommendedListDownloads).mockReturnValue({ items, isLoading })
 
 const hfCandidate = (repoId: string): CatalogModel =>
   ({
@@ -344,8 +353,8 @@ describe('ModelPickerEmptyState', () => {
 
     renderEmptyState()
 
-    // The whole list, not the widget's three: the hook is asked for all of it.
-    expect(useRecommendedDownloads).toHaveBeenCalledWith(50)
+    // The same lead + staff-pick list Welcome renders.
+    expect(useRecommendedListDownloads).toHaveBeenCalled()
     expect(screen.getByText('setup:recommend.title')).toBeInTheDocument()
 
     const rows = recommendedRows()
@@ -355,8 +364,8 @@ describe('ModelPickerEmptyState', () => {
       'model-picker-recommended-lead'
     )
     expect(rows[0]).toHaveTextContent('Qwen3.5 4B')
-    expect(rows[0]).toHaveTextContent('chat:replyGate.recommendedForDevice')
-    expect(rows[1]).toHaveTextContent('hub:recEverydayUse')
+    expect(rows[0]).toHaveTextContent('setup:recommend.defaultSummary')
+    expect(rows[1]).toHaveTextContent('setup:recommend.defaultSummary')
 
     // A mark on every row: the family's logo, Hugging Face's for the rest.
     expect(
@@ -376,17 +385,16 @@ describe('ModelPickerEmptyState', () => {
     ).toEqual(['ok', 'warn', 'no'])
     expect(
       within(rows[0]).getByRole('button', {
-        name: 'setup:recommend.fitOk. setup:recommend.whyComfortable:{"size":"2.5 GB","budget":"8 GB","pool":"setup:recommend.pool.unified"}',
+        name: 'setup:recommend.fitOk. setup:recommend.fitTipOk',
       })
     ).toBeInTheDocument()
 
-    // The size on the button; the best fit alone carries the filled one.
+    // The size sits beside the badge; every action is the same compact verb.
     const leadButton = within(rows[0]).getByRole('button', {
       name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
     })
-    expect(leadButton).toHaveTextContent(
-      'common:modelPicker.downloadSize:{"size":"2.5 GB"}'
-    )
+    expect(rows[0]).toHaveTextContent('2.5 GB')
+    expect(leadButton).toHaveTextContent(/^hub:download$/)
     expect(leadButton).toHaveAttribute('data-variant', 'default')
     expect(
       within(rows[1]).getByRole('button', {
@@ -408,11 +416,11 @@ describe('ModelPickerEmptyState', () => {
       within(row).getByRole('button', {
         name: 'chat:replyGate.downloadLabel:{"name":"Mystery"}',
       })
-    ).toHaveTextContent(/^chat:replyGate\.download$/)
+    ).toHaveTextContent(/^hub:download$/)
     expect(row.querySelector('[data-fit]')).toBeNull()
   })
 
-  it('shows a running download in its row, with the panel readout and a Cancel', () => {
+  it('shows a running download in its row without turning the row into a cancel control', () => {
     const lead = recommended(
       'AtomicChat/Qwen3.5-4B-GGUF',
       'Qwen3.5 4B',
@@ -433,17 +441,11 @@ describe('ModelPickerEmptyState', () => {
 
     const [row] = recommendedRows()
     expect(row).toHaveTextContent('common:downloadPanel.preparing')
-    const cancel = within(row).getByRole('button', {
-      name: 'common:cancelDownload',
-    })
-    expect(cancel).toHaveTextContent('common:cancel')
-    // No filled button while nothing is on offer.
-    expect(cancel).toHaveAttribute('data-variant', 'secondary')
-    expect(
-      within(row).queryByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
-      })
-    ).toBeNull()
+    const loading = within(row)
+      .getByText('setup:downloading')
+      .closest('button')!
+    expect(loading).toBeDisabled()
+    expect(loading).toHaveTextContent('setup:downloading')
 
     // Bytes arrive: percent, bytes, time left — the panel's readout.
     act(() => seedRunningDownload(lead.variant.model_id))
@@ -451,11 +453,7 @@ describe('ModelPickerEmptyState', () => {
       '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
     )
 
-    fireEvent.click(cancel)
-    expect(mocks.abortDownload).toHaveBeenCalledWith(lead.variant.model_id)
-    expect(
-      useDownloadStore.getState().resumableDownloads.has(lead.variant.model_id)
-    ).toBe(true)
+    expect(mocks.abortDownload).not.toHaveBeenCalled()
   })
 
   it('offers the reply gate routes under the list, in its order and with its words', () => {
@@ -502,7 +500,7 @@ describe('ModelPickerEmptyState', () => {
     const add = within(rows[2]).getByRole('button', {
       name: 'setup:cloudStep.trigger',
     })
-    expect(add).toHaveTextContent('setup:cloudStep.add')
+    expect(add).toHaveTextContent('setup:cloudStep.addApiKey')
 
     fireEvent.click(browse)
     fireEvent.click(connect)

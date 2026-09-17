@@ -7,19 +7,16 @@ import { useShallow } from 'zustand/shallow'
 
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
 import { Button } from '@/components/ui/button'
-import { ModelFitIndicator } from '@/containers/ModelFitIndicator'
 import { ModelLogo } from '@/containers/ModelLogo'
+import { RecommendedDownloadRow } from '@/containers/RecommendedDownloadRow'
 import { RouteRow } from '@/containers/RouteRow'
-import { describeRecommendationFit } from '@/containers/SetupScreen'
-import { fitLabelKey, fitLevel } from '@/containers/SetupScreenHelpers'
 import { selectCloudGalleryProviders } from '@/containers/dialogs/AddCloudProviderDialog'
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardware } from '@/hooks/useHardware'
-import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
-  useRecommendedDownloads,
+  useRecommendedListDownloads,
   type RecommendedDownload,
 } from '@/hooks/useRecommendedDownloads'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -31,12 +28,7 @@ import {
   formatEta,
   formatProgressPair,
 } from '@/lib/downloadFormat'
-import { judgeMemoryFit, type HardwareProfile } from '@/lib/hardware-tier'
-import {
-  getMemoryBudgetBytes,
-  parseFileSizeToBytes,
-  pickDownloadQuant,
-} from '@/lib/model-card'
+import { getMemoryBudgetBytes, pickDownloadQuant } from '@/lib/model-card'
 import { prettyModelName } from '@/lib/model-display-name'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { getPreferredMmprojModel } from '@/lib/models'
@@ -56,11 +48,6 @@ const HF_SEARCH_DEBOUNCE_MS = 300
 const HF_MIN_QUERY_LENGTH = 3
 /** Rows one search answers with. */
 const HF_SEARCH_LIMIT = 6
-/**
- * Every recommendation the manifest has for this machine. The reply gate's
- * default of three is for a dialog; the panel is the whole offer and scrolls.
- */
-const RECOMMENDED_LIMIT = 50
 /**
  * `HF_SEARCH_LIMIT` rows plus the card's padding, held from the card's first
  * empty frame: the status line, the rows and the "nothing found" line all
@@ -225,95 +212,22 @@ const modelMark = (repo: string) => (
   <ModelLogo name={repo} fallback="huggingface" className={MARK_CLASS} />
 )
 
-/**
- * The one place a recommended row starts its download, so a confirmation
- * before a download that will not fit has a single call to wrap.
- */
-function startRecommendedDownload(item: RecommendedDownload): void {
-  item.start()
-}
-
-/**
- * One recommended model, laid out as onboarding lays it out: the mark, the
- * name with its fit badge, one line under it, and "Download 2.5 GB". Once
- * its download runs the line carries the panel's readout and the button is
- * the panel's Cancel — the row does not move to make room for a second one.
- */
-function RecommendedRow({
+function PickerRecommendedRow({
   item,
   hero,
-  profile,
 }: {
   item: RecommendedDownload
-  /** The best fit: filled button, and the reason it leads as its line. */
   hero: boolean
-  profile: HardwareProfile | null
 }) {
   const { t } = useTranslation()
-  const serviceHub = useServiceHub()
   const inFlight = useInFlightDownload(item.variant.model_id)
-
-  // The file the hook judged the fit on (`useRecommendedDownloads`), judged
-  // the same way onboarding's rows are. No size or no profile — no badge:
-  // "we don't know" is not drawn as a warning.
-  const sizeLabel = item.variant.file_size || undefined
-  const sizeBytes = parseFileSizeToBytes(sizeLabel)
-  const level = fitLevel(judgeMemoryFit(sizeBytes, profile))
-  const fit = level
-    ? describeRecommendationFit({
-        sizeLabel,
-        sizeBytes,
-        profile,
-        memoryOnly: true,
-      })
-    : null
-  const reason = fit
-    ? t(fit.key, {
-        ...fit.values,
-        ...(fit.poolKey ? { pool: t(fit.poolKey) } : {}),
-      })
-    : null
-
   return (
-    <RouteRow
-      icon={modelMark(item.repo)}
-      title={item.title}
-      meta={
-        level && reason ? (
-          <ModelFitIndicator
-            level={level}
-            label={`${t(fitLabelKey(level))}. ${reason}`}
-            reason={reason}
-          />
-        ) : undefined
-      }
-      hint={
-        inFlight
-          ? inFlightHint(t, inFlight)
-          : hero
-            ? t('chat:replyGate.recommendedForDevice')
-            : t(item.descriptionKey)
-      }
-      action={
-        inFlight
-          ? t('common:cancel')
-          : sizeLabel
-            ? t('common:modelPicker.downloadSize', { size: sizeLabel })
-            : t('chat:replyGate.download')
-      }
-      label={
-        inFlight
-          ? t('common:cancelDownload')
-          : t('chat:replyGate.downloadLabel', { name: item.title })
-      }
-      primary={hero && !inFlight}
-      onClick={() => {
-        if (inFlight) {
-          cancelDownload({ id: inFlight.id, name: inFlight.id }, serviceHub)
-          return
-        }
-        startRecommendedDownload(item)
-      }}
+    <RecommendedDownloadRow
+      item={item}
+      hero={hero}
+      progressText={inFlight ? inFlightHint(t, inFlight) : null}
+      downloading={inFlight !== null}
+      onDownload={() => item.start()}
       data-testid={
         hero
           ? 'model-picker-recommended-lead'
@@ -324,16 +238,14 @@ function RecommendedRow({
 }
 
 /**
- * Every model the manifest recommends for this machine, best fit first — the
- * list onboarding leads with and the reply gate repeats, so the empty
- * selector never offers a third opinion. While the lead is unresolved a
+ * The exact list onboarding shows: its lead, followed by the Hub staff picks.
+ * While the lead is unresolved a
  * spinner line stands in; after the reply gate's 8 s budget it comes down and
  * the routes under it are the offer.
  */
 function RecommendedModels() {
   const { t } = useTranslation()
-  const { items, isLoading } = useRecommendedDownloads(RECOMMENDED_LIMIT)
-  const { profile } = useHardwareTier()
+  const { items, isLoading } = useRecommendedListDownloads()
   const [gaveUp, setGaveUp] = useState(false)
   useEffect(() => {
     if (!isLoading || gaveUp) return
@@ -356,15 +268,15 @@ function RecommendedModels() {
   return (
     <PickerSection
       label={t('setup:recommend.title')}
+      className="max-h-[min(42vh,20rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]"
       data-testid="model-picker-recommended"
     >
       <div className="flex flex-col divide-y divide-border/60">
         {items.map((item, index) => (
-          <RecommendedRow
+          <PickerRecommendedRow
             key={item.repo}
             item={item}
             hero={index === 0}
-            profile={profile}
           />
         ))}
       </div>
@@ -938,6 +850,7 @@ function PickerRoutes({
     >
       <div className="flex flex-col divide-y divide-border/60">
         <RouteRow
+          layout="onboarding"
           icon={<img src={HUGGINGFACE_LOGO_SRC} alt="" />}
           title={t('setup:cloudStep.huggingFaceTitle')}
           hint={t(
@@ -952,6 +865,7 @@ function PickerRoutes({
         />
         {subscriptionOffered && (
           <RouteRow
+            layout="onboarding"
             icon={<ChatGptMark />}
             title={t('setup:cloudStep.subscriptionTitle')}
             hint={t('setup:cloudStep.subscriptionHint')}
@@ -963,10 +877,11 @@ function PickerRoutes({
         )}
         {hasCloudProviders && (
           <RouteRow
+            layout="onboarding"
             icon={<Cloud />}
             title={t('setup:cloudStep.providerTitle')}
             hint={t('setup:cloudStep.providerHint')}
-            action={t('setup:cloudStep.add')}
+            action={t('setup:cloudStep.addApiKey')}
             label={t('setup:cloudStep.trigger')}
             onClick={onConnectCloud}
             data-testid="model-picker-cloud-key"
