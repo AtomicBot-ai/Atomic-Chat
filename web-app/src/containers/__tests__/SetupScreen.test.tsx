@@ -1085,8 +1085,8 @@ describe('SetupScreen', () => {
         'Compact Qwen for coding and everyday questions.'
       )
       expect(
-        within(row).getByRole('button', { name: /Runs well/ })
-      ).toHaveTextContent('Runs well')
+        within(row).getByRole('button', { name: /Good fit/ })
+      ).toHaveTextContent('Good fit')
       expect(downloadButtons()[0]).toHaveTextContent(/^hub:download$/)
       expect(row.querySelector('h2')?.parentElement).toHaveTextContent('2.5 GB')
       unmount()
@@ -1838,7 +1838,7 @@ describe('SetupScreen', () => {
 
       it('says the verdict in a word on the name line, never under it', async () => {
         // The circled glyph drifted out of line from row to row and said
-        // nothing without a hover. A word does — Runs well, May be slow, Too large —
+        // nothing without a hover. A verdict does — Good fit, Tight fit, Won't fit —
         // beside the name on the name's own line, where the name truncates
         // before the badge wraps.
         mocks.hardwareTier.tier = 'unified_16'
@@ -1936,15 +1936,15 @@ describe('SetupScreen', () => {
       })
 
       it.each([
-        ['ok', 'Runs well', 'This model should run smoothly on your device.'],
+        ['ok', 'Good fit', 'This model should run smoothly on your device.'],
         [
           'warn',
-          'May be slow',
+          'Tight fit',
           'This model may run slowly because it uses most of your memory.',
         ],
         [
           'no',
-          'Too large',
+          'Won’t fit',
           'This model is too large for your device and probably won’t start.',
         ],
       ])(
