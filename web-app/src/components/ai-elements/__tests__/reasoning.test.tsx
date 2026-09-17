@@ -48,7 +48,7 @@ describe('ReasoningContent', () => {
     expect(container.querySelector('[data-streaming-reasoning]')).toBeNull()
   })
 
-  it('keeps a long streaming trace out of the Markdown renderer', () => {
+  it('keeps the full long trace visible without invoking Markdown', () => {
     const longReasoning = '**token** '.repeat(12_000) + 'visible tail'
     const { container } = render(
       <Reasoning defaultOpen>
@@ -58,12 +58,10 @@ describe('ReasoningContent', () => {
 
     expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
     expect(container.querySelector('[data-streamdown]')).toBeNull()
-    expect(container.textContent).toContain(
+    expect(container.textContent).not.toContain(
       'earlier reasoning will appear when generation completes'
     )
-    // The window, plus the truncation notice — not the 120k-character trace.
-    expect(container.textContent?.length).toBeGreaterThan(4_000)
-    expect(container.textContent?.length).toBeLessThan(4_200)
+    expect(container.textContent?.length).toBeGreaterThan(100_000)
     expect(container.textContent).toMatch(/visible tail$/)
   })
 

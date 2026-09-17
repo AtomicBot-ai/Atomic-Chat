@@ -177,7 +177,7 @@ describe('MessageItem live reasoning viewport', () => {
     expect(container.querySelector('.border-dotted')).toBeNull()
   })
 
-  it('closes the bounded viewport on finish and expands only on reader request', () => {
+  it('streams at full height, closes on finish and expands on reader request', () => {
     const text =
       '**Full reasoning starts here**\n\n' +
       'A line of reasoning.\n'.repeat(500)
@@ -206,7 +206,7 @@ describe('MessageItem live reasoning viewport', () => {
     const { container, rerender } = render(item(true))
     const viewport = container.querySelector('[data-reasoning-viewport]')!
     expect(viewport).toHaveAttribute('data-state', 'open')
-    expect(viewport).toHaveAttribute('data-bounded', 'true')
+    expect(viewport).toHaveAttribute('data-bounded', 'false')
     expect(
       screen.getByRole('button', { name: /activity.thinking/ })
     ).toHaveAttribute('aria-expanded', 'true')
