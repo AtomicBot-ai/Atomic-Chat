@@ -96,6 +96,9 @@ describe('buildConnectorConfig', () => {
     expect(config.url).toBe('https://api.you.com/mcp?profile=free')
     expect(config.env).toEqual({})
     expect(youcom.secret).toBeUndefined()
+    // No official mark bundled, so the tile renders the monogram fallback.
+    expect(youcom.icon.src).toBeUndefined()
+    expect(youcom.icon.bg).toBe('#0F1724')
   })
 })
 

@@ -43,7 +43,7 @@
   },
   "descriptions": {
     "exa": "Web search and page crawling built for AI. Works out of the box, no key needed.",
-    "youcom": "Web search for current news, facts, and sources. Works out of the box, no key needed.",
+    "youcom": "Web search for current news, facts, and sources. Works out of the box, no key needed; queries go to You.com's shared keyless endpoint.",
     "github": "Work with repositories, issues, pull requests, and code.",
     "linear": "Find, create, and update issues, projects, and comments.",
     "notion": "Search, read, and update pages and databases in your workspace.",
