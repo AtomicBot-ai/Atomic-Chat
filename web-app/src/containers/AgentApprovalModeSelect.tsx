@@ -113,12 +113,16 @@ export function AgentApprovalModeSelect({
             const Icon = MODE_ICONS[option.value]
             const selected = mode === option.value
             return (
+              // The item's own `items-center` keeps the icon and the checkmark
+              // on the middle of the title + description block. Pinned to the
+              // title line they sat at the top of the three-line Full access
+              // row and read as "flown up".
               <DropdownMenuItem
                 key={option.value}
                 onSelect={() => handleSelect(option.value)}
-                className="items-start gap-2.5 px-2 py-2"
+                className="gap-2.5 px-2 py-2"
               >
-                <Icon className="mt-0.5 size-4 text-muted-foreground" />
+                <Icon className="size-4 text-muted-foreground" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm">{option.label}</span>
                   <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
@@ -127,7 +131,7 @@ export function AgentApprovalModeSelect({
                 </span>
                 <Check
                   className={cn(
-                    'mt-0.5 size-4 text-foreground',
+                    'size-4 text-foreground',
                     !selected && 'invisible'
                   )}
                 />
@@ -137,7 +141,9 @@ export function AgentApprovalModeSelect({
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog open={confirmSkipOpen} onOpenChange={setConfirmSkipOpen}>
-        <DialogContent>
+        {/* Wide enough for the warning to stay two lines at the default and
+            Large font settings; the default width wrapped it to four. */}
+        <DialogContent className="sm:max-w-xl lg:max-w-xl xl:max-w-xl">
           <DialogHeader>
             <DialogTitle>{skipConfirmTitle}</DialogTitle>
             <DialogDescription>{skipConfirmBody}</DialogDescription>
