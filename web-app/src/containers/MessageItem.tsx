@@ -167,10 +167,14 @@ export const MessageItem = memo(
                   )
                 }
 
-                return (
-                  <a
-                    href={href}
-                    {...props}
+                  return (
+                    <a
+                      href={href}
+                      {...props}
+                      className={cn(
+                        'font-medium text-primary underline decoration-primary/60 underline-offset-2 hover:decoration-primary',
+                        props.className
+                      )}
                     onClick={(event) => {
                       event.preventDefault()
                       void serviceHub
@@ -377,7 +381,7 @@ export const MessageItem = memo(
       return (
         <Reasoning
           key={block.key}
-          className="mb-3"
+          className="mb-1"
           isStreaming={streaming}
           defaultOpen={streaming}
         >
@@ -386,11 +390,9 @@ export const MessageItem = memo(
             ref={streaming ? reasoningContainerRef : null}
             onScroll={streaming ? onReasoningScroll : undefined}
           >
-            {block.items.map((item) => (
-              <ReasoningContent key={item.key} isStreaming={streaming}>
-                {item.text}
-              </ReasoningContent>
-            ))}
+            <ReasoningContent isStreaming={streaming}>
+              {block.items.map((item) => item.text).join('\n\n')}
+            </ReasoningContent>
           </ReasoningViewport>
         </Reasoning>
       )
@@ -456,7 +458,7 @@ export const MessageItem = memo(
             </div>
           )}
           {showWorking && (
-            <Shimmer duration={2.4} className="py-1 text-sm">
+            <Shimmer duration={1} className="py-1 text-sm">
               {t('activity.working')}
             </Shimmer>
           )}

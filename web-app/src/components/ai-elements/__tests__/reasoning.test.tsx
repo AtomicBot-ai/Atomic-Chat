@@ -29,7 +29,10 @@ describe('ReasoningContent', () => {
 
     expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
     expect(container.querySelector('[data-streamdown="strong"]')).toBeNull()
-    expect(container.textContent).toContain('**Material finding**')
+    expect(container.querySelector('strong')).toHaveTextContent(
+      'Material finding'
+    )
+    expect(container.textContent).not.toContain('**')
 
     rerender(
       <Reasoning defaultOpen>

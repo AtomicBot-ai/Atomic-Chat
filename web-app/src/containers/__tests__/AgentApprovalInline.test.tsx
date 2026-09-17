@@ -125,6 +125,7 @@ describe('AgentApprovalInline', () => {
 
     expect(screen.getByText('agentFolderAccess.title')).toBeInTheDocument()
     expect(screen.getByText('/Users/me/project')).toBeInTheDocument()
+    expect(screen.queryByText(/os\.fs\.read/)).toBeNull()
 
     fireEvent.click(screen.getByText('agentFolderAccess.allow'))
 

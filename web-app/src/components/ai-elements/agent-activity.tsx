@@ -53,7 +53,7 @@ export function AgentActivity({
         )}
       >
         {active ? (
-          <Shimmer duration={2.4}>{workingLabel}</Shimmer>
+          <Shimmer duration={1}>{workingLabel}</Shimmer>
         ) : (
           <span>{durationLabel}</span>
         )}

@@ -127,6 +127,56 @@ describe('MessageItem reasoning is a property of the message, not the setting', 
 })
 
 describe('MessageItem live reasoning viewport', () => {
+  it('formats adjacent bold local-reasoning steps while they stream', () => {
+    const { container } = render(
+      <MessageItem
+        message={{
+          id: 'local-steps',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'reasoning',
+              text: '**Preparing files****Creating folder**',
+              state: 'streaming',
+            },
+          ],
+        }}
+        isFirstMessage={false}
+        isLastMessage
+        status="streaming"
+      />
+    )
+
+    expect(screen.getByText('Preparing files')).toHaveClass('font-semibold')
+    expect(screen.getByText('Creating folder')).toHaveClass('font-semibold')
+    expect(container.querySelector('[data-streaming-reasoning]')).toHaveTextContent(
+      'Preparing files Creating folder'
+    )
+  })
+
+  it('renders consecutive reasoning summaries as one continuous block', () => {
+    const { container } = renderItem({
+      id: 'summary-parts',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: 'Planning the search.', state: 'done' },
+        { type: 'reasoning', text: 'Checking the sources.', state: 'done' },
+        { type: 'text', text: 'Final answer' },
+      ],
+    })
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /activity.reasoned|activity.thoughtFor/,
+      })
+    )
+
+    expect(screen.getByText('Planning the search.')).toBeVisible()
+    expect(screen.getByText('Checking the sources.')).toBeVisible()
+    expect(container.querySelectorAll('.markdown')).toHaveLength(2)
+    expect(container.querySelector('.border-dotted')).toBeNull()
+  })
+
   it('closes the bounded viewport on finish and expands only on reader request', () => {
     const text =
       '**Full reasoning starts here**\n\n' +
