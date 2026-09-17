@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   EMBEDDING_MODEL_ID,
@@ -87,12 +87,30 @@ vi.mock('posthog-js', () => ({
   default: { capture: mocks.capture },
 }))
 
-vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({
-    t: (key: string, vars?: Record<string, unknown>) =>
-      vars ? `${key}:${JSON.stringify(vars)}` : key,
-  }),
-}))
+// Keys render as keys, so the assertions below name what a row is rather
+// than how it is worded — except the copy tests, which flip `english` on and
+// read `setup:` keys back as the words the user sees.
+const locale = vi.hoisted(() => ({ english: false }))
+
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const en = (await import('@/locales/en/setup.json')).default
+  const english = (key: string) => {
+    const [ns, path] = key.split(':')
+    if (ns !== 'setup' || !path) return undefined
+    const hit = path
+      .split('.')
+      .reduce<unknown>(
+        (node, part) => (node as Record<string, unknown> | undefined)?.[part],
+        en
+      )
+    return typeof hit === 'string' ? hit : undefined
+  }
+  const t = (key: string, vars?: Record<string, unknown>) => {
+    const words = locale.english ? english(key) : undefined
+    return words ?? (vars ? `${key}:${JSON.stringify(vars)}` : key)
+  }
+  return { useTranslation: () => ({ t }) }
+})
 
 // Unmocked, the real store reports no RAM and no GPU on a test host.
 vi.mock('@/hooks/useHardwareTier', () => ({
@@ -439,6 +457,77 @@ describe('ReplyModelGate', () => {
     expect(onResolved).not.toHaveBeenCalled()
     expect(capturedEvent('reply_model_gate_outcome')).toMatchObject({
       outcome: 'hub',
+    })
+  })
+
+  describe('in the words the user reads', () => {
+    // A hint is one clamped line: some 40 characters of 12 px Inter is what a
+    // row leaves beside its mark and button, and onboarding's narrower column
+    // renders these same keys (see SetupScreen.test.tsx).
+    const HINT_BUDGET = 40
+
+    beforeEach(() => {
+      locale.english = true
+    })
+
+    afterEach(() => {
+      locale.english = false
+      ;(globalThis as Record<string, unknown>).IS_MACOS = false
+    })
+
+    it('leads the Hugging Face row with the name and keeps its line plain', async () => {
+      renderGate([unconnectedCloud()])
+      const row = await screen.findByTestId('reply-gate-browse-hub')
+
+      // "Hugging Face" is what the eye scans for, so the title opens with it.
+      expect(within(row).getByText(/^Hugging Face/)).toHaveTextContent(
+        'Hugging Face models'
+      )
+      // Plain words: no GGUF, no MLX, nothing to know before pressing Browse.
+      expect(within(row).getByText('Add any model')).toBeInTheDocument()
+      expect(row).not.toHaveTextContent(/GGUF|MLX/)
+      // The button shows the verb; assistive tech hears the whole action.
+      expect(
+        within(row).getByRole('button', { name: 'Browse Hugging Face models' })
+      ).toHaveTextContent('Browse')
+    })
+
+    it('keeps the Hugging Face line plain on macOS too, where MLX builds also run', async () => {
+      ;(globalThis as Record<string, unknown>).IS_MACOS = true
+      renderGate([unconnectedCloud()])
+      const row = await screen.findByTestId('reply-gate-browse-hub')
+
+      expect(within(row).getByText('Add any model')).toBeInTheDocument()
+      expect(row).not.toHaveTextContent(/GGUF|MLX/)
+    })
+
+    it('names the cloud providers on one short line, like every hint in the list', async () => {
+      renderGate([unconnectedCloud(), subscriptionProvider()])
+      const routes = await screen.findByTestId('reply-gate-routes')
+
+      const cloud = within(routes).getByTestId('reply-gate-cloud-key')
+      expect(within(cloud).getByText('Cloud provider')).toBeInTheDocument()
+      expect(
+        within(cloud).getByRole('button', { name: 'Add a cloud provider' })
+      ).toHaveTextContent('Add')
+      const subscription = within(routes).getByTestId('reply-gate-subscription')
+      expect(
+        within(subscription).getByText('ChatGPT subscription')
+      ).toBeInTheDocument()
+      expect(
+        within(subscription).getByRole('button', {
+          name: 'Connect ChatGPT subscription',
+        })
+      ).toHaveTextContent('Connect')
+
+      for (const hint of [
+        'Add any model',
+        'Sign in, no API key needed',
+        'OpenRouter, Anthropic, Gemini, OpenAI',
+      ]) {
+        const line = within(routes).getByText(hint)
+        expect(line.textContent?.length).toBeLessThanOrEqual(HINT_BUDGET)
+      }
     })
   })
 

@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import {
   afterAll,
   afterEach,
@@ -88,9 +95,27 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
 }))
 
-vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
+// Keys render as keys, so the assertions below name what a row is rather
+// than how it is worded — except the copy tests, which flip `english` on and
+// read `setup:` keys back as the words the user sees.
+const locale = vi.hoisted(() => ({ english: false }))
+
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const en = (await import('@/locales/en/setup.json')).default
+  const t = (key: string) => {
+    if (!locale.english) return key
+    const [ns, path] = key.split(':')
+    if (ns !== 'setup' || !path) return key
+    const hit = path
+      .split('.')
+      .reduce<unknown>(
+        (node, part) => (node as Record<string, unknown> | undefined)?.[part],
+        en
+      )
+    return typeof hit === 'string' ? hit : key
+  }
+  return { useTranslation: () => ({ t }) }
+})
 
 vi.mock('@/hooks/useModelProvider', () => {
   const state = mocks.modelProviderState
@@ -1378,6 +1403,106 @@ describe('SetupScreen', () => {
         })
       ).toBeInTheDocument()
       unmount()
+    })
+
+    describe('in the words the user reads', () => {
+      // A hint is one clamped line. Under the 520 px onboarding column the
+      // card leaves it about 260 px beside the mark, the gaps and the
+      // width-reserving button — some 40 characters of 12 px Inter. The old
+      // provider hint, 52 characters, ended in an ellipsis.
+      const HINT_BUDGET = 40
+
+      const renderRoutes = async () => {
+        mocks.modelProviderState.providers = [
+          {
+            active: true,
+            provider: 'chatgpt',
+            api_key: '',
+            base_url: 'https://chatgpt.com/backend-api/codex',
+            settings: [],
+            models: [],
+          },
+          {
+            active: true,
+            provider: 'openai',
+            api_key: '',
+            base_url: 'https://api.openai.com/v1',
+            settings: [
+              {
+                key: 'api-key',
+                title: 'API Key',
+                description: '',
+                controller_type: 'input',
+                controller_props: { value: '' },
+              },
+            ],
+            models: [{ id: 'gpt-5.5' }],
+          },
+        ] as unknown as ModelProvider[]
+        return renderPicker()
+      }
+
+      beforeEach(() => {
+        locale.english = true
+      })
+
+      afterEach(() => {
+        locale.english = false
+        ;(globalThis as Record<string, unknown>).IS_MACOS = false
+      })
+
+      it('leads the Hugging Face row with the name and keeps its line plain', async () => {
+        const { unmount } = await renderRoutes()
+        const row = screen.getByTestId('setup-browse-hub')
+
+        // "Hugging Face" is what the eye scans for, so the title opens with it.
+        expect(within(row).getByText(/^Hugging Face/)).toHaveTextContent(
+          'Hugging Face models'
+        )
+        // Plain words: no GGUF, no MLX, nothing to know before pressing Browse.
+        expect(within(row).getByText('Add any model')).toBeInTheDocument()
+        expect(row).not.toHaveTextContent(/GGUF|MLX/)
+        // The button shows the verb; assistive tech hears the whole action.
+        expect(
+          within(row).getByRole('button', {
+            name: 'Browse Hugging Face models',
+          })
+        ).toBeInTheDocument()
+        unmount()
+      })
+
+      it('keeps the Hugging Face line plain on macOS too, where MLX builds also run', async () => {
+        ;(globalThis as Record<string, unknown>).IS_MACOS = true
+        const { unmount } = await renderRoutes()
+        const row = screen.getByTestId('setup-browse-hub')
+
+        expect(within(row).getByText('Add any model')).toBeInTheDocument()
+        expect(row).not.toHaveTextContent(/GGUF|MLX/)
+        unmount()
+      })
+
+      it('names the cloud providers on one short line, like every hint in the list', async () => {
+        const { unmount } = await renderRoutes()
+
+        expect(screen.getByText('Cloud provider')).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: 'Add a cloud provider' })
+        ).toBeInTheDocument()
+        expect(screen.getByText('ChatGPT subscription')).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: 'Connect ChatGPT subscription' })
+        ).toBeInTheDocument()
+
+        for (const hint of [
+          'Add any model',
+          'Sign in, no API key needed',
+          'OpenRouter, Anthropic, Gemini, OpenAI',
+        ]) {
+          const line = screen.getByText(hint)
+          expect(line.textContent?.length).toBeLessThanOrEqual(HINT_BUDGET)
+        }
+        unmount()
+      })
     })
 
     describe('fit indicator', () => {
