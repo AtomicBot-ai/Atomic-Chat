@@ -252,7 +252,7 @@ export function ConnectorCard({
         </div>
       </div>
       <p
-        className="h-[4.5em] shrink-0 line-clamp-3 text-sm leading-normal text-muted-foreground"
+        className="line-clamp-3 text-sm leading-normal text-muted-foreground"
         title={connector ? t(connector.descriptionKey) : undefined}
       >
         {connector ? t(connector.descriptionKey) : ''}

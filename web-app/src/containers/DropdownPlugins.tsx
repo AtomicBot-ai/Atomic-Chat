@@ -34,6 +34,7 @@ import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServerStatuses } from '@/hooks/useMCPServerStatuses'
+import { effectiveMcpStatus } from '@/lib/mcp-effective-status'
 import { useMCPServerToggle } from '@/hooks/useMCPServerToggle'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { useThreads } from '@/hooks/useThreads'
@@ -502,7 +503,11 @@ export default memo(function DropdownPlugins({
                     </DropDrawerItem>
                   )}
                   {entries.map((entry) => {
-                    const status = statusByName.get(entry.key)
+                    const status = effectiveMcpStatus(
+                      entry.key,
+                      statusByName.get(entry.key),
+                      tools
+                    )
                     const isError = entry.active && status?.status === 'error'
                     const name = entry.connector?.name ?? entry.key
                     const muted = mutedServers.includes(entry.key)
