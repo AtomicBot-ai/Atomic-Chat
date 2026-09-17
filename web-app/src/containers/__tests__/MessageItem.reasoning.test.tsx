@@ -1,18 +1,23 @@
-import { act, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from 'ai'
 import { MessageItem } from '../MessageItem'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { seedServiceHub } from '@/test/service-hub'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: { count?: number }) =>
+      values?.count ? `${key} ${values.count}` : key,
+  }),
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: (s: unknown) => unknown) =>
     selector({ selectedModel: { id: 'test-model' } }),
 }))
+
+afterEach(() => vi.restoreAllMocks())
 
 const REASONED = 'activity.reasoned'
 
@@ -118,5 +123,61 @@ describe('MessageItem reasoning is a property of the message, not the setting', 
       useGeneralSetting.getState().setReasoningBudget('max')
     })
     expect(snapshot(plain.container)).toEqual(plainBefore)
+  })
+})
+
+describe('MessageItem live reasoning viewport', () => {
+  it('closes the bounded viewport on finish and expands only on reader request', () => {
+    const text =
+      '**Full reasoning starts here**\n\n' +
+      'A line of reasoning.\n'.repeat(500)
+    const item = (streaming: boolean) => (
+      <MessageItem
+        message={{
+          id: 'stream',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'reasoning',
+              text,
+              state: streaming ? 'streaming' : 'done',
+            },
+            ...(!streaming
+              ? [{ type: 'text' as const, text: 'Final answer' }]
+              : []),
+          ],
+        }}
+        isFirstMessage={false}
+        isLastMessage
+        status={streaming ? 'streaming' : 'ready'}
+      />
+    )
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    const { container, rerender } = render(item(true))
+    const viewport = container.querySelector('[data-reasoning-viewport]')!
+    expect(viewport).toHaveAttribute('data-state', 'open')
+    expect(viewport).toHaveAttribute('data-bounded', 'true')
+    expect(
+      screen.getByRole('button', { name: /activity.thinking/ })
+    ).toHaveAttribute('aria-expanded', 'true')
+
+    now.mockReturnValue(6200)
+    rerender(item(false))
+    expect(viewport).toHaveAttribute('data-state', 'closed')
+    expect(viewport).toHaveAttribute('data-bounded', 'true')
+    expect(screen.getByText('Final answer')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'activity.thoughtFor 6' })
+    ).toHaveAttribute('aria-expanded', 'false')
+    expect(container.querySelector('[data-streamdown="strong"]')).toBeNull()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /activity.reasoned|activity.thoughtFor/,
+      })
+    )
+    expect(viewport).toHaveAttribute('data-state', 'open')
+    expect(viewport).toHaveAttribute('data-bounded', 'false')
+    expect(screen.getByText('Full reasoning starts here')).toBeVisible()
   })
 })
