@@ -2,10 +2,26 @@
   "newVersion": "New Version {{version}}",
   "updateAvailable": "Update Available",
   "nightlyBuild": "Nightly Build",
-  "showReleaseNotes": "Show Release Notes",
+  "showReleaseNotes": "Show release notes",
   "hideReleaseNotes": "Hide Release Notes",
-  "remindMeLater": "Remind Me Later",
+  "remindMeLater": "Remind me later",
   "downloading": "Downloading...",
   "updateNow": "Update Now",
-  "relaunchingWindows": "Update installed. The app will restart automatically."
+  "update": "Update",
+  "starting": "Starting…",
+  "dismiss": "Dismiss",
+  "relaunchingWindows": "Update installed. The app will restart automatically.",
+  "app": {
+    "title": "New Atomic Chat version",
+    "subtitle": "A new app update is available",
+    "moreHighlights": "+{{count}} more"
+  },
+  "engine": {
+    "title": "New {{engine}} update",
+    "downloadSize": "{{size}} download",
+    "noRestartNeeded": "No restart needed after update",
+    "restartRequired": "Restart required after update",
+    "showWhatsNew": "Show what's new",
+    "updateFailed": "Could not start the engine update. Please try again."
+  }
 }

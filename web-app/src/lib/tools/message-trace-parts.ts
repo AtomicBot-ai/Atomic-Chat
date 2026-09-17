@@ -3,6 +3,35 @@ import type { AgentRunSummary } from '@/types/agent'
 import { TraceBlock } from './types'
 import { presentTool } from './registry'
 
+type ActivityTraceBlock = Extract<TraceBlock, { kind: 'activity' }>
+
+/** Agent run states after which nothing more will happen on the run. */
+const TERMINAL_AGENT_STATUSES = new Set<AgentRunSummary['status']>([
+  'finished',
+  'failed',
+  'cancelled',
+])
+
+/**
+ * Whether an activity block has anything behind its header: tool calls (the
+ * terminal `reply` / `finish` are the answer itself, not a step), agent loops,
+ * or a run's error. Without any of those the header is all there is.
+ */
+export function activityHasDetails(
+  block: Pick<ActivityTraceBlock, 'tools' | 'agentSummary'>
+): boolean {
+  const summary = block.agentSummary
+  const summaryToolCount =
+    summary?.tools.filter(({ tool }) => tool !== 'reply' && tool !== 'finish')
+      .length ?? 0
+  return (
+    block.tools.length > 0 ||
+    summaryToolCount > 0 ||
+    (summary?.loops.length ?? 0) > 0 ||
+    Boolean(summary?.error)
+  )
+}
+
 export function buildTraceBlocks(
   message: UIMessage,
   disableReasoning: boolean,
@@ -13,7 +42,7 @@ export function buildTraceBlocks(
     { agent_run?: AgentRunSummary; activityDurationMs?: number } | undefined
   const agentRun = metadata?.agent_run
   const reasoning: Array<{ key: string; text: string }> = []
-  const tools: Extract<TraceBlock, { kind: 'activity' }>['tools'] = []
+  const tools: ActivityTraceBlock['tools'] = []
   let reasoningIndex = -1
   let reasoningState: 'streaming' | 'done' | undefined
   let answeredAfterReasoning = false
@@ -113,16 +142,32 @@ export function buildTraceBlocks(
     (reasoningState === 'streaming' ||
       (reasoningState !== 'done' && !answeredAfterReasoning))
 
-  // A block that exists only because of `ensureActivity` (no tools, no agent
-  // run, no recorded duration) is a bare "Working" shimmer. While the thinking
-  // stream is live, "Thinking..." already signals activity — showing both
-  // stacks two spinners on one message.
-  const activityIsPlaceholder =
-    tools.length === 0 &&
-    !agentRun &&
-    metadata?.activityDurationMs === undefined
+  // Whether the block is still reporting live work: the turn this message
+  // belongs to is in flight, or its agent run has not reached an end state.
+  const isLive =
+    options.ensureActivity === true ||
+    (agentRun !== undefined && !TERMINAL_AGENT_STATUSES.has(agentRun.status))
+
+  // What the block is allowed to be:
+  //
+  //  - Something to expand — tool calls, agent loops, a run's error. Shown
+  //    whenever it exists; that list is the only place those are traced.
+  //  - A live "Working" shimmer, for the wait before anything visible arrives.
+  //    For a Chat turn it steps aside once output does: "Thinking..." already
+  //    signals a live thinking stream, and a streaming answer signals itself,
+  //    so a shimmer on top of either is a second spinner. Stepping aside at the
+  //    first token rather than at the end also means the answer does not jump
+  //    up a line the moment the stream finishes. An agent run keeps it — its
+  //    shimmer covers steps that produce no text.
+  //  - Never a bare "Worked for 2.9s" once the turn is over (ATO-534). With
+  //    nothing to expand it only restated the "Thought for" header right above
+  //    it. The duration stays in the message metadata for telemetry.
+  const hasVisibleOutput =
+    reasoningStreaming || blocks.some((block) => block.kind === 'text')
+  const hasDetails = activityHasDetails({ tools, agentSummary: agentRun })
   const showActivity =
-    activityIndex >= 0 && !(activityIsPlaceholder && reasoningStreaming)
+    activityIndex >= 0 &&
+    (hasDetails || (isLive && (agentRun !== undefined || !hasVisibleOutput)))
 
   if (showActivity) {
     blocks.splice(activityIndex, 0, {

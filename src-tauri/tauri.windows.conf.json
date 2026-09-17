@@ -26,8 +26,8 @@
   },
   "bundle": {
     "targets": ["nsis", "msi"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/jan-cli.exe", "resources/bin/atomic-chat-core.exe", "resources/bin/atomic-chat-app-core.exe", "resources/llamacpp-backend-upstream/**/*", "resources/llamacpp-backend/**/*"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/jan-cli.exe", "resources/bin/atomic-chat-core.exe", "resources/bin/atomic-chat-app-core.exe", "resources/llamacpp-backend-upstream/**/*", "resources/llamacpp-backend/**/*", "licenses/cloudflared-LICENSE.txt"],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv", "resources/bin/cloudflared"],
     "windows": {
       "wix": {
         "upgradeCode": "b75dd42f-800c-57cb-8c5c-ed7fcbef13a0"

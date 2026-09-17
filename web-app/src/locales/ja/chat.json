@@ -30,12 +30,14 @@
   "activity": {
     "working": "処理中...",
     "reading": "読み込み中: {{count}}%",
-    "workedFor": "{{count}}秒間処理しました",
-    "calledTool": "{{count}}個のツールを実行しました",
-    "calledTools": "{{count}}個のツールを実行しました",
     "reasoned": "推論完了",
     "thinking": "思考中...",
     "thoughtFor": "{{count}}秒間考えました"
+  },
+  "toolCall": {
+    "result": "{{count}}件の結果",
+    "results": "{{count}}件の結果",
+    "denied": "拒否されました"
   },
   "workspacePreview": {
     "generating": "プレビューは生成完了後に利用可能になります。"
@@ -53,7 +55,8 @@
     "manualDescription": "外部ファイルの編集やインターネットの使用前に必ず確認します",
     "skipSelected": "フルアクセス",
     "skip": "フルアクセス",
-    "skipDescription": "インターネットとコンピューター上のすべてのファイルに無制限にアクセスします"
+    "skipDescription": "承認の確認なし：ツールはインターネットとコンピューター上のすべてのファイルを使用できます",
+    "menuTitle": "ツール呼び出しをどのように承認しますか？"
   },
   "agentApproval": {
     "title": "エージェントの承認が必要です",

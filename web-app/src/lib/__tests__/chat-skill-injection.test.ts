@@ -54,6 +54,8 @@ describe('renderChatSkillsBlock', () => {
       { name: 'pdf', version: '1.0.0', body: 'Do PDF things.' },
     ])
     expect(block).toContain('## Invoked skills')
+    // Bundled skills name agent-only tools; the model must not invent them.
+    expect(block).toContain('Never call a tool that is not in your tool list')
     expect(block).toContain('# skill: pdf (v1.0.0)')
     expect(block).toContain('Do PDF things.')
   })
@@ -63,7 +65,7 @@ describe('renderChatSkillsBlock', () => {
     const one = renderChatSkillsBlock([
       { name: 'big', version: '1', body: huge },
     ])!
-    expect(one.length).toBeLessThanOrEqual(CHAT_SKILL_BODY_MAX_CHARS + 200)
+    expect(one.length).toBeLessThanOrEqual(CHAT_SKILL_BODY_MAX_CHARS + 300)
     expect(one).toContain('[truncated]')
 
     const block = renderChatSkillsBlock(

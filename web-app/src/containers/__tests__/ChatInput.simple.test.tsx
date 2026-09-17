@@ -529,6 +529,53 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  // ATO-530: a Cancel on the load a send is waiting for holds the model down,
+  // so the send would wait forever. The text stays in the field.
+  it('drops a waiting send when the user cancels the load it waits for', async () => {
+    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const stopKey = modelStopKey('llamacpp-upstream', model.id)
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: model,
+    })
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [stopKey],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
+    await waitFor(() =>
+      expect(screen.getByTestId('reply-gate-queued-notice')).toBeInTheDocument()
+    )
+
+    // The real switch lifts the stop as the load starts; the Cancel sets it
+    // again once the load is gone.
+    act(() => useAppState.setState({ userStoppedModels: [], loadingModel: true }))
+    act(() =>
+      useAppState.setState({ userStoppedModels: [stopKey], loadingModel: false })
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('reply-gate-queued-notice')).not.toBeInTheDocument()
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+    unmount()
+  })
+
   it('marks Send as needing a model before it is pressed', () => {
     useModelProvider.setState({ selectedProvider: '', selectedModel: null })
     const { unmount } = render(<ChatInput onSubmit={vi.fn()} />)

@@ -57,7 +57,11 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
-import { buildReasoningRequestFields } from '@/lib/reasoning-effort'
+import {
+  buildReasoningRequestFields,
+  buildRemoteReasoningRequestFields,
+  usesTemplateReasoningKwargs,
+} from '@/lib/reasoning-effort'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
@@ -889,6 +893,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               reasoningControls
             )
           )
+        } else if (usesTemplateReasoningKwargs(effectiveProviderName)) {
+          // Self-hosted and user-added OpenAI-compatible providers (ATO-527).
+          // The "off" path above has always sent these `enable_thinking:
+          // false`, and reasoning ships off by default — so a remote llama.cpp
+          // server was told to skip thinking on every request, with no control
+          // in the composer to say otherwise and no trace to expand. This is
+          // that branch's missing other half.
+          Object.assign(
+            reasoningOverride,
+            buildRemoteReasoningRequestFields(reasoningBudget)
+          )
         }
         const effectiveReasoningOverride = withUpstreamDflashReasoningOverride(
           providerId,
@@ -1031,14 +1046,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       this.invalidateSkillCache()
     }
     const skillsBlock = renderChatSkillsBlock(
-      await loadChatSkillDetails(
-        invokedSkillNames,
-        this.skillDetailCache,
-        new Set([
-          ...useAppState.getState().mcpToolNames,
-          ...useAppState.getState().ragToolNames,
-        ])
-      )
+      await loadChatSkillDetails(invokedSkillNames, this.skillDetailCache)
     )
     const systemWithSkills = composeSystemMessage(
       this.systemMessage,

@@ -1,0 +1,285 @@
+import { memo, useCallback, useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { IconLoader2, IconPhoto, IconSettings } from '@tabler/icons-react'
+import { toast } from 'sonner'
+
+import { Button } from '@/components/ui/button'
+import HeaderPage from '@/containers/HeaderPage'
+import { route } from '@/constants/routes'
+import { useImageEngine } from '@/hooks/useImageEngine'
+import { useImageForm } from '@/hooks/useImageForm'
+import { useImageGallery } from '@/hooks/useImageGallery'
+import { useImageSetting } from '@/hooks/useImageSetting'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
+import { artifactId } from '@/lib/diffusion/models'
+import { cn } from '@/lib/utils'
+import type { ImageWorkflowId } from '@/services/diffusion/types'
+import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { ImageEmptyState } from './ImageEmptyState'
+import { ImageErrorBanner } from './ImageErrorBanner'
+import { ImageGalleryGrid } from './ImageGalleryGrid'
+import { ImageModelPicker } from './ImageModelPicker'
+import { ImagePromptForm } from './ImagePromptForm'
+import { ImageSetupCard } from './ImageSetupCard'
+import { ImageViewer } from './ImageViewer'
+
+/** In Upscale "make it smaller" is the scale, not the form's width and height. */
+const UPSCALE_ERROR_LABELS = {
+  reduceSize: 'images:errors.actions.reduceUpscale',
+} as const
+
+type ImageGenerationPageProps = {
+  /** The route's workflow: `/images/` is create, `/images/<id>` the rest. */
+  workflow: ImageWorkflowId
+  /** `?model=&quant=` from the route: preselect (and offer to fetch) that checkpoint. */
+  search: { model?: string; quant?: string }
+}
+
+/**
+ * The header carries the model picker; below it a settings column (the form,
+ * or the setup card until the prerequisites are met) sits beside the canvas,
+ * split by one structural border — the same frame as the Model hub. The
+ * error banner sits above the canvas, outside the scrolling grid and never
+ * over the picture: its tint is translucent, and text on a photo is unreadable.
+ */
+export const ImageGenerationPage = memo(function ImageGenerationPage({
+  workflow,
+  search,
+}: ImageGenerationPageProps) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const serviceHub = useServiceHub()
+  const gallery = useImageGallery()
+  const engine = useImageEngine()
+  const status = useImageGenerationStore((state) => state.status)
+  const hasModel = useImageGenerationStore((state) =>
+    state.installedArtifacts.some((artifact) => artifact.complete)
+  )
+  const catalog = useImageGenerationStore((state) => state.catalog)
+  const lastError = useImageGenerationStore((state) => state.lastError)
+  const clearError = useImageGenerationStore((state) => state.clearError)
+  const openSetup = useImageGenerationStore((state) => state.openSetup)
+  const loadModel = useImageGenerationStore((state) => state.loadModel)
+  const patchForm = useImageForm((state) => state.patch)
+  const setSelectedArtifactId = useImageSetting(
+    (state) => state.setSelectedArtifactId
+  )
+  const setupCompleted = useImageSetting((state) => state.setupCompleted)
+  const [modelsOpen, setModelsOpen] = useState(false)
+
+  const modelLoaded = status?.model.state === 'loaded'
+
+  // The route names the workflow; the form carries it into the request.
+  useEffect(() => {
+    patchForm({ workflow })
+  }, [workflow, patchForm])
+
+  const ready = engine.installed && hasModel
+  // Nothing to generate with and nothing to look at: one centered setup card
+  // instead of a form-column card beside an empty canvas. Existing images
+  // keep the gallery visible.
+  const onboarding = !ready && gallery.items.length === 0
+
+  // A deep link picks the checkpoint; the picker then shows its plan if it
+  // is not on disk yet.
+  useEffect(() => {
+    if (search.model && search.quant) {
+      setSelectedArtifactId(artifactId(search.model, search.quant))
+      setModelsOpen(true)
+    }
+  }, [search.model, search.quant, setSelectedArtifactId])
+
+  // First visit with nothing set up: open the wizard rather than leave a
+  // page that does nothing.
+  useEffect(() => {
+    if (!setupCompleted && !ready && status && engine.hostBackendId !== null) {
+      openSetup(engine.installed ? 2 : 0)
+    }
+    // Only when readiness is first known.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status !== null, ready])
+
+  const offerLoad = useCallback(
+    (id: string) => {
+      toast.info(t('images:viewer.loadOffer'), {
+        action: {
+          label: t('images:model.load'),
+          onClick: () => void loadModel(id),
+        },
+      })
+    },
+    [loadModel, t]
+  )
+
+  const onErrorAction = useCallback(
+    (action: DiffusionErrorAction) => {
+      clearError()
+      switch (action) {
+        case 'install':
+          openSetup(1)
+          return
+        case 'download':
+          openSetup(2)
+          return
+        case 'openSettings':
+          void navigate({ to: route.settings.media })
+          return
+        case 'openOutputFolder':
+          if (status?.outputDir) {
+            void serviceHub.opener().openPath(status.outputDir)
+          }
+          return
+        case 'reduceSize':
+          if (workflow === 'upscale') {
+            // The output is the source times the scale; the form's size is
+            // not in the request, so 768² would change nothing here.
+            const { upscaleFactor } = useImageForm.getState()
+            patchForm({ upscaleFactor: Math.max(1.5, upscaleFactor - 0.5) })
+            return
+          }
+          patchForm({ width: 768, height: 768, aspect: 'square', portrait: false })
+          return
+        case 'pickSmallerQuant':
+          setModelsOpen(true)
+          return
+        case 'retry':
+          return
+      }
+    },
+    [clearError, navigate, openSetup, patchForm, serviceHub, status?.outputDir, workflow]
+  )
+
+  const errorLabelKeys =
+    workflow === 'upscale' ? UPSCALE_ERROR_LABELS : undefined
+
+  const header = (
+    <HeaderPage>
+      <div
+        className={cn(
+          'flex w-full items-center justify-between gap-2 pr-3',
+          !IS_MACOS && 'pr-30'
+        )}
+      >
+        {ready ? (
+          <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
+        ) : (
+          <span className="font-studio text-base font-medium">
+            {t('images:page.title')}
+          </span>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t('common:media')}
+          onClick={() => void navigate({ to: route.settings.media })}
+        >
+          <IconSettings size={16} />
+        </Button>
+      </div>
+    </HeaderPage>
+  )
+
+  if (onboarding) {
+    return (
+      <div className="flex h-svh w-full flex-col">
+        {header}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
+          <ImageErrorBanner
+            error={lastError}
+            onAction={onErrorAction}
+            onDismiss={clearError}
+            actionLabelKeys={errorLabelKeys}
+          />
+          <div
+            className="flex min-h-0 flex-1 overflow-y-auto"
+            data-testid="image-onboarding"
+          >
+            <ImageSetupCard className="m-auto w-full max-w-md" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
+      <div className="col-span-2 min-w-0">{header}</div>
+
+      <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
+        {ready ? (
+          <ImagePromptForm />
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <ImageSetupCard />
+          </div>
+        )}
+      </aside>
+
+      <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col">
+        {lastError && (
+          <div className="shrink-0 px-6 pt-3">
+            <ImageErrorBanner
+              error={lastError}
+              onAction={onErrorAction}
+              onDismiss={clearError}
+              actionLabelKeys={errorLabelKeys}
+            />
+          </div>
+        )}
+
+        {gallery.initialized && gallery.items.length === 0 ? (
+          <div className="min-h-0 flex-1">
+            <ImageEmptyState modelLoaded={modelLoaded} />
+          </div>
+        ) : (
+          <>
+            <div className="min-h-0 flex-[3]">
+              <ImageViewer
+                item={gallery.selected}
+                selectedIds={gallery.selectedIds}
+                onOfferLoad={offerLoad}
+              />
+            </div>
+            <div className="flex min-h-0 flex-[2] flex-col border-t border-border/60">
+              <div className="flex shrink-0 items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
+                <IconPhoto size={14} />
+                {/* A bare number: the i18n layer has no plural forms. */}
+                <span>{t('images:gallery.title')}</span>
+                <span className="tabular-nums">{gallery.total}</span>
+                {gallery.selectedIds.length > 1 && (
+                  <span>
+                    · {t('images:gallery.selectedCount', {
+                      count: gallery.selectedIds.length,
+                    })}
+                  </span>
+                )}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+                <ImageGalleryGrid
+                  items={gallery.items}
+                  selectedId={gallery.selectedId}
+                  selectedIds={gallery.selectedIds}
+                  hasMore={gallery.hasMore}
+                  loading={gallery.loading}
+                  onSelect={gallery.toggleSelect}
+                  onOpen={gallery.select}
+                  onLoadMore={() => void gallery.loadMore()}
+                />
+              </div>
+            </div>
+          </>
+        )}
+        {!catalog && !gallery.initialized && (
+          <div className="absolute bottom-4 left-6 flex items-center gap-2 text-xs text-muted-foreground">
+            <IconLoader2 size={14} className="animate-spin" />
+            {t('images:page.loading')}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+})
+
+export default ImageGenerationPage

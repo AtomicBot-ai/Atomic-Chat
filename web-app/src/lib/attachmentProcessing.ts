@@ -27,7 +27,13 @@ export type AttachmentProcessingResult = {
   hasEmbeddedDocuments: boolean
 }
 
-const formatAttachmentError = (err: unknown): string => {
+/**
+ * Unwrap the shapes a Tauri command rejection actually arrives in
+ * (`message` / `reason` / `detail` / `error` / `cause` / `code`) into
+ * something readable. Exported so upload surfaces outside the chat composer
+ * stop rendering `JSON.stringify(error)` blobs (#289).
+ */
+export const formatAttachmentError = (err: unknown): string => {
   if (!err) return 'Unknown error'
   if (err instanceof Error) return err.message || err.toString()
   if (typeof err === 'string') return err

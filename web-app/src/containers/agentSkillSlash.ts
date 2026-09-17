@@ -6,45 +6,19 @@ export type AgentSkillSlashQuery = {
   query: string
 }
 
-export type AgentSkillFilterOptions = {
-  /**
-   * The chat pipeline has no script execution and none of the agent's
-   * built-in `os.*` tools, so it can only serve instruction-style skills.
-   */
-  chatMode: boolean
-  /** Tool names the chat pipeline can actually call (MCP ∪ RAG). */
-  availableToolNames: ReadonlySet<string>
-}
-
 /**
- * Whether a skill can run on the chat pipeline: nothing to script, and every
- * required tool resolvable among the chat-callable tools. All bundled skills
- * require `os.*` tools, so in chat only instruction-style (typically
- * user-authored) skills survive this — intended.
+ * The "/" menu lists the same skills on both engines. A skill picked here is
+ * an explicit request, so chat mode takes it too — even a bundled one written
+ * for the agent's `os.*` tools — and injects its instructions into the system
+ * prompt (see `@/lib/chat-skill-injection`).
  */
-export function isChatCompatibleSkill(
-  skill: AgentSkill,
-  availableToolNames: ReadonlySet<string>
-): boolean {
-  return (
-    skill.requiresScripts.length === 0 &&
-    skill.requiresTools.every((tool) => availableToolNames.has(tool))
-  )
-}
-
 export function filterAgentSkills(
   skills: AgentSkill[],
-  query: string,
-  options?: AgentSkillFilterOptions
+  query: string
 ): AgentSkill[] {
   const normalizedQuery = query.toLowerCase()
   return skills
     .filter((skill) => skill.enabled && skill.compatible && !skill.error)
-    .filter(
-      (skill) =>
-        !options?.chatMode ||
-        isChatCompatibleSkill(skill, options.availableToolNames)
-    )
     .filter(
       (skill) =>
         !normalizedQuery ||
@@ -55,8 +29,7 @@ export function filterAgentSkills(
 
 export function findAvailableAgentSkill(
   skills: AgentSkill[],
-  name: string,
-  options?: AgentSkillFilterOptions
+  name: string
 ): AgentSkill | null {
   return (
     skills.find(
@@ -65,9 +38,7 @@ export function findAvailableAgentSkill(
         skill.enabled &&
         skill.compatible &&
         !skill.error &&
-        skill.unavailableReasons.length === 0 &&
-        (!options?.chatMode ||
-          isChatCompatibleSkill(skill, options.availableToolNames))
+        skill.unavailableReasons.length === 0
     ) ?? null
   )
 }

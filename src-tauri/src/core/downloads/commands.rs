@@ -1,8 +1,12 @@
-use super::helpers::_download_files_internal;
-use super::models::{DownloadItem, DownloadTask};
+use super::helpers::{
+    _download_files_internal, create_proxy_from_config, err_to_string, should_bypass_proxy,
+    validate_proxy_config,
+};
+use super::models::{DownloadItem, DownloadTask, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 use std::collections::HashMap;
+use std::time::Duration;
 use tauri::{Runtime, State};
 
 #[tauri::command]
@@ -87,5 +91,100 @@ pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> 
         Ok(())
     } else {
         Err(format!("No download task: {task_id}"))
+    }
+}
+
+/// Where a proxy test request is sent. The host models are actually fetched
+/// from, so a pass means "downloads will work", not "some unrelated site is
+/// reachable".
+const PROXY_TEST_URL: &str = "https://huggingface.co/";
+const PROXY_TEST_TIMEOUT_SECS: u64 = 15;
+
+/// Outcome of `test_proxy_connection`, kept machine-readable so the UI owns
+/// the wording (and the translations) rather than echoing a Rust string.
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyTestResult {
+    pub ok: bool,
+    /// `ok` | `bypassed` | `invalid_config` | `unreachable` | `auth_failed` | `http_error`
+    pub kind: &'static str,
+    /// Raw technical detail (status line, transport error). Shown as the toast
+    /// description; never the only thing the user is told.
+    pub detail: String,
+}
+
+/// Try one request through the configured proxy and report what happened.
+///
+/// ATO — #290/#289: a proxy that refuses connections was only ever discovered
+/// by a model download or a file upload failing a minute later, with a message
+/// that named neither the proxy nor the address. `validate_proxy_config` checks
+/// syntax and nothing else, so nothing in the app had ever actually talked to
+/// the address the user typed.
+#[tauri::command]
+pub async fn test_proxy_connection(config: ProxyConfig) -> Result<ProxyTestResult, String> {
+    if let Err(error) = validate_proxy_config(&config) {
+        return Ok(ProxyTestResult {
+            ok: false,
+            kind: "invalid_config",
+            detail: error,
+        });
+    }
+
+    // A no_proxy entry covering the test host would make this request bypass
+    // the proxy entirely and pass for the wrong reason.
+    let no_proxy = config.no_proxy.as_deref().unwrap_or(&[]);
+    if should_bypass_proxy(PROXY_TEST_URL, no_proxy) {
+        return Ok(ProxyTestResult {
+            ok: true,
+            kind: "bypassed",
+            detail: format!("{PROXY_TEST_URL} matches a no-proxy entry"),
+        });
+    }
+
+    let proxy = create_proxy_from_config(&config)?;
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(PROXY_TEST_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(PROXY_TEST_TIMEOUT_SECS))
+        .proxy(proxy);
+    if config.ignore_ssl.unwrap_or(false) {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+    let client = builder.build().map_err(err_to_string)?;
+
+    log::info!("Testing proxy {} against {PROXY_TEST_URL}", config.url);
+    match client.head(PROXY_TEST_URL).send().await {
+        Ok(response) => {
+            let status = response.status();
+            let detail = format!("HTTP {status}");
+            // The proxy answered, which is the thing being tested. 407 is the
+            // one status that is unambiguously about the proxy itself.
+            if status.as_u16() == 407 {
+                Ok(ProxyTestResult {
+                    ok: false,
+                    kind: "auth_failed",
+                    detail,
+                })
+            } else if status.is_client_error() || status.is_server_error() {
+                Ok(ProxyTestResult {
+                    ok: false,
+                    kind: "http_error",
+                    detail,
+                })
+            } else {
+                Ok(ProxyTestResult {
+                    ok: true,
+                    kind: "ok",
+                    detail,
+                })
+            }
+        }
+        Err(error) => {
+            log::warn!("Proxy test for {} failed: {error}", config.url);
+            Ok(ProxyTestResult {
+                ok: false,
+                kind: "unreachable",
+                detail: error.to_string(),
+            })
+        }
     }
 }

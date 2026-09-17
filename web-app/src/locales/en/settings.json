@@ -178,6 +178,19 @@
     "proxyUrl": "Proxy URL",
     "proxyUrlDesc": "The URL and port of your proxy server.",
     "proxyUrlPlaceholder": "http://proxy.example.com:8080",
+    "test": "Test connection",
+    "testing": "Testing…",
+    "testNeedsUrl": "Enter a proxy URL first.",
+    "testOk": "Proxy is working",
+    "testOkDesc": "Reached huggingface.co through {{proxyUrl}} ({{detail}}).",
+    "testBypassed": "Not tested: the proxy is bypassed",
+    "testBypassedDesc": "A No Proxy entry matches huggingface.co, so model downloads will not go through the proxy at all.",
+    "testInvalid": "Proxy settings are not valid",
+    "testUnreachable": "Could not reach the proxy",
+    "testUnreachableDesc": "Nothing answered at {{proxyUrl}}. Check the address and port, and that the proxy is running. Downloads and file uploads will keep failing until this connects.",
+    "testAuthFailed": "The proxy rejected these credentials",
+    "testAuthFailedDesc": "The proxy asked for authentication (HTTP 407). Check the username and password.",
+    "testHttpError": "The proxy answered with an error",
     "authentication": "Authentication",
     "authenticationDesc": "Credentials for the proxy server, if required.",
     "username": "Username",
@@ -239,6 +252,84 @@
     "defaultModelDescProvidersLink": "Model Providers",
     "defaultModelPlaceholder": "Select a local model",
     "currentModel": "Current Model"
+  },
+  "remoteLan": {
+    "title": "Remote & LAN",
+    "state": {
+      "off": "Off",
+      "starting": "Starting",
+      "online": "Online",
+      "stopping": "Stopping",
+      "error": "Error",
+      "unavailable": "Unavailable"
+    },
+    "start": "Start",
+    "starting": "Starting…",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "autoStart": "Start automatically",
+    "copyUrl": "Copy URL",
+    "noKeyWarning": "No API key is in effect: anyone who has the URL can use your models.",
+    "qr": {
+      "show": "Show QR code",
+      "title": "Scan on another device",
+      "remoteDesc": "Point a phone camera at the code, copy the link it finds and paste it as the Base URL in the app you are connecting. It works from any network.",
+      "lanDesc": "Point a phone camera at the code, copy the link it finds and paste it as the Base URL in the app you are connecting. The device has to be on the same network as this computer."
+    },
+    "remote": {
+      "title": "Remote access",
+      "description": "Reach the OpenAI-compatible API from anywhere through a temporary Cloudflare URL.",
+      "urlLabel": "API base URL",
+      "security": "Anyone who has this URL can reach the API on this computer, and the API key is the only thing between them and your models. The URL is temporary: it stops working as soon as remote access is off.",
+      "providerHint": "To chat with these models from another Atomic Chat, open Cloud there, choose “Custom (OpenAI-compatible)…” and enter this URL as the Base URL together with your API key.",
+      "autoStartDesc": "Start remote access every time the Local API Server starts. A new URL is created each time, so the previous one stops working and your clients need the new one.",
+      "autoStartFailed": "Remote access could not start automatically. Settings → Remote & LAN shows why.",
+      "unavailable": "Remote access is not available in this build of Atomic Chat.",
+      "block": {
+        "serverStopped": "The Local API Server is stopped. Starting remote access starts it first."
+      },
+      "error": {
+        "cloudflared_unavailable": "The Cloudflare tunnel program that ships with Atomic Chat (cloudflared) is missing or was blocked, most often by antivirus software. Reinstall Atomic Chat or allow cloudflared, then start again.",
+        "no_url": "Cloudflare did not hand out a URL in time. Check your internet connection and start again.",
+        "not_registered": "The tunnel could not connect to Cloudflare. This network may block outgoing port 7844: try another network or a VPN, then start again.",
+        "not_reachable": "The tunnel came up, but the API did not answer through it, so it was closed. Start again in a minute: a new Cloudflare address can take a moment to work.",
+        "exited": "The tunnel closed unexpectedly. Start remote access again to get a new URL.",
+        "stop_failed": "The tunnel process did not exit, so the URL may still work. Press Stop again, or quit Atomic Chat to end it.",
+        "unknown": "Remote access ran into a problem (code: {{code}}). Start again, and check the app logs if it keeps happening."
+      }
+    },
+    "lan": {
+      "title": "LAN access",
+      "description": "Let other devices on your Wi-Fi or wired network use the OpenAI-compatible API on this computer.",
+      "addressLabel": "Address on your network",
+      "addressesLabel": "Addresses on your network",
+      "security": "Any device on the same network can connect this way, so turn LAN access on only in networks you trust.",
+      "noKeyWarning": "No API key is in effect: any device on your network can use your models.",
+      "autoStartDesc": "The Local API Server starts on its own whenever a model loads, and with LAN access on it starts on your network. This is the same switch as “Auto-start Local API Server” under API settings on the API screen.",
+      "restartNote": "Starting or stopping LAN access restarts the Local API Server, which interrupts requests in progress.",
+      "windowsFirewallHint": "The first time, Windows asks whether Atomic Chat may pass the firewall. Allow it for private networks, or other devices will not be able to connect.",
+      "block": {
+        "serverStopped": "The Local API Server is stopped. Starting LAN access starts it on your network.",
+        "loopbackOnly": "The Local API Server is running for this computer only.",
+        "noAddresses": "LAN access is on, but this computer has no network address to share. Connect to Wi-Fi or Ethernet."
+      }
+    },
+    "apiKey": {
+      "title": "API key",
+      "description": "The key of the Local API Server, the same one as under API settings. Clients send it with every request; without a key, the address alone is enough to use your models.",
+      "generate": "Generate",
+      "generated": "New API key created. Copy it into the apps that connect.",
+      "copy": "Copy API key",
+      "restartToApply": "Restart the server to apply the API key.",
+      "restartServer": "Restart server"
+    },
+    "noKeyDialog": {
+      "title": "Start without an API key?",
+      "description": "There is no API key, so anyone who gets hold of the URL can use the models on this computer. A generated key closes that gap: you copy it once into every app that connects.",
+      "generateAndStart": "Generate key and start",
+      "startWithoutKey": "Start without key",
+      "cancel": "Cancel"
+    }
   },
   "privacy": {
     "analytics": "Analytics",
@@ -486,5 +577,45 @@
     "setupTitle": "Setup",
     "runSetupAgain": "Run setup again",
     "runSetupAgainDescription": "Walk through microphone access and the model download once more."
+  },
+  "media": {
+    "subtitle": "Local image generation with stable-diffusion.cpp. Everything runs on this computer.",
+    "engineTitle": "Engine",
+    "engine": "stable-diffusion.cpp",
+    "engineInstalled": "{{tag}} · {{backend}}",
+    "engineNotInstalled": "Not installed",
+    "engineUnsupported": "No build for this computer",
+    "install": "Install",
+    "reinstall": "Reinstall",
+    "installing": "Installing…",
+    "engineOverride": "Engine",
+    "engineOverrideDescription": "Which renderer serves generation. Auto picks the best one for this hardware.",
+    "engineAuto": "Automatic",
+    "modelsTitle": "Models",
+    "noModels": "No image models downloaded",
+    "remove": "Remove {{name}}",
+    "keepLoaded": "Keep the model loaded",
+    "keepLoadedDescription": "Skip the idle unload. Faster next image, but the memory stays taken.",
+    "idleUnload": "Unload when idle",
+    "idleUnloadDescription": "Free the memory after this long without generating.",
+    "idleNever": "Never",
+    "idleMinutes": "{{minutes}} min",
+    "evictChat": "Unload the chat model",
+    "evictChatDescription": "When loading an image model that would not fit next to the chat model.",
+    "evictWhenNeeded": "Only if needed",
+    "evictAlways": "Always",
+    "outputTitle": "Output",
+    "outputFolder": "Output folder",
+    "openFolder": "Open folder",
+    "change": "Change…",
+    "changeFailed": "The output folder could not be changed",
+    "resetDefaults": "Reset to defaults",
+    "resetDefaultsDescription": "Engine, residency and eviction back to their defaults. The output folder is kept.",
+    "update": "Update to {{tag}}",
+    "updateAvailable": "Update available: {{tag}}",
+    "checkUpdate": "Check for updates",
+    "checking": "Checking…",
+    "upToDate": "The engine is up to date.",
+    "updateCheckFailed": "Could not check for updates"
   }
 }

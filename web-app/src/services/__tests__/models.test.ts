@@ -428,7 +428,8 @@ describe('DefaultModelsService', () => {
           n_gpu_layers: 32,
         },
         false,
-        false
+        false,
+        undefined
       )
     })
 

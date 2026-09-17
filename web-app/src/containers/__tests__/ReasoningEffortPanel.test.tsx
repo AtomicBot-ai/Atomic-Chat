@@ -23,10 +23,14 @@ const selectedModel = vi.hoisted(() => ({
     | { id: string; reasoning?: ReasoningControls }
     | undefined,
 }))
+const selectedProvider = vi.hoisted(() => ({ current: 'llamacpp' }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: (state: unknown) => unknown) =>
-    selector({ selectedModel: selectedModel.current }),
+    selector({
+      selectedModel: selectedModel.current,
+      selectedProvider: selectedProvider.current,
+    }),
 }))
 
 const BUDGET_MODEL = { id: 'qwen3', reasoning: { supportsThinking: true } }
@@ -75,6 +79,7 @@ describe('ReasoningEffortPanel', () => {
 
   beforeEach(async () => {
     selectedModel.current = undefined
+    selectedProvider.current = 'llamacpp'
     // The store is persisted, so settle any pending rehydrate before seeding
     // state: one resolving mid-test would otherwise restore what an earlier
     // test wrote and undo a click.
@@ -126,6 +131,30 @@ describe('ReasoningEffortPanel', () => {
     expect(useGeneralSetting.getState().disableReasoning).toBe(false)
     expect(useGeneralSetting.getState().reasoningBudget).toBe('low')
     expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
+  })
+
+  // ATO-527: a remote provider's models carry no `ReasoningControls`, so the
+  // scale used to vanish — leaving no way to switch thinking back on.
+  it('offers the full scale for a model on a self-hosted provider', () => {
+    selectedModel.current = { id: 'qwen3-on-my-server' }
+    selectedProvider.current = 'llamacpp-server'
+    useGeneralSetting.setState({ disableReasoning: false })
+
+    render(<ReasoningEffortPanel />)
+
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.medium')
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '5')
+  })
+
+  it('renders nothing for a model on a provider with its own reasoning API', () => {
+    // OpenAI and friends are dispatched by name in the transport; this scale
+    // does not drive them, so offering it would be a lie.
+    selectedModel.current = { id: 'gpt-5' }
+    selectedProvider.current = 'openai'
+
+    const { container } = render(<ReasoningEffortPanel />)
+
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('renders nothing while no model is selected', () => {

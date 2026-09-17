@@ -33,6 +33,7 @@
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
     "download:core": "node ./scripts/download-core.mjs",
+    "download:cloudflared": "node ./scripts/download-bin.mjs --only=cloudflared",
     "build:mlx-server": "make build-mlx-server",
     "build:foundation-models-server": "make build-foundation-models-server",
     "build:cli": "make build-cli",

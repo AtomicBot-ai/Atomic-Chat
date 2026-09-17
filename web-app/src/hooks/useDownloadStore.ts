@@ -1,12 +1,27 @@
 import { create } from 'zustand'
 import { advanceSpeedSample, type SpeedSample } from '@/lib/downloadFormat'
 
+/**
+ * What the Rust downloader is doing while it has no bytes to report. Mirrors
+ * `DownloadStage` in `src-tauri/src/core/downloads/models.rs`, relayed by the
+ * download extension.
+ */
+export interface DownloadStage {
+  kind: string
+  attempt: number
+  maxAttempts: number
+}
+
 export interface DownloadProgressProps {
   id: string
   progress: number
   name: string
   current: number
   total: number
+  // ATO — #290: a transfer that cannot reach the host spends ~60s inside the
+  // retry ladders with no bytes and no events, which rendered as a permanent
+  // "Preparing". The stage is the only thing the row can show in that window.
+  stage?: DownloadStage
   // ATO-462: speed and ETA are the two numbers the panel needs and the app
   // never had. They live here rather than in the panel so the Hub card, the
   // onboarding screen and the panel all quote the same figure, and so the
@@ -56,6 +71,7 @@ export type DownloadState = {
     current?: number,
     total?: number
   ) => void
+  updateStage: (id: string, stage: DownloadStage) => void
   addLocalDownloadingModel: (modelId: string) => void
   removeLocalDownloadingModel: (modelId: string) => void
   markResumableDownload: (modelId: string) => void
@@ -102,6 +118,29 @@ export const useDownloadStore = create<DownloadState>((set) => ({
             current: nextCurrent,
             total: total ?? previous?.total ?? 0,
             speed: advanceSpeedSample(previous?.speed, nextCurrent),
+            // Bytes moved, so whatever the ladder was reporting is stale.
+            stage: undefined,
+          },
+        },
+      }
+    }),
+
+  // A stage update is a status change, never progress: it must not touch
+  // `current`/`total`, or a retry would rewind the bar to zero.
+  updateStage: (id, stage) =>
+    set((state) => {
+      const previous = state.downloads[id]
+      return {
+        downloads: {
+          ...state.downloads,
+          [id]: {
+            ...previous,
+            name: previous?.name ?? '',
+            progress: previous?.progress ?? 0,
+            current: previous?.current ?? 0,
+            total: previous?.total ?? 0,
+            speed: advanceSpeedSample(previous?.speed, previous?.current ?? 0),
+            stage,
           },
         },
       }

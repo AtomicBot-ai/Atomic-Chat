@@ -1,90 +1,90 @@
+import { useMemo } from 'react'
+
+import { UpdateBanner } from '@/containers/UpdateBanner'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-
-import { IconDownload } from '@tabler/icons-react'
-import { Button } from '@/components/ui/button'
-
-import { useState, useEffect } from 'react'
-import { cn } from '@/lib/utils'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { parseReleaseHighlights } from '@/lib/releaseHighlights'
+import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
+/// Same repository the "What's new" dialog and the release-notes store read.
+/// Duplicated rather than shared because each of the three reaches GitHub for
+/// its own reason and none of them owns the constant.
+const GITHUB_RELEASES_BASE =
+  'https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag'
+
+const releaseNotesUrl = (version: string): string =>
+  `${GITHUB_RELEASES_BASE}/${version.startsWith('v') ? version : `v${version}`}`
+
+/**
+ * Bottom-right offer to update the app itself (ATO-533).
+ *
+ * Shares `<UpdateBanner />` with the engine banner; what is specific here is
+ * the changelog preview, parsed out of the GitHub release body the updater
+ * already carries as `updateInfo.body`.
+ *
+ * "Remind me later" and the × are the same lever on purpose: the app updater
+ * has one session-scoped `remindMeLater` flag, reset by the next check or by
+ * the button in Settings → General. The engine banner, which owns a persisted
+ * snooze, is where the two differ.
+ */
 const DialogAppUpdater = () => {
   const { t } = useTranslation()
+  const serviceHub = useServiceHub()
   const { updateState, downloadAndInstallUpdate, setRemindMeLater } =
     useAppUpdater()
+
+  const newVersion = updateState.updateInfo?.version ?? ''
+  const isVisible =
+    updateState.isUpdateAvailable && !updateState.remindMeLater && !!newVersion
+  const mayRender = useUpdateBannerSlot('app', isVisible)
+
+  const highlights = useMemo(
+    () => parseReleaseHighlights(updateState.updateInfo?.body),
+    [updateState.updateInfo?.body]
+  )
+
+  if (!isVisible || !mayRender) return null
 
   const handleUpdate = () => {
     downloadAndInstallUpdate()
     setRemindMeLater(true)
   }
 
-  const [appUpdateState, setAppUpdateState] = useState({
-    remindMeLater: false,
-    isUpdateAvailable: false,
-  })
-
-  useEffect(() => {
-    setAppUpdateState({
-      remindMeLater: updateState.remindMeLater,
-      isUpdateAvailable: updateState.isUpdateAvailable,
-    })
-  }, [updateState])
-
-  if (appUpdateState.remindMeLater) return null
+  const handleShowReleaseNotes = () => {
+    const url = releaseNotesUrl(newVersion)
+    serviceHub
+      .opener()
+      .open(url)
+      .catch(() => window.open(url, '_blank'))
+  }
 
   return (
-    <>
-      {appUpdateState.isUpdateAvailable && (
-        <div
-          className={cn(
-            'fixed z-50 bottom-3 right-3 bg-background flex items-center justify-center border rounded-lg shadow-md'
-          )}
-        >
-          <div className="px-2 py-4">
-            <div className="px-4">
-              <div className="flex items-start gap-2">
-                <IconDownload
-                  size={20}
-                  className="shrink-0 text-muted-foreground mt-1"
-                />
-                <div>
-                  <div className="text-base font-medium">
-                    {t('updater:newVersion', {
-                      version: updateState.updateInfo?.version,
-                    })}
-                  </div>
-                  <div className="mt-1 text-muted-foreground font-normal mb-2">
-                    {t('updater:updateAvailable')}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 px-4">
-              <div className="flex w-full items-center justify-end">
-                <div className="flex gap-x-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setRemindMeLater(true)}
-                  >
-                    {t('updater:remindMeLater')}
-                  </Button>
-                  <Button
-                    onClick={handleUpdate}
-                    disabled={updateState.isDownloading}
-                    size="sm"
-                  >
-                    {updateState.isDownloading
-                      ? t('updater:downloading')
-                      : t('updater:updateNow')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <UpdateBanner
+      testId="app-update-banner"
+      title={t('updater:app.title')}
+      fromVersion={updateState.currentVersion || null}
+      toVersion={newVersion}
+      subtitle={t('updater:app.subtitle')}
+      highlights={highlights.items}
+      remainingLabel={
+        highlights.remaining > 0
+          ? t('updater:app.moreHighlights', { count: highlights.remaining })
+          : undefined
+      }
+      secondaryAction={{
+        label: t('updater:showReleaseNotes'),
+        onClick: handleShowReleaseNotes,
+      }}
+      remindLaterLabel={t('updater:remindMeLater')}
+      onRemindLater={() => setRemindMeLater(true)}
+      updateLabel={t('updater:update')}
+      onUpdate={handleUpdate}
+      busy={updateState.isDownloading}
+      busyLabel={t('updater:downloading')}
+      dismissLabel={t('updater:dismiss')}
+      onDismiss={() => setRemindMeLater(true)}
+    />
   )
 }
 

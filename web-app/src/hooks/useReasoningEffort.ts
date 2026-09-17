@@ -2,8 +2,10 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
+  ALL_LEVELS,
   availableReasoningLevels,
   resolveReasoningLevel,
+  usesTemplateReasoningKwargs,
   type ReasoningEffortLevel,
 } from '@/lib/reasoning-effort'
 
@@ -20,14 +22,26 @@ export const useReasoningEffort = () => {
   const disableReasoning = useGeneralSetting((state) => state.disableReasoning)
   const reasoningBudget = useGeneralSetting((state) => state.reasoningBudget)
   const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
 
   const enabled = !disableReasoning
 
   // No model picked yet, or one without a thinking phase: no scale, so no
   // level on the pill. The stored preference is kept for the next pick.
-  const levels: ReasoningEffortLevel[] = selectedModel
-    ? availableReasoningLevels(selectedModel.reasoning)
-    : []
+  //
+  // A model on a self-hosted or user-added OpenAI-compatible provider reaches
+  // us without `reasoning` — those controls are read off the chat template by
+  // the local backends, and there is no template to read here. Its thinking
+  // phase is still driven by chat-template kwargs, and reasoning ships off, so
+  // without a scale there is no way to switch it back on (ATO-527). Offer the
+  // full one: a model with no thinking phase simply ignores the kwargs.
+  const levels: ReasoningEffortLevel[] = !selectedModel
+    ? []
+    : selectedModel.reasoning
+      ? availableReasoningLevels(selectedModel.reasoning)
+      : usesTemplateReasoningKwargs(selectedProvider)
+        ? ALL_LEVELS
+        : []
   const level =
     reasoningBudget === 'off'
       ? undefined

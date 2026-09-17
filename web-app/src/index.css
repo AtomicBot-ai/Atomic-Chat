@@ -45,8 +45,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --animate-hue-rotate: hue-rotate 4s infinite;
-  --font-studio: "StudioFeixenSans";
-  --font-sans: "Inter", sans-serif;
+  /* `AtomicEmoji` leads both stacks: it only claims emoji code points (see its
+     `unicode-range` in styles/font.css), and it has to win over Inter for the
+     few BMP symbols Inter does carry — U+2764 among them — or a ZWJ sequence
+     built on one of those splits across two fonts again. */
+  --font-studio: "AtomicEmoji", "StudioFeixenSans";
+  --font-sans: "AtomicEmoji", "Inter", sans-serif;
 
   /* Font scale based on --font-size-base */
   --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */

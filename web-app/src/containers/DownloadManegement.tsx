@@ -1,5 +1,6 @@
-import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -93,6 +94,7 @@ export function DownloadManagement() {
   const {
     downloads,
     updateProgress,
+    updateStage,
     localDownloadingModels,
     removeDownload,
     removeLocalDownloadingModel,
@@ -189,6 +191,7 @@ export function DownloadManagement() {
       current: download.current,
       total: download.total,
       bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
+      stage: download.stage,
     }))
 
     // Add local downloading models that don't have progress data yet
@@ -265,6 +268,14 @@ export function DownloadManagement() {
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
+      // The downloader also emits status-only updates while its retry ladders
+      // run (`stage`), which carry no byte counts. Feeding those through
+      // `updateProgress` would publish 0/0 and rewind the bar (#290).
+      const stage = (state as unknown as { stage?: DownloadStage }).stage
+      if (stage) {
+        updateStage(state.modelId, stage)
+        return
+      }
       updateProgress(
         state.modelId,
         state.percent,
@@ -273,7 +284,7 @@ export function DownloadManagement() {
         state.size?.total
       )
     },
-    [updateProgress]
+    [updateProgress, updateStage]
   )
 
   const onFileDownloadError = useCallback(
@@ -383,6 +394,38 @@ export function DownloadManagement() {
           description: t(`${diskKey}.description`),
           duration: 30000,
         })
+        return
+      }
+
+      // ATO — #290: a download that never reached the server is not a generic
+      // failure, and when the user has a proxy configured it is overwhelmingly
+      // the cause. Naming it (and offering the settings page) is the whole
+      // difference between "it just doesn't work" and a one-click fix.
+      if (diskReason === 'proxy' || diskReason === 'network') {
+        markResumableDownload(state.modelId)
+        const viaProxy =
+          diskReason === 'proxy' ||
+          (useProxyConfig.getState().proxyEnabled &&
+            Boolean(useProxyConfig.getState().proxyUrl))
+        if (viaProxy) {
+          toast.error(t('common:toast.downloadProxyUnreachable.title'), {
+            id: 'download-failed',
+            description: t('common:toast.downloadProxyUnreachable.description', {
+              proxyUrl: useProxyConfig.getState().proxyUrl,
+            }),
+            duration: 30000,
+            action: {
+              label: t('common:toast.downloadProxyUnreachable.action'),
+              onClick: () => navigate({ to: route.settings.https_proxy }),
+            },
+          })
+        } else {
+          toast.error(t('common:toast.downloadNetworkUnreachable.title'), {
+            id: 'download-failed',
+            description: t('common:toast.downloadNetworkUnreachable.description'),
+            duration: 30000,
+          })
+        }
         return
       }
 

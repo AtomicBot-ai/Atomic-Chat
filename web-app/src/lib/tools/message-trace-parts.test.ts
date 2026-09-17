@@ -157,27 +157,49 @@ describe('buildTraceBlocks activity projection', () => {
     ])
   })
 
-  it('keeps a completed text-only Chat activity from duration metadata', () => {
+  // ATO-534: with nothing to expand, the finished block was a bare
+  // "Worked for 2.9s" stacked under "Thought for 2s" — the same fact twice.
+  it('drops a finished Chat activity that only carries its duration', () => {
     const message = {
       id: 'assistant-complete',
       role: 'assistant',
       metadata: { activityDurationMs: 1_500 },
-      parts: [{ type: 'text', text: 'Complete.' }],
+      parts: [
+        { type: 'reasoning', text: 'Say hi back.', state: 'done' },
+        { type: 'text', text: 'Complete.' },
+      ],
     } as UIMessage
 
     expect(buildTraceBlocks(message, false)).toEqual([
-      expect.objectContaining({
-        kind: 'activity',
-        durationMs: 1_500,
-      }),
-      expect.objectContaining({
-        kind: 'text',
-        text: 'Complete.',
-      }),
+      expect.objectContaining({ kind: 'reasoning', streaming: false }),
+      expect.objectContaining({ kind: 'text', text: 'Complete.' }),
     ])
   })
 
-  it('excludes terminal tools from visible activity rows', () => {
+  it('keeps a finished activity that has tool calls behind it', () => {
+    const message = {
+      id: 'assistant-tools-complete',
+      role: 'assistant',
+      metadata: { activityDurationMs: 2_000 },
+      parts: [
+        {
+          type: 'tool-mcp.search',
+          toolCallId: 'tool-1',
+          state: 'output-available',
+          input: { query: 'pelican' },
+          output: { ok: true },
+        },
+        { type: 'text', text: 'Found it.' },
+      ],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false)).toEqual([
+      expect.objectContaining({ kind: 'activity', durationMs: 2_000 }),
+      expect.objectContaining({ kind: 'text', text: 'Found it.' }),
+    ])
+  })
+
+  it('does not count terminal tools as something to expand', () => {
     const message = {
       id: 'assistant-terminal',
       role: 'assistant',
@@ -193,10 +215,69 @@ describe('buildTraceBlocks activity projection', () => {
       ],
     } as UIMessage
 
+    // Finished: the reply is the answer, so there is no step to trace.
+    expect(buildTraceBlocks(message, false)).toEqual([])
+    // Live: still a shimmer, and the reply is not a row in it.
+    expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
+      expect.objectContaining({ kind: 'activity', tools: [] }),
+    ])
+  })
+
+  it('lets the streaming answer stand in for the live shimmer', () => {
+    const message = {
+      id: 'assistant-answer-live',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'Hey! How' }],
+    } as UIMessage
+
+    // Stepping aside at the first token is what keeps the answer from jumping
+    // up a line when the stream ends and the block would otherwise vanish.
+    expect(buildTraceBlocks(message, false, { ensureActivity: true })).toEqual([
+      expect.objectContaining({ kind: 'text', text: 'Hey! How' }),
+    ])
+  })
+
+  it('drops a finished agent run with nothing to expand', () => {
+    const message = {
+      id: 'agent-run-done',
+      role: 'assistant',
+      metadata: {
+        agent_run: {
+          run_id: 'run-2',
+          status: 'finished',
+          duration_ms: 1_200,
+          tools: [{ tool: 'reply', batch_index: 0, batch_size: 1 }],
+          loops: [],
+        },
+      },
+      parts: [{ type: 'text', text: 'All set.' }],
+    } as UIMessage
+
+    expect(buildTraceBlocks(message, false)).toEqual([
+      expect.objectContaining({ kind: 'text', text: 'All set.' }),
+    ])
+  })
+
+  it('keeps a failed agent run, whose error is the point', () => {
+    const message = {
+      id: 'agent-run-failed',
+      role: 'assistant',
+      metadata: {
+        agent_run: {
+          run_id: 'run-3',
+          status: 'failed',
+          tools: [],
+          loops: [],
+          error: { category: 'provider', message: 'Connection refused' },
+        },
+      },
+      parts: [],
+    } as UIMessage
+
     expect(buildTraceBlocks(message, false)).toEqual([
       expect.objectContaining({
         kind: 'activity',
-        tools: [],
+        agentSummary: expect.objectContaining({ status: 'failed' }),
       }),
     ])
   })

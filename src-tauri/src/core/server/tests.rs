@@ -185,6 +185,19 @@ mod tests {
     }
 
     #[test]
+    fn test_images_generations_route_is_post_only_with_its_own_label() {
+        let allowed = proxy::allowed_methods_for_path("/images/generations");
+        assert_eq!(allowed, Some(&["POST"][..]));
+        assert_eq!(
+            proxy::endpoint_from_path("/images/generations"),
+            "images/generations"
+        );
+        // Sibling OpenAI image routes are not served, so they stay unlabeled.
+        assert_eq!(proxy::allowed_methods_for_path("/images/edits"), None);
+        assert_eq!(proxy::endpoint_from_path("/images/edits"), "other");
+    }
+
+    #[test]
     fn test_model_ids_match_exact() {
         assert!(proxy::model_ids_match(
             "Qwen3.5-9B-MLX-4bit",

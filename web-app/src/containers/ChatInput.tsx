@@ -1,5 +1,6 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
+import { InferenceServerStatusStrip } from '@/containers/InferenceServerStatus'
 import {
   cn,
   formatBytes,
@@ -153,7 +154,6 @@ import {
   filterAgentSkills,
   findAvailableAgentSkill,
   findAgentSkillSlashQuery,
-  isChatCompatibleSkill,
   moveAgentSkillActiveIndex,
   removeAgentSkillSlashQuery,
   type AgentSkillSlashQuery,
@@ -296,29 +296,9 @@ const ChatInput = memo(function ChatInput({
     useState<AgentSkillSlashQuery | null>(null)
   const [agentSkillMenuOpen, setAgentSkillMenuOpen] = useState(false)
   const [agentSkillActiveIndex, setAgentSkillActiveIndex] = useState(0)
-  // The chat pipeline can call MCP/RAG tools but nothing else — skills that
-  // need scripts or the agent's built-in tools are hidden outside agent mode.
-  const mcpToolNames = useAppState((state) => state.mcpToolNames)
-  const ragToolNames = useAppState((state) => state.ragToolNames)
-  const chatAvailableToolNames = useMemo(
-    () => new Set([...mcpToolNames, ...ragToolNames]),
-    [mcpToolNames, ragToolNames]
-  )
-  const agentSkillFilterOptions = useMemo(
-    () => ({
-      chatMode: !agentRouteActive,
-      availableToolNames: chatAvailableToolNames,
-    }),
-    [agentRouteActive, chatAvailableToolNames]
-  )
   const eligibleAgentSkills = useMemo(
-    () =>
-      filterAgentSkills(
-        agentSkills,
-        agentSkillSlashQuery?.query ?? '',
-        agentSkillFilterOptions
-      ),
-    [agentSkillSlashQuery?.query, agentSkills, agentSkillFilterOptions]
+    () => filterAgentSkills(agentSkills, agentSkillSlashQuery?.query ?? ''),
+    [agentSkillSlashQuery?.query, agentSkills]
   )
   const approvalMode = useAgentMode(
     (state) => state.approvalModes[composerThreadKey] ?? 'manual'
@@ -328,17 +308,6 @@ const ChatInput = memo(function ChatInput({
   useLayoutEffect(() => {
     setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
   }, [selectedAgentSkill])
-
-  // On a flip to chat mode, keep an instruction-style selection alive and
-  // drop only skills the chat pipeline can't serve.
-  useEffect(() => {
-    if (agentRouteActive) return
-    setSelectedAgentSkill((skill) =>
-      skill && !isChatCompatibleSkill(skill, chatAvailableToolNames)
-        ? null
-        : skill
-    )
-  }, [agentRouteActive, chatAvailableToolNames])
 
   useEffect(() => {
     if (!preselectedAgentSkillName) {
@@ -353,17 +322,11 @@ const ChatInput = memo(function ChatInput({
     }
     const skill = findAvailableAgentSkill(
       agentSkills,
-      preselectedAgentSkillName,
-      agentSkillFilterOptions
+      preselectedAgentSkillName
     )
     preselectedAgentSkillAppliedRef.current = preselectedAgentSkillName
     if (skill) setSelectedAgentSkill(skill)
-  }, [
-    agentSkills,
-    agentSkillsLoading,
-    agentSkillFilterOptions,
-    preselectedAgentSkillName,
-  ])
+  }, [agentSkills, agentSkillsLoading, preselectedAgentSkillName])
 
   useEffect(() => {
     setAgentSkillActiveIndex(0)
@@ -1271,6 +1234,17 @@ const ChatInput = memo(function ChatInput({
   useEffect(() => {
     if (queuedSend && selectedModelLoadFailed) setQueuedSend(null)
   }, [queuedSend, selectedModelLoadFailed])
+
+  // Nor will a model the user stops while the send waits — a Cancel on its
+  // load, or a Stop (ATO-530). Only the change counts: a send made *to* a
+  // stopped model is what lifts the stop, and must not be dropped by it.
+  const wasStoppedByUserRef = useRef(selectedModelStoppedByUser)
+  useEffect(() => {
+    const becameStopped =
+      selectedModelStoppedByUser && !wasStoppedByUserRef.current
+    wasStoppedByUserRef.current = selectedModelStoppedByUser
+    if (queuedSend && becameStopped) setQueuedSend(null)
+  }, [queuedSend, selectedModelStoppedByUser])
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -2719,6 +2693,10 @@ const ChatInput = memo(function ChatInput({
           disabled toolbar cluster: a run awaiting approval reports
           `submitted`, and an unclickable Approve button would deadlock it. */}
       {!initialMessage && <AgentApprovalInline threadId={composerThreadKey} />}
+      {/* ATO-535: why the chat is not answering — a model still loading, an
+          engine being swapped, or a load that failed (including an auto-start
+          one, which raises no toast). Renders nothing in a steady state. */}
+      <InferenceServerStatusStrip />
       <div className="relative">
         <div
           className={cn(
@@ -3181,6 +3159,7 @@ const ChatInput = memo(function ChatInput({
                   <AgentApprovalModeSelect
                     mode={approvalMode}
                     onChange={handleApprovalModeChange}
+                    menuTitle={t('chat:agentApprovals.menuTitle')}
                     manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
                     manualLabel={t('chat:agentApprovals.manual')}
                     manualDescription={t(

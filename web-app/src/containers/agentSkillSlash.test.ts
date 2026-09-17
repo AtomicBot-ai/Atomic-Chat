@@ -4,7 +4,6 @@ import {
   filterAgentSkills,
   findAvailableAgentSkill,
   findAgentSkillSlashQuery,
-  isChatCompatibleSkill,
   moveAgentSkillActiveIndex,
   removeAgentSkillSlashQuery,
 } from './agentSkillSlash'
@@ -71,46 +70,27 @@ describe('agent skill slash picker', () => {
     expect(moveAgentSkillActiveIndex(2, 1, 3)).toBe(0)
   })
 
-  describe('chat mode', () => {
-    const chatTools = new Set(['mcp_search', 'docs.retrieve'])
-    const chatOptions = { chatMode: true, availableToolNames: chatTools }
+  // Bundled skills all need the agent's `os.*` tools; the chat composer must
+  // still offer them, or "/" only ever lists user-authored skills there.
+  it('lists and resolves skills that need agent tools or scripts', () => {
+    const skills = [
+      skill('instructions', 'Plain guidance'),
+      skill('scripted', 'Runs a script', {
+        requiresScripts: ['run.sh'],
+        reserved: true,
+      }),
+      skill('os-bound', 'Needs the shell', {
+        requiresTools: ['os.shell.run'],
+        reserved: true,
+      }),
+    ]
 
-    it('hides skills that need scripts or unavailable tools', () => {
-      const skills = [
-        skill('instructions', 'Plain guidance'),
-        skill('scripted', 'Runs a script', { requiresScripts: ['run.sh'] }),
-        skill('os-bound', 'Needs the shell', { requiresTools: ['os.shell.run'] }),
-        skill('mcp-bound', 'Uses an MCP tool', { requiresTools: ['mcp_search'] }),
-      ]
-
-      expect(
-        filterAgentSkills(skills, '', chatOptions).map(({ name }) => name)
-      ).toEqual(['instructions', 'mcp-bound'])
-      // Agent mode still sees everything.
-      expect(filterAgentSkills(skills, '')).toHaveLength(4)
-    })
-
-    it('resolves a named skill only when chat-compatible', () => {
-      const skills = [
-        skill('scripted', 'Runs a script', { requiresScripts: ['run.sh'] }),
-        skill('plain', 'Plain guidance'),
-      ]
-
-      expect(findAvailableAgentSkill(skills, 'plain', chatOptions)?.name).toBe(
-        'plain'
-      )
-      expect(findAvailableAgentSkill(skills, 'scripted', chatOptions)).toBeNull()
-      expect(findAvailableAgentSkill(skills, 'scripted')?.name).toBe('scripted')
-    })
-
-    it('exposes the compatibility predicate directly', () => {
-      expect(isChatCompatibleSkill(skill('a', 'plain'), chatTools)).toBe(true)
-      expect(
-        isChatCompatibleSkill(
-          skill('b', 'tooled', { requiresTools: ['missing.tool'] }),
-          chatTools
-        )
-      ).toBe(false)
-    })
+    expect(filterAgentSkills(skills, '').map(({ name }) => name)).toEqual([
+      'instructions',
+      'scripted',
+      'os-bound',
+    ])
+    expect(findAvailableAgentSkill(skills, 'os-bound')?.name).toBe('os-bound')
+    expect(findAvailableAgentSkill(skills, 'scripted')?.name).toBe('scripted')
   })
 })

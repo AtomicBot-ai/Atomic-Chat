@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-261 records, 2026-05-19 → 2026-09-17.
+278 records, 2026-05-19 → 2026-09-17.
 
 ---
 
@@ -32,6 +32,16 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-09** — [Default the macOS local llama.cpp engine to `llamacpp-upstream` so the Recommended Gemma 4 vision model loads out of the box (ATO-116)](2026-06-09-default-the-macos-local-llama-cpp-engine-to-llamacpp-upstream.md)
 
 ---
+
+## Local image & video generation (7)
+
+- **2026-09-10** — [Generate images locally with stable-diffusion.cpp in its own Tauri plugin](2026-09-10-generate-images-locally-with-stable-diffusion-cpp-in-its-own-plugin.md)
+- **2026-09-10** — [Mirror, pin and verify stable-diffusion.cpp prebuilts in atomic-chat-conf](2026-09-10-mirror-pin-and-verify-stable-diffusion-cpp-prebuilts-in-atomic-chat-conf.md)
+- **2026-09-10** — [Arbitrate the GPU between chat and diffusion in the web app](2026-09-10-arbitrate-the-gpu-between-chat-and-diffusion-in-the-web-app.md)
+- **2026-09-10** — [Store generated media under the data folder with recipes in PNG chunks](2026-09-10-store-generated-media-under-the-data-folder-with-recipes-in-png-chunks.md)
+- **2026-09-10** — [Serve `/v1/images/generations` from the local API server, b64 only, hidden from `/v1/models`](2026-09-10-serve-openai-images-generations-from-the-local-api-server.md)
+- **2026-09-10** — [Pin the text encoder to CPU under Metal, and restart on the CPU backend after a ggml abort](2026-09-10-pin-the-text-encoder-to-cpu-under-metal-and-restart-on-cpu-after-a-ggml-abort.md)
+- **2026-09-10** — [Curate the diffusion model catalog in atomic-chat-conf](2026-09-10-curate-the-diffusion-model-catalog-in-atomic-chat-conf.md)
 
 ## Launch page & external coding agents (18)
 
@@ -134,8 +144,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (52)
+## llama.cpp providers & backend selection (53)
 
+- **2026-09-14** — [Ask before updating an inference engine](2026-09-14-ask-before-updating-an-inference-engine.md)
 - **2026-09-14** — [One GPU VRAM floor for every OS](2026-09-14-one-gpu-vram-floor-for-every-os.md)
 - **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
 - **2026-08-19** — [Disable the TurboQuant `llamacpp` provider by default on fresh installs](2026-08-19-disable-the-turboquant-provider-by-default-on-fresh-installs.md)
@@ -220,15 +231,17 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (4)
+## Local API server & OpenAI compatibility (5)
 
+- **2026-09-17** — [Expose the Local API Server through a bundled Cloudflare quick tunnel and on the LAN](2026-09-17-expose-the-local-api-server-through-a-cloudflare-tunnel-and-on-the-lan.md)
 - **2026-09-11** — [Make starting the Local API Server idempotent (ATO-524)](2026-09-11-make-starting-the-local-api-server-idempotent.md)
 - **2026-07-27** — [Reconcile remote providers before proxy-routed requests](2026-07-27-reconcile-remote-providers-before-proxy-routed-requests.md)
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (7)
+## Telemetry, crash reporting & error handling (8)
 
+- **2026-09-14** — [Register the shared HTTP commands on mobile, and make a refused connection say so](2026-09-14-register-shared-http-commands-on-mobile-and-surface-network-failures.md)
 - **2026-08-17** — [Rename the string `status` property that PostHog had globally typed numeric, which silently hid ~63k events](2026-08-17-rename-the-string-status-property-that-posthog-had-typed-numeric.md)
 - **2026-08-17** — [Track LLM response outcomes (`chat_response_received`) and close the onboarding funnel's blind spots](2026-08-17-track-llm-response-outcomes-and-close-onboarding-funnel-gaps.md)
 - **2026-08-03** — [Triage the Sentry backlog: fix real defects and stop reporting recoverable failures as crashes](2026-08-03-triage-the-sentry-backlog-fix-real-defects-and-stop.md)
@@ -254,8 +267,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (36)
+## UI / UX (40)
 
+- **2026-09-15** — [Say what a model load is waiting on, and let it be cancelled](2026-09-15-say-what-a-model-load-is-waiting-on-and-let-it-be-cancelled.md)
+- **2026-09-15** — [Show every tool call as its own line in the message](2026-09-15-show-every-tool-call-as-its-own-line.md)
+- **2026-09-15** — [Mark Full access by its icon and words, not by colour](2026-09-15-mark-full-access-by-icon-and-words-not-colour.md)
+- **2026-09-14** — [One update banner in the bottom-right corner at a time](2026-09-14-one-update-banner-in-the-corner-at-a-time.md)
 - **2026-09-11** — [List the Hub picks under the onboarding offer](2026-09-11-list-the-hub-picks-under-the-onboarding-offer.md)
 - **2026-09-11** — [Pick the model and its reasoning effort from one composer pill](2026-09-11-pick-the-model-and-its-effort-from-one-composer-pill.md)
 - **2026-09-11** — [Show engine state in the model dot and let a Stop hold](2026-09-11-show-engine-state-in-the-model-dot-and-let-a-stop-hold.md)

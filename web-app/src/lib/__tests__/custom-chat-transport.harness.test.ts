@@ -304,8 +304,7 @@ describe('CustomChatTransport skill injection', () => {
 
     expect(loadChatSkillDetails).toHaveBeenCalledWith(
       ['style-guide'],
-      expect.any(Map),
-      expect.any(Set)
+      expect.any(Map)
     )
     const doStream = (
       model as unknown as { doStream: ReturnType<typeof vi.fn> }
@@ -537,6 +536,59 @@ describe('CustomChatTransport reasoning override', () => {
       reasoning: undefined,
       disableReasoning: false,
       reasoningBudget: 'medium',
+    })
+
+    expect(override).toBeUndefined()
+  })
+
+  // ATO-527: a remote llama.cpp server was told `enable_thinking: false` on
+  // every request and never told otherwise, so its traces never appeared.
+  it('switches thinking on for a self-hosted provider, at the chosen level', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'llamacpp-server',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'medium',
+    })
+
+    expect(override?.chat_template_kwargs).toEqual({
+      enable_thinking: true,
+      reasoning_effort: 'medium',
+    })
+  })
+
+  it('caps a level above high for a user-added provider', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'my-own-gateway',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'max',
+    })
+
+    // Templates in the wild declare low|medium|high and raise on anything else.
+    expect(override?.chat_template_kwargs).toEqual({
+      enable_thinking: true,
+      reasoning_effort: 'high',
+    })
+  })
+
+  it('still switches thinking off for a self-hosted provider', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'llamacpp-server',
+      reasoning: undefined,
+      disableReasoning: true,
+      reasoningBudget: 'medium',
+    })
+
+    expect(override?.chat_template_kwargs).toEqual({ enable_thinking: false })
+  })
+
+  it('leaves a provider with its own reasoning API alone', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'anthropic',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'high',
     })
 
     expect(override).toBeUndefined()

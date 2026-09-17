@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import type { ServiceHub } from '@/services'
 import {
+  cancelModelLoad,
+  describeModelLoadFailure,
   isExplicitSwitchPending,
   planOomRetry,
   shouldAttemptAutoStart,
   splitModelLoadError,
   stopAllLocalModelsByUser,
   switchToModel,
+  unloadModelByUser,
 } from './switchModel'
 
 const { appState, localApiState, modelProviderState, startServer, stopServer } =
@@ -22,6 +26,8 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
         appState.userStoppedModels = keys
       }),
       updateLoadingModel: vi.fn(),
+      setLoadingModelProgress: vi.fn(),
+      setLoadingModelCancelling: vi.fn(),
     },
     localApiState: {
       enableOnStartup: false,
@@ -463,6 +469,172 @@ describe('switchToModel', () => {
   })
 })
 
+// ATO-530: what the loading snackbar reads, and a Cancel that is the user's
+// choice rather than a failure.
+describe('load progress and cancel', () => {
+  const cancelled = () =>
+    Object.assign(new Error('The model load was cancelled.'), {
+      code: 'MODEL_LOAD_CANCELLED',
+    })
+
+  const hubWith = (models: Record<string, unknown>) =>
+    ({
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => ({
+        getActiveModels: vi.fn().mockResolvedValue([]),
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
+        stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+        stopModel: vi.fn().mockResolvedValue(undefined),
+        cancelModelLoad: vi.fn().mockResolvedValue(true),
+        ...models,
+      }),
+    }) as unknown as ServiceHub
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    appState.serverStatus = 'stopped'
+    appState.activeModels = []
+    appState.userStoppedModels = []
+    localApiState.enableOnStartup = false
+    startServer.mockResolvedValue(1337)
+    stopServer.mockResolvedValue(undefined)
+    window.core = { api: { startServer, stopServer } } as typeof window.core
+  })
+
+  it('passes the steps the engine reports on to the status', async () => {
+    localApiState.enableOnStartup = true
+    const startModel = vi.fn(
+      async (
+        _provider: unknown,
+        _model: string,
+        _bypass: boolean,
+        options: { onStage: (stage: unknown) => void }
+      ) => {
+        options.onStage({ kind: 'loadingWeights', cachedFraction: 0.98 })
+      }
+    )
+    const serviceHub = hubWith({
+      startModel,
+      getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
+    })
+
+    await switchToModel({ modelId: 'ready-model', providerName: 'mlx', serviceHub })
+
+    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual([
+      { kind: 'loadingWeights', cachedFraction: 0.98, retry: undefined },
+      { kind: 'startingServer' },
+    ])
+    localApiState.enableOnStartup = false
+  })
+
+  it('says it is unloading the model that was serving before loading the next', async () => {
+    appState.activeModels = ['shared-model']
+    const serviceHub = hubWith({ startModel: vi.fn().mockResolvedValue(undefined) })
+
+    await switchToModel({ modelId: 'broken-model', providerName: 'mlx', serviceHub })
+
+    expect(appState.setLoadingModelProgress).toHaveBeenCalledWith({
+      kind: 'unloadingPrevious',
+    })
+    appState.activeModels = []
+  })
+
+  it('ends a cancelled load quietly, and keeps the model down', async () => {
+    let rejectLoad: (error: unknown) => void = () => {}
+    const cancelModelLoadInEngine = vi.fn(async () => {
+      rejectLoad(cancelled())
+      return true
+    })
+    const startModel = vi.fn(
+      () =>
+        new Promise((_, reject) => {
+          rejectLoad = reject
+        })
+    )
+    const serviceHub = hubWith({
+      startModel,
+      cancelModelLoad: cancelModelLoadInEngine,
+    })
+
+    const pending = switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+    const outcome = expect(pending).rejects.toMatchObject({
+      code: 'MODEL_LOAD_CANCELLED',
+    })
+    await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
+    await cancelModelLoad(serviceHub)
+    await outcome
+
+    expect(cancelModelLoadInEngine).toHaveBeenCalledWith('mlx', 'ready-model')
+
+    expect(appState.setLoadingModelCancelling).toHaveBeenCalledWith(true)
+    expect(toast.error).not.toHaveBeenCalled()
+    // Selected, not loaded, and not brought back by the composer's auto-start.
+    expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(false)
+    expect(appState.updateLoadingModel).toHaveBeenLastCalledWith(false)
+  })
+
+  it('unloads a model an engine loaded before the cancel could stop it', async () => {
+    let finishLoad: () => void = () => {}
+    const stopModel = vi.fn().mockResolvedValue(undefined)
+    const startModel = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLoad = resolve
+        })
+    )
+    const serviceHub = hubWith({
+      startModel,
+      // This engine has no way to stop a load.
+      cancelModelLoad: vi.fn().mockResolvedValue(false),
+      stopModel,
+    })
+
+    const pending = switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+    const outcome = expect(pending).rejects.toMatchObject({
+      code: 'MODEL_LOAD_CANCELLED',
+    })
+    await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
+    await cancelModelLoad(serviceHub)
+    finishLoad()
+    await outcome
+
+    expect(stopModel).toHaveBeenCalledWith('ready-model', 'mlx')
+    expect(startServer).not.toHaveBeenCalled()
+  })
+
+  it('has nothing to cancel when no local load is running', async () => {
+    const cancelInEngine = vi.fn()
+    await cancelModelLoad(hubWith({ cancelModelLoad: cancelInEngine }))
+
+    expect(cancelInEngine).not.toHaveBeenCalled()
+    // Nothing is held down by a Cancel that had no load to stop.
+    expect(appState.userStoppedModels).toEqual([])
+  })
+
+  it('unloads one model from the status dot and holds it down', async () => {
+    const stopModel = vi.fn().mockResolvedValue(undefined)
+    const serviceHub = hubWith({ stopModel })
+
+    await unloadModelByUser({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+
+    expect(stopModel).toHaveBeenCalledWith('ready-model', 'mlx')
+    expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(false)
+    appState.userStoppedModels = []
+  })
+})
+
 describe('splitModelLoadError', () => {
   it('separates the engine reason from the log it dumped after it', () => {
     const { summary, details } = splitModelLoadError({
@@ -505,6 +677,60 @@ describe('splitModelLoadError', () => {
       summary: 'Model file not found.',
       details: undefined,
     })
+  })
+})
+
+/**
+ * ATO-535: the toast and the status line above the composer read the same
+ * classification, and the status line is the *only* surface an auto-started
+ * failure ever reaches. `@/i18n/setup` is mocked to echo the key, so these
+ * pin which copy a given engine error resolves to.
+ */
+describe('describeModelLoadFailure', () => {
+  it('keeps a failure the user has to act on from expiring', () => {
+    expect(
+      describeModelLoadFailure(new Error('failed to allocate buffer'))
+    ).toMatchObject({
+      title: 'model-errors:outOfMemoryTitle',
+      persistent: true,
+    })
+    expect(
+      describeModelLoadFailure({ code: 'OS_VERSION_UNSUPPORTED' })
+    ).toMatchObject({ persistent: true })
+  })
+
+  it('maps a classified engine code onto its own copy', () => {
+    expect(
+      describeModelLoadFailure({ code: 'MODEL_FILE_NOT_FOUND' })
+    ).toMatchObject({
+      title: 'model-errors:modelFileMissingTitle',
+      description: 'model-errors:modelFileMissingDescription',
+      persistent: false,
+    })
+    // A shard set missing members is an incomplete download by another name.
+    expect(
+      describeModelLoadFailure({ code: 'MODEL_SHARDS_INCOMPLETE' })
+    ).toMatchObject({ title: 'model-errors:modelFileCorruptTitle' })
+  })
+
+  it('keeps the engine log behind the details toggle', () => {
+    const failure = describeModelLoadFailure({
+      code: 'MODEL_ARCH_NOT_SUPPORTED',
+      message: 'Model architecture is not supported.',
+      details: 'load_hparams: unknown model architecture',
+    })
+
+    expect(failure.title).toBe('model-errors:archNotSupportedTitle')
+    expect(failure.details).toBe('load_hparams: unknown model architecture')
+  })
+
+  it('falls back to the engine reason for an unclassified failure', () => {
+    const failure = describeModelLoadFailure(
+      new Error('something the engine has never said before')
+    )
+
+    expect(failure.title).toBe('model-errors:modelLoadFailedTitle')
+    expect(failure.persistent).toBe(false)
   })
 })
 

@@ -5,8 +5,10 @@ import {
   availableReasoningLevels,
   buildAgentReasoningRequest,
   buildReasoningRequestFields,
+  buildRemoteReasoningRequestFields,
   modelEffortValue,
   resolveReasoningLevel,
+  usesTemplateReasoningKwargs,
 } from '../reasoning-effort'
 
 const NON_THINKING: ReasoningControls = { supportsThinking: false }
@@ -231,5 +233,63 @@ describe('buildAgentReasoningRequest', () => {
       budget_tokens: 256,
       supports_thinking: true,
     })
+  })
+})
+
+/**
+ * ATO-527: a provider we cannot inspect. There is no chat template to read
+ * controls off, so the wire shape is fixed and the classification is the only
+ * thing deciding whether it is sent at all.
+ */
+describe('remote reasoning', () => {
+  it('drives the servers the user runs through template kwargs', () => {
+    expect(usesTemplateReasoningKwargs('llamacpp-server')).toBe(true)
+    expect(usesTemplateReasoningKwargs('ollama')).toBe(true)
+    // Not in the catalogue, so it was added by hand in Settings → Providers.
+    expect(usesTemplateReasoningKwargs('my-own-gateway')).toBe(true)
+  })
+
+  it('leaves a catalogue provider alone', () => {
+    // `chatgpt` is a baseline entry, so it is known without a registry fetch.
+    expect(usesTemplateReasoningKwargs('chatgpt')).toBe(false)
+  })
+
+  it('leaves the local engines and the big APIs to their own paths', () => {
+    for (const provider of [
+      'llamacpp',
+      'llamacpp-upstream',
+      'mlx',
+      'foundation-models',
+    ]) {
+      expect(usesTemplateReasoningKwargs(provider)).toBe(false)
+    }
+    for (const provider of [
+      'anthropic',
+      'openai',
+      'xai',
+      'google',
+      'gemini',
+      'moonshot',
+    ]) {
+      expect(usesTemplateReasoningKwargs(provider)).toBe(false)
+    }
+    expect(usesTemplateReasoningKwargs(undefined)).toBe(false)
+  })
+
+  it('sends both kwargs an open-weight template might read', () => {
+    expect(buildRemoteReasoningRequestFields('low')).toEqual({
+      chat_template_kwargs: { enable_thinking: true, reasoning_effort: 'low' },
+    })
+  })
+
+  it('never sends an effort value a template would raise on', () => {
+    for (const level of ['high', 'xhigh', 'max'] as const) {
+      expect(buildRemoteReasoningRequestFields(level)).toEqual({
+        chat_template_kwargs: {
+          enable_thinking: true,
+          reasoning_effort: 'high',
+        },
+      })
+    }
   })
 })

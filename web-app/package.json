@@ -1,7 +1,7 @@
 {
   "name": "@janhq/web-app",
   "private": true,
-  "version": "2.0.37",
+  "version": "2.0.40",
   "type": "module",
   "scripts": {
     "seed-catalog": "node scripts/fetch-seed-catalog.mjs",
@@ -86,6 +86,7 @@
     "react-dom": "19.0.0",
     "react-i18next": "15.5.1",
     "react-markdown": "10.1.0",
+    "react-qr-code": "^2.2.0",
     "react-resizable-panels": "3.0.5",
     "react-syntax-highlighter": "15.6.1",
     "react-syntax-highlighter-virtualized-renderer": "1.1.0",
