@@ -1,5 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+  memo,
+} from 'react'
 import {
   Popover,
   PopoverContent,
@@ -35,7 +43,6 @@ import { route } from '@/constants/routes'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ActiveModelIndicator } from '@/containers/ActiveModelIndicator'
 import { useAppState } from '@/hooks/useAppState'
-import { InferenceServerStatusLine } from '@/containers/InferenceServerStatus'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
@@ -53,7 +60,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { quantFromModelId } from '@/lib/telemetry'
+import { formatDownloadReadout } from '@/lib/downloadFormat'
 import {
   HuggingFacePicks,
   ModelPickerEmptyState,
@@ -150,9 +157,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const localDownloadingModels = useDownloadStore(
     (state) => state.localDownloadingModels
   )
+  const pausedDownloads = useDownloadStore((state) => state.pausedDownloads)
 
   // Search state
   const [open, setOpen] = useState(false)
+  const pillContentRef = useRef<HTMLDivElement>(null)
+  const [pillWidth, setPillWidth] = useState<number>()
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<PickerView>(() =>
@@ -542,20 +552,42 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const activeDownloads = useMemo(() => {
     const rows = new Map<
       string,
-      { id: string; progress: number; total: number }
+      {
+        id: string
+        progress: number
+        current: number
+        total: number
+        bytesPerSecond: number
+        stage?: { kind: string; attempt: number; maxAttempts: number }
+        paused: boolean
+      }
     >()
-    for (const download of Object.values(downloads)) {
-      rows.set(download.id, {
-        id: download.id,
+    for (const [downloadKey, download] of Object.entries(downloads)) {
+      const id = download.id || download.name || downloadKey
+      rows.set(id, {
+        id,
         progress: download.progress ?? 0,
+        current: download.current ?? 0,
         total: download.total ?? 0,
+        bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
+        stage: download.stage,
+        paused: pausedDownloads.has(id),
       })
     }
     for (const id of localDownloadingModels) {
-      if (!rows.has(id)) rows.set(id, { id, progress: 0, total: 0 })
+      if (!rows.has(id)) {
+        rows.set(id, {
+          id,
+          progress: 0,
+          current: 0,
+          total: 0,
+          bytesPerSecond: 0,
+          paused: false,
+        })
+      }
     }
     return [...rows.values()]
-  }, [downloads, localDownloadingModels])
+  }, [downloads, localDownloadingModels, pausedDownloads])
 
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
@@ -744,9 +776,29 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     ]
   )
 
-  if (!providers.length) return null
-
   const provider = getProviderByName(selectedProvider)
+
+  // Keep the composer's mic and Send in motion with the pill instead of
+  // teleporting them when a long model name becomes "Select Model" on unload.
+  // The inner row keeps its intrinsic width; the outer shell animates the real
+  // flex width, so neighbouring controls move smoothly too.
+  useLayoutEffect(() => {
+    const node = pillContentRef.current
+    if (!node) return
+    const measure = () => {
+      const next = Math.ceil(node.getBoundingClientRect().width)
+      if (next > 0) {
+        setPillWidth((current) => (current === next ? current : next))
+      }
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  if (!providers.length) return null
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -756,52 +808,60 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           (ATO-530) sits in the pill but outside the trigger — it is a button
           of its own, and a button cannot live inside another. */}
       <div
+        data-testid="model-picker-pill-shell"
         className={cn(
-          'inline-flex h-7 max-w-64 shrink items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70',
+          'inline-flex h-7 shrink-0 overflow-hidden rounded-full transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
           className
         )}
+        style={pillWidth ? { width: pillWidth } : undefined}
       >
-        <ActiveModelIndicator className="ml-1.5" />
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            title={selectedModel?.id ?? displayModel}
-            aria-label={compact ? displayModel : undefined}
-            data-test-id="model-picker-trigger"
-            className={cn(
-              'inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2',
-              selectedModel?.id ? 'pl-1.5' : 'pl-2.5'
-            )}
-          >
-            {provider && (
-              <div className="shrink-0">
-                <ProvidersAvatar provider={provider} className="size-4" />
-              </div>
-            )}
-            {!compact && (
-              <span
-                className={cn(
-                  'truncate font-medium',
-                  !selectedModel?.id && 'text-muted-foreground'
-                )}
-              >
-                {displayModel}
-              </span>
-            )}
-            {settledEffortLabel && (
-              <span className="text-muted-foreground shrink-0">
-                {settledEffortLabel}
-              </span>
-            )}
-            <IconChevronDown
-              size={14}
+        <div
+          ref={pillContentRef}
+          className="inline-flex h-7 w-max max-w-64 shrink-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70"
+        >
+          <ActiveModelIndicator className="ml-1.5" />
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              title={selectedModel?.id ?? displayModel}
+              aria-label={compact ? displayModel : undefined}
+              data-test-id="model-picker-trigger"
               className={cn(
-                'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
-                open && 'rotate-180'
+                'inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2',
+                selectedModel?.id ? 'pl-1.5' : 'pl-2.5'
               )}
-            />
-          </button>
-        </PopoverTrigger>
+            >
+              {provider && (
+                <div className="shrink-0">
+                  <ProvidersAvatar provider={provider} className="size-4" />
+                </div>
+              )}
+              {!compact && (
+                <span
+                  key={displayModel}
+                  className={cn(
+                    'truncate font-medium animate-in fade-in-0 duration-150',
+                    !selectedModel?.id && 'text-muted-foreground'
+                  )}
+                >
+                  {displayModel}
+                </span>
+              )}
+              {settledEffortLabel && (
+                <span className="text-muted-foreground shrink-0">
+                  {settledEffortLabel}
+                </span>
+              )}
+              <IconChevronDown
+                size={14}
+                className={cn(
+                  'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
+                  open && 'rotate-180'
+                )}
+              />
+            </button>
+          </PopoverTrigger>
+        </div>
       </div>
 
       <PopoverContent
@@ -811,7 +871,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
             cn(
-              'w-[min(36rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
+              'w-[min(32rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
               pickerEmpty
                 ? searchValue.trim()
                   ? EMPTY_SEARCH_PANEL_CLASS
@@ -861,11 +921,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 className="text-muted-foreground ml-auto shrink-0"
               />
             </button>
-            {/* ATO-535: what the engine is doing, spelled out. The dot above
-                carries the same state as colour; this is the reading of it. */}
-            <InferenceServerStatusLine className="pb-1" />
             {/* Mounted with the panel, so a fresh open always starts settled. */}
-            <ReasoningEffortPanel className="mt-3 min-w-0 border-t pt-3" />
+            <ReasoningEffortPanel className="mt-2 min-w-0 border-t pt-3" />
           </div>
         ) : (
           <div
@@ -916,7 +973,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       {t('common:downloading')}
                     </div>
                     {activeDownloads.map((download) => {
-                      const quant = quantFromModelId(download.id)
                       return (
                         <div
                           key={download.id}
@@ -927,11 +983,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                             <div className="truncate text-sm" title={download.id}>
                               {compactModelDisplayName({ id: download.id } as Model)}
                             </div>
-                            <div className="truncate text-xs text-muted-foreground">
-                              {download.total > 0
-                                ? `${Math.round(download.progress * 100)}%`
-                                : t('common:downloadPanel.preparing')}
-                              {quant ? ` · ${quant}` : ''}
+                            <div className="truncate text-xs text-muted-foreground" title={formatDownloadReadout(t, download)}>
+                              {formatDownloadReadout(t, download)}
                             </div>
                           </div>
                         </div>

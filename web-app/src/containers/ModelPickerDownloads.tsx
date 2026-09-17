@@ -854,7 +854,7 @@ function PickerRoutes({
 
   return (
     <div
-      className="rounded-lg border bg-secondary/50 px-3 py-2"
+      className="overflow-y-auto rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]"
       data-testid="model-picker-routes"
     >
       <div className="flex flex-col divide-y divide-border/60">

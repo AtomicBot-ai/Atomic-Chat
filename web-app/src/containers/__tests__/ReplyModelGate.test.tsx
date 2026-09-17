@@ -451,6 +451,10 @@ describe('ReplyModelGate', () => {
     const row = within(routes).getByTestId('reply-gate-add-folder')
     expect(row).toHaveTextContent('chat:replyGate.folderTitle')
     expect(row).toHaveTextContent('chat:replyGate.folderHint')
+    expect(row.querySelector('[aria-hidden="true"]')).toHaveClass(
+      'rounded-none',
+      'bg-transparent'
+    )
     const button = within(row).getByRole('button', {
       name: 'chat:replyGate.addFolder',
     })
@@ -722,6 +726,11 @@ describe('ReplyModelGate', () => {
       renderGate([unconnectedCloud()])
 
       await screen.findByTestId('reply-gate-recommended-lead')
+      expect(document.activeElement).toHaveAttribute(
+        'data-slot',
+        'dialog-content'
+      )
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
       const marks = recommendedRows().map((row) =>
         row.querySelector('[data-fit]')
       )

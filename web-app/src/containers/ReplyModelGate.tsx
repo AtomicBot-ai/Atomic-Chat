@@ -283,7 +283,13 @@ export function ReplyModelGate({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="overflow-x-hidden sm:max-w-[42rem] lg:max-w-[42rem] xl:max-w-[42rem]">
+        <DialogContent
+          className="overflow-x-hidden sm:max-w-[42rem] lg:max-w-[42rem] xl:max-w-[42rem]"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault()
+            ;(event.currentTarget as HTMLElement).focus({ preventScroll: true })
+          }}
+        >
           {session && (
             <ReplyModelGateBody
               branch={session.branch}
@@ -733,6 +739,7 @@ function AddFolderRoute({
     <RouteRow
       layout="onboarding"
       icon={scanning ? <Loader2 className="animate-spin" /> : <FolderPlus />}
+      iconClassName="rounded-none bg-transparent [&>svg]:size-6"
       title={t('chat:replyGate.folderTitle')}
       hint={t('chat:replyGate.folderHint')}
       action={
