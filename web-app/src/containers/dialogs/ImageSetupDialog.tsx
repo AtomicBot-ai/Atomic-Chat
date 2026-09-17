@@ -202,6 +202,9 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
   const hasModel = useImageGenerationStore((state) =>
     state.installedArtifacts.some((artifact) => artifact.complete)
   )
+  const modelRunning = useImageGenerationStore(
+    (state) => state.status?.model.state === 'loaded'
+  )
   const setSetupCompleted = useImageSetting((state) => state.setSetupCompleted)
   const { installed: engineInstalled } = useImageEngine()
 
@@ -218,7 +221,16 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
     closeSetup()
   }, [closeSetup, setSetupCompleted])
 
-  const StepIcon = STEPS[step].icon
+  // The model step says so once there is nothing left to get: a download that
+  // lands must change what the wizard says, not only one row in a long list.
+  const done = step === 2 && ready
+  const StepIcon = done ? IconCircleCheckFilled : STEPS[step].icon
+  const title = done ? 'images:setup.ready.title' : STEPS[step].title
+  const description = !done
+    ? STEPS[step].description
+    : modelRunning
+      ? 'images:setup.ready.descriptionRunning'
+      : 'images:setup.ready.description'
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? openSetup(step) : finish())}>
@@ -228,24 +240,35 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
           className="items-center text-center sm:text-center"
         >
           <div className="mb-1 grid size-12 place-items-center rounded-xl bg-secondary">
-            <StepIcon size={24} className="text-foreground" />
+            <StepIcon
+              size={24}
+              className={
+                done
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-foreground'
+              }
+            />
           </div>
-          <DialogTitle>{t(STEPS[step].title)}</DialogTitle>
+          <DialogTitle data-testid="image-setup-title">{t(title)}</DialogTitle>
           <DialogDescription
             data-testid="image-setup-description"
             className="h-10 text-pretty"
           >
-            {t(STEPS[step].description)}
+            {t(description)}
           </DialogDescription>
         </DialogHeader>
 
         {/* The model step is a list that can grow with the catalog, so it gets
-            a taller box with its own scroll; the other two are fixed. */}
+            a taller box with its own scroll; the other two are fixed. It gives
+            height back on a short window: the dialog stops at 85vh, and a
+            fixed 360px pushed Done below that edge. */}
         <div
           data-testid="image-setup-slot"
           className={cn(
             'flex flex-col justify-start gap-2 overflow-y-auto py-1',
-            step === 2 ? 'h-[360px]' : 'h-[156px]'
+            step === 2
+              ? 'h-[clamp(180px,calc(85vh_-_15rem),360px)]'
+              : 'h-[156px]'
           )}
         >
           {step === 0 && <IntroStep />}

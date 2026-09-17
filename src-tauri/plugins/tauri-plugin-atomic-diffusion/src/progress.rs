@@ -166,6 +166,27 @@ pub fn parse_step_line(line: &str) -> Option<(u32, u32)> {
     None
 }
 
+/// One redraw of sd.cpp's progress bar — sampling, VAE tiles or a tensor
+/// loader — as opposed to a line that says something. They all close with a
+/// rate: `- 3.52s/it`, `- 1.41it/s`, `- 637.50MB/s`.
+pub fn is_progress_redraw(line: &str) -> bool {
+    ["s/it", "it/s", "B/s"]
+        .iter()
+        .any(|rate| line.contains(rate))
+}
+
+/// The tile count from sd.cpp's `processing 9 tiles`, printed before a tiled
+/// VAE pass. The pass then redraws the sampler's own bar (`3/9 - 1.3s/it`), so
+/// without this nine tiles read as nine steps.
+pub fn parse_tile_announcement(line: &str) -> Option<u32> {
+    let rest = line.split("processing ").nth(1)?;
+    let (count, tail) = rest.split_once(' ')?;
+    if !tail.trim_start().starts_with("tiles") {
+        return None;
+    }
+    count.parse().ok()
+}
+
 /// Lines worth keeping from a dead server's output whatever their position.
 const DIAGNOSTIC_MARKERS: [&str; 8] = [
     "error",
@@ -305,6 +326,21 @@ mod tests {
         assert_eq!(parse_step_line("loading model from file"), None);
         assert_eq!(parse_step_line("size 1024x1024"), None);
         assert_eq!(parse_step_line("3.5s/it"), None);
+    }
+
+    #[test]
+    fn tile_announcements_are_told_from_other_lines() {
+        assert_eq!(
+            parse_tile_announcement("[VERBOSE] tiling.cpp:203  - processing 9 tiles"),
+            Some(9)
+        );
+        assert_eq!(parse_tile_announcement("processing 49 tiles"), Some(49));
+        assert_eq!(
+            parse_tile_announcement("[VERBOSE] tiling.cpp:201  - num tiles : 3, 3"),
+            None
+        );
+        assert_eq!(parse_tile_announcement("processing 9 latents"), None);
+        assert_eq!(parse_tile_announcement("|====>    | 3/9 - 1.30s/it"), None);
     }
 
     #[test]

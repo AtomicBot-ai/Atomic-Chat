@@ -74,6 +74,11 @@
       "description": "Pick a model and size that fits your memory. Bigger is slower.",
       "diskNote": "Models are 4–12 GB. Shared files are downloaded once."
     },
+    "ready": {
+      "title": "Ready to create",
+      "description": "A model is on disk. Press Run to start it, or Done and start it later from the model menu.",
+      "descriptionRunning": "The model is running. Press Done and write your first prompt."
+    },
     "card": {
       "title": "Set up image generation",
       "description": "Two things are needed before the first image: the engine and a model.",
@@ -323,6 +328,7 @@
       "openSettings": "Open Media settings",
       "openOutputFolder": "Open the output folder",
       "reduceSize": "Try 768×768",
+      "reduceUpscale": "Try a smaller scale",
       "pickSmallerQuant": "Pick a smaller quant",
       "retry": "Try again"
     },

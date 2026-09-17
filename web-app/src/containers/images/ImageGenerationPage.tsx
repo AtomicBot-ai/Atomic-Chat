@@ -25,6 +25,11 @@ import { ImagePromptForm } from './ImagePromptForm'
 import { ImageSetupCard } from './ImageSetupCard'
 import { ImageViewer } from './ImageViewer'
 
+/** In Upscale "make it smaller" is the scale, not the form's width and height. */
+const UPSCALE_ERROR_LABELS = {
+  reduceSize: 'images:errors.actions.reduceUpscale',
+} as const
+
 type ImageGenerationPageProps = {
   /** The route's workflow: `/images/` is create, `/images/<id>` the rest. */
   workflow: ImageWorkflowId
@@ -36,8 +41,8 @@ type ImageGenerationPageProps = {
  * The header carries the model picker; below it a settings column (the form,
  * or the setup card until the prerequisites are met) sits beside the canvas,
  * split by one structural border — the same frame as the Model hub. The
- * error banner floats over the canvas so it is never hidden behind a
- * scrolled grid.
+ * error banner sits above the canvas, outside the scrolling grid and never
+ * over the picture: its tint is translucent, and text on a photo is unreadable.
  */
 export const ImageGenerationPage = memo(function ImageGenerationPage({
   workflow,
@@ -127,6 +132,13 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           }
           return
         case 'reduceSize':
+          if (workflow === 'upscale') {
+            // The output is the source times the scale; the form's size is
+            // not in the request, so 768² would change nothing here.
+            const { upscaleFactor } = useImageForm.getState()
+            patchForm({ upscaleFactor: Math.max(1.5, upscaleFactor - 0.5) })
+            return
+          }
           patchForm({ width: 768, height: 768, aspect: 'square', portrait: false })
           return
         case 'pickSmallerQuant':
@@ -136,8 +148,11 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           return
       }
     },
-    [clearError, navigate, openSetup, patchForm, serviceHub, status?.outputDir]
+    [clearError, navigate, openSetup, patchForm, serviceHub, status?.outputDir, workflow]
   )
+
+  const errorLabelKeys =
+    workflow === 'upscale' ? UPSCALE_ERROR_LABELS : undefined
 
   const header = (
     <HeaderPage>
@@ -175,6 +190,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
             error={lastError}
             onAction={onErrorAction}
             onDismiss={clearError}
+            actionLabelKeys={errorLabelKeys}
           />
           <div
             className="flex min-h-0 flex-1 overflow-y-auto"
@@ -203,17 +219,20 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
 
       <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col">
         {lastError && (
-          <div className="absolute inset-x-0 top-0 z-10 px-6 pt-3">
+          <div className="shrink-0 px-6 pt-3">
             <ImageErrorBanner
               error={lastError}
               onAction={onErrorAction}
               onDismiss={clearError}
+              actionLabelKeys={errorLabelKeys}
             />
           </div>
         )}
 
         {gallery.initialized && gallery.items.length === 0 ? (
-          <ImageEmptyState modelLoaded={modelLoaded} />
+          <div className="min-h-0 flex-1">
+            <ImageEmptyState modelLoaded={modelLoaded} />
+          </div>
         ) : (
           <>
             <div className="min-h-0 flex-[3]">

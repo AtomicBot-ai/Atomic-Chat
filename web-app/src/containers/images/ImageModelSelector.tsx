@@ -38,7 +38,10 @@ import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageArtifactDownloadButton } from './ImageArtifactDownloadButton'
 
 type ImageModelSelectorProps = {
-  /** `dialog` hides Remove and keeps the list short; `page` is the full manager. */
+  /**
+   * `dialog` hides Remove and lists every quant in one place; `page` is the
+   * full manager, split into Installed and Available.
+   */
   variant?: 'page' | 'dialog'
   /**
    * The workflow the list is picked for. Families that cannot run it are
@@ -119,7 +122,22 @@ export const ImageModelSelector = memo(function ImageModelSelector({
 
   return (
     <div className={cn('space-y-2', className)} data-testid="image-model-selector">
-      {sections.installed.length > 0 && (
+      {/* The wizard keeps every quant where it is. Split into sections, a quant
+          that finished downloading left the rows the user was watching for
+          Installed at the top of a scrolled list, and all that stayed in view
+          were the Download buttons of its siblings. */}
+      {variant === 'dialog' &&
+        families.map((family) => (
+          <FamilyBlock
+            key={family.id}
+            family={family}
+            quants={family.transformer.quants}
+            variant={variant}
+            unsupportedFor={fits(family) ? null : workflow ?? null}
+            onRequestDownload={setPlanFor}
+          />
+        ))}
+      {variant === 'page' && sections.installed.length > 0 && (
         <Section title={t('images:model.installed')}>
           {sections.installed.map(([family, quants]) => (
             <FamilyBlock
@@ -133,7 +151,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
           ))}
         </Section>
       )}
-      {sections.available.length > 0 && (
+      {variant === 'page' && sections.available.length > 0 && (
         <Section title={t('images:model.available')}>
           {sections.available.map(([family, quants]) => (
             <FamilyBlock

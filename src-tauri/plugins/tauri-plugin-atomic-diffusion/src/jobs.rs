@@ -2,6 +2,7 @@
 //! path. Shared by the `generate` command and the OpenAI facade on the API
 //! server, so both get the same validation, events, gallery and idle timer.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -20,7 +21,9 @@ use crate::events::{
 };
 use crate::gallery;
 use crate::process;
-use crate::progress::{classify_exit, diagnostic_tail, parse_step_line};
+use crate::progress::{
+    classify_exit, diagnostic_tail, is_progress_redraw, parse_step_line, parse_tile_announcement,
+};
 use crate::session;
 use crate::state::{
     now_ms, tail_lines, DiffusionState, GalleryImageItem, ImageGenerateRequest, ImageJob,
@@ -238,6 +241,34 @@ pub fn resolve_inputs(request: &ImageGenerateRequest) -> DiffusionResult<Resolve
 // Progress
 // ---------------------------------------------------------------------------
 
+/// The step count sd.cpp's sampler reports for `request`.
+///
+/// With an init image and a strength below 1 the sampler enters the schedule
+/// part-way: `t_enc = ⌊steps × strength⌋` (one fewer when that is all of
+/// them), and it walks `t_enc + 1` sigmas. Twenty steps at 0.35 print `k/8`,
+/// which a tracker waiting for `k/20` never trusted, so every img2img job sat
+/// at "encoding" until it was done.
+pub fn sampled_steps(request: &ImageGenerateRequest) -> u32 {
+    let steps = request.steps.max(1);
+    let workflow = request.workflow();
+    if !workflow.uses_init_image() || request.init_image.is_none() {
+        return steps;
+    }
+    let strength = request.strength.unwrap_or(workflow.default_strength());
+    if strength >= 1.0 {
+        return steps;
+    }
+    // In f32, the way sd.cpp multiplies it.
+    let mut t_enc = (steps as f32 * strength as f32) as u32;
+    if t_enc == steps {
+        t_enc -= 1;
+    }
+    t_enc + 1
+}
+
+/// Non-progress lines a job keeps for its own failure report.
+const JOB_LOG_LINES: usize = 60;
+
 struct ProgressTracker {
     steps: u32,
     batch: u32,
@@ -248,6 +279,10 @@ struct ProgressTracker {
     first_step_at: Option<Instant>,
     first_step_done: u32,
     dirty: bool,
+    /// Tiles left in an announced VAE pass; its bar is not the sampler's.
+    tiles: Option<u32>,
+    /// What the server said during this job, progress redraws aside.
+    log: VecDeque<String>,
 }
 
 impl ProgressTracker {
@@ -262,7 +297,13 @@ impl ProgressTracker {
             first_step_at: None,
             first_step_done: 0,
             dirty: true,
+            tiles: None,
+            log: VecDeque::with_capacity(JOB_LOG_LINES),
         }
+    }
+
+    fn log_lines(&self) -> Vec<String> {
+        self.log.iter().cloned().collect()
     }
 
     fn set_phase(&mut self, phase: ImageJobPhase) {
@@ -272,12 +313,32 @@ impl ProgressTracker {
         }
     }
 
-    /// Feed one stdout line. Only a denominator equal to the requested step
-    /// count is trusted, so a loader's `1/100` cannot move the bar.
+    /// Feed one stdout line. Only a denominator equal to the sampled step
+    /// count is trusted, so a loader's `1/100` cannot move the bar — and an
+    /// announced tile pass is skipped whole, because nine tiles at nine steps
+    /// would otherwise finish the bar before sampling began.
     fn on_line(&mut self, line: &str) {
+        if let Some(tiles) = parse_tile_announcement(line) {
+            self.tiles = Some(tiles);
+        } else if line.contains("generating image:") {
+            // The sampling banner ends a tile pass whose last redraw was lost.
+            self.tiles = None;
+        }
+        if !is_progress_redraw(line) {
+            if self.log.len() == JOB_LOG_LINES {
+                self.log.pop_front();
+            }
+            self.log.push_back(line.to_string());
+        }
         let Some((step, total)) = parse_step_line(line) else {
             return;
         };
+        if self.tiles == Some(total) {
+            if step >= total {
+                self.tiles = None;
+            }
+            return;
+        }
         if total != self.steps || step == 0 || step > total {
             return;
         }
@@ -789,7 +850,7 @@ async fn poll_job(
         record.server_job_id = Some(server_job_id.clone())
     });
 
-    let mut tracker = ProgressTracker::new(request.steps, request.batch_size);
+    let mut tracker = ProgressTracker::new(sampled_steps(request), request.batch_size);
     let job_url = format!("{}{JOBS_PATH}/{server_job_id}", view.base_url);
     let deadline = started + GENERATION_CEILING;
 
@@ -934,15 +995,28 @@ async fn poll_job(
                     .pointer("/error/message")
                     .and_then(|m| m.as_str())
                     .unwrap_or("");
-                let classified = classify_exit(message, None);
+                // The job only ever says `generate_image returned no results`;
+                // why is in what the server printed while it ran.
+                while let Ok(line) = rx.try_recv() {
+                    tracker.on_line(&line);
+                }
+                let said = diagnostic_tail(&tracker.log_lines(), 12, 1200);
+                let classified = classify_exit(&format!("{message}\n{said}"), None);
+                log::warn!(
+                    "[atomic-diffusion] sd-server failed the job ({code}: {message}):\n{said}"
+                );
                 return Err(DiffusionError::with_details(
                     if classified == DiffusionErrorCode::OutOfMemory {
                         DiffusionErrorCode::OutOfMemory
                     } else {
                         DiffusionErrorCode::Internal
                     },
-                    "The image server failed to generate.",
-                    format!("{code}: {message}"),
+                    if classified == DiffusionErrorCode::OutOfMemory {
+                        "sd-server ran out of memory while generating."
+                    } else {
+                        "The image server failed to generate."
+                    },
+                    format!("{code}: {message}\n{said}"),
                 ));
             }
             "cancelled" => return Err(cancelled()),
@@ -1617,6 +1691,98 @@ mod tests {
         assert_eq!(t.snapshot().batch_index, 1);
     }
 
+    #[test]
+    fn img2img_is_tracked_by_the_steps_sd_cpp_actually_samples() {
+        let upscale = |steps: u32, strength: Option<f64>| {
+            let mut r = request();
+            r.steps = steps;
+            r.workflow = Some(ImageWorkflow::Upscale);
+            r.init_image = Some(ImageSource::Data {
+                base64: "AAAA".into(),
+            });
+            r.strength = strength;
+            sampled_steps(&r)
+        };
+        // Observed on the pinned build: 4 steps at 0.5 print `k/3`.
+        assert_eq!(upscale(4, Some(0.5)), 3);
+        // The Upscale default: 20 steps at 0.35 print `k/8`.
+        assert_eq!(upscale(20, None), 8);
+        assert_eq!(upscale(20, Some(0.0)), 1);
+        assert_eq!(upscale(20, Some(0.999)), 20);
+        // A full-strength repaint (Extend's default) walks the whole schedule.
+        assert_eq!(upscale(20, Some(1.0)), 20);
+
+        // No init image, no shortcut: Create and the reference workflows.
+        let mut create = request();
+        create.steps = 20;
+        create.strength = Some(0.35);
+        assert_eq!(sampled_steps(&create), 20);
+        create.workflow = Some(ImageWorkflow::Edit);
+        assert_eq!(sampled_steps(&create), 20);
+
+        // The bar moves on the lines that build really prints.
+        let mut t = ProgressTracker::new(upscale(20, None), 1);
+        t.on_line("|=====>    | 3/8 - 12.13s/it");
+        assert_eq!((t.snapshot().step, t.snapshot().total_steps), (3, 8));
+        assert_eq!(t.snapshot().phase, ImageJobPhase::Sampling);
+    }
+
+    #[test]
+    fn a_tiled_vae_pass_is_not_mistaken_for_sampling() {
+        // Nine tiles, nine sampled steps: the worst case, a 2x Upscale of a
+        // 1024² image at strength 0.4.
+        let mut t = ProgressTracker::new(9, 1);
+        t.set_phase(ImageJobPhase::Encoding);
+        t.on_line("[VERBOSE] tiling.cpp:203  - processing 9 tiles");
+        for tile in 1..=9 {
+            t.on_line(&format!("|==>   | {tile}/9 - 1.30s/it"));
+        }
+        assert_eq!(t.snapshot().phase, ImageJobPhase::Encoding, "encode tiles");
+        assert_eq!(t.snapshot().step, 0);
+
+        t.on_line("[INFO   ] stable-diffusion.cpp:5705 - generating image: 1/1 - seed 1");
+        t.on_line("|==>   | 1/9 - 12.0s/it");
+        assert_eq!(t.snapshot().phase, ImageJobPhase::Sampling);
+        assert_eq!(t.snapshot().step, 1);
+        for step in 2..=9 {
+            t.on_line(&format!("|==>   | {step}/9 - 12.0s/it"));
+        }
+        assert_eq!(t.snapshot().phase, ImageJobPhase::Decoding);
+
+        // Decode tiles after the last step change nothing either.
+        t.on_line("[VERBOSE] tiling.cpp:203  - processing 9 tiles");
+        t.on_line("|==>   | 1/9 - 1.41it/s");
+        assert_eq!(t.snapshot().phase, ImageJobPhase::Decoding);
+        assert_eq!(t.snapshot().step, 9);
+
+        // A lost last redraw does not swallow the sampling that follows.
+        let mut t = ProgressTracker::new(9, 1);
+        t.on_line("processing 9 tiles");
+        t.on_line("|==>   | 8/9 - 1.30s/it");
+        t.on_line("[INFO   ] stable-diffusion.cpp:5705 - generating image: 1/1 - seed 1");
+        t.on_line("|==>   | 1/9 - 12.0s/it");
+        assert_eq!(t.snapshot().step, 1);
+    }
+
+    #[test]
+    fn a_job_remembers_what_the_server_said_but_not_its_redraws() {
+        let mut t = ProgressTracker::new(8, 1);
+        t.on_line("|==>   | 1/8 - 12.0s/it");
+        t.on_line("  |####  | 108/251 - 637.50MB/s");
+        t.on_line("ggml_backend_cuda_buffer_type_alloc_buffer: allocating 13576.00 MiB on device 0: cudaMalloc failed: out of memory");
+        // An error that happens to carry an `N/M` is still kept.
+        t.on_line("[ERROR] stable-diffusion.cpp:5743 - sampling for image 1/1 failed after 0.31s");
+        let log = t.log_lines();
+        assert_eq!(log.len(), 2);
+        assert!(log[0].contains("cudaMalloc failed"));
+        assert!(log[1].contains("sampling for image 1/1 failed"));
+
+        for i in 0..(JOB_LOG_LINES + 5) {
+            t.on_line(&format!("line {i}"));
+        }
+        assert_eq!(t.log_lines().len(), JOB_LOG_LINES, "bounded");
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn completed_job_saves_outputs_and_reports_transitions() {
@@ -1884,6 +2050,56 @@ mod tests {
         assert_eq!(
             handle.await.unwrap().unwrap_err().code,
             DiffusionErrorCode::Cancelled
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_failed_job_is_explained_by_what_the_server_printed() {
+        let failed = Arc::new(AtomicBool::new(false));
+        let failed_h = failed.clone();
+        let handler: Handler = Arc::new(move |method, path, _| {
+            match (method, path) {
+            ("POST", IMG_GEN_PATH) => (202, r#"{"id":"job_6","status":"queued"}"#.into()),
+            ("GET", "/sdcpp/v1/jobs/job_6") if failed_h.load(Ordering::SeqCst) => (
+                200,
+                r#"{"id":"job_6","status":"failed","result":null,"error":{"code":"generation_failed","message":"generate_image returned no results"}}"#.into(),
+            ),
+            ("GET", "/sdcpp/v1/jobs/job_6") => {
+                (200, r#"{"id":"job_6","status":"generating"}"#.into())
+            }
+            _ => (404, "{}".into()),
+        }
+        });
+        let port = stub(handler).await;
+        let (state, _dir) = state_with_session(port, false).await;
+        let emitter = Arc::new(RecordingEmitter::default());
+        let (_id, handle) = start_image_job(state.clone(), emitter.clone(), request()).unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        {
+            // What a 2x Upscale printed before the fix: the VAE asked for
+            // 13.6 GB in one piece and the job died with a message that
+            // named nothing.
+            let guard = state.session.lock().await;
+            let listener = guard.as_ref().unwrap().step_listener.lock().unwrap();
+            let sender = listener.as_ref().expect("the job listens to stdout");
+            for line in [
+                "ggml_backend_cuda_buffer_type_alloc_buffer: allocating 13576.00 MiB on device 0: cudaMalloc failed: out of memory",
+                "[ERROR] stable-diffusion.cpp:5049 - failed to encode init image",
+            ] {
+                sender.send(line.into()).unwrap();
+            }
+        }
+        failed.store(true, Ordering::SeqCst);
+
+        let err = handle.await.unwrap().unwrap_err();
+        assert_eq!(err.code, DiffusionErrorCode::OutOfMemory);
+        let details = err.details.unwrap();
+        assert!(details.contains("generate_image returned no results"));
+        assert!(details.contains("failed to encode init image"));
+        assert!(
+            state.session.lock().await.is_some(),
+            "the server outlives a job it could not fit"
         );
     }
 

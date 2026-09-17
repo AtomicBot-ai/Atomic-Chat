@@ -18,7 +18,17 @@ use jan_utils::{canonicalize_existing_prefix, is_within};
 
 pub const OWNER_MARKER: &str = ".atomic-owned";
 pub const INSTALL_RECORD: &str = "install.json";
-const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The first launch of a just-unpacked tree is slow for reasons unrelated to
+/// the binary: Gatekeeper looks every new Mach-O up at Apple over the network
+/// and XProtect scans the 109 MB dylib (1.5-2.3 s on an idle M4 Pro, 0.02 s
+/// the second time); Windows real-time protection scans each unseen DLL, and
+/// the CUDA tree is 1.2 GB of them written the moment before. A 10 s budget
+/// failed a healthy win-cuda12 install that passed on retry.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(120);
+/// A scanner can hold a freshly written executable for a moment, which
+/// surfaces as a spawn error rather than a slow start.
+const PROBE_SPAWN_ATTEMPTS: u32 = 3;
+const PROBE_SPAWN_RETRY_DELAY: Duration = Duration::from_secs(1);
 const PROBE_MARKERS: [&str; 2] = ["stable-diffusion.cpp", "--cfg-scale"];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -98,16 +108,68 @@ fn set_executable(path: &Path) {
     }
 }
 
+fn could_not_start(binary: &Path, err: &std::io::Error) -> DiffusionError {
+    DiffusionError::with_details(
+        DiffusionErrorCode::EngineInstallFailed,
+        "The image engine could not be started.",
+        format!("{}: {err}", binary.display()),
+    )
+}
+
+/// Spawn `<binary> --help`, riding out the spawn failures of a tree that was
+/// written a moment ago.
+async fn spawn_probe(
+    binary: &Path,
+    retry_delay: Duration,
+) -> DiffusionResult<tokio::process::Child> {
+    let mut attempt = 1;
+    loop {
+        let mut command = tokio::process::Command::new(binary);
+        command.arg("--help");
+        command.stdin(std::process::Stdio::null());
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+        command.kill_on_drop(true);
+        jan_utils::setup_windows_process_flags(&mut command);
+        jan_utils::setup_library_path(binary.parent(), &mut command);
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(e) if attempt < PROBE_SPAWN_ATTEMPTS => {
+                log::warn!(
+                    "[atomic-diffusion] engine probe did not start (attempt {attempt}/{PROBE_SPAWN_ATTEMPTS}): {e}"
+                );
+                attempt += 1;
+                tokio::time::sleep(retry_delay).await;
+            }
+            Err(e) => return Err(could_not_start(binary, &e)),
+        }
+    }
+}
+
 /// Run `<binary> --help` and check that the output is stable-diffusion.cpp's.
 pub async fn probe_binary(binary: &Path) -> DiffusionResult<()> {
-    let mut command = tokio::process::Command::new(binary);
-    command.arg("--help");
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-    command.kill_on_drop(true);
-    jan_utils::setup_windows_process_flags(&mut command);
-    jan_utils::setup_library_path(binary.parent(), &mut command);
-    let output = tokio::time::timeout(PROBE_TIMEOUT, command.output())
+    let started = std::time::Instant::now();
+    let result = probe_binary_within(binary, PROBE_TIMEOUT, PROBE_SPAWN_RETRY_DELAY).await;
+    let elapsed = started.elapsed().as_secs_f32();
+    // The UI shows only the message, so the log is where the details live.
+    match &result {
+        Ok(()) => log::info!("[atomic-diffusion] engine probe passed in {elapsed:.1}s"),
+        Err(e) => log::warn!(
+            "[atomic-diffusion] engine probe failed after {elapsed:.1}s: {} ({})",
+            e.message,
+            e.details.as_deref().unwrap_or("no details")
+        ),
+    }
+    result
+}
+
+async fn probe_binary_within(
+    binary: &Path,
+    timeout: Duration,
+    spawn_retry_delay: Duration,
+) -> DiffusionResult<()> {
+    let child = spawn_probe(binary, spawn_retry_delay).await?;
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
         .map_err(|_| {
             DiffusionError::with_details(
@@ -116,17 +178,11 @@ pub async fn probe_binary(binary: &Path) -> DiffusionResult<()> {
                 format!(
                     "{} timed out after {}s",
                     binary.display(),
-                    PROBE_TIMEOUT.as_secs()
+                    timeout.as_secs()
                 ),
             )
         })?
-        .map_err(|e| {
-            DiffusionError::with_details(
-                DiffusionErrorCode::EngineInstallFailed,
-                "The image engine could not be started.",
-                format!("{}: {e}", binary.display()),
-            )
-        })?;
+        .map_err(|e| could_not_start(binary, &e))?;
     let mut text = String::from_utf8_lossy(&output.stdout).to_string();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     if probe_output_is_sdcpp(&text) {
@@ -578,6 +634,62 @@ mod tests {
         .unwrap_err();
         assert_eq!(err.code, DiffusionErrorCode::EngineInstallFailed);
         assert!(!is_owned(&bad));
+    }
+
+    #[cfg(unix)]
+    fn write_script(path: &Path, body: &str, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn probe_gives_up_on_a_binary_that_never_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        let hung = dir.path().join("hung");
+        // `exec` so the kill lands on the sleeper, not on a shell above it.
+        write_script(&hung, "exec sleep 30", 0o755);
+        let started = std::time::Instant::now();
+        let err = probe_binary_within(&hung, Duration::from_millis(300), Duration::ZERO)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, DiffusionErrorCode::EngineInstallFailed);
+        assert!(err.message.contains("did not respond"), "{}", err.message);
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn probe_retries_a_binary_that_cannot_be_spawned_yet() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let cli = dir.path().join("sd-cli");
+        write_script(&cli, "echo '  --cfg-scale SCALE'", 0o644);
+        let unlock = {
+            let cli = cli.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+            })
+        };
+        probe_binary_within(&cli, Duration::from_secs(30), Duration::from_millis(400))
+            .await
+            .unwrap();
+        unlock.await.unwrap();
+
+        // One that never becomes runnable fails once the attempts run out.
+        let locked = dir.path().join("locked");
+        write_script(&locked, "echo '  --cfg-scale SCALE'", 0o644);
+        let err = probe_binary_within(&locked, Duration::from_secs(30), Duration::ZERO)
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, DiffusionErrorCode::EngineInstallFailed);
+        assert!(
+            err.message.contains("could not be started"),
+            "{}",
+            err.message
+        );
     }
 
     #[test]

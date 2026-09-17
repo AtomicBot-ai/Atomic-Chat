@@ -6,6 +6,7 @@ import {
   makeCatalog,
   makeFakeDiffusion,
   makeFilesFor,
+  makeLoadedStatus,
   makeStatus,
   Z_IMAGE,
   type FakeDiffusion,
@@ -109,14 +110,63 @@ describe('ImageSetupDialog', () => {
       ['en', en],
       ['ru', ru],
     ] as const) {
-      for (const step of ['intro', 'engine', 'model'] as const) {
+      for (const step of ['intro', 'engine', 'model', 'ready'] as const) {
         const text = bundle.setup[step].description
         expect(
           text.length,
           `${locale} ${step}.description is ${text.length} chars`
         ).toBeLessThanOrEqual(MAX)
       }
+      expect(bundle.setup.ready.descriptionRunning.length).toBeLessThanOrEqual(MAX)
     }
+  })
+
+  it('says it is ready once a model has landed, and what to press next', () => {
+    const catalog = makeCatalog()
+    useImageGenerationStore.setState({ setupStep: 2, status: makeStatus() })
+    const { unmount } = render(<ImageSetupDialog />)
+    expect(screen.getByTestId('image-setup-title')).toHaveTextContent(
+      'images:setup.model.title'
+    )
+
+    // The download lands while the wizard is open.
+    act(() => {
+      useImageGenerationStore.setState({
+        installedArtifacts: listInstalledArtifacts(
+          catalog,
+          makeFilesFor(Z_IMAGE, 'q4_k_m')
+        ),
+      })
+    })
+    expect(screen.getByTestId('image-setup-title')).toHaveTextContent(
+      'images:setup.ready.title'
+    )
+    expect(screen.getByTestId('image-setup-description')).toHaveTextContent(
+      'images:setup.ready.description'
+    )
+    expect(screen.getByTestId('image-setup-done')).toBeEnabled()
+    unmount()
+
+    // Run was pressed: nothing is left but Done.
+    useImageGenerationStore.setState({ status: makeLoadedStatus() })
+    render(<ImageSetupDialog />)
+    expect(screen.getByTestId('image-setup-description')).toHaveTextContent(
+      'images:setup.ready.descriptionRunning'
+    )
+  })
+
+  it('keeps the model step headed "get a model" while the engine is missing', () => {
+    useImageGenerationStore.setState({
+      setupStep: 2,
+      installedArtifacts: listInstalledArtifacts(
+        makeCatalog(),
+        makeFilesFor(Z_IMAGE, 'q4_k_m')
+      ),
+    })
+    render(<ImageSetupDialog />)
+    expect(screen.getByTestId('image-setup-title')).toHaveTextContent(
+      'images:setup.model.title'
+    )
   })
 
   it('installs the engine from step 2 and shows it installed', async () => {

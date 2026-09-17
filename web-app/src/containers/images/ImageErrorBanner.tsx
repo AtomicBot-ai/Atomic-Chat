@@ -14,6 +14,8 @@ type ImageErrorBannerProps = {
   error: DiffusionError | null
   onAction: (action: DiffusionErrorAction) => void
   onDismiss: () => void
+  /** Label keys for actions that mean something else on this page. */
+  actionLabelKeys?: Partial<Record<DiffusionErrorAction, string>>
 }
 
 /**
@@ -29,10 +31,13 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
   error,
   onAction,
   onDismiss,
+  actionLabelKeys,
 }: ImageErrorBannerProps) {
   const { t } = useTranslation()
   if (!error) return null
   const described = describeDiffusionError(error.code)
+  const labelKey = (action: DiffusionErrorAction) =>
+    actionLabelKeys?.[action] ?? errorActionLabelKey(action)
 
   return (
     <div
@@ -44,10 +49,19 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm font-medium">{t(described.titleKey)}</p>
         <p className="text-xs text-muted-foreground">{t(described.bodyKey)}</p>
-        {error.message && (
-          <p className="break-words font-mono text-[11px] text-muted-foreground/80">
-            {error.message}
-          </p>
+        {(error.message || error.details) && (
+          // Capped: a server reply can run to many lines, and the banner
+          // takes its height from the canvas below it. The details are what
+          // the engine printed — often the only place the real reason is.
+          <div
+            className="max-h-24 space-y-1 overflow-y-auto font-mono text-[11px] text-muted-foreground/80"
+            data-testid="image-error-text"
+          >
+            {error.message && <p className="break-words">{error.message}</p>}
+            {error.details && (
+              <p className="whitespace-pre-wrap break-words">{error.details}</p>
+            )}
+          </div>
         )}
         {(described.action || described.secondaryAction) && (
           <div className="flex flex-wrap gap-2 pt-1">
@@ -57,7 +71,7 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
                 variant="outline"
                 onClick={() => onAction(described.action as DiffusionErrorAction)}
               >
-                {t(errorActionLabelKey(described.action))}
+                {t(labelKey(described.action))}
               </Button>
             )}
             {described.secondaryAction && (
@@ -68,7 +82,7 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
                   onAction(described.secondaryAction as DiffusionErrorAction)
                 }
               >
-                {t(errorActionLabelKey(described.secondaryAction))}
+                {t(labelKey(described.secondaryAction))}
               </Button>
             )}
           </div>

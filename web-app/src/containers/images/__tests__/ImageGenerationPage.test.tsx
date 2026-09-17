@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -107,6 +108,64 @@ describe('ImageGenerationPage', () => {
     expect(screen.queryByTestId('image-onboarding')).not.toBeInTheDocument()
     expect(screen.getByTestId('image-setup-card')).toBeInTheDocument()
     expect(screen.getByTestId('image-gallery-grid')).toBeInTheDocument()
+  })
+
+  it('puts an error above the picture, never over it', async () => {
+    fake.gallery = [makeItem()]
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      installedArtifacts: [completeArtifact],
+      lastError: {
+        code: 'INTERNAL',
+        message: 'sd-server returned 500',
+        details: 'generation_failed: generate_image returned no results',
+      },
+    })
+    await renderPage()
+
+    // The banner's tint is translucent: floated over the viewer, its text sat
+    // on the photo and could not be read.
+    const banner = screen.getByTestId('image-error-banner')
+    const viewer = screen.getByTestId('image-viewer')
+    expect(banner.parentElement).not.toHaveClass('absolute')
+    expect(
+      banner.compareDocumentPosition(viewer) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(banner).toHaveTextContent('sd-server returned 500')
+    // What the engine printed is often the only place the reason is.
+    expect(banner).toHaveTextContent('generate_image returned no results')
+  })
+
+  it('offers a smaller scale, not 768², when an upscale runs out of memory', async () => {
+    fake.gallery = [makeItem()]
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      installedArtifacts: [completeArtifact],
+      lastError: { code: 'OUT_OF_MEMORY', message: 'out of memory' },
+    })
+    useImageForm.setState({ upscaleFactor: 2, width: 1024, height: 1024 })
+    await renderPage('upscale')
+
+    // Upscale sizes the output from the source, so the form's width and
+    // height are not in the request: 768² would change nothing.
+    await userEvent.click(
+      screen.getByRole('button', { name: 'images:errors.actions.reduceUpscale' })
+    )
+    expect(useImageForm.getState().upscaleFactor).toBe(1.5)
+    expect(useImageForm.getState().width).toBe(1024)
+    expect(useImageGenerationStore.getState().lastError).toBeNull()
+
+    // Everywhere else the same error still offers the smaller size.
+    useImageGenerationStore.setState({
+      lastError: { code: 'OUT_OF_MEMORY', message: 'out of memory' },
+    })
+    cleanup()
+    await renderPage('create')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'images:errors.actions.reduceSize' })
+    )
+    expect(useImageForm.getState().width).toBe(768)
+    expect(useImageForm.getState().upscaleFactor).toBe(1.5)
   })
 
   it('shows the form beside the empty canvas once the engine and a model are in place', async () => {

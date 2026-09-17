@@ -189,6 +189,16 @@ fn dedup(flags: Vec<&str>) -> Vec<String> {
     out
 }
 
+/// Output area above which a request turns VAE tiling on.
+///
+/// The VAE's compute buffer grows with the pixel count: FLUX.2 measured 3.4 GB
+/// to encode and 6.7 GB to decode at 1024², 7.6 GB to encode at 1536², so
+/// 13.6 GB and 26.6 GB at 2048² — where a 2× Upscale of a 1024² image lands,
+/// and where it failed in under a second on a 24 GB card. Tiled, the peak
+/// stays at the one-tile figure whatever the size. Up to 1024² nothing
+/// changes, so ordinary generations keep their untiled decode.
+pub const VAE_TILING_AREA: u64 = 1024 * 1024;
+
 /// The `POST /sdcpp/v1/img_gen` body. The whole batch goes in one request;
 /// sampling lives under `sample_params` with guidance split the way sd.cpp
 /// expects (CFG → `txt_cfg`, FLUX distilled → `distilled_guidance`). Only set
@@ -199,6 +209,8 @@ fn dedup(flags: Vec<&str>) -> Vec<String> {
 /// `ref_images` for reference and edit. sd.cpp resizes the init image to
 /// `width`×`height` itself, which is how Upscale works: the source at a
 /// larger size and a low strength.
+///
+/// Past [`VAE_TILING_AREA`] the VAE is asked to work in tiles.
 pub fn build_img_gen_request(
     request: &ImageGenerateRequest,
     defaults: &FamilyDefaults,
@@ -255,6 +267,9 @@ pub fn build_img_gen_request(
     }
     if workflow.uses_references() && !inputs.refs.is_empty() {
         body.insert("ref_images".into(), json!(inputs.refs));
+    }
+    if u64::from(request.width) * u64::from(request.height) > VAE_TILING_AREA {
+        body.insert("vae_tiling_params".into(), json!({ "enabled": true }));
     }
     Value::Object(body)
 }
@@ -654,6 +669,39 @@ mod tests {
             assert!(body.get("init_image").is_none(), "{workflow:?}");
             assert!(body.get("strength").is_none(), "{workflow:?}");
         }
+    }
+
+    #[test]
+    fn the_vae_is_tiled_once_the_output_outgrows_1024_squared() {
+        let defaults = FamilyDefaults {
+            steps: 8,
+            cfg_scale: 1.0,
+            guidance: None,
+            sampling_method: None,
+            flow_shift: None,
+            width: 1024,
+            height: 1024,
+        };
+        let sized = |width: u32, height: u32, workflow: ImageWorkflow| {
+            let mut req = request();
+            req.width = width;
+            req.height = height;
+            req.workflow = Some(workflow);
+            build_img_gen_request(&req, &defaults, 1, &inputs(Some("INIT"), None, &[]))
+        };
+
+        // An ordinary generation is left alone.
+        let body = sized(1024, 1024, ImageWorkflow::Create);
+        assert!(body.get("vae_tiling_params").is_none());
+        let body = sized(832, 1216, ImageWorkflow::Create);
+        assert!(body.get("vae_tiling_params").is_none());
+
+        // A 2x Upscale of that image is not: 26.6 GB to decode in one piece.
+        let body = sized(2048, 2048, ImageWorkflow::Upscale);
+        assert_eq!(body["vae_tiling_params"], json!({ "enabled": true }));
+        // The size decides, not the workflow.
+        let body = sized(1536, 1024, ImageWorkflow::Create);
+        assert_eq!(body["vae_tiling_params"]["enabled"], true);
     }
 
     #[test]

@@ -147,6 +147,37 @@ describe('ImageModelSelector', () => {
     expect(within(installed).getByText(/images:model.sizeGb/)).toBeInTheDocument()
   })
 
+  it('keeps a quant where it is in the wizard when its download lands', () => {
+    useImageGenerationStore.setState({ modelFiles: [], installedArtifacts: [] })
+    render(<ImageModelSelector variant="dialog" />)
+    const order = () =>
+      screen.getAllByTestId(/^artifact-/).map((row) => row.getAttribute('data-testid'))
+    const before = order()
+    expect(before).toEqual([`artifact-${Q4_ID}`, `artifact-${Q8_ID}`])
+    expect(
+      within(screen.getByTestId(`artifact-${Q8_ID}`)).getByRole('button', {
+        name: /images:model.download/,
+      })
+    ).toBeInTheDocument()
+
+    // Q8 lands. In the page manager it would move up to Installed, out of a
+    // scrolled view; here it turns into Run under the pointer.
+    const q8Files = makeFilesFor(Z_IMAGE, 'q8_0')
+    act(() => {
+      useImageGenerationStore.setState({
+        modelFiles: q8Files,
+        installedArtifacts: listInstalledArtifacts(catalog, q8Files),
+      })
+    })
+    expect(order()).toEqual(before)
+    expect(screen.queryByRole('heading', { name: 'images:model.installed' })).not.toBeInTheDocument()
+    const q8 = screen.getByTestId(`artifact-${Q8_ID}`)
+    expect(within(q8).getByRole('button', { name: 'images:model.load' })).toBeEnabled()
+    expect(
+      within(q8).queryByRole('button', { name: /images:model.download/ })
+    ).not.toBeInTheDocument()
+  })
+
   it("badges the catalog's pick when this machine can run it", () => {
     // 16 GiB: Q4 needs ~7.8 GiB with its encoder and activations (ok), Q8 ~11.6 (maybe).
     hardware.profile = gpuWith(16 * 1024)
