@@ -29,13 +29,7 @@
   "recForMlx": "For MLX",
   "backToModels": "Back to models",
   "fromHuggingFace": "From Hugging Face",
-  "feedTitle": "More from Hugging Face · {{sort}}",
-  "feedSort": {
-    "trending": "trending now",
-    "downloads": "most downloaded",
-    "likes": "most liked",
-    "lastModified": "recently updated"
-  },
+  "feedTitle": "More from Hugging Face",
   "feedLoading": "Loading more from Hugging Face…",
   "feedFailed": "Couldn't reach Hugging Face for more models.",
   "fromHuggingFaceHint": "Not in curated catalog",
