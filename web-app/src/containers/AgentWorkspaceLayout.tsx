@@ -175,6 +175,10 @@ export function AgentWorkspaceLayout({
     setFilesOpen(false)
     openSettings()
   }
+  const collapseRightPanel = () => {
+    if (filesVisible) setFilesOpen(false)
+    if (settingsOpen) closeSettings()
+  }
 
   // The corner buttons below float against the window's right edge instead of
   // living in the header, so the header's own right-aligned controls have to be
@@ -311,11 +315,12 @@ export function AgentWorkspaceLayout({
           id="agent-sidebar"
           order={3}
           defaultSize={initialSidebarSize}
-          minSize={8}
+          minSize={rightPanel === 'settings' ? 20 : 16}
           maxSize={40}
           collapsedSize={0}
           collapsible
-          className="overflow-hidden transition-[flex-grow] duration-200 ease-linear"
+          onCollapse={collapseRightPanel}
+          className="min-w-0 overflow-hidden transition-[flex-grow] duration-200 ease-linear"
         >
           <AnimatePresence initial={false}>
             {rightPanel === 'files' && (

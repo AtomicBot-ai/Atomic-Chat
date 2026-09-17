@@ -21,8 +21,7 @@ const HeaderPage = memo(function HeaderPage({
   return (
     <div
       className={cn(
-        'h-15 flex items-center shrink-0',
-        (IS_MACOS && !open) ? 'pl-24' : ' pl-4',
+        'relative h-15 flex items-center shrink-0 pl-4',
         children === undefined && 'border-none'
       )}
       // On macOS the element-based drag region approach is used: this div sits
@@ -44,7 +43,10 @@ const HeaderPage = memo(function HeaderPage({
             <Button
               variant="ghost"
               size="icon-sm"
-              className='rounded-full relative z-50'
+              className={cn(
+                'rounded-full relative z-50',
+                IS_MACOS && 'absolute left-20 top-0'
+              )}
               onClick={() => setLeftPanel(!open)}
               aria-label="Toggle sidebar"
             >
