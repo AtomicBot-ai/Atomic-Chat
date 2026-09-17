@@ -61,6 +61,7 @@ import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
 import {
   buildReasoningRequestFields,
+  canDisableReasoning,
   buildRemoteReasoningRequestFields,
   usesTemplateReasoningKwargs,
 } from '@/lib/reasoning-effort'
@@ -847,7 +848,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const reasoningOverride: Record<string, unknown> = {}
         const reasoningControls =
           useModelProvider.getState().selectedModel?.reasoning
-        if (disableReasoning || reasoningBudget === 'off') {
+        const allowReasoningDisable = canDisableReasoning(
+          effectiveProviderName,
+          reasoningControls
+        )
+        const activeReasoningBudget =
+          reasoningBudget === 'off' ? 'low' : reasoningBudget
+        if (
+          allowReasoningDisable &&
+          (disableReasoning || reasoningBudget === 'off')
+        ) {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'llamacpp-upstream':
@@ -872,6 +882,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             case 'openai':
               reasoningOverride.reasoning_effort = 'minimal'
               break
+            case 'chatgpt': {
+              const offValue = reasoningControls?.offValue
+              if (offValue) reasoningOverride.reasoning_effort = offValue
+              break
+            }
             case 'xai':
               reasoningOverride.reasoning_effort = 'low'
               break
@@ -900,12 +915,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } else if (
           effectiveProviderName === 'llamacpp' ||
           effectiveProviderName === 'llamacpp-upstream' ||
-          effectiveProviderName === 'mlx'
+          effectiveProviderName === 'mlx' ||
+          effectiveProviderName === 'chatgpt'
         ) {
           Object.assign(
             reasoningOverride,
             buildReasoningRequestFields(
-              reasoningBudget,
+              activeReasoningBudget,
               effectiveProviderName,
               reasoningControls
             )
@@ -919,7 +935,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           // that branch's missing other half.
           Object.assign(
             reasoningOverride,
-            buildRemoteReasoningRequestFields(reasoningBudget)
+            buildRemoteReasoningRequestFields(activeReasoningBudget)
           )
         }
         const effectiveReasoningOverride = withUpstreamDflashReasoningOverride(

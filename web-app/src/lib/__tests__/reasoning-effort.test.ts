@@ -152,6 +152,12 @@ describe('buildReasoningRequestFields', () => {
     })
   })
 
+  it('routes a subscription effort through the top-level field', () => {
+    expect(buildReasoningRequestFields('high', 'chatgpt', GPT_OSS)).toEqual({
+      reasoning_effort: 'high',
+    })
+  })
+
   it('never sends a level a native-effort template would reject', () => {
     expect(buildReasoningRequestFields('medium', 'llamacpp', HY3)).toEqual({
       chat_template_kwargs: { reasoning_effort: 'low' },
@@ -224,6 +230,21 @@ describe('buildAgentReasoningRequest', () => {
     )
     // The bulb wins over any stored level.
     expect(buildAgentReasoningRequest('max', true, INKLING)).toEqual(suppressed)
+  })
+
+  it('keeps a native API at a declared effort when it has no off value', () => {
+    expect(buildAgentReasoningRequest('medium', true, GPT_OSS, false)).toEqual({
+      enabled: true,
+      effort: 'medium',
+      effort_value: 'medium',
+      supports_thinking: true,
+    })
+    expect(buildAgentReasoningRequest('off', false, GPT_OSS, false)).toEqual({
+      enabled: true,
+      effort: 'low',
+      effort_value: 'low',
+      supports_thinking: true,
+    })
   })
 
   it('treats a template-rendered budget model as a budget model', () => {

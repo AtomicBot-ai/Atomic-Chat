@@ -24,6 +24,42 @@ import type { ChatGptModel, ChatGptStatus } from '@/services/auth/types'
 
 /** The provider id the subscription is registered under. */
 const CHATGPT_PROVIDER = 'chatgpt'
+const OFF_LIKE_EFFORTS = new Set(['none', 'off', 'disabled'])
+
+/** Preserve the subscription catalogue's real effort contract on the model. */
+export function subscriptionModelToProviderModel(model: ChatGptModel): Model {
+  const declaredEfforts = model.reasoning_efforts
+    .map((effort) => effort.trim().toLowerCase())
+    .filter(Boolean)
+  const offValue = declaredEfforts.find((effort) =>
+    OFF_LIKE_EFFORTS.has(effort)
+  )
+  const effortValues = declaredEfforts.filter(
+    (effort) => !OFF_LIKE_EFFORTS.has(effort)
+  )
+
+  return {
+    id: model.id,
+    model: model.id,
+    name: model.display_name || model.id,
+    capabilities: [
+      ModelCapabilities.COMPLETION,
+      ModelCapabilities.TOOLS,
+      ...(model.vision ? [ModelCapabilities.VISION] : []),
+    ],
+    version: '1.0',
+    ...(effortValues.length
+      ? {
+          reasoning: {
+            supportsThinking: true,
+            effortKwarg: 'reasoning_effort' as const,
+            effortValues,
+            ...(offValue ? { offValue } : {}),
+          },
+        }
+      : {}),
+  }
+}
 
 /**
  * Put the subscription's models on the provider while it is signed in, and take
@@ -43,17 +79,7 @@ function syncSubscriptionModels(models: ChatGptModel[]): void {
     const store = useModelProvider.getState()
     if (!store.getProviderByName(CHATGPT_PROVIDER)) return
     store.updateProvider(CHATGPT_PROVIDER, {
-      models: models.map((model) => ({
-        id: model.id,
-        model: model.id,
-        name: model.display_name || model.id,
-        capabilities: [
-          ModelCapabilities.COMPLETION,
-          ModelCapabilities.TOOLS,
-          ...(model.vision ? [ModelCapabilities.VISION] : []),
-        ],
-        version: '1.0',
-      })),
+      models: models.map(subscriptionModelToProviderModel),
     })
   } catch (error) {
     console.warn('[chatgpt-auth] could not sync subscription models:', error)

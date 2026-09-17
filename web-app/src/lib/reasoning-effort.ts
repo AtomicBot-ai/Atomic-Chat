@@ -109,6 +109,12 @@ const usesNativeEffort = (
   Array.isArray(controls.effortValues) &&
   controls.effortValues.length > 0
 
+/** Some native APIs expose effort levels but no way to disable reasoning. */
+export const canDisableReasoning = (
+  provider: string | undefined,
+  controls?: ReasoningControls
+): boolean => provider !== 'chatgpt' || Boolean(controls?.offValue)
+
 /**
  * Levels the model can express: everything for a budget model, and only the
  * declared values for a native-effort one.
@@ -182,9 +188,9 @@ export const buildReasoningRequestFields = (
   if (usesNativeEffort(controls)) {
     const value = modelEffortValue(level, controls.effortValues)
     if (!value) return {}
-    // mlx-vlm reads a top-level `reasoning_effort`; llama.cpp only forwards
-    // template kwargs, and ignores the OpenAI-style top-level field.
-    return provider === 'mlx'
+    // mlx-vlm and native reasoning APIs read a top-level
+    // `reasoning_effort`; llama.cpp only forwards template kwargs.
+    return provider === 'mlx' || provider === 'chatgpt' || provider === 'openai'
       ? { reasoning_effort: value }
       : { chat_template_kwargs: { reasoning_effort: value } }
   }
@@ -275,16 +281,22 @@ export type AgentReasoningRequest = {
 export const buildAgentReasoningRequest = (
   level: ReasoningBudgetLevel,
   disableReasoning: boolean,
-  controls?: ReasoningControls
+  controls?: ReasoningControls,
+  allowDisable = true
 ): AgentReasoningRequest => {
   const supportsThinking = controls?.supportsThinking === true
   const off: AgentReasoningRequest = {
     enabled: false,
     supports_thinking: supportsThinking,
   }
-  if (disableReasoning || level === 'off' || !supportsThinking) return off
+  if (!supportsThinking) return off
+  if (allowDisable && (disableReasoning || level === 'off')) return off
 
-  const resolved = resolveReasoningLevel(level, availableReasoningLevels(controls))
+  const requestedLevel = level === 'off' ? 'low' : level
+  const resolved = resolveReasoningLevel(
+    requestedLevel,
+    availableReasoningLevels(controls)
+  )
   if (!resolved) return off
 
   const request: AgentReasoningRequest = {

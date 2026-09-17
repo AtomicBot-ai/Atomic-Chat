@@ -6,7 +6,10 @@ import {
   agentProviderBlockReason,
   isAgentLocalProvider,
 } from '@/lib/agent-provider'
-import { buildAgentReasoningRequest } from '@/lib/reasoning-effort'
+import {
+  buildAgentReasoningRequest,
+  canDisableReasoning,
+} from '@/lib/reasoning-effort'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -1122,7 +1125,8 @@ function ThreadDetail() {
       const reasoning = buildAgentReasoningRequest(
         reasoningBudget,
         disableReasoning,
-        selectedModel.reasoning
+        selectedModel.reasoning,
+        canDisableReasoning(selectedProvider, selectedModel.reasoning)
       )
 
       // Assistant sampling, exactly as the chat transport resolves it; the
