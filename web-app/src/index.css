@@ -187,34 +187,19 @@
     stroke-width: 2;
   }
 
-  /* Scrollbar styles */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  /*
+   * color-scheme must track the app's own theme class, not the OS,
+   * so native scrollbars and <select> dropdowns stay in sync with
+   * the UI regardless of the system appearance setting.
+   */
+  :root {
+    color-scheme: light;
   }
 
-  ::-webkit-scrollbar-track {
-    background: transparent;
+  :root.dark {
+    color-scheme: dark;
   }
 
-  ::-webkit-scrollbar-thumb {
-    background: oklch(0.708 0 0 / 30%);
-    border-radius: 4px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.708 0 0 / 50%);
-  }
-
-  .dark ::-webkit-scrollbar-thumb {
-    background: oklch(0.985 0 0 / 20%);
-  }
-
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.985 0 0 / 35%);
-  }
-
-  /* Firefox scrollbar */
   * {
     scrollbar-width: thin;
     scrollbar-color: oklch(0.708 0 0 / 30%) transparent;
@@ -222,6 +207,38 @@
 
   .dark * {
     scrollbar-color: oklch(0.985 0 0 / 20%) transparent;
+  }
+
+  /* Fallback for engines that don't support scrollbar-color (e.g.
+   * older WebKitGTK or non-evergreen WebView2). Once ::-webkit-scrollbar
+   * is defined the browser opts out of native overlay scrollbars, so
+   * these rules only apply where the standards path isn't available. */
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: oklch(0.708 0 0 / 30%);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: oklch(0.708 0 0 / 50%);
+    }
+
+    .dark ::-webkit-scrollbar-thumb {
+      background: oklch(0.985 0 0 / 20%);
+    }
+
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: oklch(0.985 0 0 / 35%);
+    }
   }
 
 }
