@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import { IconDownload, IconX } from '@tabler/icons-react'
 
@@ -91,13 +92,13 @@ export function UpdateBanner({
   const showExpanded = expanded && expandedContent != null
   const hasHighlights = !showExpanded && !!highlights && highlights.length > 0
 
-  return (
+  const banner = (
     <div
       role="status"
       aria-live="polite"
       data-testid={testId}
       className={cn(
-        'fixed z-[70] bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
+        'fixed z-[1000] bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
         'transition-[bottom] duration-200',
         'rounded-xl border bg-background shadow-md',
         className
@@ -222,6 +223,14 @@ export function UpdateBanner({
       </div>
     </div>
   )
+
+  // The Welcome cards establish their own stacking contexts. Rendering the
+  // fixed banner beside them allowed a card border to paint over the banner.
+  // The body is the app-wide overlay layer and keeps this notification above
+  // route content regardless of which page is open.
+  return typeof document === 'undefined'
+    ? banner
+    : createPortal(banner, document.body)
 }
 
 export default UpdateBanner
