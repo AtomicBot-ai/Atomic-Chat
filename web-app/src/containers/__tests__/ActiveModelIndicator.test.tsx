@@ -62,6 +62,13 @@ describe('ActiveModelIndicator', () => {
     render(<ActiveModelIndicator />)
 
     expect(indicator()).toHaveAttribute('data-status', 'ready')
+    expect(indicator()?.querySelector('.tabler-icon-circle-check')).toHaveClass(
+      'text-emerald-600'
+    )
+    expect(indicator()?.querySelector('.tabler-icon-circle-x')).toHaveClass(
+      'hidden',
+      'text-destructive'
+    )
     fireEvent.click(indicator()!)
 
     await waitFor(() =>
