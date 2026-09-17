@@ -13,11 +13,7 @@
  */
 import { useState, type ReactElement } from 'react'
 
-import {
-  IconCircleCheckFilled,
-  IconLoader2,
-  IconPower,
-} from '@tabler/icons-react'
+import { IconCircleCheck, IconCircleX, IconLoader2 } from '@tabler/icons-react'
 
 import {
   Tooltip,
@@ -129,14 +125,16 @@ export function ActiveModelIndicator({ className }: { className?: string }) {
             )}
           />
         ) : (
-          <IconCircleCheckFilled
+          <IconCircleCheck
             size={14}
-            className="text-green-600 group-hover/dot:hidden group-focus-visible/dot:hidden"
+            stroke={1.75}
+            className="text-emerald-600 group-hover/dot:hidden group-focus-visible/dot:hidden dark:text-emerald-400"
           />
         )}
         {!busy && (
-          <IconPower
+          <IconCircleX
             size={14}
+            stroke={1.75}
             aria-hidden="true"
             className="hidden text-destructive group-hover/dot:block group-focus-visible/dot:block"
           />
