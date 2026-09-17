@@ -67,7 +67,7 @@ describe('describeHardware', () => {
       })
 
       expect(profile).toMatchObject({
-        tier: 'unified_64_plus',
+        tier: 'unified_128',
         memoryKind: 'unified',
         budgetMib: 128 * GIB,
         hardCeiling: true,
@@ -84,7 +84,7 @@ describe('describeHardware', () => {
       expect(mac(48)).toBe('unified_48')
       expect(mac(64)).toBe('unified_64')
       expect(mac(96)).toBe('unified_64_plus')
-      expect(mac(128)).toBe('unified_64_plus')
+      expect(mac(128)).toBe('unified_128')
     })
 
     it('keeps a machine that under-reports its badge in the bucket its owner would name', () => {
@@ -306,5 +306,35 @@ describe('stepDownTier', () => {
     expect(stepDownTier('unified_24')).toBe('unified_16')
     expect(stepDownTier('unified_16')).toBe('unified_8')
     expect(stepDownTier('unified_8')).toBeNull()
+  })
+})
+
+describe('high-memory boundaries', () => {
+  it.each([
+    [64, '64', '64'],
+    [64.5, '64_plus', '64'],
+    [65, '64_plus', '64_plus'],
+    [96, '64_plus', '64_plus'],
+    [126.9, '64_plus', '64_plus'],
+    [127, '64_plus', '128'],
+    [127.5, '128', '128'],
+    [128, '128', '128'],
+    [128.5, '128_plus', '128'],
+    [129, '128_plus', '128_plus'],
+    [192, '128_plus', '128_plus'],
+    [256, '128_plus', '128_plus'],
+  ])(
+    'classifies %s GiB with nominal-128 reporting tolerance',
+    (size, unified, vram) => {
+      expect(mac(size)).toBe(`unified_${unified}`)
+      expect(pc(size)).toBe(`vram_${vram}`)
+    }
+  )
+
+  it('steps the new rungs down without crossing memory pools', () => {
+    expect(stepDownTier('unified_128_plus')).toBe('unified_128')
+    expect(stepDownTier('unified_128')).toBe('unified_64_plus')
+    expect(stepDownTier('vram_128_plus')).toBe('vram_128')
+    expect(stepDownTier('vram_128')).toBe('vram_64_plus')
   })
 })

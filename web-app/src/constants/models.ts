@@ -54,6 +54,119 @@ const QWEN_3_6_35B_A3B: LadderEntry = {
   descriptionKey: 'hub:recMathReasoning',
 }
 
+// High-memory choices verified against HF file metadata on 2026-09-17.
+// Ordered lead, vision alternative, then another text/coding option.
+const OPTIONS_64: LadderEntry[] = [
+  {
+    repo: 'AtomicChat/Qwen3.6-35B-A3B-GGUF',
+    title: 'Qwen3.6 35B A3B',
+    quant: 'Q6_K',
+    sizeGb: 26.5559,
+    descriptionKey: 'hub:recMathReasoning',
+  },
+  {
+    repo: 'AtomicChat/gemma-4-31B-it-GGUF',
+    title: 'Gemma 4 31B',
+    quant: 'Q4_K_M',
+    mmprojQuant: 'F16',
+    sizeGb: 18.5219,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  {
+    repo: 'AtomicChat/Qwen3.6-27B-GGUF',
+    title: 'Qwen3.6 27B',
+    quant: 'Q4_K_M',
+    sizeGb: 15.411,
+    descriptionKey: 'hub:recCoding',
+  },
+]
+
+const OPTIONS_64_PLUS: LadderEntry[] = [
+  {
+    repo: 'Qwen/Qwen3-Coder-Next-GGUF',
+    title: 'Qwen3 Coder Next',
+    quant: 'Q4_K_M',
+    sizeGb: 45.0862,
+    descriptionKey: 'hub:recCoding',
+  },
+  {
+    repo: 'AtomicChat/gemma-4-31B-it-GGUF',
+    title: 'Gemma 4 31B',
+    quant: 'Q6_K',
+    mmprojQuant: 'F16',
+    sizeGb: 24.589,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  {
+    repo: 'AtomicChat/Qwen3.6-35B-A3B-GGUF',
+    title: 'Qwen3.6 35B A3B',
+    quant: 'Q6_K',
+    sizeGb: 26.5559,
+    descriptionKey: 'hub:recMathReasoning',
+  },
+]
+
+const OPTIONS_128: LadderEntry[] = [
+  {
+    repo: 'unsloth/gpt-oss-120b-GGUF',
+    title: 'gpt-oss 120B',
+    quant: 'Q8_0',
+    sizeGb: 59.0341,
+    descriptionKey: 'hub:recMathReasoning',
+  },
+  {
+    repo: 'AtomicChat/gemma-4-31B-it-GGUF',
+    title: 'Gemma 4 31B',
+    quant: 'Q8_0',
+    mmprojQuant: 'F16',
+    sizeGb: 31.5126,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  {
+    repo: 'Qwen/Qwen3-Coder-Next-GGUF',
+    title: 'Qwen3 Coder Next',
+    quant: 'Q6_K',
+    sizeGb: 61.0281,
+    descriptionKey: 'hub:recCoding',
+  },
+]
+
+const OPTIONS_128_PLUS: LadderEntry[] = [
+  {
+    repo: 'unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF',
+    title: 'Nemotron 3 Super 120B A12B',
+    quant: 'Q4_K_M',
+    sizeGb: 76.8725,
+    descriptionKey: 'hub:recMathReasoning',
+  },
+  {
+    repo: 'AtomicChat/gemma-4-31B-it-GGUF',
+    title: 'Gemma 4 31B',
+    quant: 'Q8_0',
+    mmprojQuant: 'F16',
+    sizeGb: 31.5126,
+    descriptionKey: 'hub:recVisionKnowledge',
+  },
+  {
+    repo: 'unsloth/gpt-oss-120b-GGUF',
+    title: 'gpt-oss 120B',
+    quant: 'Q8_0',
+    sizeGb: 59.0341,
+    descriptionKey: 'hub:recMathReasoning',
+  },
+]
+
+const HIGH_MEMORY_TIER_OPTIONS: Partial<Record<HardwareTier, LadderEntry[]>> = {
+  vram_64: OPTIONS_64,
+  vram_64_plus: OPTIONS_64_PLUS,
+  vram_128: OPTIONS_128,
+  vram_128_plus: OPTIONS_128_PLUS,
+  unified_64: OPTIONS_64,
+  unified_64_plus: OPTIONS_64_PLUS,
+  unified_128: OPTIONS_128,
+  unified_128_plus: OPTIONS_128_PLUS,
+}
+
 /**
  * What we recommend, per hardware tier (ATO-463).
  *
@@ -61,8 +174,8 @@ const QWEN_3_6_35B_A3B: LadderEntry = {
  * first decent answer, not the largest model that fits.** From 16 GiB up the
  * offer scales with memory instead (product decision, 2026-09-11), the same on
  * a card and on unified memory: Gemma 4 12B at 16, Qwen3.6 27B at 24, and
- * Qwen3.6 35B A3B from 32 up — sparse, 3B active per token, so it answers at a
- * small model's per-token cost despite the larger download.
+ * Qwen3.6 35B A3B at 32–48. Higher tiers use the verified choices above,
+ * with a vision alternative and a separate text/coding option in each list.
  *
  * An 18 GB Mac lands on `unified_24`, where the 27B (15.4 GiB) is past the
  * Metal ceiling; `useResolvedRecommendedModels` steps it down to the 16 GiB
@@ -83,7 +196,7 @@ const QWEN_3_6_35B_A3B: LadderEntry = {
  *    — but quantization-aware training keeps four-bit quality close to the
  *    unquantized model. Measured at 37.8 tok/s median. A free upgrade.
  *
- * Everything is `Q4_K_M` (or the QAT repo's single UD-Q4_K_XL) rather than
+ * The lower rungs use `Q4_K_M` (or the QAT repo's UD-Q4_K_XL) rather than
  * `IQ4_XS`, which is ~0.5 GiB lighter: i-quants need more compute per weight
  * and are markedly slower on CPU and on some Vulkan backends, and a large part
  * of the base is exactly there (ATO-464).
@@ -146,8 +259,10 @@ export const RECOMMENDATION_LADDER: Readonly<
   vram_24: QWEN_3_6_27B,
   vram_32: QWEN_3_6_35B_A3B,
   vram_48: QWEN_3_6_35B_A3B,
-  vram_64: QWEN_3_6_35B_A3B,
-  vram_64_plus: QWEN_3_6_35B_A3B,
+  vram_64: OPTIONS_64[0],
+  vram_64_plus: OPTIONS_64_PLUS[0],
+  vram_128: OPTIONS_128[0],
+  vram_128_plus: OPTIONS_128_PLUS[0],
   // Below 16 GiB a Mac gets a rung lighter than a PC with the same number on
   // it: the Metal ceiling is hard, and unified memory is shared with
   // everything else the machine is doing, whereas VRAM on a card is the
@@ -163,8 +278,10 @@ export const RECOMMENDATION_LADDER: Readonly<
   unified_24: QWEN_3_6_27B,
   unified_32: QWEN_3_6_35B_A3B,
   unified_48: QWEN_3_6_35B_A3B,
-  unified_64: QWEN_3_6_35B_A3B,
-  unified_64_plus: QWEN_3_6_35B_A3B,
+  unified_64: OPTIONS_64[0],
+  unified_64_plus: OPTIONS_64_PLUS[0],
+  unified_128: OPTIONS_128[0],
+  unified_128_plus: OPTIONS_128_PLUS[0],
 }
 
 /**
@@ -197,7 +314,9 @@ export const BASELINE_TIER_RECOMMENDATIONS: Readonly<
 > = Object.fromEntries(
   Object.entries(RECOMMENDATION_LADDER).map(([tier, entry]) => [
     tier,
-    [ladderToRecommendation(entry)],
+    (HIGH_MEMORY_TIER_OPTIONS[tier as HardwareTier] ?? [entry]).map(
+      ladderToRecommendation
+    ),
   ])
 ) as Record<HardwareTier, Recommendation[]>
 
@@ -327,7 +446,8 @@ const MLX_QWEN_FALLBACK: CatalogModel = {
  * paints one if none ever does.
  *
  * Every rung of {@link RECOMMENDATION_LADDER} has an entry here. Sizes are the
- * actual LFS sizes read from Hugging Face (2026-09-08), in GiB, which is what
+ * LFS sizes read from Hugging Face (lower rungs 2026-09-08; high rungs
+ * 2026-09-17), rounded to two decimals in GiB, which is what
  * `parseFileSizeToBytes` assumes a "GB" suffix means.
  *
  * Only the quant each rung pins is listed for the single-quant entries; the
@@ -337,6 +457,141 @@ const MLX_QWEN_FALLBACK: CatalogModel = {
 export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
   Record<string, CatalogModel>
 > = {
+  'AtomicChat/Qwen3.6-27B-GGUF': {
+    model_name: 'AtomicChat/Qwen3.6-27B-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: GGUF',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'AtomicChat/qwen36-27b-Q4_K_M',
+        path: 'https://huggingface.co/AtomicChat/Qwen3.6-27B-GGUF/resolve/main/qwen36-27b-Q4_K_M.gguf',
+        file_size: '15.41 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme:
+      'https://huggingface.co/AtomicChat/Qwen3.6-27B-GGUF/resolve/main/README.md',
+  },
+  'AtomicChat/Qwen3.6-35B-A3B-GGUF': {
+    model_name: 'AtomicChat/Qwen3.6-35B-A3B-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: GGUF',
+    downloads: 0,
+    num_quants: 2,
+    quants: [
+      {
+        model_id: 'AtomicChat/Qwen3_6-35B-A3B-Q4_K_M',
+        path: 'https://huggingface.co/AtomicChat/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-Q4_K_M.gguf',
+        file_size: '19.71 GB',
+      },
+      {
+        model_id: 'AtomicChat/Qwen3_6-35B-A3B-Q6_K',
+        path: 'https://huggingface.co/AtomicChat/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-Q6_K.gguf',
+        file_size: '26.56 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme:
+      'https://huggingface.co/AtomicChat/Qwen3.6-35B-A3B-GGUF/resolve/main/README.md',
+  },
+  'AtomicChat/gemma-4-31B-it-GGUF': {
+    model_name: 'AtomicChat/gemma-4-31B-it-GGUF',
+    developer: 'AtomicChat',
+    description: '**Tags**: GGUF, vision',
+    downloads: 0,
+    num_quants: 3,
+    quants: [
+      {
+        model_id: 'AtomicChat/gemma-4-31B-it-Q4_K_M',
+        path: 'https://huggingface.co/AtomicChat/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q4_K_M.gguf',
+        file_size: '17.40 GB',
+      },
+      {
+        model_id: 'AtomicChat/gemma-4-31B-it-Q6_K',
+        path: 'https://huggingface.co/AtomicChat/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q6_K.gguf',
+        file_size: '23.47 GB',
+      },
+      {
+        model_id: 'AtomicChat/gemma-4-31B-it-Q8_0',
+        path: 'https://huggingface.co/AtomicChat/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q8_0.gguf',
+        file_size: '30.39 GB',
+      },
+    ],
+    num_mmproj: 1,
+    mmproj_models: [
+      {
+        model_id: 'mmproj-gemma4-31b-it-f16',
+        path: 'https://huggingface.co/AtomicChat/gemma-4-31B-it-GGUF/resolve/main/mmproj-gemma4-31b-it-f16.gguf',
+        file_size: '1.12 GB',
+      },
+    ],
+    readme:
+      'https://huggingface.co/AtomicChat/gemma-4-31B-it-GGUF/resolve/main/README.md',
+  },
+  'Qwen/Qwen3-Coder-Next-GGUF': {
+    model_name: 'Qwen/Qwen3-Coder-Next-GGUF',
+    developer: 'Qwen',
+    description: '**Tags**: GGUF',
+    downloads: 0,
+    num_quants: 2,
+    quants: [
+      {
+        model_id: 'Qwen/Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M',
+        path: 'https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf',
+        file_size: '45.09 GB',
+      },
+      {
+        model_id: 'Qwen/Qwen3-Coder-Next-Q6_K/Qwen3-Coder-Next-Q6_K',
+        path: 'https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-Q6_K/Qwen3-Coder-Next-Q6_K-00001-of-00004.gguf',
+        file_size: '61.03 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme:
+      'https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF/resolve/main/README.md',
+  },
+  'unsloth/gpt-oss-120b-GGUF': {
+    model_name: 'unsloth/gpt-oss-120b-GGUF',
+    developer: 'unsloth',
+    description: '**Tags**: GGUF',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id: 'unsloth/Q8_0/gpt-oss-120b-Q8_0',
+        path: 'https://huggingface.co/unsloth/gpt-oss-120b-GGUF/resolve/main/Q8_0/gpt-oss-120b-Q8_0-00001-of-00002.gguf',
+        file_size: '59.03 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme:
+      'https://huggingface.co/unsloth/gpt-oss-120b-GGUF/resolve/main/README.md',
+  },
+  'unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF': {
+    model_name: 'unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF',
+    developer: 'unsloth',
+    description: '**Tags**: GGUF',
+    downloads: 0,
+    num_quants: 1,
+    quants: [
+      {
+        model_id:
+          'unsloth/UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M',
+        path: 'https://huggingface.co/unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF/resolve/main/UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M-00001-of-00003.gguf',
+        file_size: '76.87 GB',
+      },
+    ],
+    num_mmproj: 0,
+    mmproj_models: [],
+    readme:
+      'https://huggingface.co/unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF/resolve/main/README.md',
+  },
   'AtomicChat/gemma-4-E4B-it-GGUF': {
     model_name: 'AtomicChat/gemma-4-E4B-it-GGUF',
     developer: 'AtomicChat',
