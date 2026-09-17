@@ -1,11 +1,21 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAppState } from '@/hooks/useAppState'
+import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import i18n from '@/i18n/setup'
+import { modelLoadStageKey } from '@/lib/inference-status'
 import { ToasterProvider } from '@/providers/ToasterProvider'
+import { modelLoadStages } from '@/test/model-load-stages'
 import { cancelModelLoad } from '@/utils/switchModel'
 import { LOADED_SNACKBAR_MS, ModelLoadSnackbar } from '../ModelLoadSnackbar'
 
@@ -102,12 +112,12 @@ describe('ModelLoadSnackbar', () => {
         screen.getByText('Starting Model', { exact: true })
       ).toBeInTheDocument()
       expect(
-        screen.getByText('Loading cached model into memory', { exact: true })
+        screen.getByText('Loading model into memory', { exact: true })
       ).toBeInTheDocument()
 
       expect(screen.getAllByRole('status')).toHaveLength(1)
       expect(snackbar()).toHaveTextContent(
-        /^Starting ModelLoading cached model into memoryCancel$/
+        /^Starting ModelLoading model into memoryCancel$/
       )
       expect(snackbar()?.querySelectorAll('.animate-spin')).toHaveLength(1)
       expect(screen.getAllByRole('button')).toHaveLength(2)
@@ -122,21 +132,36 @@ describe('ModelLoadSnackbar', () => {
     }
   )
 
-  it('tells a cold read off the disk apart from a load from cache', async () => {
-    renderSnackbar()
-    startLoad()
-    act(() =>
-      useAppState.getState().setLoadingModelProgress({
-        kind: 'loadingWeights',
-        cachedFraction: 0.1,
-      })
-    )
+  describe.each(['start', 'restart'] as const)('%s stages', (kind) => {
+    it.each(modelLoadStages)(
+      'keeps stable visible copy and real diagnostic progress for $stage',
+      async ({ stage, progress }) => {
+        renderSnackbar()
+        const { result } = renderHook(() => useInferenceStatus())
+        startLoad(kind)
+        act(() => useAppState.getState().setLoadingModelProgress(progress))
 
-    expect(
-      await screen.findByText(
-        'Reading the model from disk. The first load after a restart takes longer.'
-      )
-    ).toBeInTheDocument()
+        await waitFor(() =>
+          expect(snackbar()).toHaveAttribute('data-face', 'loading')
+        )
+        expect(
+          screen.getByText('Starting Model', { exact: true })
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('Loading model into memory', { exact: true })
+        ).toBeInTheDocument()
+        expect(snackbar()).toHaveTextContent(
+          /^Starting ModelLoading model into memoryCancel$/
+        )
+        expect(snackbar()).toHaveAttribute('data-stage', progress.kind)
+        expect(useAppState.getState().loadingModelProgress).toEqual(progress)
+        expect(result.current).toMatchObject({
+          phase: kind === 'start' ? 'starting' : 'restarting',
+          progress,
+        })
+        expect(modelLoadStageKey(result.current.progress!)).toBe(stage)
+      }
+    )
   })
 
   it('stops offering Cancel twice once a cancel is under way', async () => {

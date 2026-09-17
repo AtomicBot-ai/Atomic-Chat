@@ -2,7 +2,7 @@
  * The model loading snackbar (ATO-530).
  *
  * A load the user is waiting on gets a snackbar in the top-right corner: what
- * is starting, the step it is on, a Cancel, and a dismiss. When the model is
+ * is starting, a stable loading message, a Cancel, and a dismiss. When the model is
  * up it turns into "Model ready" for a few seconds; a load that fails
  * or is cancelled simply takes it away — the failure has its own toast and
  * the status strip above the composer.
@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import i18n from '@/i18n/setup'
-import { modelLoadStageKey, type InferenceStatus } from '@/lib/inference-status'
+import type { InferenceStatus } from '@/lib/inference-status'
 import type { ServiceHub } from '@/services'
 import { cancelModelLoad } from '@/utils/switchModel'
 
@@ -123,8 +123,8 @@ export function ModelLoadSnackbar() {
 }
 
 /**
- * The card inside the toast. Reads the status live, so the load's steps and
- * its success show up without the toast being re-created.
+ * The card inside the toast. Reads the status live, so cancellation and
+ * success show up without the toast being re-created.
  *
  * Sonner renders it under the Toaster, outside the translation and most other
  * providers — hence `i18n.t` and a service hub handed in, not hooks.
@@ -178,7 +178,7 @@ export function ModelLoadToast({
         />
       }
       title={t('common:modelLoad.starting')}
-      detail={t(`common:modelLoad.stage.${modelLoadStageKey(progress)}`)}
+      detail={t('common:modelLoad.loadingIntoMemory')}
       stage={progress.kind}
       action={
         <Button

@@ -43,7 +43,7 @@ export type ModelLoadStep =
 
 /**
  * A step, and — after an out-of-memory failure — what the retry changed. The
- * retry is a different wait from the first attempt, so it is said out loud.
+ * retry details remain available for diagnostics while snackbar copy stays stable.
  */
 export type ModelLoadProgress = ModelLoadStep & {
   retry?: 'ctx' | 'ngl' | 'fit_target'
@@ -56,7 +56,7 @@ export type ModelLoadProgress = ModelLoadStep & {
 export const CACHED_LOAD_FRACTION = 0.9
 
 /**
- * The `common:modelLoad.stage.*` key that describes `progress`. Pure so the
+ * The diagnostic stage key that describes `progress`. Pure so the
  * choice — a retry outranks the step it retries, an unknown cache state is
  * not reported as a cold one — is pinned by tests rather than by a component.
  */
@@ -156,6 +156,8 @@ export function deriveInferenceStatus(
  * three, a load in flight is told by the loading snackbar (ATO-530); only
  * `failed` stays above the composer.
  */
-export function isBlockingInferenceStatus(phase: InferenceStatusPhase): boolean {
+export function isBlockingInferenceStatus(
+  phase: InferenceStatusPhase
+): boolean {
   return phase === 'starting' || phase === 'restarting' || phase === 'failed'
 }
