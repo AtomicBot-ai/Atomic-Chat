@@ -22,6 +22,7 @@ import { Route as ApiIndexRouteImport } from './routes/api/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
+import { Route as SettingsRemoteLanRouteImport } from './routes/settings/remote-lan'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsMediaRouteImport } from './routes/settings/media'
 import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-servers'
@@ -105,6 +106,11 @@ const SettingsVoiceRoute = SettingsVoiceRouteImport.update({
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
   id: '/settings/shortcuts',
   path: '/settings/shortcuts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRemoteLanRoute = SettingsRemoteLanRouteImport.update({
+  id: '/settings/remote-lan',
+  path: '/settings/remote-lan',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
@@ -225,6 +231,7 @@ export interface FileRoutesByFullPath {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/media': typeof SettingsMediaRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/remote-lan': typeof SettingsRemoteLanRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
@@ -259,6 +266,7 @@ export interface FileRoutesByTo {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/media': typeof SettingsMediaRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/remote-lan': typeof SettingsRemoteLanRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
@@ -294,6 +302,7 @@ export interface FileRoutesById {
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/media': typeof SettingsMediaRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/remote-lan': typeof SettingsRemoteLanRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
@@ -330,6 +339,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/media'
     | '/settings/privacy'
+    | '/settings/remote-lan'
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
@@ -364,6 +374,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/media'
     | '/settings/privacy'
+    | '/settings/remote-lan'
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
@@ -398,6 +409,7 @@ export interface FileRouteTypes {
     | '/settings/mcp-servers'
     | '/settings/media'
     | '/settings/privacy'
+    | '/settings/remote-lan'
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
@@ -433,6 +445,7 @@ export interface RootRouteChildren {
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsMediaRoute: typeof SettingsMediaRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SettingsRemoteLanRoute: typeof SettingsRemoteLanRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
@@ -538,6 +551,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/shortcuts'
       fullPath: '/settings/shortcuts'
       preLoaderRoute: typeof SettingsShortcutsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/remote-lan': {
+      id: '/settings/remote-lan'
+      path: '/settings/remote-lan'
+      fullPath: '/settings/remote-lan'
+      preLoaderRoute: typeof SettingsRemoteLanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/privacy': {
@@ -697,6 +717,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsMediaRoute: SettingsMediaRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SettingsRemoteLanRoute: SettingsRemoteLanRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,

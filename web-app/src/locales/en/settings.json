@@ -253,6 +253,84 @@
     "defaultModelPlaceholder": "Select a local model",
     "currentModel": "Current Model"
   },
+  "remoteLan": {
+    "title": "Remote & LAN",
+    "state": {
+      "off": "Off",
+      "starting": "Starting",
+      "online": "Online",
+      "stopping": "Stopping",
+      "error": "Error",
+      "unavailable": "Unavailable"
+    },
+    "start": "Start",
+    "starting": "Starting…",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "autoStart": "Start automatically",
+    "copyUrl": "Copy URL",
+    "noKeyWarning": "No API key is in effect: anyone who has the URL can use your models.",
+    "qr": {
+      "show": "Show QR code",
+      "title": "Scan on another device",
+      "remoteDesc": "Point a phone camera at the code, copy the link it finds and paste it as the Base URL in the app you are connecting. It works from any network.",
+      "lanDesc": "Point a phone camera at the code, copy the link it finds and paste it as the Base URL in the app you are connecting. The device has to be on the same network as this computer."
+    },
+    "remote": {
+      "title": "Remote access",
+      "description": "Reach the OpenAI-compatible API from anywhere through a temporary Cloudflare URL.",
+      "urlLabel": "API base URL",
+      "security": "Anyone who has this URL can reach the API on this computer, and the API key is the only thing between them and your models. The URL is temporary: it stops working as soon as remote access is off.",
+      "providerHint": "To chat with these models from another Atomic Chat, open Cloud there, choose “Custom (OpenAI-compatible)…” and enter this URL as the Base URL together with your API key.",
+      "autoStartDesc": "Start remote access every time the Local API Server starts. A new URL is created each time, so the previous one stops working and your clients need the new one.",
+      "autoStartFailed": "Remote access could not start automatically. Settings → Remote & LAN shows why.",
+      "unavailable": "Remote access is not available in this build of Atomic Chat.",
+      "block": {
+        "serverStopped": "The Local API Server is stopped. Starting remote access starts it first."
+      },
+      "error": {
+        "cloudflared_unavailable": "The Cloudflare tunnel program that ships with Atomic Chat (cloudflared) is missing or was blocked, most often by antivirus software. Reinstall Atomic Chat or allow cloudflared, then start again.",
+        "no_url": "Cloudflare did not hand out a URL in time. Check your internet connection and start again.",
+        "not_registered": "The tunnel could not connect to Cloudflare. This network may block outgoing port 7844: try another network or a VPN, then start again.",
+        "not_reachable": "The tunnel came up, but the API did not answer through it, so it was closed. Start again in a minute: a new Cloudflare address can take a moment to work.",
+        "exited": "The tunnel closed unexpectedly. Start remote access again to get a new URL.",
+        "stop_failed": "The tunnel process did not exit, so the URL may still work. Press Stop again, or quit Atomic Chat to end it.",
+        "unknown": "Remote access ran into a problem (code: {{code}}). Start again, and check the app logs if it keeps happening."
+      }
+    },
+    "lan": {
+      "title": "LAN access",
+      "description": "Let other devices on your Wi-Fi or wired network use the OpenAI-compatible API on this computer.",
+      "addressLabel": "Address on your network",
+      "addressesLabel": "Addresses on your network",
+      "security": "Any device on the same network can connect this way, so turn LAN access on only in networks you trust.",
+      "noKeyWarning": "No API key is in effect: any device on your network can use your models.",
+      "autoStartDesc": "The Local API Server starts on its own whenever a model loads, and with LAN access on it starts on your network. This is the same switch as “Auto-start Local API Server” under API settings on the API screen.",
+      "restartNote": "Starting or stopping LAN access restarts the Local API Server, which interrupts requests in progress.",
+      "windowsFirewallHint": "The first time, Windows asks whether Atomic Chat may pass the firewall. Allow it for private networks, or other devices will not be able to connect.",
+      "block": {
+        "serverStopped": "The Local API Server is stopped. Starting LAN access starts it on your network.",
+        "loopbackOnly": "The Local API Server is running for this computer only.",
+        "noAddresses": "LAN access is on, but this computer has no network address to share. Connect to Wi-Fi or Ethernet."
+      }
+    },
+    "apiKey": {
+      "title": "API key",
+      "description": "The key of the Local API Server, the same one as under API settings. Clients send it with every request; without a key, the address alone is enough to use your models.",
+      "generate": "Generate",
+      "generated": "New API key created. Copy it into the apps that connect.",
+      "copy": "Copy API key",
+      "restartToApply": "Restart the server to apply the API key.",
+      "restartServer": "Restart server"
+    },
+    "noKeyDialog": {
+      "title": "Start without an API key?",
+      "description": "There is no API key, so anyone who gets hold of the URL can use the models on this computer. A generated key closes that gap: you copy it once into every app that connects.",
+      "generateAndStart": "Generate key and start",
+      "startWithoutKey": "Start without key",
+      "cancel": "Cancel"
+    }
+  },
   "privacy": {
     "analytics": "Analytics",
     "helpUsImprove": "Help us improve",

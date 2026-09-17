@@ -19,6 +19,7 @@ export const route = {
     local_api_server: '/settings/local-api-server',
     mcp_servers: '/settings/mcp-servers',
     https_proxy: '/settings/https-proxy',
+    remote_lan: '/settings/remote-lan',
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
     claude_code: '/settings/claude-code',

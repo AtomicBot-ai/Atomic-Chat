@@ -195,6 +195,12 @@ pub fn run() {
         core::server::remote_provider_commands::unregister_provider_config,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
+        // Remote & LAN access. Desktop only: the tunnel is a bundled sidecar,
+        // and `PlatformFeature.LOCAL_API_SERVER` gates the settings page.
+        core::server::remote_access::commands::get_remote_access_status,
+        core::server::remote_access::commands::start_remote_access,
+        core::server::remote_access::commands::stop_remote_access,
+        core::server::remote_access::commands::get_lan_addresses,
         // ChatGPT subscription sign-in
         core::auth::commands::chatgpt_status,
         core::auth::commands::chatgpt_login,
@@ -453,6 +459,9 @@ pub fn run() {
             mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             api_request_inspector: Arc::new(Default::default()),
+            dynamic_trusted_hosts: Default::default(),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            remote_access: Arc::new(Default::default()),
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
@@ -523,6 +532,17 @@ pub fn run() {
                 app.state::<AppState>()
                     .agent_pty_sessions
                     .set_journal_path(&data_folder);
+
+                // And for the remote-access tunnel, journalled the same way: a
+                // cloudflared left running keeps a public URL pointed at a
+                // port that whatever starts next may bind.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    crate::core::server::remote_access::reap_orphan(&data_folder);
+                    app.state::<AppState>()
+                        .remote_access
+                        .set_journal_path(&data_folder);
+                }
             }
 
             #[cfg(target_os = "windows")]
@@ -691,6 +711,12 @@ pub fn run() {
                 if killed > 0 {
                     log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
                 }
+
+                // The tunnel too, and here rather than in the async block
+                // below: that block is skipped when a cleanup is already
+                // running, and a public URL must never outlive the app.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                state.remote_access.kill_now(&state.dynamic_trusted_hosts);
 
                 // Check if cleanup already ran.
                 // block_on is safe here: RunEvent callbacks run on the main

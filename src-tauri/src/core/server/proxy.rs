@@ -1,5 +1,6 @@
 use futures_util::StreamExt;
 use hyper::body::Bytes;
+use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
 use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
@@ -23,6 +24,7 @@ use crate::core::server::chatgpt_route;
 use crate::core::server::context_expansion::{
     is_context_limit_error as shared_is_context_limit_error, request_context_increase,
 };
+use crate::core::server::dynamic_hosts::DynamicTrustedHosts;
 use crate::core::server::request_inspector::{
     is_usage_only_chunk, maybe_inject_stream_usage, prompt_preview, FinishFields, FinishGuard,
     InspectorHandle, PromptPreview, RequestInspector, StartedFields, StreamTelemetry,
@@ -3953,6 +3955,7 @@ pub async fn start_server<R: Runtime>(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
     api_request_inspector: Arc<RequestInspector>,
+    dynamic_hosts: DynamicTrustedHosts,
 ) -> Result<ServerStart, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         app_handle,
@@ -3969,6 +3972,7 @@ pub async fn start_server<R: Runtime>(
         provider_configs,
         auto_increase_state,
         api_request_inspector,
+        dynamic_hosts,
     )
     .await
 }
@@ -3989,6 +3993,7 @@ async fn start_server_internal<R: Runtime>(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     auto_increase_state: Arc<AutoIncreaseState>,
     api_request_inspector: Arc<RequestInspector>,
+    dynamic_hosts: DynamicTrustedHosts,
 ) -> Result<ServerStart, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if let Some(running) = handle_guard.as_ref() {
@@ -4086,7 +4091,12 @@ async fn start_server_internal<R: Runtime>(
 
     let api_request_aggregator = Arc::new(ApiRequestAggregator::new());
     let api_request_aggregator_for_timer = api_request_aggregator.clone();
-    let make_svc = make_service_fn(move |_conn| {
+    let make_svc = make_service_fn(move |conn: &AddrStream| {
+        // The address this connection was accepted on. With a `0.0.0.0` bind it
+        // is the LAN address the client dialled, which is what arrives in its
+        // `Host` header — see `dynamic_hosts` for why trusting it is safe.
+        let local_ip = conn.local_addr().ip();
+        let dynamic_hosts = dynamic_hosts.clone();
         let client = client.clone();
         let local_client = local_client.clone();
         let config = config.clone();
@@ -4101,11 +4111,17 @@ async fn start_server_internal<R: Runtime>(
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
+                // Read per request, not per connection: a keep-alive
+                // connection outlives a tunnel that started or stopped.
+                let mut config = config.clone();
+                config
+                    .trusted_hosts
+                    .push(dynamic_hosts.group_for(Some(local_ip)));
                 proxy_request(
                     req,
                     client.clone(),
                     local_client.clone(),
-                    config.clone(),
+                    config,
                     sessions.clone(),
                     sessions_upstream.clone(),
                     mlx_sessions.clone(),

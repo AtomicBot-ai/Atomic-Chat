@@ -31,6 +31,14 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',
+  // Settings → Remote & LAN. Desktop only on purpose: the Cloudflare tunnel is
+  // a bundled `cloudflared` sidecar, and both cards expose the Local API
+  // Server, which mobile does not have.
+  // `PlatformFeature.LOCAL_API_SERVER` gates the UI to match.
+  'get_lan_addresses',
+  'get_remote_access_status',
+  'start_remote_access',
+  'stop_remote_access',
 ])
 const EXPECTED_MOBILE_ONLY = new Set(['abort_remote_stream'])
 

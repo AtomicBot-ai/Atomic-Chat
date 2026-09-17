@@ -52,6 +52,9 @@ type GeneralSettingState = {
   // Same pattern for the Connectors nav item.
   connectorsBadgeSeen: boolean
   markConnectorsBadgeSeen: () => void
+  // Same pattern for the Remote & LAN item in the settings menu.
+  remoteLanBadgeSeen: boolean
+  markRemoteLanBadgeSeen: () => void
   /**
    * Whether the connectors button is pinned to the composer toolbar. Unpinning
    * only hides the button — connected MCP servers keep running and their tools
@@ -103,6 +106,11 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       markConnectorsBadgeSeen: () =>
         set((state) =>
           state.connectorsBadgeSeen ? state : { connectorsBadgeSeen: true }
+        ),
+      remoteLanBadgeSeen: false,
+      markRemoteLanBadgeSeen: () =>
+        set((state) =>
+          state.remoteLanBadgeSeen ? state : { remoteLanBadgeSeen: true }
         ),
       connectorsPinned: true,
       setConnectorsPinned: (value) => set({ connectorsPinned: value }),

@@ -7,6 +7,7 @@
   "plugins": "Плагины",
   "local_api_server": "Локальный API-сервер",
   "https_proxy": "HTTPS-прокси",
+  "remote_lan": "Удалённый доступ и LAN",
   "extensions": "Расширения",
   "experimental": "Экспериментально",
   "attachments": "Вложения",

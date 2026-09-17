@@ -3052,6 +3052,7 @@ __metadata:
     react-dom: "npm:19.0.0"
     react-i18next: "npm:15.5.1"
     react-markdown: "npm:10.1.0"
+    react-qr-code: "npm:^2.2.0"
     react-resizable-panels: "npm:3.0.5"
     react-syntax-highlighter: "npm:15.6.1"
     react-syntax-highlighter-virtualized-renderer: "npm:1.1.0"
@@ -16863,7 +16864,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"prop-types@npm:^15.7.2":
+"prop-types@npm:^15.7.2, prop-types@npm:^15.8.1":
   version: 15.8.1
   resolution: "prop-types@npm:15.8.1"
   dependencies:
@@ -16938,6 +16939,13 @@ __metadata:
   version: 2.3.1
   resolution: "punycode@npm:2.3.1"
   checksum: 10c0/14f76a8206bc3464f794fb2e3d3cc665ae416c01893ad7a02b23766eb07159144ee612ad67af5e84fa4479ccfe67678c4feb126b0485651b302babf66f04f9e9
+  languageName: node
+  linkType: hard
+
+"qrcode-generator@npm:^2.0.4":
+  version: 2.0.4
+  resolution: "qrcode-generator@npm:2.0.4"
+  checksum: 10c0/52dc3894bda6afecf09cb36aba9c181f3c4641fcbeac40c2af05d68da1383e3a1c7354bd3dc8c5e2a199d2e62314bbdec8cb4fbbd00bcfda40de56bb36bfdb17
   languageName: node
   linkType: hard
 
@@ -17177,6 +17185,18 @@ __metadata:
     "@types/react": ">=18"
     react: ">=18"
   checksum: 10c0/4a5dc7d15ca6d05e9ee95318c1904f83b111a76f7588c44f50f1d54d4c97193b84e4f64c4b592057c989228238a2590306cedd0c4d398e75da49262b2b5ae1bf
+  languageName: node
+  linkType: hard
+
+"react-qr-code@npm:^2.2.0":
+  version: 2.2.0
+  resolution: "react-qr-code@npm:2.2.0"
+  dependencies:
+    prop-types: "npm:^15.8.1"
+    qrcode-generator: "npm:^2.0.4"
+  peerDependencies:
+    react: "*"
+  checksum: 10c0/895b9bfe0d41467b375d271acf18a036dec1711b45990ba5afd770678fab068c9d8651b92c6c50f48f8d11664a0b4651a9e051450ae33b68f2876f9dc684a3be
   languageName: node
   linkType: hard
 

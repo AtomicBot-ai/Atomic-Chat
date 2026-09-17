@@ -22,6 +22,13 @@ export function ApiKeyInput({
   const [error, setError] = useState('')
   const { t } = useTranslation()
 
+  // The key can change underneath a mounted field: Settings → Remote & LAN
+  // generates one. Follow the store when it changes. Typing never triggers
+  // this — the store only moves on blur — so it cannot clobber the user's text.
+  useEffect(() => {
+    setInputValue(apiKey.toString())
+  }, [apiKey])
+
   const validateApiKey = useCallback(
     (value: string) => {
       if (!value || value.trim().length === 0) {
