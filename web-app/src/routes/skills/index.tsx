@@ -347,7 +347,7 @@ function SkillActionsMenu({
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={onUninstall}>
               <IconTrash />
-              {t('common:uninstallSkill')}
+              {t('common:delete')}
             </DropdownMenuItem>
           </>
         )}

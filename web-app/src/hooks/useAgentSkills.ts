@@ -30,9 +30,14 @@ export function useAgentSkills(enabled = true) {
       const next = refresh
         ? await refreshAgentSkills()
         : await listAgentSkills()
-      const sorted = [...next].sort((left, right) =>
-        left.name.localeCompare(right.name)
-      )
+      const sorted = [...next].sort((left, right) => {
+        if (left.reserved !== right.reserved) return left.reserved ? 1 : -1
+        if (!left.reserved) {
+          const recent = (right.modifiedAtMs ?? 0) - (left.modifiedAtMs ?? 0)
+          if (recent !== 0) return recent
+        }
+        return left.name.localeCompare(right.name)
+      })
       setSkills(sorted)
       const selectedName = selectedNameRef.current
       if (selectedName && sorted.some((skill) => skill.name === selectedName)) {
