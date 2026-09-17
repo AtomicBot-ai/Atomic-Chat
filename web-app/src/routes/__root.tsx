@@ -20,6 +20,7 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
+import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
@@ -57,6 +58,10 @@ const AppLayout = () => {
   // Feeds live server / model / RAM state into the desktop system tray.
   // No-op outside macOS and Windows Tauri builds (see hook implementation).
   useTrayStatusSync()
+  // Mirrors the Cloudflare tunnel's status for Settings → Remote & LAN and
+  // starts the tunnel with the Local API Server when asked to. No-op wherever
+  // there is no Local API Server (mobile, web).
+  useRemoteAccessSync()
   const isSetupCompleted = useSetupCompleted()
 
   return (

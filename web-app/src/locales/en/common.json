@@ -11,6 +11,7 @@
   "claude_code": "Claude Code",
   "hermes_agent": "Hermes Agent",
   "https_proxy": "HTTPS Proxy",
+  "remote_lan": "Remote & LAN",
   "extensions": "Extensions",
   "attachments": "Attachments",
   "voice": "Voice",

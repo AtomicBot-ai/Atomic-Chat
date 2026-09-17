@@ -152,4 +152,85 @@ describe('TauriAppService', () => {
       path: '/tmp/config.yml',
     })
   })
+
+  describe('remote & LAN access', () => {
+    const online = {
+      state: 'online',
+      url: 'https://quiet-river.trycloudflare.com',
+      error: null,
+      blockReason: null,
+      canStart: false,
+      canStop: true,
+      serverHasApiKey: true,
+    }
+
+    it.each([
+      ['getRemoteAccessStatus', 'get_remote_access_status'],
+      ['startRemoteAccess', 'start_remote_access'],
+      ['stopRemoteAccess', 'stop_remote_access'],
+    ] as const)('%s invokes %s and returns the status', async (method, command) => {
+      ipcHandler.mockReturnValue(online)
+
+      await expect(appService[method]()).resolves.toEqual(online)
+      expect(ipcHandler).toHaveBeenCalledWith(command, {})
+    })
+
+    it('reads a snake_case status, so a serde rename cannot blank the page', async () => {
+      ipcHandler.mockReturnValue({
+        state: 'off',
+        url: null,
+        error: null,
+        block_reason: 'server_stopped',
+        can_start: false,
+        can_stop: false,
+        server_has_api_key: false,
+      })
+
+      await expect(appService.getRemoteAccessStatus()).resolves.toEqual({
+        state: 'off',
+        url: null,
+        error: null,
+        blockReason: 'server_stopped',
+        canStart: false,
+        canStop: false,
+        serverHasApiKey: false,
+      })
+    })
+
+    it('rejects with a code when the reply is not a status', async () => {
+      ipcHandler.mockReturnValue({ running: true })
+
+      await expect(appService.getRemoteAccessStatus()).rejects.toThrow(
+        'malformed_status'
+      )
+    })
+
+    it('passes the refusal from Rust through untouched', async () => {
+      ipcHandler.mockRejectedValue('server_stopped')
+
+      await expect(appService.startRemoteAccess()).rejects.toBe(
+        'server_stopped'
+      )
+    })
+
+    it('returns the LAN addresses in the order Rust ranked them', async () => {
+      ipcHandler.mockReturnValue(['192.168.1.20', '10.0.0.7'])
+
+      await expect(appService.getLanAddresses()).resolves.toEqual([
+        '192.168.1.20',
+        '10.0.0.7',
+      ])
+      expect(ipcHandler).toHaveBeenCalledWith('get_lan_addresses', {})
+    })
+
+    it('treats a reply that is not a list of strings as no addresses', async () => {
+      ipcHandler.mockReturnValue(null)
+      await expect(appService.getLanAddresses()).resolves.toEqual([])
+
+      ipcHandler.mockReturnValue(['192.168.1.20', 7, null])
+      await expect(appService.getLanAddresses()).resolves.toEqual([
+        '192.168.1.20',
+      ])
+    })
+  })
 })

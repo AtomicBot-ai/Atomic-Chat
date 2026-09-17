@@ -3,7 +3,17 @@ import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 import { useState } from 'react'
 import { copyToClipboard } from '@/lib/clipboard'
 
-export const CopyButton = ({ text }: { text: string }) => {
+export const CopyButton = ({
+  text,
+  ariaLabel,
+  onCopied,
+}: {
+  text: string
+  /** Names the button when several sit next to each other. */
+  ariaLabel?: string
+  /** Runs only after the text actually reached the clipboard. */
+  onCopied?: () => void
+}) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -11,6 +21,7 @@ export const CopyButton = ({ text }: { text: string }) => {
     // used to leave the checkmark showing over a clipboard that never changed.
     if (!(await copyToClipboard(text))) return
     setCopied(true)
+    onCopied?.()
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -19,6 +30,7 @@ export const CopyButton = ({ text }: { text: string }) => {
       variant="ghost"
       size="icon-xs"
       onClick={handleCopy}
+      aria-label={ariaLabel}
     >
       {copied ? (
         <>
