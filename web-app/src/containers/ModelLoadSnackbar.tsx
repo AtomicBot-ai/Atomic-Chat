@@ -3,7 +3,7 @@
  *
  * A load the user is waiting on gets a snackbar in the top-right corner: what
  * is starting, the step it is on, a Cancel, and a dismiss. When the model is
- * up it turns into "<model> is loaded" for a few seconds; a load that fails
+ * up it turns into "Model ready" for a few seconds; a load that fails
  * or is cancelled simply takes it away — the failure has its own toast and
  * the status strip above the composer.
  *
@@ -23,11 +23,10 @@ import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import i18n from '@/i18n/setup'
 import { modelLoadStageKey, type InferenceStatus } from '@/lib/inference-status'
-import { prettyModelName } from '@/lib/model-display-name'
 import type { ServiceHub } from '@/services'
 import { cancelModelLoad } from '@/utils/switchModel'
 
-/** How long "<model> is loaded" stays up before it clears itself. */
+/** How long "Model ready" stays up before it clears itself. */
 export const LOADED_SNACKBAR_MS = 3000
 
 const isLoading = (status: InferenceStatus) =>
@@ -80,6 +79,9 @@ export function ModelLoadSnackbar() {
           // Its own × is the only way to close it: sonner's swipe and close
           // paths cannot tell the user apart from a programmatic dismiss.
           dismissible: false,
+          // The success face uses Sonner's normal width. Keep the loading
+          // face's room for progress and Cancel, and the same toast lifecycle.
+          className: 'has-[[data-face=loaded]]:w-[var(--width)]!',
           // The Toaster's default padding and background are for its own
           // layout; this one draws its own card.
           style: {
@@ -152,13 +154,12 @@ export function ModelLoadToast({
         onClose={onClose}
         icon={
           <IconCircleCheckFilled
-            size={18}
+            size={20}
             className="shrink-0 text-green-600"
           />
         }
-        title={t('common:inferenceStatus.ready', {
-          model: prettyModelName(shown.modelId),
-        })}
+        title={t('common:modelLoad.ready')}
+        detail={t('common:modelLoad.loadedIntoMemory')}
       />
     )
   }

@@ -160,10 +160,38 @@ describe('ModelLoadSnackbar', () => {
     await waitFor(() =>
       expect(snackbar()).toHaveAttribute('data-face', 'loaded')
     )
-    expect(screen.getByText('Qwen3 8B is loaded')).toBeInTheDocument()
+    expect(screen.getByText('Model ready', { exact: true })).toBeInTheDocument()
+    expect(
+      screen.getByText('Loaded into memory', { exact: true })
+    ).toBeInTheDocument()
+    expect(snackbar()).not.toHaveTextContent(MODEL)
+    expect(
+      screen.queryByRole('button', { name: 'Cancel' })
+    ).not.toBeInTheDocument()
+    expect(snackbar()?.querySelector('.animate-spin')).toBeNull()
 
-    act(() => vi.advanceTimersByTime(LOADED_SNACKBAR_MS + 1000))
+    act(() => vi.advanceTimersByTime(LOADED_SNACKBAR_MS - 100))
+    expect(snackbar()).toBeInTheDocument()
+
+    // Cross the deadline and allow Sonner's exit animation to finish.
+    act(() => vi.advanceTimersByTime(1100))
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
+  })
+
+  it('dismisses the ready state and permits the next load', async () => {
+    renderSnackbar()
+    startLoad()
+    await waitFor(() => expect(snackbar()).toBeInTheDocument())
+    finishLoad()
+    await screen.findByText('Model ready')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
+    startLoad('restart')
+    await waitFor(() =>
+      expect(snackbar()).toHaveAttribute('data-face', 'loading')
+    )
+    expect(screen.getByText('Starting Model')).toBeInTheDocument()
   })
 
   it('stays closed for the rest of a load the user dismissed', async () => {
