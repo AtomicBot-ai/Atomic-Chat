@@ -456,7 +456,7 @@ export const MessageItem = memo(
             </div>
           )}
           {showWorking && (
-            <Shimmer duration={1} className="py-1 text-sm">
+            <Shimmer duration={2.4} className="py-1 text-sm">
               {t('activity.working')}
             </Shimmer>
           )}

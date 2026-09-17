@@ -515,7 +515,7 @@ export const ToolOutput = memo(
     }
 
     return (
-      <div className={cn('space-y-2 mt-4', className)} {...props}>
+      <div className={cn('mt-3 space-y-2', className)} {...props}>
         <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
           {errorText ? 'Error' : 'Result'}
         </h4>

@@ -68,10 +68,9 @@ describe('MessageItem tool calls', () => {
       'ready'
     )
 
-    expect(screen.getByText('web_search_exa')).toBeVisible()
-    expect(screen.getByText('nemotron news')).toBeVisible()
-    expect(screen.getByText('os.fs.read')).toBeVisible()
-    expect(screen.getByText('notes.md')).toBeVisible()
+    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(2)
+    expect(screen.queryByText('web_search_exa')).not.toBeInTheDocument()
+    expect(screen.queryByText('os.fs.read')).not.toBeInTheDocument()
     expect(screen.queryByText(/activity\.workedFor/)).not.toBeInTheDocument()
     expect(screen.queryByText(/activity\.calledTool/)).not.toBeInTheDocument()
   })
@@ -86,7 +85,10 @@ describe('MessageItem tool calls', () => {
       'streaming'
     )
 
-    expect(screen.getByText('nemotron ultra')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { expanded: false })
+    ).toBeInTheDocument()
+    expect(document.querySelector('.animate-spin')).toBeInTheDocument()
     expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
   })
 
@@ -111,7 +113,7 @@ describe('MessageItem tool calls', () => {
       />
     )
     expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
-    expect(screen.getByText('web_search_exa')).toBeInTheDocument()
+    expect(screen.queryByText('web_search_exa')).not.toBeInTheDocument()
   })
 
   it('shows why an agent run failed without a click', () => {
