@@ -119,7 +119,7 @@ const STREAM_TAIL_LINES = 200
 /// stick-to-bottom logic reads as the reader scrolling away — following then
 /// stops dead on that line. Wrapping keeps the container's width stable.
 const HIGHLIGHT_SURFACE =
-  '[&>pre]:m-0 [&>pre]:bg-transparent! [&>pre]:p-4 [&>pre]:text-sm [&>pre]:whitespace-pre-wrap [&>pre]:wrap-break-word [&_code]:font-mono [&_code]:text-sm'
+  '[&>pre]:m-0 [&>pre]:bg-transparent! [&>pre]:p-4 [&>pre]:text-sm [&>pre]:whitespace-pre-wrap [&>pre]:wrap-anywhere [&_code]:block [&_code]:font-mono [&_code]:text-sm [&_code]:whitespace-pre-wrap [&_code]:wrap-anywhere [&_span]:whitespace-pre-wrap [&_span]:wrap-anywhere'
 
 /**
  * A multiline string parameter (e.g. the `content` of a file write) rendered
@@ -237,7 +237,7 @@ const ToolTextBlock = memo(
           initial="smooth"
           resize="smooth"
         >
-          <StickToBottom.Content>
+          <StickToBottom.Content scrollClassName="overflow-x-hidden overflow-y-auto">
             {html ? (
               <>
                 <div
@@ -250,7 +250,7 @@ const ToolTextBlock = memo(
                 />
               </>
             ) : (
-              <pre className="m-0 whitespace-pre-wrap wrap-break-word p-4 font-mono text-sm text-foreground">
+              <pre className="m-0 whitespace-pre-wrap wrap-anywhere p-4 font-mono text-sm text-foreground">
                 {displayText}
               </pre>
             )}
