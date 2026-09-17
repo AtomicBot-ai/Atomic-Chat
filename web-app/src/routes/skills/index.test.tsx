@@ -157,7 +157,7 @@ describe('SkillsPage', () => {
     expect(screen.getAllByText('common:writeSkillInstructions')).toHaveLength(2)
   })
 
-  it('shows modular skill details without badges and confirms uninstall', () => {
+  it('shows modular skill details without badges and confirms deletion', () => {
     render(<SkillsPage />)
 
     expect(
@@ -167,7 +167,7 @@ describe('SkillsPage', () => {
     expect(screen.queryByText('common:skillEnabled')).not.toBeInTheDocument()
     expect(screen.getAllByText('common:downloadSkill')).toHaveLength(1)
     expect(screen.getAllByText('common:editSkill')).toHaveLength(1)
-    fireEvent.click(screen.getAllByText('common:uninstallSkill')[0])
+    fireEvent.click(screen.getAllByText('common:delete')[0])
 
     const dialog = screen.getByRole('dialog')
     fireEvent.click(within(dialog).getByText('common:delete'))
@@ -195,7 +195,7 @@ describe('SkillsPage', () => {
     expect(screen.getAllByText('Invalid SKILL.md')).toHaveLength(2)
     expect(screen.queryByText('common:bundled')).not.toBeInTheDocument()
     expect(screen.queryByText('common:editSkill')).not.toBeInTheDocument()
-    expect(screen.queryByText('common:uninstallSkill')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:delete')).not.toBeInTheDocument()
     for (const button of screen.getAllByText('common:tryInChat')) {
       expect(button.closest('button')).toBeDisabled()
     }
