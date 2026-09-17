@@ -376,8 +376,13 @@ function RenderMarkdownComponent({
     >
       <ArtifactStreamingProvider value={!!isStreaming}>
         <Streamdown
-          animate={isAnimating ?? true}
-          animationDuration={500}
+          // Streamdown's entrance animation restarts as fenced code blocks
+          // grow token-by-token. That repeatedly translates the whole block
+          // and fights the chat's stick-to-bottom scroll, producing a visible
+          // jump. The stream itself is already the motion cue; animate only a
+          // completed, static message.
+          animate={!isStreaming && (isAnimating ?? true)}
+          animationDuration={180}
           linkSafety={{
             enabled: false,
           }}
@@ -405,6 +410,7 @@ export const RenderMarkdown = memo(
     prevProps.components === nextProps.components &&
     prevProps.enableHtmlPreview === nextProps.enableHtmlPreview &&
     prevProps.allowRawHtml === nextProps.allowRawHtml &&
+    prevProps.isAnimating === nextProps.isAnimating &&
     // With HTML preview on, re-render on streaming→done to drop the loader.
     (!nextProps.enableHtmlPreview ||
       prevProps.isStreaming === nextProps.isStreaming)
