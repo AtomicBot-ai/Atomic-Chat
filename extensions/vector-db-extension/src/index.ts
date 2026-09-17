@@ -12,6 +12,16 @@ import {
 import * as vecdb from '../../../src-tauri/plugins/tauri-plugin-vector-db/guest-js/index'
 import * as ragApi from '../../../src-tauri/plugins/tauri-plugin-rag/guest-js/index'
 
+function isMissingFilesTable(error: unknown): boolean {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(error)
+  } catch {
+    serialized = String(error)
+  }
+  return /no such table:\s*files/i.test(serialized)
+}
+
 export default class VectorDBExt extends VectorDBExtension {
   async onLoad(): Promise<void> {
     // no-op
@@ -203,10 +213,19 @@ export default class VectorDBExt extends VectorDBExtension {
     projectId: string,
     limit?: number
   ): Promise<AttachmentFileInfo[]> {
-    return (await vecdb.listAttachments(
-      this.collectionForProject(projectId),
-      limit
-    )) as AttachmentFileInfo[]
+    try {
+      return (await vecdb.listAttachments(
+        this.collectionForProject(projectId),
+        limit
+      )) as AttachmentFileInfo[]
+    } catch (error) {
+      // Opening a brand-new project creates its empty SQLite file before the
+      // first upload knows the embedding dimension and creates the schema.
+      // That is an empty collection, not a user-facing database failure. The
+      // first ingest calls createCollectionForProject and initializes it.
+      if (isMissingFilesTable(error)) return []
+      throw error
+    }
   }
 
   async getChunksForProject(

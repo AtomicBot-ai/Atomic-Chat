@@ -134,7 +134,7 @@ function ProjectPageContent() {
               initialMessage={true}
               projectId={projectId}
               containerClassName="max-w-none"
-              minRows={4}
+              minRows={3}
             />
           </div>
 

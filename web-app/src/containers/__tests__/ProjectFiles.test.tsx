@@ -137,4 +137,36 @@ describe('ProjectFiles', () => {
     )
     expect(screen.queryByRole('alert')).toBeNull()
   })
+
+  it('uploads a file and refreshes the visible project list', async () => {
+    const ingest = vi.fn().mockResolvedValue({ id: 'file-1' })
+    mocks.listAttachmentsForProject
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        {
+          id: 'file-1',
+          name: 'notes.txt',
+          path: '/tmp/notes.txt',
+          type: 'txt',
+          size: 128,
+          chunk_count: 1,
+        },
+      ])
+    seedServiceHub({
+      dialog: {
+        open: vi.fn().mockResolvedValue(['/tmp/notes.txt']),
+      } as unknown as ReturnType<ServiceHub['dialog']>,
+      uploads: {
+        ingestFileAttachmentForProject: ingest,
+      } as unknown as ReturnType<ServiceHub['uploads']>,
+    })
+
+    render(<ProjectFiles projectId="p1" lng="en" />)
+    await screen.findByText('common:projects.filesDescription')
+    fireEvent.click(screen.getByRole('button', { name: /upload/i }))
+
+    await waitFor(() => expect(ingest).toHaveBeenCalledOnce())
+    expect(await screen.findByText('notes.txt')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 })
