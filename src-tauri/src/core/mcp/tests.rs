@@ -806,4 +806,12 @@ async fn bundled_search_is_discoverable_after_exa_startup_403() {
     assert_eq!(tool.server, "exa");
     assert_eq!(tool.description.as_deref(), Some("Web search"));
     assert_eq!(tool.input_schema["required"], serde_json::json!(["query"]));
+    let fetch = response
+        .tools
+        .iter()
+        .find(|tool| tool.name == "web_fetch_exa")
+        .expect("bundled fallback fetch must be available");
+    assert_eq!(fetch.server, "exa");
+    assert_eq!(fetch.description.as_deref(), Some("Read webpages"));
+    assert_eq!(fetch.input_schema["required"], serde_json::json!(["urls"]));
 }

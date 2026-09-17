@@ -69,6 +69,17 @@ pub(crate) async fn search_keyless(
     }
 }
 
+/// Shared no-key page reader for Agent mode and the bundled composer MCP.
+/// Exa is attempted first; Cloudflare/rate-limit failures fall back to the
+/// guarded direct extractor and, when useful, the Wayback recovery path.
+pub(crate) async fn fetch_keyless(
+    url: &str,
+    max_chars: usize,
+    working_dir: &Path,
+) -> Result<ToolOutcome, ToolOutcome> {
+    fetch_url(url, max_chars, ExtractMode::Markdown, working_dir).await
+}
+
 /// Serper is opt-in: it runs only when one of these env vars carries a key,
 /// so the keyless default search path stays untouched.
 fn serper_api_key() -> Option<String> {

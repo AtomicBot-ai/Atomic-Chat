@@ -360,9 +360,10 @@ pub async fn get_tools(
     }
 
     if super::web_search::enabled(&app).await {
-        all_tools
-            .retain(|tool| !(tool.server == "exa" && tool.name == super::web_search::TOOL_NAME));
-        all_tools.push(super::web_search::tool());
+        all_tools.retain(|tool| {
+            !(tool.server == "exa" && super::web_search::is_bundled_tool(&tool.name))
+        });
+        all_tools.extend(super::web_search::tools());
     }
 
     let servers = collect_mcp_server_statuses(&state).await;
@@ -441,7 +442,7 @@ pub async fn call_tool<R: Runtime>(
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
     let timeout_duration = tool_call_timeout(&state).await;
-    if tool_name == super::web_search::TOOL_NAME
+    if super::web_search::is_bundled_tool(&tool_name)
         && server_name.as_deref().is_none_or(|name| name == "exa")
         && super::web_search::enabled(&app).await
     {
@@ -453,11 +454,14 @@ pub async fn call_tool<R: Runtime>(
                 .await
                 .insert(token.clone(), cancel_tx);
         }
+        let working_dir = get_jan_data_folder_path(app.clone())
+            .join("mcp")
+            .join("downloads");
         let result = tokio::select! {
-            result = timeout(timeout_duration, super::web_search::call(arguments)) => {
-                result.unwrap_or_else(|_| Err(super::web_search::UNAVAILABLE.into()))
+            result = timeout(timeout_duration, super::web_search::call(&tool_name, arguments, &working_dir)) => {
+                result.unwrap_or_else(|_| Err("Web tool timed out. Try again.".into()))
             }
-            _ = cancel_rx, if cancellation_token.is_some() => Err("Web search was cancelled.".into()),
+            _ = cancel_rx, if cancellation_token.is_some() => Err("Web tool was cancelled.".into()),
         };
         if let Some(token) = &cancellation_token {
             state.tool_call_cancellations.lock().await.remove(token);
