@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { prettyModelName } from './model-display-name'
+import { compactModelDisplayName, prettyModelName } from './model-display-name'
 
 describe('prettyModelName', () => {
   it('drops the author, the format, the quantization and the tuning suffix', () => {
@@ -53,5 +53,24 @@ describe('prettyModelName', () => {
     expect(prettyModelName('someone/GGUF')).toBe('GGUF')
     expect(prettyModelName('')).toBe('')
     expect(prettyModelName(undefined)).toBe('')
+  })
+})
+
+describe('compactModelDisplayName', () => {
+  const technical = 'mradermacher/Huihui-Ornith-1_5-9B-abliterated_i1-IQ4_XS'
+
+  it('removes the repository owner and quantization from local model ids', () => {
+    expect(compactModelDisplayName({ id: technical } as Model)).toBe(
+      'Huihui Ornith 1.5 9B Abliterated'
+    )
+  })
+
+  it('keeps an explicit user display name', () => {
+    expect(
+      compactModelDisplayName({
+        id: technical,
+        displayName: 'My Ornith',
+      } as Model)
+    ).toBe('My Ornith')
   })
 })

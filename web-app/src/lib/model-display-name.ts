@@ -142,6 +142,9 @@ export function prettyModelName(name?: string): string {
   const withoutExt = withoutAuthor
     .replace(/\.(gguf|safetensors|bin|mlx)$/i, '')
     .replace(QUANT_SEGMENT, '')
+    // Sanitized local ids turn decimal versions into underscores (`1_5`).
+    // Restore that punctuation before tokenizing the rest of the slug.
+    .replace(/(\d)_(\d)/g, '$1.$2')
 
   const tokens = withoutExt
     .split(/[-_\s]+/)
@@ -161,4 +164,14 @@ export function prettyModelName(name?: string): string {
 
   const pretty = deduped.join(' ').trim()
   return pretty || withoutExt || name
+}
+
+/**
+ * Compact label for the composer and its model picker. A user nickname wins;
+ * otherwise strip the repository owner, file format and quantization. The
+ * full technical id remains available in the element's title attribute.
+ */
+export function compactModelDisplayName(model: Model): string {
+  const custom = model.displayName?.trim()
+  return custom || prettyModelName(model.id) || model.id
 }
