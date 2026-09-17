@@ -514,7 +514,15 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // "On your device" with a Run button, which is a better offer than a
   // re-download. The rest of the registry ladder is not rendered: what follows
   // the offer is the Hub's curated list (see `popularPicks`).
-  const heroRecommendation = pendingRecommended[0] ?? null
+  const heroRecommendation = useMemo(() => {
+    const lead = pendingRecommended[0]
+    if (!lead) return null
+    const matchingPick = staffPickItems.find(
+      ({ pick }) =>
+        pick.model_name.toLowerCase() === lead.rec.modelName.toLowerCase()
+    )?.pick
+    return matchingPick ? { ...lead, pick: matchingPick } : lead
+  }, [pendingRecommended, staffPickItems])
 
   // The hook types `model` as always present (its `?? null` tail is
   // unreachable for the compiler), but a card can be unresolved at runtime —
@@ -1503,9 +1511,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       ? sourcesLoading
         ? t('hub:loadingModels')
         : t('setup:modelUnavailable')
-      : pick?.summary?.trim() ||
-        readableCatalogDescription ||
-        t('setup:recommend.defaultSummary')
+      : pick?.summary?.trim() || readableCatalogDescription || null
 
     return (
       <SetupModelRow
