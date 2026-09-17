@@ -14,6 +14,8 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useAgentRun } from '@/hooks/useAgentRun'
+import { useThreads } from '@/hooks/useThreads'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
 
@@ -207,6 +209,35 @@ describe('ChatInput', () => {
       selectedProvider: 'openai',
       selectedModel: model,
     })
+  })
+
+  it('docks pending folder access to the same surface as the composer', () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    useThreads.setState({ currentThreadId: 'approval-layout' })
+    useAgentRun.getState().startRun('approval-layout', 'run-1')
+    useAgentRun.getState().applyEvent('approval-layout', {
+      type: 'folder_access_requested',
+      run_id: 'run-1',
+      access_id: 'access-1',
+      tool: 'os.fs.read',
+      path: '/Users/me/project',
+      display_name: 'project',
+      root_id: 'root-1',
+      reason: 'outside the workspace',
+    })
+    const { unmount } = render(<ChatInput chatStatus="submitted" />)
+    const card = screen.getByTestId('agent-approval-inline')
+    const composer = screen.getByTestId('chat-input').closest('.border-input')!
+    expect(card.parentElement).toBe(composer.parentElement)
+    expect(card).toHaveClass('bg-muted', 'absolute', 'bottom-full')
+    expect(screen.getByText('/Users/me/project')).toBeVisible()
+    expect(screen.getByText('agentFolderAccess.canEditNotice')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'agentFolderAccess.allow' })
+    ).toBeEnabled()
+    unmount()
+    useAgentRun.getState().clearAll()
+    useThreads.setState({ currentThreadId: previousThreadId })
   })
 
   it('renders the production input with its translated placeholder', () => {

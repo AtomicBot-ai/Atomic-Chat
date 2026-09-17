@@ -9,8 +9,8 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-301 records, 2026-05-19 → 2026-09-17.
-301 records, 2026-05-19 → 2026-09-17.
+302 records, 2026-05-19 → 2026-09-17.
+302 records, 2026-05-19 → 2026-09-17.
 
 ---
 
@@ -263,28 +263,29 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (74)
+## UI / UX (75)
 
 - **2026-09-17** — [Describe collapsed tool calls with localized human actions](2026-09-17-tool-call-friendly-copy.md)
+- **2026-09-17** — [Dock inline approvals to the composer border](2026-09-17-agent-approval-composer-stack.md)
 
 - **2026-09-17** — [Show connector actions according to configuration state](2026-09-17-connector-card-state-actions.md)
 - **2026-09-17** — [Widen the model selector and distinguish supported download formats](2026-09-17-model-selector-format-width.md)
-## UI / UX (74)
+## UI / UX (75)
 - **2026-09-17** — [Keep live reasoning bounded through completion](2026-09-17-reasoning-stream-layout-stability.md)
 
 - **2026-09-17** — [Keep onboarding download actions compact and stable](2026-09-17-onboarding-row-polish.md)
 - **2026-09-17** — [Clear the composer selection after an explicit local model unload](2026-09-17-unload-clears-model-selection.md)
 - **2026-09-17** — [Keep connector logos in rounded-square tiles](2026-09-17-connector-icon-rounded-square.md)
-## UI / UX (74)
+## UI / UX (75)
 - **2026-09-17** — [Keep model-loading snackbar copy stable across stages](2026-09-17-model-load-stable-copy.md)
 - **2026-09-17** — [Show web search availability from discovered tools](2026-09-17-web-search-reliability.md)
 - **2026-09-17** — [Keep model selection empty after skipping onboarding](2026-09-17-onboarding-skip-no-autostart.md)
 - **2026-09-17** — [Keep the model-ready snackbar compact](2026-09-17-compact-model-loaded-snackbar.md)
-## UI / UX (74)
+## UI / UX (75)
 - **2026-09-17** — [Give the composer model settings a bounded reading width](2026-09-17-model-settings-popover-reading-width.md)
-## UI / UX (74)
+## UI / UX (75)
 
-## UI / UX (74)
+## UI / UX (75)
 - **2026-09-17** — [Give the approval menu room for a complete Full access sentence](2026-09-17-approval-menu-copy-width.md)
 - **2026-09-17** — [Give every connector card one anatomy: the action at the top-right, a status + toggle footer on every card](2026-09-17-one-anatomy-for-every-connector-card.md)
 - **2026-09-17** — [Keep the download panel's readout on one fixed line](2026-09-17-keep-the-download-panel-readout-on-one-line.md)
@@ -292,9 +293,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-17** — [Lay the onboarding rows out as one column: a fit badge with a word, the size inside the button, one button width](2026-09-17-one-button-column-and-a-fit-badge-on-the-onboarding-rows.md)
 - **2026-09-17** — [Seed one web search on a fresh install, and lay connector rows out like model rows](2026-09-17-seed-one-web-search-and-lay-out-connector-rows-like-model-rows.md)
 - **2026-09-17** — [Text fonts lead the font stacks; the emoji face is carved out of them with `unicode-range`](2026-09-17-text-fonts-lead-the-stack-the-emoji-face-is-carved-out-by-unicode-range.md)
-## UI / UX (74)
+## UI / UX (75)
 
-## UI / UX (74)
+## UI / UX (75)
 - **2026-09-17** — [Show onboarding's full recommended list in the reply gate, marks and sizes included, and seat the folder route among the routes](2026-09-17-reply-gate-shows-the-full-recommended-list.md)
 - **2026-09-16** — [Confirm Full access before enabling it, every time](2026-09-16-confirm-full-access-before-enabling-it.md)
 - **2026-09-16** — [Unfold the release notes inside the update banner](2026-09-16-unfold-release-notes-inside-the-update-banner.md)
@@ -303,9 +304,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-16** — [Let the composer's model list download: recommendations when empty, Hugging Face under the search](2026-09-16-model-selector-download-picks.md)
 - **2026-09-16** — [Show the running download first in the reply gate, arm the message on it, and share the panel's Cancel](2026-09-16-show-the-running-download-first-in-the-reply-gate.md)
 - **2026-09-16** — [Stay on the Welcome screen until the download lands](2026-09-16-stay-on-the-welcome-screen-until-the-download-lands.md)
-## UI / UX (74)
+## UI / UX (75)
 
-## UI / UX (74)
+## UI / UX (75)
 - **2026-09-16** — [Mark each recommended row with its fit, and list the picks by it](2026-09-16-mark-each-recommended-row-with-its-fit.md)
 - **2026-09-16** — [Offer the manifest's recommendation on the reminder card too, and stop waiting for it after 8 s](2026-09-16-offer-the-manifest-recommendation-on-the-reminder-card-too.md)
 - **2026-09-15** — [Ask for a model with the same rows and the same list as onboarding, and open the Hub from both](2026-09-15-ask-for-a-model-with-the-same-rows-and-list-as-onboarding.md)
