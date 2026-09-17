@@ -143,6 +143,44 @@ vi.mock('@/i18n/setup', () => ({
   default: { t: (key: string) => key },
 }))
 
+// In-memory stand-in for the local engines: which model ids each provider has
+// loaded. The stop/start methods mirror `DefaultModelsService` so a test can
+// assert which copies were unloaded and what is still loaded after a switch,
+// not just which method ran.
+const createLoadedEngines = (initial: Record<string, string[]>) => {
+  const engines = new Map(
+    Object.entries(initial).map(([provider, ids]) => [provider, [...ids]])
+  )
+  const unloaded: string[] = []
+  const keep = (provider: string, predicate: (id: string) => boolean) => {
+    const ids = engines.get(provider) ?? []
+    for (const id of ids) {
+      if (!predicate(id)) unloaded.push(`${provider}::${id}`)
+    }
+    engines.set(provider, ids.filter(predicate))
+  }
+  return {
+    unloaded,
+    getActiveModels: async (provider?: string) =>
+      provider === undefined
+        ? [...engines.values()].flat()
+        : [...(engines.get(provider) ?? [])],
+    stopAllModels: async () => {
+      for (const provider of engines.keys()) keep(provider, () => false)
+    },
+    stopAllModelsExcept: async (modelId: string, providerName: string) => {
+      for (const provider of engines.keys()) {
+        keep(provider, (id) => provider === providerName && id === modelId)
+      }
+    },
+    startModel: async (provider: { provider: string }, modelId: string) => {
+      const ids = engines.get(provider.provider) ?? []
+      if (!ids.includes(modelId)) engines.set(provider.provider, [...ids, modelId])
+    },
+    snapshot: () => Object.fromEntries(engines),
+  }
+}
+
 describe('switchToModel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -191,15 +229,15 @@ describe('switchToModel', () => {
     // auto-start landed in TurboQuant while the chat loaded upstream). A
     // switch to upstream must drop the TurboQuant copy only — never the
     // upstream server, which may be streaming an answer right now.
+    const loaded = createLoadedEngines({
+      'llamacpp': ['shared-model'],
+      'llamacpp-upstream': ['shared-model'],
+    })
     const models = {
-      getActiveModels: vi.fn(async (provider?: string) =>
-        provider === 'llamacpp' || provider === 'llamacpp-upstream'
-          ? ['shared-model']
-          : []
-      ),
-      stopAllModels: vi.fn().mockResolvedValue(undefined),
-      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
-      startModel: vi.fn().mockResolvedValue(undefined),
+      getActiveModels: vi.fn(loaded.getActiveModels),
+      stopAllModels: vi.fn(loaded.stopAllModels),
+      stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+      startModel: vi.fn(loaded.startModel),
     }
     const serviceHub = {
       app: () => ({
@@ -220,14 +258,24 @@ describe('switchToModel', () => {
     )
     expect(models.stopAllModels).not.toHaveBeenCalled()
     expect(appState.setActiveModels).toHaveBeenCalledWith(['shared-model'])
+    // Only the TurboQuant copy was unloaded; the upstream copy never went down.
+    expect(loaded.unloaded).toEqual(['llamacpp::shared-model'])
+    expect(loaded.snapshot()).toEqual({
+      'llamacpp': [],
+      'llamacpp-upstream': ['shared-model'],
+    })
   })
 
   it('still stops every local engine when switching to a cloud model', async () => {
+    const loaded = createLoadedEngines({
+      'llamacpp-upstream': ['shared-model'],
+      'mlx': ['broken-model'],
+    })
     const models = {
-      getActiveModels: vi.fn().mockResolvedValue([]),
-      stopAllModels: vi.fn().mockResolvedValue(undefined),
-      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
-      startModel: vi.fn().mockResolvedValue(undefined),
+      getActiveModels: vi.fn(loaded.getActiveModels),
+      stopAllModels: vi.fn(loaded.stopAllModels),
+      stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+      startModel: vi.fn(loaded.startModel),
     }
     const serviceHub = {
       app: () => ({
@@ -244,6 +292,11 @@ describe('switchToModel', () => {
 
     expect(models.stopAllModels).toHaveBeenCalledOnce()
     expect(models.stopAllModelsExcept).not.toHaveBeenCalled()
+    expect(loaded.unloaded).toEqual([
+      'llamacpp-upstream::shared-model',
+      'mlx::broken-model',
+    ])
+    expect(loaded.snapshot()).toEqual({ 'llamacpp-upstream': [], 'mlx': [] })
   })
 
   it('leaves a model the user stopped down until it is asked for again', async () => {

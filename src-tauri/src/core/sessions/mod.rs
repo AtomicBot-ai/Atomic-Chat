@@ -1,54 +1,33 @@
 //! Where a model is being served, and who owns the answer.
 //!
-//! Two halves. `mirror` is the app's copy of the session table of a core process it does not own;
-//! `resolver` is the single question-answering surface over every source of sessions — the two
-//! llama.cpp plugins, MLX, and that mirror.
+//! Two halves. `mirror` is the app's copy of the session table of the core process that owns every
+//! local runtime; `resolver` is the single question-answering surface over it.
 //!
 //! Deliberately outside `atomic_core`: the resolver has to be reachable from the proxy and the
 //! agent on every target the app builds for, while `atomic_core` needs process inspection that only
-//! the desktop targets have. Keeping them apart is what lets one resolver serve both the migrated
-//! and the un-migrated paths.
+//! the desktop targets have. On mobile the resolver answers over an empty mirror.
 
 pub mod mirror;
 pub mod resolver;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 use crate::core::state::AppState;
 use mirror::CoreSessions;
 use resolver::SessionResolver;
 
-/// The app's resolver, or a plugin-only one built on the spot.
+/// The app's resolver, or one over an empty mirror.
 ///
-/// `setup()` installs the real resolver once the plugins and the core client exist. Anything
-/// running before that — and any test that never called `setup` — still needs an answer, so it gets
-/// a resolver over the same plugin maps with no core attached. That is not a degraded mode: with no
-/// core, "read the plugin maps" is the correct and complete answer, and it is exactly what the
-/// installed resolver does for a provider the core does not own.
-pub fn resolver_for<R: Runtime>(app: &AppHandle<R>, state: &AppState) -> Arc<SessionResolver> {
+/// `setup()` installs the real resolver over the core client's mirror. Anything running before that,
+/// any test that never called `setup`, and mobile — where no core runs — get a resolver that finds
+/// nothing local, which is the truth for them.
+pub fn resolver_for<R: Runtime>(_app: &AppHandle<R>, state: &AppState) -> Arc<SessionResolver> {
     if let Some(resolver) = state.session_resolver.get() {
         return Arc::clone(resolver);
     }
-    let llamacpp = app
-        .state::<tauri_plugin_llamacpp::LlamacppState>()
-        .llama_server_process
-        .clone();
-    let upstream = app
-        .state::<tauri_plugin_llamacpp_upstream::LlamacppState>()
-        .llama_server_process
-        .clone();
-    let mlx = app
-        .state::<tauri_plugin_mlx::state::MlxState>()
-        .mlx_server_process
-        .clone();
-    Arc::new(SessionResolver::new(
-        llamacpp,
-        upstream,
-        mlx,
-        Arc::new(CoreSessions::new()),
-    ))
+    Arc::new(SessionResolver::new(Arc::new(CoreSessions::new())))
 }
 
 /// Where a model is served, asked of whoever owns that provider's sessions.
@@ -67,11 +46,15 @@ pub async fn resolve_local_session<R: Runtime>(
     Ok(resolver.find_in(&provider, &model_id).await)
 }
 
-/// Every model loaded right now, across every provider.
+/// Every model loaded right now, across every provider — Foundation Models included, which the
+/// proxy never routes to but the tray still shows.
 #[tauri::command]
 pub async fn list_local_sessions<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<resolver::ResolvedSession>, String> {
-    Ok(resolver_for(&app, &state).served().await)
+    let resolver = resolver_for(&app, &state);
+    let mut sessions = resolver.served().await;
+    sessions.extend(resolver.list_in(resolver::PROVIDER_FOUNDATION_MODELS).await);
+    Ok(sessions)
 }

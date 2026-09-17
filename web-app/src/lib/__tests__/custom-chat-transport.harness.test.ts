@@ -727,10 +727,20 @@ describe('CustomChatTransport pre-flight context sizing', () => {
       .spyOn(ModelFactory, 'createModel')
       .mockResolvedValue(fakeStreamingModel(idleStream))
 
-    await send(new CustomChatTransport())
+    const transport = new CustomChatTransport()
+    const chunks = await send(transport)
 
     expect(contextMocks.growModelContext).not.toHaveBeenCalled()
     expect(createModel).toHaveBeenCalledTimes(1)
+    // The answer streams and the measured window is the one already loaded.
+    expect(
+      chunks
+        .filter((chunk) => chunk.type === 'text-delta')
+        .map((chunk) => chunk.delta)
+    ).toEqual(['ok'])
+    expect(transport.lastPromptSize).toEqual(
+      expect.objectContaining({ ctxLen: 65536, measured: false })
+    )
   })
 
   it('respects a disabled auto_increase_ctx_len', async () => {
@@ -739,9 +749,15 @@ describe('CustomChatTransport pre-flight context sizing', () => {
       fakeStreamingModel(idleStream)
     )
 
-    await send(new CustomChatTransport())
+    const chunks = await send(new CustomChatTransport())
 
     expect(contextMocks.growModelContext).not.toHaveBeenCalled()
+    // The oversized prompt is still sent as-is instead of being refused.
+    expect(
+      chunks
+        .filter((chunk) => chunk.type === 'text-delta')
+        .map((chunk) => chunk.delta)
+    ).toEqual(['ok'])
   })
 
   it('refuses to send into a window that is already at the model maximum', async () => {

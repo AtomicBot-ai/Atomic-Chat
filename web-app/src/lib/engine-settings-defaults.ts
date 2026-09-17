@@ -1,17 +1,19 @@
-import llamacppSettings from '../../../extensions/llamacpp-extension/settings.json'
-import llamacppUpstreamSettings from '../../../extensions/llamacpp-upstream-extension/settings.json'
-import mlxSettings from '../../../extensions/mlx-extension/settings.json'
+import llamacppSettings from './core-settings-schema/llamacpp.json'
+import llamacppUpstreamSettings from './core-settings-schema/llamacpp-upstream.json'
+import mlxSettings from './core-settings-schema/mlx.json'
 
 import { sameSettingValue } from '@/lib/model-settings-defaults'
 
 /**
  * "Reset to default" for a local engine's settings, the list on its page
- * under Settings → Model providers: the values each engine extension ships in
- * its `settings.json`, which is what a fresh install registers.
+ * under Settings → Model providers: the defaults in `atomic-chat-core`'s
+ * settings contract, which is what a fresh install registers.
  *
- * Read from the extensions' files rather than asked from the running
- * extension: each extension bundles its own copy of core, which keeps no
- * defaults once the persisted values are merged in.
+ * Read from a vendored copy of the core's schema files
+ * (`./core-settings-schema/`, pinned to `atomicCore.version` in the root
+ * `package.json`) rather than asked from the running extension: each
+ * extension bundles its own copy of core, which keeps no defaults once the
+ * persisted values are merged in.
  */
 
 type SettingDefinition = { key: string; controllerProps?: { value?: unknown } }

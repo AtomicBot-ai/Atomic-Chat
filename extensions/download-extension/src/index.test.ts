@@ -77,10 +77,8 @@ describe('buildAuthHeaders', () => {
 describe('cancelDownload', () => {
   const manager = Object.create(DownloadManager.prototype) as DownloadManager
 
-  it('cancels a core-owned backend through the core control route', async () => {
-    vi.mocked(invoke).mockImplementation(async (command) =>
-      command === 'atomic_core_status' ? { active_runtime: 'llamacpp-upstream' } : { cancelled: true }
-    )
+  it('cancels a backend install through the core control route', async () => {
+    vi.mocked(invoke).mockResolvedValue({ cancelled: true })
     await expect(manager.cancelDownload('llamacpp-backend-b1/macos-arm64')).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
       method: 'POST', path: '/downloads/llamacpp-backend-b1/macos-arm64/cancel', body: null,
@@ -88,37 +86,27 @@ describe('cancelDownload', () => {
     expect(invoke).not.toHaveBeenCalledWith('cancel_download_task', expect.anything())
   })
 
-  it('cancels a core-owned TurboQuant backend install when the core owns every runtime', async () => {
-    vi.mocked(invoke).mockImplementation(async (command) =>
-      command === 'atomic_core_status' ? { active_runtime: 'all' } : { cancelled: true }
-    )
+  it('cancels a TurboQuant backend install through the core too', async () => {
+    vi.mocked(invoke).mockResolvedValue({ cancelled: true })
     await expect(manager.cancelDownload('llamacpp-backend-b10018-1_3_0/linux-x64-rocm')).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
       method: 'POST', path: '/downloads/llamacpp-backend-b10018-1_3_0/linux-x64-rocm/cancel', body: null,
     })
-    expect(invoke).not.toHaveBeenCalledWith('cancel_download_task', expect.anything())
   })
 
-  it('keeps legacy cancellation on its original Rust command', async () => {
-    vi.mocked(invoke).mockResolvedValue({ active_runtime: null })
-    await expect(manager.cancelDownload('llamacpp-backend-b1/macos-arm64')).resolves.toBeUndefined()
-    expect(invoke).toHaveBeenCalledWith('cancel_download_task', { taskId: 'llamacpp-backend-b1/macos-arm64' })
-  })
-
-  it('cancels a legacy task through Rust even if core ownership changed while it ran', async () => {
-    manager['activeLegacyTasks'] = new Set(['llamacpp-backend-b1/macos-arm64'])
-    vi.mocked(invoke).mockResolvedValue({ active_runtime: 'llamacpp-upstream' })
+  it('cancels a task this extension started through Rust, whatever its id', async () => {
+    manager['ownTasks'] = new Set(['llamacpp-backend-b1/macos-arm64'])
+    vi.mocked(invoke).mockResolvedValue(undefined)
     await expect(manager.cancelDownload('llamacpp-backend-b1/macos-arm64')).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('cancel_download_task', { taskId: 'llamacpp-backend-b1/macos-arm64' })
     expect(invoke).not.toHaveBeenCalledWith('atomic_core_call', expect.anything())
-    manager['activeLegacyTasks'].clear()
+    manager['ownTasks'].clear()
   })
 
-  it('uses legacy cancellation on app builds without the core status command', async () => {
-    vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === 'atomic_core_status') throw new Error('unknown command atomic_core_status')
-    })
-    await expect(manager.cancelDownload('llamacpp-backend-b1/macos-arm64')).resolves.toBeUndefined()
-    expect(invoke).toHaveBeenCalledWith('cancel_download_task', { taskId: 'llamacpp-backend-b1/macos-arm64' })
+  it('cancels a model download through Rust', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined)
+    await expect(manager.cancelDownload('qwen3-4b')).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenCalledWith('cancel_download_task', { taskId: 'qwen3-4b' })
+    expect(invoke).not.toHaveBeenCalledWith('atomic_core_call', expect.anything())
   })
 })

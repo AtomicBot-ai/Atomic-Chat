@@ -302,7 +302,7 @@ jobs:
           yarn download:core
           yarn build:foundation-models-server
           yarn build:cli
-          # Универсальная macOS-сборка + переименование VOLNAME с версией + ресигн/нотаризация DMG
+          # Universal macOS build + VOLNAME rename with the version + DMG re-sign/notarization
           make build-mac
 
       - name: Upload Rust debug files to Sentry (macOS)

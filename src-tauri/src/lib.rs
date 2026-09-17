@@ -3,7 +3,6 @@ pub mod core;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-#[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
@@ -11,18 +10,12 @@ use core::{
     setup::{self, setup_mcp},
     state::AppState,
 };
-#[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
-#[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
-#[cfg(not(feature = "cli"))]
 use tauri::{path::BaseDirectory, Emitter, Manager, RunEvent};
-#[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
-#[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
-#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
@@ -79,11 +72,6 @@ pub fn run() {
     #[cfg(feature = "mlx")]
     {
         app_builder = app_builder.plugin(tauri_plugin_mlx::init());
-    }
-
-    #[cfg(feature = "foundation-models")]
-    {
-        app_builder = app_builder.plugin(tauri_plugin_foundation_models::init());
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -185,8 +173,6 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
         // ChatGPT subscription sign-in
         core::auth::commands::chatgpt_status,
         core::auth::commands::chatgpt_login,
@@ -262,16 +248,12 @@ pub fn run() {
         // Where a model is served. One answer for the webview, whoever owns the session.
         core::sessions::resolve_local_session,
         core::sessions::list_local_sessions,
-        // atomic-chat-core: one call for the whole control API, plus the flags
-        // that decide what the core owns. Desktop only — the core is a native
+        // atomic-chat-core: one call for the whole control API, its status and
+        // its snapshot. Desktop only — the core is a native
         // process the mobile targets do not ship.
         core::atomic_core::commands::atomic_core_call,
         core::atomic_core::commands::atomic_core_status,
         core::atomic_core::commands::atomic_core_snapshot,
-        core::atomic_core::commands::atomic_core_begin_runtime_load,
-        core::atomic_core::commands::atomic_core_end_runtime_load,
-        core::atomic_core::commands::get_atomic_core_flags,
-        core::atomic_core::commands::set_atomic_core_flags,
     ]);
 
     // Mobile: no updater commands
@@ -361,9 +343,6 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
-        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::get_mcp_server_statuses,
@@ -509,23 +488,9 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             crate::core::process_reaper::reap_orphan_backends(app.handle());
 
-            // Tell the llama.cpp plugin where `<data>/atomic-core/` is, so it can mirror its
-            // session table for a core process that shares this data folder (double-load guard).
-            {
-                let core_dir =
-                    crate::core::app::commands::get_jan_data_folder_path(app.handle().clone())
-                        .join("atomic-core");
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tauri_plugin_llamacpp_upstream::set_core_dir(handle, core_dir).await;
-                });
-            }
-
-            // Attach to `atomic-chat-core` if this install has delegated
-            // anything to it. Placed after the reaper so the reaper has already
-            // decided which processes a live core owns, and after the plugin
-            // learns the core directory so both sides of the double-load guard
-            // are in place before the app can load anything.
+            // Start or attach to `atomic-chat-core`, which owns every local
+            // runtime and the public API on desktop. Placed after the reaper so
+            // the reaper has already decided which processes a live core owns.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             crate::core::atomic_core::commands::init(app.handle());
 
@@ -741,6 +706,9 @@ pub fn run() {
 
                         let state = app_handle.state::<AppState>();
 
+                        // Desktop's public API runs in the core, which stopped above; only mobile
+                        // runs the app's own proxy.
+                        #[cfg(mobile)]
                         if let Err(e) =
                             crate::core::server::proxy::stop_server(state.server_handle.clone())
                                 .await
@@ -758,43 +726,6 @@ pub fn run() {
                         {
                             Ok(_) => log::info!("MCP cleanup completed successfully"),
                             Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
-                        }
-
-                        // Both llama.cpp providers keep their own process map, so clean
-                        // up each one to avoid orphaned llama-server processes on quit.
-                        if let Err(e) =
-                            tauri_plugin_llamacpp::cleanup_llama_processes(app_handle.clone()).await
-                        {
-                            log::warn!("Failed to cleanup llamacpp processes: {}", e);
-                        } else {
-                            log::info!("llamacpp processes cleaned up successfully");
-                        }
-
-                        if let Err(e) = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(
-                            app_handle.clone(),
-                        )
-                        .await
-                        {
-                            log::warn!("Failed to cleanup llamacpp-upstream processes: {}", e);
-                        } else {
-                            log::info!("llamacpp-upstream processes cleaned up successfully");
-                        }
-
-                        #[cfg(feature = "mlx")]
-                        {
-                            use tauri_plugin_mlx::cleanup_mlx_processes;
-                            if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
-                                log::warn!("Failed to cleanup MLX processes: {}", e);
-                            } else {
-                                log::info!("MLX processes cleaned up successfully");
-                            }
-                        }
-
-                        #[cfg(feature = "foundation-models")]
-                        {
-                            use tauri_plugin_foundation_models::cleanup_processes;
-                            cleanup_processes(&app_handle).await;
-                            log::info!("Foundation Models processes cleaned up successfully");
                         }
 
                         log::info!("App cleanup completed");

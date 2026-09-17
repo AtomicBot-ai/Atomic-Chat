@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  effectiveCtxSize,
   firstGgufShardPath,
   getProxyConfig,
   isEmbeddingGguf,
@@ -641,27 +640,5 @@ describe('isEmbeddingGguf', () => {
   it('does not guess without metadata', () => {
     expect(isEmbeddingGguf(undefined)).toBe(false)
     expect(isEmbeddingGguf({})).toBe(false)
-  })
-})
-
-describe('effectiveCtxSize', () => {
-  it('clamps a request past the trained context', () => {
-    // bge-small trains at 512; the app default is 16384.
-    expect(effectiveCtxSize(16384, 512)).toBe(512)
-  })
-
-  it('leaves a request within the trained context alone', () => {
-    expect(effectiveCtxSize(4096, 32768)).toBe(4096)
-    expect(effectiveCtxSize(512, 512)).toBe(512)
-  })
-
-  it('does not guess when the trained context is unknown', () => {
-    expect(effectiveCtxSize(16384, undefined)).toBe(16384)
-    expect(effectiveCtxSize(16384, NaN)).toBe(16384)
-    expect(effectiveCtxSize(16384, 0)).toBe(16384)
-  })
-
-  it('passes through an unset request', () => {
-    expect(effectiveCtxSize(undefined, 512)).toBeUndefined()
   })
 })

@@ -878,6 +878,7 @@ describe('ChatInput local model auto-start', () => {
       'llamacpp-upstream': ['shared-model'],
       llamacpp: ['shared-model'],
     })
+    useAppState.setState({ activeModels: [] })
     const { unmount } = render(<ChatInput />)
 
     await waitFor(() => {
@@ -887,11 +888,17 @@ describe('ChatInput local model auto-start', () => {
       )
     })
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // The serving engine keeps the model, so the composer shows it as running.
+    await waitFor(() => {
+      expect(useAppState.getState().activeModels).toEqual(['shared-model'])
+    })
     unmount()
   })
 
   it('auto-starts when the selected engine does not serve the model', async () => {
     seedModels({})
+    // A stale mark from an engine that is gone (e.g. a crashed backend).
+    useAppState.setState({ activeModels: ['shared-model'] })
     const { unmount } = render(<ChatInput />)
 
     await waitFor(() => {
@@ -903,6 +910,8 @@ describe('ChatInput local model auto-start', () => {
         })
       )
     })
+    // Until the start lands, the composer no longer claims the model runs.
+    expect(useAppState.getState().activeModels).toEqual([])
     unmount()
   })
 
@@ -911,23 +920,29 @@ describe('ChatInput local model auto-start', () => {
       'llamacpp-upstream': ['shared-model'],
       llamacpp: ['shared-model'],
     })
+    useAppState.setState({ activeModels: [] })
     const { unmount } = render(<ChatInput chatStatus="streaming" />)
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(getActiveModels).not.toHaveBeenCalled()
     expect(stopAllModelsExcept).not.toHaveBeenCalled()
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // No probe ran, so the engines' report never reached the app state.
+    expect(useAppState.getState().activeModels).toEqual([])
     unmount()
   })
 
   it('never touches the engines while another chat is busy', async () => {
     mocks.chatBusy = true
     const { getActiveModels } = seedModels({})
+    useAppState.setState({ activeModels: ['shared-model'] })
     const { unmount } = render(<ChatInput />)
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(getActiveModels).not.toHaveBeenCalled()
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // The empty engine report was never synced over the running model.
+    expect(useAppState.getState().activeModels).toEqual(['shared-model'])
     unmount()
   })
 })

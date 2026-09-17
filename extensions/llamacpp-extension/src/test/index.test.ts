@@ -3,7 +3,6 @@ import llamacpp_extension from '../index'
 
 import {
   getSupportedFeaturesFromRust,
-  normalizeLlamacppConfig,
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 import { listSupportedBackends } from '../backend'
 import { getSystemInfo } from '../hardware'
@@ -53,7 +52,6 @@ vi.mock(
       mapOldBackendToNew: vi.fn(),
       removeOldBackendVersions: vi.fn(),
       readGgufMetadata: vi.fn(),
-      unloadLlamaModel: vi.fn(),
     }
   }
 )
@@ -767,7 +765,7 @@ describe('llamacpp_extension', () => {
         api_key: 'test-api-key',
       }
       extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
-      extension['performLoad'] = vi.fn().mockResolvedValue(session)
+      extension['loadThroughCore'] = vi.fn().mockResolvedValue(session)
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue({ status: 'ok' }),
@@ -776,47 +774,12 @@ describe('llamacpp_extension', () => {
       const result = await extension.load('test-model')
 
       expect(result).toEqual(session)
-      expect(extension['performLoad']).toHaveBeenCalledWith(
+      expect(extension['loadThroughCore']).toHaveBeenCalledWith(
         'test-model',
         undefined,
         false,
         false
       )
-    })
-  })
-
-  describe('unload', () => {
-    it('should throw error if no active session found', async () => {
-      await expect(extension.unload('nonexistent-model')).rejects.toThrow(
-        'No active session found'
-      )
-    })
-
-    it('should unload model successfully', async () => {
-      const { unloadLlamaModel } = await import(
-        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
-      )
-
-      extension['sessionCache'].set('test-model', {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key',
-      })
-
-      vi.mocked(unloadLlamaModel).mockResolvedValue({
-        success: true,
-        error: null,
-      })
-
-      const result = await extension.unload('test-model')
-
-      expect(result).toEqual({
-        success: true,
-        error: null,
-      })
-
-      expect(extension['sessionCache'].has('test-model')).toBe(false)
     })
   })
 
@@ -835,14 +798,18 @@ describe('llamacpp_extension', () => {
     it('should handle non-streaming chat request', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
-      extension['sessionCache'].set('test-model', {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key',
+      // The session comes from the core's session list, asked on every call.
+      vi.mocked(invoke).mockResolvedValue({
+        sessions: [
+          {
+            model_id: 'test-model',
+            pid: 123,
+            port: 3000,
+            api_key: 'test-key',
+            provider: 'llamacpp',
+          },
+        ],
       })
-
-      vi.mocked(invoke).mockResolvedValue(true) // is_process_running
 
       const mockResponse = {
         id: 'test-id',
@@ -1109,13 +1076,24 @@ describe('llamacpp_extension', () => {
     })
   })
   describe('getLoadedModels', () => {
-    it('should return list of loaded models', async () => {
+    it('should return the models the core runs for this provider', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
-      vi.mocked(invoke).mockResolvedValue(['model1', 'model2'])
+      vi.mocked(invoke).mockResolvedValue({
+        sessions: [
+          { model_id: 'model1', provider: 'llamacpp' },
+          { model_id: 'upstream-model', provider: 'llamacpp-upstream' },
+          { model_id: 'model2', provider: 'llamacpp' },
+        ],
+      })
 
       const result = await extension.getLoadedModels()
 
       expect(result).toEqual(['model1', 'model2'])
+      expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
+        method: 'GET',
+        path: '/sessions',
+        body: null,
+      })
     })
   })
 
@@ -1347,7 +1325,7 @@ describe('llamacpp_extension', () => {
         .value
     }
 
-    beforeEach(() => {
+    beforeEach(async () => {
       vi.stubGlobal('IS_MAC', false)
       vi.stubGlobal('IS_WINDOWS', false)
       vi.mocked(localStorage.getItem).mockReset()
@@ -1357,10 +1335,33 @@ describe('llamacpp_extension', () => {
         version_backend: 'v1.0.0/windows-x64-cpu',
         device: '',
       } as any
+      // The optimal-backend record is stored in the core; accept every write.
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation((async (
+        command: string,
+        args?: { method?: string; path?: string; body?: any }
+      ) => {
+        if (
+          command === 'atomic_core_call' &&
+          args?.method === 'PUT' &&
+          args.path === '/backends/llamacpp/optimal'
+        ) {
+          return {
+            status: 'updated',
+            current: {
+              revision: args.body.expected_revision + 1,
+              optimal: args.body.optimal,
+            },
+          }
+        }
+        return undefined
+      }) as never)
     })
 
-    afterEach(() => {
+    afterEach(async () => {
       delete (window as any).dispatchEvent
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockReset()
     })
 
     describe('version update', () => {
@@ -2257,56 +2258,5 @@ describe('llamacpp_extension', () => {
         )
       ).toBe('Vulkan · turboquant-linux-x64-vulkan-d86eb0b')
     })
-  })
-})
-
-describe('normalizeLlamacppConfig', () => {
-  describe('parallel field', () => {
-    it('should default parallel to 1 when undefined', () => {
-      const result = normalizeLlamacppConfig({})
-      expect(result.parallel).toBe(1)
-    })
-
-    it('should default parallel to 1 when null', () => {
-      const result = normalizeLlamacppConfig({ parallel: null })
-      expect(result.parallel).toBe(1)
-    })
-
-    it('should default parallel to 1 when empty string', () => {
-      const result = normalizeLlamacppConfig({ parallel: '' })
-      expect(result.parallel).toBe(1)
-    })
-
-    it('should parse parallel as a number', () => {
-      const result = normalizeLlamacppConfig({ parallel: 4 })
-      expect(result.parallel).toBe(4)
-    })
-
-    it('should parse parallel from a string number', () => {
-      const result = normalizeLlamacppConfig({ parallel: '2' })
-      expect(result.parallel).toBe(2)
-    })
-
-    it('should allow parallel of 0 (disables the flag)', () => {
-      const result = normalizeLlamacppConfig({ parallel: 0 })
-      expect(result.parallel).toBe(0)
-    })
-  })
-
-  it('preserves reasoning and extra argument settings for IPC', () => {
-    const result = normalizeLlamacppConfig({
-      reasoning_preserve: 'true',
-      extra_args: '--reasoning-format deepseek',
-    })
-
-    expect(result.reasoning_preserve).toBe(true)
-    expect(result.extra_args).toBe('--reasoning-format deepseek')
-  })
-
-  it('defaults reasoning preservation and extra arguments safely', () => {
-    const result = normalizeLlamacppConfig({})
-
-    expect(result.reasoning_preserve).toBe(false)
-    expect(result.extra_args).toBe('')
   })
 })

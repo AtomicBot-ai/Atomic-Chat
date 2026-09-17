@@ -801,7 +801,7 @@ mod tests {
 /// The app has listened to `download-<task id>` since before the core existed — the download
 /// extension subscribes to it by name, and so does every progress bar built on top. Renaming that
 /// would mean touching each of them, so instead the relay emits the legacy name *as well as* the
-/// core's own (PLAN.md §4 stage 3c: "слушатели не меняются").
+/// core's own (PLAN.md §4 stage 3c: "listeners (…) do not change").
 ///
 /// Returns `None` for events with no legacy counterpart, which is most of them.
 pub fn legacy_event_for(name: &str, payload: &Value) -> Option<(String, Value)> {

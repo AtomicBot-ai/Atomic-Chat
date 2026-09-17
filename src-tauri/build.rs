@@ -49,8 +49,8 @@ fn load_dotenv() {
 /// `ATOMIC_CORE_VERSION`.
 ///
 /// The supervisor refuses to attach to a core whose version does not match this
-/// string (PLAN.md §3.6: "при несовместимой версии живого владельца — понятный
-/// отказ"). The pin lives in one place, `package.json` → `atomicCore.version`,
+/// string (PLAN.md §3.4: "With an incompatible version of the live owner — a clear
+/// refusal"). The pin lives in one place, `package.json` → `atomicCore.version`,
 /// because that is what `scripts/download-core.mjs` downloads and verifies; a
 /// second copy here would let the bundled binary and the expectation drift.
 ///
@@ -126,6 +126,5 @@ fn main() {
     #[cfg(all(windows, feature = "test-tauri"))]
     embed_windows_test_manifest();
 
-    #[cfg(not(feature = "cli"))]
     build_tauri()
 }

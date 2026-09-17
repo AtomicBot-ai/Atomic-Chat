@@ -4,8 +4,6 @@ pub mod artifact;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod atomic_core;
 pub mod auth;
-#[cfg(feature = "cli")]
-pub mod cli;
 pub mod downloads;
 pub mod extensions;
 pub mod filesystem;

@@ -4,13 +4,7 @@ import {
   getBackendExePath,
   isBackendInstalled,
   fetchRemoteBackends,
-  getBackendDownloadUrl,
-  getCudaToolkitVersion,
-  getCudartArchiveName,
-  getCudartDownloadUrl,
-  findUpstreamCudaBinWithCudart,
-  upstreamCudaBackendId,
-  GGML_ORG_CUDART_PINNED_TAG,
+  assertDeletableBackendPack,
   TURBOQUANT_RELEASE_INDEX_URL,
   TURBOQUANT_LATEST_RELEASE_URL,
   TURBOQUANT_LEGACY_MANIFEST_URL,
@@ -262,18 +256,9 @@ describe('Backend functions', () => {
     })
   })
 
-  describe('getBackendDownloadUrl (TurboQuant manifest)', () => {
+  describe('TurboQuant release index and asset names', () => {
     afterEach(() => {
       vi.stubGlobal('IS_WINDOWS', false)
-    })
-
-    it('resolves to the AtomicBot-ai releases CDN, never api.github.com', () => {
-      vi.stubGlobal('IS_WINDOWS', true)
-      const url = getBackendDownloadUrl('b10018-1.3.0', 'windows-x64-cuda-12.4')
-      expect(url).not.toContain('api.github.com')
-      expect(url).toContain(
-        'github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
-      )
     })
 
     it('resolves the backend index through releases/latest, never a pinned tag', () => {
@@ -298,19 +283,6 @@ describe('Backend functions', () => {
       )
     })
 
-    it('prefers the asset name from the index over the naming convention', () => {
-      vi.stubGlobal('IS_WINDOWS', true)
-      expect(
-        getBackendDownloadUrl(
-          'b10018-1.3.0',
-          'windows-x64-cpu',
-          'llama-turboquant-windows-x64-cpu-split.zip'
-        )
-      ).toBe(
-        'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/b10018-1.3.0/llama-turboquant-windows-x64-cpu-split.zip'
-      )
-    })
-
     it('derives the archive extension from the backend id, not the host', () => {
       vi.stubGlobal('IS_WINDOWS', false)
       expect(defaultAssetName('windows-x64-cuda-13.3')).toBe(
@@ -321,32 +293,6 @@ describe('Backend functions', () => {
       )
     })
 
-    it('uses the unified manifest tag verbatim + .zip on Windows', () => {
-      vi.stubGlobal('IS_WINDOWS', true)
-      const url = getBackendDownloadUrl('b10018-1.3.0', 'windows-x64-cpu')
-      expect(url).toBe(
-        'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/b10018-1.3.0/llama-turboquant-windows-x64-cpu.zip'
-      )
-    })
-
-    it('uses .tar.gz on Linux with the unified tag', () => {
-      vi.stubGlobal('IS_WINDOWS', false)
-      const url = getBackendDownloadUrl('b10018-1.3.0', 'linux-x64-rocm')
-      expect(url).toBe(
-        'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/b10018-1.3.0/llama-turboquant-linux-x64-rocm.tar.gz'
-      )
-    })
-
-    it('still resolves installs pinned to a legacy per-backend tag', () => {
-      vi.stubGlobal('IS_WINDOWS', false)
-      const url = getBackendDownloadUrl(
-        'turboquant-linux-x64-vulkan-d86eb0b',
-        'linux-x64-vulkan'
-      )
-      expect(url).toBe(
-        'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/turboquant-linux-x64-vulkan-d86eb0b/llama-turboquant-linux-x64-vulkan.tar.gz'
-      )
-    })
   })
 })
 
@@ -366,85 +312,40 @@ describe('isTurboQuantRelease', () => {
   })
 })
 
-describe('TurboQuant cudart helpers', () => {
-  it('maps clean Windows CUDA ids to toolkit minors and archive names', () => {
-    expect(getCudaToolkitVersion('windows-x64-cuda-13.3')).toBe('13.3')
-    expect(getCudaToolkitVersion('windows-x64-cuda-12.4')).toBe('12.4')
-    expect(getCudaToolkitVersion('windows-x64-cpu')).toBeNull()
-    expect(getCudaToolkitVersion('linux-x64-vulkan')).toBeNull()
-    expect(getCudartArchiveName('windows-x64-cuda-13.3')).toBe(
-      'cudart-llama-bin-win-cuda-13.3-x64.zip'
-    )
-    expect(upstreamCudaBackendId('13.3')).toBe('win-cuda-13.3-x64')
+describe('assertDeletableBackendPack', () => {
+  it('returns the cleaned ids of a build that is not selected', () => {
+    expect(
+      assertDeletableBackendPack(
+        'b10018-1.3.0/windows-x64-cpu',
+        '\uFEFFb9937-1.2.0 ',
+        ' windows-x64-cuda-13.3'
+      )
+    ).toEqual({ version: 'b9937-1.2.0', backend: 'windows-x64-cuda-13.3' })
   })
 
-  it('builds ggml-org companion URLs from the pinned upstream tag', () => {
-    expect(getCudartDownloadUrl('windows-x64-cuda-13.3')).toBe(
-      `https://github.com/ggml-org/llama.cpp/releases/download/${GGML_ORG_CUDART_PINNED_TAG}/cudart-llama-bin-win-cuda-13.3-x64.zip`
-    )
-    expect(getCudartDownloadUrl('windows-x64-cpu')).toBeNull()
+  it('refuses the selected build, whatever BOM or whitespace it carries', () => {
+    expect(() =>
+      assertDeletableBackendPack(
+        '\uFEFFb10018-1.3.0/windows-x64-cpu',
+        'b10018-1.3.0',
+        'windows-x64-cpu '
+      )
+    ).toThrow('Cannot remove the backend that is currently selected')
   })
 
-  it('finds an upstream CUDA bin that already has cudart', async () => {
-    const jan = '/path/to/jan'
-    const donorBin =
-      '/path/to/jan/llamacpp-upstream/backends/b10205/win-cuda-13.3-x64/build/bin'
-    vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-      if (path === `${jan}/llamacpp-upstream/backends`) return true
-      if (path === `${donorBin}/cudart64_13.dll`) return true
-      return false
-    })
-    vi.mocked(fs.readdirSync).mockResolvedValue([
-      '/path/to/jan/llamacpp-upstream/backends/b9691',
-      '/path/to/jan/llamacpp-upstream/backends/b10205',
-    ] as any)
-
-    await expect(findUpstreamCudaBinWithCudart(jan, '13.3')).resolves.toBe(
-      donorBin
-    )
-  })
-
-  it('knows the CUDA 11 cudart soname', async () => {
-    const jan = '/path/to/jan'
-    const donorBin =
-      '/path/to/jan/llamacpp-upstream/backends/b10205/win-cuda-11.7-x64/build/bin'
-    vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-      if (path === `${jan}/llamacpp-upstream/backends`) return true
-      return path === `${donorBin}/cudart64_110.dll`
-    })
-    vi.mocked(fs.readdirSync).mockResolvedValue([
-      '/path/to/jan/llamacpp-upstream/backends/b10205',
-    ] as any)
-
-    await expect(findUpstreamCudaBinWithCudart(jan, '11.7')).resolves.toBe(
-      donorBin
-    )
-  })
-
-  it('refuses to guess a soname for an unknown CUDA major', async () => {
-    await expect(
-      findUpstreamCudaBinWithCudart('/path/to/jan', '10.2')
-    ).resolves.toBeNull()
-  })
-
-  it('returns null when no upstream install has been made yet', async () => {
-    vi.mocked(fs.existsSync).mockResolvedValue(false)
-
-    await expect(
-      findUpstreamCudaBinWithCudart('/path/to/jan', '13.3')
-    ).resolves.toBeNull()
-  })
-
-  it('returns null when every upstream CUDA install lacks cudart', async () => {
-    const jan = '/path/to/jan'
-    vi.mocked(fs.existsSync).mockImplementation(
-      async (path: string) => path === `${jan}/llamacpp-upstream/backends`
-    )
-    vi.mocked(fs.readdirSync).mockResolvedValue([
-      '/path/to/jan/llamacpp-upstream/backends/b10205',
-    ] as any)
-
-    await expect(findUpstreamCudaBinWithCudart(jan, '13.3')).resolves.toBeNull()
+  it('refuses ids that could leave the pack directory', () => {
+    for (const [version, backend] of [
+      ['', 'windows-x64-cpu'],
+      ['b10018-1.3.0', '  '],
+      ['../b10018', 'windows-x64-cpu'],
+      ['b10018-1.3.0', 'windows\\x64'],
+      ['..', 'windows-x64-cpu'],
+      ['b10018-1.3.0', '.'],
+    ]) {
+      expect(() => assertDeletableBackendPack('', version, backend)).toThrow(
+        'Invalid backend pack'
+      )
+    }
   })
 })
 

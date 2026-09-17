@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
     default_data_folder_path, get_app_configurations, get_jan_data_folder_path,
@@ -145,9 +144,11 @@ pub async fn factory_reset<R: Runtime>(
     if let Err(e) = cleanup_own_locks(&app_handle) {
         log::warn!("Failed to cleanup lock files: {}", e);
     }
-    // Clean up both llama.cpp providers' process maps.
-    let _ = cleanup_llama_processes(app_handle.clone()).await;
-    let _ = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(app_handle.clone()).await;
+    // The core owns every model process and holds the data folder open (its lock, journal and
+    // logs live inside it): stop it before the folder is deleted, or it keeps serving from a folder
+    // that no longer exists and the next launch attaches to a stale owner.
+    #[cfg(desktop)]
+    crate::core::atomic_core::commands::shutdown(&app_handle).await;
 
     // Windows needs time to release file handles after TerminateProcess
     #[cfg(windows)]

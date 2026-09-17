@@ -6,13 +6,14 @@
  * connection or external API key is required.
  *
  * Architecture:
- *   Jan extension (TypeScript) → Tauri plugin (Rust) → foundation-models-server (Swift)
- *                                                         ↓
- *                                             Apple FoundationModels.framework
+ *   extension (TypeScript) → atomic-chat-core → foundation-models-server (Swift)
+ *                                                  ↓
+ *                                      Apple FoundationModels.framework
  *
- * The extension spawns a lightweight OpenAI-compatible HTTP server (`foundation-models-server`)
- * that wraps the system Foundation Models API. Chat requests are proxied through that
- * local server, keeping the same pattern used by the MLX and llama.cpp engines.
+ * The core spawns a lightweight OpenAI-compatible HTTP server (`foundation-models-server`)
+ * that wraps the system Foundation Models API, and answers whether this Mac can run it.
+ * Chat requests go straight to that local server, keeping the same pattern used by the MLX
+ * and llama.cpp engines.
  */
 
 import {
@@ -30,18 +31,14 @@ import {
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
 import { invoke } from '@tauri-apps/api/core'
 import {
-  loadFoundationModelsServer,
-  unloadFoundationModelsServer,
-  isFoundationModelsProcessRunning,
-  getFoundationModelsRandomPort,
-  findFoundationModelsSession,
-  checkFoundationModelsAvailability,
-} from '@janhq/tauri-plugin-foundation-models-api'
-import {
   createCoreRuntime,
   describeCoreError,
 } from '../../shared/atomicCoreRuntime'
-import type { Invoke } from '../../shared/atomicCoreRuntime'
+import type {
+  CoreSessionInfo,
+  CoreSessionSummary,
+  Invoke,
+} from '../../shared/atomicCoreRuntime'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -50,12 +47,6 @@ const APPLE_MODEL_ID = 'apple/on-device'
 
 /** Display name shown in the Jan UI. */
 const APPLE_MODEL_NAME = 'Apple On-Device Model'
-
-/** Shared API secret used to authorise requests to the local server. */
-const API_SECRET = 'JanFoundationModels'
-
-/** Seconds to wait for the server binary to become ready. */
-const SERVER_STARTUP_TIMEOUT = 60
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 
@@ -84,9 +75,8 @@ export default class FoundationModelsExtension extends AIEngine {
   timeout: number = 300
 
   /**
-   * Foundation Models in `atomic-chat-core` (PLAN.md §4, stage 5). When the core owns this runtime
-   * (`atomic_core.runtime = all`) it starts and stops the server; there are no settings to hand
-   * over. The availability check stays with the plugin: it only runs `--check`, owns no process.
+   * Foundation Models in `atomic-chat-core` (PLAN.md §4). The core starts and stops the server and
+   * runs its `--check`; there are no settings to hand over.
    */
   private readonly core = createCoreRuntime('foundation-models', ((
     command,
@@ -94,16 +84,9 @@ export default class FoundationModelsExtension extends AIEngine {
   ) =>
     args === undefined ? invoke(command) : invoke(command, args)) as Invoke)
 
-  /** The running server, from whoever owns it. */
-  private async findSession(): Promise<{
-    pid: number
-    port: number
-    model_id: string
-    api_key: string
-  } | null> {
-    if (await this.core.coreOwnsRuntime())
-      return (await this.core.findSession(APPLE_MODEL_ID)) ?? null
-    return findFoundationModelsSession()
+  /** The running server as the core reports it now, or `null`. */
+  private async findSession(): Promise<CoreSessionSummary | null> {
+    return (await this.core.findSession(APPLE_MODEL_ID)) ?? null
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -113,8 +96,12 @@ export default class FoundationModelsExtension extends AIEngine {
 
     // Check device eligibility and silently remove ourselves if not supported.
     // This prevents the provider from appearing in the UI on ineligible devices.
+    // The core answers with the server's own `--check` token (`available`,
+    // `notEligible`, `appleIntelligenceNotEnabled`, `modelNotReady`,
+    // `unavailable`, `binaryNotFound`). The call attaches to — or starts — the
+    // core first, so an unreachable core hides the provider like a failed check.
     try {
-      const availability = await checkFoundationModelsAvailability()
+      const availability = await this.core.foundationModelsAvailability()
       if (availability !== 'available') {
         logger.warn(
           `Foundation Models not available on this device (status: ${availability}). ` +
@@ -125,14 +112,14 @@ export default class FoundationModelsExtension extends AIEngine {
     } catch (err) {
       logger.warn(
         'Could not determine Foundation Models availability — hiding provider.',
-        err
+        describeCoreError(err)
       )
       EngineManager.instance().engines.delete(this.provider)
     }
   }
 
   override async onUnload(): Promise<void> {
-    // Clean-up is handled by the Tauri plugin on app exit.
+    // The server belongs to the core; there is nothing to stop here.
   }
 
   // ── Model catalogue ────────────────────────────────────────────────────────
@@ -166,10 +153,6 @@ export default class FoundationModelsExtension extends AIEngine {
     _isEmbedding: boolean = false,
     _bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
-    return this.core.withRuntimeLoad(() => this.loadWithOwner(modelId))
-  }
-
-  private async loadWithOwner(modelId: string): Promise<SessionInfo> {
     if (modelId !== APPLE_MODEL_ID) {
       throw new Error(
         `Foundation Models extension only supports model '${APPLE_MODEL_ID}', got '${modelId}'`
@@ -186,64 +169,26 @@ export default class FoundationModelsExtension extends AIEngine {
       return this.toSessionInfo(existing)
     }
 
-    if (await this.core.coreOwnsRuntime()) {
-      try {
-        return this.toSessionInfo(await this.core.load(APPLE_MODEL_ID))
-      } catch (err) {
-        logger.error(
-          'Failed to start Foundation Models server in the core:',
-          err
-        )
-        throw new Error(describeCoreError(err))
-      }
-    }
-
-    const port = await getFoundationModelsRandomPort()
-    const apiKey = await this.generateApiKey(port)
-
-    logger.info('Starting Foundation Models server on port', port)
-
     try {
-      const session = await loadFoundationModelsServer(
-        APPLE_MODEL_ID,
-        port,
-        apiKey,
-        SERVER_STARTUP_TIMEOUT
-      )
-      logger.info('Foundation Models server started, PID', session.pid)
-      return this.toSessionInfo(session)
+      return this.toSessionInfo(await this.core.load(APPLE_MODEL_ID))
     } catch (err) {
-      logger.error('Failed to start Foundation Models server:', err)
-      throw err
+      const reason = describeCoreError(err)
+      logger.error('Failed to start Foundation Models server in the core:', reason)
+      throw new Error(reason)
     }
   }
 
-  override async unload(modelId: string): Promise<UnloadResult> {
+  override async unload(_modelId: string): Promise<UnloadResult> {
     const session = await this.findSession()
     if (!session) {
       logger.warn('No active Foundation Models session to unload')
       return { success: false, error: 'No active session found' }
     }
 
-    if (await this.core.coreOwnsRuntime()) {
-      try {
-        return await this.core.unload(APPLE_MODEL_ID)
-      } catch (err) {
-        return { success: false, error: describeCoreError(err) }
-      }
-    }
-
     try {
-      const result = await unloadFoundationModelsServer(session.pid)
-      if (result.success) {
-        logger.info('Foundation Models server unloaded successfully')
-      } else {
-        logger.warn('Failed to unload Foundation Models server:', result.error)
-      }
-      return result
+      return await this.core.unload(APPLE_MODEL_ID)
     } catch (err) {
-      logger.error('Error unloading Foundation Models server:', err)
-      return { success: false, error: String(err) }
+      return { success: false, error: describeCoreError(err) }
     }
   }
 
@@ -260,18 +205,8 @@ export default class FoundationModelsExtension extends AIEngine {
       )
     }
 
-    // Verify the server process is still alive. A core-owned server is not in the plugin's table;
-    // the core drops a dead one itself, so a session it still reports is alive as far as it knows.
-    const alive =
-      (await this.core.coreOwnsRuntime()) ||
-      (await isFoundationModelsProcessRunning(session.pid))
-    if (!alive) {
-      throw new Error(
-        'Apple Foundation Model server has crashed. Please reload the model.'
-      )
-    }
-
-    // Health check
+    // The core drops a dead server itself, so a session it still reports is alive as far as it
+    // knows; the health check catches one that stopped answering since.
     try {
       await fetch(`http://localhost:${session.port}/health`)
     } catch {
@@ -427,26 +362,10 @@ export default class FoundationModelsExtension extends AIEngine {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /**
-   * Derive a per-session API key from the shared secret and port number.
-   * Uses the same HMAC-SHA256 approach as the llamacpp extension so the
-   * Tauri `generate_api_key` command can be reused.
+   * Map the session the core reports to the `@janhq/core` SessionInfo shape. The server has no
+   * model file, and the core's extra fields (provider, device) are not part of the engine contract.
    */
-  private async generateApiKey(port: number): Promise<string> {
-    return invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: APPLE_MODEL_ID + port,
-      apiSecret: API_SECRET,
-    })
-  }
-
-  /**
-   * Map the plugin SessionInfo shape to the core SessionInfo shape.
-   */
-  private toSessionInfo(session: {
-    pid: number
-    port: number
-    model_id: string
-    api_key: string
-  }): SessionInfo {
+  private toSessionInfo(session: CoreSessionInfo): SessionInfo {
     return {
       pid: session.pid,
       port: session.port,

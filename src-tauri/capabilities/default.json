@@ -34,7 +34,6 @@
     "llamacpp-upstream:default",
     "atomic-audio:default",
     "mlx:default",
-    "foundation-models:default",
     "updater:default",
     "updater:allow-check",
     "autostart:default",

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#* Перед bundle: чистим xattr у артефактов и очищаем каталог bundle/macos (иначе на .app
-#* тянутся FinderInfo / iCloud с прошлого прогона — codesign падает на главном бинарнике).
+#* Before bundling: strip xattrs from artifacts and clear the bundle/macos directory (otherwise the .app
+#* carries FinderInfo / iCloud attributes over from the previous run — codesign fails on the main binary).
 set -euo pipefail
 if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 0

@@ -512,29 +512,3 @@ export function isEmbeddingGguf(
 
   return metadata?.[`${arch}.classifier.output_labels`] !== undefined
 }
-
-/**
- * The context length to actually request, given what the user/config asked for
- * and what the model was trained on.
- *
- * llama.cpp does not clamp this itself: asked for more than `n_ctx_train` it
- * warns and then aborts on an assertion, killing the server process. Small
- * models are the ones that get hit, because the app's default (16384) is far
- * past the 512–2048 such models train at.
- *
- * Returns the request unchanged when the trained maximum is unknown — guessing
- * a smaller window would silently degrade models we simply have no metadata for.
- */
-export function effectiveCtxSize(
-  requested: number | undefined,
-  maxCtxTrain: number | undefined
-): number | undefined {
-  if (typeof requested !== 'number' || !Number.isFinite(requested)) {
-    return requested
-  }
-  if (typeof maxCtxTrain !== 'number' || !Number.isFinite(maxCtxTrain)) {
-    return requested
-  }
-  if (maxCtxTrain <= 0) return requested
-  return Math.min(requested, maxCtxTrain)
-}

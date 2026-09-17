@@ -8,7 +8,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 import {
   CORE_PROVIDER,
   cancelBackendDownload,
-  coreOwnsRuntime,
   describeCoreError,
   findSession,
   getSettings,
@@ -246,29 +245,10 @@ describe('hardware override', () => {
   })
 })
 
-describe('the ownership flag', () => {
-  it('is read per call, because it can be flipped while the app runs', async () => {
-    invoke.mockResolvedValueOnce({ active_runtime: CORE_PROVIDER })
-    expect(await coreOwnsRuntime()).toBe(true)
-
-    invoke.mockResolvedValueOnce({
-      active_runtime: null,
-      flags: { runtime: null },
-    })
-    expect(await coreOwnsRuntime()).toBe(false)
-  })
-
-  it('uses persisted flags only for compatibility with a status response without active ownership', async () => {
-    invoke.mockResolvedValue({
-      flags: { attach: true, runtime: CORE_PROVIDER },
-    })
-
-    expect(await coreOwnsRuntime()).toBe(true)
-  })
-
+describe('core status', () => {
   it('exposes attachment generation for readiness caching', async () => {
     invoke.mockResolvedValue({
-      active_runtime: CORE_PROVIDER,
+      running: true,
       attached: { instance_id: 'core-a', generation: 4 },
     })
 
@@ -276,20 +256,6 @@ describe('the ownership flag', () => {
       attached: { instance_id: 'core-a', generation: 4 },
     })
     expect(lastCall()[0]).toBe('atomic_core_status')
-  })
-
-  it('does not route an operation while ownership is transitioning', async () => {
-    invoke.mockResolvedValue({ transitioning: true, active_runtime: null })
-
-    await expect(coreOwnsRuntime()).rejects.toMatchObject({
-      code: 'CORE_TRANSITIONING',
-    })
-  })
-
-  it('reads as off in a build that has no core at all', async () => {
-    invoke.mockRejectedValue(new Error('unknown command'))
-
-    expect(await coreOwnsRuntime()).toBe(false)
   })
 })
 

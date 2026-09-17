@@ -94,7 +94,7 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
-    // Privacy — вкладка скрыта
+    // Privacy — tab hidden
     // {
     //   title: 'common:privacy',
     //   route: route.settings.privacy,

@@ -679,94 +679,6 @@ fn compare_versions(v1: &str, v2: &str) -> i32 {
     0
 }
 
-/// Copy Windows CUDA runtime DLLs (`cudart*`, `cublas*`, …) from one
-/// `build/bin` directory into another without removing the source.
-///
-/// Used by the TurboQuant provider to repair CUDA backends that shipped
-/// without their runtime DLLs by copying from an already-installed
-/// `llamacpp-upstream` CUDA bin (or any other donor directory). Prefixes
-/// are matched case-insensitively against the file stem+extension.
-#[tauri::command]
-pub async fn copy_backend_dlls(
-    src_dir: String,
-    dst_dir: String,
-    name_prefixes: Vec<String>,
-) -> Result<u32, String> {
-    use std::path::PathBuf;
-
-    let src = PathBuf::from(&src_dir);
-    let dst = PathBuf::from(&dst_dir);
-    if !src.is_dir() {
-        return Err(format!("source dir does not exist: {src_dir}"));
-    }
-    std::fs::create_dir_all(&dst).map_err(|e| format!("create {dst_dir}: {e}"))?;
-
-    let prefixes_lower: Vec<String> = name_prefixes
-        .iter()
-        .map(|p| p.to_ascii_lowercase())
-        .collect();
-
-    let mut copied = 0u32;
-    for entry in std::fs::read_dir(&src).map_err(|e| format!("read {src_dir}: {e}"))? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let lower = name.to_ascii_lowercase();
-        if !lower.ends_with(".dll") {
-            continue;
-        }
-        if !prefixes_lower.iter().any(|p| lower.starts_with(p.as_str())) {
-            continue;
-        }
-        let dest = dst.join(name);
-        std::fs::copy(&path, &dest).map_err(|e| format!("copy {name}: {e}"))?;
-        copied += 1;
-    }
-    Ok(copied)
-}
-
-#[tauri::command]
-pub async fn is_cuda_installed(
-    backend_dir: String,
-    version: String,
-    os_type: String,
-    jan_data_folder_path: String,
-) -> Result<bool, String> {
-    // Probe for the CUDA runtime lib in the backend's own `build/bin`.
-    // TurboQuant release zips *should* ship cudart/cublas inline; when they
-    // do not, the extension repairs via copy-from-upstream or a ggml-org
-    // companion download. `jan_data_folder_path` is unused but kept for IPC
-    // compatibility with the upstream plugin signature.
-    let _ = jan_data_folder_path;
-
-    // Resolve the cudart runtime lib name by CUDA major version. The `version`
-    // is the toolkit minor (e.g. "12.4" / "13.3") for clean TurboQuant ids, or
-    // the legacy "11.7" / "12.0" / "13.0" for older janhq-style ids.
-    let major = version.split('.').next().unwrap_or("");
-    let libname: &str = match (os_type.as_str(), major) {
-        ("windows", "11") => "cudart64_110.dll",
-        ("windows", "12") => "cudart64_12.dll",
-        ("windows", "13") => "cudart64_13.dll",
-        ("linux", "11") => "libcudart.so.11.0",
-        ("linux", "12") => "libcudart.so.12",
-        ("linux", "13") => "libcudart.so.13",
-        _ => return Ok(false),
-    };
-
-    // Expected location: backend_dir/build/bin/libname
-    let new_path = std::path::PathBuf::from(&backend_dir)
-        .join("build")
-        .join("bin")
-        .join(libname);
-
-    Ok(new_path.exists())
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BestBackendResult {
     pub backend_string: String,
@@ -940,7 +852,6 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     None
 }
 
-#[tauri::command]
 pub fn parse_backend_version(version_string: String) -> u32 {
     // Remove any leading non-digit characters
     let numeric = version_string.trim_start_matches(|c: char| !c.is_ascii_digit());
@@ -1066,23 +977,6 @@ pub async fn remove_old_backend_versions(
     }
 
     Ok(removed_paths)
-}
-
-#[tauri::command]
-pub fn validate_backend_string(backend_string: String) -> Result<(String, String), String> {
-    let parts: Vec<&str> = backend_string.split('/').collect();
-    if parts.len() != 2 {
-        return Err(format!("Invalid backend format: {}", backend_string));
-    }
-
-    let version = parts[0].trim();
-    let backend = parts[1].trim();
-
-    if version.is_empty() || backend.is_empty() {
-        return Err(format!("Invalid backend format: {}", backend_string));
-    }
-
-    Ok((version.to_string(), backend.to_string()))
 }
 
 #[tauri::command]
@@ -1413,7 +1307,6 @@ mod tests {
     use super::*;
     use filetime;
     use std::fs::File;
-    use std::io::Write;
 
     // --- Tests for map_old_backend_to_new ---
 
@@ -2025,116 +1918,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_is_cuda_installed_no_legacy_migration() {
-        let backend_dir = tempfile::tempdir().unwrap();
-        let jan_data_dir = tempfile::tempdir().unwrap();
-
-        let version = "12.0";
-        let os_type = "linux"; // Maps to libcudart.so.12
-
-        // A lib ONLY in the old janhq path must NOT be picked up anymore —
-        // TurboQuant bundles cudart in the backend's own build/bin.
-        let old_lib_dir = jan_data_dir.path().join("llamacpp").join("lib");
-        fs::create_dir_all(&old_lib_dir).unwrap();
-        let lib_name = "libcudart.so.12";
-        {
-            let mut f = File::create(old_lib_dir.join(lib_name)).unwrap();
-            f.write_all(b"dummy content").unwrap();
-        }
-
-        let installed = is_cuda_installed(
-            backend_dir.path().to_string_lossy().to_string(),
-            version.to_string(),
-            os_type.to_string(),
-            jan_data_dir.path().to_string_lossy().to_string(),
-        )
-        .await
-        .unwrap();
-
-        assert!(
-            !installed,
-            "Legacy janhq cudart path must not be migrated/used"
-        );
-        let new_path = backend_dir.path().join("build").join("bin").join(lib_name);
-        assert!(!new_path.exists(), "Nothing should be created in build/bin");
-    }
-
-    #[tokio::test]
-    async fn test_is_cuda_installed_already_exists() {
-        let backend_dir = tempfile::tempdir().unwrap();
-        let jan_data_dir = tempfile::tempdir().unwrap(); // Empty
-
-        let version = "11.7";
-        let os_type = "windows"; // Maps to cudart64_110.dll
-        let lib_name = "cudart64_110.dll";
-
-        // Setup New Path directly
-        let target_dir = backend_dir.path().join("build").join("bin");
-        fs::create_dir_all(&target_dir).unwrap();
-        File::create(target_dir.join(lib_name)).unwrap();
-
-        let installed = is_cuda_installed(
-            backend_dir.path().to_string_lossy().to_string(),
-            version.to_string(),
-            os_type.to_string(),
-            jan_data_dir.path().to_string_lossy().to_string(),
-        )
-        .await
-        .unwrap();
-
-        assert!(installed);
-    }
-
-    #[tokio::test]
-    async fn test_is_cuda_installed_clean_minor_version() {
-        let backend_dir = tempfile::tempdir().unwrap();
-        let jan_data_dir = tempfile::tempdir().unwrap(); // Empty
-
-        // Clean TurboQuant id carries the toolkit minor; major drives the lib.
-        let target_dir = backend_dir.path().join("build").join("bin");
-        fs::create_dir_all(&target_dir).unwrap();
-        File::create(target_dir.join("cudart64_12.dll")).unwrap();
-
-        let installed = is_cuda_installed(
-            backend_dir.path().to_string_lossy().to_string(),
-            "12.4".to_string(),
-            "windows".to_string(),
-            jan_data_dir.path().to_string_lossy().to_string(),
-        )
-        .await
-        .unwrap();
-
-        assert!(installed, "12.4 should resolve cudart64_12.dll");
-    }
-
-    #[tokio::test]
-    async fn test_copy_backend_dlls_copies_matching_prefixes_only() {
-        let src = tempfile::tempdir().unwrap();
-        let dst = tempfile::tempdir().unwrap();
-        File::create(src.path().join("cudart64_13.dll")).unwrap();
-        File::create(src.path().join("cublas64_13.dll")).unwrap();
-        File::create(src.path().join("cublasLt64_13.dll")).unwrap();
-        File::create(src.path().join("ggml-cuda.dll")).unwrap();
-        File::create(src.path().join("readme.txt")).unwrap();
-
-        let copied = copy_backend_dlls(
-            src.path().to_string_lossy().to_string(),
-            dst.path().to_string_lossy().to_string(),
-            vec!["cudart".into(), "cublas".into()],
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(copied, 3);
-        assert!(dst.path().join("cudart64_13.dll").exists());
-        assert!(dst.path().join("cublas64_13.dll").exists());
-        assert!(dst.path().join("cublasLt64_13.dll").exists());
-        assert!(!dst.path().join("ggml-cuda.dll").exists());
-        // Source must remain intact — we copy, never move.
-        assert!(src.path().join("cudart64_13.dll").exists());
-    }
-
     // --- Tests for find_latest_version_for_backend ---
 
     #[test]
@@ -2336,20 +2119,6 @@ mod tests {
         );
     }
 
-    // --- Tests for validate_backend_string ---
-
-    #[test]
-    fn test_validate_backend_string_valid() {
-        let result = validate_backend_string("b7524/linux-common_cpus-x64".to_string()).unwrap();
-        assert_eq!(result.0, "b7524");
-        assert_eq!(result.1, "linux-common_cpus-x64");
-    }
-
-    #[test]
-    fn test_validate_backend_string_invalid() {
-        let result = validate_backend_string("invalid-format".to_string());
-        assert!(result.is_err());
-    }
 
     // --- Tests for should_migrate_backend ---
 

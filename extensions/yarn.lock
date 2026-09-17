@@ -468,7 +468,6 @@ __metadata:
   resolution: "@janhq/foundation-models-extension@workspace:foundation-models-extension"
   dependencies:
     "@janhq/core": ../../core/package.tgz
-    "@janhq/tauri-plugin-foundation-models-api": "link:../../src-tauri/plugins/tauri-plugin-foundation-models"
     "@tauri-apps/api": "npm:2.8.0"
     "@tauri-apps/plugin-http": "npm:2.5.0"
     "@tauri-apps/plugin-log": "npm:^2.6.0"
@@ -556,12 +555,6 @@ __metadata:
     rolldown: "npm:1.0.0-beta.1"
     typescript: "npm:5.9.2"
   languageName: unknown
-  linkType: soft
-
-"@janhq/tauri-plugin-foundation-models-api@link:../../src-tauri/plugins/tauri-plugin-foundation-models::locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension":
-  version: 0.0.0-use.local
-  resolution: "@janhq/tauri-plugin-foundation-models-api@link:../../src-tauri/plugins/tauri-plugin-foundation-models::locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension"
-  languageName: node
   linkType: soft
 
 "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":

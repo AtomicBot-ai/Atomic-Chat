@@ -1,9 +1,8 @@
 /**
- * An extension's half of the handover to `atomic-chat-core`, for any local provider
- * (PLAN.md §4, stages 3b and 5).
+ * An extension's client of `atomic-chat-core`, for any local provider (PLAN.md §4, stages 3b–6).
  *
- * When the core owns a provider's runtime, loading a model, unloading it and asking where it is
- * served all happen in another process. This module is everything an extension needs to talk to it
+ * The core owns every local runtime on desktop: loading a model, unloading it and asking where it
+ * is served all happen in another process. This module is everything an extension needs to talk to it
  * — and nothing else: the extension keeps its model catalogue and settings UI.
  *
  * It lives outside the extension packages and imports nothing: every extension has its own
@@ -26,9 +25,6 @@ export type CoreProvider =
   | 'llamacpp'
   | 'mlx'
   | 'foundation-models'
-
-/** The `atomic_core.runtime` flag value that hands every local runtime to the core. */
-export const ALL_RUNTIMES = 'all'
 
 export type Invoke = <T>(
   command: string,
@@ -63,9 +59,7 @@ export interface CoreUnloadResult {
 }
 
 export interface CoreStatus {
-  flags?: { attach?: boolean; runtime?: string | null }
-  active_runtime?: string | null
-  transitioning?: boolean
+  running?: boolean
   attached?: { instance_id?: string; generation?: number } | null
 }
 
@@ -185,14 +179,6 @@ export function modelIdsMatch(a: string, b: string): boolean {
   return true
 }
 
-/** Whether a runtime owner named by the app covers this provider. */
-export function runtimeCovers(
-  owner: string | null | undefined,
-  provider: CoreProvider
-): boolean {
-  return owner === provider || owner === ALL_RUNTIMES
-}
-
 export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
   const call = <T>(method: string, path: string, body?: unknown): Promise<T> =>
     invoke<T>('atomic_core_call', { method, path, body: body ?? null })
@@ -203,63 +189,6 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
 
   async function getStatus(): Promise<CoreStatus> {
     return invoke<CoreStatus>('atomic_core_status')
-  }
-
-  /** Hold the selected owner steady across preparation as well as the actual spawn. */
-  async function withRuntimeLoad<T>(operation: () => Promise<T>): Promise<T> {
-    let id: number
-    try {
-      id = await invoke<number>('atomic_core_begin_runtime_load', { provider })
-    } catch (error) {
-      // Mobile has no desktop core or its Tauri commands; keep its legacy engine path.
-      if (
-        /unknown command|command .*not found|command .*not registered/i.test(
-          String(error)
-        )
-      )
-        return operation()
-      throw error
-    }
-    try {
-      return await operation()
-    } finally {
-      await invoke('atomic_core_end_runtime_load', { id })
-    }
-  }
-
-  /**
-   * Whether this app has handed this provider's runtime to the core.
-   *
-   * Read per call rather than cached: the flag can be flipped from settings while the app runs, and
-   * the whole point of it is that the next operation goes the other way.
-   */
-  async function coreOwnsRuntime(): Promise<boolean> {
-    try {
-      const status = await getStatus()
-      // Nothing to read is a build or host without the core, the same as no such command.
-      if (!status || typeof status !== 'object') return false
-      if (status.transitioning) {
-        throw Object.assign(
-          new Error('The Atomic Chat runtime owner is changing.'),
-          {
-            code: 'CORE_TRANSITIONING',
-          }
-        )
-      }
-      // New builds distinguish the persisted request from the owner that has completed handover.
-      // Falling back to flags keeps the adapter usable with the first 3a builds.
-      return runtimeCovers(
-        'active_runtime' in status
-          ? status.active_runtime
-          : status.flags?.runtime,
-        provider
-      )
-    } catch (error) {
-      // No such command means a build without the core; that is not an error, it is the old world.
-      if (/unknown command|command .* not found/i.test(String(error)))
-        return false
-      throw error
-    }
   }
 
   async function listSessions(): Promise<CoreSessionSummary[]> {
@@ -506,8 +435,6 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
   return {
     provider,
     getStatus,
-    withRuntimeLoad,
-    coreOwnsRuntime,
     listSessions,
     getLoadedModels,
     findSession,

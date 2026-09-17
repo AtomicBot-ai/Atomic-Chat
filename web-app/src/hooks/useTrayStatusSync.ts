@@ -14,13 +14,15 @@ type SystemUsage = {
   total_memory: number
 }
 
-type MlxSession = {
+/** One entry of `list_local_sessions`: a model `atomic-chat-core` is serving right now. */
+type LocalSession = {
   pid: number
   port: number
   model_id: string
   model_path: string
   is_embedding: boolean
   api_key: string
+  provider: string
 }
 
 type TrayStatusPayload = {
@@ -75,13 +77,15 @@ export function useTrayStatusSync(): void {
           invoke<SystemUsage>('plugin:hardware|get_system_usage').catch(
             () => null
           ),
-          invoke<MlxSession[]>('plugin:mlx|get_mlx_all_sessions').catch(
-            () => [] as MlxSession[]
+          invoke<LocalSession[]>('list_local_sessions').catch(
+            () => [] as LocalSession[]
           ),
         ])
 
-        // Prefer an active MLX session (authoritative: a running inference process),
-        // fall back to `activeModels` which also tracks non-MLX engines.
+        // Prefer the sessions the core is serving (authoritative: running inference
+        // processes of llama.cpp, llama.cpp upstream and MLX), fall back to
+        // `activeModels`, which also tracks engines the resolver does not list
+        // (Foundation Models).
         const modelLabel = (() => {
           const nonEmbedding = sessions.filter((s) => !s.is_embedding)
           if (nonEmbedding.length === 1) return nonEmbedding[0].model_id

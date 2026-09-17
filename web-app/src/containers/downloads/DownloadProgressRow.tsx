@@ -10,7 +10,7 @@ import { quantFromModelId } from '@/lib/telemetry'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 
-//* Полупрозрачная зелень: текст % и ГБ остаётся читаемым в светлой и тёмной теме
+//* Semi-transparent green: the % and GB text stays readable in both light and dark themes
 export const DOWNLOAD_PROGRESS_INDICATOR =
   'bg-emerald-400/50 dark:bg-emerald-400/45'
 

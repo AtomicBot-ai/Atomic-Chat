@@ -1,67 +1,67 @@
-# Подпись Atomic Chat (Jan / Tauri) для macOS
+# Signing Atomic Chat (Jan / Tauri) for macOS
 
-По [официальной схеме Tauri](https://v2.tauri.app/distribute/sign/macos/): переменные окружения + `yarn build`. Ручной `codesign` по всему `.app` не нужен — его выполняет CLI Tauri при сборке.
+Following the [official Tauri approach](https://v2.tauri.app/distribute/sign/macos/): environment variables + `yarn build`. A manual `codesign` over the whole `.app` is not needed — the Tauri CLI does it during the build.
 
-## Что нужно
+## Prerequisites
 
-1. **Apple Developer Program** ($99/год): [developer.apple.com](https://developer.apple.com/programs/).
-2. В связке ключей — **Developer ID Application** (не «Apple Distribution» для Mac App Store).
+1. **Apple Developer Program** ($99/year): [developer.apple.com](https://developer.apple.com/programs/).
+2. A **Developer ID Application** certificate in the keychain (not "Apple Distribution", which is for the Mac App Store).
 
-Сертификат создаётся только у Apple: CSR на Mac → загрузка в [Certificates](https://developer.apple.com/account/resources/certificates/list) → скачать `.cer` → открыть (ключ попадёт в «Связку ключей»). **Сгенерировать сертификат за вас из репозитория нельзя** — нужна ваша учётка разработчика.
+The certificate can only be created at Apple: CSR on a Mac → upload to [Certificates](https://developer.apple.com/account/resources/certificates/list) → download the `.cer` → open it (the key goes into Keychain Access). **The certificate cannot be generated for you from the repository** — your developer account is required.
 
 ---
 
-## Шаг 1: Узнать signing identity
+## Step 1: Find the signing identity
 
 ```bash
 security find-identity -v -p codesigning
 ```
 
-Строка вида `Developer ID Application: … (TEAMID)` — это **полное имя**. При нескольких совпадениях надёжнее указать **SHA-1** из первого столбца.
+A line like `Developer ID Application: … (TEAMID)` is the **full name**. If there are several matches, it is safer to use the **SHA-1** from the first column.
 
 ---
 
-## Шаг 2: Сборка с подписью (как в проекте)
+## Step 2: Signed build (as done in the project)
 
-Из корня репозитория `jan/`:
+From the `jan/` repository root:
 
 ```bash
-# при необходимости положить расширения в pre-install (копирует в bundle)
+# if needed, put the extensions into pre-install (copied into the bundle)
 cp src-tauri/resources/pre-install/*.tgz pre-install/ 2>/dev/null || true
 
 export APPLE_SIGNING_IDENTITY="Developer ID Application: SpaceshipIntelligence OU (UT6WGPGTGR)"
-# или: export APPLE_SIGNING_IDENTITY="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+# or: export APPLE_SIGNING_IDENTITY="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
 CI=false yarn build
 ```
 
-`CI=false` обязателен: иначе Tauri в режиме CI может **не** подписывать.
+`CI=false` is required: otherwise Tauri in CI mode may **not** sign.
 
-Готовый **universal** DMG (Intel + Apple Silicon):
+The finished **universal** DMG (Intel + Apple Silicon):
 
 `src-tauri/target/universal-apple-darwin/release/bundle/dmg/Atomic Chat_*.dmg`
 
-(имя берётся из `productName` в `tauri.conf.json`.)
+(the name comes from `productName` in `tauri.conf.json`.)
 
-Проверка подписи приложения:
+Verify the app signature:
 
 ```bash
 codesign -dv --verbose=2 "src-tauri/target/universal-apple-darwin/release/bundle/macos/Atomic Chat.app" 2>&1 | grep -E "Authority|Timestamp|runtime"
 ```
 
-Должны быть цепочка **Developer ID** → **Developer ID Certification Authority** → **Apple Root CA**, **Timestamp**, у основного бинарника — **flags** с runtime (Hardened Runtime задаёт Tauri при подписи).
+You should see the chain **Developer ID** → **Developer ID Certification Authority** → **Apple Root CA**, a **Timestamp**, and **flags** with runtime on the main binary (Tauri sets Hardened Runtime when signing).
 
-Перед фазой bundle запускается `src-tauri/scripts/strip-macos-xattrs.sh` (снятие `xattr`), иначе `codesign` иногда падает с `resource fork, Finder information, or similar detritus not allowed`.
+Before the bundle phase, `src-tauri/scripts/strip-macos-xattrs.sh` runs (strips `xattr`); otherwise `codesign` sometimes fails with `resource fork, Finder information, or similar detritus not allowed`.
 
-Tauri подписывает только `Contents/MacOS/*`. Копии CLI из `bundle.resources` попадают в `Contents/Resources/resources/bin/` **без** повторной подписи, из‑за чего notarytool отклоняет архив. Скрипт `src-tauri/scripts/sign-macos-resource-binaries.sh` (в цепочке `beforeBundleCommand`) подписывает `jan-cli`, `mlx-server`, `foundation-models-server` в `resources/bin/` до копирования в bundle — при заданном `APPLE_SIGNING_IDENTITY`.
+Tauri signs only `Contents/MacOS/*`. The CLI copies from `bundle.resources` land in `Contents/Resources/resources/bin/` **without** being re-signed, which makes notarytool reject the archive. The `src-tauri/scripts/sign-macos-resource-binaries.sh` script (in the `beforeBundleCommand` chain) signs `jan-cli`, `mlx-server`, `foundation-models-server` in `resources/bin/` before they are copied into the bundle — when `APPLE_SIGNING_IDENTITY` is set.
 
 ---
 
-## Опционально: нотаризация
+## Optional: notarization
 
-Без нотаризации пользователи, скачавшие DMG из Telegram/браузера, увидят **«Apple could not verify … free of malware»** (карантин + Gatekeeper).
+Without notarization, users who download the DMG from Telegram or a browser will see **"Apple could not verify … free of malware"** (quarantine + Gatekeeper).
 
-Готовый сценарий из корня `jan/` (проверяет переменные и вызывает `yarn build`):
+A ready-made flow from the `jan/` root (checks the variables and calls `yarn build`):
 
 ```bash
 export APPLE_SIGNING_IDENTITY="Developer ID Application: …"
@@ -71,15 +71,15 @@ export APPLE_TEAM_ID="UT6WGPGTGR"
 yarn build:macos:notarized
 ```
 
-Скрипт: `scripts/macos-build-signed-notarized.sh`. Альтернатива — ключи API: `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (см. [Tauri — Notarization](https://v2.tauri.app/distribute/sign/macos/)).
+Script: `scripts/macos-build-signed-notarized.sh`. Alternative — API keys: `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` (see [Tauri — Notarization](https://v2.tauri.app/distribute/sign/macos/)).
 
 ---
 
-Нужны учётные данные для Apple:
+Apple credentials required:
 
-- **APPLE_ID** — email Apple ID разработчика.
-- **APPLE_PASSWORD** — [пароль для приложений](https://appleid.apple.com/account/manage) (не обычный пароль Apple ID).
-- **APPLE_TEAM_ID** — Team ID (10 символов, виден в сертификате и на developer.apple.com).
+- **APPLE_ID** — the developer's Apple ID email.
+- **APPLE_PASSWORD** — an [app-specific password](https://appleid.apple.com/account/manage) (not the regular Apple ID password).
+- **APPLE_TEAM_ID** — Team ID (10 characters, shown in the certificate and on developer.apple.com).
 
 ```bash
 export APPLE_SIGNING_IDENTITY="…"
@@ -89,25 +89,25 @@ export APPLE_TEAM_ID="UT6WGPGTGR"
 CI=false yarn build
 ```
 
-Tauri отправит билд на нотаризацию после сборки (см. доку Tauri). Либо после сборки вручную: `xcrun notarytool submit … --wait` и `xcrun stapler staple` для DMG — см. [notarytool](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution).
+Tauri submits the build for notarization after building (see the Tauri docs). Alternatively, after the build run manually: `xcrun notarytool submit … --wait` and `xcrun stapler staple` for the DMG — see [notarytool](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution).
 
 ---
 
-## Нативная сборка только под текущий Mac (быстрее, не universal)
+## Native build for the current Mac only (faster, not universal)
 
-Для локальных тестов без Intel-слоя:
+For local testing without the Intel slice:
 
 ```bash
 CI=false APPLE_SIGNING_IDENTITY="…" yarn build:web && yarn build:icon && yarn copy:assets:tauri && CI=false APPLE_SIGNING_IDENTITY="…" yarn build:tauri:darwin:native
 ```
 
-DMG: `src-tauri/target/release/bundle/dmg/Atomic Chat_*_aarch64.dmg` (на Apple Silicon).
+DMG: `src-tauri/target/release/bundle/dmg/Atomic Chat_*_aarch64.dmg` (on Apple Silicon).
 
 ---
 
-## Если нет Apple Developer
+## Without an Apple Developer account
 
-Распространять подписанный билд «для всех» нельзя. Локально можно открыть неподписанное приложение: правый клик → **Открыть**, или:
+You cannot distribute a signed build "to everyone". Locally you can open the unsigned app: right-click → **Open**, or:
 
 ```bash
 xattr -cr "/Applications/Atomic Chat.app"

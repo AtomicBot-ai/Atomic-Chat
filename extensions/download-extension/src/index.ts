@@ -60,7 +60,7 @@ export function buildAuthHeaders(
 
 export default class DownloadManager extends BaseExtension {
   hfToken?: string
-  private activeLegacyTasks?: Set<string>
+  private ownTasks?: Set<string>
 
   async onLoad() {
     this.registerSettings(SETTINGS)
@@ -95,10 +95,9 @@ export default class DownloadManager extends BaseExtension {
     onProgress?: (transferred: number, total: number) => void,
     resume: boolean = false
   ) {
-    // A task that began on the legacy downloader stays its task even if runtime ownership changes
-    // before the user presses Cancel.
-    if (!this.activeLegacyTasks) this.activeLegacyTasks = new Set()
-    this.activeLegacyTasks.add(taskId)
+    // A task started here is cancelled here, whatever its id looks like.
+    if (!this.ownTasks) this.ownTasks = new Set()
+    this.ownTasks.add(taskId)
     let unlisten: (() => void) | undefined
     try {
       // relay tauri events to onProgress callback
@@ -122,31 +121,21 @@ export default class DownloadManager extends BaseExtension {
       throw error
     } finally {
       unlisten?.()
-      this.activeLegacyTasks.delete(taskId)
+      this.ownTasks.delete(taskId)
     }
   }
 
   async cancelDownload(taskId: string) {
     try {
-      if (taskId.startsWith('llamacpp-backend-') && !this.activeLegacyTasks?.has(taskId)) {
-        let status: { active_runtime?: string | null } | null = null
-        try {
-          status = await invoke<{ active_runtime?: string | null }>('atomic_core_status')
-        } catch (error) {
-          // An older app binary has no core command; its backend task is necessarily legacy.
-          if (!/unknown command|command .* not found/i.test(String(error))) throw error
-        }
-        // Both llama.cpp providers name backend tasks `llamacpp-backend-*`. A task this extension did
-        // not start was started by the core, which runs installs for upstream alone or, with
-        // `all`, for TurboQuant too.
-        if (status?.active_runtime === 'llamacpp-upstream' || status?.active_runtime === 'all') {
-          await invoke('atomic_core_call', {
-            method: 'POST',
-            path: `/downloads/${taskId}/cancel`,
-            body: null,
-          })
-          return
-        }
+      // Both llama.cpp providers name backend installs `llamacpp-backend-*`, and the core runs every
+      // backend install on desktop. One this extension did not start is the core's.
+      if (taskId.startsWith('llamacpp-backend-') && !this.ownTasks?.has(taskId)) {
+        await invoke('atomic_core_call', {
+          method: 'POST',
+          path: `/downloads/${taskId}/cancel`,
+          body: null,
+        })
+        return
       }
       await invoke<void>('cancel_download_task', { taskId })
     } catch (error) {

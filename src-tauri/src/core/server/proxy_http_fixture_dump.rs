@@ -223,36 +223,25 @@ impl Default for Setup {
     }
 }
 
-fn session_map(
-    entries: Vec<(&str, u16, bool)>,
-) -> Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp_upstream::LLamaBackendSession>>> {
-    let mut map = HashMap::new();
-    for (i, (model_id, port, is_embedding)) in entries.into_iter().enumerate() {
-        let child = tokio::process::Command::new("sleep")
-            .arg("120")
-            .kill_on_drop(true)
-            .spawn()
-            .expect("placeholder child");
-        let pid = i as i32 + 1;
-        map.insert(
-            pid,
-            tauri_plugin_llamacpp_upstream::LLamaBackendSession {
-                child,
-                info: tauri_plugin_llamacpp_upstream::state::SessionInfo {
-                    pid,
-                    port: port as i32,
-                    model_id: model_id.to_string(),
-                    model_path: format!("/models/{model_id}.gguf"),
-                    is_embedding,
-                    api_key: SESSION_KEY.to_string(),
-                    mmproj_path: None,
-                    runtime_device: None,
-                },
-                runtime_device: tauri_plugin_llamacpp_upstream::runtime_device::new_shared(),
-            },
-        );
-    }
-    Arc::new(Mutex::new(map))
+fn session_map(entries: Vec<(&str, u16, bool)>) -> Arc<CoreSessions> {
+    let sessions: Vec<Value> = entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, (model_id, port, is_embedding))| {
+            json!({
+                "pid": i as i32 + 1,
+                "port": port,
+                "model_id": model_id,
+                "model_path": format!("/models/{model_id}.gguf"),
+                "is_embedding": is_embedding,
+                "api_key": SESSION_KEY,
+                "provider": "llamacpp-upstream",
+            })
+        })
+        .collect();
+    let mirror = Arc::new(CoreSessions::new());
+    mirror.apply_snapshot(1, "fixture", &json!({ "sessions": sessions }));
+    mirror
 }
 
 fn closed_port() -> u16 {
@@ -756,12 +745,7 @@ async fn run_case(case: &Case) -> Value {
             (EMBED_MODEL, stub_port, true),
         ]),
     };
-    let resolver = Arc::new(SessionResolver::new(
-        Arc::new(Mutex::new(HashMap::new())),
-        upstream_sessions,
-        Arc::new(Mutex::new(HashMap::new())),
-        Arc::new(CoreSessions::new()),
-    ));
+    let resolver = Arc::new(SessionResolver::new(upstream_sessions));
 
     let mut providers = HashMap::new();
     if case.setup.remote {

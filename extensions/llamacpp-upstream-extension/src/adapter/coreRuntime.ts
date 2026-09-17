@@ -11,15 +11,20 @@ import { invoke } from '@tauri-apps/api/core'
 import type { SessionInfo, UnloadResult } from '@janhq/core'
 
 import { createCoreRuntime } from '../../../shared/atomicCoreRuntime'
-import type { CoreLoadOptions, Invoke } from '../../../shared/atomicCoreRuntime'
+import type { Invoke } from '../../../shared/atomicCoreRuntime'
 
 export {
   describeCoreError,
   isCoreError,
   modelIdsMatch,
 } from '../../../shared/atomicCoreRuntime'
-export type {
+// Imported and then re-exported, not `export type { … } from`: rolldown 1.0.0-beta.1 treats a
+// type-only re-export as making every binding from that module type-only and drops
+// `createCoreRuntime` from the bundle, which then throws on load and leaves the app on a black
+// screen. `tests/extension-bundles.test.mjs` catches it coming back.
+import type {
   CoreBackendPack,
+  CoreCtxIncrease,
   CoreError,
   CoreLoadOptions,
   CoreModelCapabilities,
@@ -30,6 +35,19 @@ export type {
   CoreSettingsStatus,
   CoreStatus,
 } from '../../../shared/atomicCoreRuntime'
+export type {
+  CoreBackendPack,
+  CoreCtxIncrease,
+  CoreError,
+  CoreLoadOptions,
+  CoreModelCapabilities,
+  CoreOptimalState,
+  CoreProxyConfig,
+  CoreSessionSummary,
+  CoreSettingsSnapshot,
+  CoreSettingsStatus,
+  CoreStatus,
+}
 
 export const CORE_PROVIDER = 'llamacpp-upstream'
 
@@ -37,7 +55,6 @@ export const CORE_PROVIDER = 'llamacpp-upstream'
 const core = createCoreRuntime(CORE_PROVIDER, ((command, args) =>
       args === undefined ? invoke(command) : invoke(command, args)) as Invoke)
 
-export const coreOwnsRuntime = core.coreOwnsRuntime
 export const getStatus = core.getStatus
 export const listSessions = core.listSessions
 export const getLoadedModels = core.getLoadedModels

@@ -6,8 +6,8 @@
  * which engine. Renaming a package therefore does not rename it for anyone who already installed
  * it: their extension simply disappears and their local models stop having a provider.
  *
- * That is why the core migration deliberately does not rename these (PLAN.md §4, stage 3d: "адаптер
- * **не** отдельный тарбол"). The adapter ships *inside* the existing package rather than beside it:
+ * That is why the core migration deliberately does not rename these (PLAN.md §4, stage 3d: "the adapter
+ * is **not** a separate tarball"). The adapter ships *inside* the existing package rather than beside it:
  * two packages claiming one provider would race in `EngineManager`, and whichever registered last
  * would win, unpredictably.
  */

@@ -324,87 +324,40 @@ function createAudioInjectingFetch(
 }
 
 /**
- * Fetch that bypasses tauri_plugin_http for localhost POST requests.
- * The plugin's ReadableStream bridge does not properly deliver SSE chunks
- * from local inference servers, causing the UI to hang. This uses the
- * stream_local_http Tauri command + IPC Channel to relay response bytes
- * directly to a standard ReadableStream that the AI SDK can consume.
+ * Where `atomic-chat-core` serves this Foundation Models session. The core owns every local runtime
+ * on desktop, and Rust answers from its mirror of the core's session table; `null` means nothing is
+ * loaded.
  */
+export async function findFoundationModelsSession(
+  modelId: string
+): Promise<SessionInfo | null> {
+  return invoke<SessionInfo | null>('resolve_local_session', {
+    provider: 'foundation-models',
+    modelId,
+  })
+}
+
+/**
+ * Where `atomic-chat-core` serves this model. Rust answers from its mirror of the core's session
+ * table rather than the webview reading a cache of its own: a cached answer could be a moment out
+ * of date and name a port that now belongs to nothing. `null` and errors are authoritative.
+ */
+export async function findLocalSession(
+  providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+  modelId: string
+): Promise<SessionInfo | null> {
+  return invoke<SessionInfo | null>('resolve_local_session', {
+    provider: providerName,
+    modelId,
+  })
+}
+
 /**
  * Point a request at `port`, whatever port it was built for.
  *
  * Only loopback requests are touched: a local model's URL is the only thing this layer is entitled
  * to rewrite, and a cloud provider's must pass through untouched.
  */
-/**
- * Ask whoever owns this provider's sessions where the model is served.
- *
- * Two owners are possible: the app's own plugin, or `atomic-chat-core` once the runtime has been
- * handed over. Rust knows which, so this asks Rust rather than reading a flag here — a flag read in
- * the webview could be a moment out of date, and the answer would be a port belonging to the other
- * owner entirely.
- */
-function isUnknownCommandError(error: unknown): boolean {
-  const message =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : JSON.stringify(error)
-  return /unknown command|command .* not found/i.test(message)
-}
-
-/**
- * The Foundation Models session, from whoever owns it. With `atomic_core.runtime = all` the core
- * runs the server and the Rust resolver answers from its mirror; otherwise the resolver has nothing
- * for this provider and the plugin's own table is the answer, as it always was.
- */
-export async function findFoundationModelsSession(
-  modelId: string
-): Promise<SessionInfo | null> {
-  try {
-    const owned = await invoke<SessionInfo | null>('resolve_local_session', {
-      provider: 'foundation-models',
-      modelId,
-    })
-    if (owned) return owned
-  } catch (error) {
-    if (!isUnknownCommandError(error)) throw error
-  }
-  return invoke<SessionInfo | null>(
-    'plugin:foundation-models|find_foundation_models_session',
-    {}
-  )
-}
-
-export async function findLocalSession(
-  providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
-  modelId: string
-): Promise<SessionInfo | null> {
-  try {
-    return await invoke<SessionInfo | null>('resolve_local_session', {
-      provider: providerName,
-      modelId,
-    })
-  } catch (error) {
-    // Only an old shell that genuinely lacks the resolver may read the plugin map. `null` and
-    // operational errors are authoritative answers from the owner selected in Rust; falling back
-    // for either would cross the ownership boundary and can resurrect a former owner's session.
-    if (!isUnknownCommandError(error)) throw error
-    console.debug(
-      'resolve_local_session unavailable, using the plugin directly:',
-      error
-    )
-  }
-  const ipcName =
-    providerName === 'llamacpp'
-      ? 'plugin:llamacpp|find_session_by_model'
-      : providerName === 'llamacpp-upstream'
-        ? 'plugin:llamacpp-upstream|find_session_by_model'
-        : 'plugin:mlx|find_mlx_session_by_model'
-  return invoke<SessionInfo | null>(ipcName, { modelId })
-}
-
 export function retargetLocalRequest(
   input: RequestInfo | URL,
   port: number
@@ -454,6 +407,13 @@ export function createLiveSessionFetch(
   }
 }
 
+/**
+ * Fetch that bypasses tauri_plugin_http for localhost POST requests.
+ * The plugin's ReadableStream bridge does not properly deliver SSE chunks
+ * from local inference servers, causing the UI to hang. This uses the
+ * stream_local_http Tauri command + IPC Channel to relay response bytes
+ * directly to a standard ReadableStream that the AI SDK can consume.
+ */
 export function createLocalStreamingFetch(
   fallbackFetch: typeof httpFetch,
   parameters: Record<string, unknown>
@@ -672,7 +632,7 @@ function getLocalApiServerBaseURL(): {
 /**
  * Cached `SessionInfo` (port + api_key) for an already-warm local
  * llama.cpp / MLX session, keyed by `providerName::modelId`. Avoids paying
- * 100–200ms of redundant IPC (`startModel` + `find_session_by_model`) on
+ * 100–200ms of redundant IPC (`startModel` + `resolve_local_session`) on
  * every `sendMessages` for a session that is clearly still alive.
  *
  * TTL is short so that if the user stops/restarts the model the cache
@@ -723,8 +683,8 @@ export class ModelFactory {
 
   /**
    * Resolve `SessionInfo` for a llama.cpp or MLX model, reusing a cached
-   * entry when fresh, otherwise calling `startModel` + the appropriate
-   * `find_session_by_model` IPC and populating the cache. Concurrent
+   * entry when fresh, otherwise calling `startModel` +
+   * `resolve_local_session` and populating the cache. Concurrent
    * resolves for the same key share a single in-flight promise so the
    * pre-warm from the chat input and the real send don't both hit IPC.
    */
@@ -927,10 +887,13 @@ export class ModelFactory {
     ) {
       return ModelFactory.fmAvailabilityCache.status
     }
-    const status = await invoke<string>(
-      'plugin:foundation-models|check_foundation_models_availability',
-      {}
-    )
+    // The core probes the Swift server's availability; `status` carries the same tokens the
+    // plugin check used to return (`available`, `notEligible`, `modelNotReady`, …).
+    const { status } = await invoke<{ status: string }>('atomic_core_call', {
+      method: 'GET',
+      path: '/runtimes/foundation-models/availability',
+      body: null,
+    })
     ModelFactory.fmAvailabilityCache = { status, at: now }
     return status
   }
@@ -1024,10 +987,11 @@ export class ModelFactory {
 
   /**
    * Create a llamacpp model by starting the model and finding the running session.
-   * The `engineName` selects which Tauri plugin to talk to: `'llamacpp'` (our
-   * TurboQuant fork) or `'llamacpp-upstream'` (official ggml-org/llama.cpp).
-   * Both expose an OpenAI-compatible HTTP surface, so the rest of the factory
-   * is identical — only the session-discovery IPC differs.
+   * The `engineName` selects which of the core's llama.cpp runtimes serves it:
+   * `'llamacpp'` (our TurboQuant fork) or `'llamacpp-upstream'` (official
+   * ggml-org/llama.cpp). Both expose an OpenAI-compatible HTTP surface, so the
+   * rest of the factory is identical — only the provider passed to
+   * `resolve_local_session` differs.
    */
   private static async createLlamaCppModel(
     modelId: string,
@@ -1147,8 +1111,8 @@ export class ModelFactory {
   }
 
   /**
-   * Create a Foundation Models model (Apple on-device) by starting the local
-   * Swift server via the Tauri plugin and connecting over localhost.
+   * Create a Foundation Models model (Apple on-device): the core starts the
+   * local Swift server, and the model connects to it over localhost.
    */
   private static async createFoundationModelsModel(
     modelId: string,

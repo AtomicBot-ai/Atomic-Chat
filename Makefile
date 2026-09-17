@@ -70,14 +70,14 @@ dev-fast: install-and-build
 	make build-cli-dev
 	yarn dev
 
-# Запуск глазами НОВОГО пользователя (как dev-fast по скорости). FRESH_INSTALL
-# очищает localStorage webview на каждом старте приложения: срабатывает вся
-# fresh-install ветка — онбординг с нуля, turboquant выключен по умолчанию,
-# дефолтный движок llamacpp-upstream. Настоящий dev-профиль (провайдеры,
-# API-ключи, флаги) бэкапится и автоматически восстанавливается при следующем
-# обычном `make dev` / `make dev-fast`; всё, что сделано во fresh-запусках,
-# отбрасывается. Модели на диске не удаляются (общий каталог data), поэтому
-# после онбординга они снова видны в списке.
+# Run the app as a NEW user sees it (as fast as dev-fast). FRESH_INSTALL
+# clears the webview localStorage on every app start, so the whole
+# fresh-install branch runs: onboarding from scratch, turboquant off by default,
+# llamacpp-upstream as the default engine. The real dev profile (providers,
+# API keys, flags) is backed up and automatically restored on the next regular
+# `make dev` / `make dev-fast`; everything done during fresh runs is
+# discarded. Models on disk are not deleted (shared data directory), so
+# they show up in the list again after onboarding.
 dev-fresh: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend-if-exists
@@ -87,8 +87,8 @@ dev-fresh: install-and-build
 	make build-cli-dev
 	FRESH_INSTALL=true FORCE_ONBOARDING=true yarn dev
 
-# Dev-режим с форсированным SetupScreen (онбординг) без удаления моделей.
-# Флаг FORCE_ONBOARDING прокидывается в vite как compile-time константа.
+# Dev mode with a forced SetupScreen (onboarding), without deleting models.
+# The FORCE_ONBOARDING flag is passed to vite as a compile-time constant.
 dev-onboarding: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -98,27 +98,27 @@ dev-onboarding: install-and-build
 	make build-cli-dev
 	FORCE_ONBOARDING=true yarn dev
 
-# Путь к соседнему чекауту atomic-chat-conf. Переопределяется:
+# Path to the sibling atomic-chat-conf checkout. Override with:
 #   make dev-onboarding-low-spec ATOMIC_CHAT_CONF=~/work/atomic-chat-conf
 ATOMIC_CHAT_CONF ?= ../atomic-chat-conf
 
-# Ступень лестницы, под которую смотрим онбординг. Переопределяется:
+# Ladder tier to preview onboarding for. Override with:
 #   make dev-onboarding-low-spec FORCE_HARDWARE_TIER=unified_8
 FORCE_HARDWARE_TIER ?= vram_2
 
-# Онбординг глазами пользователя со слабой машиной: FORCE_HARDWARE_TIER
-# минует определение железа, и первый экран показывает рекомендацию заданной
-# ступени лестницы на любом компьютере.
+# Onboarding as seen by a user on a low-spec machine: FORCE_HARDWARE_TIER
+# bypasses hardware detection, and the first screen shows the recommendation
+# for the given ladder tier on any computer.
 #
-# Значение — любой id из `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
+# Value: any id from `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
 # cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_24, vram_32,
 # vram_48, vram_64, vram_64_plus, unified_8, unified_16, unified_24,
-# unified_32, unified_48, unified_64, unified_64_plus. Прежние `low` и
-# `standard` тоже принимаются и мапятся на ближайшую ступень.
+# unified_32, unified_48, unified_64, unified_64_plus. The legacy `low` and
+# `standard` are also accepted and mapped to the nearest tier.
 #
-# Манифест берём из локального чекаута conf, если он есть: ключа `tiers` в
-# удалённом может ещё не быть, но это не мешает — без него клиент штатно
-# берёт встроенную лестницу, которая и есть нужная рекомендация.
+# The manifest is taken from the local conf checkout when present: the remote
+# one may not have the `tiers` key yet, but that is fine — without it the client
+# falls back to the built-in ladder, which is exactly the recommendation needed.
 dev-onboarding-low-spec: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -128,11 +128,11 @@ dev-onboarding-low-spec: install-and-build
 	make build-cli-dev
 	@if [ -f "$(ATOMIC_CHAT_CONF)/models/recommended.json" ]; then \
 		cp "$(ATOMIC_CHAT_CONF)/models/recommended.json" web-app/public/dev-recommended.json; \
-		echo "[dev] манифест: $(ATOMIC_CHAT_CONF)/models/recommended.json"; \
+		echo "[dev] manifest: $(ATOMIC_CHAT_CONF)/models/recommended.json"; \
 		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=$(FORCE_HARDWARE_TIER) \
 			VITE_RECOMMENDED_MODELS_REGISTRY_URL=/dev-recommended.json yarn dev; \
 	else \
-		echo "[dev] $(ATOMIC_CHAT_CONF) не найден — манифест из сети (задайте ATOMIC_CHAT_CONF=...)"; \
+		echo "[dev] $(ATOMIC_CHAT_CONF) not found — using the manifest from the network (set ATOMIC_CHAT_CONF=...)"; \
 		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=$(FORCE_HARDWARE_TIER) yarn dev; \
 	fi
 
@@ -419,6 +419,9 @@ test-hardening-contracts:
 		tests/hardware-profiles.test.mjs \
 		tests/upstream-backend-resolver.test.mjs \
 		tests/core-contracts.test.mjs \
+		tests/core-settings-schema.test.mjs \
+		tests/desktop-legacy-path.test.mjs \
+		tests/extension-bundles.test.mjs \
 		tests/cli-launch-catalog.test.mjs
 
 test-coverage-critical:
@@ -492,7 +495,7 @@ test-live-cloud:
 ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-app-core
 test-core-live:
 	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" cargo test --manifest-path src-tauri/Cargo.toml \
-		-p Atomic-Chat --features test-tauri,cli --lib core::atomic_core::live_tests -- --test-threads=1
+		-p Atomic-Chat --features test-tauri --lib core::atomic_core::live_tests -- --test-threads=1
 
 mutants:
 	bash scripts/test-cargo-mutants.sh
@@ -1193,10 +1196,7 @@ else
 	@echo "Skipping llamacpp backend (unsupported platform)"
 endif
 
-# Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
-# Which implementation ships as `jan-cli`: the compiled atomic-chat-core (default) or the legacy
-# Rust binary. `make build-cli CLI_IMPL=rust` is the rollback, and stays exercised in CI.
-CLI_IMPL ?= core
+# The bundled `jan-cli` is the compiled atomic-chat-core (the legacy Rust CLI was removed in stage 6).
 
 # Fetch the pinned core release (or use ATOMIC_CORE_LOCAL) into resources/bin.
 download-core:
@@ -1230,41 +1230,7 @@ else
 endif
 
 build-cli:
-ifeq ($(CLI_IMPL),core)
 	"$(MAKE)" build-cli-core
-else
-	"$(MAKE)" build-cli-rust
-endif
-
-build-cli-rust:
-ifeq ($(shell uname -s),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
-	lipo -create \
-		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
-		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
-		-output src-tauri/resources/bin/jan-cli
-	chmod +x src-tauri/resources/bin/jan-cli
-	mkdir -p src-tauri/target/universal-apple-darwin/release
-
-	echo "Checking for code signing identity..."; \
-	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
-	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing jan-cli with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
-		echo "Code signing completed successfully"; \
-	else \
-		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
-	fi
-
-	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
-else ifeq ($(OS),Windows_NT)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/release/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
-else
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
-endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
@@ -1275,19 +1241,19 @@ build: install-and-build install-rust-targets
 	yarn build
 
 # ──────────────────────────────────────────────────────────────
-# macOS release build: universal .app + .dmg с версией в VOLNAME
+# macOS release build: universal .app + .dmg with the version in VOLNAME
 # ──────────────────────────────────────────────────────────────
-# Шаги:
-#   1. yarn tauri build (universal-apple-darwin, macos-конфиг)
-#      — Tauri подписывает и нотаризует .app, создаёт и подписывает .dmg
+# Steps:
+#   1. yarn tauri build (universal-apple-darwin, macOS config)
+#      — Tauri signs and notarizes the .app, creates and signs the .dmg
 #   2. scripts/rename-dmg-volume.sh
-#      — переименовывает том DMG в "Atomic Chat v<version>"
-#      — ломает только подпись DMG-контейнера; .app внутри остаётся нотаризованным
+#      — renames the DMG volume to "Atomic Chat v<version>"
+#      — breaks only the DMG container signature; the .app inside stays notarized
 #   3. scripts/notarize-dmg-macos.sh
-#      — восстанавливает подпись DMG + нотаризует + стейплит (если заданы APPLE_ID/PASSWORD/TEAM_ID)
+#      — restores the DMG signature + notarizes + staples (if APPLE_ID/PASSWORD/TEAM_ID are set)
 #
-# Для локальной сборки достаточно `make build-mac`; нотаризация автоматически
-# пропустится при отсутствии Apple credentials в окружении.
+# For a local build `make build-mac` is enough; notarization is skipped
+# automatically when Apple credentials are absent from the environment.
 build-mac:
 ifeq ($(shell uname -s),Darwin)
 	yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json

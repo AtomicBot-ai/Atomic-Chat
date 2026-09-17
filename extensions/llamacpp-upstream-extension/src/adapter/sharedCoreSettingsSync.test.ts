@@ -57,12 +57,23 @@ describe('shared core settings sync', () => {
 
   it('prepares once per attachment and settings state, and again when either changes', async () => {
     const h = harness({ coreValues: { ctx_size: 4096 } })
+    const cycle = [
+      'import {"ctx_size":4096,"kv_bits":3.5}',
+      'write mirroring=true',
+      'ack 7',
+      'hardware {"gpus":[{"vendor":"AMD"}],"cpu_extensions":["avx2"],"os_type":"macos"}',
+    ]
     await h.sync.ensureReady()
     await h.sync.ensureReady()
     expect(h.core.importSettings).toHaveBeenCalledTimes(1)
+    // The second call reuses the first preparation: no second mirror write, acknowledgement or
+    // hardware override reaches the core or the persisted settings.
+    expect(h.order).toEqual(cycle)
     h.core.getStatus.mockResolvedValue({ attached: { instance_id: 'i', generation: 2 } })
     await h.sync.ensureReady()
     expect(h.core.importSettings).toHaveBeenCalledTimes(2)
+    // A new core generation runs the whole handover again, not only the import.
+    expect(h.order).toEqual([...cycle, ...cycle])
   })
 
   it('refuses without an attachment, on a conflict and on a failed import, and forgets the failure', async () => {

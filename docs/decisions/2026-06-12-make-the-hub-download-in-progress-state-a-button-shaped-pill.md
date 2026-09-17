@@ -8,7 +8,7 @@ title: "Make the Hub download in-progress state a button-shaped \"pill\" and sur
 - **Context:** PM feedback (screenshots) on the Hub: (1) once a variant
  download starts, the row's action cell collapsed from a proper button
  ("Download" / "New chat") to a thin `Progress` bar + "NN%" + a tiny ghost `X`
- icon (`w-24` block), reading as a broken "недокнопка" next to the real
+ icon (`w-24` block), reading as a broken "half-button" next to the real
  buttons; (2) the title-bar download indicator
  ([`DownloadManagement`](web-app/src/containers/DownloadManegement.tsx)) — a
  ghost icon with a faint progress ring shown only while `downloadCount > 0` —

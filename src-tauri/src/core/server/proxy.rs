@@ -4016,7 +4016,7 @@ pub async fn stop_server(
         }
         handle.server_task.abort();
         // Wait for the aborted task to be dropped, which is what closes the listener: whoever
-        // starts next on this port (the core, in a handover) must find it free, not still bound
+        // starts next on this port must find it free, not still bound
         // for a few milliseconds and silently fall back to another port.
         let _ = handle.server_task.await;
         log::info!("Atomic Chat API server stopped");

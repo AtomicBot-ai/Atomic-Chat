@@ -14,6 +14,7 @@ import {
   listInstalledBackendPacks,
   deleteBackendPack,
   mergeBackendOptions,
+  cleanupIncompleteBackends,
 } from '../backend'
 import { BUNDLED_MANIFEST_BASELINE } from '../bundledManifestBaseline'
 import UPSTREAM_MANIFEST_FIXTURE from '../../../../tests/fixtures/registries/upstream-manifest.json'
@@ -496,6 +497,32 @@ describe('fetchRemoteBackends (atomic-chat-conf manifest, ATO-199)', () => {
         order: 0,
       },
     ])
+  })
+})
+
+describe('cleanupIncompleteBackends', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getJanDataFolderPath).mockResolvedValue(MOCK_JAN_PATH_STRING)
+  })
+
+  it('removes a pack without llama-server but leaves an install the core is staging', async () => {
+    const root = `${MOCK_JAN_PATH_STRING}/llamacpp-upstream/backends`
+    vi.mocked(fs.readdirSync).mockImplementation(async (path: string) =>
+      path === root
+        ? ['b10205']
+        : path === `${root}/b10205`
+          ? ['macos-arm64', 'macos-arm64.incoming-1700000000000']
+          : []
+    )
+    // Only the backends root exists; neither pack has an executable yet.
+    vi.mocked(fs.existsSync).mockImplementation(async (path: string) => path === root)
+
+    const removed = await cleanupIncompleteBackends()
+
+    expect(removed).toEqual(['b10205/macos-arm64'])
+    expect(fs.rm).toHaveBeenCalledTimes(1)
+    expect(fs.rm).toHaveBeenCalledWith(`${root}/b10205/macos-arm64`)
   })
 })
 

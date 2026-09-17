@@ -7,10 +7,10 @@
  * `extension.checkBackendForUpdates?.()` whether or not the method exists — the `?.` makes a
  * missing one a silent no-op, and the button does nothing.
  *
- * That is fine while one class implements everything. It stops being fine during the core
- * migration, where the same names have to keep working while what is behind them moves to another
- * process: a method routed to the core but dropped from the class, or renamed on the way, fails
- * exactly this way. So the call sites are read from the app and checked against the class.
+ * The migration to `atomic-chat-core` moved what is behind these names to another process: a method
+ * dropped from the class, or renamed on the way, fails exactly this way. So the call sites are read
+ * from the app and checked against the class — and no extension may reach back for the plugin
+ * commands that used to own model processes.
  */
 
 import { test } from 'node:test'
@@ -96,82 +96,76 @@ test('every core call the adapter makes goes through the Rust core commands', ()
   const invoked = [...source.matchAll(/invoke<[^>]*>\(\s*'([^']+)'/g)].map((m) => m[1])
   assert.ok(invoked.includes('atomic_core_call'), 'the shared adapter is the one that invokes')
 
-  const allowed = new Set(['atomic_core_call', 'atomic_core_status', 'atomic_core_snapshot', 'get_atomic_core_flags'])
+  const allowed = new Set(['atomic_core_call', 'atomic_core_status', 'atomic_core_snapshot'])
   const unexpected = invoked.filter((name) => !allowed.has(name))
 
   assert.deepEqual(unexpected, [], `unexpected commands: ${unexpected.join(', ')}`)
 })
 
-test('the migrated methods ask who owns the runtime before choosing a path', () => {
-  // Each of these has two implementations now. Reading the flag is what picks one, and forgetting
-  // to read it is how a method silently keeps talking to the plugin after the handover.
-  const source = readFileSync(join(EXTENSION, 'index.ts'), 'utf8')
-  const migrated = [
-    'override async load(',
-    'override async unload(',
-    'override async getLoadedModels(',
-    'async validateGgufFile(',
-    'async checkMmprojExists(',
-    'async getDevices(',
-    'async listInstalledBackends(',
-    'async deleteBackend(',
-  ]
+// Stage 6: the core owns every local model process on desktop, and the plugins no longer register
+// the commands that started, found or stopped one. A call left behind fails only at run time, as an
+// unknown command, so it is caught here instead.
+const REMOVED_PLUGIN_COMMANDS = [
+  'load_llama_model', 'unload_llama_model', 'get_devices', 'get_runtime_device', 'generate_api_key',
+  'is_process_running', 'get_random_port', 'find_session_by_model', 'get_loaded_models',
+  'get_all_sessions', 'get_session_by_model', 'estimate_kv_cache_size', 'get_model_size',
+  'cleanup_llama_processes', 'load_mlx_model', 'unload_mlx_model', 'is_mlx_process_running',
+  'get_mlx_random_port', 'find_mlx_session_by_model', 'get_mlx_loaded_models', 'get_mlx_all_sessions',
+  'cleanup_mlx_processes',
+]
+const REMOVED_GUEST_FUNCTIONS = [
+  'loadLlamaModel', 'unloadLlamaModel', 'getDevices', 'getRuntimeDevice', 'generateApiKey',
+  'isProcessRunning', 'getRandomPort', 'findSessionByModel', 'getLoadedModels', 'getAllSessions',
+  'getSessionByModel', 'estimateKVCacheSize', 'getModelSize', 'cleanupLlamaProcesses', 'loadMlxModel',
+  'unloadMlxModel', 'isMlxProcessRunning', 'getMlxRandomPort', 'findMlxSessionByModel',
+  'getMlxLoadedModels', 'getMlxAllSessions', 'cleanupMlxProcesses',
+]
 
-  const withoutCheck = migrated.filter((signature) => {
-    const start = source.indexOf(signature)
-    if (start === -1) return true
-    // The check is near the top of the method; a generous window keeps this from depending on
-    // exactly how the body is laid out.
-    return !source.slice(start, start + 2000).includes('coreOwnsRuntime()')
-  })
-
-  assert.deepEqual(
-    withoutCheck,
-    [],
-    `these methods do not consult the ownership flag: ${withoutCheck.join(', ')}`
-  )
-})
-
-test('the TurboQuant, MLX and Foundation Models methods that need a process ask who owns it', () => {
-  // Stage 5: the same handover as upstream. A method that never reads the flag keeps talking to
-  // its plugin after `atomic_core.runtime = all`, where the plugin no longer holds the process.
-  const extensions = {
-    'llamacpp-extension': [
-      'override async load(',
-      'override async unload(',
-      'override async getLoadedModels(',
-      'private async findSessionByModel(',
-      'override async chat(',
-      'async getDevices(',
-      'private async downloadAndInstallBackend(',
-      'private async handleAutoIncreaseCtx(',
-      'private async listenForCoreSettings(',
-    ],
-    'mlx-extension': [
-      'private async performLoad(',
-      'override async unload(',
-      'override async getLoadedModels(',
-      'private async findSessionByModel(',
-      'override async chat(',
-      'private async handleAutoIncreaseCtx(',
-      'private async listenForCoreSettings(',
-    ],
-    'foundation-models-extension': [
-      'private async findSession(',
-      'override async load(',
-      'override async unload(',
-      'override async chat(',
-    ],
-  }
-  const withoutCheck = []
-  for (const [extension, signatures] of Object.entries(extensions)) {
-    const source = readFileSync(join(REPO_ROOT, 'extensions', extension, 'src', 'index.ts'), 'utf8')
-    assert.ok(source.includes("'../../shared/atomicCoreRuntime'"), `${extension} binds the shared adapter`)
-    for (const signature of signatures) {
-      const start = source.indexOf(signature)
-      if (start === -1 || !source.slice(start, start + 4000).includes('coreOwnsRuntime()'))
-        withoutCheck.push(`${extension}: ${signature}`)
+function sourcesUnder(dir) {
+  const files = []
+  const walk = (current) => {
+    for (const name of readdirSync(current)) {
+      const path = join(current, name)
+      if (name === 'node_modules' || name === 'dist') continue
+      if (statSync(path).isDirectory()) walk(path)
+      else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) files.push(path)
     }
   }
-  assert.deepEqual(withoutCheck, [], `these methods do not consult the ownership flag: ${withoutCheck.join(', ')}`)
+  walk(dir)
+  return files
+}
+
+test('no extension calls a plugin command that used to own a model process', () => {
+  const offenders = []
+  for (const extension of [
+    'llamacpp-extension',
+    'llamacpp-upstream-extension',
+    'mlx-extension',
+    'foundation-models-extension',
+    'download-extension',
+  ]) {
+    for (const path of sourcesUnder(join(REPO_ROOT, 'extensions', extension, 'src'))) {
+      const source = readFileSync(path, 'utf8')
+      for (const [, command] of source.matchAll(/'plugin:[\w-]+\|(\w+)'/g))
+        if (REMOVED_PLUGIN_COMMANDS.includes(command)) offenders.push(`${path}: ${command}`)
+      for (const [, names] of source.matchAll(
+        /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*'@janhq\/tauri-plugin-[\w-]+-api'/g
+      ))
+        for (const name of names.split(',').map((n) => n.trim().split(/\s+as\s+/)[0]))
+          if (REMOVED_GUEST_FUNCTIONS.includes(name)) offenders.push(`${path}: ${name}`)
+    }
+  }
+  assert.deepEqual(offenders, [], `removed plugin commands are still called:\n${offenders.join('\n')}`)
+})
+
+test('no extension asks who owns the runtime any more', () => {
+  const offenders = []
+  for (const extension of ['llamacpp-extension', 'llamacpp-upstream-extension', 'mlx-extension', 'foundation-models-extension', 'download-extension']) {
+    for (const path of sourcesUnder(join(REPO_ROOT, 'extensions', extension, 'src'))) {
+      const source = readFileSync(path, 'utf8')
+      for (const needle of ['coreOwnsRuntime', 'withRuntimeLoad', 'active_runtime', 'atomic_core_begin_runtime_load', 'get_atomic_core_flags'])
+        if (source.includes(needle)) offenders.push(`${path}: ${needle}`)
+    }
+  }
+  assert.deepEqual(offenders, [], `ownership checks left behind:\n${offenders.join('\n')}`)
 })

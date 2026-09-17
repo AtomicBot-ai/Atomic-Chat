@@ -11,8 +11,6 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
- "console",
- "dialoguer",
  "diffy",
  "dirs 6.0.0",
  "ed25519-dalek",
@@ -60,7 +58,6 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
- "tauri-plugin-foundation-models",
  "tauri-plugin-hardware",
  "tauri-plugin-http",
  "tauri-plugin-llamacpp",
@@ -1636,19 +1633,6 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "dialoguer"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
-dependencies = [
- "console",
- "shell-words",
- "tempfile",
- "thiserror 1.0.69",
- "zeroize",
 ]
 
 [[package]]
@@ -7745,21 +7729,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-plugin-foundation-models"
-version = "0.6.599"
-dependencies = [
- "jan-utils",
- "log",
- "nix 0.30.1",
- "serde",
- "sysinfo",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "tauri-plugin-fs"
 version = "2.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7826,16 +7795,10 @@ dependencies = [
 name = "tauri-plugin-llamacpp"
 version = "0.6.599"
 dependencies = [
- "base64 0.22.1",
  "byteorder",
- "hmac",
- "jan-utils",
  "log",
- "nix 0.30.1",
- "rand 0.8.5",
  "reqwest 0.11.27",
  "serde",
- "sha2",
  "sysinfo",
  "tauri",
  "tauri-plugin",
@@ -7848,17 +7811,12 @@ dependencies = [
 name = "tauri-plugin-llamacpp-upstream"
 version = "0.6.599"
 dependencies = [
- "base64 0.22.1",
  "byteorder",
- "hmac",
  "jan-utils",
  "log",
- "nix 0.30.1",
- "rand 0.8.5",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
- "sha2",
  "sysinfo",
  "tauri",
  "tauri-plugin",
@@ -7893,15 +7851,9 @@ dependencies = [
 name = "tauri-plugin-mlx"
 version = "0.6.599"
 dependencies = [
- "jan-utils",
- "log",
- "nix 0.30.1",
  "serde",
- "sysinfo",
  "tauri",
  "tauri-plugin",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]

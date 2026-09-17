@@ -298,8 +298,8 @@ const GEMMA4_12B_QAT_HF =
 const QWEN_MLX_HF =
   'https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/main'
 
-//! MLX-fallback инжектится только на macOS — иначе утекает через useState-инициализацию
-//! useResolvedRecommendedModels и через прямое чтение в routes/hub/$modelId.tsx
+//! The MLX fallback is injected only on macOS — otherwise it leaks through the useState initialization
+//! of useResolvedRecommendedModels and through the direct read in routes/hub/$modelId.tsx
 const MLX_QWEN_FALLBACK: CatalogModel = {
   model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
   developer: 'mlx-community',
@@ -407,7 +407,7 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     num_mmproj: 1,
     mmproj_models: [
       {
-        //! Не переименован вместе с весами — имя файла в репозитории именно такое.
+        //! Not renamed together with the weights — the file name in the repository is exactly this.
         model_id: 'mmproj-gemma4-e4b-it-f16',
         path: `${ATOMIC_GEMMA4_E4B_HF}/mmproj-gemma4-e4b-it-f16.gguf`,
         file_size: '0.92 GB',
@@ -496,7 +496,7 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     num_quants: 1,
     quants: [
       {
-        //! Единственный квант в QAT-репозитории — лестницы там нет, берём что есть.
+        //! The only quant in the QAT repository — there is no ladder, take what is there.
         model_id: 'unsloth/gemma-4-12B-it-qat-UD-Q4_K_XL',
         path: `${GEMMA4_12B_QAT_HF}/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf`,
         file_size: '6.26 GB',

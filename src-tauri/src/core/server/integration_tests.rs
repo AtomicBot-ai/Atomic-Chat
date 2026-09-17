@@ -93,29 +93,22 @@ async fn spawn_stub_upstream(seen: SeenBody) -> u16 {
 
 /// A llamacpp session entry pointing at the stub. The `Child` is a real but
 /// inert process; the proxy only ever reads `info`.
-async fn session_map_with_stub(
-    model_id: &str,
-    port: u16,
-) -> Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp::LLamaBackendSession>>> {
-    let child = tokio::process::Command::new("sleep")
-        .arg("120")
-        .spawn()
-        .expect("spawn placeholder child");
-    let session = tauri_plugin_llamacpp::LLamaBackendSession {
-        child,
-        info: tauri_plugin_llamacpp::state::SessionInfo {
-            pid: 1,
-            port: port as i32,
-            model_id: model_id.to_string(),
-            model_path: "/tmp/model.gguf".to_string(),
-            is_embedding: false,
-            api_key: "session-key".to_string(),
-            mmproj_path: None,
-            runtime_device: None,
-        },
-        runtime_device: tauri_plugin_llamacpp::runtime_device::new_shared(),
-    };
-    Arc::new(Mutex::new(HashMap::from([(1, session)])))
+async fn session_map_with_stub(model_id: &str, port: u16) -> Arc<CoreSessions> {
+    let mirror = Arc::new(CoreSessions::new());
+    mirror.apply_snapshot(
+        1,
+        "test",
+        &serde_json::json!({ "sessions": [{
+            "pid": 1,
+            "port": port,
+            "model_id": model_id,
+            "model_path": "/tmp/model.gguf",
+            "is_embedding": false,
+            "api_key": "session-key",
+            "provider": "llamacpp",
+        }] }),
+    );
+    mirror
 }
 
 struct Harness {
@@ -145,12 +138,7 @@ impl Harness {
         let proxy_port = proxy::start_server(
             tauri::test::mock_app().handle().clone(),
             server_handle.clone(),
-            Arc::new(SessionResolver::new(
-                sessions,
-                Arc::new(Mutex::new(HashMap::new())),
-                Arc::new(Mutex::new(HashMap::new())),
-                Arc::new(CoreSessions::new()),
-            )),
+            Arc::new(SessionResolver::new(sessions)),
             "127.0.0.1".to_string(),
             0,
             "/v1".to_string(),
@@ -233,12 +221,7 @@ async fn a_second_start_reuses_the_running_server() {
     let second = proxy::start_server(
         tauri::test::mock_app().handle().clone(),
         harness.server_handle.clone(),
-        Arc::new(SessionResolver::new(
-            Arc::new(Mutex::new(HashMap::new())),
-            Arc::new(Mutex::new(HashMap::new())),
-            Arc::new(Mutex::new(HashMap::new())),
-            Arc::new(CoreSessions::new()),
-        )),
+        Arc::new(SessionResolver::new(Arc::new(CoreSessions::new()))),
         "127.0.0.1".to_string(),
         0,
         "/v1".to_string(),

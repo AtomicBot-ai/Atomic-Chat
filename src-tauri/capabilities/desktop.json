@@ -29,7 +29,6 @@
     "llamacpp:default",
     "llamacpp-upstream:default",
     "mlx:default",
-    "foundation-models:default",
     "deep-link:default",
     "hardware:default",
     "autostart:default",

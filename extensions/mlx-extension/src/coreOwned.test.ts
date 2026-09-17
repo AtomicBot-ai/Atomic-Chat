@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// The MLX runtime handed to `atomic-chat-core` (`atomic_core.runtime = all`, PLAN.md stage 5).
-// Mocks as in `autoIncreaseCtx.test.ts`. See
-// that file for the rationale behind the inline mocks. The MLX handler has
-// the same contract as llamacpp — same event channels, same
-// `computeNextCtxLen` ladder, same done-event payload — so we reuse the
-// same assertions against the MLX class.
+// The MLX runtime lives in `atomic-chat-core` (PLAN.md §4): every load, unload, session lookup and
+// context increase is a control call through `atomic_core_call`. The Tauri and `@janhq/core`
+// modules are mocked inline because the extension imports them at module load; `invoke` answers
+// only the core commands and the model.yml read, so any call to a plugin command fails the test.
 
 const { emitMock, listenMock, eventsEmitMock, invokeMock, listeners } =
   vi.hoisted(() => {
@@ -41,11 +39,6 @@ vi.mock('@tauri-apps/plugin-log', () => ({
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
   Channel: vi.fn(),
-}))
-
-vi.mock('@janhq/tauri-plugin-mlx-api', () => ({
-  loadMlxModel: vi.fn(),
-  unloadMlxModel: vi.fn(),
 }))
 
 vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
@@ -99,18 +92,15 @@ vi.mock('@janhq/core', () => ({
 }))
 
 import mlx_extension from './index'
-import { loadMlxModel, unloadMlxModel } from '@janhq/tauri-plugin-mlx-api'
 
 type Route = (body: unknown) => unknown
-function core(routes: Record<string, Route>, runtime: string | null = 'all') {
+function core(routes: Record<string, Route>) {
   const calls: Array<{ method: string; path: string; body: unknown }> = []
   invokeMock.mockImplementation(
     async (command: string, args?: Record<string, unknown>) => {
-      if (command === 'atomic_core_begin_runtime_load') return 7
-      if (command === 'atomic_core_end_runtime_load') return undefined
       if (command === 'atomic_core_status')
         return {
-          active_runtime: runtime,
+          running: true,
           attached: { instance_id: 'i', generation: 1 },
         }
       if (command === 'read_yaml')
@@ -170,7 +160,7 @@ beforeEach(() => {
   listeners.clear()
 })
 
-describe('MLX runtime owned by the core', () => {
+describe('MLX runtime in the core', () => {
   it('evicts through the core, restores the drafter here, and loads with the resolved settings', async () => {
     let sessions: unknown[] = [
       { ...session, model_id: 'other', provider: 'mlx' },
@@ -200,16 +190,6 @@ describe('MLX runtime owned by the core', () => {
     } as never)
 
     expect(await ext.load('m', { ctx_size: 8192 })).toEqual(session)
-    expect(
-      invokeMock.mock.calls.filter(
-        ([command]) => command === 'atomic_core_begin_runtime_load'
-      )
-    ).toEqual([['atomic_core_begin_runtime_load', { provider: 'mlx' }]])
-    expect(
-      invokeMock.mock.calls.filter(
-        ([command]) => command === 'atomic_core_end_runtime_load'
-      )
-    ).toEqual([['atomic_core_end_runtime_load', { id: 7 }]])
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       'GET /sessions',
       'GET /sessions',
@@ -231,7 +211,6 @@ describe('MLX runtime owned by the core', () => {
       isEmbedding: false,
       bypassAutoUnload: true,
     })
-    expect(loadMlxModel).not.toHaveBeenCalled()
   })
 
   it('reports a failed core load with its code and refuses a model already loaded', async () => {
@@ -268,10 +247,9 @@ describe('MLX runtime owned by the core', () => {
     await expect(ext.unload('nope')).rejects.toThrow(
       'No active MLX session found for model: nope'
     )
-    expect(unloadMlxModel).not.toHaveBeenCalled()
   })
 
-  it('chats with a core session without asking the plugin whether the process runs', async () => {
+  it('chats with the port the core reports, after a health probe', async () => {
     core({
       'GET /sessions': () => ({ sessions: [{ ...session, provider: 'mlx' }] }),
     })
@@ -287,15 +265,16 @@ describe('MLX runtime owned by the core', () => {
     vi.stubGlobal('fetch', fetchMock)
     const answer = await extension().chat({ model: 'm', messages: [] } as never)
     expect(answer).toMatchObject({ choices: [{ message: { content: 'ok' } }] })
-    expect(fetchMock.mock.calls.map(([url]) => url)).toContain(
-      'http://localhost:3100/v1/chat/completions'
-    )
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:3100/health',
+      'http://localhost:3100/v1/chat/completions',
+    ])
     vi.unstubAllGlobals()
   })
 
-  it('asks the core to grow the context and relays both outcomes', async () => {
-    let outcome: unknown = { ok: true, new_ctx_len: 32768 }
-    core({ 'POST /models/mlx/m/ctx/increase': () => outcome })
+  it('asks the core to grow the context and relays every outcome', async () => {
+    let outcome: () => unknown = () => ({ ok: true, new_ctx_len: 32768 })
+    core({ 'POST /models/mlx/m/ctx/increase': () => outcome() })
     const ext = extension()
     const handle = (id: string) =>
       (
@@ -318,7 +297,11 @@ describe('MLX runtime owned by the core', () => {
       modelId: 'm',
       newCtxLen: 32768,
     })
-    outcome = { ok: false, reason: 'at_max', current_ctx_len: 32768 }
+    expect(emitMock).toHaveBeenCalledWith(
+      'local_backend://auto_increase_ctx_notify',
+      { provider: 'mlx', modelId: 'm', newCtxLen: 32768 }
+    )
+    outcome = () => ({ ok: false, reason: 'at_max', current_ctx_len: 32768 })
     await handle('b')
     expect(emitMock).toHaveBeenCalledWith(
       'local_backend://auto_increase_ctx_done/b',
@@ -332,6 +315,17 @@ describe('MLX runtime owned by the core', () => {
         maxCtxLen: 32768,
         currentCtxLen: 32768,
       }
+    )
+    // A failed control call still answers the proxy, which is otherwise left waiting.
+    outcome = () =>
+      Promise.reject({ code: 'OUT_OF_MEMORY', message: 'Out of memory.' })
+    await handle('c')
+    const done = emitMock.mock.calls.find(
+      ([channel]) => channel === 'local_backend://auto_increase_ctx_done/c'
+    )
+    expect(done?.[1]).toMatchObject({ ok: false })
+    expect(String((done?.[1] as { reason?: string }).reason)).toContain(
+      'Out of memory.'
     )
   })
 

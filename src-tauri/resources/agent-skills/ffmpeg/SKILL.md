@@ -35,7 +35,7 @@ Outcome map:
 
 Reply (solo `reply` step):
 
-> «`ffmpeg` не установлен. Могу поставить: `brew install ffmpeg`. Поставить?»
+> "`ffmpeg` is not installed. I can install it: `brew install ffmpeg`. Install it?"
 
 On yes:
 

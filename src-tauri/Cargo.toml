@@ -19,11 +19,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "Atomic-Chat"
 path = "src/main.rs"
 
-[[bin]]
-name = "jan-cli"
-path = "src/bin/jan-cli.rs"
-required-features = ["cli"]
-
 [[example]]
 name = "gaia-eval"
 path = "examples/gaia-eval.rs"
@@ -44,12 +39,10 @@ default = [
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
 mlx = ["dep:tauri-plugin-mlx"]
-foundation-models = ["dep:tauri-plugin-foundation-models"]
 desktop = [
     "deep-link",
     "hardware",
-    "mlx",
-    "foundation-models"
+    "mlx"
 ]
 mobile = [
     "tauri/protocol-asset",
@@ -66,7 +59,6 @@ test-tauri = [
     "tauri/test",
     "desktop",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 gaia-eval = ["dep:env_logger", "dep:indicatif", "dep:parquet"]
 
 [build-dependencies]
@@ -115,7 +107,6 @@ tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = t
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
 tauri-plugin-llamacpp-upstream = { path = "./plugins/tauri-plugin-llamacpp-upstream" }
 tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
-tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-models", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
 tauri-plugin-atomic-audio = { path = "./plugins/tauri-plugin-atomic-audio" }
@@ -145,10 +136,8 @@ hostname = "0.4"
 base64 = "0.22"
 glob = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
-dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
-console = { version = "0.15", optional = true }
 ignore = "=0.4.30"
 regex = "1.13.1"
 diffy = "0.4.2"

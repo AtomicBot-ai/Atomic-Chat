@@ -30,6 +30,12 @@ describe('queuedCapture', () => {
     expect(capture()).toHaveBeenCalledWith('app_opened', {
       is_first_launch: true,
     })
+
+    // Nothing was held back: a later flush has no copy of it to replay.
+    flushTelemetryQueue()
+    expect(capture().mock.calls).toEqual([
+      ['app_opened', { is_first_launch: true }],
+    ])
   })
 
   it('holds events emitted before opt-in instead of dropping them', () => {
@@ -38,6 +44,13 @@ describe('queuedCapture', () => {
     queuedCapture('backend_step_shown', { phase: 'detecting' })
 
     expect(capture()).not.toHaveBeenCalled()
+
+    // Held, not dropped: consent replays exactly that event.
+    optedIn(true)
+    flushTelemetryQueue()
+    const calls = capture().mock.calls
+    expect(calls.map((call) => call[0])).toEqual(['backend_step_shown'])
+    expect(calls[0][1]).toMatchObject({ phase: 'detecting' })
   })
 
   it('holds events when posthog has not been initialised at all', () => {
@@ -50,6 +63,9 @@ describe('queuedCapture', () => {
     flushTelemetryQueue()
 
     expect(capture()).toHaveBeenCalledTimes(1)
+    const [event, props] = capture().mock.calls[0]
+    expect(event).toBe('backend_step_shown')
+    expect(props).toMatchObject({ phase: 'detecting' })
   })
 })
 
@@ -110,6 +126,12 @@ describe('flushTelemetryQueue', () => {
     expect(capture()).toHaveBeenCalledWith('model_load', {
       load_status: 'success',
     })
+
+    // Sent once, as-is: no replay metadata, and a second flush finds nothing.
+    flushTelemetryQueue()
+    expect(capture().mock.calls).toEqual([
+      ['model_load', { load_status: 'success' }],
+    ])
   })
 
   it('keeps replaying after one event throws', () => {

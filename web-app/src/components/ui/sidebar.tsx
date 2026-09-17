@@ -397,7 +397,7 @@ const SidebarRail = React.forwardRef<
       onMouseDown={handleMouseDown}
       title="Toggle Sidebar"
       className={cn(
-        //* Без видимой линии (::after), только ресайз и курсор
+        //* No visible line (::after), only resizing and the cursor
         'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 border-0 bg-transparent p-0 transition-all ease-linear sm:flex',
         'group-data-[side=left]:-right-4 group-data-[side=right]:left-0',
         'cursor-ew-resize group-data-[side=left]:cursor-ew-resize group-data-[side=right]:cursor-ew-resize',

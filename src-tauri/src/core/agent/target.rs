@@ -96,20 +96,19 @@ pub async fn resolve_agent_target<R: Runtime>(
     }
 }
 
-#[cfg(feature = "mlx")]
+/// An MLX session as the agent talks to it. Resolved through the core's mirror like every other
+/// local session: the MLX plugin no longer runs models, so its own table is always empty.
 pub(crate) async fn resolve_mlx_target<R: Runtime>(
     app_handle: &AppHandle<R>,
     request: &AgentTurnRequest,
 ) -> Result<OpenAiTarget, String> {
-    use super::llm_client::model_ids_match;
-    use tauri_plugin_mlx::state::MlxState;
-
-    let mlx_state: State<MlxState> = app_handle.state();
-    let sessions = mlx_state.mlx_server_process.lock().await;
-    let info = sessions
-        .values()
-        .map(|session| &session.info)
-        .find(|info| model_ids_match(&info.model_id, &request.model_id) && !info.is_embedding)
+    let state: State<AppState> = app_handle.state();
+    let resolver = crate::core::sessions::resolver_for(app_handle, &state);
+    let info = resolver
+        .list_in(crate::core::sessions::resolver::PROVIDER_MLX)
+        .await
+        .into_iter()
+        .find(|info| super::llm_client::model_ids_match(&info.model_id, &request.model_id) && !info.is_embedding)
         .ok_or_else(|| format!("no active session for model '{}'", request.model_id))?;
 
     Ok(OpenAiTarget {
@@ -123,14 +122,6 @@ pub(crate) async fn resolve_mlx_target<R: Runtime>(
         // an array-root schema.
         json_schema: true,
     })
-}
-
-#[cfg(not(feature = "mlx"))]
-pub(crate) async fn resolve_mlx_target<R: Runtime>(
-    _app_handle: &AppHandle<R>,
-    _request: &AgentTurnRequest,
-) -> Result<OpenAiTarget, String> {
-    Err(AGENT_PROVIDER_UNSUPPORTED.to_string())
 }
 
 /// Pure so it can be tested without a Tauri runtime.

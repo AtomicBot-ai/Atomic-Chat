@@ -63,14 +63,19 @@ Gap:
 
 Production entrypoints:
 
-- `tauri-plugin-llamacpp/src/args.rs` builds the TurboQuant process arguments.
-- `tauri-plugin-llamacpp-upstream/src/args.rs` builds upstream process
-  arguments and gates newer speculative features by build capability.
-- `extensions/mlx-extension/src/index.ts` translates settings into `MlxConfig`.
-- `tauri-plugin-mlx/src/commands.rs` translates `MlxConfig` into the
-  `mlx-server` process and readiness lifecycle.
-- `src-tauri/src/core/server/proxy.rs` exposes the local OpenAI-compatible
-  facade.
+- `atomic-chat-core` `src/runtime/llamacpp/args.ts` builds the TurboQuant and
+  upstream process arguments and gates newer speculative features by build
+  capability. The argv the app's Rust plugins produced before stage 6 is frozen
+  in `tests/fixtures/core-contracts/{args,args-llamacpp}` and replayed by the
+  core; `tests/capabilities.test.mjs` checks every long flag in those fixtures
+  against the pinned binary snapshots.
+- `extensions/mlx-extension/src/index.ts` sends MLX settings to the core.
+- `atomic-chat-core` `src/runtime/mlx/` translates them into the `mlx-server`
+  process and readiness lifecycle (frozen argv in
+  `tests/fixtures/core-contracts/mlx-args`).
+- `atomic-chat-core` `src/server/public/` exposes the local OpenAI-compatible
+  facade on desktop; `src-tauri/src/core/server/proxy.rs` still serves it on
+  mobile.
 
 Verified local artifacts:
 
@@ -183,9 +188,10 @@ gap is a desktop restart journey proving that the UI rehydrates the same thread.
 
 Production entrypoints:
 
-- `src-tauri/src/core/server/mod.rs`
-- `src-tauri/src/core/server/proxy.rs`
-- `src-tauri/src/core/server/responses_shim.rs`
+- Desktop: `atomic-chat-core` `src/server/public/` and `src/server/shims/`,
+  started through `src-tauri/src/core/server/commands.rs` (`CoreOwner`).
+- Mobile: `src-tauri/src/core/server/proxy.rs` and
+  `src-tauri/src/core/server/responses_shim.rs` (`LegacyOwner`).
 - `web-app/src/hooks/useLocalApiServer.ts`
 
 Rust tests cover route allowlists, authentication, model-id normalization,

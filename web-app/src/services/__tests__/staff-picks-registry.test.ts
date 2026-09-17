@@ -300,8 +300,8 @@ describe('BASELINE_STAFF_PICKS', () => {
     expect(new Set(orders).size).toBe(orders.length)
   })
 
-  //* Категории Recommended — источник capability-байджей, поэтому конверсии
-  //* одной модели не должны обещать разные возможности.
+  //* Recommended categories are the source of capability badges, so conversions
+  //* of the same model must not promise different capabilities.
   it('declares the same capabilities on a GGUF pick and its MLX twin', () => {
     const CAPABILITIES = ['vision', 'audio', 'reasoning', 'tools'] as const
     const capsOf = (pick: StaffPick) =>
@@ -329,7 +329,7 @@ describe('BASELINE_STAFF_PICKS', () => {
     }
   })
 
-  //* Порядок групп курируется вручную и легко ломается при правке манифеста.
+  //* Group order is curated by hand and easily breaks when editing the manifest.
   describe('family grouping', () => {
     const TIERS = ['qwen', 'gemma', 'lfm']
 

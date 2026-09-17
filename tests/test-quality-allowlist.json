@@ -15,7 +15,6 @@
     "extensions/llamacpp-upstream-extension/src/test/index.test.ts",
     "extensions/llamacpp-upstream-extension/src/test/migrateLegacyModels.test.ts",
     "extensions/llamacpp-upstream-extension/src/util.test.ts",
-    "extensions/mlx-extension/src/autoIncreaseCtx.test.ts",
     "web-app/src/__tests__/main.test.tsx",
     "web-app/src/components/ui/__tests__/button.test.tsx",
     "web-app/src/components/ui/__tests__/dialog.test.tsx",

@@ -29,24 +29,21 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'check_for_app_updates',
-  'get_atomic_core_flags',
-  // The session resolver reaches into the llama.cpp and MLX plugin states, none of which the
-  // mobile targets bundle.
+  // The session resolver answers from the app's mirror of atomic-chat-core's session table, and
+  // no core runs on the mobile targets.
   'list_local_sessions',
   'resolve_local_session',
   'get_local_http',
   'is_update_available',
   'post_local_http',
-  'set_atomic_core_flags',
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',
   'stream_local_http',
 ])
-const EXPECTED_MOBILE_ONLY = new Set(['abort_remote_stream'])
+const EXPECTED_MOBILE_ONLY = new Set<string>()
 const EXPECTED_PLUGIN_IDS = [
   'atomic-audio',
-  'foundation-models',
   'hardware',
   'llamacpp',
   'llamacpp-upstream',

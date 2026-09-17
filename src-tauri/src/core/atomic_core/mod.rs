@@ -17,14 +17,13 @@
 //! us, and quitting the app is a detach, not a shutdown — a model loaded from
 //! the CLI has to survive the app closing.
 //!
-//! Nothing here runs unless the app's `atomic_core` flags ask for it; with them
-//! off (the default) no core is started and no behaviour changes.
+//! On desktop the core owns every local runtime and the public API (PLAN.md §4,
+//! stage 6); the app starts its client at setup and stops it on full exit.
 
 pub mod api_requests;
 pub mod client;
 pub mod cloud;
 pub mod commands;
-pub mod external;
 pub mod launch;
 #[cfg(test)]
 mod live_tests;

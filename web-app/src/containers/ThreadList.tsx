@@ -42,7 +42,7 @@ import { useThreadReadStatus } from '@/stores/thread-read-store'
 import { ThreadStatusDot } from '@/components/left-sidebar/ThreadStatusDot'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
-//* Заголовок приветственного треда: новый бренд и старая строка из прошлых версий
+//* Welcome thread title: the new brand and the old string from previous versions
 const WELCOME_THREAD_TITLES = new Set([
   'What is Atomic Bot?',
   'What is Overchat?',

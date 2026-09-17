@@ -7,7 +7,7 @@ type HuggingFaceAuthorAvatarProps = {
   initials: string
 }
 
-//* Аватар автора модели с Hugging Face: сначала organization, затем user, иначе инициалы
+//* Model author avatar from Hugging Face: organization first, then user, otherwise initials
 export function HuggingFaceAuthorAvatar({
   author,
   className,

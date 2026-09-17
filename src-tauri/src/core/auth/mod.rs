@@ -6,6 +6,7 @@
 //! for why the tokens live here in Rust and never cross IPC.
 
 pub mod chatgpt;
+#[cfg(desktop)]
 pub mod commands;
 pub mod state;
 pub mod store;

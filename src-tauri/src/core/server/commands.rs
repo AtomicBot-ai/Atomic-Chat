@@ -1,25 +1,39 @@
-use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
+#[cfg(desktop)]
+use tauri::Emitter;
 
+#[cfg(desktop)]
+use serde_json::Value;
+
+#[cfg(desktop)]
 use crate::core::atomic_core::client::CoreError;
-use crate::core::atomic_core::cloud::core_owns_server;
+#[cfg(desktop)]
 use crate::core::atomic_core::commands::AtomicCoreClient;
-use crate::core::server::ownership::{last_config, remember_config, ControlCaller, CoreOwner, PublicApiOwner};
+#[cfg(desktop)]
+use crate::core::server::ownership::{remember_config, ControlCaller, CoreOwner};
+use crate::core::server::ownership::PublicApiOwner;
+#[cfg(mobile)]
+use crate::core::server::ownership::remember_config;
+#[cfg(mobile)]
 use crate::core::server::proxy::{self, ServerStart};
+#[cfg(desktop)]
 use crate::core::server::remote_provider_commands::{
     ProviderCustomHeader, RegisterProviderRequest,
 };
 use crate::core::server::request_inspector::ApiRequestLogSnapshot;
+#[cfg(mobile)]
 use crate::core::server::state_file;
 use crate::core::state::{AppState, LocalServerEndpoint};
 
 pub use crate::core::server::ownership::StartServerConfig;
 
-/// The app's own proxy as the server owner.
+/// The app's own proxy as the server owner — mobile only, where no core runs.
+#[cfg(mobile)]
 pub struct LegacyOwner<R: Runtime> {
     pub app: AppHandle<R>,
 }
 
+#[cfg(mobile)]
 impl<R: Runtime> LegacyOwner<R> {
     async fn start_outcome(&self, config: &StartServerConfig) -> Result<ServerStart, String> {
         let state = self.app.state::<AppState>();
@@ -79,11 +93,9 @@ impl<R: Runtime> LegacyOwner<R> {
     }
 }
 
+#[cfg(mobile)]
 #[async_trait::async_trait]
 impl<R: Runtime> PublicApiOwner for LegacyOwner<R> {
-    fn label(&self) -> &'static str {
-        "app"
-    }
 
     async fn running_port(&self) -> Result<Option<u16>, String> {
         let state = self.app.state::<AppState>();
@@ -111,11 +123,13 @@ impl<R: Runtime> PublicApiOwner for LegacyOwner<R> {
     }
 }
 
-/// Control calls through the app's attachment, with its gates — the normal path.
+/// Control calls through the app's attachment — the normal path.
+#[cfg(desktop)]
 pub struct AttachedCaller<R: Runtime> {
     pub app: AppHandle<R>,
 }
 
+#[cfg(desktop)]
 #[async_trait::async_trait]
 impl<R: Runtime> ControlCaller for AttachedCaller<R> {
     async fn call(
@@ -127,7 +141,7 @@ impl<R: Runtime> ControlCaller for AttachedCaller<R> {
         let Some(client) = self.app.try_state::<AtomicCoreClient>() else {
             return Err(CoreError::new(
                 "CORE_NOT_RUNNING",
-                "The Atomic Chat core integration is not available in this build.",
+                "The Atomic Chat core is not running yet.",
                 None,
             ));
         };
@@ -135,9 +149,9 @@ impl<R: Runtime> ControlCaller for AttachedCaller<R> {
     }
 }
 
-/// The core as the server owner, as seen from a command: the provider registrations
-/// currently known are handed over before it serves, and the endpoint is kept
-/// current for in-process callers.
+/// The core as the server owner, as seen from a command: the provider registrations the app holds
+/// are handed over before it serves, so a core that restarted serves every cloud model.
+#[cfg(desktop)]
 pub async fn core_owner<R: Runtime, C: ControlCaller>(
     app: &AppHandle<R>,
     caller: C,
@@ -168,29 +182,11 @@ pub async fn core_owner<R: Runtime, C: ControlCaller>(
             )
         })
         .collect();
-    CoreOwner {
-        caller,
-        providers,
-        external_sessions: crate::core::atomic_core::external::legacy_sessions(app).await,
-        external_generation: crate::core::atomic_core::external::generation(),
-    }
+    CoreOwner { caller, providers }
 }
 
-async fn publish_core_endpoint<R: Runtime>(
-    app: &AppHandle<R>,
-    config: &StartServerConfig,
-    port: u16,
-) {
-    let state = app.state::<AppState>();
-    *state.local_server_endpoint.lock().await = Some(LocalServerEndpoint::new(
-        &config.host,
-        port,
-        &config.prefix,
-        &config.api_key,
-    ));
-}
-
-/// UI state follows confirmed listener state, never the requested port or a guessed owner.
+/// UI state follows confirmed listener state, never the requested port.
+#[cfg(desktop)]
 pub(crate) fn emit_server_state<R: Runtime>(app: &AppHandle<R>, owner: &str, port: Option<u16>, generation: Option<u64>) {
     if let Err(error) = app.emit("atomic-core://server-state-changed", serde_json::json!({
         "running": port.is_some(), "owner": owner, "port": port, "generation": generation,
@@ -199,6 +195,7 @@ pub(crate) fn emit_server_state<R: Runtime>(app: &AppHandle<R>, owner: &str, por
     }
 }
 
+#[cfg(mobile)]
 fn remember_new_server(outcome: ServerStart, config: &StartServerConfig) -> u16 {
     match outcome {
         ServerStart::Started(port) => {
@@ -209,126 +206,94 @@ fn remember_new_server(outcome: ServerStart, config: &StartServerConfig) -> u16 
     }
 }
 
+#[cfg(desktop)]
+async fn publish_endpoint(state: &AppState, config: &StartServerConfig, port: u16) {
+    *state.local_server_endpoint.lock().await = Some(LocalServerEndpoint::new(
+        &config.host,
+        port,
+        &config.prefix,
+        &config.api_key,
+    ));
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn start_server<R: Runtime>(
     app_handle: AppHandle<R>,
     config: StartServerConfig,
 ) -> Result<u16, String> {
-    let client = app_handle.try_state::<AtomicCoreClient>();
-    let _gate = if let Some(client) = client.as_ref() {
-        Some(client.owner_gate().await)
-    } else {
-        None
-    };
-    if let Some(client) = client.as_ref() { client.ensure_reconciled()?; }
-    if core_owns_server(&app_handle) {
-        let owner = core_owner(
-            &app_handle,
-            AttachedCaller {
-                app: app_handle.clone(),
-            },
-        )
-        .await;
-        if let Some(port) = owner.running_port().await? {
-            if last_config().is_some() {
-                if let Some(client) = client.as_ref() { client.set_server_running_intent(true); }
-            }
-            emit_server_state(&app_handle, "core", Some(port), None);
-            return Ok(port);
+    let client = app_handle
+        .try_state::<AtomicCoreClient>()
+        .ok_or("The Atomic Chat core is not running yet.")?;
+    let _gate = client.inner().owner_gate().await;
+    let owner = core_owner(&app_handle, AttachedCaller { app: app_handle.clone() }).await;
+    if let Some(port) = owner.running_port().await? {
+        if crate::core::server::ownership::last_config().is_some() {
+            client.set_server_running_intent(true);
         }
-        let port = owner.start(&config).await?;
-        remember_config(&config);
-        publish_core_endpoint(&app_handle, &config, port).await;
-        if let Some(client) = client.as_ref() { client.set_server_running_intent(true); }
         emit_server_state(&app_handle, "core", Some(port), None);
         return Ok(port);
     }
-    let owner = LegacyOwner {
-        app: app_handle.clone(),
-    };
-    if let Some(port) = owner.running_port().await? {
-        if last_config().is_some() {
-            if let Some(client) = client.as_ref() { client.set_server_running_intent(true); }
-        }
-        emit_server_state(&app_handle, "legacy", Some(port), None);
-        return Ok(port);
-    }
-    let port = remember_new_server(
-        owner.start_outcome(&config).await?,
-        &config,
-    );
-    if let Some(client) = client.as_ref() { client.set_server_running_intent(true); }
-    emit_server_state(&app_handle, "legacy", Some(port), None);
+    let port = owner.start(&config).await?;
+    remember_config(&config);
+    publish_endpoint(&app_handle.state::<AppState>(), &config, port).await;
+    client.set_server_running_intent(true);
+    emit_server_state(&app_handle, "core", Some(port), None);
     Ok(port)
 }
 
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn start_server<R: Runtime>(
+    app_handle: AppHandle<R>,
+    config: StartServerConfig,
+) -> Result<u16, String> {
+    let owner = LegacyOwner { app: app_handle.clone() };
+    if let Some(port) = owner.running_port().await? {
+        return Ok(port);
+    }
+    Ok(remember_new_server(owner.start_outcome(&config).await?, &config))
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn stop_server<R: Runtime>(app_handle: AppHandle<R>) -> Result<(), String> {
-    let client = app_handle.try_state::<AtomicCoreClient>();
-    let _gate = if let Some(client) = client.as_ref() {
-        Some(client.owner_gate().await)
-    } else {
-        None
-    };
-    if let Some(client) = client.as_ref() { client.ensure_reconciled()?; }
-    if let Some(client) = client.as_ref() { client.set_server_running_intent(false); }
-    if core_owns_server(&app_handle) {
-        CoreOwner {
-            caller: AttachedCaller {
-                app: app_handle.clone(),
-            },
-            providers: Vec::new(),
-            external_sessions: Vec::new(),
-            external_generation: crate::core::atomic_core::external::generation(),
-        }
+    let client = app_handle
+        .try_state::<AtomicCoreClient>()
+        .ok_or("The Atomic Chat core is not running yet.")?;
+    let _gate = client.inner().owner_gate().await;
+    client.set_server_running_intent(false);
+    CoreOwner { caller: AttachedCaller { app: app_handle.clone() }, providers: Vec::new() }
         .stop()
         .await?;
-        app_handle
-            .state::<AppState>()
-            .local_server_endpoint
-            .lock()
-            .await
-            .take();
-        emit_server_state(&app_handle, "core", None, None);
-        return Ok(());
-    }
-    LegacyOwner {
-        app: app_handle.clone(),
-    }
-    .stop()
-    .await?;
-    emit_server_state(&app_handle, "legacy", None, None);
+    app_handle.state::<AppState>().local_server_endpoint.lock().await.take();
+    emit_server_state(&app_handle, "core", None, None);
     Ok(())
 }
 
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn stop_server<R: Runtime>(app_handle: AppHandle<R>) -> Result<(), String> {
+    LegacyOwner { app: app_handle.clone() }.stop().await
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn get_server_status<R: Runtime>(app_handle: AppHandle<R>) -> Result<bool, String> {
-    let client = app_handle.try_state::<AtomicCoreClient>();
-    let _gate = if let Some(client) = client.as_ref() {
-        Some(client.owner_gate().await)
-    } else {
-        None
-    };
-    if let Some(client) = client.as_ref() { client.ensure_reconciled()?; }
-    if core_owns_server(&app_handle) {
-        return Ok(CoreOwner {
-            caller: AttachedCaller {
-                app: app_handle.clone(),
-            },
-            providers: Vec::new(),
-            external_sessions: Vec::new(),
-            external_generation: crate::core::atomic_core::external::generation(),
-        }
+    let client = app_handle
+        .try_state::<AtomicCoreClient>()
+        .ok_or("The Atomic Chat core is not running yet.")?;
+    let _gate = client.inner().owner_gate().await;
+    Ok(CoreOwner { caller: AttachedCaller { app: app_handle.clone() }, providers: Vec::new() }
         .running_port()
         .await?
-        .is_some());
-    }
-    Ok(LegacyOwner {
-        app: app_handle.clone(),
-    }
-    .running_port()
-    .await?
-    .is_some())
+        .is_some())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn get_server_status<R: Runtime>(app_handle: AppHandle<R>) -> Result<bool, String> {
+    Ok(LegacyOwner { app: app_handle.clone() }.running_port().await?.is_some())
 }
 
 /// Snapshot of the live request log, used to hydrate the API screen on mount.
@@ -350,7 +315,10 @@ pub async fn set_api_inspector_enabled<R: Runtime>(
 ) -> Result<(), String> {
     state.api_request_inspector.set_enabled(enabled);
     // A core serving the Local API collects previews only while this screen watches.
+    #[cfg(desktop)]
     crate::core::atomic_core::api_requests::push_inspecting(&app_handle);
+    #[cfg(mobile)]
+    let _ = &app_handle;
     Ok(())
 }
 
@@ -360,7 +328,7 @@ pub async fn clear_api_request_log(state: State<'_, AppState>) -> Result<(), Str
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, mobile))]
 mod tests {
     use super::*;
 

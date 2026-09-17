@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-260 records, 2026-05-19 → 2026-09-17.
+261 records, 2026-05-19 → 2026-09-17.
 
 ---
 
@@ -296,8 +296,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (16)
+## Inference core extraction — atomic-chat-core (18)
 
+- **2026-09-17** — [Keep app mirrors coherent and import the pre-core optimum](2026-09-17-preserve-stage6-mirrors-and-optimal-cache.md)
+- **2026-09-17** — [The core owns every desktop runtime unconditionally](2026-09-17-the-core-owns-every-desktop-runtime-unconditionally.md)
 - **2026-09-17** — [Lease runtime loads across owner handover](2026-09-17-lease-runtime-loads-across-handover.md)
 - **2026-09-17** — [Reconcile app-core server ownership before reporting success](2026-09-17-reconcile-core-server-ownership.md)
 - **2026-09-17** — [Isolate application and CLI core owners](2026-09-17-isolate-app-and-cli-cores.md)

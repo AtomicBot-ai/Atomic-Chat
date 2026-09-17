@@ -22,8 +22,6 @@ import {
   AppEvent,
   DownloadEvent,
   chatCompletionRequestMessage,
-  computeNextCtxLen,
-  DEFAULT_CTX_LEN,
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
@@ -34,22 +32,15 @@ import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import {
   listSupportedBackends,
   isBackendInstalled,
-  getBackendExePath,
   getBackendDir,
   getLocalInstalledBackends,
-  getBackendDownloadUrl,
   getIndexedAssetName,
-  getCudaToolkitVersion,
-  getCudartArchiveName,
-  getCudartDownloadUrl,
-  findUpstreamCudaBinWithCudart,
   isTurboQuantRelease,
   isStableReleaseTag,
   compareBackendVersions,
   fetchStableIndex,
   invalidateStableIndexCache,
-  listInstalledBackendPacks,
-  deleteBackendPack,
+  assertDeletableBackendPack,
   mergeBackendOptions,
   type InstalledBackendPack,
 } from './backend'
@@ -59,30 +50,20 @@ import {
   buildEmbedBatches,
   mergeEmbedResponses,
   classifyBackendMismatch,
-  effectiveCtxSize,
   ggufShardSetPaths,
   isEmbeddingGguf,
-  parseGgufShard,
   type EmbedBatchResult,
 } from './util'
 import { basename } from '@tauri-apps/api/path'
 import { getSystemUsage, getSystemInfo } from './hardware'
 import {
-  resolveLlama3TemplateOverride,
-  STRICT_SYSTEM_GUARD_SIGNATURE,
-} from './chatTemplateOverrides'
-import {
-  loadLlamaModel,
   readGgufMetadata,
-  getModelSize,
   isModelSupported,
-  unloadLlamaModel,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
   EmbeddingResponse,
   DeviceList,
-  SystemMemory,
   mapOldBackendToNew,
   findLatestVersionForBackend,
   prioritizeBackends,
@@ -93,13 +74,14 @@ import {
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
   getSupportedFeaturesFromRust,
   normalizeFeatures,
-  getRuntimeDevice,
-  isCudaInstalledFromRust,
-  copyBackendDlls,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 import type { RuntimeDeviceInfo } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/types'
 import { createCoreRuntime, describeCoreError } from '../../shared/atomicCoreRuntime'
-import type { CoreProxyConfig, Invoke } from '../../shared/atomicCoreRuntime'
+import type {
+  CoreOptimalState,
+  CoreProxyConfig,
+  Invoke,
+} from '../../shared/atomicCoreRuntime'
 import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
@@ -111,49 +93,6 @@ const COMPUTE_ERROR_RECOVERY_TRIGGER = 'compute_error_recovery'
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
-/// Error code (SCREAMING_SNAKE_CASE) surfaced by the Rust plugin's
-/// `LlamacppError` when an mmproj declares a projector type the bundled
-/// (TurboQuant) llama.cpp/libmtmd build cannot parse (e.g. the Gemma 4
-/// unified `gemma4uv` / `gemma4ua` projectors, present upstream but not yet
-/// in our fork). On this error we retry the load text-only (without --mmproj).
-const ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED = 'MULTIMODAL_PROJECTOR_LOAD_FAILED'
-/// ATO-187: the model / mmproj GGUF is missing on disk (an interrupted
-/// download that never produced the final file, a file removed outside the
-/// app, or a stale path). Matches the Rust `ModelFileNotFound` code; the
-/// web-app maps it to an actionable "re-download the model" message.
-const ERR_MODEL_FILE_NOT_FOUND = 'MODEL_FILE_NOT_FOUND'
-/// ATO-187: the model / mmproj GGUF exists but is smaller than the size
-/// recorded at import — a partially-downloaded / incomplete file. Matches the
-/// Rust `ModelFileCorrupt` code; the web-app maps it to a "delete and
-/// re-download" message.
-const ERR_MODEL_FILE_CORRUPT = 'MODEL_FILE_CORRUPT'
-/// A multi-part GGUF whose set is not complete on disk. Loading any shard
-/// requires every shard to be present next to the first one, so a set missing
-/// members can only be fixed by re-downloading the model — not by retrying the
-/// load, which is what users did when llama.cpp answered with the opaque
-/// "The model process encountered an unexpected error".
-const ERR_MODEL_SHARDS_INCOMPLETE = 'MODEL_SHARDS_INCOMPLETE'
-
-/// MODEL_LOAD_TIMED_OUT (ATO-188): large models on slow / cold storage can take
-/// longer than the configured connection timeout (default 600s) to finish
-/// loading and report "ready", so the load was cut off at 600s with a raw
-/// MODEL_LOAD_TIMED_OUT error. The model-load readiness wait now uses at least
-/// this floor (30 min) while still honoring a larger user-configured timeout.
-/// The streaming path is bounded separately: `stream_local_http` treats the
-/// configured timeout as an inactivity budget between SSE chunks — floored at
-/// the same 30 min — so a long generation is never cut off while tokens are
-/// still arriving.
-const MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS = 1800
-
-/// Effective timeout (seconds) for the "server is ready" wait during model
-/// load. Never below MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS; honors a larger
-/// configured value.
-function modelLoadReadyTimeoutSecs(configuredTimeoutSecs: number): number {
-  const configured = Number(configuredTimeoutSecs)
-  const base = Number.isFinite(configured) && configured > 0 ? configured : 600
-  return Math.max(base, MODEL_LOAD_READY_TIMEOUT_FLOOR_SECS)
-}
-
 /// Payload emitted by the Rust proxy when it detects a context-limit error
 /// that we (the TS side) should recover from by reloading the backend with
 /// a larger ctx window.
@@ -161,7 +100,7 @@ interface AutoIncreaseCtxRequest {
   request_id: string
   backend: 'llamacpp' | 'mlx'
   model_id: string
-  trigger: 'error' | 'finish_length'
+  trigger: 'error' | 'finish_length' | 'compute_error_recovery'
 }
 
 /// Tauri channel constants used by the Rust proxy (`proxy.rs`) to coordinate
@@ -211,15 +150,14 @@ function isTurboquantBackendType(value: string): boolean {
 }
 
 /**
- * Coerce an unknown model-load error into a human-readable string.
+ * Coerce an unknown error into a human-readable string.
  *
- * The Rust plugin rejects `load_llama_model` with a structured
- * `{ code, message, details }` object (see `LlamacppError`), which is NOT an
- * `Error` instance. Naive string coercion (`String(err)` / `` `${err}` ``)
- * therefore yields `"[object Object]"` (see ATO-117). Prefer `message`, append
- * the concrete llama.cpp stderr reason from `details` when present (e.g.
- * `load_hparams: unknown projector type: ...`), then fall back to
- * `JSON.stringify` and finally `String`. Never returns `"[object Object]"`.
+ * The core (through `atomic_core_call`) rejects with a structured
+ * `{ code, message, details }` object, which is NOT an `Error` instance.
+ * Naive string coercion (`String(err)` / `` `${err}` ``) therefore yields
+ * `"[object Object]"` (see ATO-117). Prefer `message`, append `details` when
+ * present, then fall back to `JSON.stringify` and finally `String`. Never
+ * returns `"[object Object]"`.
  */
 function formatLoadError(err: unknown): string {
   if (err instanceof Error) return err.message || String(err)
@@ -245,89 +183,10 @@ function formatLoadError(err: unknown): string {
 }
 
 /**
- * Wrap an unknown model-load error into a real `Error` carrying a readable
- * `.message`, while preserving the original `code` / `details` as own
- * properties so downstream consumers (e.g. the unsupported-projector retry and
- * OOM detection) can still introspect them. If it is already an `Error`, it is
- * returned unchanged.
- */
-function toLoadError(err: unknown): Error {
-  if (err instanceof Error) return err
-  const wrapped = new Error(formatLoadError(err)) as Error & {
-    code?: string
-    details?: string
-  }
-  if (err && typeof err === 'object') {
-    const e = err as { code?: unknown; details?: unknown }
-    if (typeof e.code === 'string') wrapped.code = e.code
-    if (typeof e.details === 'string') wrapped.details = e.details
-  }
-  return wrapped
-}
-
-/**
- * Build an `Error` carrying a `code` own-property so the web-app's
- * `reportModelLoadError` (switchModel.ts → `toErrorObject`) can classify it
- * into the actionable MODEL_FILE_* toast instead of the opaque generic one.
- */
-function codedLoadError(
-  code: string,
-  message: string
-): Error & { code: string } {
-  const e = new Error(message) as Error & { code: string }
-  e.code = code
-  return e
-}
-
-/**
- * Load failures that describe a recoverable user or environment condition
- * rather than a backend crash. Mirrors `RECOVERABLE_MODEL_LOAD_CODES` in the
- * web-app's `telemetry.ts`, which gates the same codes out of Sentry.
- *
- * The extension logger writes through `@tauri-apps/plugin-log` into the Rust
- * logger, so an `error` here becomes a Sentry event regardless of the web-app
- * gates — these have to be classified at the call site.
- */
-const RECOVERABLE_LOAD_ERROR_CODES = new Set<string>([
-  ERR_MODEL_FILE_NOT_FOUND,
-  ERR_MODEL_FILE_CORRUPT,
-  ERR_MODEL_SHARDS_INCOMPLETE,
-  ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED,
-  'BINARY_NOT_FOUND',
-  'MODEL_ARCH_NOT_SUPPORTED',
-  'OS_VERSION_UNSUPPORTED',
-  'CPU_NO_AVX',
-])
-
-function isRecoverableLoadError(err: unknown): boolean {
-  const code = (err as { code?: unknown } | null | undefined)?.code
-  return typeof code === 'string' && RECOVERABLE_LOAD_ERROR_CODES.has(code)
-}
-
-/**
- * Log a failed load at the severity its cause deserves: recoverable
- * conditions stay out of the crash channel, everything else keeps `error`.
- */
-function logLoadFailure(context: string, err: unknown): void {
-  const message = `${context}\n${formatLoadError(err)}`
-  if (isRecoverableLoadError(err)) logger.warn(message)
-  else logger.error(message)
-}
-
-/**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-
-/**
- * Parse the build number from a llama.cpp version string like "b6325".
- * Returns the numeric portion, or null if the format doesn't match.
- */
-function parseBuildNumber(version: string): number | null {
-  const match = version.match(/^b(\d+)$/)
-  return match ? parseInt(match[1], 10) : null
-}
 
 function stripBom(s: string): string {
   return s.replace(/\uFEFF/g, '').trim()
@@ -456,7 +315,6 @@ export default class llamacpp_extension extends AIEngine {
 
   private config: LlamacppConfig
   private providerPath!: string
-  private apiSecret: string = 'JustAskNow'
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
@@ -465,16 +323,14 @@ export default class llamacpp_extension extends AIEngine {
   /// `reconcileBackendReleaseTag` so the two never fetch the same archive.
   private firstRunAdoption: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
-  private sessionCache = new Map<string, SessionInfo>()
-  /// Tracks the ctx_size a model was last loaded with so the Local API
-  /// Server auto-increase flow knows the "current" value — the extension's
-  /// `this.config.ctx_size` is only a default and doesn't reflect UI-level
-  /// per-model overrides.
+  /// The ctx_size a model was last known to run with (requested at load, grown
+  /// by the core, or read back from `/props`), so `syncLoadedCtxSize` only
+  /// notifies the UI when the real window differs from what it last heard.
   private modelCtxSize = new Map<string, number>()
   /// Cached upper bound for a model's context window, read from the GGUF
-  /// metadata key `{general.architecture}.context_length`. Acts as the hard
-  /// ceiling for the auto-expand-ctx ladder so we don't keep trying to grow
-  /// past what the model's positional embeddings actually support.
+  /// metadata key `{general.architecture}.context_length`. Served to the
+  /// web-app through `getMaxCtxTrain` so its "Increase Context" path stops at
+  /// what the model's positional embeddings actually support.
   private modelMaxCtxTrain = new Map<string, number>()
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
@@ -483,10 +339,10 @@ export default class llamacpp_extension extends AIEngine {
   /// backend from bundled resources without persisting the swap — the case
   /// where the settings dropdown keeps showing a backend that is not running.
   private effectiveVersionBackend: string | null = null
-  /// This provider in `atomic-chat-core` (PLAN.md §4, stage 5). When the core owns the TurboQuant
-  /// runtime (`atomic_core.runtime = all`), loading, unloading, finding a session, growing the
-  /// context and installing a backend happen there; the catalogue, settings UI and backend
-  /// selection stay here. Ownership is read per call: the flag can change while the app runs.
+  /// This provider in `atomic-chat-core` (PLAN.md §4). The core owns the TurboQuant runtime:
+  /// loading, unloading, finding a session, growing the context, listing devices and installing,
+  /// listing or removing a backend happen there; the catalogue, settings UI and backend selection
+  /// stay here.
   private readonly core = createCoreRuntime(
     'llamacpp',
     ((command, args) =>
@@ -504,9 +360,20 @@ export default class llamacpp_extension extends AIEngine {
     systemInfo: async () => (await getSystemInfo()) as never,
   })
   private unlistenCoreSettingsChanged?: () => void
+  private unlistenCoreOptimalChanged?: () => void
+  private unlistenCoreSnapshot?: () => void
+  /// Revision of the core's optimal-backend record this process last saw. A write names it, so a
+  /// detection made from a stale view (a CLI stored a newer one) is refused instead of overwriting.
+  private optimalRevision = 0
+  /// Bumped when a core snapshot replaces the baseline; answers to requests sent before it are
+  /// dropped rather than applied over the newer state.
+  private optimalEpoch = 0
+  // Captured before snapshot listeners can replace the old app-only localStorage record.
+  private legacyOptimalForImport: TurboquantOptimalBackendCache | null = null
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
+    this.legacyOptimalForImport = this.getCachedOptimalBackend()
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
@@ -635,11 +502,14 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     await this.listenForCoreSettings()
+    await this.listenForCoreOptimal()
+    // Not awaited: the core may still be starting, and nothing on the load path needs the record.
+    void this.adoptOptimalFromCore()
 
-    //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
+    //* configureBackends can take a long time downloading the engine — don't await, otherwise the whole UI waits for it to finish.
     this.configureBackendsPromise = this.configureBackends()
       .catch((err) => {
-        //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
+        //! Previously the rejected promise was lost; without a log it's hard to diagnose a perpetual "loading" in settings.
         logger.error('configureBackends failed:', err)
       })
       .then(() => this.reconcileBackendReleaseTag())
@@ -1923,10 +1793,10 @@ export default class llamacpp_extension extends AIEngine {
    * into `this.config` *before* any model is unloaded. Unloading flips the
    * model's status to stopped, which the web-app's local-model auto-start
    * effect (`ChatInput.tsx`) reacts to by immediately reloading it via
-   * `switchToModel()`. `performLoad()` snapshots `this.config` synchronously
-   * at call time, so an unload-before-update ordering let that auto-reload
-   * race ahead of `updateBackend()` and respawn `llama-server` against the
-   * *old* backend — the UI would then report the switch as complete while
+   * `switchToModel()`. A load hands the settings as they are at call time to
+   * the core, so an unload-before-update ordering let that auto-reload race
+   * ahead of `updateBackend()` and respawn `llama-server` against the *old*
+   * backend — the UI would then report the switch as complete while
    * the running process silently stayed on the previous (e.g. CPU) build.
    *
    * Failure modes:
@@ -2024,11 +1894,11 @@ export default class llamacpp_extension extends AIEngine {
     return undefined
   }
 
-  private persistOptimalBackendCache(
+  private async persistOptimalBackendCache(
     detection: Exclude<IdealBackendResult, { kind: 'detection-failed' }>,
     currentBackend: string,
     recommendedBackend?: string
-  ): TurboquantOptimalBackendCache {
+  ): Promise<TurboquantOptimalBackendCache> {
     const record: TurboquantOptimalBackendCache =
       detection.kind === 'cpu-optimal'
         ? {
@@ -2052,17 +1922,151 @@ export default class llamacpp_extension extends AIEngine {
             ),
           }
 
-    localStorage.setItem(
-      TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY,
-      JSON.stringify(record)
-    )
+    await this.storeOptimalRecord(record)
     return record
   }
 
   /**
-   * Silently refresh the provider-scoped optimal-backend cache. Unlike
-   * `recheckOptimalBackend`, this does not write a recommendation or emit a UI
-   * event. A failed detection leaves the last successful cache untouched.
+   * Take the core's answer as this process's view: its revision, and the `localStorage` copy that
+   * `getCachedOptimalBackend()` reads synchronously (and that a rollback to an older app finds).
+   * An answer older than one already applied is ignored.
+   */
+  private applyOptimalState(
+    state: CoreOptimalState<TurboquantOptimalBackendCache>
+  ): void {
+    if (state.revision < this.optimalRevision) return
+    this.optimalRevision = state.revision
+    try {
+      if (state.optimal) {
+        localStorage.setItem(
+          TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY,
+          JSON.stringify(state.optimal)
+        )
+      } else if (!this.legacyOptimalForImport || state.revision > 0) {
+        localStorage.removeItem(TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY)
+      }
+    } catch (error) {
+      logger.warn('Failed to mirror the optimal-backend record locally:', error)
+    }
+  }
+
+  /**
+   * Store a detection in the core, which keeps it beside the data folder where the CLI sees it too.
+   * The core commit comes first and the local copy follows it, so the UI never shows a result the
+   * core refused. On a refusal (a CLI stored a newer record: revision conflict) the core's current
+   * record is taken instead and the error is rethrown — an obsolete detection is never retried.
+   */
+  private async storeOptimalRecord(
+    record: TurboquantOptimalBackendCache | null
+  ): Promise<void> {
+    const epoch = this.optimalEpoch
+    try {
+      const state =
+        await this.core.setOptimalCache<TurboquantOptimalBackendCache>(
+          record,
+          this.optimalRevision
+        )
+      if (epoch === this.optimalEpoch) this.applyOptimalState(state)
+    } catch (error) {
+      try {
+        const state =
+          await this.core.getOptimalCache<TurboquantOptimalBackendCache>()
+        if (epoch === this.optimalEpoch) this.applyOptimalState(state)
+      } catch (readError) {
+        logger.warn(
+          `[atomic-core] could not re-read the optimal-backend record: ${describeCoreError(readError)}`
+        )
+      }
+      throw new Error(describeCoreError(error))
+    }
+  }
+
+  /**
+   * Adopt the core's stored detection at startup. It may have been made by the CLI or by a previous
+   * run, while `localStorage` may hold one from different hardware; the core's copy sits beside the
+   * data folder it describes, so it wins.
+   */
+  private async adoptOptimalFromCore(): Promise<void> {
+    const epoch = this.optimalEpoch
+    try {
+      const stored =
+        (await this.core.getOptimalSnapshot<TurboquantOptimalBackendCache>()) ??
+        (await this.core.getOptimalCache<TurboquantOptimalBackendCache>())
+      const legacy = this.legacyOptimalForImport ?? this.getCachedOptimalBackend()
+      if (stored.revision === 0 && !stored.optimal && legacy) {
+        try {
+          const imported = await this.core.setOptimalCache<TurboquantOptimalBackendCache>(legacy, 0)
+          this.legacyOptimalForImport = null
+          this.applyOptimalState(imported)
+        } catch (error) {
+          // Another client may have won revision 0. Its committed record is authoritative.
+          const current = await this.core.getOptimalCache<TurboquantOptimalBackendCache>()
+          if (current.revision > 0 || current.optimal) {
+            this.legacyOptimalForImport = null
+            this.applyOptimalState(current)
+          }
+          logger.warn(`[atomic-core] legacy optimal import was not applied: ${describeCoreError(error)}`)
+        }
+        return
+      }
+      this.legacyOptimalForImport = null
+      if (epoch === this.optimalEpoch) this.applyOptimalState(stored)
+    } catch (error) {
+      logger.warn(
+        `[atomic-core] could not read the optimal-backend record: ${describeCoreError(error)}`
+      )
+    }
+  }
+
+  /** Follow the record when someone else (a CLI, a restarted core) changes it. */
+  private async listenForCoreOptimal(): Promise<void> {
+    this.unlistenCoreOptimalChanged = await listen(
+      'atomic-core://backend:optimal-changed',
+      (event: {
+        payload?: {
+          provider?: string
+          revision?: number
+          optimal?: TurboquantOptimalBackendCache | null
+        }
+      }) => {
+        const state = event.payload
+        if (state?.provider !== this.provider) return
+        if (typeof state.revision !== 'number') return
+        this.applyOptimalState({
+          revision: state.revision,
+          optimal: state.optimal ?? null,
+        })
+      }
+    )
+    this.unlistenCoreSnapshot = await listen(
+      'atomic-core://snapshot',
+      (event: {
+        payload?: {
+          snapshot?: {
+            optimal_backends?: Record<
+              string,
+              CoreOptimalState<TurboquantOptimalBackendCache>
+            >
+          }
+        }
+      }) => {
+        // A snapshot is the new baseline: answers to requests sent before it no longer apply.
+        this.optimalEpoch++
+        this.applyOptimalState(
+          event.payload?.snapshot?.optimal_backends?.[this.provider] ?? {
+            revision: 0,
+            optimal: null,
+          }
+        )
+      }
+    )
+  }
+
+  /**
+   * Silently refresh the provider-scoped optimal-backend cache (stored in the
+   * core, mirrored locally). Unlike `recheckOptimalBackend`, this does not write
+   * a recommendation or emit a UI event. A failed detection leaves the last
+   * successful cache untouched.
    */
   async refreshOptimalBackendCache(options?: {
     hardwareHasNoGpu?: boolean
@@ -2085,7 +2089,8 @@ export default class llamacpp_extension extends AIEngine {
 
   /**
    * Return the last successfully detected provider-scoped optimum, rejecting
-   * malformed or incompatible persisted data.
+   * malformed or incompatible persisted data. Synchronous, so it reads the
+   * local copy of the core's record (see `applyOptimalState`).
    */
   getCachedOptimalBackend(): TurboquantOptimalBackendCache | null {
     try {
@@ -2201,7 +2206,7 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(
           'recheckOptimalBackend: CPU is optimal — no better GPU backend for this hardware'
         )
-        this.persistOptimalBackendCache(detection, currentBackend)
+        await this.persistOptimalBackendCache(detection, currentBackend)
         localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
         this.lastRecheckOutcome = 'cpu_optimal'
         return null
@@ -2216,7 +2221,7 @@ export default class llamacpp_extension extends AIEngine {
         logger.info(
           `recheckOptimalBackend: already on optimal category ${currentCat} (${currentBackend})`
         )
-        this.persistOptimalBackendCache(
+        await this.persistOptimalBackendCache(
           detection,
           currentBackend,
           currentType === idealType ? currentBackend : undefined
@@ -2231,7 +2236,7 @@ export default class llamacpp_extension extends AIEngine {
       // the only thing that knows which release actually carries this variant,
       // and a legacy install can still be sitting on a per-variant tag.
       const recommendedBackend = await this.resolveConcreteBackend(idealType)
-      this.persistOptimalBackendCache(
+      await this.persistOptimalBackendCache(
         detection,
         currentBackend,
         recommendedBackend
@@ -2378,20 +2383,32 @@ export default class llamacpp_extension extends AIEngine {
     return { updateAvailable: true, targetBackend }
   }
 
+  /**
+   * Backend packs on disk, asked of the core: it owns the data folder they live in and may have
+   * installed a pack this process never saw. The current selection marks which row is in use.
+   */
   async listInstalledBackends(): Promise<InstalledBackendPack[]> {
-    return listInstalledBackendPacks(
-      this.providerId,
+    return (await this.core.listInstalledBackends(
       stripBom(this.config.version_backend || '')
-    )
+    )) as InstalledBackendPack[]
   }
 
+  /**
+   * Remove a pack through the core. The core removes whatever it is asked to, so the selected
+   * build and malformed ids are refused here first: deleting the selection would leave
+   * `version_backend` pointing at nothing and the next load would fail with a missing binary.
+   */
   async deleteBackend(version: string, backend: string): Promise<void> {
-    await deleteBackendPack(
-      this.providerId,
+    const pack = assertDeletableBackendPack(
       stripBom(this.config.version_backend || ''),
       version,
       backend
     )
+    try {
+      await this.core.removeBackend(pack.version, pack.backend)
+    } catch (error) {
+      throw new Error(describeCoreError(error))
+    }
   }
 
   /**
@@ -2534,6 +2551,8 @@ export default class llamacpp_extension extends AIEngine {
       this.unlistenAutoIncreaseCtx()
     }
     this.unlistenCoreSettingsChanged?.()
+    this.unlistenCoreOptimalChanged?.()
+    this.unlistenCoreSnapshot?.()
   }
 
   /**
@@ -2546,20 +2565,13 @@ export default class llamacpp_extension extends AIEngine {
       CORE_SETTINGS_CHANGED_EVENT,
       (event: { payload?: { provider?: string } }) => {
         if (event.payload?.provider !== this.provider) return
-        void this.coreOwnsRuntime()
-          .then((owned) => (owned ? this.coreSettings.mirror() : undefined))
-          .catch((e) =>
-            logger.warn(
-              `[atomic-core] could not mirror changed settings: ${describeCoreError(e)}`
-            )
+        void this.coreSettings.mirror().catch((e) =>
+          logger.warn(
+            `[atomic-core] could not mirror changed settings: ${describeCoreError(e)}`
           )
+        )
       }
     )
-  }
-
-  /** Whether the core owns this provider's runtime right now. */
-  private async coreOwnsRuntime(): Promise<boolean> {
-    return this.core.coreOwnsRuntime()
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -2624,14 +2636,6 @@ export default class llamacpp_extension extends AIEngine {
     } else if (key === 'timeout') {
       this.timeout = value as number
     }
-  }
-
-  private async generateApiKey(modelId: string, port: string): Promise<string> {
-    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
-    return hash
   }
 
   override async get(modelId: string): Promise<modelInfo | undefined> {
@@ -3447,57 +3451,7 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /**
-   * Function to find a random port
-   */
-  private async getRandomPort(): Promise<number> {
-    try {
-      const port = await invoke<number>('plugin:llamacpp|get_random_port')
-      return port
-    } catch {
-      logger.error('Unable to find a suitable port')
-      throw new Error('Unable to find a suitable port for model')
-    }
-  }
-
-  private parseEnvFromString(
-    target: Record<string, string>,
-    envString: string
-  ): void {
-    envString
-      .split(';')
-      .filter((pair) => pair.trim())
-      .forEach((pair) => {
-        const [key, ...valueParts] = pair.split('=')
-        const cleanKey = key?.trim()
-
-        if (
-          cleanKey &&
-          valueParts.length > 0 &&
-          !cleanKey.startsWith('LLAMA')
-        ) {
-          target[cleanKey] = valueParts.join('=').trim()
-        }
-      })
-  }
-
   override async load(
-    modelId: string,
-    overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
-  ): Promise<SessionInfo> {
-    return this.core.withRuntimeLoad(() =>
-      this.loadWithOwner(
-        modelId,
-        overrideSettings,
-        isEmbedding,
-        bypassAutoUnload
-      )
-    )
-  }
-
-  private async loadWithOwner(
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
@@ -3528,19 +3482,12 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Create the loading promise
-    const loadingPromise = (await this.coreOwnsRuntime())
-      ? this.loadThroughCore(
-          modelId,
-          overrideSettings,
-          isEmbedding,
-          bypassAutoUnload
-        )
-      : this.performLoad(
-          modelId,
-          overrideSettings,
-          isEmbedding,
-          bypassAutoUnload
-        )
+    const loadingPromise = this.loadThroughCore(
+      modelId,
+      overrideSettings,
+      isEmbedding,
+      bypassAutoUnload
+    )
     this.loadingModels.set(modelId, loadingPromise)
 
     try {
@@ -3585,16 +3532,8 @@ export default class llamacpp_extension extends AIEngine {
       )
       const effective = this.effectiveVersionBackend ?? configured
 
-      // `load_tensors` normally precedes "listening on", but on a slow mmap the
-      // snapshot taken at readiness can still be empty — re-ask the plugin.
-      let runtimeDevice = sInfo.runtime_device ?? null
-      if (!runtimeDevice) {
-        try {
-          runtimeDevice = await getRuntimeDevice(sInfo.pid)
-        } catch (e) {
-          logger.warn(`reportBackendMismatch: get_runtime_device failed: ${e}`)
-        }
-      }
+      // The core parses the startup log and snapshots the device at readiness.
+      const runtimeDevice = sInfo.runtime_device ?? null
 
       const mismatch = classifyBackendMismatch({
         configuredBackend: configured.split('/')[1] ?? '',
@@ -3713,344 +3652,6 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async performLoad(
-    modelId: string,
-    overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
-  ): Promise<SessionInfo> {
-    const loadedModels = await this.getLoadedModels()
-
-    // Get OTHER models that are currently loading (exclude current model)
-    const otherLoadingPromises = Array.from(this.loadingModels.entries())
-      .filter(([id, _]) => id !== modelId)
-      .map(([_, promise]) => promise)
-
-    if (
-      this.autoUnload &&
-      !isEmbedding &&
-      !bypassAutoUnload &&
-      (loadedModels.length > 0 || otherLoadingPromises.length > 0)
-    ) {
-      // Wait for OTHER loading models to finish, then unload everything
-      if (otherLoadingPromises.length > 0) {
-        await Promise.all(otherLoadingPromises)
-      }
-
-      // Now unload all loaded Text models excluding embedding models
-      const allLoadedModels = await this.getLoadedModels()
-      if (allLoadedModels.length > 0) {
-        const sessionInfos: (SessionInfo | null)[] = await Promise.all(
-          allLoadedModels.map(async (modelId) => {
-            try {
-              return (
-                this.sessionCache.get(modelId) ??
-                (await this.findSessionByModel(modelId))
-              )
-            } catch (e) {
-              logger.warn(`Unable to find session for model "${modelId}": ${e}`)
-              return null
-            }
-          })
-        )
-
-        const nonEmbeddingModels: string[] = sessionInfos
-          .filter(
-            (s): s is SessionInfo => s !== null && s.is_embedding === false
-          )
-          .map((s) => s.model_id)
-
-        if (nonEmbeddingModels.length > 0) {
-          await Promise.all(
-            nonEmbeddingModels.map((modelId) => this.unload(modelId))
-          )
-        }
-      }
-    }
-
-    const envs: Record<string, string> = {}
-    const cfg = { ...this.config, ...(overrideSettings ?? {}) }
-    const [version, backend] = cfg.version_backend.split('/')
-
-    if (!version || !backend) {
-      throw new Error(
-        'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
-      )
-    }
-
-    // Version-aware flash_attn handling:
-    // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
-    // For older versions, "auto" is not a valid value so we fall back to "off"
-    // (i.e. don't send the flag at all).
-    if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
-      const buildNum = parseBuildNumber(version)
-      if (buildNum !== null && buildNum < 6325) {
-        cfg.flash_attn = 'off'
-      }
-    }
-
-    // Ensure backend is downloaded and ready before proceeding
-    await this.ensureBackendReady(backend, version)
-    this.effectiveVersionBackend = `${version}/${backend}`
-
-    const janDataFolderPath = await getJanDataFolderPath()
-    const modelConfigPath = await joinPath([
-      this.providerPath,
-      'models',
-      modelId,
-      'model.yml',
-    ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: modelConfigPath,
-    })
-    const port = await this.getRandomPort()
-
-    // Generate API key
-    const api_key = await this.generateApiKey(modelId, String(port))
-    envs['LLAMA_API_KEY'] = api_key
-    envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
-
-    // Set user envs
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
-
-    // Resolve model path. A multi-part GGUF has to enter llama.cpp by its first
-    // shard whichever one the model entry records.
-    const modelPath = await this.resolveShardedModelPath(
-      await joinPath([janDataFolderPath, modelConfig.model_path])
-    )
-
-    // Resolve mmproj path if present
-    let mmprojPath: string | undefined = undefined
-    if (modelConfig.mmproj_path) {
-      mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
-    }
-
-    // ATO-187: fail fast with an actionable, classified error when the model
-    // (or mmproj) file is missing or incomplete on disk, instead of spawning
-    // llama-server only for it to crash with an opaque truncated-path error.
-    await this.validateModelArtifacts(modelConfig, modelPath, mmprojPath)
-
-    // Llama 3.x `--jinja` auto-parser fix: the unsloth conversions embed a
-    // strict `raise_exception('System message must be at the beginning')`
-    // guard that the auto-parser's synthetic probes trip, failing parser
-    // generation with `400 Unable to generate parser`. Substitute the
-    // canonical Meta Llama 3.x template (no such guard) only when the user
-    // hasn't set an explicit chat_template.
-    if (!cfg.chat_template?.trim()) {
-      try {
-        const embedded = (await readGgufMetadata(modelPath))?.metadata?.[
-          'tokenizer.chat_template'
-        ] as string | undefined
-        const override = resolveLlama3TemplateOverride(modelId, embedded)
-        if (override) {
-          cfg.chat_template = override
-          logger.warn(
-            `[performLoad] Overriding strict embedded chat_template for "${modelId}" with the canonical Meta Llama 3.x template (auto-parser-safe).`
-          )
-        } else if (embedded?.includes(STRICT_SYSTEM_GUARD_SIGNATURE)) {
-          logger.warn(
-            `[performLoad] Model "${modelId}" has a strict system-message guard in its embedded chat_template but is not a recognized Llama 3.x format; leaving the template untouched.`
-          )
-        }
-      } catch (e) {
-        logger.warn(
-          `[performLoad] chat_template override probe failed for "${modelId}": ${
-            e instanceof Error ? e.message : String(e)
-          }`
-        )
-      }
-    }
-
-    if (!this.modelMaxCtxTrain.has(modelId)) {
-      const max = await this.resolveModelMaxCtxTrain(modelPath)
-      if (typeof max === 'number') {
-        this.modelMaxCtxTrain.set(modelId, max)
-      }
-    }
-
-    // Never ask for a longer context than the model was trained on: llama.cpp
-    // does not clamp, it aborts on an assertion and takes the server process
-    // down. The UI applies the same ceiling, but only for models whose
-    // `model.yml` it can read — this covers every load.
-    const clampedCtx = effectiveCtxSize(
-      cfg.ctx_size,
-      this.modelMaxCtxTrain.get(modelId)
-    )
-    if (clampedCtx !== cfg.ctx_size) {
-      logger.warn(
-        `[performLoad] Requested ctx_size ${cfg.ctx_size} exceeds the model's trained context; clamping to ${clampedCtx}.`
-      )
-      cfg.ctx_size = clampedCtx
-    }
-
-    // Migrate old env vars
-    if (typeof cfg.fit === 'string') cfg.fit = true
-
-    logger.info(
-      'Calling Tauri command load_llama_model with config:',
-      JSON.stringify(cfg)
-    )
-    const backendPath = await getBackendExePath(backend, version)
-
-    try {
-      const sInfo = await loadLlamaModel(
-        backendPath,
-        modelId,
-        modelPath,
-        port,
-        cfg,
-        envs,
-        mmprojPath,
-        isEmbedding,
-        modelLoadReadyTimeoutSecs(this.timeout)
-      )
-      this.sessionCache.set(modelId, sInfo)
-      if (typeof cfg.ctx_size === 'number') {
-        this.modelCtxSize.set(modelId, cfg.ctx_size)
-      }
-      return sInfo
-    } catch (error) {
-      // If the model crashed because its multimodal projector isn't supported
-      // by the current backend (e.g. the Gemma 4 unified `gemma4uv` / `gemma4ua`
-      // projectors, which the TurboQuant fork doesn't yet carry — it only has
-      // `gemma4v` / `gemma4a`), retry once text-only by dropping --mmproj. This
-      // keeps the model usable as a text LLM instead of failing the whole load
-      // with an opaque error. Mirrors the llamacpp-upstream fallback (issue #44).
-      const code = (error as { code?: string } | undefined)?.code
-      if (mmprojPath && code === ERR_MULTIMODAL_PROJECTOR_LOAD_FAILED) {
-        logger.warn(
-          `Model "${modelId}" has an unsupported multimodal projector for backend "${backend}". Retrying text-only (without --mmproj).`
-        )
-        try {
-          const sInfo = await loadLlamaModel(
-            backendPath,
-            modelId,
-            modelPath,
-            port,
-            cfg,
-            envs,
-            undefined, // text-only: drop the unsupported mmproj
-            isEmbedding,
-            modelLoadReadyTimeoutSecs(this.timeout)
-          )
-          this.sessionCache.set(modelId, sInfo)
-          if (typeof cfg.ctx_size === 'number') {
-            this.modelCtxSize.set(modelId, cfg.ctx_size)
-          }
-          return sInfo
-        } catch (retryError) {
-          logLoadFailure(
-            'Text-only retry after unsupported projector also failed:',
-            retryError
-          )
-          throw toLoadError(retryError)
-        }
-      }
-      logLoadFailure('Error in load command:', error)
-      throw toLoadError(error)
-    }
-  }
-
-  /**
-   * ATO-187: validate that the model (and mmproj) GGUF exists on disk and is
-   * complete before handing it to llama-server.
-   *
-   * Two failure modes this guards against, both reported as MODEL_FILE_NOT_FOUND
-   * crashes in the field (epic ATO-181):
-   *  - The file is genuinely missing — an interrupted download that never
-   *    produced the final GGUF, a file removed outside the app, or a stale
-   *    path. The Rust loader already classifies this, but only after spinning
-   *    up the backend; doing it here skips the wasted process spawn and the
-   *    opaque truncated-path stderr.
-   *  - The file exists but is a partial download (smaller than the size
-   *    recorded at import). This slips past the Rust `.exists()` check and
-   *    fails deep inside the loader with a confusing error; here we classify
-   *    it as MODEL_FILE_CORRUPT so the UI guides the user to re-download.
-   */
-  /**
-   * The path llama.cpp can actually open for a multi-part GGUF.
-   *
-   * A quant too large for one file ships as `-00001-of-000NN` shards, and both
-   * the model catalog and a local-folder scan can end up pointing a model entry
-   * at a shard other than the first. llama.cpp refuses those outright ("illegal
-   * split file idx: N ... model must be loaded with the first split") and the
-   * failure reached users as an unexplained load error they could only retry.
-   *
-   * Handed any shard, resolve to the first one — llama.cpp pulls in the rest by
-   * name. A set with missing members cannot be loaded at all, so say that
-   * instead, with the code the UI turns into a re-download prompt.
-   */
-  private async resolveShardedModelPath(modelPath: string): Promise<string> {
-    const shard = parseGgufShard(modelPath)
-    if (!shard) return modelPath
-
-    const setPaths = ggufShardSetPaths(modelPath)
-    const missing: string[] = []
-    for (const path of setPaths) {
-      if (!(await fs.existsSync(path))) missing.push(path)
-    }
-    if (missing.length) {
-      throw codedLoadError(
-        ERR_MODEL_SHARDS_INCOMPLETE,
-        `This model is split into ${shard.total} parts and ${missing.length} of them are missing on disk. Re-download the model to get the complete set.`
-      )
-    }
-
-    const first = setPaths[0]
-    if (first !== modelPath) {
-      logger.info(
-        `[performLoad] Model is shard ${shard.index}/${shard.total}; loading the first shard so llama.cpp can assemble the set.`
-      )
-    }
-    return first
-  }
-
-  private async validateModelArtifacts(
-    modelConfig: ModelConfig,
-    modelPath: string,
-    mmprojPath?: string
-  ): Promise<void> {
-    // `model_size_bytes` / `mmproj_size_bytes` are the expected per-file sizes
-    // recorded at import from the download manifest (absent for models imported
-    // from a local file — then we only check existence).
-    const sizes = modelConfig as ModelConfig & {
-      model_size_bytes?: number
-      mmproj_size_bytes?: number
-    }
-    await this.assertCompleteGguf(modelPath, sizes.model_size_bytes)
-    if (mmprojPath) {
-      await this.assertCompleteGguf(mmprojPath, sizes.mmproj_size_bytes)
-    }
-  }
-
-  private async assertCompleteGguf(
-    filePath: string,
-    expectedSize?: number
-  ): Promise<void> {
-    let stat: { size: number } | undefined
-    try {
-      stat = await fs.fileStat(filePath)
-    } catch {
-      stat = undefined
-    }
-    if (!stat) {
-      throw codedLoadError(
-        ERR_MODEL_FILE_NOT_FOUND,
-        `The specified model file does not exist or is not accessible: ${filePath}`
-      )
-    }
-    if (
-      typeof expectedSize === 'number' &&
-      expectedSize > 0 &&
-      stat.size < expectedSize
-    ) {
-      throw codedLoadError(
-        ERR_MODEL_FILE_CORRUPT,
-        `The model file is incomplete (${stat.size} of ${expectedSize} bytes), likely from an interrupted download: ${filePath}`
-      )
-    }
-  }
-
   /// Read `{general.architecture}.context_length` from a GGUF file. Returns
   /// `undefined` (with a warning logged) if the file is unreadable or the
   /// key is missing — callers must treat the absence of a bound as "no
@@ -4113,11 +3714,12 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /// Bridge from the Local API Server proxy (Rust) back to the extension
-  /// when a forwarded request exhausts the model's context window. We
-  /// unload + reload the model with a larger ctx_size, inform the proxy via
-  /// a request-scoped done event, and notify the web-app UI so the Zustand
-  /// provider store mirrors the new value (so the next UI interaction keeps
-  /// using the expanded window).
+  /// when a forwarded request exhausts the model's context window. The core
+  /// owns the process and the context ladder: it reloads the model one step
+  /// larger (or restarts a poisoned engine at the same context). We relay its
+  /// answer to the proxy via a request-scoped done event, and notify the
+  /// web-app UI so the Zustand provider store mirrors the new value (so the
+  /// next UI interaction keeps using the expanded window).
   private async handleAutoIncreaseCtx(
     payload: AutoIncreaseCtxRequest
   ): Promise<void> {
@@ -4139,10 +3741,8 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     try {
-      const coreOwned = await this.coreOwnsRuntime()
-      if (coreOwned && trigger === COMPUTE_ERROR_RECOVERY_TRIGGER) {
-        // The core owns the process: restarting it from here would take a model this extension does
-        // not own. The owner restarts it at the same context.
+      if (trigger === COMPUTE_ERROR_RECOVERY_TRIGGER) {
+        // The owner restarts a poisoned engine at the context it already has.
         const outcome = await this.core.recreateSession(model_id)
         await sendDone(
           outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason }
@@ -4162,157 +3762,58 @@ export default class llamacpp_extension extends AIEngine {
         return
       }
 
-      if (coreOwned) {
-        // The core owns the process and the ladder; it answers `at_max` itself.
-        const outcome = await this.core.increaseContext(model_id, trigger)
-        if (!outcome.ok) {
-          await sendDone({ ok: false, reason: outcome.reason })
-          if (outcome.reason === 'at_max') {
-            await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
-              provider: this.provider,
-              modelId: model_id,
-              maxCtxLen: outcome.max_ctx_len ?? outcome.current_ctx_len,
-              currentCtxLen: outcome.current_ctx_len,
-            }).catch((e) =>
-              logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
-            )
-          }
-          return
-        }
-        this.modelCtxSize.set(model_id, outcome.new_ctx_len)
-        const notifyPayload = {
-          provider: this.provider,
-          modelId: model_id,
-          newCtxLen: outcome.new_ctx_len,
-        }
-        if (events && typeof events.emit === 'function') {
-          events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
-        }
-        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload).catch((e) =>
-          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
-        )
-        await sendDone({ ok: true, new_ctx_len: outcome.new_ctx_len })
-        return
-      }
-
-      const currentCtxLen =
-        this.modelCtxSize.get(model_id) ??
-        this.config?.ctx_size ??
-        DEFAULT_CTX_LEN
-      const maxCtxLen = this.modelMaxCtxTrain.get(model_id)
-      const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
-
-      if (newCtxLen <= currentCtxLen) {
-        await sendDone({ ok: false, reason: 'at_max' })
-        try {
+      // The core answers `at_max` itself when there is no larger step to take.
+      const outcome = await this.core.increaseContext(model_id, trigger)
+      if (outcome.ok === false) {
+        await sendDone({ ok: false, reason: outcome.reason })
+        if (outcome.reason === 'at_max') {
           await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
             provider: this.provider,
             modelId: model_id,
-            maxCtxLen: maxCtxLen ?? currentCtxLen,
-            currentCtxLen,
-          })
-        } catch (e) {
-          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+            maxCtxLen: outcome.max_ctx_len ?? outcome.current_ctx_len,
+            currentCtxLen: outcome.current_ctx_len,
+          }).catch((e) =>
+            logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+          )
         }
-        logger.info(
-          `auto_increase_ctx (llamacpp) at_max model=${model_id} currentCtxLen=${currentCtxLen} maxCtxLen=${maxCtxLen ?? 'unknown'}`
-        )
         return
       }
-
-      logger.info(
-        `auto_increase_ctx (llamacpp) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen} (max=${maxCtxLen ?? 'unknown'})`
-      )
-
-      // Unload may throw if the session is gone; treat that as a reload
-      // candidate but still bail on the load step since we can't retry
-      // against a missing process.
-      try {
-        await this.unload(model_id)
-      } catch (e) {
-        logger.warn(
-          `auto_increase_ctx unload failed for ${model_id}, proceeding anyway: ${e}`
-        )
-      }
-
-      const sInfo = await this.load(
-        model_id,
-        { ctx_size: newCtxLen },
-        false,
-        true
-      )
-      this.modelCtxSize.set(model_id, newCtxLen)
-
+      this.modelCtxSize.set(model_id, outcome.new_ctx_len)
       const notifyPayload = {
         provider: this.provider,
         modelId: model_id,
-        newCtxLen,
+        newCtxLen: outcome.new_ctx_len,
       }
-
       if (events && typeof events.emit === 'function') {
         events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
       }
-
       // Redundant Tauri-level broadcast so the web-app can listen on the
       // native event bus without depending on `@janhq/core`'s in-process
       // EventEmitter singleton (which can be bypassed when extensions bundle
       // their own copy of `@janhq/core`).
-      try {
-        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
-      } catch (e) {
+      await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload).catch((e) =>
         logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
-      }
-
-      await sendDone({
-        ok: true,
-        new_ctx_len: newCtxLen,
-      })
+      )
+      await sendDone({ ok: true, new_ctx_len: outcome.new_ctx_len })
       logger.info(
-        `auto_increase_ctx (llamacpp) reload complete model=${model_id} port=${sInfo?.port} newCtxLen=${newCtxLen}; notified UI via events + tauri`
+        `auto_increase_ctx (llamacpp) model=${model_id} trigger=${trigger} -> ${outcome.new_ctx_len}; notified UI via events + tauri`
       )
     } catch (e) {
       logger.error(
-        `auto_increase_ctx handler failed for ${payload.model_id}: ${e}`
+        `auto_increase_ctx handler failed for ${payload.model_id}: ${describeCoreError(e)}`
       )
-      await sendDone({ ok: false, reason: `exception: ${e}` })
+      await sendDone({ ok: false, reason: `exception: ${describeCoreError(e)}` })
     }
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    if (await this.coreOwnsRuntime()) {
-      this.sessionCache.delete(modelId)
-      this.modelCtxSize.delete(modelId)
-      try {
-        return await this.core.unload(modelId)
-      } catch (error) {
-        return {
-          success: false,
-          error: `Failed to unload model: ${describeCoreError(error)}`,
-        }
-      }
-    }
-    const sInfo: SessionInfo =
-      this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
-    if (!sInfo) {
-      throw new Error(`No active session found for model: ${modelId}`)
-    }
-    const pid = sInfo.pid
+    this.modelCtxSize.delete(modelId)
     try {
-      const result = await unloadLlamaModel(pid)
-
-      if (result.success) {
-        this.sessionCache.delete(modelId)
-        logger.info(`Successfully unloaded model with PID ${pid}`)
-      } else {
-        logger.warn(`Failed to unload model: ${result.error}`)
-      }
-
-      return result
+      return await this.core.unload(modelId)
     } catch (error) {
-      logger.error('Error in unload command:', error)
       return {
         success: false,
-        error: `Failed to unload model: ${error}`,
+        error: `Failed to unload model: ${describeCoreError(error)}`,
       }
     }
   }
@@ -4336,21 +3837,9 @@ export default class llamacpp_extension extends AIEngine {
     backend = stripBom(backend)
     version = stripBom(version)
     const backendKey = `${version}/${backend}`
-    if (await isBackendInstalled(backend, version)) {
-      // Exe present — still repair missing cudart for Windows CUDA tiers
-      // (some TurboQuant release zips omit the runtime DLLs).
-      const targetDir = await getBackendDir(backend, version)
-      try {
-        await this.ensureCudartReady(version, backend, targetDir, backendKey)
-      } catch (cudartErr) {
-        logger.warn(
-          `cudart pre-flight for ${backendKey} failed: ${
-            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
-          }`
-        )
-      }
-      return
-    }
+    // A pack missing its CUDA runtime DLLs (some TurboQuant Windows release zips
+    // omit them) is repaired by the core, before every load and after install.
+    if (await isBackendInstalled(backend, version)) return
 
     // Auto-download from the release stream. Every platform participates —
     // macOS included, where the bundled build is the offline baseline rather
@@ -4413,234 +3902,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Ensure CUDA runtime DLLs exist in `<targetDir>/build/bin` for a Windows
-   * TurboQuant CUDA backend. Prefer copying from an already-installed
-   * `llamacpp-upstream` CUDA bin of the same minor; otherwise download the
-   * ggml-org `cudart-llama-bin-win-cuda-{minor}-x64.zip` companion.
-   *
-   * No-op off Windows / for non-CUDA backends / when cudart is already present.
-   */
-  private async ensureCudartReady(
-    _version: string,
-    backend: string,
-    targetDir: string,
-    backendString: string
-  ): Promise<void> {
-    if (!IS_WINDOWS) return
-
-    const toolkitVersion = getCudaToolkitVersion(backend)
-    const cudartName = getCudartArchiveName(backend)
-    const cudartUrl = getCudartDownloadUrl(backend)
-    if (!toolkitVersion || !cudartName || !cudartUrl) {
-      return
-    }
-
-    const janDataFolderPath = await getJanDataFolderPath()
-
-    try {
-      const alreadyInstalled = await isCudaInstalledFromRust(
-        targetDir,
-        toolkitVersion,
-        'windows',
-        janDataFolderPath
-      )
-      if (alreadyInstalled) {
-        logger.info(
-          `cudart for ${backendString} already present, skipping repair`
-        )
-        return
-      }
-    } catch (probeErr) {
-      logger.warn(
-        `is_cuda_installed probe failed for ${backendString}, will attempt cudart repair anyway: ${
-          probeErr instanceof Error ? probeErr.message : String(probeErr)
-        }`
-      )
-    }
-
-    const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
-    if (!(await fs.existsSync(buildBinDir))) {
-      await fs.mkdir(buildBinDir)
-    }
-
-    // 1) Prefer copy from a sibling upstream CUDA install (no network).
-    try {
-      const donorBin = await findUpstreamCudaBinWithCudart(
-        janDataFolderPath,
-        toolkitVersion
-      )
-      if (donorBin) {
-        const copied = await copyBackendDlls(donorBin, buildBinDir, [
-          'cudart',
-          'cublas',
-        ])
-        if (copied > 0) {
-          logger.info(
-            `Copied ${copied} CUDA runtime DLL(s) from upstream ${donorBin} into ${buildBinDir} for ${backendString}`
-          )
-          const ok = await isCudaInstalledFromRust(
-            targetDir,
-            toolkitVersion,
-            'windows',
-            janDataFolderPath
-          )
-          if (ok) return
-          logger.warn(
-            `Copied DLLs for ${backendString} but is_cuda_installed still false — falling through to download`
-          )
-        }
-      }
-    } catch (copyErr) {
-      logger.warn(
-        `copy-from-upstream cudart for ${backendString} failed, will download: ${
-          copyErr instanceof Error ? copyErr.message : String(copyErr)
-        }`
-      )
-    }
-
-    // 2) Download ggml-org companion (same archive the upstream provider uses).
-    const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
-    if (!(await fs.existsSync(tempDir))) {
-      await fs.mkdir(tempDir)
-    }
-    const cudartArchivePath = await joinPath([tempDir, cudartName])
-    const cudartExtractDir = await joinPath([
-      tempDir,
-      `cudart-${backend}-${toolkitVersion}`,
-    ])
-
-    logger.info(`Downloading cudart for ${backendString} from ${cudartUrl}`)
-
-    const taskId = `llamacpp-cudart-${this.sanitizeForTauriEvent(
-      toolkitVersion
-    )}/${this.sanitizeForTauriEvent(backend)}`
-    const downloadManager = window.core?.extensionManager?.getByName(
-      '@janhq/download-extension'
-    ) as
-      | {
-          downloadFiles?: (
-            items: DownloadItem[],
-            taskId: string,
-            onProgress?: (transferred: number, total: number) => void,
-            resume?: boolean
-          ) => Promise<void>
-        }
-      | undefined
-
-    const onProgress = (transferred: number, total: number) => {
-      if (events && typeof events.emit === 'function') {
-        events.emit(DownloadEvent.onFileDownloadUpdate, {
-          modelId: taskId,
-          percent: total > 0 ? transferred / total : 0,
-          size: { transferred, total },
-          downloadType: 'Backend',
-        })
-      }
-    }
-
-    const proxy = getProxyConfig() ?? undefined
-
-    try {
-      if (downloadManager?.downloadFiles) {
-        await downloadManager.downloadFiles(
-          [{ url: cudartUrl, save_path: cudartArchivePath, proxy }],
-          taskId,
-          onProgress,
-          false
-        )
-      } else {
-        logger.warn(
-          'download-extension not available, falling back to raw download_files invoke for cudart'
-        )
-        await invoke<void>('download_files', {
-          items: [{ url: cudartUrl, save_path: cudartArchivePath, proxy }],
-          taskId,
-          headers: {},
-          resume: false,
-        })
-      }
-
-      if (!(await fs.existsSync(cudartExtractDir))) {
-        await fs.mkdir(cudartExtractDir)
-      }
-
-      logger.info(`Extracting cudart archive to ${cudartExtractDir}`)
-      await invoke('decompress', {
-        path: cudartArchivePath,
-        outputDir: cudartExtractDir,
-      })
-
-      let copied = 0
-      const stack: string[] = [cudartExtractDir]
-      while (stack.length > 0) {
-        const currentDir = stack.pop() as string
-        const entries = (await fs.readdirSync(currentDir)) as string[]
-        for (const entryPath of entries) {
-          let stat: { isDirectory?: boolean } | undefined
-          try {
-            stat = await fs.fileStat(entryPath)
-          } catch {
-            stat = undefined
-          }
-          if (stat?.isDirectory) {
-            stack.push(entryPath)
-            continue
-          }
-          const baseName = entryPath.split(/[/\\]/).filter(Boolean).pop()
-          if (!baseName) continue
-          if (baseName.toLowerCase().endsWith('.dll')) {
-            const dst = await joinPath([buildBinDir, baseName])
-            await fs.mv(entryPath, dst)
-            copied += 1
-          }
-        }
-      }
-
-      logger.info(
-        `Merged ${copied} cudart DLL(s) into ${buildBinDir} for ${backendString}`
-      )
-
-      if (copied === 0) {
-        throw new Error(`cudart archive for ${backendString} contained no DLLs`)
-      }
-
-      if (events && typeof events.emit === 'function') {
-        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
-          modelId: taskId,
-          downloadType: 'Backend',
-        })
-      }
-    } catch (cudartErr) {
-      if (events && typeof events.emit === 'function') {
-        events.emit(DownloadEvent.onFileDownloadError, {
-          modelId: taskId,
-          error:
-            cudartErr instanceof Error ? cudartErr.message : String(cudartErr),
-          downloadType: 'Backend',
-        })
-      }
-      throw cudartErr
-    } finally {
-      try {
-        if (await fs.existsSync(cudartArchivePath)) {
-          await fs.rm(cudartArchivePath)
-        }
-      } catch {
-        // best-effort cleanup
-      }
-      try {
-        if (await fs.existsSync(cudartExtractDir)) {
-          await fs.rm(cudartExtractDir)
-        }
-      } catch {
-        // best-effort cleanup
-      }
-    }
-  }
-
-  /**
-   * A backend install the core performs, reported through the same events the extension's own
-   * install emits, so the download manager and the backend updater cannot tell the difference.
+   * A backend install the core performs, reported through the download events (`DownloadEvent.*`
+   * under the task id, `AppEvent.onBackendDownload*`) the download manager and the backend updater
+   * listen on.
    */
   private async installBackendThroughCore(
     backendString: string,
@@ -4719,8 +3983,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
-   * Downloads a backend archive from janhq/llama.cpp GitHub releases and
-   * extracts it into the local backends directory.
+   * Download and install a TurboQuant backend pack. The core owns the data folder the packs live
+   * in, so it fetches, unpacks and repairs the CUDA runtime; the task id is the one the progress bar
+   * the user is already watching listens on.
    */
   private async downloadAndInstallBackend(
     backendString: string
@@ -4732,249 +3997,16 @@ export default class llamacpp_extension extends AIEngine {
     }
     const [version, backend] = [stripBom(parts[0]), stripBom(parts[1])]
 
+    // Checked here rather than left to the core's idempotent install: an install that does nothing
+    // would still flash a download row and a "finished" event in the UI.
     if (await isBackendInstalled(backend, version)) {
       logger.info(
         `Backend ${backendString} is already installed, skipping download`
       )
-      const installedDir = await getBackendDir(backend, version)
-      try {
-        await this.ensureCudartReady(
-          version,
-          backend,
-          installedDir,
-          backendString
-        )
-      } catch (cudartErr) {
-        logger.warn(
-          `cudart repair for already-installed ${backendString} failed: ${
-            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
-          }`
-        )
-      }
       return
     }
 
-    // The core owns the data folder these packs live in, so it fetches, unpacks and repairs the
-    // CUDA runtime. The task id is built the same way either side does it: the progress bar the
-    // user is already watching listens on a name derived from it.
-    if (await this.coreOwnsRuntime()) {
-      await this.installBackendThroughCore(backendString, version, backend)
-      return
-    }
-
-    const url = getBackendDownloadUrl(
-      version,
-      backend,
-      getIndexedAssetName(version, backend)
-    )
-    const janDataFolderPath = await getJanDataFolderPath()
-    const tempDir = await joinPath([janDataFolderPath, 'llamacpp', 'tmp'])
-    if (!(await fs.existsSync(tempDir))) {
-      await fs.mkdir(tempDir)
-    }
-    // The local temp file MUST carry the real archive extension: the Rust
-    // `decompress` command picks its decoder strictly by suffix (.tar.gz vs
-    // .zip). Derive it from the URL we are actually about to fetch — the
-    // release index may name an asset whose extension differs from what this
-    // OS would assume, and feeding a zip to the tar reader fails with
-    // "failed to iterate over archive".
-    const archiveExt = url.endsWith('.zip') ? 'zip' : 'tar.gz'
-    const archiveName = `llama-${version}-bin-${backend}.${archiveExt}`
-    const archivePath = await joinPath([tempDir, archiveName])
-    const targetDir = await getBackendDir(backend, version)
-
-    logger.info(`Downloading backend ${backendString} from ${url}`)
-
-    if (events && typeof events.emit === 'function') {
-      events.emit(AppEvent.onBackendDownloadStarted, {
-        backend: backendString,
-        status: 'downloading',
-        provider: this.providerId,
-        version,
-        backendId: backend,
-      })
-    }
-
-    // Route the file transfer through `download-extension` so the
-    // standard top-left download manager picks it up via the same
-    // `DownloadEvent.onFileDownloadUpdate` channel that model
-    // downloads use. The legacy `AppEvent.onBackendDownload*`
-    // events are still emitted because the BackendUpdater dialog
-    // listens to them for the recommend → downloading →
-    // restart-required state machine.
-    //
-    // Prefix the taskId with `llamacpp-backend-` so the cancel
-    // button in the standard UI takes the
-    // `download.id.startsWith('llamacpp')` branch and can call
-    // `cancelDownload(taskId)` instead of the model-abort path.
-    //
-    // Sanitize `version`/`backend` separately because both carry dots
-    // (e.g. `windows-x64-cuda-12.4` /
-    // `turboquant-windows-x64-cuda-12.4-d86eb0b`), and Tauri's
-    // `listen()` — invoked under the hood by `download-extension` with
-    // `download-${taskId}` — rejects dots.
-    //
-    // Declared OUTSIDE the try block so the catch can emit the cleanup
-    // event with the SAME sanitized id the progress events used.
-    const taskId = `llamacpp-backend-${this.sanitizeForTauriEvent(
-      version
-    )}/${this.sanitizeForTauriEvent(backend)}`
-
-    try {
-      const downloadManager = window.core?.extensionManager?.getByName(
-        '@janhq/download-extension'
-      ) as
-        | {
-            downloadFiles?: (
-              items: { url: string; save_path: string }[],
-              taskId: string,
-              onProgress?: (transferred: number, total: number) => void,
-              resume?: boolean
-            ) => Promise<void>
-          }
-        | undefined
-
-      const onProgress = (transferred: number, total: number) => {
-        if (events && typeof events.emit === 'function') {
-          events.emit(DownloadEvent.onFileDownloadUpdate, {
-            modelId: taskId,
-            percent: total > 0 ? transferred / total : 0,
-            size: { transferred, total },
-            downloadType: 'Backend',
-          })
-        }
-      }
-
-      if (downloadManager?.downloadFiles) {
-        await downloadManager.downloadFiles(
-          [{ url, save_path: archivePath }],
-          taskId,
-          onProgress,
-          false
-        )
-      } else {
-        // Best-effort fallback when the download-extension is not
-        // available — preserves backend installation but the standard
-        // UI won't reflect progress.
-        logger.warn(
-          'download-extension not available, falling back to raw download_files invoke'
-        )
-        await invoke<void>('download_files', {
-          items: [{ url, save_path: archivePath }],
-          taskId,
-          headers: {},
-          resume: false,
-        })
-      }
-
-      logger.info(`Download complete, extracting to ${targetDir}`)
-      await invoke('decompress', {
-        path: archivePath,
-        outputDir: targetDir,
-      })
-
-      const exeName = IS_WINDOWS ? 'llama-server.exe' : 'llama-server'
-      const expectedBin = await joinPath([targetDir, 'build', 'bin', exeName])
-
-      if (!(await fs.existsSync(expectedBin))) {
-        const flatBin = await joinPath([targetDir, exeName])
-        if (await fs.existsSync(flatBin)) {
-          // TurboQuant Windows zips extract with a flat layout
-          // (llama-server.exe + DLLs at the archive root), while the
-          // Linux/macOS tarballs already contain `build/bin/`. Move (not
-          // copy) each top-level entry into `build/bin/` so layouts
-          // converge. `fs.mv` is the only file-relocation primitive the
-          // Tauri shell exposes — there is no `copy_file` Rust command, so
-          // `fs.copyFile` throws "Command copy_file not found" on Windows.
-          //
-          // CAREFUL: the Tauri `readdir_sync` command returns FULL absolute
-          // paths (Rust's `entry.path().to_string_lossy()`), not basenames.
-          // Treating them as basenames produces a silent no-op loop
-          // (`joinPath([targetDir, absPath])` resolves to `absPath` itself
-          // because `Path::join` replaces the base when the second arg is
-          // absolute → `mv(x, x)`), so the relocation never happens and the
-          // final `isBackendInstalled` check fails. Strip to the basename
-          // before joining and before the `build` skip check.
-          logger.info('Relocating flat-extracted binaries into build/bin/')
-          const buildBinDir = await joinPath([targetDir, 'build', 'bin'])
-          await fs.mkdir(buildBinDir)
-          const entries = (await fs.readdirSync(targetDir)) as string[]
-          for (const rawEntry of entries) {
-            const baseName = rawEntry.split(/[/\\]/).filter(Boolean).pop()
-            if (!baseName || baseName === 'build') continue
-            const src = await joinPath([targetDir, baseName])
-            const dst = await joinPath([buildBinDir, baseName])
-            await fs.mv(src, dst)
-          }
-        }
-      }
-
-      if (!(await isBackendInstalled(backend, version))) {
-        throw new Error(
-          `Backend extracted but llama-server binary not found at expected path`
-        )
-      }
-
-      // Prefer inline cudart from the zip; when absent, copy from an installed
-      // upstream CUDA bin or download the ggml-org companion.
-      try {
-        await this.ensureCudartReady(version, backend, targetDir, backendString)
-      } catch (cudartErr) {
-        logger.warn(
-          `Backend ${backendString} installed, but cudart DLL merge failed: ${
-            cudartErr instanceof Error ? cudartErr.message : String(cudartErr)
-          }`
-        )
-      }
-
-      logger.info(`Backend ${backendString} installed successfully`)
-
-      if (events && typeof events.emit === 'function') {
-        // Clear from the standard download manager UI. Use the same
-        // sanitized taskId the progress events were emitted under so the
-        // row actually matches and clears.
-        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
-          modelId: taskId,
-          downloadType: 'Backend',
-        })
-        events.emit(AppEvent.onBackendDownloadFinished, {
-          backend: backendString,
-          status: 'completed',
-          provider: this.providerId,
-          version,
-          backendId: backend,
-        })
-      }
-    } catch (downloadErr) {
-      const errorMessage =
-        downloadErr instanceof Error ? downloadErr.message : String(downloadErr)
-      if (events && typeof events.emit === 'function') {
-        // Clear the standard download manager row on failure too, keyed
-        // by the same sanitized taskId used for progress.
-        events.emit(DownloadEvent.onFileDownloadError, {
-          modelId: taskId,
-          error: errorMessage,
-          downloadType: 'Backend',
-        })
-        events.emit(AppEvent.onBackendDownloadFinished, {
-          backend: backendString,
-          status: 'failed',
-          error: errorMessage,
-          provider: this.providerId,
-          version,
-          backendId: backend,
-        })
-      }
-      throw downloadErr
-    } finally {
-      try {
-        if (await fs.existsSync(archivePath)) {
-          await fs.rm(archivePath)
-        }
-      } catch {
-        // best-effort cleanup
-      }
-    }
+    await this.installBackendThroughCore(backendString, version, backend)
   }
 
   private async *handleStreamingResponse(
@@ -5117,14 +4149,10 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /// Which device the loaded model actually ran on.
-  ///
-  /// Parsed from the llama-server startup log by the plugin and, until now,
-  /// used only to warn about a backend mismatch. The web-app needs it for
   /**
    * Load through the core, which owns the process: the settings are handed over first (once per
-   * core attachment and settings state), then the core plans and starts the load with the same
-   * per-model overrides this extension's own load would have used.
+   * core attachment and settings state), then the core plans and starts the load with the
+   * per-model overrides.
    */
   private async loadThroughCore(
     modelId: string,
@@ -5149,19 +4177,14 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  /**
-   * Where a model is served, from whoever owns it. When the core owns the runtime the session cache
-   * is never consulted: the core reloads a model on its own when a prompt overflows the context, and
-   * the port changes without this extension being asked.
-   */
-  private async resolveSession(modelId: string): Promise<SessionInfo> {
-    if (await this.coreOwnsRuntime()) return this.findSessionByModel(modelId)
-    return this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
-  }
-
-  /// `model_load`: `n_gpu_layers` there is the requested value — the "offload
-  /// everything" sentinel on 98.3% of events — so how many layers reached the
-  /// GPU, and whether a CUDA build quietly ran on CPU, was recorded nowhere.
+  /// Which device the loaded model actually ran on.
+  ///
+  /// Parsed by the core from the llama-server startup log and snapshotted on
+  /// the session when the server reports ready; used to warn about a backend
+  /// mismatch. The web-app needs it for `model_load`: `n_gpu_layers` there is
+  /// the requested value — the "offload everything" sentinel on 98.3% of
+  /// events — so how many layers reached the GPU, and whether a CUDA build
+  /// quietly ran on CPU, was recorded nowhere.
   ///
   /// Never throws: telemetry must not be able to break a load.
   async getRuntimeDeviceInfo(
@@ -5169,57 +4192,39 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<RuntimeDeviceInfo | null> {
     try {
       const sInfo = await this.findSessionByModel(modelId)
-      if (!sInfo) return null
-      // `load_tensors` normally precedes "listening on", but on a slow mmap
-      // the snapshot taken at readiness can still be empty — re-ask.
-      return sInfo.runtime_device ?? (await getRuntimeDevice(sInfo.pid))
+      return (sInfo?.runtime_device as RuntimeDeviceInfo | undefined) ?? null
     } catch (e) {
-      logger.debug('getRuntimeDeviceInfo failed (continuing):', e)
+      logger.warn(
+        `getRuntimeDeviceInfo failed (continuing): ${describeCoreError(e)}`
+      )
       return null
     }
   }
 
+  /**
+   * Where a model is served right now, or `null` when it is not loaded. Always asked of the core,
+   * never cached: the core reloads a model on its own when a prompt overflows the context, and the
+   * port changes without this extension being asked.
+   */
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
-    if (await this.coreOwnsRuntime())
-      return ((await this.core.findSession(modelId)) ?? null) as SessionInfo
-    try {
-      let sInfo = await invoke<SessionInfo>(
-        'plugin:llamacpp|find_session_by_model',
-        {
-          modelId,
-        }
-      )
-      return sInfo
-    } catch (e) {
-      logger.error(e)
-      throw new Error(String(e))
-    }
+    return ((await this.core.findSession(modelId)) ?? null) as SessionInfo
   }
 
   override async chat(
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = await this.resolveSession(opts.model)
+    const sessionInfo = await this.findSessionByModel(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
-    // A core-owned process is not in the plugin's table; the core removes a dead one itself.
-    const result =
-      (await this.coreOwnsRuntime()) ||
-      (await invoke<boolean>('plugin:llamacpp|is_process_running', {
-        pid: sessionInfo.pid,
-      }))
-    if (result) {
-      try {
-        await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.sessionCache.delete(opts.model)
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('Model have crashed! Please reload!')
+    // The core drops a session whose process died, so a listed session has a live process; a
+    // server that no longer answers is unloaded so the next attempt starts it again.
+    try {
+      await globalThis.fetch(`http://localhost:${sessionInfo.port}/health`)
+    } catch (e) {
+      void this.unload(sessionInfo.model_id)
+      throw new Error('Model appears to have crashed! Please reload!')
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
@@ -5283,16 +4288,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
-    if (await this.coreOwnsRuntime()) return this.core.getLoadedModels()
-    try {
-      let models: string[] = await invoke<string[]>(
-        'plugin:llamacpp|get_loaded_models'
-      )
-      return models
-    } catch (e) {
-      logger.error(e)
-      throw new Error(e)
-    }
+    return this.core.getLoadedModels()
   }
 
   /**
@@ -5339,32 +4335,17 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
-    const cfg = this.config
-    const [version, backend] = cfg.version_backend.split('/')
+    const [version, backend] = (this.config.version_backend || '').split('/')
     if (!version || !backend) {
       throw new Error(
         'Llama.cpp backend is not configured (version_backend is missing or invalid). Check Settings → Llama.cpp — Version & Backend, or reinstall the application.'
       )
     }
-    // set envs
-    const envs: Record<string, string> = {}
-    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // When the core owns the runtime it lists devices with the backend it would load with, and
-    // downloads nothing; the AMD memory correction below still applies to its answer.
-    const coreOwned = await this.coreOwnsRuntime()
-    // Ensure backend is downloaded and ready before proceeding
-    if (!coreOwned) await this.ensureBackendReady(backend, version)
-    logger.info('Calling Tauri command getDevices with arg --list-devices')
-    const backendPath = coreOwned ? '' : await getBackendExePath(backend, version)
-
+    // The core lists devices with the backend it would load with, and downloads nothing; the AMD
+    // memory correction below still applies to its answer.
     try {
-      const dList = coreOwned
-        ? await this.core.devices<DeviceList>()
-        : await invoke<DeviceList[]>('plugin:llamacpp|get_devices', {
-            backendPath,
-            envs,
-          })
+      const dList = await this.core.devices<DeviceList>()
       // On Linux with AMD GPUs, llama.cpp via Vulkan may report UMA (shared) memory as device-local.
       // For clearer UX, override with dedicated VRAM from the hardware plugin when available.
       try {
@@ -5438,8 +4419,8 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       // A device probe that fails leaves the caller with the previous device
       // list — a degraded but recoverable state, not a crash. It also has to
-      // be formatted: the Rust plugin rejects with a structured object that
-      // the logger would otherwise render as "[object Object]".
+      // be formatted: the core rejects with a structured object that the
+      // logger would otherwise render as "[object Object]".
       logger.warn('Failed to query devices:\n' + formatLoadError(error))
       throw new Error('Failed to load llamacpp backend')
     }
@@ -5687,7 +4668,7 @@ export default class llamacpp_extension extends AIEngine {
       return 0
     }
 
-    const sessionInfo = await this.resolveSession(opts.model)
+    const sessionInfo = await this.findSessionByModel(opts.model)
     if (!sessionInfo) {
       throw new Error(`No active session found for model: ${opts.model}`)
     }

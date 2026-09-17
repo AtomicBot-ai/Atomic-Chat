@@ -83,7 +83,7 @@ const AppLayout = () => {
           </div>
         </SidebarInset>
 
-        {/* Попап согласия на аналитику отключён; настройки → Privacy по-прежнему доступны */}
+        {/* Analytics consent popup is disabled; Settings → Privacy is still available */}
         {/* {productAnalyticPrompt && <PromptAnalytic />} */}
         {showOnboardingModelReminder && <PromptOnboardingModel />}
         {/* ATO-462: mounted once at the root, not inside the sidebar or the

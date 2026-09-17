@@ -777,7 +777,7 @@ function General() {
               />
             </Card>
 
-            {/* Resources — закомментировано */}
+            {/* Resources — commented out */}
             {false && (
               <Card title={t('settings:general.resources')}>
                 <CardItem
@@ -815,7 +815,7 @@ function General() {
               </Card>
             )}
 
-            {/* Community — закомментировано */}
+            {/* Community — commented out */}
             {false && (
               <Card title={t('settings:general.community')}>
                 <CardItem
@@ -853,7 +853,7 @@ function General() {
               </Card>
             )}
 
-            {/* Support — закомментировано */}
+            {/* Support — commented out */}
             {false && (
               <Card title={t('settings:general.support')}>
                 <CardItem
@@ -874,7 +874,7 @@ function General() {
               </Card>
             )}
 
-            {/* Credits — закомментировано */}
+            {/* Credits — commented out */}
             {false && (
               <Card title={t('settings:general.credits')}>
                 <CardItem

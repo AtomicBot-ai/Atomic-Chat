@@ -184,7 +184,7 @@ async fn full_app_exit_shuts_down_its_owner_and_releases_the_lock() {
     };
     let live = LiveCore::new(&binary);
     let supervisor = live.supervisor();
-    let app = super::commands::AtomicCoreClient::for_live_test(Arc::clone(&supervisor));
+    let app = super::commands::AtomicCoreClient::new(Arc::clone(&supervisor));
     let attached = supervisor.ensure_attached(true).await.expect("app owner");
     app.stop_for_live_test().await;
     assert!(supervisor.current().await.is_none());
@@ -642,7 +642,7 @@ async fn detach_allows_a_short_reconnect_before_the_app_registration_expires() {
     supervisor.detach().await;
 }
 
-/// Control calls straight through the supervisor, as a handover makes them.
+/// Control calls straight through the supervisor, as the app's server commands make them.
 struct SupervisorCaller(Arc<Supervisor>);
 
 #[async_trait::async_trait]
@@ -657,39 +657,6 @@ impl crate::core::server::ownership::ControlCaller for SupervisorCaller {
     }
 }
 
-/// Stands in for the app's proxy: holds the port the way a running server does.
-struct PortHolder {
-    port: u16,
-    listener: tokio::sync::Mutex<Option<std::net::TcpListener>>,
-    fail_restart: bool,
-}
-
-#[async_trait::async_trait]
-impl crate::core::server::ownership::PublicApiOwner for PortHolder {
-    fn label(&self) -> &'static str {
-        "app"
-    }
-    async fn running_port(&self) -> Result<Option<u16>, String> {
-        Ok(self.listener.lock().await.as_ref().map(|_| self.port))
-    }
-    async fn start(
-        &self,
-        config: &crate::core::server::ownership::StartServerConfig,
-    ) -> Result<u16, String> {
-        if self.fail_restart {
-            return Err("restart refused".into());
-        }
-        let listener =
-            std::net::TcpListener::bind(("127.0.0.1", config.port)).map_err(|e| e.to_string())?;
-        *self.listener.lock().await = Some(listener);
-        Ok(config.port)
-    }
-    async fn stop(&self) -> Result<(), String> {
-        self.listener.lock().await.take();
-        Ok(())
-    }
-}
-
 fn server_config(port: u16, host: &str) -> crate::core::server::ownership::StartServerConfig {
     crate::core::server::ownership::StartServerConfig {
         host: host.into(),
@@ -701,51 +668,47 @@ fn server_config(port: u16, host: &str) -> crate::core::server::ownership::Start
     }
 }
 
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .expect("free port")
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
 #[tokio::test]
-async fn the_public_api_moves_to_a_real_core_on_the_same_port_and_back() {
-    use crate::core::server::ownership::{hand_over, CoreOwner, Handover, PublicApiOwner};
+async fn the_public_api_starts_on_a_real_core_with_its_providers_and_stops() {
+    use crate::core::server::ownership::{CoreOwner, PublicApiOwner};
 
     let Some(binary) = core_binary() else {
         eprintln!("skipping: ATOMIC_CORE_BIN is not set");
         return;
     };
     let live = LiveCore::new(&binary);
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("app server port");
-    let port = listener.local_addr().unwrap().port();
-    let app = PortHolder {
-        port,
-        listener: tokio::sync::Mutex::new(Some(listener)),
-        fail_restart: false,
-    };
+    let port = free_port();
     let core = CoreOwner {
         caller: SupervisorCaller(live.supervisor()),
         providers: vec![(
             "cloudprov".to_string(),
             json!({"api_key": "sk-live", "base_url": "http://127.0.0.1:9/v1", "custom_headers": [], "models": ["cloud-model"]}),
         )],
-        external_sessions: Vec::new(),
-        external_generation: 1,
     };
-    let config = server_config(port, "127.0.0.1");
 
-    let moved = hand_over(&app, &core, Some(&config))
+    let started = core
+        .start(&server_config(port, "127.0.0.1"))
         .await
-        .expect("handover to the core");
-    assert_eq!(
-        moved,
-        Handover::Moved(port),
-        "the core took over the very port the app released"
-    );
+        .expect("the core serves");
+    assert_eq!(started, port, "the core serves on the requested port");
     let models: Value = reqwest::get(format!("http://127.0.0.1:{port}/v1/models"))
         .await
-        .expect("core answers on the moved port")
+        .expect("core answers on its port")
         .json()
         .await
         .unwrap();
     assert_eq!(
         models["data"][0]["id"],
         json!("cloud-model"),
-        "providers were handed over first"
+        "providers were registered before serving"
     );
     let state_file: Value = serde_json::from_str(
         &std::fs::read_to_string(live.data.path().join("local-api-server.json"))
@@ -755,10 +718,7 @@ async fn the_public_api_moves_to_a_real_core_on_the_same_port_and_back() {
     assert_eq!(state_file["running"], json!(true));
     assert_eq!(state_file["port"], json!(port));
 
-    let back = hand_over(&core, &app, Some(&config))
-        .await
-        .expect("rollback to the app");
-    assert_eq!(back, Handover::Moved(port));
+    core.stop().await.expect("the core stops serving");
     assert_eq!(core.running_port().await, Ok(None));
     let stopped: Value = serde_json::from_str(
         &std::fs::read_to_string(live.data.path().join("local-api-server.json")).unwrap(),
@@ -767,55 +727,33 @@ async fn the_public_api_moves_to_a_real_core_on_the_same_port_and_back() {
     assert_eq!(
         stopped["running"],
         json!(false),
-        "the core marked the file stopped as it left"
+        "the core marked the file stopped"
     );
     live.supervisor().detach().await;
 }
 
 #[tokio::test]
-async fn a_core_that_cannot_serve_hands_the_api_back_or_reports_it_stopped() {
-    use crate::core::server::ownership::{hand_over, CoreOwner};
+async fn a_core_that_cannot_serve_reports_the_refusal_and_stays_stopped() {
+    use crate::core::server::ownership::{CoreOwner, PublicApiOwner};
 
     let Some(binary) = core_binary() else {
         eprintln!("skipping: ATOMIC_CORE_BIN is not set");
         return;
     };
     let live = LiveCore::new(&binary);
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("app server port");
-    let port = listener.local_addr().unwrap().port();
     let core = CoreOwner {
         caller: SupervisorCaller(live.supervisor()),
         providers: vec![],
-        external_sessions: Vec::new(),
-        external_generation: 1,
     };
     // An address this machine does not have: even the free-port fallback cannot bind it.
-    let unbindable = server_config(port, "203.0.113.7");
+    let unbindable = server_config(free_port(), "203.0.113.7");
 
-    let app = PortHolder {
-        port,
-        listener: tokio::sync::Mutex::new(Some(listener)),
-        fail_restart: false,
-    };
-    let restored = hand_over(&app, &core, Some(&unbindable)).await.unwrap_err();
-    assert!(restored.restored, "{restored}");
-    // Refused by the running core itself, not for want of a core.
-    assert!(restored.message.contains("did not start"), "{restored}");
+    let refused = core.start(&unbindable).await.unwrap_err();
+    eprintln!("refusal seen: {refused}");
     assert!(
-        !restored.message.contains("no Atomic Chat core"),
-        "{restored}"
+        !refused.contains("no Atomic Chat core"),
+        "refused by the running core itself, not for want of a core: {refused}"
     );
-    eprintln!("refusal seen: {restored}");
-    assert!(app.listener.lock().await.is_some(), "the app serves again");
-
-    let doomed = PortHolder {
-        port,
-        listener: tokio::sync::Mutex::new(app.listener.lock().await.take()),
-        fail_restart: true,
-    };
-    let stopped = hand_over(&doomed, &core, Some(&unbindable))
-        .await
-        .unwrap_err();
-    assert!(!stopped.restored, "{stopped}");
+    assert_eq!(core.running_port().await, Ok(None), "nothing is left serving");
     live.supervisor().detach().await;
 }

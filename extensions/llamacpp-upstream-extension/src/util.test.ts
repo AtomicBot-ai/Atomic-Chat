@@ -1,18 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  effectiveCtxSize,
   firstGgufShardPath,
   getProxyConfig,
   isEmbeddingGguf,
   ggufShardSetPaths,
   parseGgufShard,
   isConcreteVersionBackend,
-  matchesMtpLoadFailure,
   hasEmbeddedMtp,
-  isMtpCapable,
-  isCpuBackend,
-  cpuHasAvx,
-  isUnsupportedNoAvxCpu,
   classifyProjector,
 } from './util'
 
@@ -594,48 +588,6 @@ describe('isConcreteVersionBackend (ATO-124)', () => {
   })
 })
 
-describe('matchesMtpLoadFailure (ATO-125)', () => {
-  it('matches "failed to create MTP context"', () => {
-    expect(matchesMtpLoadFailure('error: failed to create MTP context')).toBe(
-      true
-    )
-  })
-
-  it('matches "context type MTP requested"', () => {
-    expect(
-      matchesMtpLoadFailure('context type MTP requested but model ...')
-    ).toBe(true)
-  })
-
-  it("matches \"doesn't contain MTP layers\" (with apostrophe)", () => {
-    expect(
-      matchesMtpLoadFailure("model doesn't contain MTP layers")
-    ).toBe(true)
-  })
-
-  it('matches "doesnt contain MTP layers" (without apostrophe)', () => {
-    expect(matchesMtpLoadFailure('model doesnt contain MTP layers')).toBe(true)
-  })
-
-  it('matches case-insensitively', () => {
-    expect(matchesMtpLoadFailure('FAILED TO CREATE MTP CONTEXT')).toBe(true)
-  })
-
-  it('does not match an OOM error', () => {
-    expect(
-      matchesMtpLoadFailure('ggml_backend_cuda_buffer_type_alloc: out of memory')
-    ).toBe(false)
-  })
-
-  it('does not match an unrelated error', () => {
-    expect(matchesMtpLoadFailure('some unrelated failure')).toBe(false)
-  })
-
-  it('returns false for an empty string', () => {
-    expect(matchesMtpLoadFailure('')).toBe(false)
-  })
-})
-
 describe('hasEmbeddedMtp', () => {
   it('detects embedded MTP in a dense Qwen3.5 GGUF', () => {
     expect(
@@ -700,127 +652,6 @@ describe('hasEmbeddedMtp', () => {
     },
   ])('rejects non-capable metadata %#', (metadata) => {
     expect(hasEmbeddedMtp(metadata)).toBe(false)
-  })
-})
-
-describe('isMtpCapable', () => {
-  const embeddedMetadata = {
-    'general.architecture': 'qwen35',
-    'qwen35.block_count': '33',
-    'qwen35.nextn_predict_layers': '1',
-  }
-
-  it('keeps MTP enabled for an embedded head with an ordinary filename', () => {
-    expect(isMtpCapable(embeddedMetadata, '')).toBe(true)
-  })
-
-  it('disables MTP when neither metadata nor a draft head is present', () => {
-    expect(isMtpCapable({}, '')).toBe(false)
-  })
-
-  it('keeps the separate Gemma draft-head branch enabled', () => {
-    expect(isMtpCapable({}, '/models/gemma/mtp-draft.gguf')).toBe(true)
-  })
-})
-
-describe('isCpuBackend (ATO-185)', () => {
-  it('matches the Windows x64 CPU backend', () => {
-    expect(isCpuBackend('win-cpu-x64')).toBe(true)
-  })
-
-  it('matches the Linux x64 CPU backend', () => {
-    expect(isCpuBackend('linux-cpu-x64')).toBe(true)
-  })
-
-  it('matches arm64 CPU backends', () => {
-    expect(isCpuBackend('win-cpu-arm64')).toBe(true)
-    expect(isCpuBackend('linux-cpu-arm64')).toBe(true)
-  })
-
-  it('does not match GPU backends', () => {
-    expect(isCpuBackend('win-cuda-13-x64')).toBe(false)
-    expect(isCpuBackend('win-vulkan-x64')).toBe(false)
-    expect(isCpuBackend('linux-vulkan-x64')).toBe(false)
-  })
-
-  it('does not match macOS backends', () => {
-    expect(isCpuBackend('macos-x64')).toBe(false)
-    expect(isCpuBackend('macos-arm64')).toBe(false)
-  })
-
-  it('strips BOM / whitespace and is case-insensitive', () => {
-    expect(isCpuBackend('\uFEFF  WIN-CPU-X64 ')).toBe(true)
-  })
-
-  it('returns false for nullish input', () => {
-    expect(isCpuBackend(undefined)).toBe(false)
-    expect(isCpuBackend(null)).toBe(false)
-    expect(isCpuBackend('')).toBe(false)
-  })
-})
-
-describe('cpuHasAvx (ATO-185)', () => {
-  it('is true when AVX is present', () => {
-    expect(cpuHasAvx(['sse', 'sse2', 'avx'])).toBe(true)
-  })
-
-  it('is true when AVX2 is present (implies AVX)', () => {
-    expect(cpuHasAvx(['sse4_2', 'avx2'])).toBe(true)
-  })
-
-  it('is true when an AVX-512 sub-feature is present', () => {
-    expect(cpuHasAvx(['avx512_f', 'avx512_dq'])).toBe(true)
-  })
-
-  it('is case-insensitive', () => {
-    expect(cpuHasAvx(['AVX2'])).toBe(true)
-  })
-
-  it('is false for an SSE-only (no-AVX) CPU', () => {
-    expect(cpuHasAvx(['fpu', 'mmx', 'sse', 'sse2', 'sse3', 'ssse3'])).toBe(false)
-  })
-
-  it('is false for an empty / nullish list', () => {
-    expect(cpuHasAvx([])).toBe(false)
-    expect(cpuHasAvx(undefined)).toBe(false)
-    expect(cpuHasAvx(null)).toBe(false)
-  })
-})
-
-describe('isUnsupportedNoAvxCpu (ATO-185)', () => {
-  const noAvxExts = ['fpu', 'mmx', 'sse', 'sse2', 'sse3', 'ssse3', 'sse4_1']
-
-  it('blocks an x86_64 CPU backend with no AVX', () => {
-    expect(isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', noAvxExts)).toBe(true)
-    expect(isUnsupportedNoAvxCpu('x86_64', 'linux-cpu-x64', noAvxExts)).toBe(
-      true
-    )
-  })
-
-  it('allows an x86 CPU that has AVX', () => {
-    expect(
-      isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', [...noAvxExts, 'avx'])
-    ).toBe(false)
-  })
-
-  it('does not block GPU backends even on a no-AVX CPU', () => {
-    expect(isUnsupportedNoAvxCpu('x86_64', 'win-vulkan-x64', noAvxExts)).toBe(
-      false
-    )
-  })
-
-  it('does not block non-x86 hosts (no AVX concept)', () => {
-    expect(isUnsupportedNoAvxCpu('arm64', 'linux-cpu-arm64', [])).toBe(false)
-    expect(isUnsupportedNoAvxCpu('aarch64', 'win-cpu-arm64', [])).toBe(false)
-  })
-
-  it('never blocks when the extension list is empty (probe failure)', () => {
-    expect(isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', [])).toBe(false)
-    expect(isUnsupportedNoAvxCpu('x86_64', 'win-cpu-x64', null)).toBe(false)
-  })
-
-  it('accepts the amd64 arch alias', () => {
-    expect(isUnsupportedNoAvxCpu('amd64', 'win-cpu-x64', noAvxExts)).toBe(true)
   })
 })
 
@@ -933,28 +764,6 @@ describe('isEmbeddingGguf', () => {
   it('does not guess without metadata', () => {
     expect(isEmbeddingGguf(undefined)).toBe(false)
     expect(isEmbeddingGguf({})).toBe(false)
-  })
-})
-
-describe('effectiveCtxSize', () => {
-  it('clamps a request past the trained context', () => {
-    // bge-small trains at 512; the app default is 16384.
-    expect(effectiveCtxSize(16384, 512)).toBe(512)
-  })
-
-  it('leaves a request within the trained context alone', () => {
-    expect(effectiveCtxSize(4096, 32768)).toBe(4096)
-    expect(effectiveCtxSize(512, 512)).toBe(512)
-  })
-
-  it('does not guess when the trained context is unknown', () => {
-    expect(effectiveCtxSize(16384, undefined)).toBe(16384)
-    expect(effectiveCtxSize(16384, NaN)).toBe(16384)
-    expect(effectiveCtxSize(16384, 0)).toBe(16384)
-  })
-
-  it('passes through an unset request', () => {
-    expect(effectiveCtxSize(undefined, 512)).toBeUndefined()
   })
 })
 

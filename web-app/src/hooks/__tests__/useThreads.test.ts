@@ -286,12 +286,18 @@ describe('useThreads', () => {
     // The extension prefixes `attachments_` itself; a pre-prefixed id used to
     // double up and the real collection was never deleted.
     expect(deleteCollectionSpy).toHaveBeenCalledWith('thread1')
+    // Exactly one collection, under the bare id, and the thread is gone.
+    expect(deleteCollectionSpy.mock.calls).toEqual([['thread1']])
+    expect(result.current.threads).toEqual({})
   })
 
   it('clears per-thread agent state on bulk deletes', () => {
-    const removeThread = vi.fn()
     const originalRemove = useAgentMode.getState().removeThread
-    useAgentMode.setState({ removeThread })
+    // Spy through to the real store action so the cleared state is observable.
+    const removeThread = vi.fn(originalRemove)
+    useAgentMode.setState({ approvalModes: {}, removeThread })
+    useAgentMode.getState().setApprovalMode('projectThread', 'skip')
+    useAgentMode.getState().setApprovalMode('looseThread', 'skip')
     const { result } = renderHook(() => useThreads())
 
     act(() => {
@@ -310,11 +316,16 @@ describe('useThreads', () => {
       result.current.deleteAllThreadsByProject('p1')
     })
     expect(removeThread).toHaveBeenCalledWith('projectThread')
+    expect(useAgentMode.getState().approvalModes).toEqual({
+      looseThread: 'skip',
+    })
 
     act(() => {
       result.current.deleteAllThreads()
     })
     expect(removeThread).toHaveBeenCalledWith('looseThread')
+    expect(useAgentMode.getState().approvalModes).toEqual({})
+    expect(result.current.threads).toEqual({})
 
     useAgentMode.setState({ removeThread: originalRemove })
   })
