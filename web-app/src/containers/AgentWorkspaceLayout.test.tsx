@@ -64,7 +64,18 @@ vi.mock('react-resizable-panels', () => ({
       )}
     </div>
   ),
-  PanelResizeHandle: () => <div />,
+  PanelResizeHandle: ({
+    onDragging,
+  }: {
+    onDragging?: (dragging: boolean) => void
+  }) =>
+    onDragging ? (
+      <button type="button" onClick={() => onDragging(false)}>
+        Finish right resize
+      </button>
+    ) : (
+      <div />
+    ),
 }))
 
 vi.mock('./AgentWorkspaceFiles', () => ({
@@ -541,6 +552,35 @@ describe('AgentWorkspaceLayout', () => {
     await waitFor(() => {
       expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
     })
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
+  })
+
+  it('snaps the right panel closed when a drag ends at its minimum width', async () => {
+    render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+    panelLayouts.values.push([80, 0, 20])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Finish right resize' })
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+    )
     expect(
       screen.getByRole('button', { name: 'chat:runSettings.open' })
     ).toBeInTheDocument()

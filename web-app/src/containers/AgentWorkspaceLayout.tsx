@@ -50,9 +50,16 @@ function shouldUseAgentWorkspaceLayout(isDesktop: boolean): boolean {
   return isDesktop
 }
 
-function ResizeHandle({ hidden = false }: { hidden?: boolean }) {
+function ResizeHandle({
+  hidden = false,
+  onDragging,
+}: {
+  hidden?: boolean
+  onDragging?: (dragging: boolean) => void
+}) {
   return (
     <PanelResizeHandle
+      onDragging={onDragging}
       className={`group relative z-20 -mx-2 w-4 cursor-ew-resize border-0 bg-transparent p-0 outline-none transition-all ease-linear ${hidden ? 'invisible pointer-events-none' : ''}`}
     />
   )
@@ -178,6 +185,14 @@ export function AgentWorkspaceLayout({
   const collapseRightPanel = () => {
     if (filesVisible) setFilesOpen(false)
     if (settingsOpen) closeSettings()
+  }
+  const rightPanelMinSize = rightPanel === 'settings' ? 20 : 16
+  const snapRightPanelClosed = (dragging: boolean) => {
+    if (dragging || rightPanel === null) return
+    const size = panelGroupRef.current?.getLayout()[2]
+    if (size !== undefined && size <= rightPanelMinSize + 0.5) {
+      collapseRightPanel()
+    }
   }
 
   // The corner buttons below float against the window's right edge instead of
@@ -310,12 +325,15 @@ export function AgentWorkspaceLayout({
             )}
           </AnimatePresence>
         </Panel>
-        <ResizeHandle hidden={rightPanel === null} />
+        <ResizeHandle
+          hidden={rightPanel === null}
+          onDragging={snapRightPanelClosed}
+        />
         <Panel
           id="agent-sidebar"
           order={3}
           defaultSize={initialSidebarSize}
-          minSize={rightPanel === 'settings' ? 20 : 16}
+          minSize={rightPanelMinSize}
           maxSize={40}
           collapsedSize={0}
           collapsible
