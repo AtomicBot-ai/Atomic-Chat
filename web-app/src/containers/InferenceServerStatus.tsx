@@ -57,7 +57,10 @@ const useWording = (
           detail: t('common:inferenceStatus.restartingDetail'),
         }
       case 'failed': {
-        const failure = describeModelLoadFailure(modelLoadError, selectedProvider)
+        const failure = describeModelLoadFailure(
+          modelLoadError,
+          selectedProvider
+        )
         return { headline: failure.title, detail: failure.description }
       }
       case 'ready':
@@ -148,8 +151,10 @@ export function InferenceServerStatusLine({
       data-test-id="inference-server-status-line"
       data-phase={status.phase}
       className={cn(
-        'truncate text-xs',
-        status.phase === 'failed' ? 'text-destructive' : 'text-muted-foreground',
+        'min-w-0 whitespace-normal break-words text-xs leading-normal',
+        status.phase === 'failed'
+          ? 'text-destructive'
+          : 'text-muted-foreground',
         className
       )}
       title={wording.detail ?? wording.headline}

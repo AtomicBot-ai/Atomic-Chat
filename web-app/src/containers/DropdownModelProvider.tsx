@@ -775,6 +775,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       <PopoverContent
         className={cn(
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
+          view === 'main' &&
+            'w-[28rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
             (pickerEmpty
               ? EMPTY_PANEL_CLASS
@@ -783,19 +785,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         align="end"
         side="top"
         sideOffset={8}
+        collisionPadding={view === 'main' ? 16 : undefined}
         avoidCollisions={
           view === 'main' || pickerEmpty || searchValue.length === 0
         }
       >
         {view === 'main' ? (
-          <div className="flex flex-col p-1.5">
+          <div className="flex min-w-0 flex-col p-4">
             {/* The model row: what is selected, and the way into the list. */}
             <button
               type="button"
               aria-label={t('common:changeModel')}
               data-test-id="model-picker-change"
               onClick={() => setView('models')}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors duration-200 hover:bg-secondary/40"
+              className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm py-1.5 text-left text-sm transition-colors duration-200 hover:bg-secondary/40"
             >
               {provider && (
                 <div className="shrink-0">
@@ -803,8 +806,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 </div>
               )}
               <span
+                title={displayModel}
                 className={cn(
-                  'truncate font-medium',
+                  'min-w-0 flex-1 truncate font-medium',
                   !selectedModel?.id && 'text-muted-foreground'
                 )}
               >
@@ -824,9 +828,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             </button>
             {/* ATO-535: what the engine is doing, spelled out. The dot above
                 carries the same state as colour; this is the reading of it. */}
-            <InferenceServerStatusLine className="px-2 pb-1" />
+            <InferenceServerStatusLine className="pb-1" />
             {/* Mounted with the panel, so a fresh open always starts settled. */}
-            <ReasoningEffortPanel className="mt-1 border-t px-2 pt-2 pb-1" />
+            <ReasoningEffortPanel className="mt-3 min-w-0 border-t pt-3" />
           </div>
         ) : (
           <div className="flex flex-col size-full">

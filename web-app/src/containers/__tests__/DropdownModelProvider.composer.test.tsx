@@ -89,8 +89,16 @@ vi.mock('@/components/ui/popover', () => ({
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="popover-trigger">{children}</div>
   ),
-  PopoverContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="popover-content">{children}</div>
+  PopoverContent: ({
+    children,
+    className,
+  }: {
+    children: React.ReactNode
+    className?: string
+  }) => (
+    <div data-testid="popover-content" className={className}>
+      {children}
+    </div>
   ),
 }))
 
@@ -245,6 +253,27 @@ describe('DropdownModelProvider - the composer pill', () => {
     )
     expect(searchField()).toBeNull()
     expect(screen.queryByText('other.gguf')).toBeNull()
+  })
+
+  it('gives settings a bounded reading column and exposes the full model title', () => {
+    selectModel({
+      ...thinkingModel,
+      displayName: 'Qwen 3 with a very long model name',
+    })
+    render(<DropdownModelProvider />)
+
+    expect(screen.getByTestId('popover-content')).toHaveClass(
+      'w-[28rem]',
+      'max-w-[calc(100vw-2rem)]'
+    )
+    expect(
+      within(modelRow()!).getByText('Qwen 3 with a very long model name')
+    ).toHaveAttribute('title', 'Qwen 3 with a very long model name')
+    expect(modelRow()).toHaveClass('min-w-0')
+    expect(screen.getByRole('slider')).toHaveAttribute(
+      'aria-valuetext',
+      'common:reasoningEffort.medium'
+    )
   })
 
   it('steps into the model list and back', () => {

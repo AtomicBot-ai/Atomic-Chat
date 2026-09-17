@@ -151,6 +151,15 @@ describe('InferenceServerStatusLine', () => {
     )
   })
 
+  it('lets the status explanation wrap rather than hiding it behind an ellipsis', () => {
+    render(<InferenceServerStatusLine />)
+
+    const line = byTestId('inference-server-status-line')
+    expect(line).not.toHaveClass('truncate')
+    expect(line).toHaveClass('whitespace-normal', 'break-words', 'min-w-0')
+    expect(line).toHaveTextContent('common:inferenceStatus.notLoaded')
+  })
+
   it('has nothing to report for a remote model', () => {
     seed({}, 'openai')
 
