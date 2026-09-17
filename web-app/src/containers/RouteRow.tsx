@@ -23,7 +23,7 @@ export const ROUTE_ROW_BUTTON_HOVER =
  * column.
  */
 export const ONBOARDING_ROW_ACTION_CLASS =
-  'w-[8.125rem] shrink-0 rounded-full px-3 text-xs'
+  'w-[7.5rem] shrink-0 rounded-full px-2 text-xs'
 
 export const ROUTE_ROW_ACTION_CLASS =
   'min-w-[9.25rem] shrink-0 rounded-full px-3'

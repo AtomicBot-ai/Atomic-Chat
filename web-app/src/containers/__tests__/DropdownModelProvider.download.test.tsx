@@ -218,7 +218,8 @@ const runningDownload = (id: string) => {
   } as never
 }
 
-const searchField = () => screen.getByPlaceholderText('common:searchModels')
+const searchField = () =>
+  screen.getByPlaceholderText('common:searchModelsHuggingFace')
 const list = () => screen.getByTestId('popover-content')
 const hubShortcut = () =>
   screen.queryByRole('button', { name: /common:downloadModel/ })
@@ -382,7 +383,10 @@ describe('DropdownModelProvider - downloading from the list', () => {
     )
     // (Found by its name: the repo id under it has made way for the readout.)
     const row = screen
-      .getByText('Qwen3 8B')
+      .getAllByText('Qwen3 8B')
+      .find((node) =>
+        node.closest('[data-testid="model-picker-hugging-face-row"]')
+      )!
       .closest('[data-testid="model-picker-hugging-face-row"]') as HTMLElement
     expect(
       within(row).getByRole('button', { name: 'common:cancelDownload' })
@@ -410,10 +414,9 @@ describe('DropdownModelProvider - downloading from the list', () => {
     expect(list()).not.toHaveTextContent(
       'common:modelPicker.searchingHuggingFace'
     )
-    // The search field and the way into the Hub are still there — the
-    // latter as the Hugging Face route row, not a second button under it.
+    // The search field remains the single Hugging Face entry point.
     expect(searchField()).toHaveValue('qwen')
-    expect(screen.getByTestId('model-picker-browse-hub')).toBeInTheDocument()
+    expect(screen.queryByTestId('model-picker-browse-hub')).toBeNull()
     expect(hubShortcut()).toBeNull()
   })
 
@@ -443,26 +446,22 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     render(<DropdownModelProvider />)
 
-    expect(list()).toHaveTextContent('qwen3.gguf')
+    expect(list()).toHaveTextContent('Qwen3')
     expect(hubShortcut()).toBeInTheDocument()
     expect(screen.queryByTestId('model-picker-empty')).toBeNull()
     expect(screen.queryByTestId('model-picker-routes')).toBeNull()
   })
 
-  it('leads to the Hub, the cloud gallery and the subscription sign-in from its route rows', async () => {
+  it('keeps Hugging Face in search and leads to cloud and subscription from its route rows', async () => {
     withProviders([emptyUpstream, unconnectedCloud, subscriptionProvider])
 
     render(<DropdownModelProvider />)
 
-    // Browsing carries the typed query into the Hub, as the old shortcut did.
-    fireEvent.change(searchField(), { target: { value: 'qwen' } })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'setup:cloudStep.huggingFaceTrigger' })
+    expect(searchField()).toHaveAttribute(
+      'placeholder',
+      'common:searchModelsHuggingFace'
     )
-    expect(mocks.navigate).toHaveBeenCalledWith({
-      to: '/hub/',
-      search: { q: 'qwen' },
-    })
+    expect(screen.queryByTestId('model-picker-browse-hub')).toBeNull()
 
     // "Add" opens the same gallery the reply gate and onboarding open.
     fireEvent.click(

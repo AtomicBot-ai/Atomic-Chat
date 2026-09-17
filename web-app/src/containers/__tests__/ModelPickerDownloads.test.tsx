@@ -189,13 +189,11 @@ function renderEmptyState(
   providers: ModelProvider[] = [unconnectedCloud(), subscriptionProvider()]
 ) {
   useModelProvider.setState({ providers })
-  const onBrowseHub = vi.fn()
   const onConnectCloud = vi.fn()
   const onConnectSubscription = vi.fn()
   const view = (q: string) => (
     <ModelPickerEmptyState
       query={q}
-      onBrowseHub={onBrowseHub}
       onConnectCloud={onConnectCloud}
       onConnectSubscription={onConnectSubscription}
     />
@@ -203,7 +201,6 @@ function renderEmptyState(
   const result = render(view(query))
   return {
     ...result,
-    onBrowseHub,
     onConnectCloud,
     onConnectSubscription,
     retype: (q: string) => result.rerender(view(q)),
@@ -216,7 +213,7 @@ const recommendedRows = () =>
   )
 
 const routeRows = () =>
-  within(screen.getByTestId('model-picker-routes')).getAllByTestId(
+  within(screen.getByTestId('model-picker-routes')).queryAllByTestId(
     /^model-picker-(browse-hub|subscription|cloud-key)$/
   )
 
@@ -461,12 +458,10 @@ describe('ModelPickerEmptyState', () => {
       recommended('AtomicChat/Qwen3.5-4B-GGUF', 'Qwen3.5 4B', '2.5 GB'),
     ])
 
-    const { onBrowseHub, onConnectCloud, onConnectSubscription } =
-      renderEmptyState()
+    const { onConnectCloud, onConnectSubscription } = renderEmptyState()
 
     const rows = routeRows()
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
-      'model-picker-browse-hub',
       'model-picker-subscription',
       'model-picker-cloud-key',
     ])
@@ -477,48 +472,33 @@ describe('ModelPickerEmptyState', () => {
         .compareDocumentPosition(screen.getByTestId('model-picker-routes'))
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
 
-    expect(rows[0]).toHaveTextContent('setup:cloudStep.huggingFaceTitle')
-    expect(rows[0]).toHaveTextContent('setup:cloudStep.huggingFaceHintGguf')
-    const browse = within(rows[0]).getByRole('button', {
-      name: 'setup:cloudStep.huggingFaceTrigger',
-    })
-    expect(browse).toHaveTextContent('setup:cloudStep.browse')
-    expect(rows[0].querySelector('img')).toHaveAttribute(
-      'src',
-      expect.stringMatching(/huggingface/)
-    )
-
-    expect(rows[1]).toHaveTextContent('setup:cloudStep.subscriptionTitle')
-    expect(rows[1]).toHaveTextContent('setup:cloudStep.subscriptionHint')
-    const connect = within(rows[1]).getByRole('button', {
+    expect(rows[0]).toHaveTextContent('setup:cloudStep.subscriptionTitle')
+    expect(rows[0]).toHaveTextContent('setup:cloudStep.subscriptionHint')
+    const connect = within(rows[0]).getByRole('button', {
       name: 'setup:cloudStep.subscriptionTrigger',
     })
     expect(connect).toHaveTextContent('setup:cloudStep.connect')
 
-    expect(rows[2]).toHaveTextContent('setup:cloudStep.providerTitle')
-    expect(rows[2]).toHaveTextContent('setup:cloudStep.providerHint')
-    const add = within(rows[2]).getByRole('button', {
+    expect(rows[1]).toHaveTextContent('setup:cloudStep.providerTitle')
+    expect(rows[1]).toHaveTextContent('setup:cloudStep.providerHint')
+    const add = within(rows[1]).getByRole('button', {
       name: 'setup:cloudStep.trigger',
     })
     expect(add).toHaveTextContent('setup:cloudStep.addApiKey')
 
-    fireEvent.click(browse)
     fireEvent.click(connect)
     fireEvent.click(add)
-    expect(onBrowseHub).toHaveBeenCalledTimes(1)
     expect(onConnectSubscription).toHaveBeenCalledTimes(1)
     expect(onConnectCloud).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps only the Hub route when no cloud route can do anything', () => {
+  it('shows no duplicate route when search itself is the Hugging Face entry point', () => {
     // No provider takes a key, and the sign-in cannot run on this platform.
     platform.chatgptSubscription = false
 
     renderEmptyState('', [subscriptionProvider()])
 
-    expect(routeRows().map((row) => row.getAttribute('data-testid'))).toEqual([
-      'model-picker-browse-hub',
-    ])
+    expect(routeRows()).toHaveLength(0)
     // Nothing recommended and nothing loading: the routes are the offer.
     expect(screen.queryByTestId('model-picker-recommended')).toBeNull()
   })

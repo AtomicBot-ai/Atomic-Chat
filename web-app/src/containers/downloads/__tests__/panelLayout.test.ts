@@ -69,6 +69,18 @@ describe('panelLayout', () => {
     expect(layout.listMax).toBe(208)
   })
 
+  it('keeps the corner when only the rounded composer edge touches its column', () => {
+    const wide = { width: 1969, height: 1280 }
+    // Panel begins at 1601; the composer reaches 1606 — a five-pixel touch,
+    // with every real composer control still well to the left.
+    const layout = panelLayout(
+      { top: 1080, bottom: 1180, left: 704, right: 1606, height: 100 },
+      wide
+    )
+    expect(layout.bottom).toBe(16)
+    expect(layout.listMax).toBe(208)
+  })
+
   it('shrinks the cap on a short window', () => {
     // 30% of the window, so the panel never dominates a small screen.
     const layout = panelLayout(null, { width: 1280, height: 600 })
