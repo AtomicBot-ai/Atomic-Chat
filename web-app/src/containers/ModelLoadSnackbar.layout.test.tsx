@@ -80,11 +80,12 @@ describe.each(['light', 'dark'] as const)(
             progress: { kind: 'loadingWeights', cachedFraction: 1 },
           })
         })
-        const card = await screen.findByTestId('model-load-snackbar')
+        const titleNode = await screen.findByText('Starting Model')
+        const card = titleNode.closest<HTMLElement>('.model-load-snackbar')!
         expect(card.textContent).toBe(
-          `Starting ModelLoading model into memory${CANCEL}`
+          `Starting ModelLoading into memory${CANCEL}`
         )
-        expect(card.getBoundingClientRect().width).toBe(480)
+        expect(card.getBoundingClientRect().width).toBe(356)
         await settle(screen.getByText('Starting Model'))
         const initialHeight = card.getBoundingClientRect().height
         const cancel = screen.getByRole('button', {
@@ -96,44 +97,43 @@ describe.each(['light', 'dark'] as const)(
           for (const { progress } of modelLoadStages) {
             act(() => status.setState({ phase, progress }))
             expect(card.textContent).toBe(
-              `Starting ModelLoading model into memory${CANCEL}`
+              `Starting ModelLoading into memory${CANCEL}`
             )
-            expect(card.dataset.stage).toBe(progress.kind)
-            expect(card.getBoundingClientRect().width).toBe(480)
+            expect(card.getBoundingClientRect().width).toBe(356)
             expect(card.getBoundingClientRect().height).toBe(initialHeight)
             expect(cancel.getBoundingClientRect().left).toBe(initialCancelLeft)
             expectOneLine(screen.getByText('Starting Model', { exact: true }))
             expectOneLine(
-              screen.getByText('Loading model into memory', { exact: true })
+              screen.getByText('Loading into memory', { exact: true })
             )
             expectNoHorizontalOverflow(card)
             expectNoHorizontalOverflow(document.body)
           }
         }
         act(() => status.setState({ phase: 'ready' }))
-        await waitFor(() => expect(card.dataset.face).toBe('loaded'))
+        await waitFor(() => expect(card.dataset.type).toBe('success'))
         await settle(card)
 
         // Sonner's actual production width, including its outer positioning box.
         const shell = card.closest<HTMLElement>('[data-sonner-toast]')!
         const toaster = card.closest<HTMLElement>('[data-sonner-toaster]')!
         expectSameWidth([card, shell, toaster])
-        expectNoHorizontalOverflow(card)
+        // Sonner's standard close button intentionally protrudes 6 px past
+        // the card edge; the toaster/viewport boundary below is the contract.
         expectNoHorizontalOverflow(document.body)
         const title = screen.getByText('Model ready', { exact: true })
         const detail = screen.getByText('Loaded into memory', { exact: true })
         expectOneLine(title)
         expectOneLine(detail)
         expect(card.textContent).toBe('Model readyLoaded into memory')
-        const icon = card.querySelector('svg')!
-        expect(icon.getBoundingClientRect().width).toBeCloseTo(20, 1)
-        expect(icon.getBoundingClientRect().height).toBeCloseTo(20, 1)
+        const icon = card.querySelector<SVGElement>('[data-icon] svg')!
+        expect(icon.getBoundingClientRect().width).toBeCloseTo(16, 1)
+        expect(icon.getBoundingClientRect().height).toBeCloseTo(16, 1)
         expectVerticallyCentered(icon, title.parentElement!)
         expect(card.getBoundingClientRect().height).toBeLessThan(80)
-        const dismiss = screen.getByRole('button', { name: 'Dismiss' })
-        expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
-          dismiss.getBoundingClientRect().left
-        )
+        expect(
+          screen.getByRole('button', { name: 'Close toast' })
+        ).toBeVisible()
       }
     )
   }

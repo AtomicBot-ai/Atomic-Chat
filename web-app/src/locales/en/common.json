@@ -740,7 +740,7 @@
     "starting": "Starting Model",
     "ready": "Model ready",
     "loadedIntoMemory": "Loaded into memory",
-    "loadingIntoMemory": "Loading model into memory",
+    "loadingIntoMemory": "Loading into memory",
     "cancel": "Cancel",
     "cancelling": "Cancelling…",
     "dismiss": "Dismiss",
