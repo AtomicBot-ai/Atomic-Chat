@@ -82,7 +82,15 @@ export function ModelLoadSnackbar() {
           dismissible: false,
           // The Toaster's default padding and background are for its own
           // layout; this one draws its own card.
-          style: { padding: 0, background: 'transparent', border: 'none' },
+          style: {
+            padding: 0,
+            background: 'transparent',
+            border: 'none',
+            // Leave room for enlarged text while staying inside narrow windows.
+            width: '30rem',
+            maxWidth: 'calc(100vw - 2rem)',
+            right: 0,
+          },
         }
       )
       shownRef.current = { id, face: 'loading' }
@@ -134,7 +142,6 @@ export function ModelLoadToast({
   const lastShown = useRef(status)
   if (isLoading(status) || status.phase === 'ready') lastShown.current = status
   const shown = lastShown.current
-  const model = prettyModelName(shown.modelId)
 
   if (shown.phase === 'ready') {
     return (
@@ -149,7 +156,9 @@ export function ModelLoadToast({
             className="shrink-0 text-green-600"
           />
         }
-        title={t('common:inferenceStatus.ready', { model })}
+        title={t('common:inferenceStatus.ready', {
+          model: prettyModelName(shown.modelId),
+        })}
       />
     )
   }
@@ -167,19 +176,14 @@ export function ModelLoadToast({
           className="shrink-0 animate-spin text-muted-foreground"
         />
       }
-      title={t(
-        shown.phase === 'restarting'
-          ? 'common:inferenceStatus.restarting'
-          : 'common:inferenceStatus.starting',
-        { model }
-      )}
+      title={t('common:modelLoad.starting')}
       detail={t(`common:modelLoad.stage.${modelLoadStageKey(progress)}`)}
       stage={progress.kind}
       action={
         <Button
           variant="ghost"
           size="sm"
-          className="shrink-0 text-muted-foreground"
+          className="h-auto min-h-8 w-28 shrink-0 px-2 py-1 leading-snug whitespace-normal [overflow-wrap:anywhere] text-muted-foreground"
           disabled={shown.cancelling}
           onClick={() => {
             void cancelModelLoad(serviceHub)
@@ -212,15 +216,15 @@ function SnackbarCard(props: {
       data-testid={props.testId}
       data-face={props.face}
       data-stage={props.stage}
-      className="relative flex w-[var(--width)] max-w-full items-center gap-3 rounded-xl border bg-background py-3 pr-9 pl-4 shadow-md"
+      className="relative flex w-full max-w-full items-center gap-3 rounded-xl border bg-background py-3 pr-9 pl-4 shadow-md"
     >
       {props.icon}
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium leading-5 break-words text-foreground">
+        <div className="text-sm font-medium leading-snug [overflow-wrap:anywhere] text-foreground">
           {props.title}
         </div>
         {props.detail && (
-          <div className="mt-0.5 text-xs leading-4 text-muted-foreground">
+          <div className="mt-0.5 text-xs leading-snug [overflow-wrap:anywhere] text-muted-foreground">
             {props.detail}
           </div>
         )}
