@@ -13,19 +13,31 @@ import {
   cleanup,
   fireEvent,
   within,
+  act,
+  waitFor,
 } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import { localStorageKey } from '@/constants/localStorage'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: vi.fn(),
+const selectionMocks = vi.hoisted(() => ({
+  switchToModel: vi.fn(() => Promise.resolve()),
 }))
+vi.mock('@/utils/switchModel', () => ({
+  switchToModel: selectionMocks.switchToModel,
+}))
+vi.mock('@/hooks/useModelProvider', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/hooks/useModelProvider')>()
+  return { useModelProvider: Object.assign(vi.fn(), actual.useModelProvider) }
+})
 
 // The component subscribes with selectors, so the mock has to apply them.
 const mockModelProvider = (state: Record<string, unknown>) => {
@@ -145,6 +157,7 @@ describe('DropdownModelProvider - the composer pill', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    useModelLoad.setState({ modelSelectionDeferred: false })
     seedServiceHub({
       models: {
         checkMmprojExists: vi.fn().mockResolvedValue(false),
@@ -168,6 +181,48 @@ describe('DropdownModelProvider - the composer pill', () => {
   afterEach(() => {
     cleanup()
   })
+
+  it.each([false, true])(
+    'keeps Select Model after Skip with preload %s, including library refresh and remount',
+    async (preload) => {
+      const { useModelProvider: realStore } = await vi.importActual<
+        typeof import('@/hooks/useModelProvider')
+      >('@/hooks/useModelProvider')
+      vi.mocked(useModelProvider).mockImplementation(realStore)
+      realStore.setState({
+        providers: providers as ModelProvider[],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      useGeneralSetting.setState({ preloadModelOnStartup: preload })
+      useModelLoad.setState({ modelSelectionDeferred: true })
+
+      const first = render(<DropdownModelProvider />)
+      await act(async () => {})
+      expect(pill()).toHaveTextContent('common:selectAModel')
+      expect(realStore.getState().selectedModel).toBeNull()
+      await act(async () =>
+        realStore.getState().setProviders([...providers] as ModelProvider[])
+      )
+      first.unmount()
+      render(<DropdownModelProvider />)
+      await act(async () => {})
+      expect(pill()).toHaveTextContent('common:selectAModel')
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(selectionMocks.switchToModel).not.toHaveBeenCalled()
+      expect(useGeneralSetting.getState().preloadModelOnStartup).toBe(preload)
+
+      fireEvent.click(screen.getByText('Qwen 3'))
+      await waitFor(() => expect(pill()).toHaveTextContent('Qwen 3'))
+      expect(realStore.getState().selectedModel?.id).toBe(thinkingModel.id)
+      expect(selectionMocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: thinkingModel.id,
+          providerName: 'llamacpp-upstream',
+        })
+      )
+    }
+  )
 
   it('names the model and its reasoning level', () => {
     render(<DropdownModelProvider />)
