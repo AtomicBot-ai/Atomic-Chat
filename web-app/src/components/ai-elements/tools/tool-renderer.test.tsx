@@ -260,7 +260,7 @@ describe('ToolRenderer friendly activity', () => {
     expect(container).not.toHaveTextContent(path)
     await userEvent.click(screen.getByRole('button'))
     expect(screen.getByText('Parameters')).toBeInTheDocument()
-    expect(screen.getByText('os.fs.write')).toBeInTheDocument()
+    expect(screen.queryByText('os.fs.write')).not.toBeInTheDocument()
     expect(container).toHaveTextContent(path)
     expect(container).toHaveTextContent(`Permission denied: ${path}`)
   })

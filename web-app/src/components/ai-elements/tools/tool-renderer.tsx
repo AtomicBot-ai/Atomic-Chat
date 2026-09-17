@@ -110,7 +110,6 @@ export function ToolRenderer({
       </CollapsibleTrigger>
 
       <ToolContent>
-        <p className="mb-2 break-all font-mono text-xs">{toolName}</p>
         {presentation.kind === 'web_search_exa' && (
           <WebSearchToolRenderer presentation={presentation} />
         )}
