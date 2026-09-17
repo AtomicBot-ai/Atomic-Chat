@@ -17,11 +17,13 @@ export const ROUTE_ROW_BUTTON_HOVER =
  * buttons of one list read as one column whatever their labels say. A row
  * that draws its own button (the onboarding's model rows) uses this too.
  *
- * A fixed slot includes the longest English state (Downloading…) at Extra
- * Large. Longer translations truncate inside it without widening a row.
+ * A fixed slot includes the longest onboarding action, "Add API Key", at
+ * Extra Large. Longer translations truncate inside it without widening a
+ * row. Keep this deliberately compact: these are actions, not a second text
+ * column.
  */
 export const ONBOARDING_ROW_ACTION_CLASS =
-  'w-[8.5rem] shrink-0 rounded-full px-3 text-xs'
+  'w-[7.5rem] shrink-0 rounded-full px-3 text-xs'
 
 export const ROUTE_ROW_ACTION_CLASS =
   'min-w-[9.25rem] shrink-0 rounded-full px-3'
