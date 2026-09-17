@@ -16,11 +16,13 @@ import {
   within,
 } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { useNavigate } from '@tanstack/react-router'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
 import { resetModelPickerDownloadsForTest } from '../ModelPickerDownloads'
+import type { AuthService } from '@/services/auth/types'
 import type { CatalogModel, ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -90,6 +92,9 @@ const mocks = {
   fetchHuggingFaceRepo: vi.fn(),
   convertHfRepoToCatalogModel: vi.fn(),
   pullModelWithMetadata: vi.fn(),
+  abortDownload: vi.fn(() => Promise.resolve()),
+  chatgptStatus: vi.fn(() => Promise.resolve({ connected: false })),
+  navigate: vi.fn(),
 }
 
 /** An engine that is on but has nothing downloaded yet. */
@@ -165,8 +170,55 @@ const resolvedRepo: CatalogModel = {
   ],
 }
 
+/** A cloud provider that takes a key, with none pasted yet. */
+const unconnectedCloud = {
+  provider: 'openai',
+  active: true,
+  api_key: '',
+  models: [],
+  settings: [
+    {
+      key: 'api-key',
+      title: 'API key',
+      description: '',
+      controller_type: 'input',
+      controller_props: { value: '' },
+    },
+  ],
+}
+
+/** The subscription entry, present but not signed into. */
+const subscriptionProvider = {
+  provider: 'chatgpt',
+  active: true,
+  models: [],
+  settings: [],
+}
+
+const GB = 1024 ** 3
+
+/** A transfer part-way through, as the download panel sees it. */
+const runningDownload = (id: string) => {
+  const total = Math.round(1.58 * GB)
+  const current = Math.round(0.16 * GB)
+  return {
+    id,
+    name: id,
+    progress: 0.1,
+    current,
+    total,
+    speed: {
+      bytesPerSecond: (total - current) / 60,
+      atBytes: current,
+      atTime: Date.now(),
+    },
+  } as never
+}
+
 const searchField = () => screen.getByPlaceholderText('common:searchModels')
 const list = () => screen.getByTestId('popover-content')
+const hubShortcut = () =>
+  screen.queryByRole('button', { name: /common:downloadModel/ })
 
 describe('DropdownModelProvider - downloading from the list', () => {
   beforeAll(() => {
@@ -191,6 +243,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
       items: [],
       isLoading: false,
     })
+    vi.mocked(useNavigate).mockReturnValue(mocks.navigate as never)
     seedServiceHub({
       models: {
         checkMmprojExists: vi.fn().mockResolvedValue(false),
@@ -202,7 +255,11 @@ describe('DropdownModelProvider - downloading from the list', () => {
         fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
         convertHfRepoToCatalogModel: mocks.convertHfRepoToCatalogModel,
         pullModelWithMetadata: mocks.pullModelWithMetadata,
+        abortDownload: mocks.abortDownload,
       } as unknown as ModelsService,
+      auth: {
+        chatgptStatus: mocks.chatgptStatus,
+      } as unknown as AuthService,
     })
     withProviders([emptyUpstream])
   })
@@ -221,22 +278,29 @@ describe('DropdownModelProvider - downloading from the list', () => {
     render(<DropdownModelProvider />)
 
     // The list opens straight away with nothing to pick; instead of a blank
-    // panel it shows the same rows the blocked-send widget recommends.
-    expect(list()).toHaveTextContent('chat:replyGate.recommendedForDevice')
-    const row = screen.getByText('Qwen3.5 4B').closest('[data-testid]')!
-    const button = within(row as HTMLElement).getByRole('button', {
+    // panel it shows the reply gate's list: the recommended models under
+    // their label, each with its mark and the size on its button.
+    expect(list()).toHaveTextContent('setup:recommend.title')
+    const row = screen.getByTestId('model-picker-recommended-lead')
+    expect(row.querySelector('img')).toHaveAttribute(
+      'src',
+      expect.stringMatching(/qwen/)
+    )
+    const button = within(row).getByRole('button', {
       name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
     })
-    // The verb alone; the size stays off the button.
-    expect(button).toHaveTextContent(/^chat:replyGate\.download$/)
+    expect(button).toHaveTextContent(
+      'common:modelPicker.downloadSize:{"size":"2.5 GB"}'
+    )
 
     fireEvent.click(button)
 
     expect(lead.start).toHaveBeenCalledTimes(1)
-    // The way into the Hub for browsing is still at the bottom.
-    expect(
-      screen.getByRole('button', { name: /common:downloadModel/ })
-    ).toBeInTheDocument()
+    // The other ways to get a model sit under the list, as in the reply
+    // gate — and the panel is the download, so no second "Download a model"
+    // row under it.
+    expect(screen.getByTestId('model-picker-routes')).toBeInTheDocument()
+    expect(hubShortcut()).toBeNull()
   })
 
   it('shows a recommended row as downloading while its download runs', () => {
@@ -246,27 +310,39 @@ describe('DropdownModelProvider - downloading from the list', () => {
     })
     useDownloadStore.setState({
       downloads: {
-        'AtomicChat/Qwen3_5-4B-Q4_K_M': {
-          id: 'AtomicChat/Qwen3_5-4B-Q4_K_M',
-          name: 'AtomicChat/Qwen3_5-4B-Q4_K_M',
-          progress: 0.42,
-          current: 42,
-          total: 100,
-          speed: { bytesPerSecond: 0, samples: [] } as never,
-        },
+        'AtomicChat/Qwen3_5-4B-Q4_K_M': runningDownload(
+          'AtomicChat/Qwen3_5-4B-Q4_K_M'
+        ),
       },
     })
 
     render(<DropdownModelProvider />)
 
-    expect(list()).toHaveTextContent(
-      'chat:replyGate.downloadingPercent:{"percent":42}'
+    // The panel's readout in the row's hint, and Cancel where Download was.
+    const row = screen.getByTestId('model-picker-recommended-lead')
+    expect(row).toHaveTextContent(
+      '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
     )
+    const cancel = within(row).getByRole('button', {
+      name: 'common:cancelDownload',
+    })
+    expect(cancel).toHaveTextContent('common:cancel')
     expect(
-      screen.getByRole('button', {
+      within(row).queryByRole('button', {
         name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
       })
-    ).toBeDisabled()
+    ).toBeNull()
+
+    fireEvent.click(cancel)
+
+    expect(mocks.abortDownload).toHaveBeenCalledWith(
+      'AtomicChat/Qwen3_5-4B-Q4_K_M'
+    )
+    expect(
+      useDownloadStore
+        .getState()
+        .resumableDownloads.has('AtomicChat/Qwen3_5-4B-Q4_K_M')
+    ).toBe(true)
   })
 
   it('finds GGUF builds on Hugging Face when the search has no local match', async () => {
@@ -310,14 +386,23 @@ describe('DropdownModelProvider - downloading from the list', () => {
     expect(useDownloadStore.getState().localDownloadingModels).toContain(
       'unsloth/Qwen3-8B-Q4_K_M'
     )
+    // Before the first byte the row carries the downloader's status word,
+    // and its button has become the panel's Cancel.
     await waitFor(() =>
-      expect(list()).toHaveTextContent('chat:replyGate.downloading')
+      expect(list()).toHaveTextContent('common:downloadPanel.preparing')
     )
+    // (Found by its name: the repo id under it has made way for the readout.)
+    const row = screen
+      .getByText('Qwen3 8B')
+      .closest('[data-testid="model-picker-hugging-face-row"]') as HTMLElement
     expect(
-      screen.getByRole('button', {
+      within(row).getByRole('button', { name: 'common:cancelDownload' })
+    ).toHaveTextContent('common:cancel')
+    expect(
+      within(row).queryByRole('button', {
         name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"}',
       })
-    ).toBeDisabled()
+    ).toBeNull()
   })
 
   it('says so when Hugging Face cannot be reached, without giving up the list', async () => {
@@ -336,11 +421,11 @@ describe('DropdownModelProvider - downloading from the list', () => {
     expect(list()).not.toHaveTextContent(
       'common:modelPicker.searchingHuggingFace'
     )
-    // The search field and the way into the Hub are still there.
+    // The search field and the way into the Hub are still there — the
+    // latter as the Hugging Face route row, not a second button under it.
     expect(searchField()).toHaveValue('qwen')
-    expect(
-      screen.getByRole('button', { name: /common:downloadModel/ })
-    ).toBeInTheDocument()
+    expect(screen.getByTestId('model-picker-browse-hub')).toBeInTheDocument()
+    expect(hubShortcut()).toBeNull()
   })
 
   it('keeps "no models found" for a query neither side can answer', async () => {
@@ -357,5 +442,62 @@ describe('DropdownModelProvider - downloading from the list', () => {
     expect(list()).not.toHaveTextContent(
       'common:modelPicker.searchingHuggingFace'
     )
+  })
+
+  it('keeps the Hub shortcut, and no download panel, once there is a model to pick', () => {
+    withProviders([
+      {
+        ...emptyUpstream,
+        models: [{ id: 'qwen3.gguf', capabilities: ['completion'] }],
+      },
+    ])
+
+    render(<DropdownModelProvider />)
+
+    expect(list()).toHaveTextContent('qwen3.gguf')
+    expect(hubShortcut()).toBeInTheDocument()
+    expect(screen.queryByTestId('model-picker-empty')).toBeNull()
+    expect(screen.queryByTestId('model-picker-routes')).toBeNull()
+  })
+
+  it('leads to the Hub, the cloud gallery and the subscription sign-in from its route rows', async () => {
+    withProviders([emptyUpstream, unconnectedCloud, subscriptionProvider])
+
+    render(<DropdownModelProvider />)
+
+    // Browsing carries the typed query into the Hub, as the old shortcut did.
+    fireEvent.change(searchField(), { target: { value: 'qwen' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'setup:cloudStep.huggingFaceTrigger' })
+    )
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: '/hub/',
+      search: { q: 'qwen' },
+    })
+
+    // "Add" opens the same gallery the reply gate and onboarding open.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'setup:cloudStep.trigger' })
+    )
+    expect(
+      await screen.findByText('setup:cloudStep.galleryTitle')
+    ).toBeInTheDocument()
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('setup:cloudStep.galleryTitle')).toBeNull()
+    )
+
+    // "Connect" lands on the sign-in itself, not on the gallery.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'setup:cloudStep.subscriptionTrigger',
+      })
+    )
+    expect(
+      await screen.findByText('setup:cloudStep.subscriptionDescription')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('setup:cloudStep.galleryTitle')).toBeNull()
   })
 })

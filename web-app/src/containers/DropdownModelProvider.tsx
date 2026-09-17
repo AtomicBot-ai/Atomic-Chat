@@ -50,8 +50,25 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import {
   HuggingFacePicks,
-  RecommendedPicks,
+  ModelPickerEmptyState,
 } from '@/containers/ModelPickerDownloads'
+import {
+  AddCloudProviderDialog,
+  type CloudProviderSaveResult,
+} from '@/containers/dialogs/AddCloudProviderDialog'
+
+/** The subscription the empty list offers by name — the reply gate's. */
+const SUBSCRIPTION_PROVIDER = 'chatgpt'
+
+/**
+ * The panel with nothing to pick: the reply gate's list, so it takes the
+ * reply gate's width, and a height that does not follow its contents. The
+ * panel hangs off the composer pill by its bottom edge, so a height that
+ * changed with the rows — a status line, then six results, then the
+ * recommendations again — moved its top edge with every keystroke.
+ */
+const EMPTY_PANEL_CLASS =
+  'w-[32rem] max-w-[calc(100vw-2rem)] h-[min(36rem,calc(100vh-8rem))]'
 
 /**
  * Which providers may list models in the picker.
@@ -432,6 +449,36 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     })
   }, [navigate, searchValue])
 
+  // The cloud routes of the empty list open the same dialog the reply gate
+  // and onboarding open. It lives beside the panel, not in it: the panel
+  // closes as the dialog takes focus, and a dialog inside it would go too.
+  const [cloudDialog, setCloudDialog] = useState<{
+    open: boolean
+    /** Set to land on one provider's sign-in instead of the gallery. */
+    provider?: string
+  }>({ open: false })
+
+  const openCloudDialog = useCallback(
+    (provider?: string) => {
+      onOpenChange(false)
+      setCloudDialog({ open: true, provider })
+    },
+    [onOpenChange]
+  )
+
+  // A key saved, or a subscription signed in: pick the provider's model the
+  // way the reply gate does, and let `switchToModel` register it.
+  const handleCloudConnected = useCallback(
+    ({ providerName, modelId }: CloudProviderSaveResult) => {
+      if (!modelId) return
+      selectModelProvider(providerName, modelId)
+      switchToModel({ modelId, providerName, serviceHub }).catch((error) => {
+        console.error('[DropdownModelProvider] cloud switch failed:', error)
+      })
+    },
+    [selectModelProvider, serviceHub]
+  )
+
   // Create searchable items from all models
   const searchableItems = useMemo(() => {
     const items: SearchableModel[] = []
@@ -469,6 +516,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
     return items
   }, [providers])
+
+  // Nothing to pick at all — no local model downloaded, no cloud provider
+  // connected. The list is then the reply gate's download panel, whatever
+  // is typed: a search has nothing local to filter and answers from
+  // Hugging Face instead.
+  const pickerEmpty = searchableItems.length === 0
 
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
@@ -717,12 +770,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       <PopoverContent
         className={cn(
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
-          view === 'models' && searchValue.length === 0 && 'h-80'
+          view === 'models' &&
+            (pickerEmpty
+              ? EMPTY_PANEL_CLASS
+              : searchValue.length === 0 && 'h-80')
         )}
         align="end"
         side="top"
         sideOffset={8}
-        avoidCollisions={view === 'main' || searchValue.length === 0}
+        avoidCollisions={
+          view === 'main' || pickerEmpty || searchValue.length === 0
+        }
       >
         {view === 'main' ? (
           <div className="flex flex-col p-1.5">
@@ -796,9 +854,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               )}
             </div>
 
-            {/* Model list */}
-            <div className="max-h-80 overflow-y-auto">
-              <div className="py-1">
+            {/* Model list. With nothing to pick it fills the panel's fixed
+                height and scrolls inside it. */}
+            <div
+              className={cn(
+                'overflow-y-auto',
+                pickerEmpty ? 'min-h-0 flex-1' : 'max-h-80'
+              )}
+            >
+              <div className={cn(!pickerEmpty && 'py-1')}>
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
                   <div className="bg-secondary/30 rounded-sm m-2 py-1">
@@ -968,42 +1032,63 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                   )
                 })}
 
-                {/* Nothing to pick and nothing typed: the list would be a
-                      blank panel, so it offers the same downloads the
-                      blocked-send widget recommends for this device. */}
-                {!searchValue &&
-                  favoriteItems.length === 0 &&
-                  Object.keys(groupedItems).length === 0 && (
-                    <RecommendedPicks />
-                  )}
-
-                {/* Under the local matches, Hugging Face's GGUF repos for
-                      the query — a search with no local hit was a dead end
+                {/* Nothing to pick: the list would be a blank panel, so it
+                      is the reply gate's — the models recommended for this
+                      device, the other ways to get one, and Hugging Face's
+                      answer to whatever is typed. Otherwise, under the
+                      local matches, Hugging Face's GGUF repos for the
+                      query — a search with no local hit was a dead end
                       ("No models found") with nothing to download from. */}
-                {searchValue && (
-                  <HuggingFacePicks
+                {pickerEmpty ? (
+                  <ModelPickerEmptyState
                     query={searchValue}
-                    localEmpty={Object.keys(groupedItems).length === 0}
+                    onBrowseHub={onDownloadModel}
+                    onConnectCloud={() => openCloudDialog()}
+                    onConnectSubscription={() =>
+                      openCloudDialog(SUBSCRIPTION_PROVIDER)
+                    }
                   />
+                ) : (
+                  searchValue && (
+                    <HuggingFacePicks
+                      query={searchValue}
+                      localEmpty={Object.keys(groupedItems).length === 0}
+                    />
+                  )
                 )}
               </div>
             </div>
 
             {/* Download CTA — shortcut into the Hub so users can grab a local
-              model without leaving the selector first. */}
-            <div className="border-t p-1.5 mt-auto">
-              <button
-                type="button"
-                onClick={onDownloadModel}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
-              >
-                <IconDownload size={16} className="shrink-0" />
-                <span>{t('common:downloadModel')}</span>
-              </button>
-            </div>
+              model without leaving the selector first. Not with nothing to
+              pick: that panel is the download, and its Hugging Face row is
+              the way into the Hub. */}
+            {!pickerEmpty && (
+              <div className="border-t p-1.5 mt-auto">
+                <button
+                  type="button"
+                  onClick={onDownloadModel}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
+                >
+                  <IconDownload size={16} className="shrink-0" />
+                  <span>{t('common:downloadModel')}</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </PopoverContent>
+
+      {/* Beside the panel, not in it (`Popover` renders no element of its
+            own): the panel closes as this takes focus, and a dialog inside
+            it would go with it. */}
+      <AddCloudProviderDialog
+        open={cloudDialog.open}
+        onOpenChange={(open) => setCloudDialog((prev) => ({ ...prev, open }))}
+        onKeySaved={handleCloudConnected}
+        initialProviderName={cloudDialog.provider}
+        duringOnboarding={false}
+      />
     </Popover>
   )
 })
