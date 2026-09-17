@@ -4,12 +4,13 @@ Operating instructions for AI coding agents in this repository.
 Everything here applies to **every** task. Anything that applies only sometimes
 lives behind a link — follow the link when the task needs it.
 
-| Need                                    | Go to                                            |
-| --------------------------------------- | ------------------------------------------------ |
+| Need                                    | Go to                                                |
+| --------------------------------------- | ---------------------------------------------------- |
 | Why something is built the way it is    | [`docs/decisions/INDEX.md`](docs/decisions/INDEX.md) |
-| Dev loop, data folders, troubleshooting | [`DEVELOP.md`](DEVELOP.md)                        |
-| Product overview, install, API examples | [`README.md`](README.md)                          |
-| Contribution conventions                | [`CONTRIBUTING.md`](CONTRIBUTING.md)              |
+| UI layout and real-browser checks       | [`docs/ui-layout-rules.md`](docs/ui-layout-rules.md) |
+| Dev loop, data folders, troubleshooting | [`DEVELOP.md`](DEVELOP.md)                           |
+| Product overview, install, API examples | [`README.md`](README.md)                             |
+| Contribution conventions                | [`CONTRIBUTING.md`](CONTRIBUTING.md)                 |
 
 ---
 
@@ -29,22 +30,22 @@ much of the tree still carries `jan*` / `@janhq/*` names — see §4.
 
 ## 2. Repository map
 
-| Path                                      | What lives there                                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| `web-app/`                                | Frontend: React + Vite + TanStack Router, Tailwind, shadcn. Workspace `@janhq/web-app`. |
-| `web-app/src/routes/launch/`              | "Launch" page — install/configure external coding agents against the local API. Catalog: `web-app/src/constants/integrations.ts`; commands: `src-tauri/src/core/system/commands.rs`. |
-| `core/`                                   | Shared TS core: types, browser runtime, extension contracts. Built + `yarn pack`'d, consumed by extensions. |
-| `extensions/`                             | Pluggable backend extensions (TS, rolldown-bundled). Each has `src/`, `package.json`, `settings.json`. |
-| `extensions/llamacpp-extension/`          | Driver for our `atomic-llama-cpp-turboquant` fork. All desktop platforms.             |
-| `extensions/llamacpp-upstream-extension/` | Driver for stock `ggml-org/llama.cpp`. Provider id `llamacpp-upstream`. All platforms. |
-| `extensions/mlx-extension/`               | Driver for the MLX-VLM backend. Apple Silicon only.                                   |
-| `extensions/foundation-models-extension/` | Driver for Apple Foundation Models (macOS/iOS).                                       |
-| `src-tauri/`                              | Rust/Tauri shell: `src/lib.rs`, `src/main.rs`, plugins, capabilities, bundle configs.  |
-| `mlx-server/`, `foundation-models-server/`| Legacy MLX Swift source + Foundation Models Swift sidecar. Production MLX downloads the `mlx-vlm` PyInstaller binary. |
-| `pre-install/`                            | Pre-built extension tarballs bundled into the installer. Still named `janhq-*-*.tgz` (legacy, load-bearing). |
-| `scripts/`                                | Build, packaging, signing, download helpers.                                          |
-| `docs/`                                   | Public docs site (Next.js/MDX) + `docs/decisions/` (ADR log).                          |
-| `benchmarks/`, `autoqa/`, `tests/`        | Throughput benchmarks, automated QA harness, top-level Vitest.                         |
+| Path                                       | What lives there                                                                                                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `web-app/`                                 | Frontend: React + Vite + TanStack Router, Tailwind, shadcn. Workspace `@janhq/web-app`.                                                                                              |
+| `web-app/src/routes/launch/`               | "Launch" page — install/configure external coding agents against the local API. Catalog: `web-app/src/constants/integrations.ts`; commands: `src-tauri/src/core/system/commands.rs`. |
+| `core/`                                    | Shared TS core: types, browser runtime, extension contracts. Built + `yarn pack`'d, consumed by extensions.                                                                          |
+| `extensions/`                              | Pluggable backend extensions (TS, rolldown-bundled). Each has `src/`, `package.json`, `settings.json`.                                                                               |
+| `extensions/llamacpp-extension/`           | Driver for our `atomic-llama-cpp-turboquant` fork. All desktop platforms.                                                                                                            |
+| `extensions/llamacpp-upstream-extension/`  | Driver for stock `ggml-org/llama.cpp`. Provider id `llamacpp-upstream`. All platforms.                                                                                               |
+| `extensions/mlx-extension/`                | Driver for the MLX-VLM backend. Apple Silicon only.                                                                                                                                  |
+| `extensions/foundation-models-extension/`  | Driver for Apple Foundation Models (macOS/iOS).                                                                                                                                      |
+| `src-tauri/`                               | Rust/Tauri shell: `src/lib.rs`, `src/main.rs`, plugins, capabilities, bundle configs.                                                                                                |
+| `mlx-server/`, `foundation-models-server/` | Legacy MLX Swift source + Foundation Models Swift sidecar. Production MLX downloads the `mlx-vlm` PyInstaller binary.                                                                |
+| `pre-install/`                             | Pre-built extension tarballs bundled into the installer. Still named `janhq-*-*.tgz` (legacy, load-bearing).                                                                         |
+| `scripts/`                                 | Build, packaging, signing, download helpers.                                                                                                                                         |
+| `docs/`                                    | Public docs site (Next.js/MDX) + `docs/decisions/` (ADR log).                                                                                                                        |
+| `benchmarks/`, `autoqa/`, `tests/`         | Throughput benchmarks, automated QA harness, top-level Vitest.                                                                                                                       |
 
 Our own upstream repos, checked out next to this one under `/Users/misha/Work/Atomic/`:
 
@@ -57,11 +58,11 @@ Our own upstream repos, checked out next to this one under `/Users/misha/Work/At
 
 **Which llama.cpp ships where:**
 
-| Platform | Provider(s) | Default / GPU policy |
-| -------- | ----------- | -------------------- |
-| macOS | `llamacpp` (our fork) **+** `llamacpp-upstream` | upstream is the default; MLX is separate on Apple Silicon |
-| Windows | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; CUDA/ROCm/Vulkan tiers are provider-specific |
-| Linux | `llamacpp-upstream` **+** optional `llamacpp` | upstream is the default; upstream GPU = Vulkan only, `llamacpp` adds CUDA/ROCm |
+| Platform | Provider(s)                                     | Default / GPU policy                                                           |
+| -------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| macOS    | `llamacpp` (our fork) **+** `llamacpp-upstream` | upstream is the default; MLX is separate on Apple Silicon                      |
+| Windows  | `llamacpp-upstream` **+** optional `llamacpp`   | upstream is the default; CUDA/ROCm/Vulkan tiers are provider-specific          |
+| Linux    | `llamacpp-upstream` **+** optional `llamacpp`   | upstream is the default; upstream GPU = Vulkan only, `llamacpp` adds CUDA/ROCm |
 
 Consequences you must respect:
 
@@ -74,7 +75,7 @@ Consequences you must respect:
 - Release builds bundle both provider trees on Windows/Linux.
   `download-llamacpp-backend-if-exists` remains a no-op on Windows and skips on
   Linux, but the release-specific download paths are active there.
-- The optimal backend is a property of a provider *and* its pinned release, not
+- The optimal backend is a property of a provider _and_ its pinned release, not
   of the GPU. On Linux `llamacpp` picks CUDA 13.3 → CUDA 12.4 → ROCm → Vulkan →
   CPU, while `llamacpp-upstream` stays Vulkan → CPU on the same hardware,
   because ggml-org publishes no Linux CUDA/ROCm artifact. Never widen one
@@ -93,8 +94,8 @@ dflash|eagle3|mtp`; KV quantization uses `--kv-bits` / `--kv-quant-scheme`.
 **Apple Foundation Models**: macOS/iOS only. Out of scope unless asked.
 
 Details, flags and the reasoning behind each of these choices are in
-[`docs/decisions/INDEX.md`](docs/decisions/INDEX.md) — sections *llama.cpp
-providers*, *Speculative decoding*, *MLX*.
+[`docs/decisions/INDEX.md`](docs/decisions/INDEX.md) — sections _llama.cpp
+providers_, _Speculative decoding_, _MLX_.
 
 ---
 
@@ -104,16 +105,16 @@ Legacy `jan*` names are load-bearing for installer migrations, pre-install
 tarball paths, Windows APPDATA folders and the bundle-id split. Renaming them
 opportunistically breaks existing user installs.
 
-| Surface                  | Value                  | Rule                        |
-| ------------------------ | ---------------------- | --------------------------- |
-| Root `package.json` name | `jan-app`              | leave — rename = migration  |
-| Web app workspace        | `@janhq/web-app`       | leave                       |
+| Surface                  | Value                  | Rule                         |
+| ------------------------ | ---------------------- | ---------------------------- |
+| Root `package.json` name | `jan-app`              | leave — rename = migration   |
+| Web app workspace        | `@janhq/web-app`       | leave                        |
 | Pre-install tarballs     | `janhq-*-*.tgz`        | leave — installer expects it |
-| Tauri CLI binary         | `jan-cli`              | leave                       |
-| `Cargo.toml` repo URL    | `github.com/janhq/jan` | leave                       |
-| Tauri bundle id          | `chat.atomic.app`      | use this                    |
-| Cargo crate              | `Atomic-Chat`          | use this                    |
-| Product name             | `Atomic Chat`          | use this                    |
+| Tauri CLI binary         | `jan-cli`              | leave                        |
+| `Cargo.toml` repo URL    | `github.com/janhq/jan` | leave                        |
+| Tauri bundle id          | `chat.atomic.app`      | use this                     |
+| Cargo crate              | `Atomic-Chat`          | use this                     |
+| Product name             | `Atomic Chat`          | use this                     |
 
 **All new** modules, packages, env vars, log prefixes, CLI subcommands,
 telemetry events, user-facing strings and docs use `atomic` / `Atomic Chat`.
@@ -163,7 +164,7 @@ defaults on conflict.
 6. **No new top-level folders, config files or runtime dependencies** without
    the user's explicit "ok" (name + reason first).
 7. **No destructive commands** — `rm -rf`, `git push --force`, `cargo clean
-   --release`, deleting user data folders — without explicit confirmation.
+--release`, deleting user data folders — without explicit confirmation.
 8. **Record non-trivial decisions** as a new file in `docs/decisions/`
    (architecture, backend selection, perf trade-off, security default, schema
    or migration). Same session, before you finish. See §7.
