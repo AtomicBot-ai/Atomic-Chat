@@ -79,6 +79,8 @@ export type HuggingFaceFeedFormat = 'gguf' | 'mlx'
 export type HuggingFaceFeedParams = {
   format: HuggingFaceFeedFormat
   sort: HuggingFaceFeedSort
+  /** Optional Hugging Face full-text search, paginated with the same cursor. */
+  search?: string
   /** Opaque cursor from the previous page's `nextCursor`. */
   cursor?: string | null
   limit?: number

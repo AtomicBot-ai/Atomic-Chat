@@ -362,6 +362,7 @@ export class DefaultModelsService implements ModelsService {
   async listHuggingFaceFeed({
     format,
     sort,
+    search,
     cursor,
     limit = HUGGING_FACE_FEED_LIMIT,
     hfToken,
@@ -372,6 +373,7 @@ export class DefaultModelsService implements ModelsService {
       direction: '-1',
       limit: String(limit),
     })
+    if (search?.trim()) params.set('search', search.trim())
     if (cursor) params.set('cursor', cursor)
     const url = `https://huggingface.co/api/models?${params.toString()}`
     // The next page lives in the `Link` header. Hugging Face exposes it to

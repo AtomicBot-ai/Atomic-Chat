@@ -1381,13 +1381,14 @@ describe('listHuggingFaceFeed', () => {
     const page = await service.listHuggingFaceFeed({
       format: 'mlx',
       sort: 'downloads',
+      search: 'uncensored',
       cursor: 'abc',
       limit: 20,
       hfToken: 'hf_test',
     })
 
     expect(fetch).toHaveBeenCalledWith(
-      'https://huggingface.co/api/models?filter=mlx&sort=downloads&direction=-1&limit=20&cursor=abc',
+      'https://huggingface.co/api/models?filter=mlx&sort=downloads&direction=-1&limit=20&search=uncensored&cursor=abc',
       { headers: { Authorization: 'Bearer hf_test' } }
     )
     expect(page.nextCursor).toBeNull()

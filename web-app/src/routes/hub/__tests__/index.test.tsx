@@ -120,13 +120,13 @@ vi.mock('@/hooks/useHardware', () => ({
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
-    models: () => ({
-      fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
-      searchHuggingFaceCandidates: mocks.searchHuggingFaceCandidates,
-      listHuggingFaceFeed: mocks.listHuggingFaceFeed,
-      convertHfRepoToCatalogModel: (repo: CatalogModel) => repo,
-    }),
-    providers: () => ({ getProviders: async () => [] }),
+      models: () => ({
+        fetchHuggingFaceRepo: mocks.fetchHuggingFaceRepo,
+        searchHuggingFaceCandidates: mocks.searchHuggingFaceCandidates,
+        listHuggingFaceFeed: mocks.listHuggingFaceFeed,
+        convertHfRepoToCatalogModel: (repo: CatalogModel) => repo,
+      }),
+      providers: () => ({ getProviders: async () => [] }),
   }),
 }))
 
@@ -479,7 +479,7 @@ describe('/hub route', () => {
     )
   })
 
-  it('lists only uncensored builds, asking Hugging Face with the hidden terms', async () => {
+  it('lists and paginates uncensored builds under a stable heading', async () => {
     localStorage.setItem(
       HUB_FILTERS_STORAGE_KEY,
       serializeHubFilters({
@@ -493,28 +493,48 @@ describe('/hub route', () => {
       model('test/plain-GGUF'),
       model('test/qwen-abliterated-GGUF'),
     ]
-    mocks.searchHuggingFaceCandidates.mockImplementation(
-      async (...args: unknown[]) =>
-        args[0] === 'uncensored' ? [model('hf/gemma-uncensored-GGUF')] : []
-    )
+    mocks.listHuggingFaceFeed.mockImplementation(async (params) => {
+      if (params.search === 'uncensored' && !params.cursor) {
+        return {
+          models: [model('hf/gemma-uncensored-GGUF')],
+          nextCursor: 'uncensored-page-2',
+        }
+      }
+      if (params.cursor === 'uncensored-page-2') {
+        return {
+          models: [model('hf/qwen-uncensored-page-2-GGUF')],
+          nextCursor: null,
+        }
+      }
+      if (params.search === 'abliterated') {
+        return {
+          models: [model('hf/llama-abliterated-GGUF')],
+          nextCursor: null,
+        }
+      }
+      return { models: [], nextCursor: null }
+    })
     render(<HubPage />)
 
     await waitFor(() =>
       expect(screen.getByText('gemma-uncensored-GGUF')).toBeInTheDocument()
     )
+    await waitFor(() =>
+      expect(
+        screen.getByText('qwen-uncensored-page-2-GGUF')
+      ).toBeInTheDocument()
+    )
     expect(screen.getByText('qwen-abliterated-GGUF')).toBeInTheDocument()
+    expect(screen.getByText('llama-abliterated-GGUF')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'hub:uncensored' })).toBeVisible()
     expect(screen.queryByText('plain-GGUF')).not.toBeInTheDocument()
     // The curated picks carry no uncensored builds, so they are not shown.
     expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
-    expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
-      'uncensored',
-      '',
-      20
+    expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+      expect.objectContaining({ search: 'uncensored' })
     )
-    expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
-      'abliterated',
-      '',
-      20
+    expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+      expect.objectContaining({ search: 'abliterated' })
     )
     // The terms ride along out of sight: the search box stays as typed.
     expect(
