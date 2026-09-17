@@ -167,6 +167,8 @@ import type { AgentSkill } from '@/services/agent/skills'
 
 type ChatInputProps = {
   className?: string
+  containerClassName?: string
+  minRows?: number
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
@@ -183,6 +185,8 @@ type ChatInputProps = {
 
 const ChatInput = memo(function ChatInput({
   className,
+  containerClassName,
+  minRows = 2,
   initialMessage,
   preselectedAgentSkillName,
   projectId,
@@ -2680,7 +2684,10 @@ const ChatInput = memo(function ChatInput({
     // sitting at the bottom of the screen, so a running download never covers
     // the send button. Writing to a model that is still downloading is the
     // whole point of ATO-460, so the composer has to stay reachable.
-    <div data-composer-anchor className="relative mx-auto w-full max-w-3xl">
+    <div
+      data-composer-anchor
+      className={cn('relative mx-auto w-full max-w-3xl', containerClassName)}
+    >
       {/* Pending approvals dock above the composer. Outside the streaming-
           disabled toolbar cluster: a run awaiting approval reports
           `submitted`, and an unclickable Approve button would deadlock it. */}
@@ -2857,7 +2864,7 @@ const ChatInput = memo(function ChatInput({
                 <TextareaAutosize
                   dir="auto"
                   ref={textareaRef}
-                  minRows={2}
+                  minRows={minRows}
                   rows={1}
                   maxRows={10}
                   value={prompt}

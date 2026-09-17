@@ -100,9 +100,9 @@ describe('ProjectFiles', () => {
   })
 
   it('reports a failed file listing instead of showing an empty project', async () => {
-    mocks.listAttachmentsForProject.mockRejectedValue(
-      new Error('database is locked')
-    )
+    mocks.listAttachmentsForProject.mockRejectedValue({
+      error: { message: 'database is locked' },
+    })
     seedServiceHub()
 
     render(<ProjectFiles projectId="p1" lng="en" />)
@@ -117,5 +117,24 @@ describe('ProjectFiles', () => {
     await waitFor(() =>
       expect(screen.getByText('common:projects.filesDescription')).toBeTruthy()
     )
+  })
+
+  it('waits for the attachments extension instead of flashing an error', async () => {
+    useAttachments.setState({ enabled: false })
+    seedServiceHub()
+
+    render(<ProjectFiles projectId="p1" lng="en" />)
+
+    await waitFor(() =>
+      expect(screen.getByText('common:projects.filesDescription')).toBeTruthy()
+    )
+    expect(mocks.listAttachmentsForProject).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    act(() => useAttachments.setState({ enabled: true }))
+    await waitFor(() =>
+      expect(mocks.listAttachmentsForProject).toHaveBeenCalledWith('p1')
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

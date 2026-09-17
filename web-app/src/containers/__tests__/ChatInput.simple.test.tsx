@@ -59,9 +59,8 @@ vi.mock('react-textarea-autosize', async () => {
   return {
     default: React.forwardRef<HTMLTextAreaElement, AutosizeProps>(
       ({ minRows, maxRows, ...props }, ref) => {
-        void minRows
         void maxRows
-        return <textarea {...props} ref={ref} />
+        return <textarea {...props} data-min-rows={minRows} ref={ref} />
       }
     ),
   }
@@ -663,6 +662,26 @@ describe('ChatInput', () => {
     expect(
       screen.queryByText('chat:agentWorkspace.addFolder')
     ).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it('lets the project composer fill its card column and start taller', () => {
+    const { unmount } = render(
+      <ChatInput
+        initialMessage
+        projectId="project-1"
+        containerClassName="max-w-none"
+        minRows={4}
+      />
+    )
+
+    expect(document.querySelector('[data-composer-anchor]')).toHaveClass(
+      'max-w-none'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute(
+      'data-min-rows',
+      '4'
+    )
     unmount()
   })
 
