@@ -163,7 +163,7 @@ describe('model selector geometry', () => {
           await settle(panel)
           const bounds = panel.getBoundingClientRect()
           expect(bounds.width).toBeGreaterThanOrEqual(
-            Math.min(540, width - 32) - 1
+            Math.min(480, width - 32) - 1
           )
           expect(bounds.left).toBeGreaterThanOrEqual(8)
           expect(bounds.right).toBeLessThanOrEqual(width)
@@ -337,6 +337,19 @@ for (const width of [1024, 390]) {
           .map((row) => within(row).getByRole('button'))
       )
       const rows = screen.getAllByTestId('model-picker-hugging-face-row')
+      const resultRight = Math.round(
+        within(rows[0]).getByRole('button').getBoundingClientRect().right
+      )
+      const routeButtons = within(routes).queryAllByRole('button')
+      if (routeButtons.length > 0) {
+        expect(
+          new Set(
+            routeButtons.map((button) =>
+              Math.round(button.getBoundingClientRect().right)
+            )
+          )
+        ).toEqual(new Set([resultRight]))
+      }
       fireEvent.click(within(rows[0]).getByRole('button'))
       await waitFor(() =>
         expect(

@@ -178,19 +178,30 @@ export function DownloadManagement() {
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
-    const downloadsWithProgress = Object.values(downloads).map((download) => ({
-      id: download.name,
-      name: download.name,
-      progress: download.progress,
-      current: download.current,
-      total: download.total,
-      bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
-      stage: download.stage,
-    }))
+    const downloadsWithProgress = Object.entries(downloads).map(
+      ([downloadKey, download]) => {
+        // Early progress events can arrive before the backend fills `name` or
+        // even the mirrored `id`. The store key is still the requested model,
+        // so use it rather than rendering a nameless percentage-only row.
+        const modelId = download.id || download.name || downloadKey
+        return {
+          id: modelId,
+          name: modelId,
+          progress: download.progress,
+          current: download.current,
+          total: download.total,
+          bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
+          stage: download.stage,
+        }
+      }
+    )
+    const progressIds = new Set(
+      downloadsWithProgress.map((download) => download.id)
+    )
 
     // Add local downloading models that don't have progress data yet
     const localDownloadsWithoutProgress = Array.from(localDownloadingModels)
-      .filter((modelId) => !downloads[modelId]) // Only include models not in downloads
+      .filter((modelId) => !progressIds.has(modelId))
       .map((modelId) => ({
         id: modelId,
         name: modelId,

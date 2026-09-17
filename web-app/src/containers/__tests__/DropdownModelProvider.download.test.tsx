@@ -302,7 +302,9 @@ describe('DropdownModelProvider - downloading from the list', () => {
     // The other ways to get a model sit under the list, as in the reply
     // gate — and the panel is the download, so no second "Download a model"
     // row under it.
-    expect(screen.getByTestId('model-picker-routes')).toBeInTheDocument()
+    expect(screen.getByTestId('model-picker-routes')).toHaveClass(
+      '[scrollbar-gutter:stable]'
+    )
     expect(hubShortcut()).toBeNull()
   })
 
@@ -317,6 +319,9 @@ describe('DropdownModelProvider - downloading from the list', () => {
           'AtomicChat/Qwen3_5-4B-Q4_K_M'
         ),
       },
+      localDownloadingModels: new Set([
+        'AtomicChat/Qwen3_5-4B-Q4_K_M',
+      ]),
     })
 
     render(<DropdownModelProvider />)
@@ -327,6 +332,12 @@ describe('DropdownModelProvider - downloading from the list', () => {
     expect(row).toHaveTextContent(
       '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
     )
+    const active = screen.getByTestId('model-picker-downloading')
+    expect(active).toHaveTextContent('Qwen3.5 4B')
+    expect(active).toHaveTextContent(
+      '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
+    )
+    expect(within(active).getAllByText('Qwen3.5 4B')).toHaveLength(1)
     const loading = within(row)
       .getByText('setup:downloading')
       .closest('button')!

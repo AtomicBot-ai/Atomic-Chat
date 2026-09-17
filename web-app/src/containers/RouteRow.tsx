@@ -32,6 +32,8 @@ type RouteRowProps = {
   /** Onboarding reserves compact actions and full-size route marks. */
   'layout'?: 'default' | 'onboarding'
   'icon': ReactNode
+  /** Optional optical correction for a route whose mark is already outlined. */
+  'iconClassName'?: string
   'title': string
   /** Optional mark beside the title: a recommended model's fit badge. */
   'meta'?: ReactNode
@@ -63,6 +65,7 @@ type RouteRowProps = {
 export function RouteRow({
   layout = 'default',
   icon,
+  iconClassName,
   title,
   meta,
   hint,
@@ -84,7 +87,8 @@ export function RouteRow({
           aria-hidden="true"
           className={cn(
             'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&>img]:size-full',
-            layout === 'onboarding' ? '[&>svg]:size-full' : '[&>svg]:size-5'
+            layout === 'onboarding' ? '[&>svg]:size-full' : '[&>svg]:size-5',
+            iconClassName
           )}
         >
           {icon}
