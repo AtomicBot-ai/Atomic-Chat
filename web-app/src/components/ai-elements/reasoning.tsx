@@ -47,14 +47,7 @@ export type ReasoningProps = ComponentProps<typeof Collapsible> & {
 }
 
 const MS_IN_S = 1000
-// While a turn runs the panel shows six lines, so the
-// window only has to cover scroll-back, not the trace. Cost of one streamed
-// delta at a 60k-character trace, measured in WebKit: 314ms for live
-// Markdown against 1ms for a plain-text window. Any bounded window fixes the
-// growth; this one keeps the per-frame layout down to a screenful of lines.
-const STREAMING_REASONING_VISIBLE_CHARS = 4_000
-const STREAMING_REASONING_TRUNCATED_PREFIX =
-  '… earlier reasoning will appear when generation completes …\n\n'
+const STREAMING_REASONING_FORMAT_LIMIT = 20_000
 
 function normalizeReasoningMarkdown(value: string): string {
   // Some local chat templates concatenate separately-bolded status lines as
@@ -171,19 +164,18 @@ export const ReasoningViewport = ({
   className,
   ...props
 }: ComponentProps<'div'>) => {
-  const { isStreaming, isOpen } = useReasoning()
-  const bounded = isStreaming || !isOpen
+  const { isOpen } = useReasoning()
   return (
     <div
       {...props}
       data-reasoning-viewport
       data-state={isOpen ? 'open' : 'closed'}
-      data-bounded={bounded}
+      data-bounded={!isOpen}
       className={cn(
-        'relative w-full min-w-0 text-sm',
-        bounded
-          ? 'max-h-[calc(6lh+1rem)] mt-2 overflow-x-hidden overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden transition-[max-height,margin] duration-150 ease-out motion-reduce:transition-none data-[state=closed]:max-h-0 data-[state=closed]:mt-0 data-[state=closed]:overflow-hidden [&>[data-slot=collapsible-content]]:mt-0 [&>[data-slot=collapsible-content]]:py-2 [--reasoning-fade-top:0px] [--reasoning-fade-bottom:0px] data-[overflow-top=true]:[--reasoning-fade-top:1rem] data-[overflow-bottom=true]:[--reasoning-fade-bottom:1rem] [mask-image:linear-gradient(to_bottom,transparent,black_var(--reasoning-fade-top),black_calc(100%_-_var(--reasoning-fade-bottom)),transparent_100%)]'
-          : 'h-auto overflow-x-hidden',
+        'relative w-full min-w-0 text-sm transition-[margin] duration-150 ease-out motion-reduce:transition-none',
+        isOpen
+          ? 'mt-2 h-auto overflow-visible'
+          : 'mt-0 max-h-0 overflow-hidden',
         className
       )}
     />
@@ -260,13 +252,8 @@ export const ReasoningContent = memo(
     // Only a panel a reader can actually read is worth parsing.
     const showMarkdown = !isStreaming && isOpen
     const normalizedChildren = normalizeReasoningMarkdown(children)
-    const streamingTruncated =
-      normalizedChildren.length > STREAMING_REASONING_VISIBLE_CHARS
-    const plainText =
-      streamingTruncated
-        ? STREAMING_REASONING_TRUNCATED_PREFIX +
-          normalizedChildren.slice(-STREAMING_REASONING_VISIBLE_CHARS)
-        : normalizedChildren
+    const formatStreaming =
+      normalizedChildren.length <= STREAMING_REASONING_FORMAT_LIMIT
 
     return (
       <CollapsibleContent
@@ -293,10 +280,12 @@ export const ReasoningContent = memo(
               data-streaming-reasoning
               dir="auto"
             >
-              {streamingTruncated ? (
-                plainText
+              {formatStreaming ? (
+                <StreamingReasoningText>
+                  {normalizedChildren}
+                </StreamingReasoningText>
               ) : (
-                <StreamingReasoningText>{plainText}</StreamingReasoningText>
+                normalizedChildren
               )}
             </div>
           )}
