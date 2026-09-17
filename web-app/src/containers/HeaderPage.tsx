@@ -5,6 +5,11 @@ import {
 } from '@tabler/icons-react'
 import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 type HeaderPageProps = {
   children?: ReactNode
@@ -39,13 +44,14 @@ const HeaderPage = memo(function HeaderPage({
         )}
       >
         {!open && !hideControls && (
-          <>
+          <Tooltip>
+            <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon-sm"
               className={cn(
                 'rounded-full relative z-50',
-                IS_MACOS && 'absolute left-20 top-0'
+                IS_MACOS && 'absolute left-16 top-0'
               )}
               onClick={() => setLeftPanel(!open)}
               aria-label="Toggle sidebar"
@@ -54,11 +60,14 @@ const HeaderPage = memo(function HeaderPage({
                 className="text-muted-foreground relative size-4.5"
               />
             </Button>
-          </>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Toggle sidebar</TooltipContent>
+          </Tooltip>
         )}
         <div
           className={cn(
-            'flex-1 min-w-0'
+            'flex-1 min-w-0',
+            !open && !hideControls && IS_MACOS && 'pl-12'
           )}
         >
           {children}
