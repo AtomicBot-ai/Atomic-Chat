@@ -31,6 +31,7 @@
     "titleNoModel": "This model can't see images",
     "description": "The model you're chatting with is text-only, so images can't be attached. Download a model with vision and the app will switch to it.",
     "sectionLabel": "Vision models for your device",
+    "visionCapable": "Vision",
     "rowHint": "{{size}} · {{reason}}",
     "installedHint": "Already on this device",
     "download": "Download",
