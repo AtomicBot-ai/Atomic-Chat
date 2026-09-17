@@ -22,7 +22,11 @@ import {
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
-import { cancelDownload } from '@/lib/downloadCancellation'
+import {
+  cancelDownload,
+  isDownloadCancellationError,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 import {
   downloadStatusLabel,
   formatEta,
@@ -516,6 +520,12 @@ function useHuggingFaceSearch(query: string) {
         removeLocalDownloadingModel(variantId)
         clearDownloadOrigin(variantId)
         markResumableDownload(variantId)
+        if (
+          wasDownloadCancellationRequested(variantId) ||
+          isDownloadCancellationError(error)
+        ) {
+          return
+        }
       }
       toast.error(t('hub:downloadFailed'), {
         description: error instanceof Error ? error.message : String(error),

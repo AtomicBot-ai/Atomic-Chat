@@ -7,7 +7,11 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
-import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import {
+  isDownloadCancellationError,
+  markDownloadCancellationRequested,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 import {
   findInstalledLocalModel,
   MLX_PROVIDER,
@@ -196,6 +200,12 @@ export const MlxModelDownloadAction = memo(
         console.error('Error downloading MLX model:', error)
         markResumableDownload(modelId)
         removeLocalDownloadingModel(modelId)
+        if (
+          wasDownloadCancellationRequested(modelId) ||
+          isDownloadCancellationError(error)
+        ) {
+          return
+        }
         toast.error('Failed to download MLX model', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })

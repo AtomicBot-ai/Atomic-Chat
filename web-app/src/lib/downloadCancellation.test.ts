@@ -5,6 +5,7 @@ import type { ServiceHub } from '@/services'
 
 import {
   cancelDownload,
+  isDownloadCancellationError,
   wasDownloadCancellationRequested,
 } from './downloadCancellation'
 
@@ -78,5 +79,24 @@ describe('cancelDownload', () => {
     expect(abortDownload).toHaveBeenCalledWith('transfer-name')
     expect(wasDownloadCancellationRequested('row-id')).toBe(true)
     expect(wasDownloadCancellationRequested('transfer-name')).toBe(true)
+  })
+})
+
+describe('isDownloadCancellationError', () => {
+  it.each([
+    new Error('Download cancelled'),
+    'operation aborted by user',
+    'transfer stopped',
+  ])(
+    'recognises a user cancellation without treating it as a failure',
+    (error) => {
+      expect(isDownloadCancellationError(error)).toBe(true)
+    }
+  )
+
+  it('does not hide a real download failure', () => {
+    expect(isDownloadCancellationError(new Error('HTTP status 500'))).toBe(
+      false
+    )
   })
 })

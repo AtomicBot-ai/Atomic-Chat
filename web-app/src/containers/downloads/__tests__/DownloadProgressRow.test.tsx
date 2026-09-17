@@ -38,7 +38,7 @@ describe('DownloadProgressRow status while no bytes have moved', () => {
     ).toBeTruthy()
   })
 
-  it('says it is connecting before the first attempt fails', () => {
+  it('keeps the initial network handshake under the plain starting copy', () => {
     render(
       <DownloadProgressRow
         id="AtomicChat/some-model"
@@ -49,7 +49,8 @@ describe('DownloadProgressRow status while no bytes have moved', () => {
       />
     )
 
-    expect(screen.getByText('common:downloadPanel.connecting')).toBeTruthy()
+    expect(screen.getByText('common:downloadPanel.preparing')).toBeTruthy()
+    expect(screen.queryByText('common:downloadPanel.connecting')).toBeNull()
   })
 
   it('falls back to the plain preparing state with no stage', () => {
@@ -92,6 +93,24 @@ describe('DownloadProgressRow status while no bytes have moved', () => {
     )
 
     expect(screen.getByText('common:downloadPanel.paused')).toBeTruthy()
+  })
+})
+
+describe('DownloadProgressRow activity colour', () => {
+  it('uses product blue instead of the green ready-state colour', () => {
+    const { container } = render(
+      <DownloadProgressRow
+        id="AtomicChat/some-model"
+        progress={0.42}
+        current={420}
+        total={1000}
+      />
+    )
+    const indicator = container.querySelector(
+      '[data-slot="progress-indicator"]'
+    )
+    expect(indicator).toHaveClass('bg-blue-500/60')
+    expect(indicator).not.toHaveClass('bg-emerald-400/50')
   })
 })
 

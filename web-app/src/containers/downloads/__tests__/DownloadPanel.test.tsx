@@ -100,6 +100,8 @@ describe('DownloadPanel width', () => {
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
     const badge = screen.getByLabelText('common:downloadPanel.expand')
     expect(badge).toHaveTextContent('3')
+    expect(badge.querySelector('span')).toHaveClass('bg-blue-500')
+    expect(badge.querySelector('span')).not.toHaveClass('bg-emerald-500')
 
     fireEvent.click(badge)
     expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
