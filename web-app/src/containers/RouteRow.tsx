@@ -17,22 +17,24 @@ export const ROUTE_ROW_BUTTON_HOVER =
  * buttons of one list read as one column whatever their labels say. A row
  * that draws its own button (the onboarding's model rows) uses this too.
  *
- * One column means one width: the pill is at least as wide as the widest
- * label it wears — "Download 19.7 GB" is 118 px in Inter Medium at 14 px,
- * plus the size's normal 12 px of padding a side — and a shorter label
- * ("Browse", "Add") centres in that width rather than shrinking the button.
- * A longer label widens its own button; nothing is clipped.
+ * A fixed slot includes the longest English state (Downloading…) at Extra
+ * Large. Longer translations truncate inside it without widening a row.
  */
+export const ONBOARDING_ROW_ACTION_CLASS =
+  'w-[8.5rem] shrink-0 rounded-full px-3 text-xs'
+
 export const ROUTE_ROW_ACTION_CLASS =
   'min-w-[9.25rem] shrink-0 rounded-full px-3'
 
 type RouteRowProps = {
+  /** Onboarding reserves compact actions and full-size route marks. */
+  'layout'?: 'default' | 'onboarding'
   'icon': ReactNode
   'title': string
   /** Optional mark beside the title: a recommended model's fit badge. */
   'meta'?: ReactNode
   'hint': string
-  /** What the button shows: the verb, with the size when there is one. */
+  /** What the button shows: a short action label. */
   'action': ReactNode
   /**
    * The whole action, for assistive tech. The button shows only the verb, and
@@ -57,6 +59,7 @@ type RouteRowProps = {
  * screen reader.
  */
 export function RouteRow({
+  layout = 'default',
   icon,
   title,
   meta,
@@ -74,14 +77,13 @@ export function RouteRow({
       data-testid={testId}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        {/* The footprint of a model row's 32 px mark: a glyph (lucide's
-            Cloud, the ChatGPT blossom) draws at 20 px and a brand image (the
-            Hugging Face face) fills the circle, so the marks of the two lists
-            read as one size. Direct children only: a `ModelLogo` in this
-            slot sizes its own image. */}
+        {/* Every route mark fills the same 32 px slot, centred on its text. */}
         <span
           aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&>svg]:size-5 [&>img]:size-full"
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-foreground [&>img]:size-full',
+            layout === 'onboarding' ? '[&>svg]:size-full' : '[&>svg]:size-5'
+          )}
         >
           {icon}
         </span>
@@ -92,7 +94,7 @@ export function RouteRow({
             </span>
             {meta}
           </span>
-          <span className="mt-0.5 line-clamp-1 block text-xs text-muted-foreground">
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {hint}
           </span>
         </div>
@@ -105,11 +107,13 @@ export function RouteRow({
         disabled={disabled}
         onClick={onClick}
         className={cn(
-          ROUTE_ROW_ACTION_CLASS,
+          layout === 'onboarding'
+            ? ONBOARDING_ROW_ACTION_CLASS
+            : ROUTE_ROW_ACTION_CLASS,
           !primary && ROUTE_ROW_BUTTON_HOVER
         )}
       >
-        {action}
+        <span className="min-w-0 truncate">{action}</span>
       </Button>
     </div>
   )

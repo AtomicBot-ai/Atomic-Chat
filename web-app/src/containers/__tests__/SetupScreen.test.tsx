@@ -18,7 +18,7 @@ import {
 } from 'vitest'
 import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
-import { ROUTE_ROW_ACTION_CLASS } from '@/containers/RouteRow'
+import { ONBOARDING_ROW_ACTION_CLASS } from '@/containers/RouteRow'
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
@@ -295,6 +295,7 @@ describe('SetupScreen', () => {
   }
 
   beforeEach(() => {
+    locale.english = false
     vi.clearAllMocks()
     localStorage.clear()
     seedServiceHub({
@@ -437,7 +438,7 @@ describe('SetupScreen', () => {
       expect(run).toBeInTheDocument()
       // Its button stands in the same column as every Download and Browse
       // under it, and carries no hidden width-reserving labels.
-      expect(run).toHaveClass(ROUTE_ROW_ACTION_CLASS)
+      expect(run).toHaveClass(ONBOARDING_ROW_ACTION_CLASS)
       expect(run).toHaveTextContent(/^setup:localStep\.run$/)
       unmount()
     })
@@ -738,22 +739,21 @@ describe('SetupScreen', () => {
       mocks.modelProviderState.getProviderByName.mockReset()
     })
 
-    it('turns the button into a single Downloading… pill that cancels', async () => {
+    it('turns the button into a stable disabled Downloading… state', async () => {
       const { unmount } = await renderPicker()
       const row = screen.getByTestId('setup-recommended-row')
-      // The offer's line under the name is there, empty, so a readout can
-      // take it later without adding a line.
-      expect(row.querySelector('p')).toBeEmptyDOMElement()
+      expect(row.querySelector('p')).not.toBeEmptyDOMElement()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
 
       expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
-      // One control where the button was: it reads Downloading… and cancels.
-      const cancel = screen.getByRole('button', {
-        name: 'common:cancelDownload',
+      // The action slot shows status; cancellation stays in the download panel.
+      const downloading = screen.getByRole('button', {
+        name: 'setup:downloading',
       })
-      expect(cancel).toHaveTextContent('setup:downloading')
-      expect(cancel).toBeEnabled()
+      expect(downloading).toHaveTextContent('setup:downloading')
+      expect(downloading).toBeDisabled()
+      expect(downloading.querySelector('svg')).toBeNull()
       expect(
         screen.queryByRole('button', { name: /hub:download/ })
       ).not.toBeInTheDocument()
@@ -767,7 +767,7 @@ describe('SetupScreen', () => {
         screen.queryByText('setup:downloadStartedOpening')
       ).not.toBeInTheDocument()
       expect(row.children).toHaveLength(2)
-      expect(row.lastElementChild).toBe(cancel)
+      expect(row.lastElementChild).toBe(downloading)
 
       // Progress, once known, goes on the line under the name, so the
       // button never moves.
@@ -786,7 +786,7 @@ describe('SetupScreen', () => {
       expect(progress).toHaveAttribute('aria-live', 'polite')
       expect(row.firstElementChild).toContainElement(progress)
       expect(row.children).toHaveLength(2)
-      expect(row.lastElementChild).toBe(cancel)
+      expect(row.lastElementChild).toBe(downloading)
       unmount()
     })
 
@@ -800,7 +800,7 @@ describe('SetupScreen', () => {
 
       expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
       expect(
-        screen.getByRole('button', { name: 'common:cancelDownload' })
+        screen.getByRole('button', { name: 'setup:downloading' })
       ).toBeInTheDocument()
       expect(mocks.navigate).not.toHaveBeenCalled()
       expect(localStorage.getItem(localStorageKey.setupCompleted)).toBeNull()
@@ -812,16 +812,13 @@ describe('SetupScreen', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole('button', { name: 'common:cancelDownload' })
-        )
+        await mocks.abortDownload(variantId)
       })
 
-      expect(mocks.abortDownload).toHaveBeenCalledWith(variantId)
       const download = screen.getByRole('button', { name: /hub:download/ })
       expect(download).toBeEnabled()
       expect(
-        screen.queryByRole('button', { name: 'common:cancelDownload' })
+        screen.queryByRole('button', { name: 'setup:downloading' })
       ).not.toBeInTheDocument()
       // The list is still here: the same row, or another, can be started.
       fireEvent.click(download)
@@ -1051,6 +1048,39 @@ describe('SetupScreen', () => {
       mocks.staffPicks = [gemma, nemotron]
     })
 
+    it('uses plain memory copy, a useful lead subtitle and size outside the action', async () => {
+      locale.english = true
+      const { unmount } = await renderPicker()
+      const row = screen.getAllByTestId('setup-recommended-row')[0]
+      expect(row).not.toHaveTextContent('Best fit for your device')
+      expect(row.querySelector('p')).toHaveTextContent(
+        'Balanced speed and quality'
+      )
+      expect(
+        within(row).getByRole('button', { name: /Runs well/ })
+      ).toHaveTextContent('Runs well')
+      expect(downloadButtons()[0]).toHaveTextContent(/^hub:download$/)
+      expect(row.querySelector('h2')?.parentElement).toHaveTextContent('2.5 GB')
+      unmount()
+    })
+
+    it('uses the catalog summary for the lead model when available', async () => {
+      mocks.recommended = [
+        {
+          ...ladderModel,
+          model: {
+            ...ladderModel.model,
+            description: 'A compact model for coding and everyday questions.',
+          },
+        },
+      ]
+      const { unmount } = await renderPicker()
+      expect(
+        screen.getAllByTestId('setup-recommended-row')[0].querySelector('p')
+      ).toHaveTextContent('A compact model for coding and everyday questions.')
+      unmount()
+    })
+
     it('leads with the offer and lists the Hub picks under it, plainly secondary', async () => {
       // The offer alone (d29b99b85) left a user who wanted anything else with
       // Skip and an empty chat. The Hub's picks come back under it — but as
@@ -1058,11 +1088,13 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
-      // One heading over one list; one badge, on the offer; the offer's
+      // One heading over one list; the offer's
       // button is the only primary one, but no taller than the rest — a
       // bigger pill broke the column of buttons it sits in.
       expect(screen.getAllByText('setup:recommend.title')).toHaveLength(1)
-      expect(screen.getAllByText('setup:recommend.badge')).toHaveLength(1)
+      expect(
+        screen.queryByText('setup:recommend.badge')
+      ).not.toBeInTheDocument()
       const buttons = downloadButtons()
       expect(buttons).toHaveLength(3)
       expect(buttons[0]).toHaveAttribute('data-variant', 'default')
@@ -1193,7 +1225,7 @@ describe('SetupScreen', () => {
         // That row alone turns into the Downloading… pill; the offer's
         // button stays, so the user can still change their mind.
         expect(
-          screen.getByRole('button', { name: 'common:cancelDownload' })
+          screen.getByRole('button', { name: 'setup:downloading' })
         ).toHaveTextContent('setup:downloading')
         expect(downloadButtons()).toHaveLength(2)
         expect(
@@ -1321,17 +1353,14 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('says why this model, in terms of the memory it will live in', async () => {
-      // "Recommended" on its own is not a reason. The badge's tooltip names
-      // the pool the weights go into, because 8 GB of VRAM and 8 GB of unified
-      // memory are not the same 8 GB. It is not a line under the name: the
-      // offer's row carries the badge there instead.
+    it('shows memory status without a second recommendation badge', async () => {
+      // The lead row has the same plain memory badge as the other rows.
       const { unmount } = await renderPicker()
 
       // 2.52 GB against an 8 GiB card is under half the budget.
       expect(
-        screen.getByTitle(/setup:recommend\.whyComfortable/)
-      ).toHaveTextContent('setup:recommend.badge')
+        screen.getAllByRole('button', { name: /setup:recommend\.fitTipOk/ })[0]
+      ).toHaveAttribute('data-fit', 'ok')
       expect(
         screen.queryByText(/setup:recommend\.whyComfortable/)
       ).not.toBeInTheDocument()
@@ -1353,16 +1382,16 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(
-        screen.getByTitle(/setup:recommend\.whySpills/)
+        screen.getAllByRole('button', {
+          name: /setup:recommend\.fitTipWarn/,
+        })[0]
       ).toBeInTheDocument()
       expect(downloadButtons()[0]).toBeEnabled()
       unmount()
     })
 
-    it('explains a CPU-only machine by its CPU, not by its RAM', async () => {
-      // The old rule read "x86 without a GPU → low spec" and picked by RAM,
-      // which is how a 128 GiB workstation got an 8 GiB laptop's advice. What
-      // binds here is throughput, and the line has to say so.
+    it('shows the memory badge on a CPU-only machine', async () => {
+      // Memory status remains meaningful even without a GPU.
       mocks.hardwareTier.tier = 'cpu_only'
       mocks.hardwareTier.profile = {
         tier: 'cpu_only',
@@ -1375,7 +1404,7 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(
-        screen.getByTitle(/setup:recommend\.whyCpuOnly/)
+        screen.getAllByRole('button', { name: /setup:recommend\.fitTipOk/ })[0]
       ).toBeInTheDocument()
       unmount()
     })
@@ -1520,13 +1549,16 @@ describe('SetupScreen', () => {
         ).toBeInTheDocument()
         expect(screen.getByText('ChatGPT subscription')).toBeInTheDocument()
         expect(
+          screen.getByRole('button', { name: 'Add a cloud provider' })
+        ).toHaveTextContent('Add API Key')
+        expect(
           screen.getByRole('button', { name: 'Connect ChatGPT subscription' })
         ).toBeInTheDocument()
 
         for (const hint of [
           'Add any model',
           'Sign in, no API key needed',
-          'OpenRouter, Anthropic, Gemini, OpenAI',
+          'OpenRouter, Anthropic, OpenAI, and more',
         ]) {
           const line = screen.getByText(hint)
           expect(line.textContent?.length).toBeLessThanOrEqual(HINT_BUDGET)
@@ -1541,7 +1573,7 @@ describe('SetupScreen', () => {
       // width of "Downloading…", and a progress readout shoving the button
       // aside. Every row is now mark · name + badge · one line · one button,
       // and the buttons of every list on the screen stand in one column.
-      it('puts the size inside the Download button, and only the name and its badge on the name line', async () => {
+      it('puts the size after the badge and keeps the action label Download', async () => {
         mocks.staffPicks = [gemma, nemotron, unresolved]
         const { unmount } = await renderPicker()
 
@@ -1556,12 +1588,19 @@ describe('SetupScreen', () => {
         // is unknown says Download alone.
         const buttons = downloadButtons()
         expect(buttons.map((button) => button.textContent)).toEqual([
-          'hub:download 2.5 GB',
-          'hub:download 7.3 GB',
-          'hub:download 19.7 GB',
+          'hub:download',
+          'hub:download',
+          'hub:download',
           'hub:download',
         ])
         expect(buttons[3]).toBeDisabled()
+        expect(
+          headings
+            .slice(0, 3)
+            .map(
+              (heading) => heading.parentElement?.lastElementChild?.textContent
+            )
+        ).toEqual(['2.5 GB', '7.3 GB', '19.7 GB'])
         unmount()
       })
 
@@ -1575,11 +1614,11 @@ describe('SetupScreen', () => {
           within(row).getByRole('button', { name: /hub:download/ })
         )
 
-        const cancel = within(row).getByRole('button', {
-          name: 'common:cancelDownload',
+        const downloading = within(row).getByRole('button', {
+          name: 'setup:downloading',
         })
         expect(row.children).toHaveLength(2)
-        expect(row.lastElementChild).toBe(cancel)
+        expect(row.lastElementChild).toBe(downloading)
         await act(async () => {
           useDownloadStore
             .getState()
@@ -1598,12 +1637,12 @@ describe('SetupScreen', () => {
         expect(row.firstElementChild).toContainElement(readout)
         expect(row).not.toHaveTextContent(summary)
         expect(row.children).toHaveLength(2)
-        expect(row.lastElementChild).toBe(cancel)
+        expect(row.lastElementChild).toBe(downloading)
 
         // Cancelled: the summary is back under the name, the Download button
         // back in its place.
         await act(async () => {
-          fireEvent.click(cancel)
+          await mocks.abortDownload('gemma-4-12B-it-GGUF-Q4_K_M')
         })
         expect(row).toHaveTextContent(summary)
         expect(within(row).queryByText(/^12% · /)).not.toBeInTheDocument()
@@ -1626,7 +1665,7 @@ describe('SetupScreen', () => {
           name: /setup:cloudStep\.subscriptionTrigger/,
         })
         for (const button of [...downloadButtons(), browse, connect]) {
-          expect(button).toHaveClass(ROUTE_ROW_ACTION_CLASS)
+          expect(button).toHaveClass(ONBOARDING_ROW_ACTION_CLASS)
         }
         // A route button shows its verb and nothing else: no invisible copy
         // of every other label padding it out.
@@ -1648,8 +1687,7 @@ describe('SetupScreen', () => {
 
         // jsdom lays nothing out; the classes are what it can see of a size.
         // A model row's mark is 32 px. A route row's circle is 32 px too,
-        // holding a 20 px glyph or an image that fills it — not a 16 px
-        // glyph lost in the middle.
+        // filled by both glyphs and images.
         const hfMark = screen
           .getByTestId('setup-browse-hub')
           .querySelector('img')
@@ -1658,7 +1696,9 @@ describe('SetupScreen', () => {
           name: /setup:cloudStep\.subscriptionTrigger/,
         }).parentElement
         const chatGptMark = subscriptionRow?.querySelector('svg')
-        expect(chatGptMark?.parentElement).toHaveClass('size-8 [&>svg]:size-5')
+        expect(chatGptMark?.parentElement).toHaveClass(
+          'size-8 [&>svg]:size-full'
+        )
         unmount()
       })
     })
@@ -1708,13 +1748,13 @@ describe('SetupScreen', () => {
         // 2.52 GB and 7.3 GB on 18 GiB: under half the pool.
         expect(marks[0]).toHaveAttribute('data-fit', 'ok')
         expect(marks[0]).toHaveAccessibleName(
-          /setup:recommend\.fitOk.*setup:recommend\.whyComfortable/
+          /setup:recommend\.fitOk.*setup:recommend\.fitTipOk/
         )
         expect(marks[1]).toHaveAttribute('data-fit', 'ok')
         // 19.7 GB will not load on an 18 GiB Mac.
         expect(marks[2]).toHaveAttribute('data-fit', 'no')
         expect(marks[2]).toHaveAccessibleName(
-          /setup:recommend\.fitNo.*setup:recommend\.whyWontLoad/
+          /setup:recommend\.fitNo.*setup:recommend\.fitTipNo/
         )
         // Every mark sits on the name side of its row, not in the button
         // column, and the unresolved row has none.
@@ -1739,19 +1779,19 @@ describe('SetupScreen', () => {
         expect(marks[1]).toHaveAttribute('data-fit', 'warn')
         expect(marks[1]).toHaveTextContent('setup:recommend.fitBadgeWarn')
         expect(marks[1]).toHaveAccessibleName(
-          /setup:recommend\.fitWarn.*setup:recommend\.whyTight/
+          /setup:recommend\.fitWarn.*setup:recommend\.fitTipWarn/
         )
         // 19.7 GB on an 8 GiB card: spills, still runs.
         expect(marks[2]).toHaveAttribute('data-fit', 'warn')
         expect(marks[2]).toHaveAccessibleName(
-          /setup:recommend\.fitWarn.*setup:recommend\.whySpills/
+          /setup:recommend\.fitWarn.*setup:recommend\.fitTipWarn/
         )
         unmount()
       })
 
       it('says the verdict in a word on the name line, never under it', async () => {
         // The circled glyph drifted out of line from row to row and said
-        // nothing without a hover. A word does — Fits, Tight, Won't fit —
+        // nothing without a hover. A word does — Runs well, May be slow, Too large —
         // beside the name on the name's own line, where the name truncates
         // before the badge wraps.
         mocks.hardwareTier.tier = 'unified_16'
@@ -1768,7 +1808,7 @@ describe('SetupScreen', () => {
         // The word is what the eye gets; assistive tech still gets the level
         // and the reason, and the tooltip is unchanged.
         expect(marks[2]).toHaveAccessibleName(
-          /setup:recommend\.fitNo.*setup:recommend\.whyWontLoad/
+          /setup:recommend\.fitNo.*setup:recommend\.fitTipNo/
         )
         const headings = screen.getAllByRole('heading', { level: 2 })
         marks.forEach((mark, index) => {
@@ -1790,7 +1830,7 @@ describe('SetupScreen', () => {
         unmount()
       })
 
-      it('judges a CPU-only machine by its memory on the mark, while the badge still speaks of the CPU', async () => {
+      it('judges a CPU-only machine by its memory', async () => {
         // The badge explains the offer by the constraint that binds — CPU
         // throughput. The mark is a memory fit and says so in memory terms,
         // because on this machine that is what it measured.
@@ -1806,11 +1846,11 @@ describe('SetupScreen', () => {
         const { unmount } = await renderPicker()
 
         expect(
-          screen.getByTitle(/setup:recommend\.whyCpuOnly/)
+          screen.getAllByRole('button', {
+            name: /setup:recommend\.fitTipOk/,
+          })[0]
         ).toBeInTheDocument()
-        expect(fitMarks()[0]).toHaveAccessibleName(
-          /setup:recommend\.whyComfortable/
-        )
+        expect(fitMarks()[0]).toHaveAccessibleName(/setup:recommend\.fitTipOk/)
         unmount()
       })
 
@@ -1848,6 +1888,34 @@ describe('SetupScreen', () => {
         unmount()
       })
 
+      it.each([
+        ['ok', 'Runs well', 'This model should run smoothly on your device.'],
+        [
+          'warn',
+          'May be slow',
+          'This model may run slowly because it uses most of your memory.',
+        ],
+        [
+          'no',
+          'Too large',
+          'This model is too large for your device and probably won’t start.',
+        ],
+      ])(
+        'exposes the %s memory sentence by keyboard',
+        async (level, label, tip) => {
+          locale.english = true
+          mocks.hardwareTier.profile = { ...unifiedMac, budgetMib: 10 * 1024 }
+          const { unmount } = await renderPicker()
+          const mark = screen.getByRole('button', { name: `${label}. ${tip}` })
+          expect(mark).toHaveAttribute('data-fit', level)
+          expect(mark).toHaveTextContent(label)
+          act(() => mark.focus())
+          expect(mark).toHaveFocus()
+          expect(await screen.findByRole('tooltip')).toHaveTextContent(tip)
+          unmount()
+        }
+      )
+
       it('opens the reason on keyboard focus, not only under the pointer', async () => {
         mocks.staffPicks = [gemma]
         const { unmount } = await renderPicker()
@@ -1856,7 +1924,7 @@ describe('SetupScreen', () => {
         act(() => mark.focus())
         expect(mark).toHaveFocus()
         const tip = await screen.findByRole('tooltip')
-        expect(tip).toHaveTextContent('setup:recommend.whyComfortable')
+        expect(tip).toHaveTextContent('setup:recommend.fitTipOk')
         unmount()
       })
     })
@@ -1924,7 +1992,7 @@ describe('SetupScreen', () => {
         // The row reads Downloading… as a green row's would; the other two
         // still offer.
         expect(
-          screen.getByRole('button', { name: 'common:cancelDownload' })
+          screen.getByRole('button', { name: 'setup:downloading' })
         ).toHaveTextContent('setup:downloading')
         expect(downloadButtons()).toHaveLength(2)
         unmount()
@@ -1942,7 +2010,7 @@ describe('SetupScreen', () => {
         expectNothingStarted()
         expect(downloadButtons()).toHaveLength(3)
         expect(
-          screen.queryByRole('button', { name: 'common:cancelDownload' })
+          screen.queryByRole('button', { name: 'setup:downloading' })
         ).not.toBeInTheDocument()
         unmount()
       })
@@ -1958,7 +2026,7 @@ describe('SetupScreen', () => {
           'gemma-4-12B-it-GGUF-Q4_K_M'
         )
         expect(
-          screen.getByRole('button', { name: 'common:cancelDownload' })
+          screen.getByRole('button', { name: 'setup:downloading' })
         ).toBeInTheDocument()
         unmount()
       })
@@ -1988,7 +2056,7 @@ describe('SetupScreen', () => {
           nemotronVariant
         )
         expect(
-          screen.getByRole('button', { name: 'common:cancelDownload' })
+          screen.getByRole('button', { name: 'setup:downloading' })
         ).toBeInTheDocument()
         unmount()
       })
