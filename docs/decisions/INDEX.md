@@ -9,9 +9,8 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-285 records, 2026-05-19 → 2026-09-17.
-285 records, 2026-05-19 → 2026-09-17.
-285 records, 2026-05-19 → 2026-09-17.
+286 records, 2026-05-19 → 2026-09-17.
+286 records, 2026-05-19 → 2026-09-17.
 
 ---
 
@@ -144,8 +143,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (47)
+## llama.cpp providers & backend selection (48)
 
+- **2026-09-17** — [Recover an installed upstream backend before waiting for the catalog](2026-09-17-recover-installed-upstream-backend-before-catalog-wait.md)
 - **2026-09-16** — [Bound the model load's wait on backend configuration, then load from disk](2026-09-16-bound-the-model-load-wait-on-backend-configuration.md)
 - **2026-09-14** — [Ask before updating an inference engine](2026-09-14-ask-before-updating-an-inference-engine.md)
 - **2026-09-14** — [One GPU VRAM floor for every OS](2026-09-14-one-gpu-vram-floor-for-every-os.md)

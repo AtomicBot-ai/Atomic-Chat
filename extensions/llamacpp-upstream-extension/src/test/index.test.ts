@@ -1283,6 +1283,120 @@ describe('llamacpp_extension', () => {
       vi.useRealTimers()
     })
 
+    it.each([
+      'macos-arm64',
+      'macos-x64',
+      'win-cuda-13.3-x64',
+      'linux-vulkan-x64',
+    ])(
+      'reconciles stale b10431 to installed b10809/%s before waiting on the catalog',
+      async (backend) => {
+        await prepareLoad(
+          `b10431/${backend}`,
+          (version, type) => version === 'b10809' && type === backend
+        )
+        const backendModule = await import('../backend')
+        vi.mocked(
+          backendModule.findCompatibleInstalledBackend
+        ).mockResolvedValue({
+          version: 'b10809',
+          backend,
+        } as any)
+        const settings = [
+          {
+            key: 'version_backend',
+            controllerProps: { value: `b10431/${backend}` },
+          },
+        ]
+        extension['getSettings'] = vi.fn().mockResolvedValue(settings)
+        extension['updateSettings'] = vi
+          .fn()
+          .mockImplementation(async (next) => {
+            settings.splice(0, settings.length, ...next)
+          })
+        extension['configureBackendsPromise'] = new Promise<void>(() => {})
+
+        const load = startLoad()
+        await vi.advanceTimersByTimeAsync(0)
+
+        expect(load.isSettled()).toBe(true)
+        await expect(load.outcome).resolves.toEqual(session)
+        expect(extension.getEffectiveBackend()).toBe(`b10809/${backend}`)
+        expect(settings[0].controllerProps.value).toBe(`b10809/${backend}`)
+      }
+    )
+
+    it('fails boundedly with the missing selection when configuration stalls and no compatible backend is installed', async () => {
+      await prepareLoad('b10431/macos-arm64', () => false)
+      extension['configureBackendsPromise'] = new Promise<void>(() => {})
+      extension['downloadAndInstallBackend'] = vi
+        .fn()
+        .mockImplementation(() => new Promise<void>(() => {}))
+      const outcome = extension.load('test-model').catch((error) => error)
+
+      await vi.advanceTimersByTimeAsync(BACKEND_CONFIG_LOAD_WAIT_MS)
+      const result = await Promise.race([
+        outcome,
+        Promise.resolve('still loading'),
+      ])
+
+      expect(result).toBeInstanceOf(Error)
+      expect(result.message).toContain('b10431/macos-arm64')
+      expect(result.message).toContain('Settings')
+      expect(extension.getEffectiveBackend()).toBeNull()
+    })
+
+    it('preserves an explicitly selected installed older build even when a newer compatible build exists', async () => {
+      await prepareLoad('b10431/macos-arm64', () => true)
+      const backendModule = await import('../backend')
+      vi.mocked(backendModule.findCompatibleInstalledBackend).mockResolvedValue(
+        {
+          version: 'b10809',
+          backend: 'macos-arm64',
+        } as any
+      )
+      extension['configureBackendsPromise'] = new Promise<void>(() => {})
+
+      const load = startLoad()
+      await vi.advanceTimersByTimeAsync(0)
+
+      await expect(load.outcome).resolves.toEqual(session)
+      expect(extension.getEffectiveBackend()).toBe('b10431/macos-arm64')
+      expect(extension['config'].version_backend).toBe('b10431/macos-arm64')
+    })
+
+    it('rechecks disk after the timeout when installation finished during the wait', async () => {
+      let installed = false
+      await prepareLoad('b10431/macos-arm64', () => installed)
+      extension['configureBackendsPromise'] = new Promise<void>(() => {})
+      const load = startLoad()
+      await vi.advanceTimersByTimeAsync(BACKEND_CONFIG_LOAD_WAIT_MS / 2)
+      expect(load.isSettled()).toBe(false)
+      installed = true
+      await vi.advanceTimersByTimeAsync(BACKEND_CONFIG_LOAD_WAIT_MS / 2)
+
+      await expect(load.outcome).resolves.toEqual(session)
+      expect(extension.getEffectiveBackend()).toBe('b10431/macos-arm64')
+    })
+
+    it('does not replace a valid selection made while scanning installed builds', async () => {
+      await prepareLoad('b10431/macos-arm64', (version) => version !== 'b10431')
+      const backendModule = await import('../backend')
+      vi.mocked(
+        backendModule.findCompatibleInstalledBackend
+      ).mockImplementation(async () => {
+        extension['config'].version_backend = 'b10700/macos-arm64'
+        return { version: 'b10809', backend: 'macos-arm64' } as any
+      })
+      extension['configureBackendsPromise'] = Promise.resolve()
+      const load = startLoad()
+      await vi.advanceTimersByTimeAsync(0)
+
+      await expect(load.outcome).resolves.toEqual(session)
+      expect(extension.getEffectiveBackend()).toBe('b10700/macos-arm64')
+      expect(extension['config'].version_backend).toBe('b10700/macos-arm64')
+    })
+
     it('stops waiting on a stalled configuration when the backend is an unresolved sentinel', async () => {
       await prepareLoad('latest/macos-arm64', () => true)
       extension['configureBackendsPromise'] = new Promise<void>(() => {})
