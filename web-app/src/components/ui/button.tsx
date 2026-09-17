@@ -15,10 +15,11 @@ const buttonVariants = cva(
           'bg-destructive rounded-full text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline:
           'border rounded-full bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
-        // Light theme: `bg-secondary` is a shade off white, which on a white
-        // card is no fill at all. A neutral-200 pill reads as a button.
+        // Secondary actions use the same quiet outlined surface everywhere.
+        // Keeping this semantic variant separate lets call sites express
+        // hierarchy without drifting to a different visual treatment.
         secondary:
-          'bg-neutral-200 rounded-full text-secondary-foreground hover:bg-neutral-300 dark:bg-secondary dark:hover:bg-secondary/80',
+          'border rounded-full bg-background text-secondary-foreground shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
         ghost:
           'hover:bg-accent rounded-full hover:text-accent-foreground dark:hover:bg-accent/50',
         link: 'text-primary underline-offset-4 hover:underline',
