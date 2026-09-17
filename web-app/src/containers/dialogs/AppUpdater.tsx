@@ -19,6 +19,7 @@ const releaseNotesUrl = (version: string): string =>
   `${GITHUB_RELEASES_BASE}/${version.startsWith('v') ? version : `v${version}`}`
 
 const REMARK_PLUGINS = [remarkGfm]
+const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
 
 /// Release bodies are plain GitHub-flavoured markdown: paragraphs, headings,
 /// bullets, links, inline code. Rendered with bare `react-markdown` rather
@@ -72,9 +73,9 @@ const DialogAppUpdater = () => {
   )
 
   // Unfolded notes belong to one offer: a different version folds them back.
-  const [notesOpen, setNotesOpen] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(FORCE_UPDATE_PREVIEW)
   useEffect(() => {
-    setNotesOpen(false)
+    setNotesOpen(FORCE_UPDATE_PREVIEW)
   }, [newVersion])
 
   const openExternal = useCallback(

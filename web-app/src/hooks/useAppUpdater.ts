@@ -22,6 +22,19 @@ export interface UpdateState {
   currentVersion: string
 }
 
+const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
+
+const PREVIEW_UPDATE_INFO: UpdateInfo = {
+  version: '2.0.39-fixes-preview',
+  body: `## Atomic Chat 2.0.39 fixes
+
+- Unified Welcome, Select Model and no-model reply flows
+- Stable model downloads, cancellation and loading feedback
+- Cleaner model names, fit badges and provider controls
+- Connector, project, tool-call and reasoning layout fixes
+- Web search recovery and expanded release notes`,
+}
+
 /// Running app version, preferring what Tauri reports over the build-time
 /// define — a `yarn dev` web session has no Tauri API at all.
 const readCurrentVersion = async (): Promise<string> => {
@@ -38,8 +51,8 @@ const readCurrentVersion = async (): Promise<string> => {
 export const useAppUpdater = () => {
   const { t } = useTranslation()
   const [updateState, setUpdateState] = useState<UpdateState>({
-    isUpdateAvailable: false,
-    updateInfo: null,
+    isUpdateAvailable: FORCE_UPDATE_PREVIEW,
+    updateInfo: FORCE_UPDATE_PREVIEW ? PREVIEW_UPDATE_INFO : null,
     isDownloading: false,
     downloadProgress: 0,
     downloadedBytes: 0,
@@ -212,54 +225,57 @@ export const useAppUpdater = () => {
       getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
-        switch (event.event) {
-          case 'Started':
-            contentLength = event.data?.contentLength || 0
-            setUpdateState((prev) => ({
-              ...prev,
-              totalBytes: contentLength,
-            }))
-            console.log(`Started downloading ${contentLength} bytes`)
+      await getServiceHub()
+        .updater()
+        .downloadAndInstallWithProgress((event) => {
+          switch (event.event) {
+            case 'Started':
+              contentLength = event.data?.contentLength || 0
+              setUpdateState((prev) => ({
+                ...prev,
+                totalBytes: contentLength,
+              }))
+              console.log(`Started downloading ${contentLength} bytes`)
 
-            // Emit app update download started event
-            events.emit(AppEvent.onAppUpdateDownloadUpdate, {
-              progress: 0,
-              downloadedBytes: 0,
-              totalBytes: contentLength,
-            })
-            break
-          case 'Progress': {
-            downloaded += event.data?.chunkLength || 0
-            const progress = contentLength > 0 ? downloaded / contentLength : 0
-            setUpdateState((prev) => ({
-              ...prev,
-              downloadProgress: progress,
-              downloadedBytes: downloaded,
-            }))
-            console.log(`Downloaded ${downloaded} from ${contentLength}`)
+              // Emit app update download started event
+              events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+                progress: 0,
+                downloadedBytes: 0,
+                totalBytes: contentLength,
+              })
+              break
+            case 'Progress': {
+              downloaded += event.data?.chunkLength || 0
+              const progress =
+                contentLength > 0 ? downloaded / contentLength : 0
+              setUpdateState((prev) => ({
+                ...prev,
+                downloadProgress: progress,
+                downloadedBytes: downloaded,
+              }))
+              console.log(`Downloaded ${downloaded} from ${contentLength}`)
 
-            // Emit app update download progress event
-            events.emit(AppEvent.onAppUpdateDownloadUpdate, {
-              progress: progress,
-              downloadedBytes: downloaded,
-              totalBytes: contentLength,
-            })
-            break
+              // Emit app update download progress event
+              events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+                progress: progress,
+                downloadedBytes: downloaded,
+                totalBytes: contentLength,
+              })
+              break
+            }
+            case 'Finished':
+              console.log('Download finished')
+              setUpdateState((prev) => ({
+                ...prev,
+                isDownloading: false,
+                downloadProgress: 1,
+              }))
+
+              // Emit app update download success event
+              events.emit(AppEvent.onAppUpdateDownloadSuccess, {})
+              break
           }
-          case 'Finished':
-            console.log('Download finished')
-            setUpdateState((prev) => ({
-              ...prev,
-              isDownloading: false,
-              downloadProgress: 1,
-            }))
-
-            // Emit app update download success event
-            events.emit(AppEvent.onAppUpdateDownloadSuccess, {})
-            break
-        }
-      })
+        })
 
       if (IS_WINDOWS) {
         // NSIS .onInstSuccess (RunAsUser) is the sole relauncher on Windows.
@@ -284,7 +300,6 @@ export const useAppUpdater = () => {
       })
     }
   }, [updateState.updateInfo, t])
-
 
   return {
     updateState,
