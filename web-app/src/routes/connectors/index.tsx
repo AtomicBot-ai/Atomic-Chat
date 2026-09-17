@@ -28,6 +28,7 @@ import {
   type MCPSettings,
 } from '@/hooks/useMCPServers'
 import { useMCPServerStatuses } from '@/hooks/useMCPServerStatuses'
+import { effectiveMcpStatus } from '@/lib/mcp-effective-status'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -61,6 +62,7 @@ function ConnectorsPage() {
     useToolApproval()
   const { statusByName, refresh } = useMCPServerStatuses()
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
+  const availableTools = useAppState((state) => state.tools)
 
   // Logs are secondary: collapsed by default, expanded by the button at the
   // bottom of the page. Mount-on-open also skips the log tail subscription.
@@ -485,7 +487,15 @@ function ConnectorsPage() {
                     key={key}
                     connector={connector}
                     installed={installed}
-                    status={installed ? statusByName.get(key) : undefined}
+                    status={
+                      installed
+                        ? effectiveMcpStatus(
+                            key,
+                            statusByName.get(key),
+                            availableTools
+                          )
+                        : undefined
+                    }
                     busy={!!busyServers[key]}
                     onSetUp={() => connector && handleSetUp(connector)}
                     onCancelSignIn={handleCancelSignIn}
