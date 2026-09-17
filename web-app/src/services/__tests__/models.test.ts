@@ -1409,3 +1409,41 @@ describe('listHuggingFaceFeed', () => {
     expect(parseHuggingFaceNextCursor(null)).toBeNull()
   })
 })
+
+describe('Hugging Face search formats', () => {
+  it.each(['gguf', 'mlx'] as const)(
+    'returns only %s candidates with their format',
+    async (format) => {
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { id: 'community/Qwen-Mixed', tags: ['gguf', 'mlx'] },
+          { id: 'community/Qwen-GGUF', tags: ['gguf'] },
+          { id: 'mlx-community/Qwen-4bit', tags: ['mlx'] },
+          { id: 'upstream/Qwen', tags: ['transformers'] },
+        ],
+      } as Response)
+      const result =
+        await new DefaultModelsService().searchHuggingFaceCandidates(
+          'Qwen',
+          undefined,
+          6,
+          format
+        )
+      expect(result.map((m) => [m.model_name, m.is_mlx]).sort()).toEqual(
+        format === 'mlx'
+          ? [
+              ['community/Qwen-Mixed', true],
+              ['mlx-community/Qwen-4bit', true],
+            ]
+          : [
+              ['community/Qwen-GGUF', false],
+              ['community/Qwen-Mixed', false],
+            ]
+      )
+      const url = new URL(String(vi.mocked(fetch).mock.calls.at(-1)?.[0]))
+      expect(url.searchParams.get('filter')).toBe(format)
+      expect(url.searchParams.get('search')).toBe('Qwen')
+    }
+  )
+})

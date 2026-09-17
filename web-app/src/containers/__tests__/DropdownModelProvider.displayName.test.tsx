@@ -192,6 +192,32 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     cleanup()
   })
 
+  it.each(['llamacpp', 'llamacpp-upstream', 'chatgpt'])(
+    'gives %s an accessible settings button with transparent rest and a separated status slot',
+    (provider) => {
+      const configured = { ...mockProviders[0], provider }
+      mockModelProvider({
+        providers: [configured],
+        selectedProvider: provider,
+        selectedModel: mockSelectedModel,
+        getProviderByName: () => configured,
+        selectModelProvider: vi.fn(),
+        getModelBy: vi.fn(),
+        updateProvider: vi.fn(),
+      })
+      renderPicker()
+      const gear = screen.getByRole('button', {
+        name: 'common:modelPicker.providerSettings',
+      })
+      expect(gear).toHaveClass(
+        'bg-transparent',
+        'hover:bg-secondary-foreground/8',
+        'focus-visible:bg-secondary-foreground/8'
+      )
+      expect(gear.parentElement).toHaveClass('gap-3')
+    }
+  )
+
   it('should display custom model name in the trigger button', () => {
     renderPicker()
 

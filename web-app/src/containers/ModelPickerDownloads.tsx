@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { IconLoader2 } from '@tabler/icons-react'
 import { Cloud } from 'lucide-react'
+import { EngineManager } from '@janhq/core'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/shallow'
 
@@ -42,7 +43,10 @@ import { getPreferredMmprojModel } from '@/lib/models'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { cn, sanitizeModelId } from '@/lib/utils'
-import type { CatalogModel } from '@/services/models/types'
+import type {
+  CatalogModel,
+  HuggingFaceFeedFormat,
+} from '@/services/models/types'
 
 /** How long the recommendation may take to resolve before the list stops waiting. */
 const RECOMMENDATION_WAIT_MS = 8_000
@@ -63,7 +67,7 @@ const RECOMMENDED_LIMIT = 50
  * take the same room, so the routes under the card never move while the
  * user types, the search loads or the query is cleared.
  */
-const HF_RESULTS_MIN_HEIGHT_CLASS = 'min-h-[21rem]'
+const HF_RESULTS_HEIGHT_CLASS = 'h-[21rem] min-h-[21rem] overflow-y-auto'
 /** The subscription the routes offer by name — the reply gate's. */
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
 /** `ModelLogo` drawn as a bare 32 px mark in a `RouteRow`'s icon slot. */
@@ -81,6 +85,19 @@ const startedVariantByRepo = new Map<string, string>()
 export function resetModelPickerDownloadsForTest(): void {
   resolvedCards.clear()
   startedVariantByRepo.clear()
+}
+
+const candidateFormat = (candidate: CatalogModel) =>
+  candidate.is_mlx ? 'MLX' : 'GGUF'
+const candidateKey = (candidate: CatalogModel) =>
+  `${candidate.model_name}:${candidateFormat(candidate)}`
+
+function FormatBadge({ candidate }: { candidate: CatalogModel }) {
+  return (
+    <span className="shrink-0 rounded border bg-secondary px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+      {candidateFormat(candidate)}
+    </span>
+  )
 }
 
 type Translate = (key: string, vars?: Record<string, unknown>) => string
@@ -187,7 +204,10 @@ function PickerSection({
         {label}
       </span>
       <div
-        className={cn('rounded-lg border bg-secondary/50 px-3 py-2', className)}
+        className={cn(
+          'rounded-lg border bg-secondary/50 px-3 py-2 [&_.line-clamp-1]:truncate',
+          className
+        )}
         data-testid={testId}
       >
         {children}
@@ -362,11 +382,11 @@ type HuggingFaceAnswer = {
 }
 
 /**
- * Hugging Face's GGUF repos for the typed query, and the download behind
+ * Hugging Face's compatible repos for the typed query, and the download behind
  * each — shared by the compact rows under the normal list and the panel
  * rows of the empty state.
  *
- * One request per settled query, never per keystroke — anonymous requests
+ * One request per supported format and settled query, never per keystroke — anonymous requests
  * are rate-limited per IP. A row knows only its repo until it is clicked:
  * the file to download is resolved then, from the repo's own listing, with
  * the same rule the Hub's download panel opens on (`pickDownloadQuant`), so
@@ -417,15 +437,35 @@ function useHuggingFaceSearch(query: string) {
     const ticket = ++ticketRef.current
     if (!eligible) return
     const timer = setTimeout(() => {
-      serviceHub
-        .models()
-        .searchHuggingFaceCandidates(trimmed, huggingfaceToken, HF_SEARCH_LIMIT)
-        .then((found) => {
+      const formats: HuggingFaceFeedFormat[] = IS_MACOS
+        ? ['gguf', 'mlx']
+        : ['gguf']
+      Promise.all(
+        formats.map((format) =>
+          serviceHub
+            .models()
+            .searchHuggingFaceCandidates(
+              trimmed,
+              huggingfaceToken,
+              HF_SEARCH_LIMIT,
+              format
+            )
+        )
+      )
+        .then((answers) => {
           if (ticket !== ticketRef.current) return
-          // GGUF only: an MLX repo has no file this row could fetch.
+          // Interleave formats so six popular GGUF repos cannot bury MLX.
+          const found = Array.from({ length: HF_SEARCH_LIMIT }, (_, index) =>
+            answers.flatMap((rows) => (rows[index] ? [rows[index]] : []))
+          ).flat()
+          const unique = new Map(
+            found
+              .filter((m) => IS_MACOS || !m.is_mlx)
+              .map((m) => [candidateKey(m), m])
+          )
           setAnswer({
             query: trimmed,
-            results: found.filter((m) => !m.is_mlx),
+            results: [...unique.values()],
             failed: false,
           })
         })
@@ -456,8 +496,12 @@ function useHuggingFaceSearch(query: string) {
   // `fetchHuggingFaceRepo` answers `null` for a repo it could not fetch as
   // well as for one that does not exist, so a miss is not cached: the next
   // click may be online.
-  const resolveCard = async (repo: string): Promise<CatalogModel | null> => {
-    const cached = resolvedCards.get(repo)
+  const resolveCard = async (
+    candidate: CatalogModel
+  ): Promise<CatalogModel | null> => {
+    const repo = candidate.model_name
+    const key = candidateKey(candidate)
+    const cached = resolvedCards.get(key)
     if (cached) return cached
     const repoInfo = await serviceHub
       .models()
@@ -467,22 +511,61 @@ function useHuggingFaceSearch(query: string) {
     const card: CatalogModel = {
       ...catalog,
       model_name: repo,
+      is_mlx: candidate.is_mlx,
       quants: catalog.quants?.map((quant) => ({
         ...quant,
         model_id: sanitizeModelId(quant.model_id),
       })),
     }
-    resolvedCards.set(repo, card)
+    resolvedCards.set(key, card)
     return card
   }
 
   const download = async (candidate: CatalogModel) => {
     const repo = candidate.model_name
     if (busyRepo) return
-    setBusyRepo(repo)
+    const key = candidateKey(candidate)
+    setBusyRepo(key)
     let variantId: string | undefined
     try {
-      const card = await resolveCard(repo)
+      if (candidate.is_mlx) {
+        if (!IS_MACOS) return
+        const repoInfo = await serviceHub
+          .models()
+          .fetchHuggingFaceRepo(repo, huggingfaceToken)
+        if (!repoInfo)
+          throw new Error(t('common:modelPicker.huggingFaceUnavailable'))
+        const files = repoInfo.siblings ?? []
+        const main = files.find((file) =>
+          file.rfilename.toLowerCase().endsWith('.safetensors')
+        )
+        if (!main) {
+          setUnavailable((prev) => new Set(prev).add(key))
+          return
+        }
+        const engine = EngineManager.instance().get('mlx')
+        if (!engine) throw new Error(t('common:modelPicker.mlxUnavailable'))
+        variantId = sanitizeModelId(repo.split('/').pop() ?? repo)
+        startedVariantByRepo.set(key, variantId)
+        clearResumableDownload(variantId)
+        addLocalDownloadingModel(variantId)
+        setDownloadOrigin(variantId, repo)
+        await engine.import(variantId, {
+          modelPath: `https://huggingface.co/${repo}/resolve/main/${main.rfilename}`,
+          files: files
+            .filter(
+              (file) =>
+                file !== main && !file.rfilename.toLowerCase().endsWith('.gguf')
+            )
+            .map((file) => ({
+              url: `https://huggingface.co/${repo}/resolve/main/${file.rfilename}`,
+              filename: file.rfilename,
+            })),
+          resume: resumableDownloads.has(variantId),
+        })
+        return
+      }
+      const card = await resolveCard(candidate)
       if (!card) {
         toast.error(t('hub:downloadFailed'), {
           description: t('common:modelPicker.huggingFaceUnavailable'),
@@ -495,11 +578,11 @@ function useHuggingFaceSearch(query: string) {
         getMemoryBudgetBytes({ total_memory, gpus })
       )
       if (!variant) {
-        setUnavailable((prev) => new Set(prev).add(repo))
+        setUnavailable((prev) => new Set(prev).add(key))
         return
       }
       variantId = variant.model_id
-      startedVariantByRepo.set(repo, variantId)
+      startedVariantByRepo.set(key, variantId)
       clearResumableDownload(variantId)
       addLocalDownloadingModel(variantId)
       setDownloadOrigin(variantId, card.model_name)
@@ -540,6 +623,7 @@ function useHuggingFaceSearch(query: string) {
  * download runs.
  */
 function PickerDownloadRow({
+  candidate,
   title,
   hint,
   label,
@@ -547,6 +631,7 @@ function PickerDownloadRow({
   busy,
   onDownload,
 }: {
+  candidate: CatalogModel
   title: string
   hint: string
   label: string
@@ -562,8 +647,11 @@ function PickerDownloadRow({
       data-testid="model-picker-download-row"
     >
       <div className="min-w-0 flex-1">
-        <span className="block truncate text-sm" title={title}>
-          {title}
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate text-sm" title={title}>
+            {title}
+          </span>
+          <FormatBadge candidate={candidate} />
         </span>
         <span className="block truncate text-xs text-muted-foreground">
           {hint}
@@ -576,7 +664,7 @@ function PickerDownloadRow({
         aria-label={label}
         disabled={disabled || busy}
         onClick={onDownload}
-        className="shrink-0 rounded-full"
+        className="w-[8rem] max-w-[35%] shrink-0 rounded-full"
       >
         {busy ? (
           <IconLoader2 className="animate-spin" aria-hidden />
@@ -602,17 +690,24 @@ function HuggingFaceRow({
   const { t } = useTranslation()
   const repo = candidate.model_name
   const title = prettyModelName(repo) || repo
-  const inFlight = useInFlightDownload(startedVariantByRepo.get(repo))
+  const inFlight = useInFlightDownload(
+    startedVariantByRepo.get(candidateKey(candidate))
+  )
   const hint = inFlight
     ? inFlightHint(t, inFlight)
     : unavailable
-      ? t('common:modelPicker.noGgufFile')
+      ? t(
+          candidate.is_mlx
+            ? 'common:modelPicker.noMlxFile'
+            : 'common:modelPicker.noGgufFile'
+        )
       : repo
   return (
     <PickerDownloadRow
+      candidate={candidate}
       title={title}
       hint={hint}
-      label={t('chat:replyGate.downloadLabel', { name: title })}
+      label={`${t('chat:replyGate.downloadLabel', { name: title })} (${candidateFormat(candidate)})`}
       disabled={inFlight !== null || unavailable}
       busy={busy}
       onDownload={onDownload}
@@ -621,7 +716,7 @@ function HuggingFaceRow({
 }
 
 /**
- * Hugging Face's GGUF repos for the typed query, under the local matches of
+ * Hugging Face's compatible repos for the typed query, under the local matches of
  * the normal list — a search with no local hit was a dead end ("No models
  * found") with nothing to download from.
  *
@@ -676,10 +771,10 @@ export function HuggingFacePicks({
       </div>
       {results.map((candidate) => (
         <HuggingFaceRow
-          key={candidate.model_name}
+          key={candidateKey(candidate)}
           candidate={candidate}
-          busy={busyRepo === candidate.model_name}
-          unavailable={unavailable.has(candidate.model_name)}
+          busy={busyRepo === candidateKey(candidate)}
+          unavailable={unavailable.has(candidateKey(candidate))}
           onDownload={() => void download(candidate)}
         />
       ))}
@@ -708,16 +803,23 @@ function HuggingFaceRouteRow({
   const serviceHub = useServiceHub()
   const repo = candidate.model_name
   const title = prettyModelName(repo) || repo
-  const inFlight = useInFlightDownload(startedVariantByRepo.get(repo))
+  const inFlight = useInFlightDownload(
+    startedVariantByRepo.get(candidateKey(candidate))
+  )
   return (
     <RouteRow
       icon={modelMark(repo)}
       title={title}
+      meta={<FormatBadge candidate={candidate} />}
       hint={
         inFlight
           ? inFlightHint(t, inFlight)
           : unavailable
-            ? t('common:modelPicker.noGgufFile')
+            ? t(
+                candidate.is_mlx
+                  ? 'common:modelPicker.noMlxFile'
+                  : 'common:modelPicker.noGgufFile'
+              )
             : repo
       }
       action={
@@ -732,7 +834,7 @@ function HuggingFaceRouteRow({
       label={
         inFlight
           ? t('common:cancelDownload')
-          : t('chat:replyGate.downloadLabel', { name: title })
+          : `${t('chat:replyGate.downloadLabel', { name: title })} (${candidateFormat(candidate)})`
       }
       disabled={!inFlight && (busy || unavailable)}
       onClick={() => {
@@ -776,10 +878,10 @@ function HuggingFaceResults({ query }: { query: string }) {
       <div className="flex flex-col divide-y divide-border/60">
         {results.map((candidate) => (
           <HuggingFaceRouteRow
-            key={candidate.model_name}
+            key={candidateKey(candidate)}
             candidate={candidate}
-            busy={busyRepo === candidate.model_name}
-            unavailable={unavailable.has(candidate.model_name)}
+            busy={busyRepo === candidateKey(candidate)}
+            unavailable={unavailable.has(candidateKey(candidate))}
             onDownload={() => void download(candidate)}
           />
         ))}
@@ -790,7 +892,7 @@ function HuggingFaceResults({ query }: { query: string }) {
   return (
     <PickerSection
       label={t('common:modelPicker.huggingFace')}
-      className={HF_RESULTS_MIN_HEIGHT_CLASS}
+      className={HF_RESULTS_HEIGHT_CLASS}
       data-testid="model-picker-hugging-face"
     >
       {body}

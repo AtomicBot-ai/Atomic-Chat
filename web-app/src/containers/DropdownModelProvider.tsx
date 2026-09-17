@@ -67,8 +67,7 @@ const SUBSCRIPTION_PROVIDER = 'chatgpt'
  * changed with the rows — a status line, then six results, then the
  * recommendations again — moved its top edge with every keystroke.
  */
-const EMPTY_PANEL_CLASS =
-  'w-[32rem] max-w-[calc(100vw-2rem)] h-[min(36rem,calc(100vh-8rem))]'
+const EMPTY_PANEL_CLASS = 'h-[min(36rem,calc(100dvh-8rem))]'
 
 /**
  * Which providers may list models in the picker.
@@ -769,18 +768,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
       <PopoverContent
         className={cn(
-          'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
+          'w-[42rem] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-hidden p-0 backdrop-blur-2xl bg-background/95 border',
           view === 'models' &&
             (pickerEmpty
               ? EMPTY_PANEL_CLASS
-              : searchValue.length === 0 && 'h-80')
+              : 'h-[min(32rem,calc(100dvh-8rem))]')
         )}
         align="end"
         side="top"
         sideOffset={8}
-        avoidCollisions={
-          view === 'main' || pickerEmpty || searchValue.length === 0
-        }
+        avoidCollisions
+        collisionPadding={16}
       >
         {view === 'main' ? (
           <div className="flex flex-col p-1.5">
@@ -824,9 +822,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             <ReasoningEffortPanel className="mt-1 border-t px-2 pt-2 pb-1" />
           </div>
         ) : (
-          <div className="flex flex-col size-full">
+          <div className="flex min-h-0 flex-col size-full">
             {/* Search input, with the way back to the model row. */}
-            <div className="relative flex items-center gap-1 p-1.5 border-b">
+            <div className="relative flex shrink-0 items-center gap-1 p-1.5 border-b">
               <Button
                 type="button"
                 variant="ghost"
@@ -841,7 +839,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
                 placeholder={t('common:searchModels')}
-                className="min-w-0 flex-1 text-sm font-normal outline-0"
+                className="min-w-0 flex-1 pr-6 text-sm font-normal outline-0"
               />
               {searchValue.length > 0 && (
                 <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
@@ -856,12 +854,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
             {/* Model list. With nothing to pick it fills the panel's fixed
                 height and scrolls inside it. */}
-            <div
-              className={cn(
-                'overflow-y-auto',
-                pickerEmpty ? 'min-h-0 flex-1' : 'max-h-80'
-              )}
-            >
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <div className={cn(!pickerEmpty && 'py-1')}>
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
@@ -937,7 +930,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
                     >
                       {/* Provider header */}
-                      <div className="flex items-center justify-between px-2 py-1">
+                      <div className="flex items-center justify-between gap-3 px-2 py-1">
                         {/* `min-w-0` on the group and the span is what lets
                             a long title ("ChatGPT subscription (Codex)")
                             ellipsise instead of wrapping and pushing the
@@ -958,8 +951,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           )}
                         </div>
 
-                        <div
-                          className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                        <button
+                          type="button"
+                          aria-label={t('common:modelPicker.providerSettings', {
+                            provider: getProviderTitle(providerInfo.provider),
+                          })}
+                          className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-transparent transition-colors duration-200 ease-in-out hover:bg-secondary-foreground/8 focus-visible:bg-secondary-foreground/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={(e) => {
                             e.stopPropagation()
                             // Cloud providers are set up on `/cloud`; local
@@ -984,7 +981,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                             size={16}
                             className="text-muted-foreground"
                           />
-                        </div>
+                        </button>
                       </div>
 
                       {/* Models for this provider */}
@@ -1036,7 +1033,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       is the reply gate's — the models recommended for this
                       device, the other ways to get one, and Hugging Face's
                       answer to whatever is typed. Otherwise, under the
-                      local matches, Hugging Face's GGUF repos for the
+                      local matches, Hugging Face's compatible repos for the
                       query — a search with no local hit was a dead end
                       ("No models found") with nothing to download from. */}
                 {pickerEmpty ? (
@@ -1064,7 +1061,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               pick: that panel is the download, and its Hugging Face row is
               the way into the Hub. */}
             {!pickerEmpty && (
-              <div className="border-t p-1.5 mt-auto">
+              <div className="shrink-0 border-t p-1.5 mt-auto">
                 <button
                   type="button"
                   onClick={onDownloadModel}
