@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from '../ChatInput'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
@@ -183,7 +190,7 @@ describe('ChatInput', () => {
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({ connectorsPinned: true, agentModeEnabled: false })
+    useGeneralSetting.setState({ agentModeEnabled: false })
 
     const model = {
       id: 'test-model',
@@ -316,7 +323,11 @@ describe('ChatInput', () => {
     act(() => {
       useModelProvider.setState({
         selectedProvider: 'openai',
-        selectedModel: { id: 'test-model', capabilities: [], settings: {} } as Model,
+        selectedModel: {
+          id: 'test-model',
+          capabilities: [],
+          settings: {},
+        } as Model,
       })
     })
 
@@ -355,7 +366,11 @@ describe('ChatInput', () => {
     act(() => {
       useModelProvider.setState({
         selectedProvider: 'openai',
-        selectedModel: { id: 'test-model', capabilities: [], settings: {} } as Model,
+        selectedModel: {
+          id: 'test-model',
+          capabilities: [],
+          settings: {},
+        } as Model,
       })
     })
 
@@ -422,7 +437,11 @@ describe('ChatInput', () => {
   })
 
   it('starts the only local model on send and holds the message until it is up', async () => {
-    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
     useModelProvider.setState({
       providers: [
         {
@@ -470,7 +489,11 @@ describe('ChatInput', () => {
   })
 
   it('brings a model the user stopped back up on send, instead of blocking Send', async () => {
-    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
     useModelProvider.setState({
       providers: [
         {
@@ -532,7 +555,11 @@ describe('ChatInput', () => {
   // ATO-530: a Cancel on the load a send is waiting for holds the model down,
   // so the send would wait forever. The text stays in the field.
   it('drops a waiting send when the user cancels the load it waits for', async () => {
-    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
     const stopKey = modelStopKey('llamacpp-upstream', model.id)
     useModelProvider.setState({
       providers: [
@@ -557,20 +584,29 @@ describe('ChatInput', () => {
     fireEvent.change(screen.getByTestId('chat-input'), {
       target: { value: 'Invoke the machine spirit' },
     })
-    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
     await waitFor(() =>
       expect(screen.getByTestId('reply-gate-queued-notice')).toBeInTheDocument()
     )
 
     // The real switch lifts the stop as the load starts; the Cancel sets it
     // again once the load is gone.
-    act(() => useAppState.setState({ userStoppedModels: [], loadingModel: true }))
     act(() =>
-      useAppState.setState({ userStoppedModels: [stopKey], loadingModel: false })
+      useAppState.setState({ userStoppedModels: [], loadingModel: true })
+    )
+    act(() =>
+      useAppState.setState({
+        userStoppedModels: [stopKey],
+        loadingModel: false,
+      })
     )
 
     await waitFor(() =>
-      expect(screen.queryByTestId('reply-gate-queued-notice')).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('reply-gate-queued-notice')
+      ).not.toBeInTheDocument()
     )
     expect(onSubmit).not.toHaveBeenCalled()
     unmount()
@@ -685,49 +721,49 @@ describe('ChatInput', () => {
     })
   }
 
-  it('drops the connectors button from the toolbar once it is unpinned', () => {
-    // Unpinning is a UI choice, not a kill switch: it only takes the button
-    // out of the toolbar, and the "+" menu is the way back to it.
+  it('keeps the Plugins button in the toolbar next to web search, with no setting behind it', () => {
+    // Same standing as the globe: always on the toolbar, and each
+    // connector's on/off switch lives inside its dropdown. No store flag is
+    // left that could hide it.
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
       },
     })
-    useGeneralSetting.setState({ connectorsPinned: false })
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
 
+    const plugins = screen.getByRole('button', { name: 'plugins' })
     expect(
-      document.querySelector('[data-test-id="connectors-dropdown"]')
-    ).not.toBeInTheDocument()
-    // The server it would have listed is still connected, and web search —
-    // which runs on one of those servers — is still on the toolbar.
-    expect(useMCPServers.getState().mcpServers.exa.active).toBe(true)
-    expect(
-      screen.getByLabelText('common:webSearchToggleEnabled')
+      plugins.querySelector('[data-test-id="connectors-dropdown"]')
     ).toBeInTheDocument()
+    const globe = screen.getByLabelText('common:webSearchToggleEnabled')
+    expect(plugins.parentElement).toBe(globe.parentElement)
+    expect(
+      plugins.compareDocumentPosition(globe) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect('connectorsPinned' in useGeneralSetting.getState()).toBe(false)
 
     useMCPServers.setState({ mcpServers: {} })
     unmount()
   })
 
-  it('pins and unpins the plugins button from the attach menu', () => {
+  it('offers no Plugins item in the attach menu', () => {
+    // With the button a toolbar fixture there is nothing to pin or unpin:
+    // the "+" menu is back to attachments and Agent mode.
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
 
-    fireEvent.click(screen.getByText('plugins'))
-    expect(useGeneralSetting.getState().connectorsPinned).toBe(false)
-    expect(
-      document.querySelector('[data-test-id="connectors-dropdown"]')
-    ).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('plugins'))
-    expect(useGeneralSetting.getState().connectorsPinned).toBe(true)
-    expect(
-      document.querySelector('[data-test-id="connectors-dropdown"]')
-    ).toBeInTheDocument()
+    const addImages = screen.getByText('Add Images').closest('button')!
+    const items = within(addImages.parentElement!).getAllByRole('button')
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Add Images',
+      'Add documents or files',
+      'chat:agentMode.menuItem',
+    ])
+    expect(screen.queryByText('plugins')).not.toBeInTheDocument()
 
     unmount()
   })
@@ -912,7 +948,7 @@ describe('ChatInput local model auto-start', () => {
     mocks.switchToModel.mockResolvedValue(undefined)
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({ connectorsPinned: true, agentModeEnabled: false })
+    useGeneralSetting.setState({ agentModeEnabled: false })
     useModelProvider.setState({
       providers: [upstream],
       selectedProvider: 'llamacpp-upstream',
@@ -923,7 +959,7 @@ describe('ChatInput local model auto-start', () => {
   it('drops a stray copy in another engine instead of switching', async () => {
     const { stopAllModelsExcept } = seedModels({
       'llamacpp-upstream': ['shared-model'],
-      llamacpp: ['shared-model'],
+      'llamacpp': ['shared-model'],
     })
     const { unmount } = render(<ChatInput />)
 
@@ -956,7 +992,7 @@ describe('ChatInput local model auto-start', () => {
   it('never touches the engines while this thread is streaming', async () => {
     const { getActiveModels, stopAllModelsExcept } = seedModels({
       'llamacpp-upstream': ['shared-model'],
-      llamacpp: ['shared-model'],
+      'llamacpp': ['shared-model'],
     })
     const { unmount } = render(<ChatInput chatStatus="streaming" />)
 

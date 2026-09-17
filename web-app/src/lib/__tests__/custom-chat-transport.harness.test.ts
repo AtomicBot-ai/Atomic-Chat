@@ -2,6 +2,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import type { LanguageModel } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { localStorageKey } from '@/constants/localStorage'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -375,8 +376,10 @@ describe('CustomChatTransport skill injection', () => {
 
     await send()
     // Stand in for the real loader having memoized a body.
-    const firstCache = vi.mocked(loadChatSkillDetails).mock
-      .calls[0][1] as Map<string, unknown>
+    const firstCache = vi.mocked(loadChatSkillDetails).mock.calls[0][1] as Map<
+      string,
+      unknown
+    >
     firstCache.set('style-guide', { name: 'style-guide', body: 'stale' })
 
     await send()
@@ -914,6 +917,27 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     const report = useAppState.getState().toolCostReports['']
     expect(report.perServer.map((s) => s.server)).toEqual(['exa'])
     expect(report.tooHeavy).toBe(false)
+  })
+
+  it('sends every connector for an install that had the Plugins button unpinned', async () => {
+    // Hiding the composer's Plugins button never muted anything, and the
+    // pin is gone (v4 of the general settings): a stale persisted value
+    // must not start to. Only the switches inside the dropdown decide.
+    localStorage.setItem(
+      localStorageKey.settingGeneral,
+      JSON.stringify({ state: { connectorsPinned: false }, version: 3 })
+    )
+    try {
+      await useGeneralSetting.persist.rehydrate()
+
+      const sent = await sendAndCaptureTools()
+
+      expect(sent).toEqual(
+        [...linearTools.map((t) => t.name), exaTool.name].sort()
+      )
+    } finally {
+      localStorage.removeItem(localStorageKey.settingGeneral)
+    }
   })
 
   it('never sends a system server (filesystem, fetch) — that is agent-mode tooling', async () => {

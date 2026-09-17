@@ -53,13 +53,6 @@ type GeneralSettingState = {
   connectorsBadgeSeen: boolean
   markConnectorsBadgeSeen: () => void
   /**
-   * Whether the connectors button is pinned to the composer toolbar. Unpinning
-   * only hides the button — connected MCP servers keep running and their tools
-   * stay available to the model; the "+" menu pins it back.
-   */
-  connectorsPinned: boolean
-  setConnectorsPinned: (value: boolean) => void
-  /**
    * Global opt-in for the agent engine. Off = every turn runs on the chat
    * pipeline. Toggled from the composer "+" menu; while on, an "Agent" chip
    * sits in the composer toolbar until the user removes it.
@@ -104,18 +97,19 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         set((state) =>
           state.connectorsBadgeSeen ? state : { connectorsBadgeSeen: true }
         ),
-      connectorsPinned: true,
-      setConnectorsPinned: (value) => set({ connectorsPinned: value }),
       agentModeEnabled: false,
       setAgentModeEnabled: (value) => set({ agentModeEnabled: value }),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
       setReasoningBudget: (value) => set({ reasoningBudget: value }),
-      setPreloadModelOnStartup: (value) => set({ preloadModelOnStartup: value }),
+      setPreloadModelOnStartup: (value) =>
+        set({ preloadModelOnStartup: value }),
       setLegacyChatEngine: (value) => set({ legacyChatEngine: value }),
       setMaxImageSizePx: (value) =>
-        set({ maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0 }),
+        set({
+          maxImageSizePx: Number.isFinite(value) && value > 0 ? value : 0,
+        }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
       setScanLocalModels: (value) => set({ scanLocalModels: value }),
       addLocalScanFolder: (folder) =>
@@ -151,9 +145,10 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState: unknown, version: number) => {
-        const state = (persistedState ?? {}) as Partial<GeneralSettingState>
+        const state = (persistedState ?? {}) as Partial<GeneralSettingState> &
+          Record<string, unknown>
         if (version < 1 && (state.reasoningBudget as string) === 'unlimited') {
           // v0 → v1: the uncapped level joined the effort scale as `max`.
           state.reasoningBudget = 'max'
@@ -174,6 +169,14 @@ export const useGeneralSetting = create<GeneralSettingState>()(
           // where agent skills never reach the model — with no notice.
           // Carry their choice over.
           state.agentModeEnabled = true
+        }
+        if (version < 4) {
+          // v3 → v4: the composer's Plugins button no longer hides behind a
+          // "+" menu pin (`connectorsPinned`); it is a toolbar fixture like
+          // the web-search globe. The store saves every field, so an install
+          // that had the button unpinned still carries the key — drop it.
+          // Each connector's own on/off state lives elsewhere and is kept.
+          delete state.connectorsPinned
         }
         return state as GeneralSettingState
       },
