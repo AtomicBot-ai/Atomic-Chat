@@ -136,7 +136,7 @@ describe('VisionModelDialog', () => {
     // Size and reason on one line under each name.
     expect(
       screen.getAllByText(
-        'chat:visionGate.rowHint:{"size":"4.5 GB","reason":"hub:recVisionKnowledge"}'
+        'chat:visionGate.rowHint:{"size":"4.5 GB","reason":"chat:visionGate.visionCapable · hub:recVisionKnowledge"}'
       )
     ).toHaveLength(2)
   })
@@ -195,8 +195,10 @@ describe('VisionModelDialog', () => {
     })
     expect(onModelReady).not.toHaveBeenCalled()
 
-    // Closing now is not cancelling: the download goes on in the panel.
-    expect(screen.getByRole('button', { name: 'common:close' })).toBeVisible()
+    // No redundant footer action: the titlebar × / outside click dismisses
+    // the dialog without cancelling the download.
+    expect(screen.queryByText('common:close')).not.toBeInTheDocument()
+    expect(screen.queryByText('common:cancel')).not.toBeInTheDocument()
 
     act(() => {
       events.emit('onModelImported', { modelId: 'Gemma 4 E4B-Q4_K_M' })
@@ -230,18 +232,6 @@ describe('VisionModelDialog', () => {
 
     expect(mocks.navigate).toHaveBeenCalledWith({ to: '/hub/' })
     expect(onOpenChange).toHaveBeenCalledWith(false)
-  })
-
-  it('closes on Cancel without starting anything', () => {
-    const { onOpenChange, onModelReady } = renderDialog()
-
-    const cancel = screen.getByRole('button', { name: 'common:cancel' })
-    expect(cancel).toHaveTextContent(/^common:cancel$/)
-    fireEvent.click(cancel)
-
-    expect(onOpenChange).toHaveBeenCalledWith(false)
-    expect(onModelReady).not.toHaveBeenCalled()
-    expect(mocks.items[0].start).not.toHaveBeenCalled()
   })
 
   it('says so when nothing in the list fits this device', () => {

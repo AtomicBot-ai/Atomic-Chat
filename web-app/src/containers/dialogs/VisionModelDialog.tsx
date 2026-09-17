@@ -3,12 +3,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { AppEvent, events } from '@janhq/core'
 
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -82,7 +80,7 @@ export function VisionModelDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
+      <DialogContent className="overflow-x-hidden sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         {open && (
           <VisionModelDialogBody
             modelName={modelName}
@@ -118,10 +116,6 @@ function VisionModelDialogBody({
   const navigate = useNavigate()
   const { items, isLoading } = useVisionDownloads()
   const downloads = useDownloadStore((state) => state.downloads)
-  // Once a download is under way, closing is not cancelling: the download
-  // goes on in the panel and the composer switches when it lands.
-  const [downloadStarted, setDownloadStarted] = useState(false)
-
   // The card lookup has no failure state of its own; past this the empty
   // line and the Hub row are the offer.
   const [gaveUp, setGaveUp] = useState(false)
@@ -180,7 +174,7 @@ function VisionModelDialogBody({
           </div>
         ) : (
           <div
-            className="rounded-lg border bg-secondary/50 px-3 py-2"
+            className="min-w-0 overflow-x-hidden rounded-lg border bg-secondary/50 px-3 py-2"
             data-testid="vision-gate-recommended"
           >
             <div className="flex flex-col divide-y divide-border/60">
@@ -188,7 +182,7 @@ function VisionModelDialogBody({
                 const progress = item.isDownloading
                   ? progressFor(item.variant.model_id)
                   : null
-                const reason = t(item.hint)
+                const reason = `${t('chat:visionGate.visionCapable')} · ${t(item.hint)}`
                 const hint = item.installed
                   ? t('chat:visionGate.installedHint')
                   : item.isDownloading
@@ -240,7 +234,6 @@ function VisionModelDialogBody({
                       const started = item.start()
                       if (!started) return
                       onDownloadStarted(started)
-                      setDownloadStarted(true)
                     }}
                     data-testid={
                       index === 0
@@ -255,7 +248,7 @@ function VisionModelDialogBody({
         )}
 
         <div
-          className="rounded-lg border bg-secondary/50 px-3 py-2"
+          className="min-w-0 overflow-x-hidden rounded-lg border bg-secondary/50 px-3 py-2"
           data-testid="vision-gate-routes"
         >
           <RouteRow
@@ -270,11 +263,6 @@ function VisionModelDialogBody({
         </div>
       </div>
 
-      <DialogFooter>
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-          {downloadStarted ? t('common:close') : t('common:cancel')}
-        </Button>
-      </DialogFooter>
     </>
   )
 }
