@@ -164,7 +164,8 @@ export interface ModelsService {
   searchHuggingFaceCandidates(
     query: string,
     hfToken?: string,
-    limit?: number
+    limit?: number,
+    format?: HuggingFaceFeedFormat
   ): Promise<CatalogModel[]>
   /**
    * One page of Hugging Face's own listing of a format, in one of its sort

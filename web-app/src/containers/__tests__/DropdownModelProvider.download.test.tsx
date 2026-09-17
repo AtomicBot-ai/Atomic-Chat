@@ -367,7 +367,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"}',
+        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"} (GGUF)',
       })
     )
 
@@ -400,7 +400,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     ).toHaveTextContent('common:cancel')
     expect(
       within(row).queryByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"}',
+        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"} (GGUF)',
       })
     ).toBeNull()
   })

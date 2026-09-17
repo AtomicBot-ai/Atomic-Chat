@@ -6,8 +6,9 @@ import {
   waitFor,
   within,
 } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { EngineManager } from '@janhq/core'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
@@ -68,6 +69,7 @@ vi.mock('@/lib/platform/const', () => ({
 }))
 
 import {
+  HuggingFacePicks,
   ModelPickerEmptyState,
   resetModelPickerDownloadsForTest,
 } from '../ModelPickerDownloads'
@@ -210,6 +212,10 @@ const routeRows = () =>
   )
 
 describe('ModelPickerEmptyState', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     resetModelPickerDownloadsForTest()
@@ -232,6 +238,96 @@ describe('ModelPickerEmptyState', () => {
         abortDownload: mocks.abortDownload,
       } as unknown as ModelsService,
     })
+  })
+
+  it.each([true, false])(
+    'labels supported formats in both lists (macOS=%s)',
+    async (macos) => {
+      vi.stubGlobal('IS_MACOS', macos)
+      const repo = 'community/Qwen3-235B-A22B-Instruct-2507'
+      mocks.searchHuggingFaceCandidates.mockResolvedValue([
+        hfCandidate(repo),
+        { ...hfCandidate(repo), is_mlx: true },
+      ])
+      const { unmount } = renderEmptyState('qwen')
+      await screen.findAllByText(repo)
+      let rows = screen.getAllByTestId('model-picker-hugging-face-row')
+      expect(rows).toHaveLength(macos ? 2 : 1)
+      expect(within(rows[0]).getByText('GGUF')).toBeVisible()
+      if (macos) expect(within(rows[1]).getByText('MLX')).toBeVisible()
+      unmount()
+      render(<HuggingFacePicks query="qwen" localEmpty />)
+      await screen.findAllByText(repo)
+      rows = screen.getAllByTestId('model-picker-download-row')
+      expect(rows).toHaveLength(macos ? 2 : 1)
+      expect(within(rows[0]).getByText('GGUF')).toBeVisible()
+      if (macos) expect(within(rows[1]).getByText('MLX')).toBeVisible()
+      vi.unstubAllGlobals()
+    }
+  )
+
+  it('downloads MLX weights and keeps the same repo GGUF row independent', async () => {
+    vi.stubGlobal('IS_MACOS', true)
+    const repo = 'community/Qwen3-8B'
+    mocks.searchHuggingFaceCandidates.mockResolvedValue([
+      hfCandidate(repo),
+      { ...hfCandidate(repo), is_mlx: true },
+    ])
+    mocks.fetchHuggingFaceRepo.mockResolvedValue({
+      siblings: [
+        { rfilename: 'model.safetensors' },
+        { rfilename: 'config.json' },
+        { rfilename: 'model-Q4_K_M.gguf' },
+      ],
+    })
+    const importModel = vi.fn().mockResolvedValue(undefined)
+    vi.spyOn(EngineManager, 'instance').mockReturnValue({
+      get: () => ({ import: importModel }),
+    } as never)
+    renderEmptyState('qwen')
+    await screen.findAllByText(repo)
+    const rows = screen.getAllByTestId('model-picker-hugging-face-row')
+    fireEvent.click(within(rows[1]).getByRole('button'))
+    await waitFor(() =>
+      expect(
+        within(rows[1]).getByRole('button', { name: 'common:cancelDownload' })
+      ).toBeEnabled()
+    )
+    expect(rows[1]).toHaveTextContent('common:downloadPanel.preparing')
+    expect(within(rows[0]).getByRole('button')).toBeEnabled()
+    expect(rows[0]).not.toHaveTextContent('common:downloadPanel.preparing')
+    expect(importModel).toHaveBeenCalledWith('Qwen3-8B', {
+      modelPath: `https://huggingface.co/${repo}/resolve/main/model.safetensors`,
+      files: [
+        {
+          url: `https://huggingface.co/${repo}/resolve/main/config.json`,
+          filename: 'config.json',
+        },
+      ],
+      resume: false,
+    })
+  })
+
+  it('reports missing MLX weights without disabling the GGUF twin', async () => {
+    vi.stubGlobal('IS_MACOS', true)
+    const repo = 'community/Qwen3-8B'
+    mocks.searchHuggingFaceCandidates.mockResolvedValue([
+      hfCandidate(repo),
+      { ...hfCandidate(repo), is_mlx: true },
+    ])
+    mocks.fetchHuggingFaceRepo.mockResolvedValue({
+      siblings: [{ rfilename: 'model.gguf' }],
+    })
+    renderEmptyState('qwen')
+    await screen.findAllByText(repo)
+    const rows = screen.getAllByTestId('model-picker-hugging-face-row')
+    fireEvent.click(within(rows[1]).getByRole('button'))
+    await waitFor(() =>
+      expect(rows[1]).toHaveTextContent('common:modelPicker.noMlxFile')
+    )
+    expect(within(rows[1]).getByRole('button')).toBeDisabled()
+    expect(within(rows[0]).getByRole('button')).toBeEnabled()
+    expect(rows[0]).not.toHaveTextContent('common:modelPicker.noGgufFile')
   })
 
   it('lists every recommended model under its label, each with a mark, its fit and its size', () => {
@@ -460,7 +556,7 @@ describe('ModelPickerEmptyState', () => {
     )
     expect(
       within(rows[0]).getByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"}',
+        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"} (GGUF)',
       })
     ).toHaveTextContent(/^chat:replyGate\.download$/)
     expect(card).toHaveClass('min-h-[21rem]')

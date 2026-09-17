@@ -34,6 +34,7 @@ import type {
   HuggingFaceFeedPage,
   HuggingFaceFeedParams,
   HuggingFaceFeedSort,
+  HuggingFaceFeedFormat,
   CatalogModel,
   ModelValidationResult,
 } from './types'
@@ -293,14 +294,19 @@ export class DefaultModelsService implements ModelsService {
   async searchHuggingFaceCandidates(
     query: string,
     hfToken?: string,
-    limit = HUGGING_FACE_SEARCH_LIMIT
+    limit = HUGGING_FACE_SEARCH_LIMIT,
+    format: HuggingFaceFeedFormat = 'gguf'
   ): Promise<CatalogModel[]> {
     const trimmed = query.trim()
     if (trimmed.length < 3) return []
     try {
-      const ggufQuery = /\bgguf\b/i.test(trimmed) ? trimmed : `${trimmed} GGUF`
+      const params = new URLSearchParams({
+        search: trimmed,
+        filter: format,
+        limit: String(limit),
+      })
       const response = await fetch(
-        `https://huggingface.co/api/models?search=${encodeURIComponent(ggufQuery)}&limit=${limit}`,
+        `https://huggingface.co/api/models?${params.toString()}`,
         { headers: this.getHuggingFaceHeaders(hfToken) }
       )
       if (!response.ok) {
@@ -311,7 +317,11 @@ export class DefaultModelsService implements ModelsService {
       const raw = (await response.json()) as HuggingFaceRepoSearchResult[]
       const ranked = raw
         .filter((repo) => getHuggingFaceRepoId(repo))
-        .filter(isLikelyGgufRepo)
+        .filter((repo) =>
+          format === 'gguf'
+            ? isLikelyGgufRepo(repo)
+            : repo.tags?.some((tag) => tag.toLowerCase() === 'mlx')
+        )
         .sort(
           (a, b) =>
             scoreHuggingFaceRepoMatch(trimmed, b) -
@@ -335,7 +345,7 @@ export class DefaultModelsService implements ModelsService {
           mmproj_models: [],
           num_safetensors: 0,
           safetensors_files: [],
-          is_mlx: (repo.tags ?? []).some((t) => t.toLowerCase() === 'mlx'),
+          is_mlx: format === 'mlx',
           readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
         } satisfies CatalogModel
       })
