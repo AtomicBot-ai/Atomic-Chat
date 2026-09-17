@@ -53,6 +53,9 @@
  * The top of both ladders used to end at `vram_16_plus` / `unified_32_plus`;
  * they were split into the 24–64+ rungs so the larger models can be offered by
  * size. A manifest that still carries the old keys has them dropped on parse.
+ * The 64_plus ids remain valid below nominal 128 GiB; 128 and 128_plus
+ * distinguish the two higher rungs. The 128 bucket allows 1 GiB of reporting
+ * tolerance on cards and 0.5 GiB on unified memory in either direction.
  */
 export type HardwareTier =
   /** No accelerator enumerated at all. Inference runs on the CPU. */
@@ -75,8 +78,12 @@ export type HardwareTier =
   | 'vram_48'
   /** 49–65 GiB. */
   | 'vram_64'
-  /** 65 GiB and up. */
+  /** Above the 64 GiB bucket, below nominal 128 GiB. Legacy id retained. */
   | 'vram_64_plus'
+  /** Nominal 128 GiB, allowing for firmware reporting tolerance. */
+  | 'vram_128'
+  /** Above nominal 128 GiB. */
+  | 'vram_128_plus'
   /** Unified memory up to ~8 GiB. */
   | 'unified_8'
   /** ~9–16 GiB. */
@@ -89,8 +96,12 @@ export type HardwareTier =
   | 'unified_48'
   /** ~49–64 GiB. */
   | 'unified_64'
-  /** 65 GiB and up. */
+  /** Above the 64 GiB bucket, below nominal 128 GiB. Legacy id retained. */
   | 'unified_64_plus'
+  /** Nominal 128 GiB, allowing for firmware reporting tolerance. */
+  | 'unified_128'
+  /** Above nominal 128 GiB. */
+  | 'unified_128_plus'
 
 /** Every tier, in ladder order. Used to validate manifest keys and dev flags. */
 export const HARDWARE_TIERS: readonly HardwareTier[] = [
@@ -105,6 +116,8 @@ export const HARDWARE_TIERS: readonly HardwareTier[] = [
   'vram_48',
   'vram_64',
   'vram_64_plus',
+  'vram_128',
+  'vram_128_plus',
   'unified_8',
   'unified_16',
   'unified_24',
@@ -112,6 +125,8 @@ export const HARDWARE_TIERS: readonly HardwareTier[] = [
   'unified_48',
   'unified_64',
   'unified_64_plus',
+  'unified_128',
+  'unified_128_plus',
 ] as const
 
 export const isHardwareTier = (value: unknown): value is HardwareTier =>
@@ -209,6 +224,8 @@ export const VRAM_TIER_BOUNDS: ReadonlyArray<readonly [number, HardwareTier]> =
     [33 * GIB, 'vram_32'],
     [49 * GIB, 'vram_48'],
     [65 * GIB, 'vram_64'],
+    [127 * GIB, 'vram_64_plus'],
+    [129 * GIB, 'vram_128'],
   ] as const
 
 /**
@@ -227,6 +244,8 @@ export const UNIFIED_TIER_BOUNDS: ReadonlyArray<
   [32.5 * GIB, 'unified_32'],
   [48.5 * GIB, 'unified_48'],
   [64.5 * GIB, 'unified_64'],
+  [127.5 * GIB, 'unified_64_plus'],
+  [128.5 * GIB, 'unified_128'],
 ] as const
 
 /** Matches `arm64`, `aarch64`. Mirrors the check in `AnalyticProvider.tsx`. */
@@ -290,7 +309,7 @@ export function describeHardware(
   if (hw.os_type === 'macos') {
     if (ram <= 0) return null
     return {
-      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_64_plus'),
+      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_128_plus'),
       memoryKind: 'unified',
       budgetMib: ram,
       systemRamMib: ram,
@@ -302,7 +321,7 @@ export function describeHardware(
   // 2. A real accelerator was enumerated (discrete or integrated).
   if (vram > 0) {
     return {
-      tier: bucket(vram, VRAM_TIER_BOUNDS, 'vram_64_plus'),
+      tier: bucket(vram, VRAM_TIER_BOUNDS, 'vram_128_plus'),
       memoryKind: 'vram',
       budgetMib: vram,
       systemRamMib: ram,
@@ -317,7 +336,7 @@ export function describeHardware(
   // 3. ARM without a discrete GPU: unified memory, same buckets as macOS.
   if (isArmArch(hw.cpu?.arch)) {
     return {
-      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_64_plus'),
+      tier: bucket(ram, UNIFIED_TIER_BOUNDS, 'unified_128_plus'),
       memoryKind: 'unified',
       budgetMib: ram,
       systemRamMib: ram,

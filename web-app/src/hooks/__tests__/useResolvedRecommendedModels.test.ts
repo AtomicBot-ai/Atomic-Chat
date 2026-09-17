@@ -66,7 +66,11 @@ vi.mock('@/stores/recommended-models-registry-store', () => ({
     }),
 }))
 
-import type { HardwareProfile, HardwareTier } from '@/lib/hardware-tier'
+import {
+  describeHardware,
+  type HardwareProfile,
+  type HardwareTier,
+} from '@/lib/hardware-tier'
 import { useResolvedRecommendedModels } from '../useResolvedRecommendedModels'
 
 describe('useResolvedRecommendedModels', () => {
@@ -322,4 +326,38 @@ describe('useResolvedRecommendedModels memory ceiling', () => {
 
     expect(result.current[0].rec.modelName).toBe(lead.model_name)
   })
+})
+
+describe('high-memory offers offline', () => {
+  it.each([
+    [128, 'unified_128', 'unsloth/gpt-oss-120b-GGUF', 'Q8_0'],
+    [
+      192,
+      'unified_128_plus',
+      'unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF',
+      'Q4_K_M',
+    ],
+  ] as const)(
+    'resolves the %s GiB lead and vision alternative without the network',
+    (size, tier, repo, quant) => {
+      mocks.fetchHuggingFaceRepo.mockResolvedValue(null)
+      const profile = describeHardware({
+        os_type: 'macos',
+        total_memory: size * 1024,
+      })
+      const { result } = renderHook(() =>
+        useResolvedRecommendedModels([], tier, profile)
+      )
+      expect(result.current[0].rec).toMatchObject({ modelName: repo, quant })
+      expect(result.current[0].model?.model_name).toBe(repo)
+      expect(result.current[1].rec).toMatchObject({
+        modelName: 'AtomicChat/gemma-4-31B-it-GGUF',
+        quant: 'Q8_0',
+        mmprojQuant: 'F16',
+      })
+      expect(result.current[1].model?.mmproj_models?.[0].path).toContain(
+        'mmproj-gemma4-31b-it-f16.gguf'
+      )
+    }
+  )
 })
