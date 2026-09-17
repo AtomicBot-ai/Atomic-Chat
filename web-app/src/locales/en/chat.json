@@ -58,7 +58,67 @@
   "toolCall": {
     "result": "{{count}} result",
     "results": "{{count}} results",
-    "denied": "Denied"
+    "file": "file",
+    "action": "Action",
+    "locations": {
+      "home": "Home",
+      "desktop": "Desktop",
+      "documents": "Documents",
+      "downloads": "Downloads"
+    },
+    "onDesktop": "{{name}} on {{folder}}",
+    "inFolder": "{{name}} in {{folder}}",
+    "withContext": "{{label}}: {{context}}",
+    "fallback": {
+      "running": "{{title}} — working…",
+      "success": "{{title}} — completed",
+      "error": "{{title}} — failed",
+      "denied": "{{title}} — denied"
+    },
+    "actions": {
+      "write": {
+        "running": "Creating {{target}}…",
+        "success": "Created {{target}}",
+        "error": "Could not create {{target}}",
+        "denied": "Creating {{target}} was denied"
+      },
+      "read": {
+        "running": "Reading {{target}}…",
+        "success": "Read {{target}}",
+        "error": "Could not read {{target}}",
+        "denied": "Reading {{target}} was denied"
+      },
+      "list": {
+        "running": "Looking through files…",
+        "success": "Looked through files",
+        "error": "Could not look through files",
+        "denied": "Looking through files was denied"
+      },
+      "mkdir": {
+        "running": "Creating folder…",
+        "success": "Created folder",
+        "error": "Could not create folder",
+        "denied": "Creating folder was denied"
+      },
+      "shell": {
+        "running": "Running a command…",
+        "success": "Ran a command",
+        "error": "Command failed",
+        "denied": "Command was denied"
+      },
+      "search": {
+        "running": "Searching the web…",
+        "success": "Searched the web",
+        "error": "Web search failed",
+        "denied": "Web search was denied"
+      },
+      "fetch": {
+        "running": "Reading web page…",
+        "success": "Read web page",
+        "error": "Could not read web page",
+        "denied": "Reading web page was denied"
+      }
+    }
   },
   "workspacePreview": {
     "generating": "Preview will be available after generation finishes."
