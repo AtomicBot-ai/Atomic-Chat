@@ -257,7 +257,7 @@
     }
   },
   "proactive": "Proactive",
-  "selectAModel": "Select a model",
+  "selectAModel": "Select Model",
   "changeModel": "Change model",
   "downloadModel": "Download a model",
   "noToolsAvailable": "No tools available",

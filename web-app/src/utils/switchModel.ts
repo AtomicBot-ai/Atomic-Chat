@@ -412,6 +412,34 @@ export async function stopAllLocalModelsByUser(
   const { userStoppedModels, setUserStoppedModels } = useAppState.getState()
   setUserStoppedModels([...new Set([...userStoppedModels, ...loaded.flat()])])
   await serviceHub.models().stopAllModels()
+  const { selectedProvider, selectedModel } = useModelProvider.getState()
+  if (
+    selectedModel &&
+    loaded.flat().includes(modelStopKey(selectedProvider, selectedModel.id))
+  ) {
+    // Some engines return a failed UnloadResult instead of throwing, which
+    // stopAllModels does not propagate. Confirm this provider actually stopped.
+    const remaining = await serviceHub
+      .models()
+      .getActiveModels(selectedProvider)
+      .catch(() => null)
+    if (remaining && !remaining.includes(selectedModel.id)) {
+      clearUnloadedSelection(selectedProvider, selectedModel.id)
+    }
+  }
+}
+
+function clearUnloadedSelection(providerName: string, modelId: string): void {
+  const state = useModelProvider.getState()
+  // An unload may finish after the user has already picked another model,
+  // including the same id on another engine, or begun loading this one again.
+  if (
+    state.selectedProvider === providerName &&
+    state.selectedModel?.id === modelId &&
+    !isExplicitSwitchPending(providerName, modelId)
+  ) {
+    state.selectModelProvider('', '')
+  }
 }
 
 function recordUserStop(providerName: string, modelId: string): void {
@@ -425,7 +453,8 @@ function recordUserStop(providerName: string, modelId: string): void {
 /**
  * Unload one local model because the user asked to — the status dot in the
  * composer pill (ATO-530). Recorded like a Stop, so the auto-start leaves it
- * down until the user picks it or sends to it again.
+ * down until the user picks it again. Clear only the runtime selection after
+ * a successful unload; the provider and its downloaded models stay registered.
  */
 export async function unloadModelByUser(params: {
   modelId: string
@@ -435,7 +464,11 @@ export async function unloadModelByUser(params: {
   const { modelId, providerName, serviceHub } = params
   recordUserStop(providerName, modelId)
   try {
-    await serviceHub.models().stopModel(modelId, providerName)
+    const result = await serviceHub.models().stopModel(modelId, providerName)
+    if (result && !result.success) {
+      throw new Error(result.error || `Failed to stop model '${modelId}'`)
+    }
+    clearUnloadedSelection(providerName, modelId)
   } finally {
     const active = await serviceHub
       .models()
