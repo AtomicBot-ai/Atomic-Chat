@@ -399,6 +399,7 @@ test-rust: stub-resources
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-vector-db/Cargo.toml
 ifeq ($(shell uname -s),Darwin)
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-mlx/Cargo.toml
 endif

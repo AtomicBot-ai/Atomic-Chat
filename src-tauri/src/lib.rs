@@ -66,7 +66,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_llamacpp_upstream::init())
-        .plugin(tauri_plugin_vector_db::init())
+        // Document indexes belong to the data folder: they move with it and are reset with it.
+        .plugin(tauri_plugin_vector_db::init_in(|app| {
+            core::app::commands::get_jan_data_folder_path(app.clone()).join("db")
+        }))
         .plugin(tauri_plugin_rag::init());
 
     #[cfg(feature = "deep-link")]

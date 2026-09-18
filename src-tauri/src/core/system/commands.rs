@@ -203,7 +203,8 @@ pub async fn factory_reset<R: Runtime>(
     default_config.autostart_preference = autostart_preference;
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
-    restart_app(&app_handle)
+    restart_app(&app_handle);
+    Ok(())
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -215,7 +216,14 @@ fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::proces
 }
 
 /// Restart without leaking AppRun's environment into host launchers.
-fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
+///
+/// The restart is *requested*, not performed here: `AppHandle::restart` called on the main thread
+/// — where a synchronous command such as `relaunch` runs — replaces the process without
+/// `RunEvent::Exit`, and that handler is the only place that stops the app's core and cleans up
+/// its MCP servers. A core left running keeps the data folder's lock, and the app that comes up
+/// next — after an update, a backend change, a data-folder move — has to wait out the vanished
+/// app's client lease (about 45 s) before it can replace it.
+fn restart_app<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "linux")]
     if let Some(appimage) = std::env::var_os("APPIMAGE") {
         app.cleanup_before_exit();
@@ -226,7 +234,7 @@ fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
             ),
         }
     }
-    app.restart()
+    app.request_restart();
 }
 
 #[tauri::command]

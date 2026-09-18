@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-286 records, 2026-05-19 → 2026-09-18.
+288 records, 2026-05-19 → 2026-09-19.
 
 ---
 
@@ -241,8 +241,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (15)
+## Packaging, installers, autostart & platform policy (16)
 
+- **2026-09-19** — [Keep document indexes in the data folder](2026-09-19-keep-document-indexes-in-the-data-folder.md)
 - **2026-09-18** — [Keep the HTTP plugin's JS client on the Rust plugin's version](2026-09-18-keep-the-http-plugin-js-client-on-the-rust-plugin-version.md)
 - **2026-09-04** — [Sanitize the AppImage environment before launching host processes](2026-09-04-sanitize-appimage-environment-before-launching-host-processes.md)
 - **2026-08-19** — [Leave launch at startup off for new installs](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
@@ -304,8 +305,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (19)
+## Inference core extraction — atomic-chat-core (20)
 
+- **2026-09-19** — [Restart through the exit handler](2026-09-19-restart-through-the-exit-handler.md)
 - **2026-09-18** — [Stop the core before moving the data folder](2026-09-18-stop-the-core-before-moving-the-data-folder.md)
 - **2026-09-17** — [Keep app mirrors coherent and import the pre-core optimum](2026-09-17-preserve-stage6-mirrors-and-optimal-cache.md)
 - **2026-09-17** — [The core owns every desktop runtime unconditionally](2026-09-17-the-core-owns-every-desktop-runtime-unconditionally.md)
