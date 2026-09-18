@@ -34,6 +34,7 @@ vi.mock('../backend', async () => {
       source: 'none' as const,
     })),
     invalidateStableIndexCache: vi.fn(),
+    getIndexedVariantSize: vi.fn(async () => 11 * 1024 * 1024),
   }
 })
 
@@ -55,6 +56,13 @@ vi.mock(
     }
   }
 )
+
+// A backend install the core runs reports through `listen('download-<taskId>')`.
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async () => () => {}),
+  emit: vi.fn(async () => undefined),
+}))
+
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
@@ -778,8 +786,69 @@ describe('llamacpp_extension', () => {
         'test-model',
         undefined,
         false,
-        false
+        false,
+        undefined
       )
+    })
+
+    it('keeps the code on a core refusal and names the stages a watcher waits on', async () => {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
+      extension['coreSettings'] = { ensureReady: vi.fn(async () => undefined) } as any
+      extension['isConfiguredBackendInstalled'] = vi.fn(async () => false)
+      extension['modelFilePaths'] = vi.fn(async () => ['/data/llamacpp/models/m/model.gguf'])
+      const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+      const stages: unknown[] = []
+      extension['core'] = {
+        load: vi.fn(async () => session),
+        unload: vi.fn(),
+        cancelLoad: vi.fn(async () => true),
+      } as any
+      extension['loadCancel'] = new (await import('../../../shared/loadCancel')).LoadCancelTracker(
+        extension['core'] as any
+      )
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation(async (command) =>
+        command === 'get_page_cache_resident_fraction' ? 0.5 : undefined
+      )
+      await expect(
+        extension.load('m', undefined, false, false, { onStage: (stage) => stages.push(stage) })
+      ).resolves.toEqual(session)
+      expect(stages).toEqual([
+        { kind: 'installingEngine' },
+        { kind: 'loadingWeights', cachedFraction: 0.5 },
+      ])
+
+      extension['core'].load = vi.fn(async () => {
+        throw { code: 'MODEL_LOAD_CANCELLED', message: 'The model load was cancelled.' }
+      })
+      await expect(extension.load('m')).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+        message: 'The model load was cancelled. [MODEL_LOAD_CANCELLED]',
+      })
+    })
+
+    it('cancels a load through the core, and the load rejects as cancelled', async () => {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
+      extension['coreSettings'] = { ensureReady: vi.fn(async () => undefined) } as any
+      let rejectLoad!: (error: unknown) => void
+      extension['core'] = {
+        load: vi.fn(() => new Promise((_, reject) => (rejectLoad = reject))),
+        unload: vi.fn(),
+        cancelLoad: vi.fn(async () => {
+          rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'The model load was cancelled.' })
+          return true
+        }),
+      } as any
+      extension['loadCancel'] = new (await import('../../../shared/loadCancel')).LoadCancelTracker(
+        extension['core'] as any
+      )
+      expect(await extension.cancelLoad('m')).toBe(false)
+      const load = extension.load('m')
+      load.catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(await extension.cancelLoad('m')).toBe(true)
+      expect(extension['core'].cancelLoad).toHaveBeenCalledWith('m')
+      await expect(load).rejects.toMatchObject({ code: 'MODEL_LOAD_CANCELLED' })
     })
   })
 
@@ -1281,6 +1350,111 @@ describe('llamacpp_extension', () => {
           'v2.0.0'
         )
       })
+    })
+  })
+
+  describe('backend install through the core', () => {
+    it('routes a relayed stage frame to the row status, not the progress bar', async () => {
+      const { events } = await import('@janhq/core')
+      const { listen } = await import('@tauri-apps/api/event')
+      type Frame = {
+        transferred: number
+        total: number
+        stage?: { kind: string; attempt: number; maxAttempts: number }
+      }
+      let frame: ((event: { payload: Frame }) => void) | undefined
+      const unlisten = vi.fn()
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        frame = callback as typeof frame
+        return unlisten
+      })
+      const stage = { kind: 'retrying', attempt: 2, maxAttempts: 5 }
+      extension['core'] = {
+        installBackend: vi.fn(async () => {
+          frame?.({ payload: { transferred: 10, total: 20 } })
+          // What the relay makes of the core's `download:stage`: the same name, counters at zero.
+          frame?.({ payload: { transferred: 0, total: 0, stage } })
+          frame?.({ payload: { transferred: 15, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }),
+      } as any
+
+      await extension['installBackendThroughCore']('b1/macos-arm64', 'b1', 'macos-arm64')
+
+      const taskId = 'llamacpp-backend-b1/macos-arm64'
+      expect(vi.mocked(listen).mock.calls[0]?.[0]).toBe(`download-${taskId}`)
+      const updates = vi
+        .mocked(events.emit)
+        .mock.calls.filter(([name]) => name === 'onFileDownloadUpdate')
+        .map(([, payload]) => payload)
+      expect(updates).toEqual([
+        {
+          modelId: taskId,
+          percent: 0.5,
+          size: { transferred: 10, total: 20 },
+          downloadType: 'Backend',
+        },
+        { modelId: taskId, downloadType: 'Backend', stage },
+        {
+          modelId: taskId,
+          percent: 0.75,
+          size: { transferred: 15, total: 20 },
+          downloadType: 'Backend',
+        },
+      ])
+      expect(unlisten).toHaveBeenCalledOnce()
+    })
+
+    it('names the row after the task id when a stage frame comes before any byte', async () => {
+      const { events } = await import('@janhq/core')
+      const { listen } = await import('@tauri-apps/api/event')
+      type Frame = {
+        transferred: number
+        total: number
+        stage?: { kind: string; attempt: number; maxAttempts: number }
+      }
+      let frame: ((event: { payload: Frame }) => void) | undefined
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        frame = callback as typeof frame
+        return vi.fn()
+      })
+      // The core's order: the preflight's stages, then the bytes.
+      const connecting = { kind: 'connecting', attempt: 0, maxAttempts: 6 }
+      const retrying = { kind: 'retrying', attempt: 1, maxAttempts: 6 }
+      extension['core'] = {
+        installBackend: vi.fn(async () => {
+          frame?.({ payload: { transferred: 0, total: 0, stage: connecting } })
+          frame?.({ payload: { transferred: 0, total: 0, stage: retrying } })
+          frame?.({ payload: { transferred: 10, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }),
+      } as any
+
+      await extension['installBackendThroughCore']('b1/macos-arm64', 'b1', 'macos-arm64')
+
+      const taskId = 'llamacpp-backend-b1/macos-arm64'
+      const updates = vi
+        .mocked(events.emit)
+        .mock.calls.filter(([name]) => name === 'onFileDownloadUpdate')
+        .map(([, payload]) => payload)
+      expect(updates).toEqual([
+        // A progress update names the row (a stage update would leave it blank, and its Cancel
+        // would not reach the core task), once.
+        {
+          modelId: taskId,
+          percent: 0,
+          size: { transferred: 0, total: 0 },
+          downloadType: 'Backend',
+        },
+        { modelId: taskId, downloadType: 'Backend', stage: connecting },
+        { modelId: taskId, downloadType: 'Backend', stage: retrying },
+        {
+          modelId: taskId,
+          percent: 0.5,
+          size: { transferred: 10, total: 20 },
+          downloadType: 'Backend',
+        },
+      ])
     })
   })
 
@@ -1848,6 +2022,21 @@ describe('llamacpp_extension', () => {
         '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
       )
       vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+      const { getIndexedVariantSize } = await import('../backend')
+      vi.mocked(getIndexedVariantSize).mockResolvedValue(11 * 1024 * 1024)
+      vi.mocked(localStorage.setItem).mockReset()
+      ;(window as any).dispatchEvent = vi.fn()
+    }
+
+    /// Offer published by the last `reconcileBackendReleaseTag()` run, read off
+    /// the persisted mirror the banner boots from (ATO-528).
+    const publishedOffer = () => {
+      const call = vi
+        .mocked(localStorage.setItem)
+        .mock.calls.find(
+          ([key]) => key === 'atomic_engine_update_offer_llamacpp'
+        )
+      return call ? JSON.parse(call[1] as string) : null
     }
 
     beforeEach(async () => {
@@ -1856,7 +2045,7 @@ describe('llamacpp_extension', () => {
       await stubReconcileDeps()
     })
 
-    it('pulls a runtime-downloaded GPU tier onto the new release tag', async () => {
+    it('offers a runtime-downloaded GPU tier the new release tag', async () => {
       extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
         updateNeeded: true,
         newVersion: 'b10018-1.3.0',
@@ -1865,9 +2054,40 @@ describe('llamacpp_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
-        TARGET
-      )
+      // ATO-528: the tag bump is offered, not taken — a launch no longer
+      // starts a several hundred megabyte transfer on its own.
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(publishedOffer()).toMatchObject({
+        provider: 'llamacpp',
+        currentBackend: CURRENT,
+        targetBackend: TARGET,
+        currentVersion: 'b9937-1.2.0',
+        targetVersion: 'b10018-1.3.0',
+        downloadSizeBytes: 11 * 1024 * 1024,
+        restartRequired: false,
+        releaseNotesUrl:
+          'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/tag/b10018-1.3.0',
+      })
+      const event = vi.mocked((window as any).dispatchEvent).mock
+        .calls[0]?.[0] as CustomEvent
+      expect(event?.type).toBe('app:engine-update-available')
+      expect(event?.detail).toMatchObject({ targetBackend: TARGET })
+    })
+
+    it('still offers when the release index has no size for the build', async () => {
+      const { getIndexedVariantSize } = await import('../backend')
+      vi.mocked(getIndexedVariantSize).mockResolvedValue(undefined)
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: TARGET,
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      const offer = publishedOffer()
+      expect(offer).toMatchObject({ targetBackend: TARGET })
+      expect(offer.downloadSizeBytes).toBeUndefined()
     })
 
     it('leaves a user who already runs the newest tag alone', async () => {
@@ -1880,7 +2100,7 @@ describe('llamacpp_extension', () => {
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
     })
 
-    it('updates the engine on macOS too, without an app release', async () => {
+    it('offers an engine update on macOS too, without an app release', async () => {
       vi.stubGlobal('IS_MAC', true)
       extension['config'] = {
         version_backend: 'b9937-1.2.0/macos-arm64',
@@ -1893,9 +2113,11 @@ describe('llamacpp_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
-        'b10018-1.3.0/macos-arm64'
-      )
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(publishedOffer()).toMatchObject({
+        currentBackend: 'b9937-1.2.0/macos-arm64',
+        targetBackend: 'b10018-1.3.0/macos-arm64',
+      })
     })
 
     it('refuses to move onto a legacy prerelease found on disk', async () => {
@@ -1948,20 +2170,21 @@ describe('llamacpp_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
-        'b10018-1.3.0/linux-x64-vulkan'
-      )
+      expect(publishedOffer()).toMatchObject({
+        targetBackend: 'b10018-1.3.0/linux-x64-vulkan',
+      })
     })
 
-    it('keeps the working backend when the download fails', async () => {
+    it('keeps the working backend when the offer cannot be built', async () => {
       extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
         updateNeeded: true,
         newVersion: 'b10018-1.3.0',
         targetBackend: TARGET,
       })
-      extension['downloadRecommendedBackend'] = vi
-        .fn()
-        .mockRejectedValue(new Error('network down'))
+      const { getIndexedVariantSize } = await import('../backend')
+      vi.mocked(getIndexedVariantSize).mockRejectedValue(
+        new Error('network down')
+      )
 
       await expect(
         extension['reconcileBackendReleaseTag']()

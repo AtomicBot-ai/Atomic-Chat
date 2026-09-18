@@ -25,6 +25,7 @@ import {
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
+  type ModelLoadOptions,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -42,8 +43,14 @@ import {
   invalidateStableIndexCache,
   assertDeletableBackendPack,
   mergeBackendOptions,
+  getIndexedVariantSize,
   type InstalledBackendPack,
 } from './backend'
+import {
+  buildEngineUpdateOffer,
+  clearEngineUpdateOffer,
+  publishEngineUpdateOffer,
+} from './engineUpdateOffer'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
   getProxyConfig,
@@ -83,6 +90,7 @@ import type {
   Invoke,
 } from '../../shared/atomicCoreRuntime'
 import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
 /** Written when a CLI (or anyone else) changes core-owned settings; see `onLoad`. */
@@ -349,6 +357,10 @@ export default class llamacpp_extension extends AIEngine {
       args === undefined ? invoke(command) : invoke(command, args)) as Invoke
   )
   private isMirroringCoreSettings = false
+  /// ATO-530: loads in flight and the cancels aimed at them, on top of the core's load.
+  private readonly loadCancel = new LoadCancelTracker(this.core, (message) =>
+    logger.warn(message)
+  )
   private readonly coreSettings = createCoreSettingsSync({
     core: this.core,
     readSettings: async () =>
@@ -1836,6 +1848,11 @@ export default class llamacpp_extension extends AIEngine {
 
     localStorage.removeItem(TURBOQUANT_PENDING_KEY)
 
+    // A pending engine-update offer is about this provider's backend, and the
+    // backend just changed — whatever it proposed is now either done or stale.
+    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
+    clearEngineUpdateOffer(this.providerId)
+
     // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
     // a pure UI concern (the dialog/pill in the web app) and does not
     // need to traverse the cross-extension event bus. `window` is always
@@ -2475,18 +2492,53 @@ export default class llamacpp_extension extends AIEngine {
         return
       }
 
+      // ATO-528: a tag bump is offered, not taken. It used to download here
+      // unannounced — hundreds of megabytes on a launch the user did not ask
+      // anything of. The offer is published instead and the web app's
+      // `<EngineUpdateBanner />` asks; accepting routes back through
+      // `downloadRecommendedBackend()`, which is what this call used to be.
+      // A first-run adoption, awaited at the top, is still automatic: that is
+      // an install completing, not an update.
       logger.info(
-        `reconcileBackendReleaseTag: moving '${current}' -> '${targetBackend}'`
+        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}'`
       )
-      await this.downloadRecommendedBackend(targetBackend)
-      logger.info(
-        `reconcileBackendReleaseTag: reconciled to '${targetBackend}'`
-      )
+      await this.offerEngineUpdate(current, targetBackend)
     } catch (err) {
       logger.error(
         'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
         err
       )
+    }
+  }
+
+  /**
+   * Publishes a "new engine build available" offer for the banner (ATO-528).
+   *
+   * Best-effort in both directions: the archive size comes from the release
+   * index and is simply absent for a build the index does not describe, and a
+   * failure to publish costs the banner, not the app — the offer is rebuilt on
+   * the next launch because the tag comparison that produced it is stateless.
+   */
+  private async offerEngineUpdate(
+    currentBackend: string,
+    targetBackend: string
+  ): Promise<void> {
+    try {
+      const offer = await buildEngineUpdateOffer(
+        this.providerId,
+        currentBackend,
+        targetBackend,
+        (version, backendId) => getIndexedVariantSize(version, backendId)
+      )
+      if (!offer) {
+        logger.warn(
+          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
+        )
+        return
+      }
+      publishEngineUpdateOffer(offer)
+    } catch (err) {
+      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
     }
   }
 
@@ -3455,7 +3507,29 @@ export default class llamacpp_extension extends AIEngine {
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
+  ): Promise<SessionInfo> {
+    return this.loadCancel.track(modelId, () =>
+      this.startLoad(modelId, overrideSettings, isEmbedding, bypassAutoUnload, options)
+    )
+  }
+
+  /**
+   * ATO-530: stop a load of `modelId` that has not finished. Resolves `true`
+   * when one was running; that load then rejects with MODEL_LOAD_CANCELLED
+   * and leaves no server behind.
+   */
+  override cancelLoad(modelId: string): Promise<boolean> {
+    return this.loadCancel.cancelLoad(modelId)
+  }
+
+  private async startLoad(
+    modelId: string,
+    overrideSettings: Partial<LlamacppConfig> | undefined,
+    isEmbedding: boolean,
+    bypassAutoUnload: boolean,
+    options: ModelLoadOptions | undefined
   ): Promise<SessionInfo> {
     if (this.configureBackendsPromise) {
       const vb = this.config.version_backend || ''
@@ -3481,12 +3555,16 @@ export default class llamacpp_extension extends AIEngine {
       return this.loadingModels.get(modelId)!
     }
 
+    // A cancel that arrived while this load waited for backend configuration.
+    this.loadCancel.throwIfCancelled(modelId)
+
     // Create the loading promise
     const loadingPromise = this.loadThroughCore(
       modelId,
       overrideSettings,
       isEmbedding,
-      bypassAutoUnload
+      bypassAutoUnload,
+      options
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -3916,7 +3994,9 @@ export default class llamacpp_extension extends AIEngine {
     )}/${this.sanitizeForTauriEvent(backend)}`
     let highestTransferred = 0
     let knownTotal = 0
+    let reported = false
     const reportProgress = (transferred: number, total: number) => {
+      reported = true
       // A resumed transfer can restart at byte zero; the bar must never move backwards.
       highestTransferred = Math.max(highestTransferred, transferred)
       knownTotal = Math.max(knownTotal, total)
@@ -3930,10 +4010,31 @@ export default class llamacpp_extension extends AIEngine {
       })
     }
     // Registered before the transfer starts: the core can report progress before the POST returns.
-    const unlisten = await listen<{ transferred: number; total: number }>(
-      `download-${taskId}`,
-      (event) => reportProgress(event.payload.transferred, event.payload.total)
-    )
+    // A stage frame (connecting, retrying n/m) comes under the same name with zeroed counters: it
+    // goes to the row's status as a `stage` update, never through `reportProgress`. The core's
+    // preflight stages come before any byte, and a stage update does not name the row it creates,
+    // so a first 0/0 progress update names it after the task id (the id its Cancel routes on).
+    const unlisten = await listen<{
+      transferred: number
+      total: number
+      stage?: {
+        kind: 'connecting' | 'retrying'
+        attempt: number
+        maxAttempts: number
+      }
+    }>(`download-${taskId}`, (event) => {
+      const { stage } = event.payload
+      if (stage) {
+        if (!reported) reportProgress(0, 0)
+        events.emit(DownloadEvent.onFileDownloadUpdate, {
+          modelId: taskId,
+          downloadType: 'Backend',
+          stage,
+        })
+        return
+      }
+      reportProgress(event.payload.transferred, event.payload.total)
+    })
     events.emit(AppEvent.onBackendDownloadStarted, {
       backend: backendString,
       status: 'downloading',
@@ -4158,22 +4259,95 @@ export default class llamacpp_extension extends AIEngine {
     modelId: string,
     overrideSettings: Partial<LlamacppConfig> | undefined,
     isEmbedding: boolean,
-    bypassAutoUnload: boolean
+    bypassAutoUnload: boolean,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo> {
     try {
       await this.coreSettings.ensureReady()
-      const session = (await this.core.load(modelId, {
-        ...(overrideSettings
-          ? { settings: overrideSettings as Record<string, unknown> }
-          : {}),
-        isEmbedding,
-        bypassAutoUnload,
-      })) as SessionInfo
+      this.loadCancel.throwIfCancelled(modelId)
+      // ATO-530: a missing engine build is downloaded by the core before
+      // anything else can happen, and that wait is worth naming.
+      if (options?.onStage && !(await this.isConfiguredBackendInstalled())) {
+        options.onStage({ kind: 'installingEngine' })
+      }
+      this.loadCancel.throwIfCancelled(modelId)
+      if (options?.onStage) {
+        options.onStage({
+          kind: 'loadingWeights',
+          cachedFraction: await this.pageCacheFraction(
+            await this.modelFilePaths(modelId)
+          ),
+        })
+      }
+      const session = (await this.loadCancel.loadInCore(modelId, () =>
+        this.core.load(modelId, {
+          ...(overrideSettings
+            ? { settings: overrideSettings as Record<string, unknown> }
+            : {}),
+          isEmbedding,
+          bypassAutoUnload,
+        })
+      )) as SessionInfo
       const ctx = overrideSettings?.ctx_size ?? this.config?.ctx_size
       if (typeof ctx === 'number' && ctx > 0) this.modelCtxSize.set(modelId, ctx)
       return session
     } catch (error) {
-      throw new Error(describeCoreError(error))
+      throw toLoadError(error)
+    }
+  }
+
+  /// Whether the configured `<version>/<backend>` is on disk; anything unsure
+  /// counts as installed, so the stage is never announced by mistake.
+  private async isConfiguredBackendInstalled(): Promise<boolean> {
+    const versionBackend = (this.config?.version_backend || '').replace(/\uFEFF/g, '').trim()
+    const [version, backend] = versionBackend.split('/')
+    if (!version || !backend) return true
+    try {
+      return await isBackendInstalled(backend, version)
+    } catch {
+      return true
+    }
+  }
+
+  /// The weights files of a model, for the page-cache probe; empty when unknown.
+  private async modelFilePaths(modelId: string): Promise<string[]> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const path = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      const config = await invoke<ModelConfig>('read_yaml', { path })
+      const paths: string[] = []
+      for (const file of [config.model_path, config.mmproj_path]) {
+        const resolved = await this.resolveModelPath(janDataFolderPath, file)
+        if (resolved) paths.push(resolved)
+      }
+      return paths
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * How much of `paths` the OS already holds in its page cache (0–1), or
+   * `null` when that cannot be told. Only ever feeds the loading status, so a
+   * failure is not worth more than a debug line.
+   */
+  private async pageCacheFraction(paths: string[]): Promise<number | null> {
+    if (paths.length === 0) return null
+    try {
+      const fraction = await invoke<number | null>(
+        'get_page_cache_resident_fraction',
+        { paths }
+      )
+      return typeof fraction === 'number' ? fraction : null
+    } catch (error) {
+      console.debug(`page cache probe failed: ${error}`)
+      return null
     }
   }
 

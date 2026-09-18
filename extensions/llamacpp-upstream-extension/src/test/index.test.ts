@@ -151,6 +151,78 @@ describe('llamacpp_extension', () => {
       expect(unlisten).toHaveBeenCalledOnce()
     })
 
+    it('routes a relayed stage frame to the row status, not the progress bar', async () => {
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      type Frame = { transferred: number; total: number; stage?: { kind: string; attempt: number; maxAttempts: number } }
+      let progress: ((event: { payload: Frame }) => void) | undefined
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        progress = callback as typeof progress
+        return vi.fn()
+      })
+      const stage = { kind: 'retrying', attempt: 2, maxAttempts: 5 }
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_call') {
+          progress?.({ payload: { transferred: 10, total: 20 } })
+          // What the relay makes of the core's `download:stage`: the same name, counters at zero.
+          progress?.({ payload: { transferred: 0, total: 0, stage } })
+          progress?.({ payload: { transferred: 15, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }
+        return undefined
+      })
+      await extension['downloadAndInstallBackend']('b1/macos-arm64')
+      const taskId = 'llamacpp-backend-b1/macos-arm64'
+      const updates = vi.mocked(events.emit).mock.calls
+        .filter(([name]) => name === 'onFileDownloadUpdate')
+        .map(([, payload]) => payload)
+      expect(updates).toEqual([
+        { modelId: taskId, percent: 0.5, size: { transferred: 10, total: 20 }, downloadType: 'Backend' },
+        { modelId: taskId, downloadType: 'Backend', stage },
+        { modelId: taskId, percent: 0.75, size: { transferred: 15, total: 20 }, downloadType: 'Backend' },
+        // The missing last frame is still made up at the end; the stage frame did not count as one.
+        { modelId: taskId, percent: 1, size: { transferred: 20, total: 20 }, downloadType: 'Backend' },
+      ])
+    })
+
+    it('names the row after the task id when a stage frame comes before any byte', async () => {
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+      type Frame = { transferred: number; total: number; stage?: { kind: string; attempt: number; maxAttempts: number } }
+      let progress: ((event: { payload: Frame }) => void) | undefined
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        progress = callback as typeof progress
+        return vi.fn()
+      })
+      // The core's order: the preflight's stages, then the bytes.
+      const connecting = { kind: 'connecting', attempt: 0, maxAttempts: 6 }
+      const retrying = { kind: 'retrying', attempt: 1, maxAttempts: 6 }
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'atomic_core_call') {
+          progress?.({ payload: { transferred: 0, total: 0, stage: connecting } })
+          progress?.({ payload: { transferred: 0, total: 0, stage: retrying } })
+          progress?.({ payload: { transferred: 10, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }
+        return undefined
+      })
+      await extension['downloadAndInstallBackend']('b1/macos-arm64')
+      const taskId = 'llamacpp-backend-b1/macos-arm64'
+      const updates = vi.mocked(events.emit).mock.calls
+        .filter(([name]) => name === 'onFileDownloadUpdate')
+        .map(([, payload]) => payload)
+      expect(updates).toEqual([
+        // A progress update names the row (a stage update would leave it blank, and its Cancel
+        // would not reach the core task), once.
+        { modelId: taskId, percent: 0, size: { transferred: 0, total: 0 }, downloadType: 'Backend' },
+        { modelId: taskId, downloadType: 'Backend', stage: connecting },
+        { modelId: taskId, downloadType: 'Backend', stage: retrying },
+        { modelId: taskId, percent: 0.5, size: { transferred: 10, total: 20 }, downloadType: 'Backend' },
+        // The seed changes nothing at the end: the missing last frame is still made up.
+        { modelId: taskId, percent: 1, size: { transferred: 20, total: 20 }, downloadType: 'Backend' },
+      ])
+    })
+
     it('finishes the existing progress bar even if the last core progress frame is missing', async () => {
       vi.mocked(isBackendInstalled).mockResolvedValue(false)
       vi.mocked(localStorage.getItem).mockReturnValue(null)
@@ -1033,6 +1105,104 @@ describe('llamacpp_extension', () => {
       await expect(extension.load('m')).rejects.toThrow('settings conflict')
       expect(invoke).not.toHaveBeenCalledWith('atomic_core_call', expect.anything())
     })
+
+    it('keeps the code on the error, so the web app can tell a cancel from a failure', async () => {
+      extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(invoke).mockRejectedValue({
+        code: 'MODEL_LOAD_CANCELLED',
+        message: 'The model load was cancelled.',
+      })
+      await expect(extension.load('m')).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+        message: 'The model load was cancelled. [MODEL_LOAD_CANCELLED]',
+      })
+    })
+
+    it('names the stages a watching caller waits on, with the page-cache fraction', async () => {
+      extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+      extension['isConfiguredBackendInstalled'] = vi.fn(async () => false)
+      extension['modelFilePaths'] = vi.fn(async () => ['/data/llamacpp/models/m/model.gguf'])
+      const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === 'get_page_cache_resident_fraction') {
+          expect(args).toEqual({ paths: ['/data/llamacpp/models/m/model.gguf'] })
+          return 0.25
+        }
+        if (command === 'atomic_core_call') return { session, created: true }
+        return undefined
+      })
+      const stages: unknown[] = []
+      await extension.load('m', undefined, false, false, { onStage: (stage) => stages.push(stage) })
+      expect(stages).toEqual([
+        { kind: 'installingEngine' },
+        { kind: 'loadingWeights', cachedFraction: 0.25 },
+      ])
+
+      // An installed engine has no install stage; an unreadable cache is `null`, never a failure.
+      stages.length = 0
+      extension['isConfiguredBackendInstalled'] = vi.fn(async () => true)
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === 'get_page_cache_resident_fraction') throw new Error('no probe')
+        if (command === 'atomic_core_call') return { session, created: true }
+        return undefined
+      })
+      await extension.load('m', undefined, false, false, { onStage: (stage) => stages.push(stage) })
+      expect(stages).toEqual([{ kind: 'loadingWeights', cachedFraction: null }])
+    })
+
+    it('cancels a load in flight through the core, and the load rejects as cancelled', async () => {
+      extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+      let rejectLoad!: (error: unknown) => void
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        const { path } = args as { path: string }
+        if (command === 'atomic_core_call' && path.endsWith('/load/cancel')) {
+          rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'The model load was cancelled.' })
+          return { cancelled: true }
+        }
+        if (command === 'atomic_core_call' && path.endsWith('/load'))
+          return new Promise((_, reject) => (rejectLoad = reject))
+        return undefined
+      })
+      expect(await extension.cancelLoad('m')).toBe(false)
+      const load = extension.load('m')
+      load.catch(() => {}) // the rejection lands before the assertion below attaches its handler
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(await extension.cancelLoad('m')).toBe(true)
+      expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
+        method: 'POST',
+        path: '/models/llamacpp-upstream/m/load/cancel',
+        body: null,
+      })
+      await expect(load).rejects.toMatchObject({ code: 'MODEL_LOAD_CANCELLED' })
+      expect(await extension.cancelLoad('m')).toBe(false)
+    })
+
+    it('unloads a session that came up before the cancel reached the core', async () => {
+      extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+      const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+      let resolveLoad!: (value: unknown) => void
+      const unloads: string[] = []
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        const { path } = args as { path: string }
+        if (command !== 'atomic_core_call') return undefined
+        if (path.endsWith('/load/cancel')) return { cancelled: false }
+        if (path.endsWith('/unload')) {
+          unloads.push(path)
+          return { success: true }
+        }
+        if (path.endsWith('/load')) return new Promise((resolve) => (resolveLoad = resolve))
+        return undefined
+      })
+      const load = extension.load('m')
+      load.catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const cancelling = extension.cancelLoad('m')
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      resolveLoad({ session, created: true })
+      expect(await cancelling).toBe(true)
+      await expect(load).rejects.toMatchObject({ code: 'MODEL_LOAD_CANCELLED' })
+      expect(unloads).toEqual(['/models/llamacpp-upstream/m/unload'])
+    })
   })
 
   describe('unload', () => {
@@ -1816,11 +1986,23 @@ describe('llamacpp_extension', () => {
     })
 
     describe('reconcileBackendReleaseTag', () => {
+      /// Offer published by the last `reconcileBackendReleaseTag()` run, read
+      /// off the persisted mirror the banner boots from (ATO-528).
+      const publishedOffer = () => {
+        const call = vi
+          .mocked(localStorage.setItem)
+          .mock.calls.find(
+            ([key]) => key === 'atomic_engine_update_offer_llamacpp-upstream'
+          )
+        return call ? JSON.parse(call[1] as string) : null
+      }
+
       beforeEach(() => {
         vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+        ;(window as any).dispatchEvent = vi.fn()
       })
 
-      it('moves the selected backend type onto the newest manifest release', async () => {
+      it('offers the newest manifest release instead of taking it', async () => {
         extension['config'] = {
           version_backend: 'b9937/win-cuda-13.3-x64',
         } as any
@@ -1835,9 +2017,28 @@ describe('llamacpp_extension', () => {
 
         await extension['reconcileBackendReleaseTag']()
 
-        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
-          'b10344/win-cuda-13.3-x64'
-        )
+        // The whole point of ATO-528: a launch no longer starts a several
+        // hundred megabyte transfer the user never asked for.
+        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
+        const offer = publishedOffer()
+        expect(offer).toMatchObject({
+          provider: 'llamacpp-upstream',
+          currentBackend: 'b9937/win-cuda-13.3-x64',
+          targetBackend: 'b10344/win-cuda-13.3-x64',
+          currentVersion: 'b9937',
+          targetVersion: 'b10344',
+          restartRequired: false,
+          releaseNotesUrl:
+            'https://github.com/ggml-org/llama.cpp/releases/tag/b10344',
+        })
+        // The core downloads from the signed mirror; the extension no longer knows the size.
+        expect(offer.downloadSizeBytes).toBeUndefined()
+        const event = vi.mocked((window as any).dispatchEvent).mock
+          .calls[0]?.[0] as CustomEvent
+        expect(event?.type).toBe('app:engine-update-available')
+        expect(event?.detail).toMatchObject({
+          targetBackend: 'b10344/win-cuda-13.3-x64',
+        })
       })
 
       it('leaves the newest release alone', async () => {
@@ -1872,7 +2073,7 @@ describe('llamacpp_extension', () => {
         expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
       })
 
-      it('bumps the tag on macOS, where the family never changes', async () => {
+      it('offers a tag bump on macOS, where the family never changes', async () => {
         extension['config'] = {
           version_backend: 'b10205/macos-arm64',
         } as any
@@ -1887,9 +2088,11 @@ describe('llamacpp_extension', () => {
 
         await extension['reconcileBackendReleaseTag']()
 
-        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
-          'b10344/macos-arm64'
-        )
+        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
+        expect(publishedOffer()).toMatchObject({
+          currentBackend: 'b10205/macos-arm64',
+          targetBackend: 'b10344/macos-arm64',
+        })
       })
 
       it('resolves a sentinel parked in the config instead of skipping it', async () => {
@@ -1913,14 +2116,12 @@ describe('llamacpp_extension', () => {
         expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
       })
 
-      it('keeps the working backend when the download fails', async () => {
-        const current = 'b9937/win-vulkan-x64'
+      it('keeps the working backend when the sentinel download fails', async () => {
+        // The parked-sentinel recovery is the one leg that still downloads on
+        // its own; a failure there must not disturb the running backend.
+        const current = 'latest/win-vulkan-x64'
         extension['config'] = { version_backend: current } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-vulkan-x64',
-        })
+        extension.checkBackendForUpdates = vi.fn()
         extension.downloadRecommendedBackend = vi
           .fn()
           .mockRejectedValue(new Error('asset unavailable'))
