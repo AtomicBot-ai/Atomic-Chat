@@ -11,27 +11,6 @@ The governing decision is
 Evidence strength and the current critical gaps live in
 [`testing-critical-flows.md`](testing-critical-flows.md).
 
-## Status (2026-09-18)
-
-The first slice exists on macOS arm64: `make build-app-e2e` and
-`make test-app-e2e` run desktop journeys for clean onboarding with restart;
-local chat with a fixture backend, persistence and rehydration; the local API
-served to an outside client; recovery from a killed backend and a killed core
-daemon; switching between two local models; context overflow with and without a window
-the app can grow; and a provider setting travelling from the UI to the core and
-the backend's argv — with their failure assertions. `make test-app-e2e-live` adds
-one opt-in chat against a real `llama-server` and model. It narrows the driver choice below — the embedded WebDriver
-plugin with the plain `webdriverio` client, without the Tauri service — and
-records why in
-[Drive the desktop UI through an embedded WebDriver on an isolated profile](decisions/2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md).
-
-Against the phases: the phase 1 seams for the data root, home directory and
-local API port exist, with the fixture backend taken from `atomic-chat-core`;
-the phase 2 harness exists without browser mode; journeys 2, 3 and 4 of phase 3
-are implemented and journey 1 in part. Not started: the acceptance catalog
-(phase 0), journeys 5 and 6, Windows and Linux, CI, and a fully offline run —
-catalog and registry lookups still leave the machine.
-
 ## Current baseline
 
 - `make verify` runs deterministic lint, type, quality, Vitest, coverage, and

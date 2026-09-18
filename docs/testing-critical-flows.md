@@ -442,22 +442,18 @@ now regression-tested rather than retroactively rewriting the score.
    hardware-to-exact-asset scenario.
 4. Backend process acceptance exists only as an opt-in live contract, not a
    deterministic default-gate sidecar lifecycle.
-5. The local OpenAI-compatible API has a real socket round-trip to a
-   deterministic backend stub on macOS only
-   (`tests/e2e/desktop/local-api.spec.ts`); the default gate has none.
+5. The local OpenAI-compatible API has no real socket round-trip to a
+   deterministic backend stub.
 6. Hub download/start and Launch-agent installation have no production route
    journey.
 7. Data-folder relocation has no success-and-rollback behavioral test.
 
 ### P1 — important supporting evidence
 
-1. UI thread rehydration after desktop restart is proved on macOS by
-   `tests/e2e/desktop/local-chat.spec.ts`; Windows and Linux have no desktop
-   journey yet.
+1. UI thread rehydration after desktop restart is unproved despite strong Rust
+   file-store and IPC coverage.
 2. llama.cpp error classification and extension stream cancellation are thin.
-3. Sidecar orphan cleanup is tested as a lifecycle on macOS
-   (`tests/e2e/desktop/recovery.spec.ts`: a killed core's backend is reaped by
-   its successor); the default gate still has matching logic only.
+3. Sidecar orphan cleanup is tested as matching logic, not as a lifecycle.
 4. ServiceHub construction is smoke evidence; adapter behavior belongs to the
    dedicated `mockIPC` suites.
 5. Local image generation is proved through the seam (`tauri.test.ts`) and a
@@ -514,29 +510,3 @@ externally observable outcome.
 
 WDIO scenarios must use deterministic local fixtures, retain screenshots and
 logs on failure, and may not download model weights or contact GAIA.
-
-### Implemented journeys (macOS arm64, `make test-app-e2e`)
-
-How the suite is built and isolated:
-[Drive the desktop UI through an embedded WebDriver on an isolated profile](decisions/2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md).
-The suite is outside `make verify`.
-
-| Contract item | Owning test | What it proves | What it does not |
-| --- | --- | --- | --- |
-| 1. Clean onboarding | `tests/e2e/desktop/onboarding.spec.ts` | an empty isolated profile reaches the production setup screen; the app config on disk and over IPC name the same data folder; skipping completes setup and survives a full restart; a build without its own root refuses to start | no backend recommendation is asserted (macOS has no backend step); completing setup by downloading a model is not covered |
-| 2. Model start and first streamed reply | `tests/e2e/desktop/local-chat.spec.ts` | a model picked in the UI is loaded through the core; the deterministic backend's exact reply is rendered; the session resolved by the webview equals the one in the core's `/sessions`; the spawned process is the fixture backend and no other backend got installed; both turns are persisted; a backend that dies while loading surfaces its stderr and error code with a retry, and leaves no session or process | no Hub install and no download progress: the model and backend are placed on disk by the fixture; stream order is not asserted beyond the final text |
-| 3. Thread persistence across restart | same test | after a full restart the thread is listed and its reply rehydrates from disk | the thread is titled by its prompt, not renamed |
-| 4. Local OpenAI-compatible API | `tests/e2e/desktop/local-api.spec.ts` | nothing listens until the user starts the server in the UI; an outside HTTP client is refused without the key, lists the app's model with it, and receives a multi-chunk streamed completion whose text is the fixture backend's exact reply, loaded on demand by the core; stopping it in the UI closes the port | the port and key come from a seeded profile, not from typing into the settings popover (its inputs have no accessible names yet); `/v1/responses` and `/v1/messages`, trusted hosts and CORS are not covered |
-| 5–6 | — | — | not implemented |
-
-Journeys beyond the six contract items, all against the core-owned runtime:
-
-| Flow | Owning test | What it proves | What it does not |
-| --- | --- | --- | --- |
-| Sidecar lifecycle: backend crash | `tests/e2e/desktop/recovery.spec.ts` | killing the backend under a loaded model removes its session from the core, shows the crash toast, and the app restarts the model by itself; the next message is answered by a new process and exactly one backend is left | a crash in the middle of a stream; the composer ignores Enter while the model reloads (its send button is disabled), which the test waits out as a user would |
-| Sidecar lifecycle: core crash | same file | killing the core daemon under a running app yields a new ready instance from the app's supervisor, the orphaned backend is reaped rather than adopted, the next message loads the model under the new core, and no crash toast is shown for a death that was the owner's | the three-restart ceiling; a crash while a request is in flight; the public listener coming back |
-| Context overflow: growth | `tests/e2e/desktop/context-growth.spec.ts` | with the provider's `fit` off the core passes an explicit window; a backend that answers `exceed_context_size_error` below a threshold makes the app grow the window past it, replace the process and deliver the reply with no growth indicator, error text or crash toast left | `fit` is turned off by a seeded extension setting, not in the settings UI; the proxy and agent overflow paths; the ladder's cap at the training maximum |
-| Context overflow: `fit` on (as shipped) | same file | the user is told the context is fitted to the device's memory | **known defect, recorded with `it.fails`:** afterwards the thread is a dead end — "Growing the Mind..." never clears, no error or Retry appears and the send button stays disabled, because `handleContextSizeIncrease` returns on `fit`/`at_max` without lowering `isAutoIncreasingContext` or the active-request flag (`routes/threads/$threadId.tsx`) |
-| Provider setting UI → core → backend | `tests/e2e/desktop/provider-settings.spec.ts` | "Fit context to device memory" switched off on the provider's settings page reaches the core's settings file and the next backend's argv (`--fit off`); after a full restart the switch and the core still agree; switching it back is a higher core revision and the next backend runs without the override | one boolean setting of one provider; the page is reached through the model picker's settings button, which got a `data-test-id` for this (it is an icon-only `div`) |
-| Real backend and model (opt-in, `make test-app-e2e-live`) | `tests/e2e/desktop/live-model.spec.ts` | a real `llama-server` from a backend directory the operator names starts with the argv the core builds and is recognised as ready; a real model answers; the stored reply is the one shown; the process is the copied binary; stopping the core stops it | what the model says; `runtime_device` — llama-server b10809 on macOS prints no log lines by default, so the core reports an empty device and backend-mismatch detection never gets a positive signal there |
-| Model switch | `tests/e2e/desktop/model-switch.spec.ts` | picking another local model mid-conversation leaves one session in the core — the new model's — ends the first model's process, shows no crash toast for that deliberate stop, and the conversation continues | unloading from Settings; MLX and TurboQuant; two providers holding the same model |

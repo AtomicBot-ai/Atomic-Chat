@@ -60,9 +60,6 @@ test-tauri = [
     "desktop",
 ]
 gaia-eval = ["dep:env_logger", "dep:indicatif", "dep:parquet"]
-# Desktop UI end-to-end builds only: embeds a WebDriver server in the app. Never
-# part of `default` or `desktop`, so a release build does not contain it.
-e2e = ["dep:tauri-plugin-wdio-webdriver"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -120,7 +117,6 @@ tauri-plugin-opener = "2.2.7"
 tauri-plugin-os = "2.2.1"
 tauri-plugin-shell = "2.2.0"
 tauri-plugin-store = "2"
-tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
