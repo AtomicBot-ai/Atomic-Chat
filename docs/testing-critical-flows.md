@@ -199,6 +199,23 @@ proxy transformations, and Responses API translation. The frontend hook tests
 cover state transitions. There is no real socket round-trip through the local
 server to a deterministic backend stub.
 
+`/v1/images/generations` and Remote & LAN (the `cloudflared` quick tunnel,
+per-request trusted hosts, the LAN address list) are served by the core on
+desktop (ADR 2026-09-18). Here the seam is proved by
+`services/__tests__/app.test.ts` (the four remote-access calls hit their core
+routes and a refused start keeps the core's `details` for
+`parseRemoteAccessRejection`), `hooks/__tests__/useRemoteAccessSync.test.ts`
+and `routes/settings/__tests__/remote-lan.test.tsx` on the page, and in Rust by
+`atomic_core::launch` (`--cloudflared-bin` only when the sidecar is there),
+`atomic_core::relay::legacy_events` (`download:stage` under the legacy task
+name) and `server::api_request_analytics` (the image labels). A status read
+the core fails no longer marks remote access unavailable
+(`useRemoteAccess.test.ts`, `useRemoteAccessSync.test.ts`), and a core
+failure reaches the UI and telemetry as its code (`remoteLan.test.ts`). The
+llama extensions' index tests prove a relayed `download:stage` frame of a core
+backend install becomes a named row's status, never progress. Nothing here
+starts a tunnel or generates an image; the core's e2e and live tests do.
+
 ### Agent turn and approval — strong at the deterministic runtime boundary
 
 Production entrypoints:
@@ -252,13 +269,37 @@ There are focused process, unload, and error-path tests, but no deterministic
 scenario proves start, readiness, routing, cancellation, unload, and orphan
 cleanup as one lifecycle.
 
+Cancelling a model load is the core's (`POST /models/:provider/:id/load/cancel`,
+ADR 2026-09-18); the three runtime extensions share
+`extensions/shared/loadCancel.ts` on top of it. `llamacpp-upstream-extension`
+`src/adapter/sharedLoadCancel.test.ts` proves the protocol against a fake core:
+the cancel is retried while the load request is still on its way, a session
+that came up first is unloaded again, the load rejects with
+`code: 'MODEL_LOAD_CANCELLED'`, and a core refusal keeps its code. Each
+extension's `index.test.ts` (`mlx-extension/src/loadCancel.test.ts`) then
+proves its own `load` reports the `installingEngine`/`loadingWeights` stages
+before the core call and that `cancelLoad` reaches through it. The core-side
+registry is proved in `atomic-chat-core` (test/e2e/load-cancel.test.ts there).
+
 ### Local image generation — partial, P1
 
 Production entrypoints:
 
-- `web-app/src/stores/image-generation-store.ts` — binds to the native
-  diffusion plugin, adopts a running job, runs the multi-run loop
-  (`seed = base + run × batchSize`), stops, and lands outputs in the gallery.
+- `atomic-chat-core` `src/diffusion/` — the engine (`sd-server`) process, the
+  jobs, step progress, the gallery and engine installs; reached through
+  `/atomic/v1/diffusion/*` and relayed as `atomic-core://diffusion:*`
+  (ADR 2026-09-18, image generation runs in the core).
+- `web-app/src/services/diffusion/tauri.ts` — the seam: one `atomic_core_call`
+  per operation, the core's four envelopes unwrapped, the four events plus the
+  `atomic-core://snapshot` reset stamped with their discriminant.
+- `web-app/src/stores/image-generation-store.ts` — binds to that service,
+  adopts a running job, runs the multi-run loop
+  (`seed = base + run × batchSize`), stops, lands outputs in the gallery, and
+  configures the core again on every `reset` (each attachment's snapshot) with
+  the idle interval and the output folder it keeps in `useImageSetting`.
+- `web-app/src/services/diffusion/install.ts` — downloads and unpacks the
+  engine here, asks the core for free space (`POST /disk/available`) and hands
+  the tree over (`POST /diffusion/backends/finalize`).
 - `web-app/src/containers/images/*`, `containers/dialogs/ImageSetupDialog.tsx`,
   `routes/settings/media.tsx` — the Images page, the first-run wizard and the
   Media settings page.
@@ -268,12 +309,32 @@ Production entrypoints:
 
 Existing evidence:
 
+- `services/diffusion/__tests__/tauri.test.ts` runs the production
+  `TauriDiffusionService` against `mockIPC`: every operation hits its one core
+  route with the interface parameters as the body, load and generate requests
+  pass through unchanged, the four envelopes are unwrapped, ids are escaped, a
+  core refusal keeps its `code`, and `subscribe` listens on the four relayed
+  events plus the snapshot reset and detaches each listener exactly once.
 - `image-generation-store.test.ts` drives the loop against a fake
   `DiffusionService` and asserts the seeds handed to `generate`, the gallery
   order after three runs, that Stop ends the loop without a toast, that a
   failure stops it with the code surfaced, the 2 s `getJob` fallback when the
-  terminal event never arrives, adoption of `getStatus().activeJob`, and that
-  the telemetry payload carries neither prompt nor seed.
+  terminal event never arrives, adoption of `getStatus().activeJob`, that bind
+  and a `reset` both re-send the stored output folder, that a folder the core
+  cannot create falls back to the default while the choice is kept (and that a
+  core outage does not), that a `reset` drops stale capabilities, and that the
+  telemetry payload carries neither prompt nor seed. `media.test.tsx` proves
+  the chosen folder is persisted, a refused one leaves the old choice, and
+  picking the default folder stores none. `lib/diffusion/__tests__/errors.test.ts`
+  walks core and relay codes outside the 21 (message kept, code in details).
+- `services/diffusion/__tests__/install.test.ts` proves the engine install
+  end to end against the download and core mocks: the host's qualifying
+  build, the free-space refusal and the go-ahead when the core cannot tell,
+  retiring the previous tree unless a session still runs from it.
+- The core's own evidence — the hand-ported sd.cpp tables, the fake
+  `sd-server`, the diffusion e2e on the compiled binary (test/e2e/diffusion.test.ts
+  there) and the live run on a real engine (test/live/diffusion.test.ts) —
+  lives in `atomic-chat-core/docs/testing-critical-flows.md`.
 - `size.test.ts`, `recipe.test.ts`, `generation-stop.test.ts`, `errors.test.ts`
   cover the pure helpers as tables; `errors.test.ts` walks every code in the
   contract and checks each has English copy.
@@ -292,11 +353,14 @@ Existing evidence:
 
 Gap:
 
-- Nothing exercises the real `TauriDiffusionService` against `mockIPC` from the
-  UI side; the store's event handling is proved only through the fake.
+- The store's event handling is proved only through the fake service; no test
+  drives the production store through the relayed `atomic-core://diffusion:*`
+  events end to end.
 - The full-page composition (`ImageGenerationPage`) and the deep-link
   `?model=&quant=` preselect have no test.
 - OS notification on completion and the GPU arbiter hand-off are mocked.
+- `make test-core-live` does not yet generate an image through the packaged
+  app core; the live engine run is the core's `ATOMIC_LIVE=1` test.
 
 ## Coverage snapshot
 
@@ -392,8 +456,10 @@ now regression-tested rather than retroactively rewriting the score.
 3. Sidecar orphan cleanup is tested as matching logic, not as a lifecycle.
 4. ServiceHub construction is smoke evidence; adapter behavior belongs to the
    dedicated `mockIPC` suites.
-5. Local image generation is proved through a fake `DiffusionService`; the
-   page composition and the deep-link preselect are untested.
+5. Local image generation is proved through the seam (`tauri.test.ts`) and a
+   fake `DiffusionService` in the store; the page composition and the
+   deep-link preselect are untested, and no app-level test generates an
+   image through the packaged core.
 
 ### P2 — cleanup
 
