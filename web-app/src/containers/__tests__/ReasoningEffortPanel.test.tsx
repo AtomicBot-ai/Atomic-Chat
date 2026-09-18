@@ -146,15 +146,31 @@ describe('ReasoningEffortPanel', () => {
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '5')
   })
 
-  it('renders nothing for a model on a provider with its own reasoning API', () => {
-    // OpenAI and friends are dispatched by name in the transport; this scale
-    // does not drive them, so offering it would be a lie.
+  it.each(['openai', 'anthropic', 'gemini', 'xai', 'openrouter', 'nvidia'])(
+    'offers effort for a %s cloud model without local template metadata',
+    (provider) => {
+      selectedModel.current = { id: `${provider}-reasoning-model` }
+      selectedProvider.current = provider
+
+      render(<ReasoningEffortPanel />)
+
+      expect(shownLevel()).toHaveTextContent('common:reasoningEffort.medium')
+      expect(screen.getByRole('slider')).toBeVisible()
+    }
+  )
+
+  it('starts non-disableable cloud APIs at Low instead of showing a false Off', () => {
     selectedModel.current = { id: 'gpt-5' }
     selectedProvider.current = 'openai'
+    useGeneralSetting.setState({ disableReasoning: true })
 
-    const { container } = render(<ReasoningEffortPanel />)
+    render(<ReasoningEffortPanel />)
 
-    expect(container).toBeEmptyDOMElement()
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.low')
+    expect(
+      screen.queryByText('common:reasoningEffort.off')
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '4')
   })
 
   it('uses only declared Codex effort levels when the API has no off value', () => {
@@ -304,7 +320,7 @@ describe('ReasoningEffortPanel', () => {
     expect(accentWash()).toHaveClass('opacity-100')
   })
 
-  it('runs free under the pointer and settles on release', async () => {
+  it('previews under the pointer and commits the snapped level on release', async () => {
     selectedModel.current = BUDGET_MODEL
     useGeneralSetting.setState({ reasoningBudget: 'medium' })
 
@@ -321,14 +337,17 @@ describe('ReasoningEffortPanel', () => {
     fireEvent.pointerDown(root, { pointerId: 1 })
     fireEvent.pointerMove(root, { pointerId: 1 })
 
-    // Under the pointer the thumb is placed, not animated — jsdom has no
-    // layout, so Radix reads a zero-width track and lands on the first stop.
+    // Under the pointer the thumb is placed, not animated. The store keeps the
+    // last committed model preference until release; jsdom has no layout, so
+    // Radix previews the first stop here.
     expect(root).not.toHaveClass(GLIDE_CLASS)
-    expect(useGeneralSetting.getState().disableReasoning).toBe(true)
+    expect(useGeneralSetting.getState().disableReasoning).toBe(false)
+    expect(shownLevel()).toHaveTextContent('common:reasoningEffort.off')
 
     fireEvent.pointerUp(root, { pointerId: 1 })
 
     expect(root).toHaveClass(GLIDE_CLASS)
+    expect(useGeneralSetting.getState().disableReasoning).toBe(true)
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '0')
   })
 

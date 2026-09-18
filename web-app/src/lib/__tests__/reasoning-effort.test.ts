@@ -4,9 +4,11 @@ import type { ReasoningControls } from '@janhq/core'
 import {
   availableReasoningLevels,
   buildAgentReasoningRequest,
+  buildCloudReasoningRequestFields,
   buildReasoningRequestFields,
   buildRemoteReasoningRequestFields,
   modelEffortValue,
+  isCloudReasoningProvider,
   resolveReasoningLevel,
   usesTemplateReasoningKwargs,
 } from '../reasoning-effort'
@@ -181,10 +183,11 @@ describe('buildAgentReasoningRequest', () => {
     })
   })
 
-  it('leaves max uncapped', () => {
+  it('caps Agent Max at the top finite tier so tools retain output room', () => {
     expect(buildAgentReasoningRequest('max', false, BUDGET_ONLY)).toEqual({
       enabled: true,
       effort: 'max',
+      budget_tokens: 8192,
       supports_thinking: true,
     })
   })
@@ -273,6 +276,65 @@ describe('remote reasoning', () => {
   it('leaves a catalogue provider alone', () => {
     // `chatgpt` is a baseline entry, so it is known without a registry fetch.
     expect(usesTemplateReasoningKwargs('chatgpt')).toBe(false)
+  })
+
+  it('recognizes catalogue cloud providers without treating local servers as cloud', () => {
+    for (const provider of [
+      'openai',
+      'anthropic',
+      'gemini',
+      'xai',
+      'openrouter',
+      'nvidia',
+      'chatgpt',
+    ]) {
+      expect(isCloudReasoningProvider(provider)).toBe(true)
+    }
+    for (const provider of [
+      'llamacpp',
+      'llamacpp-upstream',
+      'mlx',
+      'ollama',
+      'llamacpp-server',
+      'my-own-gateway',
+    ]) {
+      expect(isCloudReasoningProvider(provider)).toBe(false)
+    }
+  })
+
+  it('uses each cloud API reasoning shape', () => {
+    expect(buildCloudReasoningRequestFields('high', 'openai')).toEqual({
+      reasoning_effort: 'high',
+    })
+    expect(buildCloudReasoningRequestFields('max', 'moonshot')).toEqual({
+      reasoning_effort: 'max',
+    })
+    expect(buildCloudReasoningRequestFields('medium', 'anthropic')).toEqual({
+      thinking: { type: 'enabled', budget_tokens: 4096 },
+    })
+    expect(buildCloudReasoningRequestFields('xhigh', 'gemini')).toEqual({
+      reasoning_effort: 'xhigh',
+      extra_body: {
+        google: { thinking_config: { thinking_budget: 16384 } },
+      },
+    })
+    expect(buildCloudReasoningRequestFields('max', 'openrouter')).toEqual({
+      reasoning: { effort: 'xhigh' },
+    })
+    expect(buildCloudReasoningRequestFields('low', 'nvidia')).toEqual({
+      reasoning_effort: 'low',
+    })
+  })
+
+  it('gives cloud Agent turns an effort even without model metadata', () => {
+    expect(
+      buildAgentReasoningRequest('high', false, undefined, false, 'openai')
+    ).toEqual({
+      enabled: true,
+      effort: 'high',
+      effort_value: 'high',
+      supports_thinking: true,
+    })
   })
 
   it('leaves the local engines and the big APIs to their own paths', () => {

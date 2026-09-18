@@ -16,6 +16,23 @@ Object.assign(navigator, {
 })
 
 describe('RenderMarkdown', () => {
+  it('turns bare URLs into visibly styled links', () => {
+    const { container } = render(
+      <RenderMarkdown
+        content="Source: https://www.reuters.com/world/example"
+        enableHtmlPreview
+      />
+    )
+
+    const link = container.querySelector('a')
+    expect(link).toHaveAttribute(
+      'href',
+      'https://www.reuters.com/world/example'
+    )
+    expect(link).toHaveClass('text-blue-600', 'underline', 'underline-offset-2')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
   it('preserves line breaks in model responses (when isUser == undefined)', () => {
     const modelResponseWithNewLines = `This is line 1
     This is line 2

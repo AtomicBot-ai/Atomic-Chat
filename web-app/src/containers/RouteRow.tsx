@@ -47,8 +47,10 @@ type RouteRowProps = {
   'label': string
   'onClick': () => void
   'disabled'?: boolean
+  'compact'?: boolean
   /** The row the screen leads with: filled button instead of a secondary. */
   'primary'?: boolean
+  'textAction'?: boolean
   'data-testid'?: string
 }
 
@@ -73,12 +75,17 @@ export function RouteRow({
   label,
   onClick,
   disabled = false,
+  compact = false,
   primary = false,
+  textAction = false,
   'data-testid': testId,
 }: RouteRowProps) {
   return (
     <div
-      className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+      className={cn(
+        'flex items-center justify-between gap-3 first:pt-0 last:pb-0',
+        compact ? 'py-2' : 'py-2.5'
+      )}
       data-testid={testId}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -100,14 +107,16 @@ export function RouteRow({
             </span>
             {meta}
           </span>
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-            {hint}
-          </span>
+          {!compact && (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              {hint}
+            </span>
+          )}
         </div>
       </div>
       <Button
         type="button"
-        variant={primary ? 'default' : 'secondary'}
+        variant={textAction ? 'link' : primary ? 'default' : 'secondary'}
         size="sm"
         aria-label={label}
         disabled={disabled}
@@ -116,7 +125,9 @@ export function RouteRow({
           layout === 'onboarding'
             ? ONBOARDING_ROW_ACTION_CLASS
             : ROUTE_ROW_ACTION_CLASS,
-          !primary && ROUTE_ROW_BUTTON_HOVER
+          textAction &&
+            'h-auto border-0 bg-transparent px-2 font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground hover:underline underline-offset-4',
+          !primary && !textAction && ROUTE_ROW_BUTTON_HOVER
         )}
       >
         <span className="min-w-0 truncate">{action}</span>

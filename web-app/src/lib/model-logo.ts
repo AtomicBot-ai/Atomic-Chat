@@ -20,7 +20,7 @@ const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/minimax/i, '/svg/minimax.svg'],
   [/lfm/i, '/svg/liquid.svg'],
   [/nemotron/i, '/images/model-provider/nvidia.svg'],
-  [/gpt-oss/i, '/images/model-provider/openai.svg'],
+  [/gpt-oss/i, '/svg/openai-mark.svg'],
   [/granite/i, '/svg/ibm.svg'],
   [/olmo/i, '/svg/ai2-color.svg'],
   [/hermes/i, '/svg/nousresearch.svg'],
@@ -48,6 +48,7 @@ const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set([
   '/svg/minimax.svg',
   '/svg/bfl.svg',
   '/svg/lightricks.svg',
+  '/svg/openai-mark.svg',
 ])
 
 // Explicit icon keys addressable from the staff-picks manifest. Curators pick
@@ -67,7 +68,7 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   liquid: '/svg/liquid.svg',
   minimax: '/svg/minimax.svg',
   nvidia: '/images/model-provider/nvidia.svg',
-  openai: '/images/model-provider/openai.svg',
+  openai: '/svg/openai-mark.svg',
   ibm: '/svg/ibm.svg',
   allenai: '/svg/ai2-color.svg',
   nous: '/svg/nousresearch.svg',
@@ -98,6 +99,7 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
   'z-image': 'tongyi',
   'flux.2-klein': 'bfl',
   'flux.1': 'bfl',
+  'flux.1-uncensored': 'bfl',
   'qwen-image': 'qwen',
   'wan2.2-ti2v-5b': 'wan',
   'ltx-2': 'ltx',

@@ -140,6 +140,7 @@ export function workflowsForFamily(family: string): ImageWorkflowId[] {
       return ['create', 'transform', 'inpaint', 'extend', 'upscale', 'reference', 'edit']
     case 'z-image':
     case 'flux.1':
+    case 'flux.1-uncensored':
     case 'qwen-image':
       return ['create', 'transform', 'inpaint', 'extend', 'upscale']
     default:

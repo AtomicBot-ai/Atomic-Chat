@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import {
+  IconCircleCheckFilled,
   IconLoader2,
   IconPlayerPlay,
   IconPlayerStopFilled,
@@ -47,6 +48,8 @@ type ImageModelSelectorProps = {
    */
   workflow?: ImageWorkflowId
   className?: string
+  /** Setup closes as soon as a background download has been accepted. */
+  onDownloadStarted?: (artifactId: string) => void
 }
 
 const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
@@ -63,6 +66,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   variant = 'page',
   workflow,
   className,
+  onDownloadStarted,
 }: ImageModelSelectorProps) {
   const { t } = useTranslation()
   const catalog = useImageGenerationStore((state) => state.catalog)
@@ -70,6 +74,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
     (state) => state.installedArtifacts
   )
   const [planFor, setPlanFor] = useState<string | null>(null)
+  const { profile } = useHardwareTier()
 
   const fits = (family: DiffusionCatalogFamily) =>
     workflow === undefined || familySupportsWorkflow(family.id, workflow)
@@ -97,23 +102,68 @@ export const ImageModelSelector = memo(function ImageModelSelector({
     const installed: Array<[DiffusionCatalogFamily, DiffusionCatalogQuant[]]> = []
     const available: Array<[DiffusionCatalogFamily, DiffusionCatalogQuant[]]> = []
     for (const family of families) {
-      const have = family.transformer.quants.filter((quant) =>
+      // One family, one row. Prefer what is already on disk; otherwise show
+      // the quant selected for this machine. Alternate quants remain an
+      // implementation detail instead of turning the picker into a file list.
+      const have = family.transformer.quants.find((quant) =>
         installedIds.has(artifactId(family.id, quant.id))
       )
-      const rest = family.transformer.quants.filter(
-        (quant) => !installedIds.has(artifactId(family.id, quant.id))
-      )
-      if (have.length > 0) installed.push([family, have])
-      if (rest.length > 0) available.push([family, rest])
+      const recommended = recommendedQuant(family, profile, {
+        teOnCpu: IS_MACOS,
+      })
+      const choice = have ?? recommended ?? family.transformer.quants[0]
+      if (!choice) continue
+      if (have) installed.push([family, [choice]])
+      else available.push([family, [choice]])
     }
     return { installed, available }
-  }, [families, installedIds])
+  }, [families, installedIds, profile])
 
   if (!catalog) {
     return (
       <p className="text-sm text-muted-foreground" data-testid="image-models-loading">
         {t('images:model.loadingCatalog')}
       </p>
+    )
+  }
+
+  if (variant === 'dialog') {
+    const choices = families
+      .map((family) => ({
+        family,
+        quant:
+          recommendedQuant(family, profile, { teOnCpu: IS_MACOS }) ??
+          family.transformer.quants[0],
+      }))
+      .filter(
+        (
+          choice
+        ): choice is {
+          family: DiffusionCatalogFamily
+          quant: DiffusionCatalogQuant
+        } => Boolean(choice.quant)
+      )
+
+    return (
+      <div
+        className={cn('space-y-1 rounded-xl border bg-secondary/20 p-1', className)}
+        data-testid="image-model-selector"
+      >
+        {choices.map(({ family, quant }, index) => (
+          <SetupFamilyRow
+            key={family.id}
+            family={family}
+            quant={quant}
+            recommended={index === 0}
+            onDownloadStarted={onDownloadStarted}
+          />
+        ))}
+        {choices.length === 0 && (
+          <p className="p-3 text-sm text-muted-foreground">
+            {t('images:model.noneInCatalog')}
+          </p>
+        )}
+      </div>
     )
   }
 
@@ -161,6 +211,74 @@ export const ImageModelSelector = memo(function ImageModelSelector({
     </div>
   )
 })
+
+function SetupFamilyRow({
+  family,
+  quant,
+  recommended,
+  onDownloadStarted,
+}: {
+  family: DiffusionCatalogFamily
+  quant: DiffusionCatalogQuant
+  recommended: boolean
+  onDownloadStarted?: (artifactId: string) => void
+}) {
+  const { t } = useTranslation()
+  const id = artifactId(family.id, quant.id)
+  const artifact = useImageArtifact(id)
+  const setSelectedArtifactId = useImageSetting(
+    (state) => state.setSelectedArtifactId
+  )
+
+  const start = () => {
+    setSelectedArtifactId(id)
+    void artifact.download()
+    onDownloadStarted?.(id)
+  }
+
+  return (
+    <div
+      className="flex min-h-16 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out hover:bg-background"
+      data-testid={`artifact-${id}`}
+    >
+      <ModelLogo
+        icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
+        name={family.name}
+        author={family.developer}
+        className="size-8 rounded-lg"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <span className="truncate">{family.name}</span>
+          {recommended && (
+            <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+              {t('images:model.recommended')}
+            </span>
+          )}
+        </p>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+          <FitBadge
+            fit={artifact.fit}
+            className="rounded-none border-0 bg-transparent p-0 font-medium dark:bg-transparent"
+          />
+          <span aria-hidden>·</span>
+          <span>{t('images:model.sizeGb', { size: gb(artifact.totalBytes) })}</span>
+        </div>
+      </div>
+      {artifact.complete ? (
+        <span className="flex w-24 items-center justify-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <IconCircleCheckFilled size={16} />
+          {t('images:model.downloaded')}
+        </span>
+      ) : (
+        <ImageArtifactDownloadButton
+          artifact={artifact}
+          onRequestDownload={start}
+        />
+      )}
+    </div>
+  )
+}
 
 function Section({
   title,

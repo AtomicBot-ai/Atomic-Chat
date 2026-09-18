@@ -119,7 +119,7 @@ describe('ImageSetupDialog', () => {
     }
   })
 
-  it('installs the engine from step 2 and shows it installed', async () => {
+  it('starts the engine install and dismisses the wizard', async () => {
     install.ensure.mockImplementation(async () => {
       fake.getStatus.mockResolvedValue(makeStatus())
       return {
@@ -140,7 +140,7 @@ describe('ImageSetupDialog', () => {
     })
 
     await waitFor(() =>
-      expect(screen.getByText('images:setup.engine.installed')).toBeInTheDocument()
+      expect(useImageGenerationStore.getState().setupOpen).toBe(false)
     )
     expect(useImageGenerationStore.getState().status?.install.state).toBe('installed')
   })

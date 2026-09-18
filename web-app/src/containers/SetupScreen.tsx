@@ -292,22 +292,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   >('idle')
   const autoRunFiredRef = useRef(false)
 
-  // Downloads started from this screen, by the id their row tracks. The
-  // screen stays up while they run — the row shows the progress and cancels —
-  // and the chat opens only once the model is in the library (see the effect
-  // after enterChatForDownload). A cancel deletes the entry, so a later
-  // stray import of that id cannot walk the user out of the list.
-  const pendingDownloadHandoffsRef = useRef<
-    Map<
-      string,
-      {
-        provider: LocalLlamacppProvider | 'mlx'
-        model: CatalogModel
-        variant: ModelQuant | null
-      }
-    >
-  >(new Map())
-
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
@@ -820,12 +804,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ) => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
-      // The import event also lands for a download started from this screen,
-      // usually before the library re-renders; it is a download exit, not an
-      // import of a model another app left on disk.
-      const startedHere = pendingDownloadHandoffsRef.current.delete(importedId)
       captureOnboardingCompleted({
-        exitPath: startedHere ? 'download_started' : 'imported',
+        exitPath: 'imported',
         hadAnyModel: true,
         providerState: describeProviderState(
           useModelProvider.getState().providers
@@ -851,16 +831,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
             ? t('setup:foundFrom', { name: autoRun.displayName, source })
             : t('setup:foundLocal', { name: autoRun.displayName })
         )
-      }
-
-      if (startedHere) {
-        toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
-          id: 'download-complete',
-          description: t(
-            'common:toast.downloadAndVerificationComplete.description',
-            { item: modelId }
-          ),
-        })
       }
 
       toast.dismiss(`model-validation-started-${modelId}`)
@@ -952,45 +922,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     },
     [navigate]
   )
-
-  // Download path: unlike "Run", which switches to a model that is ready, this
-  // one leaves the user waiting on bytes. The screen used to hand over to the
-  // chat 3 s after the click; a cancel from the download panel then left an
-  // empty chat with no way back to the list. Now the list stays until the
-  // model has landed in the library, and cancelling simply restores the row.
-  const armDownloadHandoff = useCallback(
-    (
-      modelId: string,
-      providerName: LocalLlamacppProvider | 'mlx',
-      model: CatalogModel,
-      variant: ModelQuant | null
-    ) => {
-      if (hasNavigatedRef.current) return
-      pendingDownloadHandoffsRef.current.set(modelId, {
-        provider: providerName,
-        model,
-        variant,
-      })
-    },
-    []
-  )
-
-  // Re-runs whenever a local provider's library changes (the downloaded
-  // checks are rebuilt on it); the import event usually gets there first and
-  // handleImportedId takes the same exit, so this is the backstop for an
-  // import that lands without its event or under another id.
-  useEffect(() => {
-    if (hasNavigatedRef.current) return
-    for (const [id, pending] of pendingDownloadHandoffsRef.current) {
-      const landed = pending.variant
-        ? isVariantDownloaded(pending.model, pending.variant)
-        : isMlxDownloaded(pending.model)
-      if (!landed) continue
-      pendingDownloadHandoffsRef.current.delete(id)
-      enterChatForDownload(id, pending.provider)
-      return
-    }
-  }, [isVariantDownloaded, isMlxDownloaded, enterChatForDownload])
 
   // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
   const providerForCandidate = useCallback(
@@ -1395,14 +1326,15 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       // downloads a catalog model instead of running them.
       importCandidatesInBackground(localCandidates ?? [])
       if (isMlx) {
+        const modelId = getMlxModelId(model)
         captureRecommendedModelClicked({
-          modelId: getMlxModelId(model),
+          modelId,
           format: 'MLX',
           sizeGb: sizeStringToGb(downloadSize),
           position: index,
         })
         void startMlxDownload(model)
-        armDownloadHandoff(getMlxModelId(model), 'mlx', model, null)
+        enterChatForDownload(modelId, 'mlx')
       } else if (variant) {
         captureRecommendedModelClicked({
           modelId: variant.model_id,
@@ -1411,11 +1343,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           position: index,
         })
         startDownload(model, variant, mmproj?.path)
-        armDownloadHandoff(
+        enterChatForDownload(
           variant.model_id,
-          LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider,
-          model,
-          variant
+          LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
         )
       }
     }

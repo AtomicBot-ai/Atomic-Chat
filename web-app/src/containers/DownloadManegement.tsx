@@ -32,6 +32,14 @@ import {
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
 
+type DiffusionDownloadKind = 'model' | 'engine'
+
+function diffusionDownloadKind(id: string): DiffusionDownloadKind | null {
+  if (id.startsWith('diffusion-model-')) return 'model'
+  if (id.startsWith('diffusion-backend-')) return 'engine'
+  return null
+}
+
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
  * success events don't double-count. PII contract: only ids/enums/buckets.
@@ -464,6 +472,23 @@ export function DownloadManagement() {
     (event: { modelId: string; downloadType: string }) => {
       console.debug('onModelValidationStarted', event)
 
+      const diffusionKind = diffusionDownloadKind(event.modelId)
+      if (diffusionKind) {
+        toast.loading(
+          t(
+            diffusionKind === 'model'
+              ? 'images:download.finishingModel'
+              : 'images:download.finishingEngine'
+          ),
+          {
+            id: `model-validation-started-${event.modelId}`,
+            description: t('images:download.checkingFiles'),
+            duration: Infinity,
+          }
+        )
+        return
+      }
+
       // Show validation in progress toast
       toast.info(t('common:toast.modelValidationStarted.title'), {
         id: `model-validation-started-${event.modelId}`,
@@ -587,12 +612,24 @@ export function DownloadManagement() {
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
-      toast.success(t('common:toast.downloadComplete.title'), {
+      const diffusionKind = diffusionDownloadKind(state.modelId)
+      toast.success(
+        diffusionKind
+          ? t(
+              diffusionKind === 'model'
+                ? 'images:download.modelReady'
+                : 'images:download.engineReady'
+            )
+          : t('common:toast.downloadComplete.title'),
+        {
         id: 'download-complete',
-        description: t('common:toast.downloadComplete.description', {
-          item: state.modelId,
-        }),
-      })
+          description: diffusionKind
+            ? undefined
+            : t('common:toast.downloadComplete.description', {
+                item: state.modelId,
+              }),
+        }
+      )
     },
     [
       removeDownload,
@@ -625,15 +662,27 @@ export function DownloadManagement() {
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
-      toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
+      const diffusionKind = diffusionDownloadKind(state.modelId)
+      toast.success(
+        diffusionKind
+          ? t(
+              diffusionKind === 'model'
+                ? 'images:download.modelReady'
+                : 'images:download.engineReady'
+            )
+          : t('common:toast.downloadAndVerificationComplete.title'),
+        {
         id: 'download-complete',
-        description: t(
-          'common:toast.downloadAndVerificationComplete.description',
-          {
-            item: state.modelId,
-          }
-        ),
-      })
+          description: diffusionKind
+            ? undefined
+            : t(
+                'common:toast.downloadAndVerificationComplete.description',
+                {
+                  item: state.modelId,
+                }
+              ),
+        }
+      )
     },
     [
       removeDownload,

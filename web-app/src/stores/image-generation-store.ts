@@ -630,7 +630,15 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
             {
               offload:
                 settings.offloadOverride === 'auto'
-                  ? fit.policy
+                  ? IS_MACOS && family.id === 'qwen-image'
+                    // Qwen-Image's Wan VAE needs a large temporary decode
+                    // buffer on Metal. Keeping the VAE on the GPU can produce
+                    // a command-buffer page fault even when the static weights
+                    // fit; the fault corrupts the first image and poisons the
+                    // backend for every later request. Full model offload keeps
+                    // the VAE on CPU while Metal still runs the denoiser.
+                    ? 'model'
+                    : fit.policy
                   : settings.offloadOverride,
               engine:
                 settings.engineOverride === 'auto'

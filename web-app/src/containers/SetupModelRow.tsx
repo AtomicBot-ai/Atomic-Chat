@@ -16,6 +16,7 @@ type SetupModelRowProps = {
   'disabled': boolean
   'onDownload': () => void
   'buttonLabel': string
+  'compact'?: boolean
   'buttonAriaLabel'?: string
   'data-testid'?: string
 }
@@ -33,13 +34,17 @@ export function SetupModelRow({
   disabled,
   onDownload,
   buttonLabel,
+  compact = false,
   buttonAriaLabel,
   'data-testid': testId = 'setup-recommended-row',
 }: SetupModelRowProps) {
   const { t } = useTranslation()
   return (
     <div
-      className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+      className={cn(
+        'flex items-center justify-between gap-3 first:pt-0 last:pb-0',
+        compact ? 'py-2' : 'py-2.5'
+      )}
       data-testid={testId}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -52,7 +57,7 @@ export function SetupModelRow({
               {title}
             </h2>
             {fitMark}
-            {downloadSize && (
+            {!compact && downloadSize && (
               <span
                 className="shrink-0 whitespace-nowrap text-xs text-muted-foreground"
                 data-testid="setup-model-size"
@@ -64,12 +69,14 @@ export function SetupModelRow({
           {/* The one line under the name: the summary, or the progress
                 readout in its place while the download runs — announced as
                 it changes, since nothing else on the row says so. */}
-          <p
-            className="mt-0.5 truncate min-h-4 text-xs text-muted-foreground tabular-nums"
-            aria-live="polite"
-          >
-            {progressText ?? summary}
-          </p>
+          {!compact && (
+            <p
+              className="mt-0.5 truncate min-h-4 text-xs text-muted-foreground tabular-nums"
+              aria-live="polite"
+            >
+              {progressText ?? summary}
+            </p>
+          )}
         </div>
       </div>
       {rowDownloading ? (

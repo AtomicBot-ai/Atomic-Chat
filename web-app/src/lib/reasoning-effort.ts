@@ -76,6 +76,32 @@ const NATIVE_REASONING_API_PROVIDERS = new Set<string>([
   'moonshot',
 ])
 
+const CLOUD_REASONING_PROVIDERS = new Set<string>([
+  'ai21',
+  'aimlapi',
+  'anthropic',
+  'azure',
+  'bedrock',
+  'chatgpt',
+  'cohere',
+  'deepseek',
+  'fireworks',
+  'gemini',
+  'google',
+  'groq',
+  'huggingface',
+  'meta',
+  'minimax',
+  'mistral',
+  'moonshot',
+  'nvidia',
+  'openai',
+  'openrouter',
+  'perplexity',
+  'together',
+  'xai',
+])
+
 /**
  * Whether a provider's thinking phase is driven by chat-template kwargs.
  *
@@ -102,6 +128,17 @@ export const usesTemplateReasoningKwargs = (
   return !isKnownProvider(provider)
 }
 
+/** Catalogue-backed remote providers. Their model lists rarely carry the
+ * per-model `ReasoningControls` local engines can inspect, so the provider is
+ * the capability boundary for the composer effort control. */
+export const isCloudReasoningProvider = (
+  provider: string | undefined
+): boolean => {
+  if (!provider || isLocalProvider(provider)) return false
+  if (isSelfHostedProviderName(provider)) return false
+  return CLOUD_REASONING_PROVIDERS.has(provider) || isKnownProvider(provider)
+}
+
 const usesNativeEffort = (
   controls?: ReasoningControls
 ): controls is ReasoningControls & { effortValues: string[] } =>
@@ -115,7 +152,19 @@ export const canDisableReasoning = (
   controls?: ReasoningControls
 ): boolean => {
   if (controls?.canDisable !== undefined) return controls.canDisable
-  return provider !== 'chatgpt' || Boolean(controls?.offValue)
+  if (controls?.offValue) return true
+  // These APIs expose a real zero/disabled state. Other cloud APIs only
+  // expose a weakest effort level, so their slider starts at Low rather than
+  // promising an Off state the provider cannot honour.
+  if (
+    provider === 'anthropic' ||
+    provider === 'google' ||
+    provider === 'gemini'
+  ) {
+    return true
+  }
+  if (isCloudReasoningProvider(provider)) return false
+  return true
 }
 
 /**
@@ -229,6 +278,63 @@ const REMOTE_EFFORT_VALUE: Record<ReasoningEffortLevel, string> = {
   max: 'high',
 }
 
+const CLOUD_EFFORT_VALUE: Record<ReasoningEffortLevel, string> = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  // `max` is a UI endpoint, not a portable provider value.
+  max: 'xhigh',
+}
+
+const CLOUD_THINKING_TOKENS: Record<ReasoningEffortLevel, number> = {
+  low: 1_024,
+  medium: 4_096,
+  high: 8_192,
+  xhigh: 16_384,
+  max: 32_768,
+}
+
+export const cloudReasoningEffortValue = (
+  level: ReasoningEffortLevel,
+  provider: string
+): string => {
+  if (provider === 'moonshot') return level
+  return CLOUD_EFFORT_VALUE[level]
+}
+
+/** Provider-native request fields for catalogue cloud providers. */
+export const buildCloudReasoningRequestFields = (
+  level: ReasoningEffortLevel,
+  provider: string
+): Record<string, unknown> => {
+  const effort = cloudReasoningEffortValue(level, provider)
+  if (provider === 'anthropic') {
+    return {
+      thinking: {
+        type: 'enabled',
+        budget_tokens: CLOUD_THINKING_TOKENS[level],
+      },
+    }
+  }
+  if (provider === 'google' || provider === 'gemini') {
+    return {
+      reasoning_effort: effort,
+      extra_body: {
+        google: {
+          thinking_config: {
+            thinking_budget: CLOUD_THINKING_TOKENS[level],
+          },
+        },
+      },
+    }
+  }
+  if (provider === 'openrouter') {
+    return { reasoning: { effort } }
+  }
+  return { reasoning_effort: effort }
+}
+
 /**
  * Request fields that put a level into effect on a remote provider whose
  * models arrive without `ReasoningControls` — see
@@ -285,15 +391,29 @@ export const buildAgentReasoningRequest = (
   level: ReasoningBudgetLevel,
   disableReasoning: boolean,
   controls?: ReasoningControls,
-  allowDisable = true
+  allowDisable = true,
+  provider?: string
 ): AgentReasoningRequest => {
-  const supportsThinking = controls?.supportsThinking === true
+  const inferredCloudThinking =
+    controls === undefined && isCloudReasoningProvider(provider)
+  const supportsThinking =
+    controls?.supportsThinking === true || inferredCloudThinking
   const off: AgentReasoningRequest = {
     enabled: false,
     supports_thinking: supportsThinking,
   }
   if (!supportsThinking) return off
   if (allowDisable && (disableReasoning || level === 'off')) return off
+
+  if (inferredCloudThinking) {
+    const effort = level === 'off' ? 'low' : level
+    return {
+      enabled: true,
+      effort,
+      effort_value: cloudReasoningEffortValue(effort, provider!),
+      supports_thinking: true,
+    }
+  }
 
   const available = availableReasoningLevels(controls)
   const requestedLevel =
@@ -318,9 +438,13 @@ export const buildAgentReasoningRequest = (
     if (value) request.effort_value = value
     return request
   }
-  // `max` is "no cap", so it deliberately carries no budget.
-  if (resolved !== 'max') {
-    request.budget_tokens = REASONING_LEVEL_TOKENS[resolved]
-  }
+  // Agent turns must leave room for the structured tool-call array. An
+  // uncapped local Max can spend the entire 16k completion on thought and then
+  // trigger another equally long repair pass. Max therefore uses the top
+  // finite xhigh budget in Agent mode; ordinary chat remains uncapped.
+  request.budget_tokens =
+    resolved === 'max'
+      ? REASONING_LEVEL_TOKENS.xhigh
+      : REASONING_LEVEL_TOKENS[resolved]
   return request
 }

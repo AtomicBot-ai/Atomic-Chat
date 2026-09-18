@@ -106,7 +106,7 @@ describe('ImageModelSelector', () => {
     useImageGenerationStore.setState({ catalog: makeCatalog([Z_IMAGE, klein]) })
     render(<ImageModelSelector workflow="edit" />)
 
-    // Z-Image sits in both sections (Q4 on disk, Q8 not); both copies are marked.
+    // One family is one row: an installed quant wins over alternate downloads.
     const installed = screen.getByRole('heading', { name: 'images:model.installed' }).closest('section')!
     const available = screen.getByRole('heading', { name: 'images:model.available' }).closest('section')!
     for (const zImage of screen.getAllByTestId('family-z-image')) {
@@ -114,13 +114,9 @@ describe('ImageModelSelector', () => {
       expect(within(zImage).getByText('images:model.notForWorkflow')).toBeInTheDocument()
       expect(within(zImage).getAllByRole('button', { name: 'images:model.pick' })[0]).toBeDisabled()
     }
-    // Neither the installed quant's Run nor an available quant's Download.
+    // The installed quant cannot run this workflow.
     expect(within(installed).getByRole('button', { name: 'images:model.load' })).toBeDisabled()
-    expect(
-      within(within(available).getByTestId('family-z-image')).queryByRole('button', {
-        name: /images:model.download/,
-      })
-    ).not.toBeInTheDocument()
+    expect(within(available).queryByTestId('family-z-image')).not.toBeInTheDocument()
 
     const kleinBlock = screen.getByTestId('family-flux.2-klein')
     expect(kleinBlock).not.toHaveAttribute('data-unsupported')
@@ -136,13 +132,14 @@ describe('ImageModelSelector', () => {
     expect(screen.getByRole('button', { name: 'images:model.load' })).toBeEnabled()
   })
 
-  it('splits the family into what is on disk and what is not', () => {
+  it('shows one configuration per family, preferring what is on disk', () => {
     render(<ImageModelSelector />)
     const installed = screen.getByRole('heading', { name: 'images:model.installed' }).closest('section')!
-    const available = screen.getByRole('heading', { name: 'images:model.available' }).closest('section')!
     expect(within(installed).getByText('Q4_K_M')).toBeInTheDocument()
     expect(within(installed).queryByText('Q8_0')).not.toBeInTheDocument()
-    expect(within(available).getByText('Q8_0')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'images:model.available' })
+    ).not.toBeInTheDocument()
     // The size shown is the whole artifact, side files included.
     expect(within(installed).getByText(/images:model.sizeGb/)).toBeInTheDocument()
   })
@@ -154,9 +151,7 @@ describe('ImageModelSelector', () => {
     expect(
       within(screen.getByTestId(`artifact-${Q4_ID}`)).getByText('images:model.recommended')
     ).toBeInTheDocument()
-    expect(
-      within(screen.getByTestId(`artifact-${Q8_ID}`)).queryByText('images:model.recommended')
-    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId(`artifact-${Q8_ID}`)).not.toBeInTheDocument()
   })
 
   it('recommends nothing when no quant fits this machine', () => {
@@ -184,31 +179,34 @@ describe('ImageModelSelector', () => {
   })
 
   it('shows the download plan before fetching a quant that is not on disk', async () => {
+    useImageGenerationStore.setState({
+      modelFiles: [],
+      installedArtifacts: [],
+    })
     render(<ImageModelSelector />)
     await act(async () => {
       await userEvent.click(
-        within(screen.getByTestId(`artifact-${Q8_ID}`)).getByRole('button', {
+        within(screen.getByTestId(`artifact-${Q4_ID}`)).getByRole('button', {
           name: 'images:model.pick',
         })
       )
     })
 
-    // Only the transformer is missing: the VAE and the encoder are shared with
-    // the installed Q4 and already on disk.
+    // First download includes the transformer and its shared side files.
     const entries = await screen.findByTestId('plan-entries')
     const rows = within(entries).getAllByRole('listitem')
     expect(rows.map((row) => row.getAttribute('data-present'))).toEqual([
       'false',
-      'true',
-      'true',
+      'false',
+      'false',
     ])
     expect(screen.getByTestId('plan-total')).toBeInTheDocument()
 
     await act(async () => {
       await userEvent.click(screen.getByTestId('plan-download'))
     })
-    expect(transfer.download.mock.calls[0][1]).toBe('q8_0')
-    expect(useImageSetting.getState().selectedArtifactId).toBe(Q8_ID)
+    expect(transfer.download.mock.calls[0][1]).toBe('q4_k_m')
+    expect(useImageSetting.getState().selectedArtifactId).toBe(Q4_ID)
   })
 
   it('removes an installed quant after confirmation', async () => {
@@ -236,10 +234,10 @@ describe('ImageModelSelector', () => {
     act(() => {
       useDownloadStore
         .getState()
-        .updateProgress(diffusionDownloadTaskId(Q8_ID), 0.18, Q8_ID, 1, 10)
+        .updateProgress(diffusionDownloadTaskId(Q4_ID), 0.18, Q4_ID, 1, 10)
     })
     render(<ImageModelSelector />)
-    const row = screen.getByTestId(`artifact-${Q8_ID}`)
+    const row = screen.getByTestId(`artifact-${Q4_ID}`)
 
     const pick = within(row).getByRole('button', { name: 'images:model.pick' })
     expect(within(pick).getByText('images:model.progress')).toBeInTheDocument()

@@ -22,7 +22,12 @@ describe('WebSearchToolRenderer', () => {
     expect(screen.getAllByText(/^Result \d$/)).toHaveLength(6)
     expect(screen.getAllByRole('link')).toHaveLength(6)
     expect(screen.getAllByText('example.com')).toHaveLength(6)
-    expect(container.querySelector('.max-h-80.overflow-y-auto')).not.toBeNull()
+    expect(screen.getByText('chat:toolCall.results')).toBeInTheDocument()
+    const scroller = container.querySelector(
+      '.max-h-64.overflow-y-auto'
+    ) as HTMLElement
+    expect(scroller).not.toBeNull()
+    expect(scroller).toHaveClass('[scrollbar-gutter:stable]')
   })
 
   it('shows a compact clean error with a retry action', async () => {

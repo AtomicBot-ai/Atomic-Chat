@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 import type { AgentApprovalMode } from '@/hooks/useAgentMode'
 
 type AgentApprovalModeSelectProps = {
+  compact?: boolean
   mode: AgentApprovalMode
   onChange: (mode: AgentApprovalMode) => void
   menuTitle: string
@@ -49,6 +50,7 @@ const MODE_ICONS: Record<AgentApprovalMode, LucideIcon> = {
 }
 
 export function AgentApprovalModeSelect({
+  compact = false,
   mode,
   onChange,
   menuTitle,
@@ -97,12 +99,15 @@ export function AgentApprovalModeSelect({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted data-[state=open]:text-foreground"
+            className={cn(
+              'flex shrink-0 cursor-pointer items-center rounded-md py-0.5 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted data-[state=open]:text-foreground',
+              compact ? 'px-1' : 'gap-1.5 px-1.5'
+            )}
             aria-label={selectedLabel}
           >
             <SelectedIcon className="size-4" />
-            <span>{selectedLabel}</span>
-            <ChevronDown className="size-3.5 opacity-60" />
+            {!compact && <span>{selectedLabel}</span>}
+            {!compact && <ChevronDown className="size-3.5 opacity-60" />}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent

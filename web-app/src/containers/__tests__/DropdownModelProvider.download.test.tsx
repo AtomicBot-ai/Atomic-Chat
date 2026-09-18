@@ -281,10 +281,8 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     render(<DropdownModelProvider />)
 
-    // The list opens straight away with nothing to pick; instead of a blank
-    // panel it shows the reply gate's list: the recommended models under
-    // their label, each with its mark and the size beside its fit badge.
-    expect(list()).toHaveTextContent('setup:recommend.title')
+    // The empty picker is a compact list: mark, name, fit and action only.
+    expect(list()).not.toHaveTextContent('setup:recommend.title')
     const row = screen.getByTestId('model-picker-recommended-lead')
     expect(row.querySelector('img')).toHaveAttribute(
       'src',
@@ -293,7 +291,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     const button = within(row).getByRole('button', {
       name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
     })
-    expect(row).toHaveTextContent('2.5 GB')
+    expect(row).not.toHaveTextContent('2.5 GB')
     expect(button).toHaveTextContent(/^hub:download$/)
 
     fireEvent.click(button)
@@ -308,7 +306,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     expect(hubShortcut()).toBeNull()
   })
 
-  it('shows a recommended row as downloading while its download runs', () => {
+  it('shows a running download once at the top with a text Cancel action', () => {
     vi.mocked(useRecommendedListDownloads).mockReturnValue({
       items: [recommended({ isDownloading: true })],
       isLoading: false,
@@ -326,23 +324,16 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     render(<DropdownModelProvider />)
 
-    // The panel's readout replaces the subtitle; cancellation stays in the
-    // global download panel so this row keeps Welcome's stable geometry.
-    const row = screen.getByTestId('model-picker-recommended-lead')
-    expect(row).toHaveTextContent(
-      '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
-    )
+    expect(screen.queryByTestId('model-picker-recommended-lead')).toBeNull()
     const active = screen.getByTestId('model-picker-downloading')
     expect(active).toHaveTextContent('Qwen3.5 4B')
     expect(active).toHaveTextContent(
       '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
     )
-    expect(within(active).getAllByText('Qwen3.5 4B')).toHaveLength(1)
-    const loading = within(row)
-      .getByText('setup:downloading')
-      .closest('button')!
-    expect(loading).toBeDisabled()
-    expect(loading).toHaveTextContent('setup:downloading')
+    expect(within(active).getAllByText('AtomicChat/Qwen3.5 4B')).toHaveLength(1)
+    const cancel = within(active).getByRole('button', { name: 'common:cancel' })
+    expect(cancel).toHaveClass('text-muted-foreground')
+    expect(cancel).not.toHaveAttribute('data-variant')
     expect(mocks.abortDownload).not.toHaveBeenCalled()
   })
 
@@ -359,8 +350,8 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     // Rows carry the repo they stand for and a Download button each; the
     // "nothing found" line is gone, because something was.
-    await screen.findByText('unsloth/Qwen3-8B-GGUF')
-    expect(screen.getByText('bartowski/Qwen3-4B-GGUF')).toBeInTheDocument()
+    await screen.findByText('Qwen3 8B')
+    expect(screen.getByText('Qwen3 4B')).toBeInTheDocument()
     expect(list()).not.toHaveTextContent('common:noModelsFoundFor')
     expect(list()).not.toHaveTextContent(
       'common:modelPicker.searchingHuggingFace'
@@ -447,7 +438,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     )
   })
 
-  it('keeps the Hub shortcut, and no download panel, once there is a model to pick', () => {
+  it('uses search instead of a separate Hub shortcut once there is a model to pick', () => {
     withProviders([
       {
         ...emptyUpstream,
@@ -458,7 +449,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     render(<DropdownModelProvider />)
 
     expect(list()).toHaveTextContent('Qwen3')
-    expect(hubShortcut()).toBeInTheDocument()
+    expect(hubShortcut()).toBeNull()
     expect(screen.queryByTestId('model-picker-empty')).toBeNull()
     expect(screen.queryByTestId('model-picker-routes')).toBeNull()
   })

@@ -143,6 +143,9 @@ const PROJECT_FILE_LOAD_RETRY_DELAYS_MS = [0, 120, 300] as const
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
+const isUninitializedProjectDatabase = (error: unknown) =>
+  /no such table:\s*files/i.test(formatAttachmentError(error))
+
 async function getFilesFromPaths(paths: string[]): Promise<string[]> {
   const files: string[] = []
   const { fs } = await import('@janhq/core')
@@ -249,6 +252,15 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       }
       setLoadError(null)
     } catch (error) {
+      // Compatibility guard for an older packaged vector extension: its first
+      // read creates an empty SQLite file but reports the absent pre-ingest
+      // table as an error. The native plugin and current extension both return
+      // [] now; keep this boundary tolerant so stale extension caches do too.
+      if (isUninitializedProjectDatabase(error)) {
+        setFiles([])
+        setLoadError(null)
+        return
+      }
       // A listing that fails must not look like a project with no files:
       // the upload the user just made may well be in there.
       console.error('Failed to load project files:', error)

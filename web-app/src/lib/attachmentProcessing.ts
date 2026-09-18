@@ -45,7 +45,12 @@ export const formatAttachmentError = (err: unknown): string => {
   }
   if (typeof err === 'object') {
     const obj = err as Record<string, unknown>
-    const candidates = [obj.message, obj.reason, obj.detail]
+    const candidates = [
+      obj.message,
+      obj.reason,
+      obj.detail,
+      obj.DatabaseError,
+    ]
     for (const val of candidates) {
       if (typeof val === 'string' && val.trim().length > 0) {
         return val

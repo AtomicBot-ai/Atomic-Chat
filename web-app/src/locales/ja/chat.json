@@ -13,6 +13,12 @@
     "startingDescription": "準備ができ次第、メッセージを送信します。",
     "emptyTitle": "まだ返信に使えるモデルがありません",
     "emptyDescription": "この端末に合うモデルをダウンロードするか、クラウドのモデルを接続してください。メッセージはどちらの場合も保持されます。",
+    "downloadingTitle": "モデルをダウンロードしています",
+    "downloadingDescription": "メッセージは保存され、モデルのダウンロードと起動が完了すると自動的に送信されます。",
+    "downloadingSection": "モデルをダウンロード中",
+    "gotIt": "わかりました",
+    "backgroundStarted": "モデルの準備ができました。チャットをバックグラウンドで開始しました。",
+    "backgroundFailed": "保留中のメッセージを送信できませんでした。チャットを開いてもう一度お試しください。",
     "recommendedForDevice": "お使いの端末におすすめ",
     "download": "ダウンロード",
     "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。",
@@ -25,9 +31,11 @@
   "clearHistory": "履歴を消去",
   "activity": {
     "working": "処理中...",
+    "completedActions": "{{count}}件の操作を完了",
     "reading": "読み込み中: {{count}}%",
     "reasoned": "推論完了",
     "thinking": "思考中...",
+    "thinkingFor": "{{count}}秒間思考中…",
     "thoughtFor": "{{count}}秒間考えました"
   },
   "toolCall": {
@@ -57,6 +65,7 @@
   "agentApproval": {
     "title": "エージェントの承認が必要です",
     "description": "{{tool}} が判断を待っています。",
+    "tool": "ツール",
     "reason": "理由",
     "preview": "アクションのプレビュー",
     "resources": "影響を受けるリソース",
@@ -66,14 +75,25 @@
     "approveOnce": "1回のみ承認",
     "resolveFailed": "承認決定の送信に失敗しました。",
     "showDetails": "詳細を表示",
-    "hideDetails": "詳細を隠す"
+    "hideDetails": "詳細を隠す",
+    "summary": {
+      "command": "このコマンドはファイル、ネットワーク接続、プロセス、またはシステム設定を変更する可能性があります。",
+      "script": "このスクリプトはコンピューターに変更を加える可能性があります。",
+      "deleteFiles": "この操作はファイルまたはフォルダを削除する可能性があります。",
+      "changeFiles": "この操作はファイルを作成または変更する可能性があります。",
+      "internet": "この操作はインターネットにアクセスします。",
+      "repository": "この操作はリポジトリを変更する可能性があります。",
+      "connectedTool": "接続済みツールが外部操作を実行しようとしています。",
+      "generic": "この操作はデータまたはシステム状態を変更する可能性があります。"
+    }
   },
   "agentFolderAccess": {
     "title": "フォルダへのアクセスを許可",
     "description": "{{tool}} にはこのフォルダへのアクセスが必要です。",
-    "canEditNotice": "許可すると、このフォルダがこのエージェントスレッドの「編集可能」な外部フォルダとして追加されます。",
+    "canEditNotice": "「許可」は今回の実行だけにアクセスを許可します。「常に許可」はこのフォルダを編集可能な外部フォルダとしてチャットに追加します。",
     "deny": "拒否",
-    "allow": "フォルダを許可",
+    "allow": "許可",
+    "alwaysAllow": "常に許可",
     "resolveFailed": "フォルダアクセスの決定の送信に失敗しました。"
   },
   "agentWorkspace": {

@@ -180,12 +180,12 @@
 
   /* Links */
   a {
-    color: var(--color-primary);
-    text-decoration: none;
+    @apply text-blue-600 underline decoration-blue-500/40 underline-offset-2 dark:text-blue-400;
   }
 
-  a:hover {
-    text-decoration: underline;
+  a:hover,
+  a:focus-visible {
+    @apply decoration-blue-600 dark:decoration-blue-400;
   }
 
   ul.contains-task-list {

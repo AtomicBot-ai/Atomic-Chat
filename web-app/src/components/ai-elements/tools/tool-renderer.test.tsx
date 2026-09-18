@@ -284,11 +284,7 @@ describe('ToolRenderer friendly activity', () => {
     const row = screen.getByRole('button')
     expect(row).toHaveTextContent('nemotron')
     expect(row).not.toHaveTextContent('web_search_exa')
-    if (state === 'output-available')
-      expect(row).toHaveAccessibleDescription('2 results')
-    expect(row.textContent?.includes('2 results')).toBe(
-      state === 'output-available'
-    )
+    expect(row).not.toHaveTextContent('2 results')
   })
 
   it('uses a web page hostname instead of the full URL', () => {

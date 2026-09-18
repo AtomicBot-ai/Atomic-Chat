@@ -126,6 +126,7 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'z-image',
   'flux.2-klein',
   'flux.1',
+  'flux.1-uncensored',
   'qwen-image',
   'wan2.2-ti2v-5b',
   'ltx-2',

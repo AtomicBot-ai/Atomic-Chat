@@ -25,7 +25,7 @@ use crate::session;
 use crate::state::{
     now_ms, tail_lines, DiffusionState, GalleryImageItem, ImageGenerateRequest, ImageJob,
     ImageJobPhase, ImageJobProgress, ImageJobState, ImageRecipe, ImageSource, ImageWorkflow,
-    JobRecord, RecipeEngine, RecipeModel, ServerSpec, MAX_BATCH,
+    JobRecord, RecipeEngine, RecipeModel, ServerSpec, SharedTail, MAX_BATCH,
 };
 
 pub const IMG_GEN_PATH: &str = "/sdcpp/v1/img_gen";
@@ -82,6 +82,16 @@ pub fn validate_request(request: &ImageGenerateRequest, spec: &ServerSpec) -> Di
                 format!("{label}={value}"),
             ));
         }
+    }
+    if spec.backend == crate::state::DiffusionBackend::Metal
+        && spec.family == "qwen-image"
+        && u64::from(request.width) * u64::from(request.height) > 1024 * 1024
+    {
+        return Err(DiffusionError::with_details(
+            DiffusionErrorCode::InvalidDimensions,
+            "Qwen-Image is limited to about one megapixel on Apple GPUs. Choose a smaller resolution.",
+            format!("{}x{} exceeds the Metal-safe pixel budget", request.width, request.height),
+        ));
     }
     let (min_steps, max_steps) = spec.ranges.steps;
     if request.steps < min_steps || request.steps > max_steps {
@@ -556,6 +566,7 @@ struct SessionView {
     client: reqwest::Client,
     spec: ServerSpec,
     tag: String,
+    tail: SharedTail,
 }
 
 /// The resident session, respawned from `spec` when a cancel or crash took
@@ -574,6 +585,7 @@ async fn ensure_session(
                     client: session.client.clone(),
                     spec: session.spec.clone(),
                     tag: session.spec.tag.clone(),
+                    tail: session.tail.clone(),
                 });
             }
         }
@@ -602,6 +614,7 @@ async fn ensure_session(
         client: session.client.clone(),
         spec: session.spec.clone(),
         tag: session.spec.tag.clone(),
+        tail: session.tail.clone(),
     })
 }
 
@@ -732,6 +745,10 @@ async fn poll_job(
     started: Instant,
     rx: &mut UnboundedReceiver<String>,
 ) -> DiffusionResult<Attempt> {
+    // Only inspect diagnostics produced by this request. A recovered server may
+    // still carry old warnings in its bounded tail, and those must not poison a
+    // later successful render.
+    let attempt_tail_start = tail_lines(&view.tail).len();
     let submit = view
         .client
         .post(format!("{}{IMG_GEN_PATH}", view.base_url))
@@ -911,6 +928,20 @@ async fn poll_job(
                 set_job_state(state, emitter, id, ImageJobState::Generating);
                 tracker.set_phase(ImageJobPhase::Saving);
                 set_progress(state, emitter, id, tracker.snapshot());
+                if let Some(err) = fatal_gpu_error_since(&view.tail, attempt_tail_start) {
+                    // Metal remains in an error state after an address fault.
+                    // Keeping this process alive makes every Retry fail
+                    // immediately, so retire it while preserving the model
+                    // spec; the next Generate respawns a clean server.
+                    session::stop_keeping_spec(
+                        state,
+                        emitter,
+                        "gpu-fault",
+                        Some(err.clone()),
+                    )
+                    .await;
+                    return Err(err);
+                }
                 let pngs = decode_images(&job)?;
                 let outputs =
                     save_outputs(state, id, request, view, batch_seed, started, &pngs).await?;
@@ -926,6 +957,16 @@ async fn poll_job(
                 })));
             }
             "failed" => {
+                if let Some(err) = fatal_gpu_error_since(&view.tail, attempt_tail_start) {
+                    session::stop_keeping_spec(
+                        state,
+                        emitter,
+                        "gpu-fault",
+                        Some(err.clone()),
+                    )
+                    .await;
+                    return Err(err);
+                }
                 let code = job
                     .pointer("/error/code")
                     .and_then(|c| c.as_str())
@@ -953,6 +994,22 @@ async fn poll_job(
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
+}
+
+fn fatal_gpu_error_since(tail: &SharedTail, start: usize) -> Option<DiffusionError> {
+    let lines = tail_lines(tail);
+    let recent = lines.get(start.min(lines.len())..).unwrap_or(&[]).join("\n");
+    let lower = recent.to_ascii_lowercase();
+    let fatal = lower.contains("gpu address fault")
+        || lower.contains("backend is in error state")
+        || lower.contains("command buffer") && lower.contains("pagefault");
+    fatal.then(|| {
+        DiffusionError::with_details(
+            DiffusionErrorCode::EngineCrashed,
+            "The GPU stopped this render. The image engine was restarted; try again at a smaller resolution.",
+            diagnostic_tail(&lines[start.min(lines.len())..], 20, 1500),
+        )
+    })
 }
 
 async fn after_transport_error(

@@ -50,6 +50,16 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+class MockResizeObserver implements ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.ResizeObserver ??= MockResizeObserver
+
+Element.prototype.scrollIntoView ??= vi.fn()
+
 // `isPlatformTauri()` now probes for the real IPC bridge instead of trusting a
 // build-time define, so the suite has to declare which platform it stands in.
 // This is the desktop app's test suite, so present the bridge; the handful of

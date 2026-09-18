@@ -95,6 +95,10 @@ async function prepare(testCase: (typeof cases)[number], text = longText) {
   const result = render(<Harness text={text} />)
   await act(async () => {
     await document.fonts.ready
+    fireEvent.click(
+      result.container.querySelector('[data-slot="collapsible-trigger"]')!
+    )
+    await frame()
     const outer = screen.getByTestId('history').parentElement!.parentElement!
     const deadline = performance.now() + 3000
     while (
@@ -112,6 +116,18 @@ async function prepare(testCase: (typeof cases)[number], text = longText) {
 }
 
 describe('Live reasoning geometry (Chromium)', () => {
+  it('starts as one compact closed status row', async () => {
+    await page.viewport(1024, 800)
+    const result = render(<Harness text={longText} />)
+    await settle()
+    const panel = viewport(result.container)
+
+    expect(panel.getBoundingClientRect().height).toBe(0)
+    expect(
+      result.container.querySelector('[data-slot="collapsible-trigger"]')
+    ).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it.each(cases)(
     '$width / $fontSize / $theme: reserves height and follows fully visible tail lines',
     async (testCase) => {
@@ -183,7 +199,7 @@ describe('Live reasoning geometry (Chromium)', () => {
   )
 
   it.each(cases)(
-    '$width / $fontSize / $theme: finishing never expands the closing trace or jolts the bottom anchor',
+    '$width / $fontSize / $theme: finishing preserves an explicitly opened trace without jolting the bottom anchor',
     async (testCase) => {
       const { container, rerender, panel } = await prepare(testCase)
       const liveHeight = panel.getBoundingClientRect().height
@@ -210,16 +226,23 @@ describe('Live reasoning geometry (Chromium)', () => {
       expect(
         Math.max(...samples.map((s) => Math.abs(s.anchor - anchor)))
       ).toBeLessThan(60)
-      expect(panel.getBoundingClientRect().height).toBe(0)
+      expect(panel.getBoundingClientRect().height).toBeCloseTo(liveHeight, 0)
       expect(end.getBoundingClientRect().bottom).toBeCloseTo(anchor, 0)
       expect(screen.getByText('The final answer.')).toBeTruthy()
       expect(
         container
           .querySelector('[data-slot="collapsible-trigger"]')!
           .getAttribute('aria-expanded')
-      ).toBe('false')
+      ).toBe('true')
       expectNoHorizontalOverflow(container)
 
+      fireEvent.click(
+        container.querySelector('[data-slot="collapsible-trigger"]')!
+      )
+      await act(async () => {
+        await settle()
+      })
+      expect(panel.getBoundingClientRect().height).toBe(0)
       fireEvent.click(
         container.querySelector('[data-slot="collapsible-trigger"]')!
       )

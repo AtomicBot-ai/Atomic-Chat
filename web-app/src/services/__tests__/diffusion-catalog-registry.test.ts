@@ -231,6 +231,7 @@ describe('baseline and lookups', () => {
       'z-image',
       'flux.2-klein',
       'flux.1',
+      'flux.1-uncensored',
       'qwen-image',
     ])
   })

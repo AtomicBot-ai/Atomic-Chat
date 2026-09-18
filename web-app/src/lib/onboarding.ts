@@ -60,6 +60,14 @@ export function hasValidProviders(providers: ProviderLike[]): boolean {
   })
 }
 
+/** Durable evidence that this is not the app's first-run surface anymore. */
+export function hasPriorAppUse(
+  providers: ProviderLike[],
+  hasPriorThread: boolean
+): boolean {
+  return hasPriorThread || hasValidProviders(providers)
+}
+
 /**
  * What the user actually had when they left onboarding.
  *

@@ -3,6 +3,22 @@ import { useLastSeenVersion } from './useLastSeenVersion'
 
 const GITHUB_REPO = 'AtomicBot-ai/Atomic-Chat'
 
+const BUNDLED_RELEASES: Record<string, GithubRelease> = {
+  '2.0.40': {
+    tag_name: 'v2.0.40',
+    name: 'Atomic Chat 2.0.40',
+    body: `## A smoother Atomic Chat
+
+- Rebuilt image-generation setup and a compact model picker
+- Safer local image rendering with automatic recovery after GPU failures
+- New uncensored FLUX image option and hardware-aware model recommendations
+- Stable reasoning, tool activity, scrolling and chat-message spacing
+- Cleaner approvals, API-key errors, downloads and connector feedback
+- Responsive left and right sidebars with a compact composer
+- Fixed project files on databases created by older builds`,
+  },
+}
+
 type GithubRelease = {
   tag_name: string
   name?: string
@@ -109,8 +125,16 @@ export const useWhatsNew = (): WhatsNewState => {
       const version = await getRuntimeVersion()
       setCurrentVersion(version)
 
+      const normalizedVersion = version.replace(/^v/i, '')
+      const bundled = BUNDLED_RELEASES[normalizedVersion] ?? null
+
       if (!lastSeenVersion) {
-        setLastSeenVersion(version)
+        if (bundled?.body) {
+          setRelease(bundled)
+          setOpen(true)
+        } else {
+          setLastSeenVersion(version)
+        }
         return
       }
 
@@ -123,7 +147,7 @@ export const useWhatsNew = (): WhatsNewState => {
       }
 
       const tag = version.startsWith('v') ? version : `v${version}`
-      const rel = await fetchReleaseByTag(tag)
+      const rel = (await fetchReleaseByTag(tag)) ?? bundled
 
       if (!rel || !rel.body) {
         setLastSeenVersion(version)

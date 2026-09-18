@@ -16,7 +16,7 @@ export type FitBadgeProps = {
 }
 
 /**
- * Compatibility badge for a download option: "Good fit" / "Tight fit" /
+ * Compatibility badge for a download option: "Good fit" / "Might fit" /
  * "Won’t fit", matching the recommendation list's outcome-first vocabulary
  * used. It states what the size means for *this* machine, which a claim about
  * GPU offload does not.

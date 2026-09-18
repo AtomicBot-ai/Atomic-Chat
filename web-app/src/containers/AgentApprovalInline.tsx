@@ -3,6 +3,7 @@ import { IconShieldQuestion, IconFolderQuestion } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { useAgentApprovalActions } from '@/hooks/useAgentApprovalActions'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { agentApprovalSummary } from '@/lib/agent-approval-copy'
 
 const PREVIEW_LIMIT = 4_000
 const RESOURCE_VALUE_LIMIT = 512
@@ -46,6 +47,10 @@ export default function AgentApprovalInline({
     () => (approval ? boundedJson(approval.preview) : ''),
     [approval]
   )
+  const approvalCopy = useMemo(
+    () => (approval ? agentApprovalSummary(approval, t) : ''),
+    [approval, t]
+  )
 
   // Keyboard affordance while the card is up, wherever focus sits (usually
   // the composer textarea): Mod+Enter approves. Deliberately no Escape
@@ -60,7 +65,7 @@ export default function AgentApprovalInline({
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         if (hasApproval) void resolveApproval('allow_once')
-        else void resolveFolderAccess(true)
+        else void resolveFolderAccess('allow_once')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -94,9 +99,7 @@ export default function AgentApprovalInline({
             <div className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
               <span className="font-medium">{t('agentApproval.title')}</span>
               <span className="text-muted-foreground">
-                {' '}
-                · <code className="text-xs">{approval.tool}</code> —{' '}
-                {approval.reason}
+                {' '}— {approvalCopy}
               </span>
             </div>
           </div>
@@ -112,6 +115,20 @@ export default function AgentApprovalInline({
             </button>
             {detailsOpen && (
               <div className="mt-2 space-y-2">
+                <div className="rounded-md border bg-secondary px-2 py-1.5 text-xs">
+                  <div>
+                    <span className="font-medium">
+                      {t('agentApproval.tool')}:
+                    </span>{' '}
+                    <code>{approval.tool}</code>
+                  </div>
+                  <div className="mt-1 text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {t('agentApproval.reason')}:
+                    </span>{' '}
+                    {approval.reason}
+                  </div>
+                </div>
                 {preview && (
                   <pre className="max-h-40 overflow-auto rounded-md border bg-secondary p-2 text-xs whitespace-pre-wrap break-all">
                     {preview}
@@ -196,16 +213,24 @@ export default function AgentApprovalInline({
             <Button
               size="sm"
               disabled={folderAccessResolving}
-              onClick={() => void resolveFolderAccess(true)}
+              onClick={() => void resolveFolderAccess('allow_once')}
               autoFocus
             >
               {t('agentFolderAccess.allow')}
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              disabled={folderAccessResolving}
+              onClick={() => void resolveFolderAccess('always_allow')}
+            >
+              {t('agentFolderAccess.alwaysAllow')}
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               disabled={folderAccessResolving}
-              onClick={() => void resolveFolderAccess(false)}
+              onClick={() => void resolveFolderAccess('deny')}
             >
               {t('agentFolderAccess.deny')}
             </Button>

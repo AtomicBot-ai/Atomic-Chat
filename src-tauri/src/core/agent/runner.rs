@@ -311,6 +311,50 @@ pub async fn run_turn(
                 match parse_tool_calls_for_profile(&completion.content, input.model_profile) {
                     Ok(parsed) => parsed,
                     Err(error) => {
+                        // A generation that already exhausted its output cap
+                        // cannot be repaired by asking the same model to emit
+                        // the same call again with nearly the same cap. That
+                        // doubled the wait (16,384 + 15,188 tokens in the
+                        // reported run) and ended in the same failure. Preserve
+                        // any reasoning the live scanner missed, then fail once
+                        // with the actionable budget category.
+                        if completion.stop_reason == StopReason::Limit {
+                            if !prelude_reasoning_streamed {
+                                let (reasoning, _) = split_reasoning_for_profile(
+                                    &completion.content,
+                                    input.model_profile,
+                                );
+                                if !reasoning.is_empty() {
+                                    emit(AgentEvent::ReasoningDelta {
+                                        step_index,
+                                        text: reasoning,
+                                    })?;
+                                }
+                            }
+                            let terminal_error = if completion.prompt_truncated {
+                                LlmClientError::ContextOverflow(
+                                    "the context window filled up before the tool call finished"
+                                        .into(),
+                                )
+                            } else {
+                                LlmClientError::OutputTruncated {
+                                    max_tokens: request.max_tokens,
+                                }
+                            };
+                            let message = terminal_error.to_string();
+                            emit(AgentEvent::StepError {
+                                message: message.clone(),
+                                category: repair_error_category(&terminal_error).into(),
+                            })?;
+                            emit(AgentEvent::TurnFinished {
+                                reason: "failed".into(),
+                                step_count: step_index + 1,
+                                usage: usage.finish(),
+                            })?;
+                            finish_session(input.session, &loaded_tools, &loaded_skills, None)
+                                .await;
+                            return Err(message);
+                        }
                         emit(AgentEvent::ParseRetry {
                             step_index,
                             reason: error.to_string(),

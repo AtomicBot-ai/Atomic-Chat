@@ -19,6 +19,21 @@ vi.mock('streamdown', async (importOriginal) => {
 })
 
 describe('ReasoningContent', () => {
+  it('uses the shared action-icon scale and a vertically centred trigger', () => {
+    const { container, getByRole } = render(
+      <Reasoning defaultOpen>
+        <ReasoningTrigger />
+        <ReasoningContent>Reasoning</ReasoningContent>
+      </Reasoning>
+    )
+
+    expect(getByRole('button')).toHaveClass('min-h-6', 'items-center')
+    expect(container.querySelector('.tabler-icon-bulb')).toHaveClass(
+      'size-[18px]',
+      'shrink-0'
+    )
+  })
+
   it('renders streaming reasoning as plain text, then Markdown once complete', async () => {
     const reasoning = '**Material finding**\n\n- first\n- second'
     const { container, rerender } = render(
@@ -65,7 +80,7 @@ describe('ReasoningContent', () => {
     expect(container.textContent).toMatch(/visible tail$/)
   })
 
-  it('does not parse the trace when a finished panel auto-closes', () => {
+  it('keeps a just-finished live trace open and lightweight', () => {
     const reasoning = '**Material finding**\n\n- first\n- second'
     const { container, rerender } = render(
       <Reasoning isStreaming defaultOpen>
@@ -85,19 +100,16 @@ describe('ReasoningContent', () => {
     )
 
     expect(markdownRenders).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
+    expect(getComputedStyle(container.firstElementChild!).display).not.toBe(
+      'none'
+    )
   })
 
-  it('parses the trace when the reader opens a finished panel', async () => {
+  it('parses a stored trace when the reader opens its finished panel', async () => {
     const reasoning = '**Material finding**\n\n- first\n- second'
-    const { container, getByRole, rerender } = render(
-      <Reasoning isStreaming defaultOpen>
-        <ReasoningTrigger />
-        <ReasoningContent isStreaming>{reasoning}</ReasoningContent>
-      </Reasoning>
-    )
-
-    rerender(
-      <Reasoning defaultOpen>
+    const { container, getByRole } = render(
+      <Reasoning defaultOpen={false}>
         <ReasoningTrigger />
         <ReasoningContent>{reasoning}</ReasoningContent>
       </Reasoning>

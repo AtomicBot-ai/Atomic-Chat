@@ -23,7 +23,7 @@ type ImageErrorBannerProps = {
  * body and the action that actually fixes it — OOM offers a smaller size and
  * a smaller quant, a missing engine offers Install — instead of a toast with
  * the raw message. The message is still shown underneath for the cases the
- * copy cannot anticipate.
+ * Technical details stay in logs; the main surface only explains the recovery.
  */
 export const ImageErrorBanner = memo(function ImageErrorBanner({
   error,
@@ -44,11 +44,6 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm font-medium">{t(described.titleKey)}</p>
         <p className="text-xs text-muted-foreground">{t(described.bodyKey)}</p>
-        {error.message && (
-          <p className="break-words font-mono text-[11px] text-muted-foreground/80">
-            {error.message}
-          </p>
-        )}
         {(described.action || described.secondaryAction) && (
           <div className="flex flex-wrap gap-2 pt-1">
             {described.action && (

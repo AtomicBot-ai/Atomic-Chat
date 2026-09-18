@@ -1272,7 +1272,7 @@ async fn repeated_repair_failure_finishes_as_grammar_failure() {
 }
 
 #[tokio::test]
-async fn a_step_cut_off_at_the_token_limit_is_repaired_with_the_step_budget() {
+async fn a_step_cut_off_at_the_token_limit_stops_without_a_second_huge_completion() {
     let workspace = TestWorkspace::new();
     let run = run_script(
         &workspace,
@@ -1288,19 +1288,17 @@ async fn a_step_cut_off_at_the_token_limit_is_repaired_with_the_step_budget() {
     )
     .await;
 
-    assert!(run.result.is_ok(), "{:?}", run.result);
-    assert_eq!(finished_reason(&run.events), Some(("reply", 1)));
-    assert_eq!(run.requests.len(), 2);
-    let step_budget = run.requests[0]["n_predict"].as_u64().unwrap();
-    let repair_budget = run.requests[1]["n_predict"].as_u64().unwrap();
-    assert!(
-        repair_budget > 1024 && repair_budget <= step_budget,
-        "repair budget {repair_budget} should follow the step budget {step_budget}"
-    );
-    // The echo shows the batch to fix, not the thinking that came before it.
-    let repair_prompt = run.requests[1]["prompt"].as_str().unwrap();
-    assert!(repair_prompt.contains(r#"[{"tool":"reply","args":{"text":"the model ran out of"#));
-    assert!(!repair_prompt.contains("plan the reply carefully"));
+    assert!(run.result.is_err());
+    assert_eq!(finished_reason(&run.events), Some(("failed", 1)));
+    assert_eq!(run.requests.len(), 1);
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::StepError { category, .. } if category == "budget"
+    )));
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::ReasoningDelta { text, .. } if text.contains("plan the reply carefully")
+    )));
 }
 
 #[tokio::test]

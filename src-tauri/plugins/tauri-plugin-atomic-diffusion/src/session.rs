@@ -28,7 +28,7 @@ pub fn workflows_for_family(family: &str) -> Vec<ImageWorkflow> {
         "flux.2-klein" => vec![
             Create, Transform, Inpaint, Extend, Upscale, Reference, Edit,
         ],
-        "z-image" | "flux.1" | "qwen-image" => {
+        "z-image" | "flux.1" | "flux.1-uncensored" | "qwen-image" => {
             vec![Create, Transform, Inpaint, Extend, Upscale]
         }
         _ => vec![Create],

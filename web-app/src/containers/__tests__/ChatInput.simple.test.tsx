@@ -16,6 +16,8 @@ import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
 
@@ -192,6 +194,14 @@ describe('ChatInput', () => {
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
     useGeneralSetting.setState({ agentModeEnabled: false })
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+      pausedDownloads: new Set(),
+      resumeParams: {},
+    })
+    useDeferredFirstSend.setState({ queued: null })
 
     const model = {
       id: 'test-model',
@@ -369,6 +379,117 @@ describe('ChatInput', () => {
       )
     )
     expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    unmount()
+  })
+
+  it('starts the downloaded first model and sends the preserved prompt when import completes', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    useAppState.setState({ activeModels: [], loadingModel: false })
+    useDownloadStore.getState().addLocalDownloadingModel(modelId)
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Send this after the download' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 4,
+        openedAtMs: Date.now() - 4,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    // DataProvider refreshes the library after import but intentionally does
+    // not auto-start arbitrary downloads. This queued Send supplies the intent.
+    act(() => {
+      useDownloadStore.getState().removeLocalDownloadingModel(modelId)
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'llamacpp-upstream',
+            active: true,
+            models: [{ id: modelId, capabilities: [], settings: {} } as Model],
+            settings: [],
+          } as ModelProvider,
+        ],
+      })
+    })
+
+    await waitFor(() =>
+      expect(mocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerName: 'llamacpp-upstream',
+          modelId,
+        })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    act(() => useAppState.setState({ activeModels: [modelId] }))
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Send this after the download',
+        undefined,
+        undefined
+      )
+    )
+    unmount()
+  })
+
+  it('hands a home-screen first download to the root queue', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Keep working even if I leave this screen' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 1,
+        openedAtMs: Date.now() - 1,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      prompt: 'Keep working even if I leave this screen',
+      downloadModelIds: [modelId],
+    })
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Keep working even if I leave this screen'
+    )
     unmount()
   })
 
@@ -906,6 +1027,38 @@ describe('ChatInput', () => {
       'common:placeholder.chatInput'
     )
     unmount()
+  })
+
+  it('reveals an image remove button only on hover or keyboard focus', () => {
+    useThreads.setState({ currentThreadId: undefined })
+    useChatAttachments.setState({
+      attachmentsByThread: {
+        '__new-thread__': [
+          {
+            type: 'image',
+            name: 'reference.png',
+            mimeType: 'image/png',
+            dataUrl: 'data:image/png;base64,dGVzdA==',
+            base64: 'dGVzdA==',
+            size: 4,
+          },
+        ],
+      },
+    })
+
+    render(<ChatInput />)
+
+    const remove = screen.getByRole('button', {
+      name: 'Remove reference.png',
+    })
+    expect(remove).toHaveClass(
+      'bg-foreground',
+      'text-background',
+      'opacity-0',
+      'group-hover/attachment:opacity-100',
+      'focus-visible:opacity-100'
+    )
+    expect(remove).not.toHaveClass('bg-destructive')
   })
 
   it('downscales an image before applying the byte limit', async () => {

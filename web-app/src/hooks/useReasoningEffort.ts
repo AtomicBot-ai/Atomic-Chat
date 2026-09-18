@@ -5,6 +5,7 @@ import {
   ALL_LEVELS,
   availableReasoningLevels,
   canDisableReasoning,
+  isCloudReasoningProvider,
   resolveReasoningLevel,
   usesTemplateReasoningKwargs,
   type ReasoningEffortLevel,
@@ -44,6 +45,8 @@ export const useReasoningEffort = () => {
     ? []
     : selectedModel.reasoning
       ? availableReasoningLevels(selectedModel.reasoning)
+      : isCloudReasoningProvider(selectedProvider)
+        ? ALL_LEVELS
       : usesTemplateReasoningKwargs(selectedProvider)
         ? ALL_LEVELS
         : []

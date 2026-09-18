@@ -3,9 +3,9 @@ import {
   IconAdjustmentsHorizontal,
   IconCircleCheckFilled,
   IconCpu,
-  IconDownload,
   IconLoader2,
   IconLock,
+  IconPhoto,
   IconSparkles,
   IconX,
 } from '@tabler/icons-react'
@@ -31,7 +31,7 @@ import { VoiceSetupRow, VoiceSetupRowIcon } from '@/containers/VoiceSetupRow'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { formatBytes } from '@/lib/downloadFormat'
+import { formatProgressPair } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
 import {
   useImageGenerationStore,
@@ -90,7 +90,11 @@ function IntroStep() {
  * Engine row: install state on the right, progress while the archive comes
  * down, and the reason when this host has no supported build.
  */
-export const ImageEngineBlock = memo(function ImageEngineBlock() {
+export const ImageEngineBlock = memo(function ImageEngineBlock({
+  onInstallStarted,
+}: {
+  onInstallStarted?: () => void
+}) {
   const { t } = useTranslation()
   const engine = useImageEngine()
   const percent =
@@ -107,10 +111,10 @@ export const ImageEngineBlock = memo(function ImageEngineBlock() {
       </span>
       {engine.progress.total > 0 && (
         <p className="text-right text-xs tabular-nums text-muted-foreground" aria-live="polite">
-          {t('images:setup.engine.progress', {
-            current: formatBytes(engine.progress.transferred, engine.progress.total),
-            total: formatBytes(engine.progress.total, engine.progress.total),
-          })}
+          {formatProgressPair(
+            engine.progress.transferred,
+            engine.progress.total
+          )}
         </p>
       )}
     </div>
@@ -125,22 +129,23 @@ export const ImageEngineBlock = memo(function ImageEngineBlock() {
       {t('images:setup.engine.unsupportedShort')}
     </span>
   ) : (
-    <Button size="sm" onClick={() => void engine.startInstall()} data-testid="image-engine-install">
-      <IconDownload size={16} />
+    <Button
+      size="sm"
+      onClick={() => {
+        void engine.startInstall()
+        onInstallStarted?.()
+      }}
+      data-testid="image-engine-install"
+    >
       {t('images:setup.engine.install')}
     </Button>
   )
 
   const description =
     engine.install.state === 'installed'
-      ? t('images:setup.engine.backend', {
-          backend: engine.install.backendId,
-          tag: engine.install.tag,
-        })
+      ? t('images:setup.engine.readyDescription')
       : engine.hostBackendId
-        ? t('images:setup.engine.rowDescription', {
-            backend: engine.hostBackendId,
-          })
+        ? t('images:setup.engine.rowDescription')
         : undefined
 
   return (
@@ -181,7 +186,7 @@ const STEPS = [
     description: 'images:setup.engine.description',
   },
   {
-    icon: IconDownload,
+    icon: IconPhoto,
     title: 'images:setup.model.title',
     description: 'images:setup.model.description',
   },
@@ -218,17 +223,22 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
     closeSetup()
   }, [closeSetup, setSetupCompleted])
 
+  const dismiss = useCallback(() => {
+    if (ready) setSetupCompleted(true)
+    closeSetup()
+  }, [closeSetup, ready, setSetupCompleted])
+
   const StepIcon = STEPS[step].icon
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? openSetup(step) : finish())}>
+    <Dialog open={open} onOpenChange={(next) => (next ? openSetup(step) : dismiss())}>
       <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         <DialogHeader
           data-testid="image-setup-header"
           className="items-center text-center sm:text-center"
         >
-          <div className="mb-1 grid size-12 place-items-center rounded-xl bg-secondary">
-            <StepIcon size={24} className="text-foreground" />
+          <div className="mb-2 grid size-14 place-items-center rounded-2xl border bg-secondary/60 shadow-sm">
+            <StepIcon size={27} className="text-foreground" strokeWidth={1.75} />
           </div>
           <DialogTitle>{t(STEPS[step].title)}</DialogTitle>
           <DialogDescription
@@ -250,22 +260,13 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
         >
           {step === 0 && <IntroStep />}
           {step === 1 && (
-            <>
-              <ImageEngineBlock />
-              <p className="text-center text-xs text-muted-foreground">
-                {t('images:setup.engine.note')}
-              </p>
-            </>
+            <ImageEngineBlock onInstallStarted={closeSetup} />
           )}
           {step === 2 && (
-            <>
-              <ImageModelSelector variant="dialog" />
-              {!hasModel && (
-                <p className="text-center text-xs text-muted-foreground">
-                  {t('images:setup.model.diskNote')}
-                </p>
-              )}
-            </>
+            <ImageModelSelector
+              variant="dialog"
+              onDownloadStarted={closeSetup}
+            />
           )}
         </div>
 

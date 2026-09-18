@@ -259,14 +259,14 @@ describe('DownloadOptionsSelect', () => {
     // 2.50 GB against a 3 GB budget is past the 70% comfort threshold.
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={3 * GB} />)
 
-    expect(screen.getByText('Tight fit')).toBeInTheDocument()
+    expect(screen.getByText('Might fit')).toBeInTheDocument()
   })
 
   it('hides the fit verdict while the memory budget is unknown', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={0} />)
 
     expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
-    expect(screen.queryByText('Tight fit')).not.toBeInTheDocument()
+    expect(screen.queryByText('Might fit')).not.toBeInTheDocument()
     expect(screen.queryByText('Won’t fit')).not.toBeInTheDocument()
   })
 

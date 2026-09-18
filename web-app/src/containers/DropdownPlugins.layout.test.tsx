@@ -81,6 +81,14 @@ describe('Plugins connector icon geometry', () => {
             await settle()
           })
 
+          expect(menu).toHaveClass('w-72', 'min-w-72')
+          const scroller = menu.querySelector<HTMLElement>('.max-h-72')!
+          expect(scroller).toHaveClass(
+            'overflow-y-auto',
+            'overflow-x-hidden',
+            '[scrollbar-gutter:stable]'
+          )
+
           for (const key of ['exa', 'notion', 'my-tools']) {
             const slot = screen.getByTestId(`connector-mark-${key}`)
             const tile = slot.firstElementChild!

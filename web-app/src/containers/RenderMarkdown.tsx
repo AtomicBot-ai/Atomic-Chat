@@ -225,6 +225,8 @@ function RenderMarkdownComponent({
     return normalizeLatex(prepared)
   }, [content, enableHtmlPreview])
   const thetaMarked = useRef(false)
+  const streamedThisMountRef = useRef(Boolean(isStreaming))
+  if (isStreaming) streamedThisMountRef.current = true
 
   useEffect(() => {
     thetaMarked.current = false
@@ -276,6 +278,21 @@ function RenderMarkdownComponent({
 
   const mergedComponents = useMemo<Components | undefined>(() => {
     if (!enableHtmlPreview) return components
+
+    const LinkRenderer: Components['a'] = ({
+      className: linkClassName,
+      ...props
+    }) => (
+      <a
+        {...props}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          'text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
+          linkClassName
+        )}
+      />
+    )
 
     const CodeRenderer: Components['code'] = ({
       node,
@@ -337,18 +354,20 @@ function RenderMarkdownComponent({
       )
     }
 
-    return { code: CodeRenderer, ...(components ?? {}) }
+    return { a: LinkRenderer, code: CodeRenderer, ...(components ?? {}) }
   }, [enableHtmlPreview, components, delegateProps])
 
   const containsMath =
     normalizedContent.includes('$$') ||
     /(^|[^\\])\$[^$\n]+\$/.test(normalizedContent)
+  const containsUrl = /(?:https?:\/\/|www\.)/i.test(normalizedContent)
 
   if (
     content.length > 0 &&
     content.length < 32 &&
     !components &&
-    !containsMath
+    !containsMath &&
+    !containsUrl
   ) {
     return (
       <div
@@ -381,7 +400,14 @@ function RenderMarkdownComponent({
           // and fights the chat's stick-to-bottom scroll, producing a visible
           // jump. The stream itself is already the motion cue; animate only a
           // completed, static message.
-          animate={!isStreaming && (isAnimating ?? true)}
+          // Never replay the entrance animation when a live response flips to
+          // ready. Re-animating the already painted tree fades the entire
+          // answer toward white for a frame and looks like a page reload.
+          animate={
+            !isStreaming &&
+            !streamedThisMountRef.current &&
+            (isAnimating ?? true)
+          }
           animationDuration={180}
           linkSafety={{
             enabled: false,

@@ -1,4 +1,15 @@
 {
+  "agentError": {
+    "budgetTitle": "The response ran too long",
+    "budgetBody": "The model used its output budget before completing the action. Try a lower reasoning level or ask for a smaller step.",
+    "authTitle": "Authentication failed",
+    "authBody": "Check this provider's API key, then try again.",
+    "timeoutTitle": "The model took too long",
+    "timeoutBody": "The request timed out before the action completed. Try again or use a smaller step.",
+    "genericTitle": "The action could not be completed",
+    "genericBody": "The model stopped before it finished. Try again; if it repeats, switch models or make the request smaller.",
+    "retry": "Try again"
+  },
   "welcome": "Hi, how are you?",
   "description": "How can I help you today?",
   "temporaryChat": "Temporary Chat",
@@ -13,6 +24,12 @@
     "startingDescription": "Your message will be sent as soon as it's ready.",
     "emptyTitle": "Pick a model to start chatting",
     "emptyDescription": "Your message is saved. Pick a model and it will be sent.",
+    "downloadingTitle": "Your model is downloading",
+    "downloadingDescription": "Your message is saved and will be sent automatically as soon as the model finishes downloading and starts.",
+    "downloadingSection": "Downloading model",
+    "gotIt": "Got it",
+    "backgroundStarted": "Model ready. Your chat started in the background.",
+    "backgroundFailed": "The queued message could not be sent. Open the chat and try again.",
     "recommendedForDevice": "Best fit for your device",
     "download": "Download",
     "downloadSize": "Download {{size}}",
@@ -51,9 +68,11 @@
   "clearHistory": "Clear History",
   "activity": {
     "working": "Working...",
+    "completedActions": "Completed {{count}} actions",
     "reading": "Reading: {{count}}%",
     "reasoned": "Reasoned",
     "thinking": "Thinking...",
+    "thinkingFor": "Thinking for {{count}}s…",
     "thoughtFor": "Thought for {{count}}s"
   },
   "toolCall": {
@@ -147,6 +166,7 @@
   "agentApproval": {
     "title": "Agent approval required",
     "description": "{{tool}} is waiting for your decision.",
+    "tool": "Tool",
     "reason": "Reason",
     "preview": "Action preview",
     "resources": "Affected resources",
@@ -156,14 +176,25 @@
     "approveOnce": "Approve once",
     "resolveFailed": "Failed to send the approval decision.",
     "showDetails": "Show details",
-    "hideDetails": "Hide details"
+    "hideDetails": "Hide details",
+    "summary": {
+      "command": "This command may change files, network connections, processes, or system settings.",
+      "script": "This script may make changes on your computer.",
+      "deleteFiles": "This action may remove files or folders.",
+      "changeFiles": "This action may create or change files.",
+      "internet": "This action will access the internet.",
+      "repository": "This action may change the repository.",
+      "connectedTool": "A connected tool wants to perform an external action.",
+      "generic": "This action may change data or system state."
+    }
   },
   "agentFolderAccess": {
     "title": "Allow folder access",
     "description": "{{tool}} needs access to this folder.",
-    "canEditNotice": "Allowing adds this folder to External with CAN EDIT access for this Agent thread.",
+    "canEditNotice": "Allow grants access for this run. Always Allow adds the folder to External with CAN EDIT access for this Agent thread.",
     "deny": "Deny",
-    "allow": "Allow folder",
+    "allow": "Allow",
+    "alwaysAllow": "Always Allow",
     "resolveFailed": "Failed to send the folder access decision."
   },
   "agentWorkspace": {

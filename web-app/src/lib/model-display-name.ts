@@ -175,3 +175,16 @@ export function compactModelDisplayName(model: Model): string {
   const custom = model.displayName?.trim()
   return custom || prettyModelName(model.id) || model.id
 }
+
+/**
+ * Readable model name with its repository owner. The compact composer pill
+ * deliberately omits this namespace, while the model details and full picker
+ * need it to distinguish otherwise identical rows from different authors.
+ */
+export function qualifiedModelDisplayName(model: Model): string {
+  const compact = compactModelDisplayName(model)
+  const normalizedId = model.id.replace(/\\/g, '/')
+  const separator = normalizedId.lastIndexOf('/')
+  if (separator <= 0) return compact
+  return `${normalizedId.slice(0, separator)}/${compact}`
+}

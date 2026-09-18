@@ -20,7 +20,6 @@ import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageEmptyState } from './ImageEmptyState'
 import { ImageErrorBanner } from './ImageErrorBanner'
 import { ImageGalleryGrid } from './ImageGalleryGrid'
-import { ImageModelPicker } from './ImageModelPicker'
 import { ImagePromptForm } from './ImagePromptForm'
 import { ImageSetupCard } from './ImageSetupCard'
 import { ImageViewer } from './ImageViewer'
@@ -33,7 +32,7 @@ type ImageGenerationPageProps = {
 }
 
 /**
- * The header carries the model picker; below it a settings column (the form,
+ * The form carries the model picker beside the prompt; below the header a settings column,
  * or the setup card until the prerequisites are met) sits beside the canvas,
  * split by one structural border — the same frame as the Model hub. The
  * error banner floats over the canvas so it is never hidden behind a
@@ -147,13 +146,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           !IS_MACOS && 'pr-30'
         )}
       >
-        {ready ? (
-          <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
-        ) : (
-          <span className="font-studio text-base font-medium">
-            {t('images:page.title')}
-          </span>
-        )}
+        <span className="font-studio text-base font-medium">
+          {t('images:page.title')}
+        </span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -180,7 +175,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
             className="flex min-h-0 flex-1 overflow-y-auto"
             data-testid="image-onboarding"
           >
-            <ImageSetupCard className="m-auto w-full max-w-md" />
+            <ImageSetupCard className="m-auto" />
           </div>
         </div>
       </div>
@@ -193,7 +188,10 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
 
       <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
         {ready ? (
-          <ImagePromptForm />
+          <ImagePromptForm
+            modelsOpen={modelsOpen}
+            onModelsOpenChange={setModelsOpen}
+          />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <ImageSetupCard />
@@ -203,7 +201,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
 
       <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col">
         {lastError && (
-          <div className="absolute inset-x-0 top-0 z-10 px-6 pt-3">
+          <div className="shrink-0 px-6 pt-3">
             <ImageErrorBanner
               error={lastError}
               onAction={onErrorAction}

@@ -49,18 +49,19 @@
     "done": "Done",
     "doneBlocked": "Install the engine and at least one model first.",
     "intro": {
-      "title": "Make images on this computer",
-      "description": "Type a prompt, pick a size, and the image is rendered locally.",
-      "bulletLocal": "Runs on this computer — prompts never leave it.",
-      "bulletRecipes": "Every image keeps its settings, so you can redo or tweak it.",
-      "bulletApi": "Also available to other apps at localhost:1337/v1/images."
+      "title": "Создавайте изображения локально",
+      "description": "Превращайте идеи в изображения, не отправляя промпты наружу.",
+      "bulletLocal": "Опишите своими словами, что хотите увидеть.",
+      "bulletRecipes": "Выберите размер, а затем доработайте или повторите результат.",
+      "bulletApi": "Промпты и созданные изображения остаются на этом компьютере."
     },
     "engine": {
-      "title": "Install the image engine",
-      "description": "A small renderer (stable-diffusion.cpp) built for this computer.",
-      "rowTitle": "stable-diffusion.cpp",
-      "rowDescription": "Build for {{backend}} · downloaded once, updated with the app.",
-      "install": "Install",
+      "title": "Установите движок изображений",
+      "description": "Atomic Chat установит рендерер, подходящий этому компьютеру.",
+      "rowTitle": "Движок изображений",
+      "rowDescription": "Безопасно создаёт изображения на этом компьютере.",
+      "readyDescription": "Готов создавать изображения на этом компьютере.",
+      "install": "Установить движок",
       "installed": "Installed",
       "unsupported": "There is no image engine build for this computer yet.",
       "unsupportedShort": "Not available",
@@ -70,16 +71,18 @@
       "note": "About 100 MB. Installed under the app data folder."
     },
     "model": {
-      "title": "Get an image model",
-      "description": "Pick a model and size that fits your memory. Bigger is slower.",
+      "title": "Выберите модель изображений",
+      "description": "Мы подобрали лучшую версию каждой модели для этого компьютера.",
       "diskNote": "Models are 4–12 GB. Shared files are downloaded once."
     },
     "card": {
-      "title": "Set up image generation",
-      "description": "Two things are needed before the first image: the engine and a model.",
-      "engine": "Install the image engine",
-      "model": "Download an image model",
-      "button": "Set up"
+      "title": "Создайте первое изображение",
+      "description": "Приватная студия изображений прямо на компьютере. Нужны всего две быстрые загрузки.",
+      "engine": "Установите движок",
+      "engineDescription": "Небольшой рендерер для локального создания изображений.",
+      "model": "Выберите модель",
+      "modelDescription": "Выберите стиль и качество будущих изображений.",
+      "button": "Начать настройку"
     }
   },
   "model": {
@@ -94,6 +97,7 @@
     "pick": "Select {{name}} {{quant}}",
     "sizeGb": "{{size}} GB",
     "recommended": "Recommended",
+    "downloaded": "Загружено",
     "incomplete": "Incomplete",
     "load": "Run",
     "loading": "Starting…",
@@ -126,6 +130,13 @@
     "gatedHint": "This model is gated on Hugging Face. Add a token with access in",
     "gatedLink": "General settings.",
     "download": "Download"
+  },
+  "download": {
+    "finishingModel": "Завершаем установку модели",
+    "finishingEngine": "Завершаем установку движка",
+    "checkingFiles": "Проверяем загруженные файлы…",
+    "modelReady": "Модель изображений готова",
+    "engineReady": "Движок изображений готов"
   },
   "form": {
     "prompt": "Prompt",
@@ -335,8 +346,8 @@
       "body": "The download or unpacking failed. Check your connection and disk space, then try again."
     },
     "ENGINE_CRASHED": {
-      "title": "The renderer stopped unexpectedly",
-      "body": "sd-server exited during the job. Generating again restarts it; if it keeps happening, try a smaller model."
+      "title": "GPU остановил рендер",
+      "body": "Движок изображений уже сброшен. Выберите меньшее разрешение и попробуйте снова."
     },
     "MODEL_MISSING": {
       "title": "The model file is missing",
