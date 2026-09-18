@@ -9,42 +9,13 @@ import type { SdcppManifest } from './diffusion/install'
 export const BASELINE_SDCPP_MANIFEST: SdcppManifest = {
   "tag_name": "master-849-d04e895",
   "upstream_repo": "leejet/stable-diffusion.cpp",
+  "download_base": "https://github.com/AtomicBot-ai/atomic-chat-conf/releases/download",
   "assets": [
     {
-      "backend": "macos-arm64",
-      "name": "sd-master-d04e895-bin-Darwin-macOS-26.6.2-arm64.zip",
-      "sha256": "7dc34b46ea5299d248ca67ab6d3538575a9638fd2a24e013c6dc979cce9ca1d4",
-      "size": 50032742
-    },
-    {
-      "backend": "win-cuda12-x64",
-      "name": "sd-master-d04e895-bin-win-cuda12-x64.zip",
-      "sha256": "78a805478aeb2c09d4dabec6a34ddba1ce322912c30f0d173a79674836bd3b0a",
-      "size": 336414089
-    },
-    {
-      "backend": "win-rocm-7.14-x64",
-      "name": "sd-master-d04e895-bin-win-rocm-7.14.0-x64.zip",
-      "sha256": "375da5bad52e0bfe29110bcd7fa670a9af5bbbc2a9bbefdd9991f15fc7237aa2",
-      "size": 197957146
-    },
-    {
-      "backend": "win-vulkan-x64",
-      "name": "sd-master-d04e895-bin-win-vulkan-x64.zip",
-      "sha256": "5a75237c5c6a7253b1079b03f6ec0fe1358393bf879f486887863ac31dea978e",
-      "size": 38862152
-    },
-    {
-      "backend": "win-cpu-x64",
-      "name": "sd-master-d04e895-bin-win-cpu-x64.zip",
-      "sha256": "731208e2cde69fcf2e69e6968d30a570d47f2629d5682f51b699b60f47019abf",
-      "size": 24112084
-    },
-    {
-      "backend": "linux-vulkan-x64",
-      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
-      "sha256": "972a45d783e2c6ffda543d0e7862f00829a0f7dbd9145cf3077828f9c74f2780",
-      "size": 46155251
+      "backend": "linux-cpu-x64",
+      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64.zip",
+      "sha256": "cde88608e4cfe077be9b761abebae6be65d145befa750fbd5ad2e9521d5c5c89",
+      "size": 33031959
     },
     {
       "backend": "linux-rocm-7.14-x64",
@@ -53,10 +24,28 @@ export const BASELINE_SDCPP_MANIFEST: SdcppManifest = {
       "size": 264332750
     },
     {
-      "backend": "linux-cpu-x64",
-      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64.zip",
-      "sha256": "cde88608e4cfe077be9b761abebae6be65d145befa750fbd5ad2e9521d5c5c89",
-      "size": 33031959
+      "backend": "linux-vulkan-x64",
+      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+      "sha256": "972a45d783e2c6ffda543d0e7862f00829a0f7dbd9145cf3077828f9c74f2780",
+      "size": 46155251
+    },
+    {
+      "backend": "macos-arm64",
+      "name": "sd-master-d04e895-bin-Darwin-macOS-26.6.2-arm64.zip",
+      "sha256": "3796d5c6d89e41dd0f112c0e9007b5df0b4a3b9ac9f0acf26ea5b36870a6a21a",
+      "size": 50211385
+    },
+    {
+      "backend": "win-cpu-x64",
+      "name": "sd-master-d04e895-bin-win-cpu-x64.zip",
+      "sha256": "efb5b2f071fb775196544ff93e0db19230cd95bd51ff74336d35e26fb3f18e6b",
+      "size": 24253380
+    },
+    {
+      "backend": "win-cuda12-x64",
+      "name": "sd-master-d04e895-bin-win-cuda12-x64.zip",
+      "sha256": "770a0d7e7b3ff48d2c12850835ef54a25794d37a909df25acc2be8f08d015054",
+      "size": 336562996
     },
     {
       "backend": "win-cudart-cu12",
@@ -64,6 +53,18 @@ export const BASELINE_SDCPP_MANIFEST: SdcppManifest = {
       "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
       "size": 563452046,
       "companion": true
+    },
+    {
+      "backend": "win-rocm-7.14-x64",
+      "name": "sd-master-d04e895-bin-win-rocm-7.14.0-x64.zip",
+      "sha256": "c469db426fdfa0a6f0e89d218c6966cab702e586bb2284fb83e7e513e8554d53",
+      "size": 197980839
+    },
+    {
+      "backend": "win-vulkan-x64",
+      "name": "sd-master-d04e895-bin-win-vulkan-x64.zip",
+      "sha256": "948629eaa346cbe32fa198a32ac03b373bf5f41bee91adccca9b5da12b93a333",
+      "size": 39011200
     }
   ]
 }
