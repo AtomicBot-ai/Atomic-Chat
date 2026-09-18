@@ -39,20 +39,43 @@ const family = (overrides: Record<string, unknown> = {}) => ({
   transformer: {
     repo: 'unsloth/Z-Image-Turbo-GGUF',
     quants: [
-      { id: 'q4_k_m', label: 'Q4_K_M', filename: 'z-image-turbo-Q4_K_M.gguf', bytes: 5017613376, sha256: HASH, recommended: true },
+      {
+        id: 'q4_k_m',
+        label: 'Q4_K_M',
+        filename: 'z-image-turbo-Q4_K_M.gguf',
+        bytes: 5017613376,
+        sha256: HASH,
+        recommended: true,
+      },
     ],
   },
-  vae: { repo: 'unsloth/Z-Image-Turbo-ComfyUI', filename: 'split_files/vae/ae.safetensors', bytes: 335304388 },
+  vae: {
+    repo: 'unsloth/Z-Image-Turbo-ComfyUI',
+    filename: 'split_files/vae/ae.safetensors',
+    bytes: 335304388,
+  },
   text_encoders: [
-    { repo: 'unsloth/Z-Image-Turbo-ComfyUI', filename: 'split_files/text_encoders/qwen_3_4b.safetensors', bytes: 8044982048, field: 'llm' },
+    {
+      repo: 'unsloth/Z-Image-Turbo-ComfyUI',
+      filename: 'split_files/text_encoders/qwen_3_4b.safetensors',
+      bytes: 8044982048,
+      field: 'llm',
+    },
   ],
   defaults: { steps: 8, cfg_scale: 1.0, width: 1024, height: 1024 },
   ranges: { steps: [1, 50], dims: [256, 2048], dim_multiple: 16 },
-  capabilities: { negative_prompt: false, guidance: false, workflows: ['create'] },
+  capabilities: {
+    negative_prompt: false,
+    guidance: false,
+    workflows: ['create'],
+  },
   ...overrides,
 })
 
-const manifest = (families: unknown[] = [family()], overrides: Record<string, unknown> = {}) => ({
+const manifest = (
+  families: unknown[] = [family()],
+  overrides: Record<string, unknown> = {}
+) => ({
   $schema: './schema.diffusion.json',
   schema_version: SUPPORTED_SCHEMA_VERSION,
   updated_at: '2026-09-10T18:00:00Z',
@@ -87,7 +110,9 @@ describe('fetchDiffusionCatalog', () => {
     expect(result.source).toBe('remote')
     expect(result.catalog.families.map((f) => f.id)).toEqual(['z-image'])
     expect(result.catalog).not.toHaveProperty('$schema')
-    expect(getCachedDiffusionCatalog()?.catalog.updated_at).toBe('2026-09-10T18:00:00Z')
+    expect(getCachedDiffusionCatalog()?.catalog.updated_at).toBe(
+      '2026-09-10T18:00:00Z'
+    )
   })
 
   it('serves the fresh cache without a round-trip', async () => {
@@ -117,7 +142,9 @@ describe('fetchDiffusionCatalog', () => {
   })
 
   it('rejects a manifest written for a newer client', async () => {
-    fetchOk(manifest([family()], { schema_version: SUPPORTED_SCHEMA_VERSION + 1 }))
+    fetchOk(
+      manifest([family()], { schema_version: SUPPORTED_SCHEMA_VERSION + 1 })
+    )
     const result = await fetchDiffusionCatalog({ url: REMOTE_URL })
     expect(result.source).toBe('baseline')
     expect(result.error).toMatch(/schema_version 2 is newer/)
@@ -143,16 +170,36 @@ describe('strict parsing', () => {
       transformer: {
         repo: 'unsloth/Z-Image-Turbo-GGUF',
         quants: [
-          { id: 'q4_k_m', label: 'Q4_K_M', filename: 'z-image-turbo-Q4_K_M.gguf', bytes: 5017613376, sha256: HASH, recommended: true },
+          {
+            id: 'q4_k_m',
+            label: 'Q4_K_M',
+            filename: 'z-image-turbo-Q4_K_M.gguf',
+            bytes: 5017613376,
+            sha256: HASH,
+            recommended: true,
+          },
         ],
       },
-      vae: { repo: 'unsloth/Z-Image-Turbo-ComfyUI', filename: 'split_files/vae/ae.safetensors', bytes: 335304388 },
+      vae: {
+        repo: 'unsloth/Z-Image-Turbo-ComfyUI',
+        filename: 'split_files/vae/ae.safetensors',
+        bytes: 335304388,
+      },
       text_encoders: [
-        { repo: 'unsloth/Z-Image-Turbo-ComfyUI', filename: 'split_files/text_encoders/qwen_3_4b.safetensors', bytes: 8044982048, field: 'llm' },
+        {
+          repo: 'unsloth/Z-Image-Turbo-ComfyUI',
+          filename: 'split_files/text_encoders/qwen_3_4b.safetensors',
+          bytes: 8044982048,
+          field: 'llm',
+        },
       ],
       defaults: { steps: 8, cfg_scale: 1, width: 1024, height: 1024 },
       ranges: { steps: [1, 50], dims: [256, 2048], dim_multiple: 16 },
-      capabilities: { negative_prompt: false, guidance: false, workflows: ['create'] },
+      capabilities: {
+        negative_prompt: false,
+        guidance: false,
+        workflows: ['create'],
+      },
     })
   })
 
@@ -162,10 +209,25 @@ describe('strict parsing', () => {
         transformer: {
           repo: 'unsloth/Z-Image-Turbo-GGUF',
           quants: [
-            { id: 'q4_k_m', label: 'Q4_K_M', filename: 'ok-Q4_K_M.gguf', bytes: 1 },
-            { id: 'q5_k_m', label: 'Q5_K_M', filename: '../escape.gguf', bytes: 1 },
+            {
+              id: 'q4_k_m',
+              label: 'Q4_K_M',
+              filename: 'ok-Q4_K_M.gguf',
+              bytes: 1,
+            },
+            {
+              id: 'q5_k_m',
+              label: 'Q5_K_M',
+              filename: '../escape.gguf',
+              bytes: 1,
+            },
             { id: 'q6_k', label: 'Q6_K', filename: 'sub/dir.gguf', bytes: 1 },
-            { id: 'q8_0', label: 'Q8_0', filename: 'weights.safetensors', bytes: 1 },
+            {
+              id: 'q8_0',
+              label: 'Q8_0',
+              filename: 'weights.safetensors',
+              bytes: 1,
+            },
             { id: 'f16', label: 'F16', filename: 'weights.gguf', bytes: 0 },
           ],
         },
@@ -177,17 +239,31 @@ describe('strict parsing', () => {
   it('rejects the whole family when a side file could escape the models root', () => {
     expect(
       sanitizeDiffusionFamily(
-        family({ vae: { repo: 'unsloth/x', filename: 'split_files/../../ae.safetensors', bytes: 1 } })
+        family({
+          vae: {
+            repo: 'unsloth/x',
+            filename: 'split_files/../../ae.safetensors',
+            bytes: 1,
+          },
+        })
       )
     ).toBeNull()
     expect(
       sanitizeDiffusionFamily(
-        family({ text_encoders: [{ repo: 'unsloth/x', filename: 'enc.bin', bytes: 1, field: 'llm' }] })
+        family({
+          text_encoders: [
+            { repo: 'unsloth/x', filename: 'enc.bin', bytes: 1, field: 'llm' },
+          ],
+        })
       )
     ).toBeNull()
     expect(
       sanitizeDiffusionFamily(
-        family({ text_encoders: [{ repo: 'unsloth/x', filename: 'enc.safetensors', bytes: 1 }] })
+        family({
+          text_encoders: [
+            { repo: 'unsloth/x', filename: 'enc.safetensors', bytes: 1 },
+          ],
+        })
       )
     ).toBeNull()
   })
@@ -195,9 +271,23 @@ describe('strict parsing', () => {
   it('rejects unknown ids, bad bytes and malformed ranges', () => {
     expect(sanitizeDiffusionFamily(family({ id: 'sdxl' }))).toBeNull()
     expect(
-      sanitizeDiffusionFamily(family({ vae: { repo: 'unsloth/x', filename: 'ae.safetensors', bytes: '335304388' } }))
+      sanitizeDiffusionFamily(
+        family({
+          vae: {
+            repo: 'unsloth/x',
+            filename: 'ae.safetensors',
+            bytes: '335304388',
+          },
+        })
+      )
     ).toBeNull()
-    expect(sanitizeDiffusionFamily(family({ ranges: { steps: [50, 1], dims: [256, 2048], dim_multiple: 16 } }))).toBeNull()
+    expect(
+      sanitizeDiffusionFamily(
+        family({
+          ranges: { steps: [50, 1], dims: [256, 2048], dim_multiple: 16 },
+        })
+      )
+    ).toBeNull()
     expect(sanitizeDiffusionFamily(family({ engines: ['comfy'] }))).toBeNull()
     expect(sanitizeDiffusionFamily(family({ vae_format: 'sdxl' }))).toBeNull()
   })
@@ -242,6 +332,10 @@ describe('baseline and lookups', () => {
       'flux.2-klein',
       'flux.1',
       'flux.1-uncensored',
+      'flux.1-abliterated',
+      'flux.1-frankenstein',
+      'flux.1-nsfw-realism',
+      'flux.1-krea',
       'qwen-image',
     ])
   })

@@ -195,7 +195,7 @@ export const ImageViewer = memo(function ImageViewer({
             alt={item.recipe.prompt}
             decoding="async"
             draggable={false}
-            className="col-start-1 row-start-1 max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md"
+            className="col-start-1 row-start-1 max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md animate-in fade-in-0 zoom-in-95 duration-500"
           />
           <span className="pointer-events-none col-start-1 row-start-1 m-2 self-start justify-self-end rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
             {item.width}×{item.height}

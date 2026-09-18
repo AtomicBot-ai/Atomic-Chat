@@ -293,6 +293,23 @@ describe('CloudPage', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('pins the implicit connected provider in the URL before it can disconnect', async () => {
+    const openai = providers.find((p) => p.provider === 'openai')!
+    mockStore([
+      ...providers.filter((p) => p.provider !== 'openai'),
+      { ...openai, api_key: 'sk-live' },
+    ])
+    render(<CloudPage />)
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: '/cloud/',
+        search: { provider: 'openai' },
+        replace: true,
+      })
+    )
+  })
+
   it('opens on OpenRouter when nothing is connected and the URL names none', () => {
     // A blank picker on arrival is a dead page. With no connection to open
     // on, the page still lands on a provider the user can set up right away.

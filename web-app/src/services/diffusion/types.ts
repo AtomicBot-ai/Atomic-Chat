@@ -35,6 +35,10 @@ export type DiffusionFamilyId =
   | 'flux.2-klein'
   | 'flux.1'
   | 'flux.1-uncensored'
+  | 'flux.1-abliterated'
+  | 'flux.1-frankenstein'
+  | 'flux.1-nsfw-realism'
+  | 'flux.1-krea'
   | 'qwen-image'
   | 'wan2.2-ti2v-5b'
   | 'ltx-2'
@@ -115,7 +119,12 @@ export type DiffusionEngineInstall =
       dir: string
     }
 
-export type DiffusionModelState = 'unloaded' | 'loading' | 'loaded' | 'unloading' | 'failed'
+export type DiffusionModelState =
+  | 'unloaded'
+  | 'loading'
+  | 'loaded'
+  | 'unloading'
+  | 'failed'
 
 export type LoadedDiffusionModel = {
   modelId: string
@@ -147,6 +156,7 @@ export type NativeDiffusionErrorCode =
   | 'UNSUPPORTED_WORKFLOW'
   | 'INVALID_DIMENSIONS'
   | 'INVALID_REQUEST'
+  | 'INVALID_OUTPUT'
   | 'JOB_BUSY'
   | 'JOB_NOT_FOUND'
   | 'QUEUE_FULL'
@@ -244,9 +254,19 @@ export type ImageGenerateRequest = {
   strength?: number
 }
 
-export type ImageJobState = 'queued' | 'generating' | 'completed' | 'failed' | 'cancelled'
+export type ImageJobState =
+  | 'queued'
+  | 'generating'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
 
-export type ImageJobPhase = 'queued' | 'encoding' | 'sampling' | 'decoding' | 'saving'
+export type ImageJobPhase =
+  | 'queued'
+  | 'encoding'
+  | 'sampling'
+  | 'decoding'
+  | 'saving'
 
 export type ImageJobProgress = {
   phase: ImageJobPhase
@@ -443,7 +463,9 @@ export interface DiffusionService {
    * without `cancelGenerating` is stopped by killing the server after a short
    * grace period; the next `generate` respawns it transparently.
    */
-  cancelJob(jobId: string): Promise<{ cancelled: boolean; serverStopped: boolean }>
+  cancelJob(
+    jobId: string
+  ): Promise<{ cancelled: boolean; serverStopped: boolean }>
 
   // --- gallery -------------------------------------------------------------
   listGallery(options: GalleryListOptions): Promise<GalleryPage>

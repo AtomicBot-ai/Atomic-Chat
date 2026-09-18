@@ -25,10 +25,11 @@ const GPU_SETTLE: Duration = Duration::from_millis(500);
 pub fn workflows_for_family(family: &str) -> Vec<ImageWorkflow> {
     use ImageWorkflow::*;
     match family {
-        "flux.2-klein" => vec![
-            Create, Transform, Inpaint, Extend, Upscale, Reference, Edit,
-        ],
-        "z-image" | "flux.1" | "flux.1-uncensored" | "qwen-image" => {
+        "flux.2-klein" => vec![Create, Transform, Inpaint, Extend, Upscale, Reference, Edit],
+        "z-image" | "qwen-image" => {
+            vec![Create, Transform, Inpaint, Extend, Upscale]
+        }
+        family if family.starts_with("flux.1") => {
             vec![Create, Transform, Inpaint, Extend, Upscale]
         }
         _ => vec![Create],
@@ -267,7 +268,11 @@ mod tests {
         use ImageWorkflow::*;
         for family in ["z-image", "flux.1", "qwen-image"] {
             let ws = workflows_for_family(family);
-            assert_eq!(ws, vec![Create, Transform, Inpaint, Extend, Upscale], "{family}");
+            assert_eq!(
+                ws,
+                vec![Create, Transform, Inpaint, Extend, Upscale],
+                "{family}"
+            );
         }
         let klein = workflows_for_family("flux.2-klein");
         assert!(klein.contains(&Reference) && klein.contains(&Edit));

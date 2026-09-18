@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { IconLoader2 } from '@tabler/icons-react'
-import { Cloud } from 'lucide-react'
+import { IconDownload, IconLoader2 } from '@tabler/icons-react'
+import { Cloud, FolderPlus, Search } from 'lucide-react'
 import { EngineManager } from '@janhq/core'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/shallow'
@@ -8,17 +8,12 @@ import { useShallow } from 'zustand/shallow'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
 import { Button } from '@/components/ui/button'
 import { ModelLogo } from '@/containers/ModelLogo'
-import { RecommendedDownloadRow } from '@/containers/RecommendedDownloadRow'
 import { RouteRow } from '@/containers/RouteRow'
 import { selectCloudGalleryProviders } from '@/containers/dialogs/AddCloudProviderDialog'
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardware } from '@/hooks/useHardware'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import {
-  useRecommendedListDownloads,
-  type RecommendedDownload,
-} from '@/hooks/useRecommendedDownloads'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -43,8 +38,6 @@ import type {
   HuggingFaceFeedFormat,
 } from '@/services/models/types'
 
-/** How long the recommendation may take to resolve before the list stops waiting. */
-const RECOMMENDATION_WAIT_MS = 8_000
 /** Keystrokes settle for this long before Hugging Face is asked. */
 const HF_SEARCH_DEBOUNCE_MS = 300
 /** Below this the service answers nothing anyway; mirrors `searchHuggingFaceCandidates`. */
@@ -84,7 +77,7 @@ const candidateKey = (candidate: CatalogModel) =>
 
 function FormatBadge({ candidate }: { candidate: CatalogModel }) {
   return (
-    <span className="shrink-0 rounded border bg-secondary px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+    <span className="shrink-0 rounded border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
       {candidateFormat(candidate)}
     </span>
   )
@@ -216,86 +209,6 @@ function PickerSection({
 const modelMark = (repo: string) => (
   <ModelLogo name={repo} fallback="huggingface" className={MARK_CLASS} />
 )
-
-function PickerRecommendedRow({
-  item,
-  hero,
-}: {
-  item: RecommendedDownload
-  hero: boolean
-}) {
-  const { t } = useTranslation()
-  const inFlight = useInFlightDownload(item.variant.model_id)
-  return (
-    <RecommendedDownloadRow
-      item={item}
-      hero={hero}
-      progressText={inFlight ? inFlightHint(t, inFlight) : null}
-      downloading={inFlight !== null}
-      onDownload={() => item.start()}
-      compact
-      data-testid={
-        hero
-          ? 'model-picker-recommended-lead'
-          : 'model-picker-recommended-other'
-      }
-    />
-  )
-}
-
-/**
- * The exact list onboarding shows: its lead, followed by the Hub staff picks.
- * While the lead is unresolved a
- * spinner line stands in; after the reply gate's 8 s budget it comes down and
- * the routes under it are the offer.
- */
-function RecommendedModels() {
-  const { t } = useTranslation()
-  const { items, isLoading } = useRecommendedListDownloads()
-  const downloads = useDownloadStore((state) => state.downloads)
-  const localDownloadingModels = useDownloadStore(
-    (state) => state.localDownloadingModels
-  )
-  const visibleItems = items.filter(
-    (item) =>
-      !downloads[item.variant.model_id] &&
-      !localDownloadingModels.has(item.variant.model_id)
-  )
-  const [gaveUp, setGaveUp] = useState(false)
-  useEffect(() => {
-    if (!isLoading || gaveUp) return
-    const timer = setTimeout(() => setGaveUp(true), RECOMMENDATION_WAIT_MS)
-    return () => clearTimeout(timer)
-  }, [isLoading, gaveUp])
-
-  if (visibleItems.length === 0) {
-    if (!isLoading || gaveUp) return null
-    return (
-      <PickerSection
-        data-testid="model-picker-recommended"
-      >
-        <StatusLine text={t('chat:replyGate.findingRecommendation')} spinning />
-      </PickerSection>
-    )
-  }
-
-  return (
-    <PickerSection
-      className="max-h-[min(42vh,20rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]"
-      data-testid="model-picker-recommended"
-    >
-      <div className="flex flex-col divide-y divide-border/60">
-        {visibleItems.map((item, index) => (
-          <PickerRecommendedRow
-            key={item.repo}
-            item={item}
-            hero={index === 0}
-          />
-        ))}
-      </div>
-    </PickerSection>
-  )
-}
 
 type HuggingFaceStatus = 'idle' | 'searching' | 'done' | 'failed'
 
@@ -571,7 +484,6 @@ function PickerDownloadRow({
   busy?: boolean
   onDownload: () => void
 }) {
-  const { t } = useTranslation()
   return (
     <div
       className="mx-1 mb-1 flex items-center gap-2 rounded-sm px-2 py-1.5"
@@ -591,18 +503,18 @@ function PickerDownloadRow({
       <Button
         type="button"
         variant="secondary"
-        size="sm"
+        size="icon-sm"
         aria-label={label}
         disabled={disabled || busy}
         onClick={onDownload}
-        className="w-[6.75rem] max-w-[32%] shrink-0 rounded-full px-2 text-xs"
+        className="size-8 shrink-0 rounded-full"
       >
         {busy ? (
           <span className="flex size-4 items-center justify-center bg-transparent">
             <IconLoader2 className="size-3.5 animate-spin" aria-hidden />
           </span>
         ) : (
-          t('chat:replyGate.download')
+          <IconDownload size={15} aria-hidden />
         )}
       </Button>
     </div>
@@ -762,7 +674,7 @@ function HuggingFaceRouteRow({
         ) : busy ? (
           <IconLoader2 className="animate-spin" aria-hidden />
         ) : (
-          t('chat:replyGate.download')
+          <IconDownload size={15} aria-hidden />
         )
       }
       label={
@@ -772,6 +684,7 @@ function HuggingFaceRouteRow({
       }
       disabled={!inFlight && (busy || unavailable)}
       textAction={Boolean(inFlight)}
+      iconAction={!inFlight}
       onClick={() => {
         if (inFlight) {
           cancelDownload({ id: inFlight.id, name: inFlight.id }, serviceHub)
@@ -844,11 +757,15 @@ function HuggingFaceResults({ query }: { query: string }) {
  * account is already signed in. The Hub route is always there.
  */
 function PickerRoutes({
+  onBrowseHuggingFace,
   onConnectCloud,
   onConnectSubscription,
+  onImportLocal,
 }: {
+  onBrowseHuggingFace: () => void
   onConnectCloud: () => void
   onConnectSubscription: () => void
+  onImportLocal: () => void
 }) {
   const { t } = useTranslation()
   const providers = useModelProvider((state) => state.providers)
@@ -870,6 +787,17 @@ function PickerRoutes({
       data-testid="model-picker-routes"
     >
       <div className="flex flex-col divide-y divide-border/60">
+        <RouteRow
+          layout="onboarding"
+          compact
+          icon={<Search />}
+          title={t('setup:cloudStep.huggingFaceTitle')}
+          hint={t('setup:cloudStep.huggingFaceHint')}
+          action={t('setup:cloudStep.browse')}
+          label={t('setup:cloudStep.huggingFaceTrigger')}
+          onClick={onBrowseHuggingFace}
+          data-testid="model-picker-hugging-face-route"
+        />
         {subscriptionOffered && (
           <RouteRow
             layout="onboarding"
@@ -896,6 +824,17 @@ function PickerRoutes({
             data-testid="model-picker-cloud-key"
           />
         )}
+        <RouteRow
+          layout="onboarding"
+          compact
+          icon={<FolderPlus />}
+          title={t('chat:replyGate.folderTitle')}
+          hint={t('chat:replyGate.folderHint')}
+          action={t('setup:cloudStep.add')}
+          label={t('chat:replyGate.addFolder')}
+          onClick={onImportLocal}
+          data-testid="model-picker-local-import"
+        />
       </div>
     </div>
   )
@@ -911,21 +850,30 @@ function PickerRoutes({
  */
 export function ModelPickerEmptyState({
   query,
+  onBrowseHuggingFace,
   onConnectCloud,
   onConnectSubscription,
+  onImportLocal,
 }: {
   query: string
+  onBrowseHuggingFace: () => void
   onConnectCloud: () => void
   onConnectSubscription: () => void
+  onImportLocal: () => void
 }) {
   const searching = query.trim().length > 0
   return (
     <div className="flex flex-col gap-2 p-2" data-testid="model-picker-empty">
-      {searching ? <HuggingFaceResults query={query} /> : <RecommendedModels />}
-      <PickerRoutes
-        onConnectCloud={onConnectCloud}
-        onConnectSubscription={onConnectSubscription}
-      />
+      {searching ? (
+        <HuggingFaceResults query={query} />
+      ) : (
+        <PickerRoutes
+          onBrowseHuggingFace={onBrowseHuggingFace}
+          onConnectCloud={onConnectCloud}
+          onConnectSubscription={onConnectSubscription}
+          onImportLocal={onImportLocal}
+        />
+      )}
     </div>
   )
 }

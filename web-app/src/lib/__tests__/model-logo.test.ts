@@ -124,6 +124,11 @@ describe('modelFamilyLogoSrc', () => {
 describe('image and video families', () => {
   it('gives every family in the offline catalog a bundled mark, by id and by name', () => {
     for (const family of BASELINE_DIFFUSION_CATALOG.families) {
+      if (family.id === 'z-image') {
+        expect(iconKeyLogoSrc(DIFFUSION_FAMILY_ICON_KEYS[family.id])).toBeNull()
+        expect(modelFamilyLogoSrc(family.name)).toBeNull()
+        continue
+      }
       expect(
         iconKeyLogoSrc(DIFFUSION_FAMILY_ICON_KEYS[family.id]),
         `no icon key for "${family.id}"`
@@ -141,7 +146,7 @@ describe('image and video families', () => {
       '/svg/bfl.svg'
     )
     expect(modelFamilyLogoSrc('city96/flux1-dev-gguf')).toBe('/svg/bfl.svg')
-    expect(modelFamilyLogoSrc('Z-Image Turbo')).toBe('/svg/qwen-color.svg')
+    expect(modelFamilyLogoSrc('Z-Image Turbo')).toBeNull()
     expect(modelFamilyLogoSrc('Qwen-Image')).toBe('/svg/qwen-color.svg')
     expect(modelFamilyLogoSrc('Wan-AI/Wan2.2-TI2V-5B')).toBe(
       '/svg/qwen-color.svg'

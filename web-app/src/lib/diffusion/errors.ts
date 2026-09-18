@@ -52,6 +52,7 @@ const ROUTES: Record<
   UNSUPPORTED_WORKFLOW: [null, null],
   INVALID_DIMENSIONS: ['reduceSize', null],
   INVALID_REQUEST: [null, null],
+  INVALID_OUTPUT: ['retry', 'pickSmallerQuant'],
   JOB_BUSY: ['retry', null],
   JOB_NOT_FOUND: [null, null],
   QUEUE_FULL: ['retry', null],
@@ -94,15 +95,15 @@ export function toDiffusionError(error: unknown): {
   details?: string
 } {
   if (error && typeof error === 'object' && 'code' in error) {
-    const candidate = error as { code?: unknown; message?: unknown; details?: unknown }
-    if (
-      typeof candidate.code === 'string' &&
-      candidate.code in ROUTES
-    ) {
+    const candidate = error as {
+      code?: unknown
+      message?: unknown
+      details?: unknown
+    }
+    if (typeof candidate.code === 'string' && candidate.code in ROUTES) {
       return {
         code: candidate.code as NativeDiffusionErrorCode,
-        message:
-          typeof candidate.message === 'string' ? candidate.message : '',
+        message: typeof candidate.message === 'string' ? candidate.message : '',
         details:
           typeof candidate.details === 'string' ? candidate.details : undefined,
       }

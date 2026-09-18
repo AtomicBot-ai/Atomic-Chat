@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { IconRefresh } from '@tabler/icons-react'
 import cloneDeep from 'lodash/cloneDeep'
@@ -104,6 +104,13 @@ export function CloudPage() {
   const clearSelection = useCallback(() => {
     navigate({ to: route.cloud.index, search: {}, replace: true })
   }, [navigate])
+
+  // Canonicalise the implicit “first connected provider” choice into the URL.
+  // Otherwise disconnecting it changes `isProviderConnected`, recomputes the
+  // fallback and unexpectedly jumps the page to OpenRouter.
+  useEffect(() => {
+    if (!search.provider && selected) selectProvider(selected.provider)
+  }, [search.provider, selectProvider, selected])
 
   const createProvider = useCallback(
     (name: string) => {

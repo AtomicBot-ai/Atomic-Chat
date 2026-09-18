@@ -272,7 +272,7 @@ describe('DropdownModelProvider - downloading from the list', () => {
     cleanup()
   })
 
-  it('offers the best fit for this device when nothing is downloaded', () => {
+  it('offers explicit model setup routes when nothing is downloaded', () => {
     const lead = recommended()
     vi.mocked(useRecommendedListDownloads).mockReturnValue({
       items: [lead],
@@ -281,28 +281,17 @@ describe('DropdownModelProvider - downloading from the list', () => {
 
     render(<DropdownModelProvider />)
 
-    // The empty picker is a compact list: mark, name, fit and action only.
+    // Recommendations no longer compete with the four explicit ways to add a
+    // model in the empty state. Searching Hugging Face is still available as
+    // the first route.
     expect(list()).not.toHaveTextContent('setup:recommend.title')
-    const row = screen.getByTestId('model-picker-recommended-lead')
-    expect(row.querySelector('img')).toHaveAttribute(
-      'src',
-      expect.stringMatching(/qwen/)
-    )
-    const button = within(row).getByRole('button', {
-      name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
-    })
-    expect(row).not.toHaveTextContent('2.5 GB')
-    expect(button).toHaveTextContent(/^hub:download$/)
-
-    fireEvent.click(button)
-
-    expect(lead.start).toHaveBeenCalledTimes(1)
-    // The other ways to get a model sit under the list, as in the reply
-    // gate — and the panel is the download, so no second "Download a model"
-    // row under it.
+    expect(screen.queryByTestId('model-picker-recommended-lead')).toBeNull()
     expect(screen.getByTestId('model-picker-routes')).toHaveClass(
       '[scrollbar-gutter:stable]'
     )
+    expect(screen.getByTestId('model-picker-hugging-face-route')).toBeVisible()
+    expect(screen.getByTestId('model-picker-local-import')).toBeVisible()
+    expect(lead.start).not.toHaveBeenCalled()
     expect(hubShortcut()).toBeNull()
   })
 

@@ -51,6 +51,8 @@ type RouteRowProps = {
   /** The row the screen leads with: filled button instead of a secondary. */
   'primary'?: boolean
   'textAction'?: boolean
+  /** Square icon-only action, used by compact search results. */
+  'iconAction'?: boolean
   'data-testid'?: string
 }
 
@@ -78,6 +80,7 @@ export function RouteRow({
   compact = false,
   primary = false,
   textAction = false,
+  iconAction = false,
   'data-testid': testId,
 }: RouteRowProps) {
   return (
@@ -127,10 +130,13 @@ export function RouteRow({
             : ROUTE_ROW_ACTION_CLASS,
           textAction &&
             'h-auto border-0 bg-transparent px-2 font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground hover:underline underline-offset-4',
+          iconAction && 'size-8 min-w-8 rounded-full px-0',
           !primary && !textAction && ROUTE_ROW_BUTTON_HOVER
         )}
       >
-        <span className="min-w-0 truncate">{action}</span>
+        <span className={cn('min-w-0', !iconAction && 'truncate')}>
+          {action}
+        </span>
       </Button>
     </div>
   )

@@ -1,20 +1,25 @@
 import { useState } from 'react'
-import { CircleAlert, ChevronRight, ListChecks } from 'lucide-react'
+import { CircleAlert, ChevronRight, ListChecks, Loader2 } from 'lucide-react'
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toolActivityLabel } from '@/lib/tools/activity-label'
 import type { TraceBlock } from '@/lib/tools/types'
 import { cn } from '@/lib/utils'
-import { ToolRenderer } from './tool-renderer'
+import { ToolRenderer, toolIcon } from './tool-renderer'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 
 type ActivityTool = Extract<TraceBlock, { kind: 'activity' }>['tools'][number]
 
 type ToolActivityGroupProps = {
   tools: ActivityTool[]
-  loopMessages?: string[]
   errorMessage?: string
+  /** The enclosing agent turn is still running or awaiting approval. */
+  active?: boolean
   working?: boolean
   onRetry?: () => void
 }
@@ -30,14 +35,17 @@ const isRunning = (tool: ActivityTool) =>
  */
 export function ToolActivityGroup({
   tools,
-  loopMessages = [],
   errorMessage,
+  active = false,
   working = false,
   onRetry,
 }: ToolActivityGroupProps) {
   const { t } = useTranslation('chat')
-  const runningTool = tools.find(isRunning)
-  const live = Boolean(runningTool || working)
+  // The newest running call owns the headline. Older calls may remain in an
+  // input state when a loop guard ends the turn; `active` prevents that stale
+  // state from looking like work is still happening after the composer opens.
+  const runningTool = active ? [...tools].reverse().find(isRunning) : undefined
+  const live = Boolean(active && (runningTool || working))
   // A live turn stays one stable row. The user can opt into the detailed
   // timeline, but new tool calls never expand it and shove the answer around.
   const [open, setOpen] = useState(false)
@@ -53,20 +61,18 @@ export function ToolActivityGroup({
       ? t('activity.working')
       : errorMessage
         ? errorMessage
-        : tools.length > 1
+        : tools.length > 0
           ? t('activity.completedActions', { count: tools.length })
-          : tools.length === 1
-            ? toolActivityLabel(
-                tools[0].toolName,
-                tools[0].presentation,
-                tools[0].state,
-                t
-              )
-            : t('activity.working')
+          : t('activity.working')
 
-  const hasDetails =
-    tools.length > 0 || loopMessages.length > 0 || Boolean(errorMessage)
-  const StatusIcon = errorMessage ? CircleAlert : ListChecks
+  const hasDetails = tools.length > 0 || Boolean(errorMessage)
+  const StatusIcon = errorMessage
+    ? CircleAlert
+    : runningTool
+      ? toolIcon(runningTool.toolName, runningTool.presentation.kind)
+      : working
+        ? Loader2
+        : ListChecks
 
   return (
     <Collapsible
@@ -83,6 +89,7 @@ export function ToolActivityGroup({
           aria-hidden="true"
           className={cn(
             'size-[18px] shrink-0',
+            live && !runningTool && 'animate-spin',
             errorMessage && !live && 'text-destructive'
           )}
         />
@@ -107,14 +114,6 @@ export function ToolActivityGroup({
               state={tool.state}
               onRetry={onRetry}
             />
-          ))}
-          {loopMessages.map((message, index) => (
-            <div
-              key={`${message}-${index}`}
-              className="py-1 text-xs text-muted-foreground"
-            >
-              {message}
-            </div>
           ))}
           {errorMessage && (
             <div className="py-1 text-xs text-destructive">{errorMessage}</div>

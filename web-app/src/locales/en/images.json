@@ -154,7 +154,7 @@
     "shortcutMac": "⌘ Enter to generate",
     "negativePrompt": "Negative prompt",
     "negativePlaceholder": "What to avoid…",
-    "advanced": "Advanced",
+    "advanced": "Advanced settings",
     "reset": "Reset",
     "steps": "Steps",
     "cfgScale": "CFG scale",
@@ -189,7 +189,7 @@
     "runsHint": "Repeat the generation, one run after another. Each run takes the next seed.",
     "seedHint": "Leave empty for a fresh random seed each run.",
     "advancedHint": "Load-time options. They apply the next time the model is loaded.",
-    "mediaSettings": "More in Media settings",
+    "mediaSettings": "Open Media settings",
     "resetHint": "Put the settings back to the model defaults. The prompt stays.",
     "memory": "Memory",
     "memoryHint": "Where the weights sit while generating. Auto picks from the model size and this computer; offloading frees GPU memory at the cost of speed.",
@@ -198,7 +198,7 @@
     "memoryGroup": "Offload weights",
     "memoryModel": "Offload everything",
     "engineHint": "Which renderer serves generation.",
-    "evictChat": "Free chat model",
+    "evictChat": "Free memory from chat",
     "sourceImage": "Source image",
     "referenceImage": "Reference image",
     "dropzone": "Click or drop an image",
@@ -262,6 +262,7 @@
     "flip": "Flip width and height",
     "toPortrait": "Switch to portrait",
     "toLandscape": "Switch to landscape",
+    "squareNoFlip": "Square images have the same width and height.",
     "presets": "{{label}} presets"
   },
   "progress": {
@@ -269,6 +270,8 @@
     "stopping": "Stopping the renderer…",
     "step": "Step {{step}}/{{total}}",
     "eta": "~{{seconds}} s",
+    "generatingImage": "Generating image",
+    "elapsed": "{{seconds}} s",
     "image": "image {{index}} of {{total}}",
     "run": "run {{run}} of {{total}}",
     "phase": {
@@ -397,6 +400,10 @@
     "INVALID_REQUEST": {
       "title": "The request was rejected",
       "body": "One of the settings is outside what the model accepts."
+    },
+    "INVALID_OUTPUT": {
+      "title": "The renderer produced a blank image",
+      "body": "The image engine finished, but its output contained no usable pixels. Atomic Chat discarded it instead of adding a white frame to your gallery. Try again or choose another model."
     },
     "JOB_BUSY": {
       "title": "The renderer is busy",

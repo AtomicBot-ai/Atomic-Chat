@@ -64,7 +64,10 @@ export function toolActivityLabel(
 ): string {
   const status =
     (state as string) === 'output-denied'
-      ? 'denied'
+      ? presentation.kind === 'generic' &&
+        presentation.deniedReason === 'tool-loop'
+        ? 'skipped'
+        : 'denied'
       : state === 'output-error'
         ? 'error'
         : state === 'input-streaming' || state === 'input-available'

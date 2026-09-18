@@ -19,6 +19,7 @@ import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageEmptyState } from './ImageEmptyState'
 import { ImageErrorBanner } from './ImageErrorBanner'
 import { ImageGalleryGrid } from './ImageGalleryGrid'
+import { ImageGenerationPlaceholder } from './ImageGenerationPlaceholder'
 import { ImagePromptForm } from './ImagePromptForm'
 import { ImageSetupCard } from './ImageSetupCard'
 import { ImageViewer } from './ImageViewer'
@@ -47,6 +48,11 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const gallery = useImageGallery()
   const engine = useImageEngine()
   const status = useImageGenerationStore((state) => state.status)
+  const generating = useImageGenerationStore((state) => state.generating)
+  const currentJob = useImageGenerationStore((state) => state.currentJob)
+  const generationStartedAtMs = useImageGenerationStore(
+    (state) => state.generationStartedAtMs
+  )
   const hasModel = useImageGenerationStore((state) =>
     state.installedArtifacts.some((artifact) => artifact.complete)
   )
@@ -56,6 +62,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const loadModel = useImageGenerationStore((state) => state.loadModel)
   const patchForm = useImageForm((state) => state.patch)
+  const draftWidth = useImageForm((state) => state.width)
+  const draftHeight = useImageForm((state) => state.height)
+  const draftBatchSize = useImageForm((state) => state.batchSize)
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
   )
@@ -63,6 +72,18 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const [modelsOpen, setModelsOpen] = useState(false)
 
   const modelLoaded = status?.model.state === 'loaded'
+  const pendingSize = {
+    width: currentJob?.request.width || draftWidth,
+    height: currentJob?.request.height || draftHeight,
+  }
+  const pendingCount = generating
+    ? Math.max(1, currentJob?.request.batchSize ?? draftBatchSize)
+    : 0
+  const pendingStartedAtMs =
+    generationStartedAtMs ??
+    currentJob?.startedAtMs ??
+    currentJob?.createdAtMs ??
+    0
 
   // The route names the workflow; the form carries it into the request.
   useEffect(() => {
@@ -206,23 +227,35 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           </div>
         )}
 
-        {gallery.initialized && gallery.items.length === 0 ? (
+        {gallery.initialized && gallery.items.length === 0 && !generating ? (
           <ImageEmptyState modelLoaded={modelLoaded} />
         ) : (
           <>
             <div className="min-h-0 flex-[3]">
-              <ImageViewer
-                item={gallery.selected}
-                selectedIds={gallery.selectedIds}
-                onOfferLoad={offerLoad}
-              />
+              {generating ? (
+                <ImageGenerationPlaceholder
+                  variant="viewer"
+                  width={pendingSize.width}
+                  height={pendingSize.height}
+                  progress={currentJob?.progress ?? null}
+                  startedAtMs={pendingStartedAtMs}
+                />
+              ) : (
+                <ImageViewer
+                  item={gallery.selected}
+                  selectedIds={gallery.selectedIds}
+                  onOfferLoad={offerLoad}
+                />
+              )}
             </div>
             <div className="flex min-h-0 flex-[2] flex-col border-t border-border/60">
               <div className="flex shrink-0 items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
                 <IconPhoto size={14} />
                 {/* A bare number: the i18n layer has no plural forms. */}
                 <span>{t('images:gallery.title')}</span>
-                <span className="tabular-nums">{gallery.total}</span>
+                <span className="tabular-nums">
+                  {gallery.total + pendingCount}
+                </span>
                 {gallery.selectedIds.length > 1 && (
                   <span>
                     ·{' '}
@@ -239,6 +272,10 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
                   selectedIds={gallery.selectedIds}
                   hasMore={gallery.hasMore}
                   loading={gallery.loading}
+                  pendingCount={pendingCount}
+                  pendingSize={pendingSize}
+                  pendingProgress={currentJob?.progress ?? null}
+                  pendingStartedAtMs={pendingStartedAtMs}
                   onSelect={gallery.toggleSelect}
                   onOpen={gallery.select}
                   onLoadMore={() => void gallery.loadMore()}

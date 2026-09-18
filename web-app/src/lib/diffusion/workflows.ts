@@ -89,9 +89,8 @@ export const IMAGE_WORKFLOWS: readonly ImageWorkflowSpec[] = [
   },
 ] as const
 
-export const IMAGE_WORKFLOW_IDS: readonly ImageWorkflowId[] = IMAGE_WORKFLOWS.map(
-  (workflow) => workflow.id
-)
+export const IMAGE_WORKFLOW_IDS: readonly ImageWorkflowId[] =
+  IMAGE_WORKFLOWS.map((workflow) => workflow.id)
 
 /** Extra references a `reference` job may carry after the source. */
 export const MAX_EXTRA_REFERENCES = 3
@@ -113,7 +112,9 @@ export function isImageWorkflowId(value: unknown): value is ImageWorkflowId {
 }
 
 export function workflowSpec(id: ImageWorkflowId): ImageWorkflowSpec {
-  return IMAGE_WORKFLOWS.find((workflow) => workflow.id === id) ?? IMAGE_WORKFLOWS[0]
+  return (
+    IMAGE_WORKFLOWS.find((workflow) => workflow.id === id) ?? IMAGE_WORKFLOWS[0]
+  )
 }
 
 export function workflowPath(id: ImageWorkflowId): string {
@@ -137,13 +138,22 @@ export function isSourceImagePath(path: string): boolean {
 export function workflowsForFamily(family: string): ImageWorkflowId[] {
   switch (family) {
     case 'flux.2-klein':
-      return ['create', 'transform', 'inpaint', 'extend', 'upscale', 'reference', 'edit']
+      return [
+        'create',
+        'transform',
+        'inpaint',
+        'extend',
+        'upscale',
+        'reference',
+        'edit',
+      ]
     case 'z-image':
-    case 'flux.1':
-    case 'flux.1-uncensored':
     case 'qwen-image':
       return ['create', 'transform', 'inpaint', 'extend', 'upscale']
     default:
+      if (family.startsWith('flux.1')) {
+        return ['create', 'transform', 'inpaint', 'extend', 'upscale']
+      }
       return ['create']
   }
 }

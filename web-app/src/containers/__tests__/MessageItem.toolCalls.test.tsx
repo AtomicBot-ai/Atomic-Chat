@@ -118,6 +118,42 @@ describe('MessageItem tool calls', () => {
     expect(document.querySelectorAll('.animate-spin')).toHaveLength(1)
   })
 
+  it('tracks the newest live action, then settles stale calls into a completed summary', () => {
+    const message: UIMessage = {
+      id: 'a-live',
+      role: 'assistant',
+      parts: [
+        search('t1', 'input-available', 'nemotron ultra'),
+        {
+          type: 'tool-os.fs.read',
+          toolCallId: 't2',
+          state: 'input-available',
+          input: { path: 'notes.md' },
+        } as UIMessage['parts'][number],
+      ],
+    }
+    const { rerender } = renderLast(message, 'streaming')
+    const liveButton = within(
+      screen.getByTestId('tool-activity-group')
+    ).getByRole('button')
+    expect(liveButton).toHaveTextContent('toolCall.actions.read.running')
+    expect(liveButton.querySelector('.lucide-file-text')).toBeInTheDocument()
+
+    rerender(
+      <MessageItem
+        message={message}
+        isFirstMessage={false}
+        isLastMessage
+        status="ready"
+      />
+    )
+    const doneButton = within(
+      screen.getByTestId('tool-activity-group')
+    ).getByRole('button')
+    expect(doneButton).toHaveTextContent('activity.completedActions')
+    expect(doneButton.querySelector('.lucide-list-checks')).toBeInTheDocument()
+  })
+
   it('shows Working between calls, and drops it once the answer streams', () => {
     const between: UIMessage = {
       id: 'a3',
@@ -164,6 +200,8 @@ describe('MessageItem tool calls', () => {
     expect(screen.getByTestId('agent-error-card')).toHaveTextContent(
       'chat:agentError.genericTitle'
     )
-    expect(screen.queryByText('model server returned 400')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('model server returned 400')
+    ).not.toBeInTheDocument()
   })
 })

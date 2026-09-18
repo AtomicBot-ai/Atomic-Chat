@@ -11,10 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EngineManager } from '@janhq/core'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import {
-  useRecommendedListDownloads,
-  type RecommendedDownload,
-} from '@/hooks/useRecommendedDownloads'
 import type { CatalogModel, ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -23,12 +19,6 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
     t: (key: string, vars?: Record<string, unknown>) =>
       vars ? `${key}:${JSON.stringify(vars)}` : key,
   }),
-}))
-
-// The recommendation itself is the hook's business (its own tests cover it);
-// here it is a fixture so the tests are about what the panel does with it.
-vi.mock('@/hooks/useRecommendedDownloads', () => ({
-  useRecommendedListDownloads: vi.fn(),
 }))
 
 // A Mac with 8 GB of unified memory: 2.5 GB fits, 6 GB is tight, 12 GB will
@@ -83,38 +73,6 @@ const mocks = {
 }
 
 const GB = 1024 ** 3
-
-const recommended = (
-  repo: string,
-  title: string,
-  fileSize: string | undefined,
-  overrides: Partial<RecommendedDownload> = {}
-): RecommendedDownload => ({
-  repo,
-  title,
-  descriptionKey: 'hub:recEverydayUse',
-  model: {} as CatalogModel,
-  variant: {
-    model_id: `${repo}:Q4_K_M`,
-    path: `https://example.test/${title}.gguf`,
-    file_size: fileSize as string,
-  },
-  sizeLabel: fileSize,
-  sizeBytes: fileSize ? Number.parseFloat(fileSize) * GB : undefined,
-  fit: fileSize
-    ? Number.parseFloat(fileSize) >= 12
-      ? 'wont_load'
-      : Number.parseFloat(fileSize) >= 6
-        ? 'tight'
-        : 'comfortable'
-    : null,
-  isDownloading: false,
-  start: vi.fn(() => `${repo}:Q4_K_M`),
-  ...overrides,
-})
-
-const withRecommended = (items: RecommendedDownload[], isLoading = false) =>
-  vi.mocked(useRecommendedListDownloads).mockReturnValue({ items, isLoading })
 
 const hfCandidate = (repoId: string): CatalogModel =>
   ({
@@ -191,11 +149,15 @@ function renderEmptyState(
   useModelProvider.setState({ providers })
   const onConnectCloud = vi.fn()
   const onConnectSubscription = vi.fn()
+  const onBrowseHuggingFace = vi.fn()
+  const onImportLocal = vi.fn()
   const view = (q: string) => (
     <ModelPickerEmptyState
       query={q}
+      onBrowseHuggingFace={onBrowseHuggingFace}
       onConnectCloud={onConnectCloud}
       onConnectSubscription={onConnectSubscription}
+      onImportLocal={onImportLocal}
     />
   )
   const result = render(view(query))
@@ -203,18 +165,15 @@ function renderEmptyState(
     ...result,
     onConnectCloud,
     onConnectSubscription,
+    onBrowseHuggingFace,
+    onImportLocal,
     retype: (q: string) => result.rerender(view(q)),
   }
 }
 
-const recommendedRows = () =>
-  within(screen.getByTestId('model-picker-recommended')).getAllByTestId(
-    /^model-picker-recommended-/
-  )
-
 const routeRows = () =>
   within(screen.getByTestId('model-picker-routes')).queryAllByTestId(
-    /^model-picker-(browse-hub|subscription|cloud-key)$/
+    /^model-picker-(hugging-face-route|subscription|cloud-key|local-import)$/
   )
 
 describe('ModelPickerEmptyState', () => {
@@ -233,7 +192,6 @@ describe('ModelPickerEmptyState', () => {
       pausedDownloads: new Set(),
       resumeParams: {},
     })
-    withRecommended([])
     mocks.searchHuggingFaceCandidates.mockResolvedValue([])
     seedServiceHub({
       models: {
@@ -328,149 +286,45 @@ describe('ModelPickerEmptyState', () => {
     expect(within(rows[0]).getByRole('button')).toBeEnabled()
   })
 
-  it('lists compact recommendations with a mark, fit and action only', () => {
-    const lead = recommended(
-      'AtomicChat/Qwen3.5-4B-GGUF',
-      'Qwen3.5 4B',
-      '2.5 GB'
-    )
-    withRecommended([
-      lead,
-      recommended('AtomicChat/gemma-4-E4B-it-GGUF', 'Gemma 4 E4B', '6.0 GB'),
-      recommended('someone/Big-70B-GGUF', 'Big 70B', '12 GB'),
-    ])
-
-    renderEmptyState()
-
-    // The same lead + staff-pick list Welcome renders.
-    expect(useRecommendedListDownloads).toHaveBeenCalled()
-    expect(screen.queryByText('setup:recommend.title')).toBeNull()
-
-    const rows = recommendedRows()
-    expect(rows).toHaveLength(3)
-    expect(rows[0]).toHaveAttribute(
-      'data-testid',
-      'model-picker-recommended-lead'
-    )
-    expect(rows[0]).toHaveTextContent('Qwen3.5 4B')
-    expect(rows[0]).not.toHaveTextContent('setup:recommend.defaultSummary')
-    expect(rows[1]).not.toHaveTextContent('setup:recommend.defaultSummary')
-    expect(rows[0].querySelector('p')).toBeNull()
-
-    // A mark on every row: the family's logo, Hugging Face's for the rest.
-    expect(
-      rows.map((row) => row.querySelector('img')?.getAttribute('src'))
-    ).toEqual([
-      expect.stringMatching(/qwen/),
-      expect.stringMatching(/google/),
-      expect.stringMatching(/huggingface/),
-    ])
-
-    // The fit badge beside the name, coloured against this machine's memory
-    // and naming the reason for a screen reader.
-    expect(
-      rows.map((row) =>
-        row.querySelector('[data-fit]')?.getAttribute('data-fit')
-      )
-    ).toEqual(['ok', 'warn', 'no'])
-    expect(
-      within(rows[0]).getByRole('button', {
-        name: 'setup:recommend.fitOk. setup:recommend.fitTipOk',
-      })
-    ).toBeInTheDocument()
-
-    // Size and summary stay out of this compact picker; every action is the
-    // same compact verb.
-    const leadButton = within(rows[0]).getByRole('button', {
-      name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
-    })
-    expect(rows[0]).not.toHaveTextContent('2.5 GB')
-    expect(leadButton).toHaveTextContent(/^hub:download$/)
-    expect(leadButton).toHaveAttribute('data-variant', 'default')
-    expect(
-      within(rows[1]).getByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Gemma 4 E4B"}',
-      })
-    ).toHaveAttribute('data-variant', 'secondary')
-
-    fireEvent.click(leadButton)
-    expect(lead.start).toHaveBeenCalledTimes(1)
-  })
-
-  it('says Download alone, with no fit badge, when the file size is unknown', () => {
-    withRecommended([recommended('someone/Mystery-GGUF', 'Mystery', undefined)])
-
-    renderEmptyState()
-
-    const [row] = recommendedRows()
-    expect(
-      within(row).getByRole('button', {
-        name: 'chat:replyGate.downloadLabel:{"name":"Mystery"}',
-      })
-    ).toHaveTextContent(/^hub:download$/)
-    expect(row.querySelector('[data-fit]')).toBeNull()
-  })
-
-  it('removes a running download from recommendations to avoid a duplicate row', () => {
-    const lead = recommended(
-      'AtomicChat/Qwen3.5-4B-GGUF',
-      'Qwen3.5 4B',
-      '2.5 GB',
-      {
-        isDownloading: true,
-      }
-    )
-    withRecommended([lead])
-    // Started, nothing received yet: the downloader's own status word.
-    act(() =>
-      useDownloadStore
-        .getState()
-        .addLocalDownloadingModel(lead.variant.model_id)
-    )
-
-    renderEmptyState()
-
-    expect(screen.queryByTestId('model-picker-recommended')).toBeNull()
-    expect(mocks.abortDownload).not.toHaveBeenCalled()
-  })
-
-  it('offers the reply gate routes under the list, in its order and with its words', () => {
-    withRecommended([
-      recommended('AtomicChat/Qwen3.5-4B-GGUF', 'Qwen3.5 4B', '2.5 GB'),
-    ])
-
-    const { onConnectCloud, onConnectSubscription } = renderEmptyState()
+  it('offers four explicit ways to get a model, without a miniature catalog', () => {
+    const {
+      onBrowseHuggingFace,
+      onConnectCloud,
+      onConnectSubscription,
+      onImportLocal,
+    } = renderEmptyState()
 
     const rows = routeRows()
     expect(rows.map((row) => row.getAttribute('data-testid'))).toEqual([
+      'model-picker-hugging-face-route',
       'model-picker-subscription',
       'model-picker-cloud-key',
+      'model-picker-local-import',
     ])
-    // The routes sit under the recommendations, never above them.
-    expect(
-      screen
-        .getByTestId('model-picker-recommended')
-        .compareDocumentPosition(screen.getByTestId('model-picker-routes'))
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(screen.queryByTestId('model-picker-recommended')).toBeNull()
 
-    expect(rows[0]).toHaveTextContent('setup:cloudStep.subscriptionTitle')
-    expect(rows[0]).not.toHaveTextContent('setup:cloudStep.subscriptionHint')
-    const connect = within(rows[0]).getByRole('button', {
+    expect(rows[0]).toHaveTextContent('setup:cloudStep.huggingFaceTitle')
+    const browse = within(rows[0]).getByRole('button', {
+      name: 'setup:cloudStep.huggingFaceTrigger',
+    })
+    const connect = within(rows[1]).getByRole('button', {
       name: 'setup:cloudStep.subscriptionTrigger',
     })
-    expect(connect).toHaveTextContent('setup:cloudStep.connect')
-
-    expect(rows[1]).toHaveTextContent('setup:cloudStep.providerTitle')
-    expect(rows[1]).not.toHaveTextContent('setup:cloudStep.providerHint')
-    const add = within(rows[1]).getByRole('button', {
+    const add = within(rows[2]).getByRole('button', {
       name: 'setup:cloudStep.trigger',
     })
-    expect(add).toHaveTextContent('setup:cloudStep.addApiKey')
+    const local = within(rows[3]).getByRole('button', {
+      name: 'chat:replyGate.addFolder',
+    })
 
+    fireEvent.click(browse)
     fireEvent.click(connect)
     fireEvent.click(add)
+    fireEvent.click(local)
+    expect(onBrowseHuggingFace).toHaveBeenCalledTimes(1)
     expect(onConnectSubscription).toHaveBeenCalledTimes(1)
     expect(onConnectCloud).toHaveBeenCalledTimes(1)
+    expect(onImportLocal).toHaveBeenCalledTimes(1)
   })
 
   it('shows no duplicate route when search itself is the Hugging Face entry point', () => {
@@ -479,15 +333,13 @@ describe('ModelPickerEmptyState', () => {
 
     renderEmptyState('', [subscriptionProvider()])
 
-    expect(routeRows()).toHaveLength(0)
-    // Nothing recommended and nothing loading: the routes are the offer.
-    expect(screen.queryByTestId('model-picker-recommended')).toBeNull()
+    expect(routeRows().map((row) => row.getAttribute('data-testid'))).toEqual([
+      'model-picker-hugging-face-route',
+      'model-picker-local-import',
+    ])
   })
 
   it('holds the results card at its reserved height while a search loads, answers and is cleared', async () => {
-    withRecommended([
-      recommended('AtomicChat/Qwen3.5-4B-GGUF', 'Qwen3.5 4B', '2.5 GB'),
-    ])
     mocks.searchHuggingFaceCandidates.mockResolvedValue([
       hfCandidate('unsloth/Qwen3-8B-GGUF'),
       hfCandidate('bartowski/Llama-3-8B-GGUF'),
@@ -517,13 +369,12 @@ describe('ModelPickerEmptyState', () => {
       within(rows[0]).getByRole('button', {
         name: 'chat:replyGate.downloadLabel:{"name":"Qwen3 8B"} (GGUF)',
       })
-    ).toHaveTextContent(/^chat:replyGate\.download$/)
+    ).toContainElement(rows[0].querySelector('.tabler-icon-download'))
     expect(card).toHaveClass('min-h-[21rem]')
     expect(card).not.toHaveTextContent(
       'common:modelPicker.searchingHuggingFace'
     )
-    // The routes stay under the results the whole time.
-    expect(screen.getByTestId('model-picker-routes')).toBeInTheDocument()
+    expect(screen.queryByTestId('model-picker-routes')).not.toBeInTheDocument()
 
     // A query too short to ask about, and one nothing answers.
     retype('qw')
@@ -544,12 +395,10 @@ describe('ModelPickerEmptyState', () => {
       'min-h-[21rem]'
     )
 
-    // Cleared: the recommendations are back where they were.
+    // Cleared: the four entry points return, not a miniature model catalog.
     retype('')
     expect(screen.queryByTestId('model-picker-hugging-face')).toBeNull()
-    expect(screen.getByTestId('model-picker-recommended')).toHaveTextContent(
-      'Qwen3.5 4B'
-    )
+    expect(screen.getByTestId('model-picker-routes')).toBeInTheDocument()
   })
 
   it('says so, in the same card, when Hugging Face cannot be reached', async () => {

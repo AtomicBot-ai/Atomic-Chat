@@ -4,7 +4,9 @@ import { IconLoader2 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { GalleryImageItem } from '@/services/diffusion/types'
+import type { ImageJobProgress } from '@/services/diffusion/types'
 import { ImageGalleryTile } from './ImageGalleryTile'
+import { ImageGenerationPlaceholder } from './ImageGenerationPlaceholder'
 
 type ImageGalleryGridProps = {
   items: GalleryImageItem[]
@@ -12,6 +14,10 @@ type ImageGalleryGridProps = {
   selectedIds: string[]
   hasMore: boolean
   loading: boolean
+  pendingCount?: number
+  pendingSize?: { width: number; height: number }
+  pendingProgress?: ImageJobProgress | null
+  pendingStartedAtMs?: number
   onSelect: (id: string, modifiers: { shift: boolean; meta: boolean }) => void
   onOpen: (id: string) => void
   onLoadMore: () => void
@@ -28,6 +34,10 @@ export const ImageGalleryGrid = memo(function ImageGalleryGrid({
   selectedIds,
   hasMore,
   loading,
+  pendingCount = 0,
+  pendingSize = { width: 1024, height: 1024 },
+  pendingProgress = null,
+  pendingStartedAtMs = Date.now(),
   onSelect,
   onOpen,
   onLoadMore,
@@ -52,6 +62,17 @@ export const ImageGalleryGrid = memo(function ImageGalleryGrid({
   return (
     <div className="space-y-3" data-testid="image-gallery-grid">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
+        {Array.from({ length: pendingCount }, (_, index) => (
+          <ImageGenerationPlaceholder
+            key={`pending-${index}`}
+            variant="tile"
+            width={pendingSize.width}
+            height={pendingSize.height}
+            progress={pendingProgress}
+            startedAtMs={pendingStartedAtMs}
+            index={index}
+          />
+        ))}
         {items.map((item) => (
           <ImageGalleryTile
             key={item.id}

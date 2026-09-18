@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Runtime, State};
 
+use crate::args::numerical_stability_flags;
 use crate::error::{DiffusionError, DiffusionErrorCode, DiffusionResult};
 use crate::events::SharedEmitter;
 use crate::gallery;
@@ -255,6 +256,7 @@ pub async fn load_model<R: Runtime>(
                 "Install the image engine first.",
             )
         })?;
+    let extra_args = numerical_stability_flags(&request.family, record.backend);
 
     let spec = ServerSpec {
         binary_dir: PathBuf::from(&record.dir),
@@ -271,7 +273,7 @@ pub async fn load_model<R: Runtime>(
         ranges: request.ranges,
         offload: request.offload,
         threads: request.threads,
-        extra_args: Vec::new(),
+        extra_args,
         startup_timeout: Duration::from_secs(
             request
                 .startup_timeout_secs

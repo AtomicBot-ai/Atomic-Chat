@@ -129,7 +129,10 @@ pub fn validate_request(request: &ImageGenerateRequest, spec: &ServerSpec) -> Di
     if !session::workflows_for_family(&spec.family).contains(&workflow) {
         return Err(DiffusionError::with_details(
             DiffusionErrorCode::UnsupportedWorkflow,
-            format!("This model cannot run the {} workflow.", workflow_name(workflow)),
+            format!(
+                "This model cannot run the {} workflow.",
+                workflow_name(workflow)
+            ),
             spec.family.clone(),
         ));
     }
@@ -238,7 +241,11 @@ pub fn resolve_inputs(request: &ImageGenerateRequest) -> DiffusionResult<Resolve
     } else {
         inputs.init = Some(source);
         if workflow.uses_mask() {
-            inputs.mask = request.mask_image.as_ref().map(resolve_source).transpose()?;
+            inputs.mask = request
+                .mask_image
+                .as_ref()
+                .map(resolve_source)
+                .transpose()?;
         }
     }
     Ok(inputs)
@@ -675,12 +682,7 @@ async fn execute(
     loop {
         attempts += 1;
         let view = ensure_session(state, emitter, &cancel).await?;
-        let body = build_img_gen_request(
-            &request,
-            &view.spec.defaults,
-            batch_seed,
-            &inputs,
-        );
+        let body = build_img_gen_request(&request, &view.spec.defaults, batch_seed, &inputs);
         let outcome = run_attempt(
             state, emitter, id, &request, &view, body, batch_seed, &cancel, started,
         )
@@ -933,13 +935,8 @@ async fn poll_job(
                     // Keeping this process alive makes every Retry fail
                     // immediately, so retire it while preserving the model
                     // spec; the next Generate respawns a clean server.
-                    session::stop_keeping_spec(
-                        state,
-                        emitter,
-                        "gpu-fault",
-                        Some(err.clone()),
-                    )
-                    .await;
+                    session::stop_keeping_spec(state, emitter, "gpu-fault", Some(err.clone()))
+                        .await;
                     return Err(err);
                 }
                 let pngs = decode_images(&job)?;
@@ -958,13 +955,8 @@ async fn poll_job(
             }
             "failed" => {
                 if let Some(err) = fatal_gpu_error_since(&view.tail, attempt_tail_start) {
-                    session::stop_keeping_spec(
-                        state,
-                        emitter,
-                        "gpu-fault",
-                        Some(err.clone()),
-                    )
-                    .await;
+                    session::stop_keeping_spec(state, emitter, "gpu-fault", Some(err.clone()))
+                        .await;
                     return Err(err);
                 }
                 let code = job
@@ -998,7 +990,10 @@ async fn poll_job(
 
 fn fatal_gpu_error_since(tail: &SharedTail, start: usize) -> Option<DiffusionError> {
     let lines = tail_lines(tail);
-    let recent = lines.get(start.min(lines.len())..).unwrap_or(&[]).join("\n");
+    let recent = lines
+        .get(start.min(lines.len())..)
+        .unwrap_or(&[])
+        .join("\n");
     let lower = recent.to_ascii_lowercase();
     let fatal = lower.contains("gpu address fault")
         || lower.contains("backend is in error state")
@@ -1085,6 +1080,14 @@ async fn save_outputs(
     started: Instant,
     pngs: &[Vec<u8>],
 ) -> DiffusionResult<(Vec<GalleryImageItem>, Vec<Vec<u8>>)> {
+    for png in pngs {
+        if gallery::is_blank_output(png)? {
+            return Err(DiffusionError::new(
+                DiffusionErrorCode::InvalidOutput,
+                "The image engine produced a blank frame. Nothing was saved.",
+            ));
+        }
+    }
     let output_dir = state.output_dir()?;
     let spec = &view.spec;
     let filename = std::path::Path::new(&spec.files.diffusion_model)
@@ -1118,10 +1121,11 @@ async fn save_outputs(
             flow_shift: request.flow_shift.or(spec.defaults.flow_shift),
             workflow: request.workflow(),
             // The effective value, so a recipe can be replayed as sent.
-            strength: request
-                .workflow()
-                .uses_init_image()
-                .then(|| request.strength.unwrap_or(request.workflow().default_strength())),
+            strength: request.workflow().uses_init_image().then(|| {
+                request
+                    .strength
+                    .unwrap_or(request.workflow().default_strength())
+            }),
             model: RecipeModel {
                 model_id: spec.model_id.clone(),
                 family: spec.family.clone(),
@@ -1592,7 +1596,10 @@ mod tests {
             );
             let mut klein = s.clone();
             klein.family = "flux.2-klein".into();
-            assert!(validate_request(&r, &klein).is_ok(), "{workflow:?} on klein");
+            assert!(
+                validate_request(&r, &klein).is_ok(),
+                "{workflow:?} on klein"
+            );
             r.reference_images = Some(vec![ImageSource::Path {
                 path: "/nonexistent/ref.png".into(),
             }]);
@@ -1620,14 +1627,21 @@ mod tests {
         r.mask_image = Some(mask.clone());
         let inputs = resolve_inputs(&r).unwrap();
         assert_eq!(inputs.init.as_deref(), Some("UE5HPw=="));
-        assert_eq!(inputs.mask.as_deref(), Some("QUJD"), "data URL prefix stripped");
+        assert_eq!(
+            inputs.mask.as_deref(),
+            Some("QUJD"),
+            "data URL prefix stripped"
+        );
         assert!(inputs.refs.is_empty());
 
         r.workflow = Some(ImageWorkflow::Reference);
         r.reference_images = Some(vec![mask.clone()]);
         let inputs = resolve_inputs(&r).unwrap();
         assert!(inputs.init.is_none() && inputs.mask.is_none());
-        assert_eq!(inputs.refs, vec!["UE5HPw==".to_string(), "QUJD".to_string()]);
+        assert_eq!(
+            inputs.refs,
+            vec!["UE5HPw==".to_string(), "QUJD".to_string()]
+        );
 
         // Create reads nothing, whatever the request carries.
         r.workflow = None;

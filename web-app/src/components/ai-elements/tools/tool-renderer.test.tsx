@@ -210,6 +210,23 @@ describe('ToolRenderer friendly activity', () => {
     expect(screen.getByRole('button')).toHaveAccessibleName(label)
   })
 
+  it('labels an automatic loop veto as skipped, not as denied access', () => {
+    render(
+      <ToolRenderer
+        toolName="os.fs.mkdir"
+        state={'output-denied' as never}
+        presentation={{
+          kind: 'generic',
+          title: 'os.fs.mkdir',
+          deniedReason: 'tool-loop',
+        }}
+      />
+    )
+    const button = screen.getByRole('button')
+    expect(button).toHaveAccessibleName('Skipped repeated folder creation')
+    expect(button.querySelector('.text-destructive')).toBeNull()
+  })
+
   it.each([
     [
       'os.web.search',

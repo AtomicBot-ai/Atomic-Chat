@@ -98,7 +98,7 @@ export function UpdateBanner({
       aria-live="polite"
       data-testid={testId}
       className={cn(
-        'fixed z-[1000] bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
+        'fixed z-40 bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
         'transition-[bottom] duration-200',
         'rounded-xl border bg-background shadow-md',
         className

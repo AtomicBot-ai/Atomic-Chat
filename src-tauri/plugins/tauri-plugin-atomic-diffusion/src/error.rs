@@ -19,6 +19,7 @@ pub enum DiffusionErrorCode {
     UnsupportedWorkflow,
     InvalidDimensions,
     InvalidRequest,
+    InvalidOutput,
     JobBusy,
     JobNotFound,
     QueueFull,

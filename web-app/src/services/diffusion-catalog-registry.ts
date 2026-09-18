@@ -127,6 +127,10 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'flux.2-klein',
   'flux.1',
   'flux.1-uncensored',
+  'flux.1-abliterated',
+  'flux.1-frankenstein',
+  'flux.1-nsfw-realism',
+  'flux.1-krea',
   'qwen-image',
   'wan2.2-ti2v-5b',
   'ltx-2',
@@ -358,7 +362,11 @@ export const sanitizeDiffusionFamily = (
 
 const isCatalogShape = (
   value: unknown
-): value is { schema_version: number; updated_at: string; families: unknown[] } =>
+): value is {
+  schema_version: number
+  updated_at: string
+  families: unknown[]
+} =>
   isRecord(value) &&
   typeof value.schema_version === 'number' &&
   typeof value.updated_at === 'string' &&
@@ -507,7 +515,10 @@ const fetchCatalog = async (
  * Hard timeout wrapper. Tauri's HTTP plugin does not always honour
  * `AbortSignal`, so we race against a timer to guarantee resolution.
  */
-const withHardTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+const withHardTimeout = <T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () =>
@@ -579,7 +590,11 @@ export const fetchDiffusionCatalog = async (
 
   const cached = getCachedDiffusionCatalog()
   if (!force && isDiffusionCatalogCacheFresh(cached) && cached) {
-    return { catalog: cached.catalog, source: 'cache', fetchedAt: cached.fetchedAt }
+    return {
+      catalog: cached.catalog,
+      source: 'cache',
+      fetchedAt: cached.fetchedAt,
+    }
   }
 
   const controller = new AbortController()

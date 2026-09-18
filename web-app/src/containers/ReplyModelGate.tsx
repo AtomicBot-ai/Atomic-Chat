@@ -213,8 +213,13 @@ export function ReplyModelGate({
       }
       captureReplyGateOutcome(resolution)
       callbacksRef.current.onResolved(resolution)
+      // Starting a new download resolves this gate. The current message now
+      // waits in the composer queue, so return to chat immediately. A later,
+      // separate Send while the transfer is active may open the dedicated
+      // "model is downloading" state.
+      if (outcome === 'download') onOpenChange(false)
     },
-    [session]
+    [onOpenChange, session]
   )
 
   const dismissQueuedDownload = useCallback(() => {
@@ -382,8 +387,7 @@ function ReplyModelGateBody({
   // Import removes the transfer just before the refreshed provider appears.
   // Hold the wait surface through that short handoff instead of flashing the
   // recommendation catalogue back into the dialog.
-  const waitingForDownload =
-    branch === 'none' && waitingForDownloadRef.current
+  const waitingForDownload = branch === 'none' && waitingForDownloadRef.current
   const displayedDownloads =
     inFlight.length > 0 ? inFlight : lastInFlightRef.current
 
@@ -452,27 +456,30 @@ function ReplyModelGateBody({
         <RecommendedDownloads
           inFlight={displayedDownloads}
           onStarted={(modelId) => onResolve('download', [modelId])}
-          onInFlight={(modelIds) =>
-            onResolve('download_in_flight', modelIds)
-          }
+          onInFlight={(modelIds) => onResolve('download_in_flight', modelIds)}
           onCancelQueuedDownload={onCancelQueuedDownload}
         />
       )}
 
-      <ModelRoutes
-        providers={providers}
-        onConnectCloud={onConnectCloud}
-        onConnectSubscription={onConnectSubscription}
-        onBrowseHub={onBrowseHub}
-        folderRoute={
-          branch === 'none' ? (
-            <AddFolderRoute
-              onStarted={(option) => start(option, 'folder')}
-              disabled={startingKey !== null}
-            />
-          ) : null
-        }
-      />
+      <div className="flex flex-col gap-2">
+        <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+          {t('chat:replyGate.otherOptions')}
+        </span>
+        <ModelRoutes
+          providers={providers}
+          onConnectCloud={onConnectCloud}
+          onConnectSubscription={onConnectSubscription}
+          onBrowseHub={onBrowseHub}
+          folderRoute={
+            branch === 'none' ? (
+              <AddFolderRoute
+                onStarted={(option) => start(option, 'folder')}
+                disabled={startingKey !== null}
+              />
+            ) : null
+          }
+        />
+      </div>
 
       {waitingForDownload && (
         <DialogFooter>
@@ -623,10 +630,7 @@ function RecommendedDownloads({
 
   if (hasInFlight) {
     return (
-      <div
-        className="flex flex-col gap-2"
-        data-testid="reply-gate-downloading"
-      >
+      <div className="flex flex-col gap-2" data-testid="reply-gate-downloading">
         <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
           {t('chat:replyGate.downloadingSection')}
         </span>

@@ -6,6 +6,8 @@
     "authBody": "Check this provider's API key, then try again.",
     "timeoutTitle": "The model took too long",
     "timeoutBody": "The request timed out before the action completed. Try again or use a smaller step.",
+    "loopTitle": "The agent stopped a repeated action",
+    "loopBody": "The same action was no longer making progress, so Atomic Chat stopped it instead of letting it loop. Try again or describe a different approach.",
     "genericTitle": "The action could not be completed",
     "genericBody": "The model stopped before it finished. Try again; if it repeats, switch models or make the request smaller.",
     "retry": "Try again"
@@ -27,6 +29,7 @@
     "downloadingTitle": "Your model is downloading",
     "downloadingDescription": "Your message is saved and will be sent automatically as soon as the model finishes downloading and starts.",
     "downloadingSection": "Downloading model",
+    "otherOptions": "Other ways to start chatting",
     "gotIt": "Got it",
     "backgroundStarted": "Model ready. Your chat started in the background.",
     "backgroundFailed": "The queued message could not be sent. Open the chat and try again.",
@@ -93,50 +96,58 @@
       "running": "{{title}} — working…",
       "success": "{{title}} — completed",
       "error": "{{title}} — failed",
-      "denied": "{{title}} — denied"
+      "denied": "{{title}} — denied",
+      "skipped": "{{title}} — skipped repeated action"
     },
     "actions": {
       "write": {
         "running": "Creating {{target}}…",
         "success": "Created {{target}}",
         "error": "Could not create {{target}}",
-        "denied": "Creating {{target}} was denied"
+        "denied": "Creating {{target}} was denied",
+        "skipped": "Skipped repeating the same file change"
       },
       "read": {
         "running": "Reading {{target}}…",
         "success": "Read {{target}}",
         "error": "Could not read {{target}}",
-        "denied": "Reading {{target}} was denied"
+        "denied": "Reading {{target}} was denied",
+        "skipped": "Skipped repeating the same file read"
       },
       "list": {
         "running": "Looking through files…",
         "success": "Looked through files",
         "error": "Could not look through files",
-        "denied": "Looking through files was denied"
+        "denied": "Looking through files was denied",
+        "skipped": "Skipped repeating the same file lookup"
       },
       "mkdir": {
         "running": "Creating folder…",
         "success": "Created folder",
         "error": "Could not create folder",
-        "denied": "Creating folder was denied"
+        "denied": "Creating folder was denied",
+        "skipped": "Skipped repeated folder creation"
       },
       "shell": {
         "running": "Running a command…",
         "success": "Ran a command",
         "error": "Command failed",
-        "denied": "Command was denied"
+        "denied": "Command was denied",
+        "skipped": "Skipped repeating the same command"
       },
       "search": {
         "running": "Searching the web…",
         "success": "Searched the web",
         "error": "Web search failed",
-        "denied": "Web search was denied"
+        "denied": "Web search was denied",
+        "skipped": "Skipped repeating the same web search"
       },
       "fetch": {
         "running": "Reading web page…",
         "success": "Read web page",
         "error": "Could not read web page",
-        "denied": "Reading web page was denied"
+        "denied": "Reading web page was denied",
+        "skipped": "Skipped repeatedly reading the same page"
       }
     }
   },

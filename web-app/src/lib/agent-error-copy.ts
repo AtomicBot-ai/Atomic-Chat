@@ -13,7 +13,10 @@ export function agentErrorCopy(error: AgentRunError): AgentErrorCopy {
       bodyKey: 'chat:agentError.budgetBody',
     }
   }
-  if (category === 'auth' || /api key|unauthori[sz]ed|forbidden/i.test(error.message)) {
+  if (
+    category === 'auth' ||
+    /api key|unauthori[sz]ed|forbidden/i.test(error.message)
+  ) {
     return {
       titleKey: 'chat:agentError.authTitle',
       bodyKey: 'chat:agentError.authBody',
@@ -23,6 +26,12 @@ export function agentErrorCopy(error: AgentRunError): AgentErrorCopy {
     return {
       titleKey: 'chat:agentError.timeoutTitle',
       bodyKey: 'chat:agentError.timeoutBody',
+    }
+  }
+  if (category === 'loop') {
+    return {
+      titleKey: 'chat:agentError.loopTitle',
+      bodyKey: 'chat:agentError.loopBody',
     }
   }
   return {

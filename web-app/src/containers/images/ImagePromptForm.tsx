@@ -502,10 +502,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
               className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
               data-testid="image-advanced-toggle"
             >
-              <IconSettings
-                size={14}
-                className="shrink-0 text-muted-foreground"
-              />
               <span className="min-w-0 flex-1 text-xs font-medium">
                 {t('images:form.advanced')}
               </span>
@@ -520,9 +516,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           </CollapsibleTrigger>
           <CollapsibleContent className={collapsiblePanelAnimation}>
             <div className="flex flex-col gap-3 pt-3">
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                {t('images:form.advancedHint')}
-              </p>
               <AdvancedSelect
                 label={t('images:form.memory')}
                 hint={t('images:form.memoryHint')}

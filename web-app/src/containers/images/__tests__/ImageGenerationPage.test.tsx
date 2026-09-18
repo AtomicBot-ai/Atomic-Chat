@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   makeFakeDiffusion,
   makeItem,
+  makeJob,
   makeStatus,
   Q4_ID,
   type FakeDiffusion,
@@ -18,7 +19,9 @@ vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 
 // The page decides which blocks to show; the blocks have their own tests.
 vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }))
 vi.mock('../ImagePromptForm', () => ({
   ImagePromptForm: () => <div data-testid="image-prompt-form" />,
@@ -92,7 +95,9 @@ describe('ImageGenerationPage', () => {
     await renderPage()
 
     const onboarding = screen.getByTestId('image-onboarding')
-    expect(within(onboarding).getByTestId('image-setup-card')).toBeInTheDocument()
+    expect(
+      within(onboarding).getByTestId('image-setup-card')
+    ).toBeInTheDocument()
     expect(screen.queryByTestId('image-empty-state')).not.toBeInTheDocument()
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
   })
@@ -120,5 +125,20 @@ describe('ImageGenerationPage', () => {
     expect(screen.getByTestId('image-prompt-form')).toBeInTheDocument()
     expect(screen.getByTestId('image-empty-state')).toBeInTheDocument()
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
+  })
+
+  it('reserves animated canvas and gallery slots while generation is running', async () => {
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      installedArtifacts: [completeArtifact],
+      generating: true,
+      generationStartedAtMs: 1_000,
+      currentJob: makeJob({ state: 'generating' }),
+    })
+    await renderPage()
+
+    expect(screen.getByTestId('image-generation-preview')).toBeInTheDocument()
+    expect(screen.queryByTestId('image-empty-state')).not.toBeInTheDocument()
+    expect(screen.getByTestId('image-gallery-grid')).toBeInTheDocument()
   })
 })

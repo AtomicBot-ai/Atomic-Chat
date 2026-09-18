@@ -174,14 +174,14 @@ export const MessageItem = memo(
                   )
                 }
 
-                  return (
-                    <a
-                      href={href}
-                      {...props}
-                      className={cn(
-                        'font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
-                        props.className
-                      )}
+                return (
+                  <a
+                    href={href}
+                    {...props}
+                    className={cn(
+                      'font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
+                      props.className
+                    )}
                     onClick={(event) => {
                       event.preventDefault()
                       void serviceHub
@@ -413,7 +413,6 @@ export const MessageItem = memo(
           agentStatus === 'running' ||
           agentStatus === 'awaiting_approval')
       const error = block.agentSummary?.error
-      const loops = block.agentSummary?.loops ?? []
       // One live indicator at a time (ATO-529): a running call spins on its
       // own line, a thinking stream says "Thinking...", and a Chat answer
       // streaming below signals itself. "Working" only covers the gaps between
@@ -434,7 +433,7 @@ export const MessageItem = memo(
         !reasoningLive &&
         (Boolean(block.agentSummary) || !answerBelow)
 
-      if (!block.tools.length && !loops.length && !error && !showWorking) {
+      if (!block.tools.length && !error && !showWorking) {
         return null
       }
 
@@ -442,40 +441,41 @@ export const MessageItem = memo(
         <div key={block.key} className="not-prose mb-3">
           <ToolActivityGroup
             tools={block.tools}
-            loopMessages={loops.map((loop) => loop.message)}
+            active={active}
             working={showWorking}
             onRetry={onRegenerate ? handleRegenerate : undefined}
           />
-          {error && (() => {
-            const copy = agentErrorCopy(error)
-            return (
-              <div
-                role="alert"
-                className="mt-3 flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3"
-                data-testid="agent-error-card"
-              >
-                <IconAlertCircle
-                  size={18}
-                  className="mt-0.5 shrink-0 text-destructive"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{t(copy.titleKey)}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {t(copy.bodyKey)}
-                  </p>
+          {error &&
+            (() => {
+              const copy = agentErrorCopy(error)
+              return (
+                <div
+                  role="alert"
+                  className="mt-3 flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3"
+                  data-testid="agent-error-card"
+                >
+                  <IconAlertCircle
+                    size={18}
+                    className="mt-0.5 shrink-0 text-destructive"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{t(copy.titleKey)}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {t(copy.bodyKey)}
+                    </p>
+                  </div>
+                  {onRegenerate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRegenerate}
+                    >
+                      {t('chat:agentError.retry')}
+                    </Button>
+                  )}
                 </div>
-                {onRegenerate && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRegenerate}
-                  >
-                    {t('chat:agentError.retry')}
-                  </Button>
-                )}
-              </div>
-            )
-          })()}
+              )
+            })()}
         </div>
       )
     }

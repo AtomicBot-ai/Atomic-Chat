@@ -157,29 +157,34 @@ export const ImageSizeControl = memo(function ImageSizeControl({
           </DropdownMenu>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                size="icon"
-                disabled={disabled || square}
-                aria-label={t('images:size.flip')}
-                aria-pressed={value.portrait}
-                onClick={flip}
-              >
-                {/* The arrows turn with the orientation, showing which way it flips. */}
-                <IconArrowsLeftRight
-                  size={16}
-                  className={cn(
-                    'transition-transform duration-200',
-                    value.portrait && 'rotate-90'
-                  )}
-                />
-              </Button>
+              <span className="inline-flex shrink-0">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  disabled={disabled || square}
+                  aria-label={t('images:size.flip')}
+                  aria-pressed={value.portrait}
+                  className={cn((disabled || square) && 'pointer-events-none')}
+                  onClick={flip}
+                >
+                  {/* The arrows turn with the orientation, showing which way it flips. */}
+                  <IconArrowsLeftRight
+                    size={16}
+                    className={cn(
+                      'transition-transform duration-200',
+                      value.portrait && 'rotate-90'
+                    )}
+                  />
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent>
-              {value.portrait
-                ? t('images:size.toLandscape')
-                : t('images:size.toPortrait')}
+              {square
+                ? t('images:size.squareNoFlip')
+                : value.portrait
+                  ? t('images:size.toLandscape')
+                  : t('images:size.toPortrait')}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -280,7 +285,10 @@ function PresetSizeSelect({
           <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
             {megapixels(value.width, value.height)}
           </span>
-          <IconChevronDown size={16} className="shrink-0 text-muted-foreground" />
+          <IconChevronDown
+            size={16}
+            className="shrink-0 text-muted-foreground"
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -382,7 +390,10 @@ function DimensionSelect({
         >
           <IconChevronDown size={16} />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="max-h-72 w-28 overflow-y-auto">
+        <DropdownMenuContent
+          align="end"
+          className="max-h-72 w-28 overflow-y-auto"
+        >
           {options.map((edge) => (
             <DropdownMenuItem
               key={edge}

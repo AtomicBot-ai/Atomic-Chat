@@ -1,12 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  useEffect,
-  useState,
-  useRef,
-  useMemo,
-  useCallback,
-  memo,
-} from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react'
 import {
   Popover,
   PopoverContent,
@@ -80,7 +73,7 @@ const SUBSCRIPTION_PROVIDER = 'chatgpt'
  * owns its own scrollbar, like Welcome, so a short list never leaves a blank
  * floor while a long list never pushes the routes out of view.
  */
-const EMPTY_PANEL_CLASS = 'h-[min(22rem,calc(100dvh-12rem))]'
+const EMPTY_PANEL_CLASS = 'max-h-[min(22rem,calc(100dvh-12rem))]'
 const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(22rem,calc(100dvh-12rem))]'
 
 /**
@@ -791,9 +784,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           className
         )}
       >
-        <div
-          className="inline-flex h-7 w-full min-w-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70"
-        >
+        <div className="inline-flex h-7 w-full min-w-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70">
           <ActiveModelIndicator className="ml-1.5" />
           <PopoverTrigger asChild>
             <button
@@ -954,10 +945,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                         >
                           <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm" title={download.id}>
-                              {qualifiedModelDisplayName({ id: download.id } as Model)}
+                            <div
+                              className="truncate text-sm"
+                              title={download.id}
+                            >
+                              {qualifiedModelDisplayName({
+                                id: download.id,
+                              } as Model)}
                             </div>
-                            <div className="truncate text-xs text-muted-foreground" title={formatDownloadReadout(t, download)}>
+                            <div
+                              className="truncate text-xs text-muted-foreground"
+                              title={formatDownloadReadout(t, download)}
+                            >
                               {formatDownloadReadout(t, download)}
                             </div>
                           </div>
@@ -1143,7 +1142,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 className="text-sm truncate"
                                 title={searchableModel.model.id}
                               >
-                                {qualifiedModelDisplayName(searchableModel.model)}
+                                {qualifiedModelDisplayName(
+                                  searchableModel.model
+                                )}
                               </span>
                               {searchableModel.model.source && (
                                 <ModelSourceBadge
@@ -1189,10 +1190,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 {pickerEmpty ? (
                   <ModelPickerEmptyState
                     query={searchValue}
+                    onBrowseHuggingFace={() => searchInputRef.current?.focus()}
                     onConnectCloud={() => openCloudDialog()}
                     onConnectSubscription={() =>
                       openCloudDialog(SUBSCRIPTION_PROVIDER)
                     }
+                    onImportLocal={() => {
+                      setOpen(false)
+                      void navigate({ to: route.settings.general })
+                    }}
                   />
                 ) : (
                   searchValue && (
@@ -1204,7 +1210,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 )}
               </div>
             </div>
-
           </div>
         )}
       </PopoverContent>

@@ -620,6 +620,20 @@ describe('ReplyModelGate', () => {
     ).toHaveClass(ONBOARDING_ROW_ACTION_CLASS)
   })
 
+  it('returns to chat after starting a new download', async () => {
+    const { onResolved, onOpenChange } = renderGate([unconnectedCloud()])
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
+      })
+    )
+
+    expect(onResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'download', branch: 'none' })
+    )
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
   describe('the recommended list', () => {
     // The Hub's picks in manifest order: a family's sizes together, the
     // largest first — the order that on an 18 GiB Mac would head the list

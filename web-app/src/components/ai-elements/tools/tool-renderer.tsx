@@ -22,7 +22,7 @@ import { WebSearchToolRenderer } from './renderers/web-search-tool-renderer'
 import { WebFetchToolRenderer } from './renderers/web-fetch-tool-renderer'
 import { GenericToolRenderer } from './renderers/generic-tool-renderer'
 
-function toolIcon(
+export function toolIcon(
   toolName: string,
   kind: ToolPresentation['kind']
 ): LucideIcon {
@@ -52,7 +52,11 @@ export function ToolRenderer({
   const { t } = useTranslation('chat')
   const running = state === 'input-streaming' || state === 'input-available'
   const denied = (state as string) === 'output-denied'
-  const failed = state === 'output-error' || denied
+  const loopSkipped =
+    denied &&
+    presentation.kind === 'generic' &&
+    presentation.deniedReason === 'tool-loop'
+  const failed = state === 'output-error' || (denied && !loopSkipped)
   const Icon = running ? Loader2 : toolIcon(toolName, presentation.kind)
   const label = toolActivityLabel(toolName, presentation, state, t)
 

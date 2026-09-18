@@ -605,21 +605,26 @@ pub async fn run_turn(
             }
         }
         if let Some((tool, count, detector)) = breaker {
-            let reply = format_forced_loop_reply(&tool, count);
+            let diagnostic = format_forced_loop_reply(&tool, count);
+            log::warn!("Agent loop guard stopped the turn: {diagnostic}");
+            let message =
+                "The agent stopped after repeating the same action without making progress."
+                    .to_string();
             emit(AgentEvent::LoopDetected {
                 level: LoopLevel::Breaker,
                 detector,
-                message: reply.clone(),
+                message: message.clone(),
             })?;
-            emit(AgentEvent::AssistantReply {
-                text: reply.clone(),
+            emit(AgentEvent::StepError {
+                message,
+                category: "loop".into(),
             })?;
             emit(AgentEvent::TurnFinished {
-                reason: "reply".into(),
+                reason: "failed".into(),
                 step_count: step_index + 1,
                 usage: usage.finish(),
             })?;
-            finish_session(input.session, &loaded_tools, &loaded_skills, Some(&reply)).await;
+            finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
             return Ok(());
         }
 

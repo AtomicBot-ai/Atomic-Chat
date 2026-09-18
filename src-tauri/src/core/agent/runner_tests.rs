@@ -1772,7 +1772,16 @@ async fn repeated_no_progress_calls_trip_the_breaker() {
             ..
         }
     )));
-    assert_eq!(finished_reason(&run.events), Some(("reply", 7)));
+    assert!(run.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::StepError { category, message }
+            if category == "loop" && !message.contains("os.fs.read")
+    )));
+    assert!(!run
+        .events
+        .iter()
+        .any(|event| matches!(event, AgentEvent::AssistantReply { .. })));
+    assert_eq!(finished_reason(&run.events), Some(("failed", 7)));
 }
 
 #[tokio::test]
