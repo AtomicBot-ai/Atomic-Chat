@@ -21,6 +21,7 @@ import {
   getBaselineDiffusionCatalog,
   getCachedDiffusionCatalog,
   isSafeSideFilename,
+  mergeBundledDiffusionFamilies,
   parseDiffusionCatalog,
   sanitizeDiffusionFamily,
   SUPPORTED_SCHEMA_VERSION,
@@ -224,6 +225,15 @@ describe('strict parsing', () => {
 })
 
 describe('baseline and lookups', () => {
+  it('keeps remote definitions and appends bundled families a released client knows', () => {
+    const remote = parseDiffusionCatalog(manifest())
+    const merged = mergeBundledDiffusionFamilies(remote)
+    expect(merged.families[0].name).toBe('Z-Image Turbo')
+    expect(merged.families.map((entry) => entry.id)).toContain(
+      'flux.1-uncensored'
+    )
+  })
+
   it('bundles a catalog that passes its own validation', () => {
     const baseline = getBaselineDiffusionCatalog()
     expect(baseline.schema_version).toBe(SUPPORTED_SCHEMA_VERSION)

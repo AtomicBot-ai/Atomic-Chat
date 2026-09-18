@@ -541,6 +541,24 @@ export const getBaselineDiffusionCatalog = (): DiffusionCatalog =>
   parseDiffusionCatalog(BASELINE_DIFFUSION_CATALOG)
 
 /**
+ * A release may teach the client a new family before the remote manifest PR is
+ * published. Keep the remote definition for every id it knows, then append
+ * only bundled ids it does not know yet. Applied solely to the production URL
+ * so tests, previews and explicit catalog overrides remain exact.
+ */
+export const mergeBundledDiffusionFamilies = (
+  catalog: DiffusionCatalog
+): DiffusionCatalog => {
+  const known = new Set(catalog.families.map((family) => family.id))
+  const bundled = getBaselineDiffusionCatalog().families.filter(
+    (family) => !known.has(family.id)
+  )
+  return bundled.length === 0
+    ? catalog
+    : { ...catalog, families: [...catalog.families, ...bundled] }
+}
+
+/**
  * Resolve the catalog using the priority chain:
  *
  *   1. Fresh cache (when not forcing).
@@ -572,10 +590,14 @@ export const fetchDiffusionCatalog = async (
     console.info(
       `[diffusion-catalog-registry] Fetching ${fetchUrl} (timeout ${timeoutMs}ms)`
     )
-    const catalog = await withHardTimeout(
+    const fetchedCatalog = await withHardTimeout(
       fetchCatalog(fetchUrl, controller.signal),
       timeoutMs
     )
+    const catalog =
+      url === DIFFUSION_CATALOG_URL
+        ? mergeBundledDiffusionFamilies(fetchedCatalog)
+        : fetchedCatalog
     const fetchedAt = Date.now()
     writeCache(catalog, fetchedAt)
     console.info(
