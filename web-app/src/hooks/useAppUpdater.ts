@@ -23,17 +23,21 @@ export interface UpdateState {
 }
 
 const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
+export const QA_UPDATE_COMPLETE_KEY = 'atomic_qa_update_complete_version'
 
 const PREVIEW_UPDATE_INFO: UpdateInfo = {
-  version: '2.0.39-fixes-preview',
-  body: `## Atomic Chat 2.0.39 fixes
+  version: '2.0.41-preview',
+  body: `## Atomic Chat 2.0.41 preview
 
-- Unified Welcome, Select Model and no-model reply flows
-- Stable model downloads, cancellation and loading feedback
-- Cleaner model names, fit badges and provider controls
-- Connector, project, tool-call and reasoning layout fixes
-- Web search recovery and expanded release notes`,
+- Rebuilt local image generation setup and model picker
+- Automatic recovery after image GPU failures
+- Smoother reasoning, tool activity and sidebar resizing
+- Clearer approvals, downloads and project feedback
+- New hardware-aware and uncensored model options`,
 }
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
 /// Running app version, preferring what Tauri reports over the build-time
 /// define — a `yarn dev` web session has no Tauri API at all.
@@ -226,6 +230,39 @@ export const useAppUpdater = () => {
     }
 
     if (!updateState.updateInfo) return
+
+    if (FORCE_UPDATE_PREVIEW) {
+      const totalBytes = 48 * 1024 * 1024
+      setUpdateState((prev) => ({
+        ...prev,
+        isDownloading: true,
+        downloadProgress: 0,
+        downloadedBytes: 0,
+        totalBytes,
+      }))
+      for (const progress of [0.12, 0.38, 0.72, 1]) {
+        await wait(350)
+        const downloadedBytes = Math.round(totalBytes * progress)
+        setUpdateState((prev) => ({
+          ...prev,
+          isDownloading: progress < 1,
+          downloadProgress: progress,
+          downloadedBytes,
+        }))
+        events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+          progress,
+          downloadedBytes,
+          totalBytes,
+        })
+      }
+      localStorage.setItem(
+        QA_UPDATE_COMPLETE_KEY,
+        updateState.updateInfo.version
+      )
+      await wait(250)
+      window.location.reload()
+      return
+    }
 
     try {
       setUpdateState((prev) => ({

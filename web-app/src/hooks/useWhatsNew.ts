@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLastSeenVersion } from './useLastSeenVersion'
+import { QA_UPDATE_COMPLETE_KEY } from './useAppUpdater'
 
 const GITHUB_REPO = 'AtomicBot-ai/Atomic-Chat'
+const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
+
+const QA_PREVIEW_RELEASE: GithubRelease = {
+  tag_name: 'v2.0.41-preview',
+  name: 'Atomic Chat 2.0.41 preview',
+  body: `## Update complete
+
+- Image generation setup is clearer and faster
+- Failed GPU renders recover without corrupting the gallery
+- Reasoning, tools and sidebars move more smoothly
+- Model downloads and approvals are easier to understand`,
+}
 
 const BUNDLED_RELEASES: Record<string, GithubRelease> = {
   '2.0.40': {
@@ -122,6 +135,16 @@ export const useWhatsNew = (): WhatsNewState => {
     didRunRef.current = true
 
     const run = async () => {
+      if (FORCE_UPDATE_PREVIEW) {
+        const completed = localStorage.getItem(QA_UPDATE_COMPLETE_KEY)
+        if (completed === '2.0.41-preview') {
+          setCurrentVersion(completed)
+          setRelease(QA_PREVIEW_RELEASE)
+          setOpen(true)
+        }
+        return
+      }
+
       const version = await getRuntimeVersion()
       setCurrentVersion(version)
 
@@ -165,6 +188,9 @@ export const useWhatsNew = (): WhatsNewState => {
 
   const acknowledge = useCallback(() => {
     setOpen(false)
+    if (FORCE_UPDATE_PREVIEW) {
+      localStorage.removeItem(QA_UPDATE_COMPLETE_KEY)
+    }
     if (currentVersion) setLastSeenVersion(currentVersion)
   }, [currentVersion, setLastSeenVersion])
 

@@ -117,7 +117,7 @@ describe('DialogAppUpdater', () => {
     await user.click(screen.getByRole('button', { name: 'updater:update' }))
 
     expect(downloadAndInstallUpdate).toHaveBeenCalledTimes(1)
-    expect(setRemindMeLater).toHaveBeenCalledWith(true)
+    expect(setRemindMeLater).not.toHaveBeenCalled()
   })
 
   it('puts the banner away on "Remind me later" and on the ×', async () => {

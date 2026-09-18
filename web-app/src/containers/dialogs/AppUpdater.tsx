@@ -7,6 +7,7 @@ import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { parseReleaseHighlights } from '@/lib/releaseHighlights'
+import { formatProgressPair } from '@/lib/downloadFormat'
 import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
 /// Same repository the "What's new" dialog and the release-notes store read.
@@ -19,7 +20,6 @@ const releaseNotesUrl = (version: string): string =>
   `${GITHUB_RELEASES_BASE}/${version.startsWith('v') ? version : `v${version}`}`
 
 const REMARK_PLUGINS = [remarkGfm]
-const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
 
 /// Release bodies are plain GitHub-flavoured markdown: paragraphs, headings,
 /// bullets, links, inline code. Rendered with bare `react-markdown` rather
@@ -73,9 +73,9 @@ const DialogAppUpdater = () => {
   )
 
   // Unfolded notes belong to one offer: a different version folds them back.
-  const [notesOpen, setNotesOpen] = useState(FORCE_UPDATE_PREVIEW)
+  const [notesOpen, setNotesOpen] = useState(false)
   useEffect(() => {
-    setNotesOpen(FORCE_UPDATE_PREVIEW)
+    setNotesOpen(false)
   }, [newVersion])
 
   const openExternal = useCallback(
@@ -112,7 +112,6 @@ const DialogAppUpdater = () => {
 
   const handleUpdate = () => {
     downloadAndInstallUpdate()
-    setRemindMeLater(true)
   }
 
   const handleOpenRelease = () => openExternal(releaseNotesUrl(newVersion))
@@ -133,6 +132,14 @@ const DialogAppUpdater = () => {
       title={t('updater:app.title')}
       fromVersion={updateState.currentVersion || null}
       toVersion={newVersion}
+      subtitle={
+        updateState.isDownloading
+          ? `${Math.round(updateState.downloadProgress * 100)}% · ${formatProgressPair(
+              updateState.downloadedBytes,
+              updateState.totalBytes
+            )}`
+          : undefined
+      }
       highlights={highlights.items}
       remainingLabel={
         highlights.remaining > 0
