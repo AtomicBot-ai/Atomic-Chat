@@ -787,7 +787,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         data-testid="model-picker-pill-shell"
         className={cn(
           'inline-flex h-7 shrink-0 overflow-hidden rounded-full',
-          compact ? 'w-20' : 'w-44',
+          compact ? 'w-20' : selectedModel?.id ? 'w-32' : 'w-24',
           className
         )}
       >
@@ -802,8 +802,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               aria-label={compact ? displayModel : undefined}
               data-test-id="model-picker-trigger"
               className={cn(
-                'inline-flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-full pr-2',
-                selectedModel?.id ? 'pl-1.5' : 'pl-2.5'
+                'inline-flex h-full min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-1.5'
               )}
             >
               {provider && (

@@ -188,9 +188,6 @@ export const useWhatsNew = (): WhatsNewState => {
 
   const acknowledge = useCallback(() => {
     setOpen(false)
-    if (FORCE_UPDATE_PREVIEW) {
-      localStorage.removeItem(QA_UPDATE_COMPLETE_KEY)
-    }
     if (currentVersion) setLastSeenVersion(currentVersion)
   }, [currentVersion, setLastSeenVersion])
 

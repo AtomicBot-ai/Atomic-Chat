@@ -23,7 +23,7 @@ export interface UpdateState {
 }
 
 const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
-export const QA_UPDATE_COMPLETE_KEY = 'atomic_qa_update_complete_version'
+export const QA_UPDATE_COMPLETE_KEY = 'atomic_qa_update_complete_version_v2'
 
 const PREVIEW_UPDATE_INFO: UpdateInfo = {
   version: '2.0.41-preview',
@@ -54,9 +54,15 @@ const readCurrentVersion = async (): Promise<string> => {
 
 export const useAppUpdater = () => {
   const { t } = useTranslation()
+  const previewAlreadyInstalled =
+    FORCE_UPDATE_PREVIEW &&
+    localStorage.getItem(QA_UPDATE_COMPLETE_KEY) === PREVIEW_UPDATE_INFO.version
   const [updateState, setUpdateState] = useState<UpdateState>({
-    isUpdateAvailable: FORCE_UPDATE_PREVIEW,
-    updateInfo: FORCE_UPDATE_PREVIEW ? PREVIEW_UPDATE_INFO : null,
+    isUpdateAvailable: FORCE_UPDATE_PREVIEW && !previewAlreadyInstalled,
+    updateInfo:
+      FORCE_UPDATE_PREVIEW && !previewAlreadyInstalled
+        ? PREVIEW_UPDATE_INFO
+        : null,
     isDownloading: false,
     downloadProgress: 0,
     downloadedBytes: 0,
@@ -114,14 +120,17 @@ export const useAppUpdater = () => {
       // startup check must not immediately replace its preview with "nothing
       // available" before the tester can inspect the banner.
       if (FORCE_UPDATE_PREVIEW) {
+        const alreadyInstalled =
+          localStorage.getItem(QA_UPDATE_COMPLETE_KEY) ===
+          PREVIEW_UPDATE_INFO.version
         const previewState = {
-          isUpdateAvailable: true,
+          isUpdateAvailable: !alreadyInstalled,
           remindMeLater: false,
-          updateInfo: PREVIEW_UPDATE_INFO,
+          updateInfo: alreadyInstalled ? null : PREVIEW_UPDATE_INFO,
         }
         setUpdateState((prev) => ({ ...prev, ...previewState }))
         syncStateToOtherInstances(previewState)
-        return PREVIEW_UPDATE_INFO
+        return alreadyInstalled ? null : PREVIEW_UPDATE_INFO
       }
 
       try {
