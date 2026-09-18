@@ -5,6 +5,8 @@ pub mod artifact;
 pub mod atomic_core;
 pub mod auth;
 pub mod downloads;
+#[cfg(feature = "e2e")]
+pub mod e2e;
 pub mod extensions;
 pub mod filesystem;
 pub mod http;

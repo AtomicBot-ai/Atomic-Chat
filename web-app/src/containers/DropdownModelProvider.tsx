@@ -874,6 +874,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           </div>
 
                           <div
+                            data-test-id={`provider-settings-${providerInfo.provider}`}
                             className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
                             onClick={(e) => {
                               e.stopPropagation()

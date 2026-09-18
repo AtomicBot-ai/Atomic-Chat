@@ -329,7 +329,8 @@ lint: install-and-build
 .PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
 	typecheck verify-fast verify test-quality test-hardening-contracts \
 	test-telemetry-props test-coverage-critical capture-capabilities capture-hw-profile \
-	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
+	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants \
+	build-app-e2e test-app-e2e test-app-e2e-live
 
 test-web:
 	yarn test
@@ -496,6 +497,83 @@ ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-app-core
 test-core-live:
 	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" cargo test --manifest-path src-tauri/Cargo.toml \
 		-p Atomic-Chat --features test-tauri --lib core::atomic_core::live_tests -- --test-threads=1
+
+# Desktop UI end-to-end tests: the real app binary, the real core and a fake
+# llama-server, driven through a WebDriver server that exists only in a build
+# with `--features e2e`. See tests/e2e/ and the ADR on desktop e2e.
+#
+# The build gets its own target directory. At startup the app reaps orphaned
+# backends under its resource dir, which for an unbundled binary is the cargo
+# output dir — sharing `target/debug` would let a test run kill the backends of
+# a `yarn dev` session. The path must keep `target` as its third-last component
+# or Tauri stops treating the binary's directory as the resource dir.
+#
+# No analytics or crash-reporting key reaches the binary, the registries point
+# at a closed port so the bundled seeds are used, and the web build calls the
+# local tsc/vite directly so the target does not depend on which yarn is on PATH.
+E2E_TARGET_DIR := $(CURDIR)/src-tauri/target/e2e
+E2E_APP_BIN := $(E2E_TARGET_DIR)/debug/Atomic-Chat
+E2E_DEAD_URL := http://127.0.0.1:9
+build-app-e2e:
+	@test -z "$$(ls src-tauri/.env web-app/.env* 2>/dev/null)" || \
+		(echo "build-app-e2e: remove src-tauri/.env and web-app/.env* first; their keys would be baked into the test build" && exit 1)
+	@oldest=$$(ls -tr src-tauri/resources/pre-install/*.tgz | head -1); \
+	stale=$$(find extensions/*/src extensions/shared -type f -newer "$$oldest" 2>/dev/null | head -5); \
+	if [ -n "$$stale" ] && [ "$(ALLOW_STALE_EXTENSIONS)" != "1" ]; then \
+		echo "build-app-e2e: extension sources are newer than the packed extensions the app installs:"; \
+		echo "$$stale"; \
+		echo "The app unpacks src-tauri/resources/pre-install/*.tgz without a version check, so the tests would"; \
+		echo "run old extension code. Run \`yarn build:extensions && yarn copy:assets:tauri\`, or pass"; \
+		echo "ALLOW_STALE_EXTENSIONS=1 for a scenario that does not depend on them."; \
+		exit 1; \
+	fi
+	@for packed in src-tauri/resources/pre-install/*.tgz; do \
+		if tar -xzOf "$$packed" package/dist/index.js 2>/dev/null | grep -q '@janhq/tauri-plugin-[a-z-]*-api'; then \
+			echo "build-app-e2e: $$packed imports a Tauri plugin API it did not bundle, so the webview cannot load it."; \
+			echo "The plugin JS was not built when the extensions were: run \`yarn build:tauri:plugin:api\` first,"; \
+			echo "then \`yarn build:extensions && yarn copy:assets:tauri\`."; \
+			exit 1; \
+		fi; \
+	done
+	env -u CI CARGO_TARGET_DIR="$(E2E_TARGET_DIR)" \
+		POSTHOG_KEY= POSTHOG_HOST= GA_MEASUREMENT_ID= SENTRY_DSN= SENTRY_DSN_DESKTOP= \
+		SENTRY_AUTH_TOKEN= SENTRY_ORG= SENTRY_PROJECT_FRONTEND= AUTO_UPDATER_DISABLED=true \
+		VITE_MODEL_CATALOG_URL=$(E2E_DEAD_URL)/catalog.json \
+		VITE_MODEL_CATALOG_INDEX_URL=$(E2E_DEAD_URL)/index.json \
+		VITE_PROVIDER_REGISTRY_URL=$(E2E_DEAD_URL)/providers.json \
+		VITE_RECOMMENDED_MODELS_REGISTRY_URL=$(E2E_DEAD_URL)/recommended.json \
+		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_DEAD_URL)/staff-picks.json \
+		./node_modules/.bin/tauri build --debug --no-bundle --features e2e \
+		--config src-tauri/tauri.e2e.conf.json
+
+# Refuses a binary older than what it was built from: a stale one may predate an
+# isolation fix and write into the developer's own profile.
+test-app-e2e:
+	@test -x "$(E2E_APP_BIN)" || (echo "test-app-e2e: no e2e build; run \`make build-app-e2e\`" && exit 2)
+	@test -x "$(ATOMIC_CORE_BIN)" || (echo "test-app-e2e: no core at ATOMIC_CORE_BIN=$(ATOMIC_CORE_BIN)" && exit 2)
+	@stale=$$(find src-tauri/src src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/tauri.macos.conf.json \
+		src-tauri/tauri.e2e.conf.json web-app/src -newer "$(E2E_APP_BIN)" -type f 2>/dev/null | head -5); \
+	if [ -n "$$stale" ]; then \
+		echo "test-app-e2e: the e2e build is older than its sources; run \`make build-app-e2e\`:"; echo "$$stale"; exit 2; \
+	fi
+	@test -d tests/e2e/node_modules || (cd tests/e2e && npm install --no-audit --no-fund)
+	cd tests/e2e && ATOMIC_E2E_APP_BIN="$(E2E_APP_BIN)" ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" \
+		./node_modules/.bin/vitest run
+
+# The one scenario that uses a real llama-server and a real model instead of
+# the scripted backend. Opt-in: point the two variables at a backend directory
+# (the one holding `build/`) and a GGUF file. Both are only read — the backend
+# is copied into the test profile, the model is referenced where it lies.
+ATOMIC_E2E_LLAMA_BACKEND_DIR ?=
+ATOMIC_E2E_MODEL_GGUF ?=
+test-app-e2e-live:
+	@test -x "$(E2E_APP_BIN)" || (echo "test-app-e2e-live: no e2e build; run \`make build-app-e2e\`" && exit 2)
+	@test -x "$(ATOMIC_CORE_BIN)" || (echo "test-app-e2e-live: no core at ATOMIC_CORE_BIN=$(ATOMIC_CORE_BIN)" && exit 2)
+	@test -d "$(ATOMIC_E2E_LLAMA_BACKEND_DIR)/build" || (echo "test-app-e2e-live: ATOMIC_E2E_LLAMA_BACKEND_DIR must hold a llama.cpp backend's build/ directory" && exit 2)
+	@test -f "$(ATOMIC_E2E_MODEL_GGUF)" || (echo "test-app-e2e-live: ATOMIC_E2E_MODEL_GGUF must be a GGUF file" && exit 2)
+	cd tests/e2e && ATOMIC_E2E_APP_BIN="$(E2E_APP_BIN)" ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" \
+		ATOMIC_E2E_LLAMA_BACKEND_DIR="$(ATOMIC_E2E_LLAMA_BACKEND_DIR)" ATOMIC_E2E_MODEL_GGUF="$(ATOMIC_E2E_MODEL_GGUF)" \
+		./node_modules/.bin/vitest run desktop/live-model.spec.ts
 
 mutants:
 	bash scripts/test-cargo-mutants.sh
