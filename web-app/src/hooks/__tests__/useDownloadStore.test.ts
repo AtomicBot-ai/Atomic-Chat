@@ -440,6 +440,7 @@ describe('useDownloadStore', () => {
 
       const entry = result.current.downloads['model-1']
       expect(entry).toBeDefined()
+      expect(entry.name).toBe('model-1')
       expect(entry.total).toBe(0)
       expect(entry.stage?.kind).toBe('connecting')
     })
