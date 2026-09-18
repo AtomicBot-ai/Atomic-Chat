@@ -21,6 +21,9 @@ reqwest = { version = "0.11", features = ["json", "native-tls"] }
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
 

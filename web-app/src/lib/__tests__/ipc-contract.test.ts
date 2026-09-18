@@ -24,17 +24,44 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'check_for_app_updates',
-  'get_local_http',
   'is_update_available',
-  'post_local_http',
+  // Best-effort crash-reporting scope sync. Every call site in
+  // `lib/sentry.ts` swallows a rejection, and `PlatformFeature.ANALYTICS` is
+  // false on mobile, so their absence there changes nothing.
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',
-  'stream_local_http',
+  // Settings → Remote & LAN. Desktop only on purpose: the Cloudflare tunnel is
+  // a bundled `cloudflared` sidecar, and both cards expose the Local API
+  // Server, which mobile does not have.
+  // `PlatformFeature.LOCAL_API_SERVER` gates the UI to match.
+  'get_lan_addresses',
+  'get_remote_access_status',
+  'start_remote_access',
+  'stop_remote_access',
 ])
 const EXPECTED_MOBILE_ONLY = new Set(['abort_remote_stream'])
+
+/**
+ * Commands that shared (non-platform-gated) frontend code invokes, and that
+ * must therefore exist on BOTH handlers.
+ *
+ * ATO — #293: `providers/tauri.ts` routes every provider's model listing
+ * through `get_local_http` with no platform branch, but the command was
+ * registered only on desktop — so a custom OpenAI-compatible provider listed
+ * nothing at all on iOS. The "registers every frontend app command" check
+ * below compares against the *union* of both handlers, which is exactly why
+ * it shipped; this set closes that hole.
+ */
+const MOBILE_REQUIRED = [
+  'get_local_http',
+  'post_local_http',
+  'stream_local_http',
+  'test_proxy_connection',
+]
 const EXPECTED_PLUGIN_IDS = [
   'atomic-audio',
+  'atomic-diffusion',
   'foundation-models',
   'hardware',
   'llamacpp',
@@ -309,6 +336,18 @@ describe('Tauri IPC contract', () => {
     expect(
       sorted(setDifference(appHandlers.mobile, appHandlers.desktop))
     ).toEqual(sorted(EXPECTED_MOBILE_ONLY))
+  })
+
+  it('registers the commands shared frontend code needs on mobile too', () => {
+    const missing = MOBILE_REQUIRED.filter(
+      (command) => !appHandlers.mobile.has(command)
+    )
+    expect(sorted(missing)).toEqual([])
+    // And they are not accidentally mobile-only either.
+    const missingOnDesktop = MOBILE_REQUIRED.filter(
+      (command) => !appHandlers.desktop.has(command)
+    )
+    expect(sorted(missingOnDesktop)).toEqual([])
   })
 
   it('registers every frontend app command', () => {

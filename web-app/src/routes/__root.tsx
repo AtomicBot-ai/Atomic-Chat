@@ -3,6 +3,8 @@ import { createRootRoute, Outlet } from '@tanstack/react-router'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
+import EngineUpdateBanner from '@/containers/dialogs/EngineUpdateBanner'
+import ModelLoadSnackbar from '@/containers/ModelLoadSnackbar'
 import SuboptimalBackendDialog from '@/containers/dialogs/SuboptimalBackendDialog'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
@@ -20,10 +22,13 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
+import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
 import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
+import ImageSetupDialog from '@/containers/dialogs/ImageSetupDialog'
+import { ImageGenerationProvider } from '@/providers/ImageGenerationProvider'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
@@ -57,6 +62,10 @@ const AppLayout = () => {
   // Feeds live server / model / RAM state into the desktop system tray.
   // No-op outside macOS and Windows Tauri builds (see hook implementation).
   useTrayStatusSync()
+  // Mirrors the Cloudflare tunnel's status for Settings → Remote & LAN and
+  // starts the tunnel with the Local API Server when asked to. No-op wherever
+  // there is no Local API Server (mobile, web).
+  useRemoteAccessSync()
   const isSetupCompleted = useSetupCompleted()
 
   return (
@@ -71,6 +80,13 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
+        {/* ATO-528/531: offers a new inference-engine build. Gated on
+            the same flag as <BackendUpdater /> — an engine update is
+            noise while onboarding is still picking the first one. */}
+        {isSetupCompleted && <EngineUpdateBanner />}
+        {/* ATO-530: a load the user is waiting on, top-right — the opposite
+            corner from the update banners above, so the two never meet. */}
+        {isSetupCompleted && <ModelLoadSnackbar />}
         {/* Unlike the recommendation dialogs above, this dialog only opens
             after ChatInput dispatches a mismatch prompt. Keep it mounted for
             upgraded/legacy users whose setup-completed flag is absent. */}
@@ -93,6 +109,10 @@ const AppLayout = () => {
             the component that registers the download event listeners, so a
             single mount keeps them registered exactly once. */}
         <DownloadManagement />
+        {/* Binds the image-generation store to the native plugin for the life
+            of the app: a job lives in the plugin, so the run loop and the
+            event subscription must outlive the Images page. */}
+        <ImageGenerationProvider />
       </SidebarProvider>
     </div>
   )
@@ -168,6 +188,7 @@ function RootLayout() {
           <AgentApprovalDialog />
           <AgentFolderAccessDialog />
           <VoiceSetupDialog />
+          <ImageSetupDialog />
           <AttachmentIngestionDialog />
         </TranslationProvider>
       </ServiceHubProvider>

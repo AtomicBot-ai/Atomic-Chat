@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-gallery-items"
+description = "Enables the delete_gallery_items command without any pre-configured scope."
+commands.allow = ["delete_gallery_items"]
+
+[[permission]]
+identifier = "deny-delete-gallery-items"
+description = "Denies the delete_gallery_items command without any pre-configured scope."
+commands.deny = ["delete_gallery_items"]

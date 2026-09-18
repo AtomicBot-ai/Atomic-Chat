@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-export-gallery-item"
+description = "Enables the export_gallery_item command without any pre-configured scope."
+commands.allow = ["export_gallery_item"]
+
+[[permission]]
+identifier = "deny-export-gallery-item"
+description = "Denies the export_gallery_item command without any pre-configured scope."
+commands.deny = ["export_gallery_item"]

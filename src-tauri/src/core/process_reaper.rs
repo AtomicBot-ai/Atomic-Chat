@@ -27,7 +27,7 @@ use tauri::{Manager, Runtime};
 use crate::core::app::commands::get_jan_data_folder_path;
 
 /// Executable file-name prefixes for the backends we manage.
-const BACKEND_NAME_PREFIXES: [&str; 2] = ["llama-server", "mlx-server"];
+const BACKEND_NAME_PREFIXES: [&str; 3] = ["llama-server", "mlx-server", "sd-server"];
 
 /// How long to wait after `SIGTERM` before escalating survivors to `SIGKILL`.
 const GRACE_PERIOD: Duration = Duration::from_millis(1500);

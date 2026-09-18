@@ -10,6 +10,18 @@ import {
 } from '@/constants/localStorage'
 import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
+import { normalizeRemoteAccessStatus } from '@/lib/remoteLan'
+import type { RemoteAccessStatus } from '@/types/remoteAccess'
+
+/**
+ * A reply that is not a status is a contract break, not "off": reject with a
+ * code so the card reports it instead of showing a tunnel state it made up.
+ */
+function expectRemoteAccessStatus(raw: unknown): RemoteAccessStatus {
+  const status = normalizeRemoteAccessStatus(raw)
+  if (!status) throw new Error('malformed_status')
+  return status
+}
 
 export class TauriAppService extends DefaultAppService {
   async factoryReset(): Promise<void> {
@@ -112,5 +124,32 @@ export class TauriAppService extends DefaultAppService {
 
   async readYaml<T = unknown>(path: string): Promise<T> {
     return await invoke<T>('read_yaml', { path })
+  }
+
+  // Desktop-only commands; `PlatformFeature.LOCAL_API_SERVER` gates every
+  // caller, so mobile never reaches them.
+  async getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+    return expectRemoteAccessStatus(
+      await invoke<unknown>('get_remote_access_status')
+    )
+  }
+
+  async startRemoteAccess(): Promise<RemoteAccessStatus> {
+    return expectRemoteAccessStatus(
+      await invoke<unknown>('start_remote_access')
+    )
+  }
+
+  async stopRemoteAccess(): Promise<RemoteAccessStatus> {
+    return expectRemoteAccessStatus(await invoke<unknown>('stop_remote_access'))
+  }
+
+  async getLanAddresses(): Promise<string[]> {
+    const addresses = await invoke<unknown>('get_lan_addresses')
+    return Array.isArray(addresses)
+      ? addresses.filter(
+          (address): address is string => typeof address === 'string'
+        )
+      : []
   }
 }

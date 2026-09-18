@@ -122,6 +122,15 @@ export async function loadLlamaModel(
   })
 }
 
+/**
+ * Stop a load of `modelId` that has not reached readiness: its server is
+ * killed and the pending `loadLlamaModel` rejects with MODEL_LOAD_CANCELLED.
+ * Resolves `false` when no load of that model is in flight in the plugin.
+ */
+export async function cancelLlamaModelLoad(modelId: string): Promise<boolean> {
+  return await invoke('plugin:llamacpp-upstream|cancel_llama_model_load', { modelId })
+}
+
 export async function unloadLlamaModel(pid: number): Promise<UnloadResult> {
   return await invoke('plugin:llamacpp-upstream|unload_llama_model', { pid })
 }

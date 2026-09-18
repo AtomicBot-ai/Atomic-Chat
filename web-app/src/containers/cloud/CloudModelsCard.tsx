@@ -12,6 +12,7 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { getModelDisplayName } from '@/lib/utils'
+import { useProviderModelFetchStore } from '@/stores/provider-model-fetch-store'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 
 type CloudModelsCardProps = {
@@ -36,6 +37,13 @@ export function CloudModelsCard({
 }: CloudModelsCardProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
+  // ATO — #293: why the list is empty matters. A rejected key, an unreachable
+  // base URL and a genuinely empty catalog all rendered identically, and the
+  // only report of the difference was a toast the user had already dismissed
+  // (or never saw, having arrived from the model picker).
+  const fetchError = useProviderModelFetchStore(
+    (state) => state.errors[provider.provider]
+  )
 
   const models = useMemo(
     () => provider.models.filter((m) => m.id !== EMBEDDING_MODEL_ID),
@@ -107,9 +115,15 @@ export function CloudModelsCard({
       }
     >
       {models.length === 0 ? (
-        <p className="py-2 text-muted-foreground">
-          {t('providers:noModelFoundDesc')}
-        </p>
+        fetchError ? (
+          <p className="py-2 text-destructive" role="alert">
+            {fetchError}
+          </p>
+        ) : (
+          <p className="py-2 text-muted-foreground">
+            {t('providers:noModelFoundDesc')}
+          </p>
+        )
       ) : visible.length === 0 ? (
         <p className="py-2 text-muted-foreground">
           {t('cloud:models.noResults')}

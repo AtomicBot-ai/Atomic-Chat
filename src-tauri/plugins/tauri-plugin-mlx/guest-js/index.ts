@@ -41,6 +41,15 @@ export async function loadMlxModel(
   })
 }
 
+/**
+ * Stop a load of `modelId` that has not reached readiness, including one still
+ * queued behind another load. The pending `loadMlxModel` rejects with
+ * MODEL_LOAD_CANCELLED. Resolves `false` when no such load is in flight.
+ */
+export async function cancelMlxModelLoad(modelId: string): Promise<boolean> {
+  return await invoke('plugin:mlx|cancel_mlx_model_load', { modelId })
+}
+
 export async function unloadMlxModel(pid: number): Promise<UnloadResult> {
   return await invoke('plugin:mlx|unload_mlx_model', { pid })
 }

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-capabilities"
+description = "Enables the get_capabilities command without any pre-configured scope."
+commands.allow = ["get_capabilities"]
+
+[[permission]]
+identifier = "deny-get-capabilities"
+description = "Denies the get_capabilities command without any pre-configured scope."
+commands.deny = ["get_capabilities"]

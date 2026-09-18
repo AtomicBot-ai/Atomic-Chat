@@ -116,14 +116,16 @@
 
   /* Code */
   code {
-    font-family: monospace;
+    /* Emoji first: a monospace text font (DejaVu Sans Mono on Linux) carries
+       half the pieces of a ZWJ sequence and would split the cluster. */
+    font-family: 'AtomicEmoji', monospace;
     @apply bg-secondary text-foreground;
     padding: 0.2em 0.4em;
     border-radius: 3px;
   }
 
   pre {
-    font-family: monospace;
+    font-family: 'AtomicEmoji', monospace;
     @apply bg-secondary text-foreground px-0!;
     overflow-x: auto;
     /* border-radius: 8px; */

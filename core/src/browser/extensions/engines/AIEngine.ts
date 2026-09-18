@@ -207,6 +207,28 @@ export interface UnloadResult {
   error?: string
 }
 
+/**
+ * A step inside `load` that the user is waiting on (ATO-530). The steps
+ * around the load — unloading the previous model, starting the Local API
+ * Server — belong to the caller, which reports those itself.
+ */
+export type ModelLoadStage =
+  /** The engine build is missing and is being downloaded before the load. */
+  | { kind: 'installingEngine' }
+  /**
+   * The server is starting and reading the weights. `cachedFraction` is how
+   * much of the model files the OS already holds in memory (0–1), or `null`
+   * when that cannot be told.
+   */
+  | { kind: 'loadingWeights'; cachedFraction: number | null }
+
+export interface ModelLoadOptions {
+  onStage?: (stage: ModelLoadStage) => void
+}
+
+/** `code` of the error a load rejects with after {@link AIEngine.cancelLoad}. */
+export const MODEL_LOAD_CANCELLED_CODE = 'MODEL_LOAD_CANCELLED'
+
 // 5. /chat
 export interface chatOptions {
   providerId: string
@@ -282,13 +304,24 @@ export abstract class AIEngine extends BaseExtension {
    * @param settings - Optional settings for loading
    * @param isEmbedding - Whether this is an embedding model (skips auto-unload)
    * @param bypassAutoUnload - When true, prevents unloading other models (useful for API server)
+   * @param options - Progress reporting for a load the user is watching
    */
   abstract load(
     modelId: string,
     settings?: any,
     isEmbedding?: boolean,
-    bypassAutoUnload?: boolean
+    bypassAutoUnload?: boolean,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo>
+
+  /**
+   * Stops a load of `modelId` that has not finished. Resolves `true` when one
+   * was in flight: its `load` then rejects with {@link MODEL_LOAD_CANCELLED_CODE}
+   * and leaves nothing running. Engines that cannot cancel keep this default.
+   */
+  cancelLoad(_modelId: string): Promise<boolean> {
+    return Promise.resolve(false)
+  }
 
   /**
    * Unloads a model from memory

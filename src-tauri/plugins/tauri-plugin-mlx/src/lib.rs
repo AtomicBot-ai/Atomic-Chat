@@ -19,6 +19,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             cleanup::cleanup_mlx_processes,
             commands::load_mlx_model,
+            commands::cancel_mlx_model_load,
             commands::unload_mlx_model,
             commands::is_mlx_process_running,
             commands::get_mlx_random_port,

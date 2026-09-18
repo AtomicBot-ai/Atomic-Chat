@@ -1,7 +1,7 @@
 use super::disk::{
     disk_err_to_string, ensure_free_space, ensure_path_within_limit, remaining_bytes,
 };
-use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
+use super::models::{DownloadEvent, DownloadItem, DownloadStage, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::StreamExt;
 use jan_utils::{canonicalize_existing_prefix, normalize_path};
@@ -40,6 +40,53 @@ const MAX_STREAM_RETRIES: u32 = 5;
 #[cfg(not(test))]
 const RETRY_BASE_DELAY_MS: u64 = 1_000;
 const RETRY_RESET_PROGRESS_BYTES: u64 = 1024 * 1024;
+
+/// Relays `DownloadStage` updates to the task's progress channel.
+///
+/// ATO — #290: both retry ladders below used to run in complete silence, so a
+/// download that could not reach the server looked identical to one that had
+/// simply not started yet. The reporter is optional because the preflight
+/// helpers are also exercised directly by unit tests, which have no app handle.
+#[derive(Clone)]
+pub(super) struct StageReporter {
+    emit: std::sync::Arc<dyn Fn(DownloadStage) + Send + Sync>,
+}
+
+impl StageReporter {
+    pub(super) fn new<R: Runtime>(app: tauri::AppHandle<R>, evt_name: String) -> Self {
+        Self {
+            emit: std::sync::Arc::new(move |stage| {
+                // A stage update carries no byte counts; consumers treat it as
+                // a status change so a retry never rewinds the progress bar.
+                let _ = app.emit(
+                    &evt_name,
+                    DownloadEvent {
+                        transferred: 0,
+                        total: 0,
+                        stage: Some(stage),
+                    },
+                );
+            }),
+        }
+    }
+
+    /// Test seam: the retry ladders take a reporter, not an app handle, so a
+    /// unit test can observe what they would have emitted.
+    #[cfg(test)]
+    pub(super) fn from_fn(emit: impl Fn(DownloadStage) + Send + Sync + 'static) -> Self {
+        Self {
+            emit: std::sync::Arc::new(emit),
+        }
+    }
+
+    fn report(&self, kind: &'static str, attempt: u32) {
+        (self.emit)(DownloadStage {
+            kind,
+            attempt,
+            max_attempts: MAX_STREAM_RETRIES,
+        });
+    }
+}
 
 #[derive(Debug)]
 enum DownloadRequestError {
@@ -454,8 +501,12 @@ async fn head_file_size_with_retry(
     client: &reqwest::Client,
     url: &str,
     cancel_token: &CancellationToken,
+    stage: Option<&StageReporter>,
 ) -> Result<u64, DownloadRequestError> {
     let mut retry_count = 0;
+    if let Some(stage) = stage {
+        stage.report(DownloadStage::CONNECTING, 0);
+    }
     loop {
         match head_file_size(client, url).await {
             Ok(size) => return Ok(size),
@@ -474,6 +525,9 @@ async fn head_file_size_with_retry(
                     MAX_STREAM_RETRIES,
                     delay.as_millis()
                 );
+                if let Some(stage) = stage {
+                    stage.report(DownloadStage::RETRYING, retry_count + 1);
+                }
                 wait_for_retry(delay, cancel_token)
                     .await
                     .map_err(DownloadRequestError::Fatal)?;
@@ -494,6 +548,7 @@ pub(super) async fn preflight_file_size(
     client: &reqwest::Client,
     item: &DownloadItem,
     cancel_token: &CancellationToken,
+    stage: Option<&StageReporter>,
 ) -> Result<u64, String> {
     if cancel_token.is_cancelled() {
         return Err("Download cancelled".to_string());
@@ -501,7 +556,7 @@ pub(super) async fn preflight_file_size(
     if let Some(size) = item.size.filter(|size| *size > 0) {
         return Ok(size);
     }
-    match head_file_size_with_retry(client, &item.url, cancel_token).await {
+    match head_file_size_with_retry(client, &item.url, cancel_token, stage).await {
         Ok(size) => Ok(size),
         Err(error) => {
             if cancel_token.is_cancelled() {
@@ -541,18 +596,21 @@ pub async fn _download_files_internal(
 
     let header_map = _convert_headers(headers).map_err(err_to_string)?;
 
+    let evt_name = format!("download-{task_id}");
+    // Built before the preflight loop on purpose: that loop is where a
+    // download against an unreachable host spends its first silent minute.
+    let stage_reporter = StageReporter::new(app.clone(), evt_name.clone());
+
     // Calculate sizes for each file
     let mut file_sizes: HashMap<String, u64> = HashMap::new();
     for item in items.iter() {
         let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-        let size = preflight_file_size(&client, item, &cancel_token).await?;
+        let size = preflight_file_size(&client, item, &cancel_token, Some(&stage_reporter)).await?;
         file_sizes.insert(item.url.clone(), size);
     }
 
     let total_size: u64 = file_sizes.values().sum();
     log::info!("Total download size: {total_size}");
-
-    let evt_name = format!("download-{task_id}");
 
     // Create progress tracker
     let progress_tracker = ProgressTracker::new(items, file_sizes.clone());
@@ -710,7 +768,11 @@ pub async fn _download_files_internal(
 
     // Emit final progress
     let (transferred, total) = progress_tracker.get_total_progress().await;
-    let final_evt = DownloadEvent { transferred, total };
+    let final_evt = DownloadEvent {
+        transferred,
+        total,
+        stage: None,
+    };
     app.emit(&evt_name, final_evt).unwrap();
     Ok(())
 }
@@ -740,6 +802,8 @@ async fn download_single_file(
                 .map_err(|error| disk_err_to_string(&error))?;
         }
     }
+
+    let stage_reporter = StageReporter::new(app.clone(), evt_name.clone());
 
     let tmp_save_path = sidecar_path(save_path, "tmp");
     let url_save_path = sidecar_path(save_path, "url");
@@ -795,6 +859,7 @@ async fn download_single_file(
                 0,
                 expected_size,
                 &cancel_token,
+                Some(&stage_reporter),
             )
             .await
             .map_err(|error| error.to_string())?;
@@ -806,6 +871,7 @@ async fn download_single_file(
                 downloaded_size,
                 expected_size,
                 &cancel_token,
+                Some(&stage_reporter),
             )
             .await
             {
@@ -828,6 +894,7 @@ async fn download_single_file(
                     let evt = DownloadEvent {
                         transferred: combined_transferred,
                         total: combined_total,
+                        stage: None,
                     };
                     app.emit(&evt_name, evt).unwrap();
 
@@ -841,6 +908,7 @@ async fn download_single_file(
                         0,
                         expected_size,
                         &cancel_token,
+                        Some(&stage_reporter),
                     )
                     .await
                     .map_err(|request_error| request_error.to_string())?;
@@ -857,6 +925,7 @@ async fn download_single_file(
             0,
             expected_size,
             &cancel_token,
+            Some(&stage_reporter),
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -927,6 +996,7 @@ async fn download_single_file(
                     let evt = DownloadEvent {
                         transferred: combined_transferred,
                         total: combined_total,
+                        stage: None,
                     };
                     app.emit(&evt_name, evt).unwrap();
 
@@ -1065,6 +1135,7 @@ async fn download_single_file(
     let evt = DownloadEvent {
         transferred: combined_transferred,
         total: combined_total,
+        stage: None,
     };
     app.emit(&evt_name, evt).unwrap();
 
@@ -1197,6 +1268,7 @@ async fn request_download_response_with_retry(
     start_bytes: u64,
     expected_size: u64,
     cancel_token: &CancellationToken,
+    stage: Option<&StageReporter>,
 ) -> Result<reqwest::Response, DownloadRequestError> {
     let mut retry_count = 0;
     loop {
@@ -1217,6 +1289,9 @@ async fn request_download_response_with_retry(
                     MAX_STREAM_RETRIES,
                     delay.as_millis()
                 );
+                if let Some(stage) = stage {
+                    stage.report(DownloadStage::RETRYING, retry_count + 1);
+                }
                 wait_for_retry(delay, cancel_token)
                     .await
                     .map_err(DownloadRequestError::Fatal)?;

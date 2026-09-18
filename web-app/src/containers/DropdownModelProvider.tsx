@@ -31,6 +31,8 @@ import { useReasoningEffort } from '@/hooks/useReasoningEffort'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { ActiveModelIndicator } from '@/containers/ActiveModelIndicator'
+import { InferenceServerStatusLine } from '@/containers/InferenceServerStatus'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
@@ -657,19 +659,25 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
+      {/* The composer pill: the model, with the reasoning level as its
+          subtitle. Its width follows the label, and the panel anchors to its
+          right edge so the mic and Send beside it hold still. The status dot
+          (ATO-530) sits in the pill but outside the trigger — it is a button
+          of its own, and a button cannot live inside another. */}
+      <div
+        className={cn(
+          'inline-flex h-7 max-w-64 shrink items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70',
+          className
+        )}
+      >
+        <ActiveModelIndicator className="ml-1.5" />
       <PopoverTrigger asChild>
-        {/* The composer pill: the model, with the reasoning level as its
-            subtitle. Its width follows the label, and the panel anchors to its
-            right edge so the mic and Send beside it hold still. */}
         <button
           type="button"
           title={selectedModel?.id ?? displayModel}
           aria-label={compact ? displayModel : undefined}
           data-test-id="model-picker-trigger"
-          className={cn(
-            'inline-flex h-7 max-w-64 shrink items-center gap-1.5 rounded-full border bg-secondary/40 pr-2 pl-1.5 text-xs transition-colors duration-200 hover:bg-secondary/70',
-            className
-          )}
+          className="inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2 pl-1.5"
         >
           {provider && (
             <div className="shrink-0">
@@ -700,6 +708,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           />
         </button>
       </PopoverTrigger>
+      </div>
 
       <PopoverContent
         className={cn(
@@ -746,6 +755,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 className="text-muted-foreground ml-auto shrink-0"
               />
             </button>
+            {/* ATO-535: what the engine is doing, spelled out. The dot above
+                carries the same state as colour; this is the reading of it. */}
+            <InferenceServerStatusLine className="px-2 pb-1" />
             {/* Mounted with the panel, so a fresh open always starts settled. */}
             <ReasoningEffortPanel className="mt-1 border-t px-2 pt-2 pb-1" />
           </div>

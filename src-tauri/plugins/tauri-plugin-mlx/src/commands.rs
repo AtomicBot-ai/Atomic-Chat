@@ -15,6 +15,7 @@ use crate::process::{
     get_random_available_port, is_process_running_by_pid,
 };
 use crate::state::{MlxBackendSession, MlxState, SessionInfo};
+use jan_utils::load_cancel::{is_load_cancelled, load_cancelled, CancellationToken};
 
 #[cfg(unix)]
 use crate::process::graceful_terminate_process;
@@ -158,6 +159,8 @@ fn build_mlx_server_args(model_path: &str, port: u16, config: &MlxConfig) -> Vec
 /// Core model-loading logic, decoupled from Tauri AppHandle.
 /// `binary_path` must point to the mlx-server executable.
 /// `process_map_arc` is the shared session map from MlxState.
+/// `cancel`, when tripped before the server reports ready — or while the load
+/// is still queued behind another — ends it with `ModelLoadCancelled`.
 pub async fn load_mlx_model_impl(
     process_map_arc: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     load_operation: Arc<Mutex<()>>,
@@ -169,8 +172,15 @@ pub async fn load_mlx_model_impl(
     envs: HashMap<String, String>,
     is_embedding: bool,
     timeout: u64,
+    cancel: Option<CancellationToken>,
 ) -> ServerResult<SessionInfo> {
-    let _load_guard = load_operation.lock().await;
+    let _load_guard = tokio::select! {
+        guard = load_operation.lock() => guard,
+        _ = load_cancelled(&cancel) => {
+            log::info!("MLX load of '{}' cancelled while queued", model_id);
+            return Err(MlxError::load_cancelled().into());
+        }
+    };
 
     log::info!("Attempting to launch MLX server at path: {:?}", binary_path);
     log::info!("Using MLX configuration: {:?}", config);
@@ -247,6 +257,14 @@ pub async fn load_mlx_model_impl(
     // mlx-server instances pile up. Once inserted into the map the child is
     // owned there (not dropped), so healthy sessions keep running normally.
     command.kill_on_drop(true);
+
+    if is_load_cancelled(&cancel) {
+        log::info!(
+            "MLX load of '{}' cancelled before the server was spawned",
+            model_id
+        );
+        return Err(MlxError::load_cancelled().into());
+    }
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;
@@ -362,6 +380,13 @@ pub async fn load_mlx_model_impl(
                 log::info!("MLX model is ready to accept requests!");
                 break;
             }
+            // Kill now rather than on drop, so the memory is back before the
+            // error reaches the UI.
+            _ = load_cancelled(&cancel) => {
+                log::info!("MLX load of '{}' cancelled while waiting for the server", model_id);
+                let _ = child.kill().await;
+                return Err(MlxError::load_cancelled().into());
+            }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if let Some(status) = child.try_wait()? {
                     let stderr_output = stderr_task.await.unwrap_or_default();
@@ -395,6 +420,17 @@ pub async fn load_mlx_model_impl(
                 }
             }
         }
+    }
+
+    // A cancel that raced the ready signal still wins: registering the session
+    // would hand back a model the user asked to be gone.
+    if is_load_cancelled(&cancel) {
+        log::info!(
+            "MLX load of '{}' cancelled as the server became ready",
+            model_id
+        );
+        let _ = child.kill().await;
+        return Err(MlxError::load_cancelled().into());
     }
 
     let pid = child.id().map(|id| id as i32).unwrap_or(-1);
@@ -452,6 +488,7 @@ pub async fn load_mlx_model<R: Runtime>(
             )
         })?
         .join("resources/bin/mlx-server");
+    let cancel_guard = state.load_cancels.register(&model_id);
     load_mlx_model_impl(
         state.mlx_server_process.clone(),
         state.load_operation.clone(),
@@ -463,8 +500,20 @@ pub async fn load_mlx_model<R: Runtime>(
         envs,
         is_embedding,
         timeout,
+        Some(cancel_guard.token()),
     )
     .await
+}
+
+/// Stop a load of `model_id` that has not reached readiness. Returns whether a
+/// load was in flight; `false` means there is nothing to cancel here.
+#[tauri::command]
+pub async fn cancel_mlx_model_load<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: String,
+) -> bool {
+    let state: State<MlxState> = app_handle.state();
+    state.load_cancels.cancel(&model_id)
 }
 
 /// Unload an MLX model by terminating its process
@@ -744,6 +793,7 @@ mod tests {
                 HashMap::new(),
                 false,
                 1,
+                None,
             ),
         )
         .await;
@@ -792,6 +842,7 @@ mod tests {
                 HashMap::new(),
                 false,
                 1,
+                None,
             ),
         )
         .await;
@@ -806,6 +857,108 @@ mod tests {
             result.unwrap(),
             Err(ServerError::Mlx(MlxError {
                 code: ErrorCode::BinaryNotFound,
+                ..
+            }))
+        ));
+    }
+
+    fn unique_temp_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "atomic-chat-mlx-{}-{}-{}",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancel_while_waiting_for_ready_ends_the_load_without_a_session() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // A server that starts and never reports ready.
+        let binary_path = unique_temp_path("never-ready-server");
+        std::fs::write(&binary_path, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let model_dir = unique_temp_path("cancel-model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+
+        let sessions = Arc::new(Mutex::new(HashMap::new()));
+        let token = CancellationToken::new();
+        let load = tokio::spawn({
+            let sessions = sessions.clone();
+            let binary_path = binary_path.clone();
+            let model_path = model_dir.display().to_string();
+            let token = token.clone();
+            async move {
+                load_mlx_model_impl(
+                    sessions,
+                    Arc::new(Mutex::new(())),
+                    &binary_path,
+                    "test-model".to_string(),
+                    model_path,
+                    1337,
+                    base_config(),
+                    HashMap::new(),
+                    false,
+                    30,
+                    Some(token),
+                )
+                .await
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        token.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(2), load).await;
+
+        std::fs::remove_file(binary_path).unwrap();
+        std::fs::remove_dir_all(model_dir).unwrap();
+
+        assert!(result.is_ok(), "a cancelled load waited out its timeout");
+        assert!(matches!(
+            result.unwrap().unwrap(),
+            Err(ServerError::Mlx(MlxError {
+                code: ErrorCode::ModelLoadCancelled,
+                ..
+            }))
+        ));
+        assert!(sessions.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancel_while_queued_behind_another_load_ends_it_there() {
+        let load_operation = Arc::new(Mutex::new(()));
+        let _another_load = load_operation.lock().await;
+        let token = CancellationToken::new();
+        token.cancel();
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            load_mlx_model_impl(
+                Arc::new(Mutex::new(HashMap::new())),
+                load_operation.clone(),
+                Path::new("/nonexistent/atomic-chat-mlx-server"),
+                "test-model".to_string(),
+                "/nonexistent/atomic-chat-mlx-model".to_string(),
+                1337,
+                base_config(),
+                HashMap::new(),
+                false,
+                1,
+                Some(token),
+            ),
+        )
+        .await;
+
+        assert!(result.is_ok(), "a cancelled load stayed queued");
+        assert!(matches!(
+            result.unwrap(),
+            Err(ServerError::Mlx(MlxError {
+                code: ErrorCode::ModelLoadCancelled,
                 ..
             }))
         ));

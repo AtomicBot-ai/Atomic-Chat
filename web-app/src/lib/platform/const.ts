@@ -80,4 +80,8 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // ChatGPT subscription sign-in — see PlatformFeature.CHATGPT_SUBSCRIPTION.
   [PlatformFeature.CHATGPT_SUBSCRIPTION]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
+  // Local image generation — desktop platforms only, like voice input.
+  [PlatformFeature.MEDIA_GENERATION]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }

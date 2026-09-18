@@ -7,6 +7,7 @@ import {
   modelInfo,
   ThreadMessage,
   UnloadResult,
+  type ModelLoadOptions,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
@@ -162,8 +163,15 @@ export interface ModelsService {
   startModel(
     provider: ProviderObject,
     model: string,
-    bypassAutoUnload?: boolean
+    bypassAutoUnload?: boolean,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo | undefined>
+  /**
+   * Stop a load of `model` on `provider` that has not finished (ATO-530).
+   * Resolves `true` when the engine had one to stop; that load then rejects
+   * with `MODEL_LOAD_CANCELLED_CODE`.
+   */
+  cancelModelLoad(provider: string, model: string): Promise<boolean>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(
     modelId: string,
