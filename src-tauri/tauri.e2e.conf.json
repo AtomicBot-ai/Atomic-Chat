@@ -1,0 +1,27 @@
+{
+  "identifier": "chat.atomic.app.e2e",
+  "build": {
+    "beforeBuildCommand": "cd web-app && node scripts/fetch-seed-catalog.mjs && ../node_modules/.bin/tsc -b && ../node_modules/.bin/cross-env IS_TAURI=true ../node_modules/.bin/vite build"
+  },
+  "app": {
+    "security": {
+      "capabilities": [
+        "default",
+        "log-app-window",
+        "logs-window",
+        "system-monitor-window",
+        {
+          "identifier": "e2e",
+          "description": "Desktop UI end-to-end builds only. Inlined here, not in capabilities/, because tauri-build validates every file there whether or not the `e2e` feature compiled the plugin in.",
+          "windows": ["main"],
+          "permissions": ["wdio-webdriver:default"]
+        }
+      ]
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://127.0.0.1:9/latest.json"]
+    }
+  }
+}
