@@ -182,7 +182,13 @@ function readSubtitle(input: unknown): string | undefined {
     values.pattern ??
     values.name ??
     values.cmd
-  return typeof value === 'string' && value.trim() ? value : undefined
+  if (typeof value === 'string' && value.trim()) return value
+  // MCP tools name their parameters freely; the first text argument is
+  // still a better hint at what the call did than nothing at all.
+  return Object.values(values).find(
+    (candidate): candidate is string =>
+      typeof candidate === 'string' && candidate.trim().length > 0
+  )
 }
 
 export function presentGenericTool(args: {

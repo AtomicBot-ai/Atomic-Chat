@@ -63,10 +63,35 @@ pub struct DownloadItem {
     pub model_id: Option<String>,
 }
 
+/// What a download task is doing while it has no bytes to report.
+///
+/// ATO — #290: the preflight HEAD and the first GET each run a five-step
+/// backoff ladder (1+2+4+8+16s) that emitted nothing at all. A user whose
+/// proxy refuses connections therefore stared at "Preparing" and an empty bar
+/// for over a minute per file before the first sign that anything was wrong.
 #[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadStage {
+    /// `"connecting"` for the first attempt, `"retrying"` for each one after.
+    pub kind: &'static str,
+    pub attempt: u32,
+    pub max_attempts: u32,
+}
+
+impl DownloadStage {
+    pub const CONNECTING: &'static str = "connecting";
+    pub const RETRYING: &'static str = "retrying";
+}
+
+#[derive(serde::Serialize, Clone, Debug, Default)]
 pub struct DownloadEvent {
     pub transferred: u64,
     pub total: u64,
+    /// Present only on stage updates, which carry no byte counts — consumers
+    /// must treat a staged event as "status changed", never as "progress is
+    /// now 0", or a retry would rewind the bar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<DownloadStage>,
 }
 
 /// Structure to track progress for each file in parallel downloads

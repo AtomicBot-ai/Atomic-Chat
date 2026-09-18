@@ -300,6 +300,14 @@ jobs:
 
           yarn download:bin
           yarn download:core
+          # The release targets universal-apple-darwin, so the Remote access
+          # sidecar has to be a real fat binary (download-bin.mjs lipo's the
+          # two verified slices). One architecture under the universal name
+          # would only surface on an Intel Mac, as "bad CPU type".
+          cloudflared_archs="$(lipo -archs src-tauri/resources/bin/cloudflared-universal-apple-darwin)"
+          echo "cloudflared universal sidecar architectures: ${cloudflared_archs}"
+          case " ${cloudflared_archs} " in *" x86_64 "*) ;; *) echo "::error::cloudflared sidecar lacks the x86_64 slice"; exit 1 ;; esac
+          case " ${cloudflared_archs} " in *" arm64 "*) ;; *) echo "::error::cloudflared sidecar lacks the arm64 slice"; exit 1 ;; esac
           yarn build:foundation-models-server
           yarn build:cli
           # Universal macOS build + VOLNAME rename with the version + DMG re-sign/notarization
@@ -538,11 +546,40 @@ jobs:
           yarn build:core
           yarn build:extensions
 
-      - name: Download binaries (bun, uv)
+      - name: Download binaries (bun, uv, cloudflared)
         run: yarn download:bin
 
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
+
+      - name: Verify the cloudflared sidecar is Cloudflare's signed binary
+        # cloudflared ships inside our installer with Cloudflare's own
+        # Authenticode signature; we deliberately do not re-sign it (their
+        # certificate is the one SmartScreen and antivirus engines know).
+        # download-bin.mjs already pinned the sha256; this checks the other
+        # half of the supply chain: that the file is intact and was signed by
+        # Cloudflare. Any other status or signer fails the build.
+        shell: pwsh
+        run: |
+          $sidecar = 'src-tauri/resources/bin/cloudflared-x86_64-pc-windows-msvc.exe'
+          if (-not (Test-Path $sidecar)) {
+            Write-Host "::error::$sidecar not found after yarn download:bin."
+            exit 1
+          }
+          $signature = Get-AuthenticodeSignature -FilePath $sidecar
+          $subject = $signature.SignerCertificate.Subject
+          Write-Host "cloudflared signature: $($signature.Status); signer: $subject"
+          if ($signature.Status -ne 'Valid') {
+            Write-Host "::error::cloudflared Authenticode status is $($signature.Status), expected Valid."
+            exit 1
+          }
+          # Match the company name itself, in either spelling: their macOS
+          # Developer ID reads "Cloudflare Inc.", and a subject quotes a name
+          # that contains a comma (O="Cloudflare, Inc.").
+          if ($subject -notmatch 'Cloudflare,? Inc') {
+            Write-Host "::error::cloudflared is signed by an unexpected publisher: $subject"
+            exit 1
+          }
 
       - name: Download upstream llamacpp backend (manifest resolver)
         shell: bash
@@ -928,11 +965,24 @@ jobs:
           yarn build:core
           yarn build:extensions
 
-      - name: Download binaries (bun, uv, sqlite-vec)
+      - name: Download binaries (bun, uv, cloudflared, sqlite-vec)
         run: yarn download:bin
 
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
+
+      - name: Assert the cloudflared sidecar was bundled
+        # download-bin.mjs fails the step on a sha256 mismatch, so reaching
+        # this point means the file was verified. This only guards against
+        # the externalBin path and the installed name drifting apart, which
+        # `tauri build` would report as an opaque path-not-found much later.
+        run: |
+          sidecar=src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu
+          if [ ! -x "$sidecar" ]; then
+            echo "::error::$sidecar is missing or not executable after yarn download:bin."
+            exit 1
+          fi
+          echo "cloudflared present: $(ls -l "$sidecar")"
 
       - name: Assert sqlite-vec was bundled
         # `scripts/download-bin.mjs` treats sqlite-vec as non-fatal (it

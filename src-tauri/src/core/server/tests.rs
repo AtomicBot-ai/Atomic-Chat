@@ -184,6 +184,9 @@ mod tests {
         assert_eq!(allowed, Some(&["POST"][..]));
     }
 
+    // `/v1/images/generations` is served by the core on desktop (`src/server/public/images.ts`
+    // there); this mobile-only proxy does not route it, so no method or label test for it here.
+
     #[test]
     fn test_model_ids_match_exact() {
         assert!(proxy::model_ids_match(

@@ -97,3 +97,19 @@ describe('shared core adapter', () => {
     })
   })
 })
+
+describe('cancelLoad', () => {
+  it('asks the core to cancel a pending load of its own provider and reads the answer', async () => {
+    const { core, invoke } = bound('mlx', (_command, args) =>
+      String(args?.['path']).endsWith('/load/cancel') ? { cancelled: true } : {}
+    )
+    expect(await core.cancelLoad('Owner/Model')).toBe(true)
+    expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
+      method: 'POST',
+      path: '/models/mlx/Owner/Model/load/cancel',
+      body: null,
+    })
+    const { core: silent } = bound('llamacpp', () => ({}))
+    expect(await silent.cancelLoad('m')).toBe(false)
+  })
+})

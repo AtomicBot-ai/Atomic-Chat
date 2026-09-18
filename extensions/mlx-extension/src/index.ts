@@ -26,6 +26,7 @@ import {
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
+  type ModelLoadOptions,
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
@@ -48,6 +49,7 @@ import {
 } from '../../shared/atomicCoreRuntime'
 import type { Invoke } from '../../shared/atomicCoreRuntime'
 import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
 /// The three mutually-exclusive speculative-decoding families surfaced by
@@ -155,6 +157,10 @@ export default class mlx_extension extends AIEngine {
   private readonly core = createCoreRuntime('mlx', ((command, args) =>
     args === undefined ? invoke(command) : invoke(command, args)) as Invoke)
   private isMirroringCoreSettings = false
+  /// ATO-530: loads in flight and the cancels aimed at them, on top of the core's load.
+  private readonly loadCancel = new LoadCancelTracker(this.core, (message) =>
+    logger.warn(message)
+  )
   private readonly coreSettings = createCoreSettingsSync({
     core: this.core,
     readSettings: async () =>
@@ -536,7 +542,29 @@ export default class mlx_extension extends AIEngine {
     modelId: string,
     overrideSettings?: any,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
+  ): Promise<SessionInfo> {
+    return this.loadCancel.track(modelId, () =>
+      this.startLoad(modelId, overrideSettings, isEmbedding, bypassAutoUnload, options)
+    )
+  }
+
+  /**
+   * ATO-530: stop a load of `modelId` that has not finished. Resolves `true`
+   * when one was running; that load then rejects with MODEL_LOAD_CANCELLED
+   * and leaves no server behind.
+   */
+  override cancelLoad(modelId: string): Promise<boolean> {
+    return this.loadCancel.cancelLoad(modelId)
+  }
+
+  private async startLoad(
+    modelId: string,
+    overrideSettings: any,
+    isEmbedding: boolean,
+    bypassAutoUnload: boolean,
+    options: ModelLoadOptions | undefined
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -547,11 +575,13 @@ export default class mlx_extension extends AIEngine {
       return this.loadingModels.get(modelId)!
     }
 
+    this.loadCancel.throwIfCancelled(modelId)
     const loadingPromise = this.performLoad(
       modelId,
       overrideSettings,
       isEmbedding,
-      bypassAutoUnload
+      bypassAutoUnload,
+      options
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -566,7 +596,8 @@ export default class mlx_extension extends AIEngine {
     modelId: string,
     overrideSettings?: any,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
@@ -590,6 +621,7 @@ export default class mlx_extension extends AIEngine {
         await Promise.all(allLoadedModels.map((id) => this.unload(id)))
       }
     }
+    this.loadCancel.throwIfCancelled(modelId)
 
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
 
@@ -711,6 +743,21 @@ export default class mlx_extension extends AIEngine {
       'with config:',
       JSON.stringify(mlxConfig)
     )
+
+    if (options?.onStage) {
+      this.loadCancel.throwIfCancelled(modelId)
+      // An MLX model is a folder of shards; a legacy entry points at its
+      // first file instead.
+      const modelDir = /\.safetensors$/i.test(modelPath)
+        ? modelPath.slice(0, modelPath.lastIndexOf('/'))
+        : modelPath
+      options.onStage({
+        kind: 'loadingWeights',
+        cachedFraction: await this.pageCacheFraction(
+          [modelDir, draftPath].filter((path): path is string => !!path)
+        ),
+      })
+    }
 
     try {
       const sInfo = await this.loadThroughCore(
@@ -877,13 +924,34 @@ export default class mlx_extension extends AIEngine {
   ): Promise<SessionInfo> {
     try {
       await this.coreSettings.ensureReady()
-      return (await this.core.load(modelId, {
-        settings,
-        isEmbedding,
-        bypassAutoUnload: true,
-      })) as SessionInfo
+      return (await this.loadCancel.loadInCore(modelId, () =>
+        this.core.load(modelId, {
+          settings,
+          isEmbedding,
+          bypassAutoUnload: true,
+        })
+      )) as SessionInfo
     } catch (error) {
-      throw new Error(describeCoreError(error))
+      throw toLoadError(error)
+    }
+  }
+
+  /**
+   * How much of `paths` the OS already holds in its page cache (0–1), or
+   * `null` when that cannot be told. Only ever feeds the loading status, so a
+   * failure is not worth more than a debug line.
+   */
+  private async pageCacheFraction(paths: string[]): Promise<number | null> {
+    if (paths.length === 0) return null
+    try {
+      const fraction = await invoke<number | null>(
+        'get_page_cache_resident_fraction',
+        { paths }
+      )
+      return typeof fraction === 'number' ? fraction : null
+    } catch (error) {
+      console.debug(`page cache probe failed: ${error}`)
+      return null
     }
   }
 

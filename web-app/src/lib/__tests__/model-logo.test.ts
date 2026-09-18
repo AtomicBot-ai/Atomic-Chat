@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { BASELINE_DIFFUSION_CATALOG } from '@/services/diffusion-catalog-baseline'
 import {
+  DIFFUSION_FAMILY_ICON_KEYS,
   HUGGINGFACE_LOGO_SRC,
   iconKeyLogoSrc,
   isMonochromeFamilyLogo,
@@ -115,6 +117,54 @@ describe('modelFamilyLogoSrc', () => {
   it('returns null for an unknown family or missing name', () => {
     expect(modelFamilyLogoSrc('someone/entirely-unknown')).toBeNull()
     expect(modelFamilyLogoSrc(undefined)).toBeNull()
+  })
+})
+
+describe('image and video families', () => {
+  it('gives every family in the offline catalog a bundled mark, by id and by name', () => {
+    for (const family of BASELINE_DIFFUSION_CATALOG.families) {
+      expect(
+        iconKeyLogoSrc(DIFFUSION_FAMILY_ICON_KEYS[family.id]),
+        `no icon key for "${family.id}"`
+      ).toBeTruthy()
+      expect(
+        modelFamilyLogoSrc(family.name),
+        `no name rule for "${family.name}"`
+      ).toBeTruthy()
+    }
+  })
+
+  it('draws each family under its publisher', () => {
+    expect(modelFamilyLogoSrc('FLUX.2 Klein 4B')).toBe('/svg/bfl.svg')
+    expect(modelFamilyLogoSrc('black-forest-labs/FLUX.1-schnell')).toBe(
+      '/svg/bfl.svg'
+    )
+    expect(modelFamilyLogoSrc('city96/flux1-dev-gguf')).toBe('/svg/bfl.svg')
+    expect(modelFamilyLogoSrc('Z-Image Turbo')).toBe('/svg/qwen-color.svg')
+    expect(modelFamilyLogoSrc('Qwen-Image')).toBe('/svg/qwen-color.svg')
+    expect(modelFamilyLogoSrc('Wan-AI/Wan2.2-TI2V-5B')).toBe(
+      '/svg/qwen-color.svg'
+    )
+    expect(modelFamilyLogoSrc('Lightricks/LTX-2')).toBe('/svg/lightricks.svg')
+    expect(modelFamilyLogoSrc('Lightricks/LTX-Video')).toBe(
+      '/svg/lightricks.svg'
+    )
+  })
+
+  it('does not hand text models an image-lab mark', () => {
+    expect(modelFamilyLogoSrc('someone/Swan-7B-GGUF')).toBeNull()
+    expect(modelFamilyLogoSrc('someone/influx-3b')).toBeNull()
+  })
+
+  it('ships the new marks as files and tints the single-color ones', async () => {
+    const { existsSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const src of ['/svg/bfl.svg', '/svg/lightricks.svg']) {
+      expect(existsSync(resolve(__dirname, '../../../public', `.${src}`))).toBe(
+        true
+      )
+      expect(isMonochromeFamilyLogo(src)).toBe(true)
+    }
   })
 })
 

@@ -25,6 +25,7 @@ import {
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
+  type ModelLoadOptions,
 } from '@janhq/core'
 
 import { error, info, warn } from '@tauri-apps/plugin-log'
@@ -75,6 +76,12 @@ import {
 import { basename } from '@tauri-apps/api/path'
 import { getSystemInfo } from './hardware'
 import * as coreRuntime from './adapter/coreRuntime'
+import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
+import {
+  buildEngineUpdateOffer,
+  clearEngineUpdateOffer,
+  publishEngineUpdateOffer,
+} from './engineUpdateOffer'
 import {
   readGgufMetadata,
   isModelSupported,
@@ -407,6 +414,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /// (`{general.architecture}.context_length`). It is a property of the file,
   /// so it is asked once per model and kept for the life of the extension.
   private modelMaxCtxTrain = new Map<string, number>()
+  /// ATO-530: loads in flight and the cancels aimed at them, on top of the core's load.
+  private readonly loadCancel = new LoadCancelTracker(coreRuntime, (message) =>
+    logger.warn(message)
+  )
   private unlistenValidationStarted?: () => void
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenCoreSettingsChanged?: () => void
@@ -1671,18 +1682,55 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return
       }
 
+      // ATO-528: a tag bump is offered, not taken. It used to download here
+      // unannounced — hundreds of megabytes on a launch the user did not ask
+      // anything of. The offer is published instead and the web app's
+      // `<EngineUpdateBanner />` asks; accepting routes back through
+      // `downloadRecommendedBackend()`, which is what this call used to be.
+      // The recovery paths above (a parked `latest/` sentinel) still act on
+      // their own — those are not updates, they are a broken configuration.
       logger.info(
-        `reconcileBackendReleaseTag: moving '${current}' -> '${targetBackend}'`
+        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}'`
       )
-      await this.downloadRecommendedBackend(targetBackend)
-      logger.info(
-        `reconcileBackendReleaseTag: reconciled to '${targetBackend}'`
-      )
+      await this.offerEngineUpdate(current, targetBackend)
     } catch (err) {
       logger.error(
         'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
         err
       )
+    }
+  }
+
+  /**
+   * Publishes a "new engine build available" offer for the banner (ATO-528).
+   *
+   * Best-effort in both directions: the archive size is not known on this
+   * line (the core downloads the archive from the signed mirror and the
+   * extension no longer reads that manifest), so the banner shows no size, and
+   * a failure to publish costs the banner, not the app — the offer is rebuilt
+   * on the next launch because the tag comparison that produced it is
+   * stateless.
+   */
+  private async offerEngineUpdate(
+    currentBackend: string,
+    targetBackend: string
+  ): Promise<void> {
+    try {
+      const offer = await buildEngineUpdateOffer(
+        this.providerId,
+        currentBackend,
+        targetBackend,
+        async () => undefined
+      )
+      if (!offer) {
+        logger.warn(
+          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
+        )
+        return
+      }
+      publishEngineUpdateOffer(offer)
+    } catch (err) {
+      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
     }
   }
 
@@ -2191,6 +2239,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     localStorage.removeItem('llama_cpp_pending_backend')
+
+    // A pending engine-update offer is about this provider's backend, and the
+    // backend just changed — whatever it proposed is now either done or stale.
+    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
+    clearEngineUpdateOffer(this.providerId)
 
     // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
     // a pure UI concern (the dialog/pill in the web app) and does not
@@ -4269,19 +4322,103 @@ export default class llamacpp_upstream_extension extends AIEngine {
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo> {
-    await this.ensureCoreIsReady()
+    return this.loadCancel.track(modelId, async () => {
+      try {
+        await this.ensureCoreIsReady()
+        this.loadCancel.throwIfCancelled(modelId)
+        // ATO-530: a missing engine build is downloaded by the core before
+        // anything else can happen, and that wait is worth naming.
+        if (options?.onStage && !(await this.isConfiguredBackendInstalled())) {
+          options.onStage({ kind: 'installingEngine' })
+        }
+        this.loadCancel.throwIfCancelled(modelId)
+        if (options?.onStage) {
+          options.onStage({
+            kind: 'loadingWeights',
+            cachedFraction: await this.pageCacheFraction(
+              await this.modelFilePaths(modelId)
+            ),
+          })
+        }
+        return await this.loadCancel.loadInCore(modelId, () =>
+          coreRuntime.load(modelId, {
+            ...(overrideSettings
+              ? { settings: overrideSettings as Record<string, unknown> }
+              : {}),
+            isEmbedding,
+            bypassAutoUnload,
+          })
+        )
+      } catch (error) {
+        throw toLoadError(error)
+      }
+    })
+  }
+
+  /**
+   * ATO-530: stop a load of `modelId` that has not finished. Resolves `true`
+   * when one was running; that load then rejects with MODEL_LOAD_CANCELLED
+   * and leaves no server behind.
+   */
+  override cancelLoad(modelId: string): Promise<boolean> {
+    return this.loadCancel.cancelLoad(modelId)
+  }
+
+  /// Whether the configured `<version>/<backend>` is on disk; anything unsure
+  /// counts as installed, so the stage is never announced by mistake.
+  private async isConfiguredBackendInstalled(): Promise<boolean> {
+    const versionBackend = stripBom(this.config?.version_backend || '')
+    const [version, backend] = versionBackend.split('/')
+    if (!version || !backend) return true
     try {
-      return await coreRuntime.load(modelId, {
-        ...(overrideSettings
-          ? { settings: overrideSettings as Record<string, unknown> }
-          : {}),
-        isEmbedding,
-        bypassAutoUnload,
-      })
+      return await isBackendInstalled(stripBom(backend), stripBom(version))
+    } catch {
+      return true
+    }
+  }
+
+  /// The weights files of a model, for the page-cache probe; empty when unknown.
+  private async modelFilePaths(modelId: string): Promise<string[]> {
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const path = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'models',
+        modelId,
+        'model.yml',
+      ])
+      const config = await invoke<ModelConfig>('read_yaml', { path })
+      const paths: string[] = []
+      for (const file of [config.model_path, config.mmproj_path]) {
+        const resolved = await this.resolveModelPath(janDataFolderPath, file)
+        if (resolved) paths.push(resolved)
+      }
+      return paths
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * How much of `paths` the OS already holds in its page cache (0–1), or
+   * `null` when that cannot be told. Only ever feeds the loading status, so a
+   * failure is not worth more than a debug line.
+   */
+  private async pageCacheFraction(paths: string[]): Promise<number | null> {
+    if (paths.length === 0) return null
+    try {
+      const fraction = await invoke<number | null>(
+        'get_page_cache_resident_fraction',
+        { paths }
+      )
+      return typeof fraction === 'number' ? fraction : null
     } catch (error) {
-      throw new Error(coreRuntime.describeCoreError(error))
+      console.debug(`page cache probe failed: ${error}`)
+      return null
     }
   }
 
@@ -4555,7 +4692,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
     let highestTransferred = 0
     let knownTotal = 0
     let completedProgress = false
+    let reported = false
     const reportProgress = (transferred: number, total: number) => {
+      reported = true
       // A resumed transfer can restart at byte zero after a range mismatch. The UI represents
       // task completion, so it must never move its bar backwards during that retry.
       highestTransferred = Math.max(highestTransferred, transferred)
@@ -4570,13 +4709,24 @@ export default class llamacpp_upstream_extension extends AIEngine {
       })
     }
     // Register before starting the transfer: the core can emit its first progress frame before
-    // the POST returns. The Rust relay re-emits the core's progress under this name.
-    const unlisten = await listen<{ transferred: number; total: number }>(
-      `download-${taskId}`,
-      (event) => {
-        reportProgress(event.payload.transferred, event.payload.total)
+    // the POST returns. The Rust relay re-emits the core's progress under this name, and its
+    // stages (connecting, retrying n/m) too, with zeroed counters: a frame with `stage` goes to
+    // the row's status as a `stage` update, never through `reportProgress`. The core's preflight
+    // stages come before any byte, and a stage update does not name the row it creates, so a first
+    // 0/0 progress update names it after the task id (the id its Cancel routes on).
+    const unlisten = await listen<{
+      transferred: number
+      total: number
+      stage?: { kind: 'connecting' | 'retrying'; attempt: number; maxAttempts: number }
+    }>(`download-${taskId}`, (event) => {
+      const { stage } = event.payload
+      if (stage) {
+        if (!reported) reportProgress(0, 0)
+        events.emit(DownloadEvent.onFileDownloadUpdate, { modelId: taskId, downloadType: 'Backend', stage })
+        return
       }
-    )
+      reportProgress(event.payload.transferred, event.payload.total)
+    })
     events.emit(AppEvent.onBackendDownloadStarted, {
       backend: backendString,
       status: 'downloading',

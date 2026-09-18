@@ -224,7 +224,11 @@ async fn next_app_launch_replaces_an_idle_owner_with_an_outdated_lock_version() 
         .expect("replace the idle old app core");
     assert_ne!(replacement.instance_id, old.instance_id);
     assert_ne!(replacement.pid, old.pid);
-    assert_eq!(replacement.version, "0.2.0");
+    // The replacement is the core this build pins (`package.json` `atomicCore.version`).
+    assert_eq!(
+        Some(replacement.version.as_str()),
+        super::supervisor::expected_core_version()
+    );
     next.detach().await;
 }
 

@@ -5,6 +5,7 @@ pub mod fs;
 pub mod http;
 pub mod math;
 pub mod network;
+pub mod page_cache;
 pub mod path;
 pub mod string;
 pub mod system;

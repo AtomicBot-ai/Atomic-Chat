@@ -34,6 +34,8 @@ import { DefaultVoiceService } from './voice/default'
 import type { VoiceService } from './voice/types'
 import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
+import { DefaultDiffusionService } from './diffusion/default'
+import type { DiffusionService } from './diffusion/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -82,6 +84,7 @@ export interface ServiceHub {
   rag(): RAGService
   uploads(): UploadsService
   voice(): VoiceService
+  diffusion(): DiffusionService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -108,6 +111,7 @@ class PlatformServiceHub implements ServiceHub {
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
   private voiceService: VoiceService = new DefaultVoiceService()
+  private diffusionService: DiffusionService = new DefaultDiffusionService()
   private initialized = false
 
   /**
@@ -142,6 +146,7 @@ class PlatformServiceHub implements ServiceHub {
           coreModule,
           deepLinkModule,
           voiceModule,
+          diffusionModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -158,6 +163,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./core/tauri'),
           import('./deeplink/tauri'),
           import('./voice/tauri'),
+          import('./diffusion/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -175,6 +181,7 @@ class PlatformServiceHub implements ServiceHub {
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
         this.voiceService = new voiceModule.TauriVoiceService()
+        this.diffusionService = new diffusionModule.TauriDiffusionService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -345,6 +352,11 @@ class PlatformServiceHub implements ServiceHub {
   voice(): VoiceService {
     this.ensureInitialized()
     return this.voiceService
+  }
+
+  diffusion(): DiffusionService {
+    this.ensureInitialized()
+    return this.diffusionService
   }
 }
 

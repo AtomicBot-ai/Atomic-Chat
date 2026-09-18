@@ -11,6 +11,7 @@
   "claude_code": "Claude Code",
   "hermes_agent": "Hermes Agent",
   "https_proxy": "HTTPS Proxy",
+  "remote_lan": "Remote & LAN",
   "extensions": "Extensions",
   "attachments": "Attachments",
   "voice": "Voice",
@@ -36,6 +37,8 @@
   "recents": "Recents",
   "hub": "Hub",
   "models": "Models",
+  "images": "Images",
+  "media": "Media",
   "launch": "Integrations",
   "api": "API",
   "skills": "Skills",
@@ -440,6 +443,8 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
+    "uploading": "Indexing…",
+    "uploadingHint": "The first upload also downloads the embedding model. Progress is in the downloads panel.",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -590,6 +595,9 @@
       "title": "Upload Failed",
       "description": "Failed to upload file"
     },
+    "unsupportedFileType": {
+      "title": "Unsupported file type"
+    },
     "fileDeleted": {
       "title": "File Deleted",
       "description": "File has been removed from the project"
@@ -625,6 +633,15 @@
     "downloadDiskDeviceLost": {
       "title": "The drive is no longer available",
       "description": "The external or network drive holding the Jan data folder disconnected. Reconnect it and resume the download."
+    },
+    "downloadProxyUnreachable": {
+      "title": "Could not reach the server through your proxy",
+      "description": "The download never got a connection through {{proxyUrl}}. Check that the proxy address is correct and the proxy is running, or turn the proxy off in Settings.",
+      "action": "Proxy settings"
+    },
+    "downloadNetworkUnreachable": {
+      "title": "Could not reach the download server",
+      "description": "The connection never got through. Check your internet connection, VPN or firewall, then start the download again."
     }
   },
   "errors": {
@@ -684,8 +701,45 @@
     "collapse": "Collapse downloads",
     "expand": "Show downloads",
     "preparing": "Starting…",
+    "connecting": "Connecting…",
+    "retrying": "Connection failed, retrying ({{attempt}}/{{maxAttempts}})…",
     "paused": "Paused",
     "left": "{{eta}} left",
     "appUpdate": "App update"
+  },
+  "inferenceStatus": {
+    "starting": "Starting {{model}}…",
+    "startingDetail": "The model is loading into memory. Chat will answer as soon as it is ready.",
+    "restarting": "Restarting for {{model}}…",
+    "restartingDetail": "The previous engine is being stopped and this one started. Chat is paused until the swap finishes.",
+    "ready": "{{model}} is loaded",
+    "notLoaded": "No model loaded — the first message will start one",
+    "retry": "Try again"
+  },
+  "modelLoad": {
+    "cancel": "Cancel",
+    "cancelling": "Cancelling…",
+    "dismiss": "Dismiss",
+    "stage": {
+      "preparing": "Getting the engine ready.",
+      "unloadingPrevious": "Unloading the previous model to free memory.",
+      "installingEngine": "Downloading the engine first. This happens once per engine version.",
+      "loadingWeights": "Loading the model into memory.",
+      "loadingCachedWeights": "Loading cached model into memory.",
+      "readingWeightsFromDisk": "Reading the model from disk. The first load after a restart takes longer.",
+      "startingServer": "Starting the local API server.",
+      "retry_ctx": "Not enough memory. Retrying with a smaller context.",
+      "retry_ngl": "Not enough GPU memory. Retrying on the CPU.",
+      "retry_fit_target": "Not enough memory. Retrying with more headroom."
+    },
+    "indicator": {
+      "loaded": "{{model}} is loaded",
+      "unload": "Unload from memory",
+      "unloading": "Unloading {{model}}…",
+      "loading": "Loading {{model}}…",
+      "stopLoading": "Stop loading",
+      "notLoaded": "Not loaded — the first message will start it",
+      "failed": "Failed to load"
+    }
   }
 }

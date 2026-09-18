@@ -244,6 +244,18 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
   }
 
   /**
+   * Stop a load that has not answered yet. `false` means nothing was pending for the model in the
+   * core: the load request has not arrived there yet, or it has already answered.
+   */
+  async function cancelLoad(modelId: string): Promise<boolean> {
+    const response = await call<{ cancelled?: boolean }>(
+      'POST',
+      modelPath(modelId, 'load/cancel')
+    )
+    return response?.cancelled === true
+  }
+
+  /**
    * Reload a model one context step larger. The core answers with a reason when there is no step to
    * take — `fit`, `at_max`, `unsupported` — outcomes, not failures, so they are returned.
    */
@@ -440,6 +452,7 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
     findSession,
     load,
     unload,
+    cancelLoad,
     increaseContext,
     recreateSession,
     importSettings,

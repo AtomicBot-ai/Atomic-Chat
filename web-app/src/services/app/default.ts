@@ -4,6 +4,10 @@
 
 import type { AppService, LogEntry } from './types'
 import type { AutostartPreference } from '@janhq/core'
+import {
+  REMOTE_ACCESS_OFF,
+  type RemoteAccessStatus,
+} from '@/types/remoteAccess'
 
 export class DefaultAppService implements AppService {
   async factoryReset(): Promise<void> {
@@ -53,5 +57,23 @@ export class DefaultAppService implements AppService {
 
   async getInstallerType(): Promise<string | undefined> {
     return undefined
+  }
+
+  // Remote & LAN access is desktop only. Web has no tunnel to report on, so
+  // these stay inert: always off, nothing to start, no addresses.
+  async getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+    return REMOTE_ACCESS_OFF
+  }
+
+  async startRemoteAccess(): Promise<RemoteAccessStatus> {
+    return REMOTE_ACCESS_OFF
+  }
+
+  async stopRemoteAccess(): Promise<RemoteAccessStatus> {
+    return REMOTE_ACCESS_OFF
+  }
+
+  async getLanAddresses(): Promise<string[]> {
+    return []
   }
 }

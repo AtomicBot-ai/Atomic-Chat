@@ -39,6 +39,15 @@ type LocalApiServerState = {
   // Server request timeout (default 600 sec)
   proxyTimeout: number
   setProxyTimeout: (value: number) => void
+  // Settings → Remote & LAN: bring the Cloudflare tunnel up every time the
+  // Local API Server comes up. The tunnel URL itself is never persisted: it is
+  // new on every start.
+  remoteAccessAutoStart: boolean
+  setRemoteAccessAutoStart: (value: boolean) => void
+  // The user chose "Start without key" once, so the confirmation stays out of
+  // the way. Saving a key withdraws it: losing that key later asks again.
+  exposeWithoutKeyAcknowledged: boolean
+  setExposeWithoutKeyAcknowledged: (value: boolean) => void
 }
 
 export const useLocalApiServer = create<LocalApiServerState>()(
@@ -75,12 +84,23 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       proxyTimeout: 600,
       setProxyTimeout: (value) => set({ proxyTimeout: value }),
       apiKey: '',
-      setApiKey: (value) => set({ apiKey: value }),
+      setApiKey: (value) =>
+        set(
+          value.trim() !== ''
+            ? { apiKey: value, exposeWithoutKeyAcknowledged: false }
+            : { apiKey: value }
+        ),
+      remoteAccessAutoStart: false,
+      setRemoteAccessAutoStart: (value) =>
+        set({ remoteAccessAutoStart: value }),
+      exposeWithoutKeyAcknowledged: false,
+      setExposeWithoutKeyAcknowledged: (value) =>
+        set({ exposeWithoutKeyAcknowledged: value }),
     }),
     {
       name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => localStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
         if (version < 1) {
@@ -96,6 +116,14 @@ export const useLocalApiServer = create<LocalApiServerState>()(
           // it now drives the Local API Server auto-start toggle and defaults
           // to on, so opt existing users in to match the new default.
           state.enableOnStartup = true
+        }
+        if (version < 4) {
+          // v3 → v4: Settings → Remote & LAN. Both are opt-in, so an existing
+          // install starts with the tunnel on manual start and the no-key
+          // confirmation still to come. `serverHost` is left alone: a server
+          // already bound on 0.0.0.0 is what the page reports as LAN access.
+          state.remoteAccessAutoStart = false
+          state.exposeWithoutKeyAcknowledged = false
         }
         return state
       },

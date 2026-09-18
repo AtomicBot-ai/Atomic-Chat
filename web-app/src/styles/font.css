@@ -184,3 +184,40 @@
   src: url('/fonts/StudioFeixenSans-Bold.otf') format('opentype');
   font-weight: 700;
 }
+
+/* Emoji
+ *
+ * Inter carries no emoji, so an emoji falls through to the platform's generic
+ * `sans-serif`. On Linux (WebKitGTK) that is a text font — DejaVu Sans — which
+ * does have monochrome glyphs for *some* of the pieces a ZWJ sequence is built
+ * from (U+2620 skull, U+2744 snowflake, U+26A7 transgender symbol) but not for
+ * the others (U+1F3F4 black flag, U+1F43B bear). The shaper then splits the
+ * cluster across two fonts, the sequence's ligature never applies, and 🏴‍☠️
+ * renders as a flag next to a skull. Single-codepoint emoji are resolved one
+ * at a time, so those look fine — exactly the shape of ATO-526.
+ *
+ * Binding the emoji code points to one colour-emoji family, ahead of every
+ * text font, keeps each cluster in a single font so the ligature can apply.
+ * `local()` only: whichever emoji font the platform ships. If none matches,
+ * the face fails to load and fallback continues exactly as it does today.
+ *
+ * The range is deliberately tight: the emoji planes (U+1F000-1FAFF), the
+ * joiner / variation selector / subdivision tags, and only those BMP symbols
+ * that appear inside an RGI ZWJ sequence — U+261D, U+263A, U+2620 skull,
+ * U+2640 and U+2642 gender signs, U+2694-2697 swords through medical symbol,
+ * U+26A7 transgender symbol, U+26D3 chains, U+2708 aeroplane, U+2744
+ * snowflake, U+2764 heart, U+27A1 rightwards arrow. Everything else Inter
+ * renders today keeps rendering through Inter.
+ */
+@font-face {
+  font-family: 'AtomicEmoji';
+  font-display: swap;
+  src:
+    local('Apple Color Emoji'), local('Segoe UI Emoji'),
+    local('Noto Color Emoji'), local('Twemoji Mozilla'),
+    local('EmojiOne Color'), local('JoyPixels');
+  unicode-range:
+    U+200D, U+20E3, U+FE0F, U+261D, U+263A, U+2620, U+2640, U+2642,
+    U+2694-2697, U+26A7, U+26D3, U+2708, U+2744, U+2764, U+27A1,
+    U+1F000-1FAFF, U+E0020-E007F;
+}

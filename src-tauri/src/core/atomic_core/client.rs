@@ -332,10 +332,16 @@ impl ControlClient {
     }
 }
 
+/// Calls whose deadline is the core's own: a model load, an embedding batch and a backend install
+/// can all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
+/// is ready; the core's own budget for that (600 s by default, `startupTimeoutSecs`) starts at the
+/// spawn, after it has cancelled a running job, torn the old session down and checked the files,
+/// so any client deadline of the same length would fire first and hide the core's own error.
 fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration> {
     if method == reqwest::Method::POST
         && ((path.starts_with("/models/") && (path.ends_with("/load") || path.ends_with("/embed")))
-            || (path.starts_with("/backends/") && path.ends_with("/install")))
+            || (path.starts_with("/backends/") && path.ends_with("/install"))
+            || path == "/diffusion/model/load")
     {
         None
     } else {
@@ -452,6 +458,14 @@ mod tests {
                 &reqwest::Method::POST,
                 "/models/llamacpp-upstream/a/b/unload"
             ),
+            Some(CALL_TIMEOUT)
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/diffusion/model/load"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/diffusion/jobs"),
             Some(CALL_TIMEOUT)
         );
     }

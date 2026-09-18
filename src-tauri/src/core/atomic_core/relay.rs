@@ -820,6 +820,20 @@ pub fn legacy_event_for(name: &str, payload: &Value) -> Option<(String, Value)> 
                 "total": payload.get("total").cloned().unwrap_or(json!(0)),
             }),
         )),
+        // A stage (connecting, retrying n/m) goes under the same name with the counters the
+        // listener expects at zero. The core runs downloads for the app only when it installs a
+        // llama.cpp backend, and the two llama extensions' install listeners route a payload with
+        // `stage` to a status update, never to the progress bar, so the zeros cannot rewind it.
+        "download:stage" => {
+            let stage = payload.get("stage")?;
+            if !stage.is_object() {
+                return None;
+            }
+            Some((
+                format!("download-{task_id}"),
+                json!({ "transferred": 0, "total": 0, "stage": stage.clone() }),
+            ))
+        }
         _ => None,
     }
 }
@@ -856,6 +870,35 @@ mod legacy_events {
         )
         .is_none());
         assert!(legacy_event_for("download:progress", &json!({ "taskId": "t" })).is_none());
+    }
+
+    #[test]
+    fn a_download_stage_goes_under_the_task_name_with_zeroed_counters() {
+        let (name, payload) = legacy_event_for(
+            "atomic-core://download:stage",
+            &json!({
+                "taskId": "backend-b6325",
+                "stage": { "kind": "retrying", "attempt": 2, "maxAttempts": 5 }
+            }),
+        )
+        .expect("mapped");
+
+        assert_eq!(name, "download-backend-b6325");
+        assert_eq!(
+            payload,
+            json!({
+                "transferred": 0,
+                "total": 0,
+                "stage": { "kind": "retrying", "attempt": 2, "maxAttempts": 5 }
+            })
+        );
+        // Without a stage object there is nothing the listener could route.
+        assert!(legacy_event_for("atomic-core://download:stage", &json!({ "taskId": "t" })).is_none());
+        assert!(legacy_event_for(
+            "atomic-core://download:stage",
+            &json!({ "taskId": "t", "stage": "retrying" })
+        )
+        .is_none());
     }
 
     #[test]
