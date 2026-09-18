@@ -54,7 +54,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server', () => {
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('is closed until the user starts it, then serves authenticated clients, then closes again', async () => {

@@ -36,9 +36,11 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
   })
 
   afterAll(async () => {
-    const left = await endSession(session)
-    await cloud.stop()
-    expect(left).toEqual([])
+    try {
+      if (session) expect(await endSession(session)).toEqual([])
+    } finally {
+      if (cloud) await cloud.stop()
+    }
   })
 
   it('connects with a key, lists the provider\'s models and chats through the core', async () => {
@@ -91,6 +93,15 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
         authorization: `Bearer ${API_KEY}`,
         status: 200,
       })
+      expect(cloud.completions()).toContainEqual(
+        expect.objectContaining({
+          model: MODEL,
+          stream: true,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: 'user', content: 'hello, cloud' }),
+          ]),
+        })
+      )
 
       // The core was told about the provider, and does not hand its key back.
       const known = await (await coreRequest(dataFolder, '/cloud/providers')).text()
@@ -112,6 +123,17 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       const cloudModelId = listed.map((m) => m.id).find((id) => id.includes(MODEL))
       expect(cloudModelId, `the local API lists ${JSON.stringify(listed.map((m) => m.id))}`).toBeDefined()
 
+      // A client with the wrong local key cannot make the core spend the
+      // provider's private key on its behalf.
+      const beforeDenied = cloud.requests().length
+      const denied = await fetch(`${localApi}/chat/completions`, {
+        method: 'POST',
+        headers: { ...local, authorization: 'Bearer wrong-local-key' },
+        body: JSON.stringify({ model: cloudModelId, messages: [{ role: 'user', content: 'denied' }] }),
+      })
+      expect(denied.status).toBe(401)
+      expect(cloud.requests()).toHaveLength(beforeDenied)
+
       const before = cloud.requests().length
       const completion = await fetch(`${localApi}/chat/completions`, {
         method: 'POST',
@@ -124,6 +146,11 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       expect(cloud.requests().slice(before)).toEqual([
         { method: 'POST', path: '/v1/chat/completions', authorization: `Bearer ${API_KEY}`, status: 200 },
       ])
+      expect(cloud.completions().at(-1)).toMatchObject({
+        model: MODEL,
+        stream: false,
+        messages: [{ role: 'user', content: 'ping' }],
+      })
 
       // The key is a secret: it reached the provider, and it is in neither the
       // core's settings file nor the app's log.

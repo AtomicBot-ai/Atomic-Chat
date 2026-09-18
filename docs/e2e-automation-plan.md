@@ -20,16 +20,23 @@ served to an outside client; recovery from a killed backend and a killed core
 daemon; switching between two local models; context overflow with and without a window
 the app can grow; and a provider setting travelling from the UI to the core and
 the backend's argv — with their failure assertions. `make test-app-e2e-live` adds
-one opt-in chat against a real `llama-server` and model. It narrows the driver choice below — the embedded WebDriver
+one opt-in chat against a real `llama-server` and model. A Hub journey downloads
+a model from a local fixture catalog, with progress, cancellation, pause and
+resume, and a chat afterwards. A conversation journey stops a reply, regenerates,
+rewrites and deletes messages, and renames and deletes the thread. A backend
+journey installs a release archive from a file and runs the model on it, and
+finds, downloads and installs a newer release published locally behind a proxy.
+The defects these journeys found were fixed on 2026-09-18; the suite carries no
+expected failures. It narrows the driver choice below — the embedded WebDriver
 plugin with the plain `webdriverio` client, without the Tauri service — and
 records why in
 [Drive the desktop UI through an embedded WebDriver on an isolated profile](decisions/2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md).
 
 Against the phases: the phase 1 seams for the data root, home directory and
 local API port exist, with the fixture backend taken from `atomic-chat-core`;
-the phase 2 harness exists without browser mode; journeys 2, 3 and 4 of phase 3
+the phase 2 harness exists without browser mode; journeys 2 to 6 of phase 3
 are implemented and journey 1 in part. Not started: the acceptance catalog
-(phase 0), journeys 5 and 6, Windows and Linux, CI, and a fully offline run —
+(phase 0), Windows and Linux, CI, and a fully offline run —
 catalog and registry lookups still leave the machine.
 
 ## Current baseline

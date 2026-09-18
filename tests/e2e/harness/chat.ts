@@ -58,30 +58,38 @@ export async function waitForChat(session: Session): Promise<void> {
  */
 export async function pickModel(session: Session, modelId: string): Promise<void> {
   const browser = session.app.browser
-  await browser.$('[data-test-id="model-picker-trigger"]').click()
-  // Which of the two views the popover opened on is only known once it has
-  // rendered one of them.
+  const trigger = browser.$('[data-test-id="model-picker-trigger"]')
+  const change = browser.$('button[aria-label="Change model"]')
+  const row = browser.$(`div[title="${modelId}"]`)
   // Queried afresh on every look: a `$$` result is resolved once and then
   // keeps answering with what it found the first time.
-  const change = browser.$('button[aria-label="Change model"]')
   const rowCount = () => browser.$$(`div[title="${modelId}"]`).length
-  await browser.waitUntil(async () => (await change.isExisting()) || (await rowCount()) > 0, {
-    timeout: 15_000,
-    timeoutMsg: 'the model picker did not open',
-  })
-  if ((await rowCount()) === 0) await change.click()
+  const shows = async (element: typeof row) => (await element.isExisting()) && (await element.isDisplayed())
+
+  // Open it, and make sure it stayed open. A page that is still settling — a
+  // thread route restoring its model, for one — can close the popover right
+  // after it opens, leaving its content in the DOM but out of sight. Clicking
+  // the trigger again is safe here: it is only done while nothing is showing.
+  // Which of the two views it opened on is known once it has rendered one.
+  await browser.waitUntil(
+    async () => {
+      if ((await shows(change)) || (await shows(row))) return true
+      await trigger.click()
+      return false
+    },
+    { timeout: 30_000, interval: 1_500, timeoutMsg: 'the model picker did not open' }
+  )
+  if (!(await shows(row))) await change.click()
   await expect.poll(rowCount, { timeout: 15_000 }).toBe(1)
 
   // The outcome is read off the trigger, which shows the selected model. The
   // row itself says nothing: it stays in the DOM while the popover animates
   // shut, and clicking it again then reopens the picker.
-  const trigger = browser.$('[data-test-id="model-picker-trigger"]')
   const picked = () =>
     browser
       .waitUntil(async () => (await trigger.getText()).includes(modelId), { timeout: 5_000 })
       .then(() => true, () => false)
 
-  const row = browser.$(`div[title="${modelId}"]`)
   await row.waitForClickable({ timeout: 15_000 })
   await row.click()
   if (!(await picked())) {
@@ -125,15 +133,57 @@ export async function send(session: Session, prompt: string): Promise<void> {
   })
 }
 
+/** Opens a local provider's settings page the way a user does: the gear beside it in the model picker. */
+export async function openProviderSettings(session: Session, provider: string): Promise<void> {
+  const browser = session.app.browser
+  await browser.$('[data-test-id="model-picker-trigger"]').click()
+  const change = browser.$('button[aria-label="Change model"]')
+  const gear = browser.$(`[data-test-id="provider-settings-${provider}"]`)
+  await browser.waitUntil(async () => (await change.isExisting()) || (await gear.isExisting()), {
+    timeout: 15_000,
+    timeoutMsg: 'the model picker did not open',
+  })
+  if (!(await gear.isExisting())) await change.click()
+  await gear.waitForClickable({ timeout: 15_000 })
+  await gear.click()
+}
+
+/**
+ * Clicks an element once it has stopped moving. Pages that fill in as results
+ * arrive — the Integrations page resolves each agent's status separately — shift
+ * their layout under a click aimed a moment earlier, and the click lands on
+ * nothing. Clicking again is not an answer where the action must happen once.
+ */
+export async function clickWhenStill(session: Session, selector: string): Promise<void> {
+  const browser = session.app.browser
+  const element = browser.$(selector)
+  await element.waitForClickable({ timeout: 30_000 })
+  let last = ''
+  let stableFor = 0
+  await browser.waitUntil(
+    async () => {
+      const { x, y } = await element.getLocation()
+      const now = `${Math.round(x)},${Math.round(y)}`
+      stableFor = now === last ? stableFor + 1 : 0
+      last = now
+      return stableFor >= 3
+    },
+    { timeout: 30_000, interval: 300, timeoutMsg: `${selector} never stopped moving` }
+  )
+  await element.click()
+}
+
 /**
  * Chooses an item from a dropdown menu, from the keyboard. These menus open on
  * `pointerdown`, which the embedded WebDriver's click does not produce; Enter on
  * the focused trigger opens them the way it does for a user without a mouse.
+ * The trigger only has to exist: a thread row's is drawn on hover or on focus,
+ * and focus is what this gives it.
  */
 export async function chooseFromMenu(session: Session, trigger: string, item: string): Promise<void> {
   const browser = session.app.browser
   const button = browser.$(trigger)
-  await button.waitForDisplayed({ timeout: 15_000 })
+  await button.waitForExist({ timeout: 15_000 })
   await browser.execute((el) => (el as unknown as HTMLElement).focus(), await button)
   await browser.keys('Enter')
   const entry = browser.$(`//*[@role="menuitem"][starts-with(normalize-space(.), "${item}")]`)
@@ -143,7 +193,13 @@ export async function chooseFromMenu(session: Session, trigger: string, item: st
   await entry.waitForExist({ reverse: true, timeout: 10_000 })
 }
 
-export const CRASH_TOAST = 'Model crashed during generation'
+/**
+ * What every report of a dead model process says, whichever title it carries:
+ * "Model crashed during generation" while a reply was being produced, "Model
+ * stopped unexpectedly" otherwise.
+ */
+export const CRASH_TOAST = "The model's backend process exited unexpectedly"
+export const IDLE_CRASH_TITLE = 'Model stopped unexpectedly'
 
 /**
  * Watches the page for a text that may come and go, such as a toast, which a

@@ -516,9 +516,16 @@ pub fn normalize_backend_layout<R: Runtime>(
 
 // rfd native file dialog
 #[tauri::command]
+#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables, unused_mut))]
 pub async fn open_dialog(
     options: Option<DialogOpenOptions>,
 ) -> Result<Option<serde_json::Value>, String> {
+    // A native file dialog cannot be driven from a test and would sit on the
+    // desktop of whoever runs it; an end-to-end build answers with what the
+    // runner queued, or "cancelled" when it queued nothing.
+    #[cfg(feature = "e2e")]
+    return Ok(crate::core::e2e::take_dialog_answer(&crate::core::e2e::data_root()));
+
     let mut dialog = AsyncFileDialog::new();
 
     if let Some(opts) = options {
@@ -562,7 +569,12 @@ pub async fn open_dialog(
 }
 
 #[tauri::command]
+#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables, unused_mut))]
 pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<String>, String> {
+    #[cfg(feature = "e2e")]
+    return Ok(crate::core::e2e::take_dialog_answer(&crate::core::e2e::data_root())
+        .and_then(|answer| answer.as_str().map(str::to_string)));
+
     let mut dialog = AsyncFileDialog::new();
 
     if let Some(opts) = options {

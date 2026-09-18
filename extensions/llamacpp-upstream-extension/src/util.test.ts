@@ -6,6 +6,7 @@ import {
   ggufShardSetPaths,
   parseGgufShard,
   isConcreteVersionBackend,
+  isDownloadableUrl,
   hasEmbeddedMtp,
   classifyProjector,
 } from './util'
@@ -836,5 +837,35 @@ describe('classifyProjector', () => {
         'clip.audio.projector_type': '  ',
       })
     ).toEqual({ vision: true, audio: false })
+  })
+})
+
+describe('isDownloadableUrl', () => {
+  it('takes any https address as something to download', () => {
+    expect(isDownloadableUrl('https://huggingface.co/org/repo/resolve/main/m.gguf')).toBe(true)
+    expect(isDownloadableUrl('https://mirror.example/m.gguf')).toBe(true)
+  })
+
+  it('takes plain http only from this machine', () => {
+    expect(isDownloadableUrl('http://127.0.0.1:8080/m.gguf')).toBe(true)
+    expect(isDownloadableUrl('http://localhost:8080/m.gguf')).toBe(true)
+    expect(isDownloadableUrl('http://LOCALHOST/m.gguf')).toBe(true)
+    expect(isDownloadableUrl('http://[::1]:8080/m.gguf')).toBe(true)
+  })
+
+  it('does not take plain http from anywhere else, however local it looks', () => {
+    expect(isDownloadableUrl('http://mirror.example/m.gguf')).toBe(false)
+    expect(isDownloadableUrl('http://192.168.1.10/m.gguf')).toBe(false)
+    expect(isDownloadableUrl('http://127.0.0.1.evil.example/m.gguf')).toBe(false)
+    expect(isDownloadableUrl('http://localhost.evil.example/m.gguf')).toBe(false)
+    expect(isDownloadableUrl('http://user@127.0.0.1@evil.example/m.gguf')).toBe(false)
+  })
+
+  it('leaves paths on disk and nonsense to the local-file branch', () => {
+    expect(isDownloadableUrl('/Users/me/models/m.gguf')).toBe(false)
+    expect(isDownloadableUrl('C:\\models\\m.gguf')).toBe(false)
+    expect(isDownloadableUrl('ftp://127.0.0.1/m.gguf')).toBe(false)
+    expect(isDownloadableUrl('http://')).toBe(false)
+    expect(isDownloadableUrl('')).toBe(false)
   })
 })

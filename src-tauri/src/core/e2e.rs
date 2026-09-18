@@ -144,6 +144,43 @@ pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<(
     Ok(())
 }
 
+/// Where the commands of terminals that were not opened are written, one JSON
+/// string per line.
+pub const OPENED_TERMINALS_FILE: &str = "opened-terminals.jsonl";
+
+/// Stands in for opening a terminal with an agent in it. The Launch page still
+/// goes through the real command; the desktop of whoever runs the tests is left
+/// alone, and a test can read exactly what would have been run.
+pub fn record_terminal(root: &Path, command: &str) -> Result<(), String> {
+    use std::io::Write;
+    let line = serde_json::to_string(command).map_err(|error| error.to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(root.join(OPENED_TERMINALS_FILE))
+        .map_err(|error| error.to_string())?;
+    writeln!(file, "{line}").map_err(|error| error.to_string())
+}
+
+/// Answers the runner queued for the file dialogs the app is about to open,
+/// one JSON value per line: a path, an array of paths, or `null` for "cancelled".
+pub const DIALOG_ANSWERS_FILE: &str = "dialog-answers.jsonl";
+
+/// Takes the next queued answer; `None` — what a cancelled dialog returns —
+/// when nothing is queued, so an unexpected dialog never blocks a run.
+pub fn take_dialog_answer(root: &Path) -> Option<serde_json::Value> {
+    let file = root.join(DIALOG_ANSWERS_FILE);
+    let queued = std::fs::read_to_string(&file).ok()?;
+    let mut lines = queued.lines().filter(|line| !line.trim().is_empty());
+    let next = lines.next()?.to_string();
+    let rest: Vec<&str> = lines.collect();
+    let _ = std::fs::write(&file, rest.join("\n"));
+    match serde_json::from_str::<serde_json::Value>(&next).ok()? {
+        serde_json::Value::Null => None,
+        answer => Some(answer),
+    }
+}
+
 /// The file a runner may put in the root to start the webview with chosen
 /// localStorage entries: a JSON object of key to stored string.
 pub const WEBVIEW_SEED_FILE: &str = "webview-seed.json";
@@ -291,6 +328,37 @@ mod tests {
         assert_eq!(seed_script("{}").unwrap(), None);
         assert!(seed_script(r#"{"key": 1}"#).unwrap_err().contains("must map keys to strings"));
         assert!(seed_script("not json").unwrap_err().contains("webview-seed.json"));
+    }
+
+    #[test]
+    fn a_terminal_that_is_not_opened_is_written_down_verbatim() {
+        let root = tempfile::tempdir().unwrap();
+
+        record_terminal(root.path(), "codex").unwrap();
+        record_terminal(root.path(), "KEY='a \"b\"' agent --flag").unwrap();
+
+        let written = std::fs::read_to_string(root.path().join(OPENED_TERMINALS_FILE)).unwrap();
+        let commands: Vec<String> = written
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(commands, vec!["codex", "KEY='a \"b\"' agent --flag"]);
+    }
+
+    #[test]
+    fn dialog_answers_are_taken_in_order_and_run_out_as_cancelled() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(DIALOG_ANSWERS_FILE),
+            "\"/picked/folder\"\nnull\n[\"/a\",\"/b\"]\n",
+        )
+        .unwrap();
+
+        assert_eq!(take_dialog_answer(root.path()), Some(serde_json::json!("/picked/folder")));
+        assert_eq!(take_dialog_answer(root.path()), None);
+        assert_eq!(take_dialog_answer(root.path()), Some(serde_json::json!(["/a", "/b"])));
+        assert_eq!(take_dialog_answer(root.path()), None);
+        assert_eq!(take_dialog_answer(tempfile::tempdir().unwrap().path()), None);
     }
 
     #[test]

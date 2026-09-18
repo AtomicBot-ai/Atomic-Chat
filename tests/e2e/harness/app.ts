@@ -11,18 +11,22 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { remote, type Browser } from 'webdriverio'
-import { APP_BINARY_NAME, inheritedEnvKeys } from './platform.js'
+import { APP_BINARY_NAME, inheritedEnvKeys, listProcesses } from './platform.js'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
 /** `make build-app-e2e` writes here; a separate target dir keeps the app's
  *  orphan reaper, which scans the build's resource dir, away from a dev build. */
-export const APP_BINARY =
-  process.env.ATOMIC_E2E_APP_BIN ??
-  resolve(REPO_ROOT, 'src-tauri/target/e2e/debug', APP_BINARY_NAME)
+export const APP_BINARY = resolve(
+  // Normalised: an app that restarts itself shows up in the process list under
+  // its canonical path, and one given here as `a/../b` would not be recognised
+  // as this suite's — it would outlive the run and, holding the single-instance
+  // socket, make the next launch exit at once.
+  process.env.ATOMIC_E2E_APP_BIN ?? join(REPO_ROOT, 'src-tauri/target/e2e/debug', APP_BINARY_NAME)
+)
 
 const DRIVER_READY_TIMEOUT_MS = 60_000
 const STOP_GRACE_MS = 5_000
@@ -126,6 +130,45 @@ export async function stopProcess(child: ChildProcess): Promise<void> {
   clearTimeout(timer)
 }
 
+/** App processes started from this build's binary, by their own argv. */
+function appPids(): number[] {
+  return listProcesses()
+    .filter((p) => p.command === APP_BINARY || p.command.startsWith(`${APP_BINARY} `))
+    .map((p) => p.pid)
+}
+
+/**
+ * Follows the app through a restart it performs itself (after relocating its
+ * data folder, say). The new process is the old one's child, not the harness's,
+ * and inherits its environment — so the WebDriver server comes back on the same
+ * port, and the session is simply attached again.
+ */
+export async function followRelaunch(app: RunningApp): Promise<void> {
+  if (app.child.exitCode === null && app.child.signalCode === null) {
+    await Promise.race([once(app.child, 'exit'), new Promise((r) => setTimeout(r, 60_000))])
+  }
+  if (app.child.exitCode === null && app.child.signalCode === null) {
+    throw new Error('the app did not restart itself within 60 s')
+  }
+  await app.browser.deleteSession().catch(() => undefined)
+  const deadline = Date.now() + DRIVER_READY_TIMEOUT_MS
+  for (;;) {
+    const up = await fetch(`http://127.0.0.1:${app.driverPort}/status`).then((r) => r.ok, () => false)
+    if (up) break
+    if (Date.now() > deadline) throw new Error(`the restarted app never served WebDriver on ${app.driverPort}\n${app.output()}`)
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  app.browser = await remote({
+    hostname: '127.0.0.1',
+    port: app.driverPort,
+    path: '/',
+    logLevel: 'warn',
+    waitforTimeout: 15_000,
+    capabilities: {},
+  })
+  await waitForSplashToGo(app.browser)
+}
+
 export async function launchApp(extraEnv: Record<string, string>): Promise<RunningApp> {
   const driverPort = await freePort()
   const { child, output } = spawnApp(
@@ -144,16 +187,32 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
       capabilities: {},
     })
     await waitForSplashToGo(browser)
-    return {
+    const app: RunningApp = {
       child,
       browser,
       driverPort,
       output,
       stop: async () => {
-        await browser.deleteSession().catch(() => undefined)
+        await app.browser.deleteSession().catch(() => undefined)
         await stopProcess(child)
+        // An app that restarted itself is no longer this process's child. One
+        // suite runs one app at a time, so every process of this binary is it.
+        for (const pid of appPids()) {
+          try {
+            process.kill(pid, 'SIGKILL')
+          } catch {
+            // exited meanwhile
+          }
+        }
+        // A kill is a request. While the process is still going down it holds the
+        // single-instance socket, and the next launch hands itself over to it and
+        // exits with code 0 before its WebDriver server exists.
+        for (let waited = 0; appPids().length > 0 && waited < 10_000; waited += 100) {
+          await new Promise((r) => setTimeout(r, 100))
+        }
       },
     }
+    return app
   } catch (error) {
     await stopProcess(child)
     throw error

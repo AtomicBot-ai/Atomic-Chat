@@ -7,15 +7,16 @@
  * the core's own test doubles, and copying them here would let the copy drift
  * from the process protocol the core actually expects.
  */
+import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
-import { cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { appendFile, cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Profile } from './profile.js'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-const CORE_REPO = process.env.ATOMIC_CORE_REPO ?? resolve(REPO_ROOT, '../atomic-chat-core')
+export const CORE_REPO = process.env.ATOMIC_CORE_REPO ?? resolve(REPO_ROOT, '../atomic-chat-core')
 
 async function coreHelper<T>(file: string): Promise<T> {
   return (await import(/* @vite-ignore */ pathToFileURL(join(CORE_REPO, file)).href)) as T
@@ -38,6 +39,8 @@ export interface FakeBackendOptions {
   reply?: string
   /** `ready` by default; `exit-1` makes every load fail. */
   mode?: string
+  /** The release tag to install it as; `FAKE_BACKEND_VERSION` unless a scenario needs an older one. */
+  version?: string
 }
 
 export async function installFakeBackend(
@@ -87,10 +90,18 @@ export interface CloudRequest {
   status: number
 }
 
+export interface CloudCompletion {
+  model?: string
+  stream?: boolean
+  messages?: { role?: string; content?: unknown }[]
+}
+
 export interface FakeCloud {
   baseUrl: string
   /** Every request the endpoint received, in order. */
   requests: () => CloudRequest[]
+  /** Completion payloads received from the app and outside API clients. */
+  completions: () => CloudCompletion[]
   stop: () => Promise<void>
 }
 
@@ -106,6 +117,7 @@ export async function startFakeCloud(options: {
   reply: string
 }): Promise<FakeCloud> {
   const seen: CloudRequest[] = []
+  const completions: CloudCompletion[] = []
   const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0] ?? ''
     const authorization = req.headers.authorization ?? ''
@@ -127,7 +139,9 @@ export async function startFakeCloud(options: {
         return json(200, { object: 'list', data: [{ id: options.model, object: 'model', owned_by: 'e2e' }] })
       }
       if (req.method === 'POST' && path === '/v1/chat/completions') {
-        const wantsStream = (JSON.parse(raw || '{}') as { stream?: boolean }).stream === true
+        const completion = JSON.parse(raw || '{}') as CloudCompletion
+        completions.push(completion)
+        const wantsStream = completion.stream === true
         const chunk = (delta: object, finishReason: string | null) => ({
           id: 'chatcmpl-e2e',
           object: 'chat.completion.chunk',
@@ -161,6 +175,139 @@ export async function startFakeCloud(options: {
   const port = typeof address === 'object' && address ? address.port : 0
   return {
     baseUrl: `http://127.0.0.1:${port}/v1`,
+    requests: () => [...seen],
+    completions: () => [...completions],
+    stop: async () => {
+      server.closeAllConnections()
+      server.close()
+      await once(server, 'close')
+    },
+  }
+}
+
+/** The port baked into the e2e build as the Hub's catalog and picks address (Makefile: E2E_FIXTURE_PORT). */
+export const HUB_FIXTURE_PORT = Number(process.env.ATOMIC_E2E_FIXTURE_PORT ?? 47391)
+
+export interface HubFixtureRequest {
+  method: string
+  path: string
+  authorization: string
+  /** The `Range` header, empty when the whole file was asked for. */
+  range: string
+}
+
+export interface HubFixture {
+  modelBytes: number
+  /** sha256 of the model file, to compare with what landed on disk. */
+  modelSha256: string
+  requests: () => HubFixtureRequest[]
+  stop: () => Promise<void>
+}
+
+/**
+ * What the Hub needs to offer one model and let it be downloaded, served from
+ * this machine: the catalog, the landing page's picks, and the model file. The
+ * file is a real GGUF as far as the importer looks — magic, version, no tensors,
+ * no metadata — padded out, and sent slowly, because the app reports progress
+ * once per 10 MB and a file that arrives at once shows none. The padding counts
+ * its own position, so a resumed transfer written at the wrong offset changes
+ * the file's hash instead of vanishing among zeros.
+ */
+export async function startHubFixture(options: {
+  modelName: string
+  quantId: string
+  title: string
+  modelBytes?: number
+}): Promise<HubFixture> {
+  const modelBytes = options.modelBytes ?? 32 * 1024 * 1024
+  const origin = `http://127.0.0.1:${HUB_FIXTURE_PORT}`
+  const header = Buffer.alloc(24)
+  header.write('GGUF', 0, 'ascii')
+  header.writeUInt32LE(3, 4) // version
+  header.writeBigUInt64LE(0n, 8) // tensor count
+  header.writeBigUInt64LE(0n, 16) // metadata key-value count
+  const model = Buffer.alloc(modelBytes)
+  for (let at = header.length; at + 4 <= modelBytes; at += 4) model.writeUInt32LE(at, at)
+  header.copy(model)
+
+  const catalog = {
+    manifest_version: 1,
+    schema_version: 1,
+    updated_at: '2026-01-01T00:00:00Z',
+    models: [
+      {
+        model_name: options.modelName,
+        developer: 'e2e',
+        description: 'A fixture model served by the desktop e2e suite.',
+        downloads: 0,
+        num_quants: 1,
+        quants: [{ model_id: options.quantId, path: `${origin}/model.gguf`, file_size: '0.03 GB' }],
+        num_mmproj: 0,
+        mmproj_models: [],
+        num_safetensors: 0,
+        safetensors_files: [],
+        is_mlx: false,
+      },
+    ],
+  }
+  const picks = {
+    schema_version: 1,
+    updated_at: '2026-01-01T00:00:00Z',
+    picks: [{ model_name: options.modelName, title: options.title, summary: 'Fixture pick.', format: 'gguf', order: 1, active: true }],
+  }
+
+  const seen: HubFixtureRequest[] = []
+  const server = createServer((req, res) => {
+    const path = (req.url ?? '').split('?')[0] ?? ''
+    seen.push({
+      method: req.method ?? '',
+      path,
+      authorization: req.headers.authorization ?? '',
+      range: req.headers.range ?? '',
+    })
+    const json = (body: unknown) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+      res.end(JSON.stringify(body))
+    }
+    if (path === '/catalog.json') return json(catalog)
+    if (path === '/staff-picks.json') return json(picks)
+    if (path === '/model.gguf') {
+      const range = /^bytes=(\d+)-/.exec(req.headers.range ?? '')
+      const from = range ? Number(range[1]) : 0
+      res.writeHead(range ? 206 : 200, {
+        'content-type': 'application/octet-stream',
+        'content-length': String(model.length - from),
+        'accept-ranges': 'bytes',
+        ...(range ? { 'content-range': `bytes ${from}-${model.length - 1}/${model.length}` } : {}),
+      })
+      if (req.method === 'HEAD') return res.end()
+      // A megabyte every 150 ms: about five seconds for the default size, so
+      // each of the app's 10 MB progress reports stays on screen long enough to
+      // be read.
+      let offset = from
+      const pump = () => {
+        if (res.destroyed) return
+        if (offset >= model.length) return res.end()
+        const end = Math.min(offset + 1024 * 1024, model.length)
+        res.write(model.subarray(offset, end))
+        offset = end
+        setTimeout(pump, 150)
+      }
+      return pump()
+    }
+    // Including the `.gz` twins the app asks for first.
+    res.writeHead(404, { 'access-control-allow-origin': '*' })
+    res.end()
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', (error) =>
+      reject(new Error(`the Hub fixture could not listen on ${origin}: ${String(error)}. The port is baked into the e2e build.`))
+    )
+    server.listen(HUB_FIXTURE_PORT, '127.0.0.1', resolve)
+  })
+  return {
+    modelBytes: model.length,
+    modelSha256: createHash('sha256').update(model).digest('hex'),
     requests: () => [...seen],
     stop: async () => {
       server.closeAllConnections()
@@ -198,6 +345,15 @@ export async function writeRealModel(profile: Profile, modelId: string, ggufPath
     join(dir, 'model.yml'),
     [`model_path: ${ggufPath}`, `name: ${modelId}`, `size_bytes: ${size}`, 'embedding: false', ''].join('\n')
   )
+}
+
+/**
+ * Queues what the next native file dialog will "return". An e2e build never
+ * opens one: it takes the next queued answer, or behaves as if the user
+ * cancelled when there is none.
+ */
+export async function answerNextDialog(profile: Profile, answer: string | string[] | null): Promise<void> {
+  await appendFile(join(profile.root, 'dialog-answers.jsonl'), `${JSON.stringify(answer)}\n`)
 }
 
 /** Kills fake backends the core journalled but did not get to stop. */

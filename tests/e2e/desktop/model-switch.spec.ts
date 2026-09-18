@@ -38,7 +38,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('switching between two local models', () 
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('unloads the first model, ends its process, and answers from the second', async () => {

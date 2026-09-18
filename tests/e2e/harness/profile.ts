@@ -6,13 +6,15 @@
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { homeRedirect, listProcesses, webviewStoreDir } from './platform.js'
 
 export interface Profile {
   root: string
   home: string
   dataFolder: string
+  /** First on the app's PATH: where a scenario puts stand-ins for tools the app looks for. */
+  binDir: string
   /** Where the webview keeps this run's localStorage and IndexedDB. */
   webviewStore: string
   /** What the app needs in its environment to live inside this profile. */
@@ -67,8 +69,10 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   const root = await realpath(await mkdtemp(join(tmpdir(), ROOT_PREFIX)))
   const home = join(root, 'home')
   const dataFolder = join(root, 'data')
+  const binDir = join(root, 'bin')
   await mkdir(home, { recursive: true })
   await mkdir(dataFolder, { recursive: true })
+  await mkdir(binDir, { recursive: true })
 
   // A first launch otherwise connects to a hosted MCP server (one default
   // server ships enabled) and creates ~/Documents/Atomic_chat. An existing
@@ -91,7 +95,11 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   await writeFile(join(root, 'webview-seed.json'), JSON.stringify(seed))
 
   const webviewStore = webviewStoreDir(root, webviewStoreUuid(root))
-  const env: Record<string, string> = { ...homeRedirect(home), ATOMIC_E2E_DATA_ROOT: root }
+  const env: Record<string, string> = {
+    ...homeRedirect(home),
+    ATOMIC_E2E_DATA_ROOT: root,
+    PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
+  }
   // Which core the app starts: `make test-app-e2e` names one, otherwise the app
   // falls back to the one bundled with the build. Quoted because the app splits
   // the override like a command line and the path may contain spaces.
@@ -101,6 +109,7 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
     root,
     home,
     dataFolder,
+    binDir,
     webviewStore,
     env,
     destroy: async () => {

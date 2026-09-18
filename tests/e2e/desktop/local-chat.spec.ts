@@ -48,7 +48,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a chat with a local model', () => {
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('loads the model through the core, streams the reply and keeps the thread across a restart', async () => {
@@ -123,7 +123,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a local model whose backend dies while l
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('tells the user why, offers a retry, and leaves no session or process behind', async () => {

@@ -60,7 +60,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a provider setting changed in the UI', (
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('reaches the core and the next backend, survives a restart, and can be turned back', async () => {

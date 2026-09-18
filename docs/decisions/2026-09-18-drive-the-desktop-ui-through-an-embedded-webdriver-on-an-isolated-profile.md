@@ -53,6 +53,12 @@ title: "Drive the desktop UI through an embedded WebDriver on an isolated profil
   - an initialization script seeds localStorage from `<root>/webview-seed.json`
     once per profile (the runner turns the API server's auto-start off and gives
     it a free port) and collects page errors for failure artifacts;
+  - native file dialogs are answered from `<root>/dialog-answers.jsonl`, which
+    the test fills in advance, or as "cancelled" when it is empty: they cannot
+    be driven from a test and would sit on the operator's desktop;
+  - opening a terminal with an agent in it is replaced by writing the command
+    to `<root>/opened-terminals.jsonl`: the Launch page still goes through the
+    real command, and no window opens on the desktop of whoever runs the tests;
   - the startup CLI install is compiled out, and the windows are kept on top:
     WebKit gives a fully covered window no animation frames, the app removes its
     full-window splash overlay from one, and on a machine somebody is working on
@@ -74,15 +80,24 @@ title: "Drive the desktop UI through an embedded WebDriver on an isolated profil
   is asked to shut down with `force`: a killed app's registration stays attached
   for some 45 s, an unforced shutdown is refused meanwhile, and killing the core
   instead orphans the backends it never got to stop. The build has its own target directory (`src-tauri/target/e2e`),
-  carries no telemetry key, points the registries at a closed port, and builds
-  the web app without yarn.
+  carries no telemetry key, points the registries at a closed port — except the
+  Hub's catalog and picks, which point at a fixed loopback port where one
+  scenario runs a fixture and the others find nothing listening — and builds the
+  web app without yarn. One production rule changed for this: the upstream
+  llama.cpp extension takes `http://` model addresses from loopback hosts as
+  downloads (it took only `https://`, and treated everything else as a path on
+  disk). A build-time switch was rejected: the extensions ship as packed
+  tarballs shared with dev builds, and a tarball built with "allow insecure
+  downloads" must never be the one a developer installs from.
 - **Consequences:** `make build-app-e2e` and `make test-app-e2e` give a
   deterministic window-level check in a few minutes, outside `make verify`.
   Which journeys exist, what each proves and what it does not is kept in
   [`docs/testing-critical-flows.md`](../testing-critical-flows.md), not here.
   An e2e build differs from the shipped one in the
   identifier, the updater endpoint, who creates the configured windows (and that
-  they float on top), where path resolution starts and the missing CLI install; `tests/e2e-config.test.mjs`
+  they float on top), where path resolution starts, the missing CLI install, the
+  terminal that is recorded rather than opened and the file dialogs that are
+  answered from a queue; `tests/e2e-config.test.mjs`
   keeps the config copy and the wiring from drifting. Costs and limits: macOS
   arm64 is the only verified platform. The harness keeps every OS fact in
   `tests/e2e/harness/platform.ts` and fails loudly on an unported one instead

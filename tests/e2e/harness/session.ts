@@ -23,8 +23,12 @@ export interface Session {
   apiPort: number
   app: RunningApp
   operatorBefore: OperatorSnapshot
+  /** Every data folder the app has used in this run; a relocation adds one. */
+  dataFolders: string[]
   /** Stops every page watcher still running; safe to call twice. */
   watchers: (() => Promise<unknown>)[]
+  /** The backends (`provider:version/backend`) this run may leave installed. */
+  allowedBackends: string[]
 }
 
 export async function startSession(
@@ -33,6 +37,10 @@ export async function startSession(
     webviewSeed?: Record<string, string>
     apiServer?: Record<string, unknown>
     prepare?: (profile: Profile) => Promise<void>
+    /** Release tag of the scripted backend every profile gets; the newest-possible one by default. */
+    backendVersion?: string
+    /** Backends the scenario is expected to install on top of that one. */
+    alsoAllowedBackends?: string[]
   } = {}
 ): Promise<Session> {
   await sweepStaleProfiles()
@@ -48,10 +56,20 @@ export async function startSession(
     // on a profile without one the upstream extension downloads and installs
     // the real thing on first launch, without asking. A scenario's own
     // `prepare` may install it again with other options; the last one wins.
-    if (CAN_RUN_FAKE_BACKEND) await installFakeBackend(profile)
+    const backendVersion = options.backendVersion ?? FAKE_BACKEND_VERSION
+    if (CAN_RUN_FAKE_BACKEND) await installFakeBackend(profile, { version: backendVersion })
     await options.prepare?.(profile)
     const app = await launchApp(profile.env)
-    return { name, profile, apiPort, app, operatorBefore, watchers: [] }
+    return {
+      name,
+      profile,
+      apiPort,
+      app,
+      operatorBefore,
+      dataFolders: [profile.dataFolder],
+      watchers: [],
+      allowedBackends: [`${FAKE_PROVIDER}:${backendVersion}/${FAKE_BACKEND}`, ...(options.alsoAllowedBackends ?? [])],
+    }
   } catch (error) {
     await stopCore(profile.dataFolder)
     await profile.destroy()
@@ -95,10 +113,14 @@ export async function endSession(session: Session): Promise<string[]> {
   // Before the app goes: a watcher left polling a dead app only produces noise.
   await Promise.all(session.watchers.map((stop) => stop()))
   await session.app.stop()
-  const coreStop = await stopCore(session.profile.dataFolder)
+  let coreStop: string = 'no core'
+  for (const folder of session.dataFolders) {
+    const stopped = await stopCore(folder)
+    if (stopped !== 'no core') coreStop = stopped
+  }
   // Before the profile goes: the journal that names the core's children lives
   // in it, and a core that had to be killed did not stop them.
-  await reapFakeBackends(session.profile.dataFolder)
+  for (const folder of session.dataFolders) await reapFakeBackends(folder)
   // A stopped core is supposed to have stopped its backends. One that has not
   // holds a model in memory for as long as the machine stays up.
   const leaked = profileProcesses(session.profile.root)
@@ -111,9 +133,8 @@ export async function endSession(session: Session): Promise<string[]> {
   }
   // Anything but the fixture pack was installed behind the scenario's back —
   // including a half-finished `*.incoming-*` staging folder.
-  const expectedBackend = `${FAKE_PROVIDER}:${FAKE_BACKEND_VERSION}/${FAKE_BACKEND}`
   const foreignBackends = CAN_RUN_FAKE_BACKEND
-    ? (await installedBackends(session.profile.dataFolder)).filter((b) => b !== expectedBackend)
+    ? (await installedBackends(session.profile.dataFolder)).filter((b) => !session.allowedBackends.includes(b))
     : []
   await session.profile.destroy()
   return [

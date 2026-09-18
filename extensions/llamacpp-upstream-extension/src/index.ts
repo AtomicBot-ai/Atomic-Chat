@@ -56,6 +56,7 @@ import {
   isConcreteVersionBackend,
   hasEmbeddedMtp,
   ggufShardSetPaths,
+  isDownloadableUrl,
   isEmbeddingGguf,
   classifyProjector,
 } from './util'
@@ -3648,7 +3649,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     const maybeDownload = async (path: string, saveName: string) => {
       // if URL, add to downloadItems, and return local path
-      if (path.startsWith('https://')) {
+      if (isDownloadableUrl(path)) {
         const localPath = `${modelDir}/${saveName}`
         downloadItems.push({
           url: path,
@@ -3679,7 +3680,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
      * and say nothing about its siblings — they are left off, and completeness
      * is enforced at load time against the shard set itself.
      */
-    const shardUrls = opts.modelPath.startsWith('https://')
+    const shardUrls = isDownloadableUrl(opts.modelPath)
       ? ggufShardSetPaths(opts.modelPath)
       : [opts.modelPath]
     const isSharded = shardUrls.length > 1
