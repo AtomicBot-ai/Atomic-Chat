@@ -100,4 +100,56 @@ describe('toDiffusionError', () => {
     })
     expect(toDiffusionError(undefined).message).toBe('')
   })
+
+  // What the relay and the core's HTTP layer reject with besides the
+  // diffusion codes: a plain object, never an Error.
+  it.each([
+    [
+      'an unreachable core',
+      { code: 'CORE_UNREACHABLE', message: 'The core is not reachable.', details: 'connection refused' },
+      { code: 'INTERNAL', message: 'The core is not reachable.', details: 'CORE_UNREACHABLE: connection refused' },
+    ],
+    [
+      'a core that is not running',
+      { code: 'CORE_NOT_RUNNING', message: 'The app is starting up or shutting down.' },
+      { code: 'INTERNAL', message: 'The app is starting up or shutting down.', details: 'CORE_NOT_RUNNING' },
+    ],
+    [
+      'another core version',
+      { code: 'CORE_VERSION_MISMATCH', message: 'A different Atomic Chat core is already running.', details: 'pid 123' },
+      { code: 'INTERNAL', message: 'A different Atomic Chat core is already running.', details: 'CORE_VERSION_MISMATCH: pid 123' },
+    ],
+    [
+      'a refused body',
+      { code: 'INVALID_ARGUMENT', message: 'The request body is not valid JSON.' },
+      { code: 'INTERNAL', message: 'The request body is not valid JSON.', details: 'INVALID_ARGUMENT' },
+    ],
+    [
+      'an HTTP status',
+      { code: 'HTTP_502', message: 'Bad gateway', details: 'upstream closed' },
+      { code: 'INTERNAL', message: 'Bad gateway', details: 'HTTP_502: upstream closed' },
+    ],
+    [
+      "the core's raw throw",
+      { code: 'INTERNAL_ERROR', message: 'Something broke.' },
+      { code: 'INTERNAL', message: 'Something broke.', details: 'INTERNAL_ERROR' },
+    ],
+    [
+      'a code that is only an Object.prototype key',
+      { code: 'toString', message: 'm' },
+      { code: 'INTERNAL', message: 'm', details: 'toString' },
+    ],
+    [
+      'an object without a code',
+      { message: 'no code', details: 'd' },
+      { code: 'INTERNAL', message: 'no code', details: 'd' },
+    ],
+    ['an empty object', {}, { code: 'INTERNAL', message: '' }],
+    ['a string', 'plain failure', { code: 'INTERNAL', message: 'plain failure' }],
+    ['null', null, { code: 'INTERNAL', message: '' }],
+  ])('keeps the message of %s and routes it as INTERNAL', (_label, rejection, expected) => {
+    const described = toDiffusionError(rejection)
+    expect(described).toEqual(expected)
+    expect(described.message).not.toContain('[object Object]')
+  })
 })

@@ -83,7 +83,7 @@ describe('image-generation-store', () => {
     captured.events.length = 0
     install.ensure.mockReset()
     install.select.mockResolvedValue({ backendId: 'macos-arm64', reason: undefined })
-    useImageSetting.setState({ selectedArtifactId: null, keepModelLoaded: false, idleUnloadMinutes: 10 })
+    useImageSetting.setState({ selectedArtifactId: null, keepModelLoaded: false, idleUnloadMinutes: 10, outputDir: null })
     resetImageGenerationForTests()
     useImageGalleryStore.getState().reset()
     fake = makeFakeDiffusion()
@@ -348,6 +348,128 @@ describe('image-generation-store', () => {
       fake.emit({ type: 'state', status: makeStatus(), reason: 'idle' })
       expect(useImageGenerationStore.getState().capabilities).toBeNull()
       expect(useImageGenerationStore.getState().status?.model.state).toBe('unloaded')
+    })
+
+    it('configures a new core generation again and takes its status as the truth', async () => {
+      const { configureDiffusion } = await import('@/lib/diffusion/config')
+      const configure = vi.mocked(configureDiffusion)
+      configure.mockClear()
+      useImageGenerationStore.setState({ status: makeLoadedStatus(), capabilities: makeCapabilities() })
+      fake.emit({ type: 'reset', generation: 2 })
+      await waitFor(() => expect(configure).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(useImageGenerationStore.getState().status?.model.state).toBe('unloaded'))
+      expect(useImageGenerationStore.getState().capabilities).toBeNull()
+    })
+
+    it('sends the stored output folder on bind and again on a new core generation', async () => {
+      const { configureDiffusion } = await import('@/lib/diffusion/config')
+      const configure = vi.mocked(configureDiffusion)
+      useImageSetting.setState({ outputDir: '/Users/me/Pictures/AI' })
+      configure.mockClear()
+      resetImageGenerationForTests()
+      await useImageGenerationStore.getState().bind()
+      expect(configure.mock.calls.map(([settings]) => settings)).toEqual([
+        { idleUnloadSecs: 600, outputDir: '/Users/me/Pictures/AI' },
+      ])
+
+      fake.emit({ type: 'reset', generation: 2 })
+      await waitFor(() => expect(configure).toHaveBeenCalledTimes(2))
+      expect(configure.mock.calls[1][0]).toEqual({
+        idleUnloadSecs: 600,
+        outputDir: '/Users/me/Pictures/AI',
+      })
+    })
+
+    it('falls back to the default folder when the stored one is unusable, and keeps the choice', async () => {
+      const { configureDiffusion } = await import('@/lib/diffusion/config')
+      const configure = vi.mocked(configureDiffusion)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      // What the core throws when it cannot create the folder (a drive that
+      // is not plugged in): an I/O failure, reported as INTERNAL.
+      const unusable = {
+        code: 'INTERNAL',
+        message: 'Could not create the output folder.',
+        details: "EACCES: permission denied, mkdir '/Volumes/Gone'",
+      }
+      useImageSetting.setState({ outputDir: '/Volumes/Gone/AI' })
+      try {
+        configure.mockClear()
+        configure.mockRejectedValueOnce(unusable)
+        resetImageGenerationForTests()
+        await useImageGenerationStore.getState().bind()
+        expect(configure.mock.calls.map(([settings]) => settings)).toEqual([
+          { idleUnloadSecs: 600, outputDir: '/Volumes/Gone/AI' },
+          { idleUnloadSecs: 600 },
+        ])
+        expect(useImageGenerationStore.getState().lastError).toBeNull()
+
+        // A new core generation the same way, and it still ends with a status.
+        configure.mockClear()
+        configure.mockRejectedValueOnce(unusable)
+        useImageGenerationStore.setState({ status: null })
+        fake.emit({ type: 'reset', generation: 3 })
+        await waitFor(() =>
+          expect(useImageGenerationStore.getState().status?.outputDir).toBe('/data/images')
+        )
+        expect(configure.mock.calls.map(([settings]) => settings)).toEqual([
+          { idleUnloadSecs: 600, outputDir: '/Volumes/Gone/AI' },
+          { idleUnloadSecs: 600 },
+        ])
+        expect(useImageSetting.getState().outputDir).toBe('/Volumes/Gone/AI')
+        expect(warn).toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('does not drop the stored folder when the core itself is down', async () => {
+      const { configureDiffusion } = await import('@/lib/diffusion/config')
+      const configure = vi.mocked(configureDiffusion)
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      useImageSetting.setState({ outputDir: '/Users/me/Pictures/AI' })
+      try {
+        configure.mockClear()
+        configure.mockRejectedValueOnce({
+          code: 'CORE_UNREACHABLE',
+          message: 'The Atomic Chat core did not answer.',
+        })
+        resetImageGenerationForTests()
+        await useImageGenerationStore.getState().bind()
+        expect(configure.mock.calls.map(([settings]) => settings)).toEqual([
+          { idleUnloadSecs: 600, outputDir: '/Users/me/Pictures/AI' },
+        ])
+        expect(useImageGenerationStore.getState().lastError?.details).toBe(
+          'CORE_UNREACHABLE'
+        )
+        expect(useImageSetting.getState().outputDir).toBe(
+          '/Users/me/Pictures/AI'
+        )
+      } finally {
+        error.mockRestore()
+      }
+    })
+
+    it('reports a configure failure, message kept, when no folder is stored to blame', async () => {
+      const { configureDiffusion } = await import('@/lib/diffusion/config')
+      const configure = vi.mocked(configureDiffusion)
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        configure.mockClear()
+        configure.mockRejectedValueOnce({
+          code: 'CORE_UNREACHABLE',
+          message: 'The core is not reachable.',
+        })
+        resetImageGenerationForTests()
+        await useImageGenerationStore.getState().bind()
+        expect(configure).toHaveBeenCalledTimes(1)
+        expect(useImageGenerationStore.getState().lastError).toEqual({
+          code: 'INTERNAL',
+          message: 'The core is not reachable.',
+          details: 'CORE_UNREACHABLE',
+        })
+      } finally {
+        error.mockRestore()
+      }
     })
   })
 
@@ -696,11 +818,29 @@ describe('engine updates', () => {
   })
 
   it('does nothing without an offer or an installed engine', async () => {
+    captured.events.length = 0
     await useImageGenerationStore.getState().updateEngine()
     expect(install.ensure).not.toHaveBeenCalled()
+    // No install ran: the install row is untouched (an attempt would leave
+    // an error or progress there) and no install run was reported.
+    expect(useImageGenerationStore.getState().engineInstall).toEqual({
+      inFlight: false,
+      transferred: 0,
+      total: 0,
+      error: null,
+    })
+    expect(captured.events).toEqual([])
 
     useImageGenerationStore.setState({ status: makeStatus({ install: { state: 'not-installed' } }) })
     await useImageGenerationStore.getState().checkEngineUpdate()
     expect(install.manifest).not.toHaveBeenCalled()
+    // No check happened: nothing is offered and no check time is recorded
+    // (a check that ran stamps checkedAt even when it finds nothing).
+    expect(useImageGenerationStore.getState().engineUpdate).toEqual({
+      checking: false,
+      availableTag: null,
+      checkedAt: null,
+      error: null,
+    })
   })
 })

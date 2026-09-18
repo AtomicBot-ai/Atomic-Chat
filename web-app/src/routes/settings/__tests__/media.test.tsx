@@ -73,6 +73,7 @@ describe('Media settings', () => {
     vi.clearAllMocks()
     localStorage.clear()
     await useImageSetting.persist.rehydrate()
+    useImageSetting.setState({ outputDir: null })
     fake = makeFakeDiffusion()
     seedServiceHub({
       diffusion: fake,
@@ -175,6 +176,51 @@ describe('Media settings', () => {
         '/Users/me/Pictures/Atomic'
       )
     )
+    // Kept by the app too: the core forgets it with its generation.
+    expect(useImageSetting.getState().outputDir).toBe('/Users/me/Pictures/Atomic')
+    expect(
+      JSON.parse(localStorage.getItem('setting-images') ?? '{}').state?.outputDir
+    ).toBe('/Users/me/Pictures/Atomic')
+  })
+
+  it('treats picking the default folder as the default, so it follows the data folder', async () => {
+    const { getDiffusionPaths } = await import('@/lib/diffusion/config')
+    vi.mocked(getDiffusionPaths).mockResolvedValueOnce({
+      imagesDir: '/Users/me/Pictures/Atomic/',
+    } as Awaited<ReturnType<typeof getDiffusionPaths>>)
+    useImageSetting.setState({ outputDir: '/Users/me/Pictures/Old' })
+    render(<Component />)
+    await act(async () => {
+      await userEvent.click(screen.getByText('settings:media.change'))
+    })
+    expect(fake.setOutputDir).toHaveBeenCalledWith('')
+    expect(useImageSetting.getState().outputDir).toBeNull()
+  })
+
+  it('keeps the previous folder when the core refuses the new one', async () => {
+    useImageSetting.setState({ outputDir: '/Users/me/Pictures/Old' })
+    fake.setOutputDir.mockRejectedValueOnce({
+      code: 'INTERNAL',
+      message: 'Could not create the output folder.',
+    })
+    render(<Component />)
+    await act(async () => {
+      await userEvent.click(screen.getByText('settings:media.change'))
+    })
+    expect(fake.setOutputDir).toHaveBeenCalledWith('/Users/me/Pictures/Atomic')
+    expect(useImageSetting.getState().outputDir).toBe('/Users/me/Pictures/Old')
+  })
+
+  it('rehydrates a stored setting from before the folder was kept with none', async () => {
+    localStorage.setItem(
+      'setting-images',
+      JSON.stringify({ state: { idleUnloadMinutes: 30 }, version: 1 })
+    )
+    await useImageSetting.persist.rehydrate()
+    expect(useImageSetting.getState()).toMatchObject({
+      idleUnloadMinutes: 30,
+      outputDir: null,
+    })
   })
 
   it('opens the output folder', async () => {
@@ -201,12 +247,13 @@ describe('Media settings', () => {
     )
   })
 
-  it('resets the residency settings to their defaults', async () => {
+  it('resets the residency settings to their defaults and keeps the folder', async () => {
     useImageSetting.setState({
       keepModelLoaded: true,
       idleUnloadMinutes: 60,
       evictChatModel: 'always',
       engineOverride: 'sd-cpp',
+      outputDir: '/Users/me/Pictures/Atomic',
     })
     render(<Component />)
     await act(async () => {
@@ -217,6 +264,16 @@ describe('Media settings', () => {
       idleUnloadMinutes: 10,
       evictChatModel: 'whenNeeded',
       engineOverride: 'auto',
+      outputDir: '/Users/me/Pictures/Atomic',
     })
+    // The configure that applies the defaults sends the folder along, or the
+    // core would drop it.
+    const { configureDiffusion } = await import('@/lib/diffusion/config')
+    await waitFor(() =>
+      expect(vi.mocked(configureDiffusion).mock.calls.at(-1)?.[0]).toEqual({
+        idleUnloadSecs: 600,
+        outputDir: '/Users/me/Pictures/Atomic',
+      })
+    )
   })
 })

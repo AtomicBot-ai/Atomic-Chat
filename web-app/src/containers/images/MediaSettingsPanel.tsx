@@ -30,6 +30,7 @@ import {
 } from '@/hooks/useImageSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { getDiffusionPaths } from '@/lib/diffusion/config'
 import { parseArtifactId } from '@/lib/diffusion/models'
 import { formatBytes } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
@@ -71,6 +72,7 @@ export function MediaSettingsPanel() {
     setEvictChatModel,
     offloadOverride,
     setOffloadOverride,
+    setOutputDir: rememberOutputDir,
   } = useImageSetting()
 
   const [removingId, setRemovingId] = useState<string | null>(null)
@@ -136,7 +138,15 @@ export function MediaSettingsPanel() {
       })
       const dir = Array.isArray(picked) ? picked[0] : picked
       if (!dir) return
-      await serviceHub.diffusion().setOutputDir(dir)
+      // Picking the default folder (the picker opens on it) means "the
+      // default": sent and kept as none, so it keeps following the data
+      // folder when that is relocated.
+      const chosen = isSameFolder(dir, await defaultOutputDir()) ? '' : dir
+      await serviceHub.diffusion().setOutputDir(chosen)
+      // The core forgets the folder with its generation and every configure
+      // replaces it, so the app keeps the choice (a blank one as null, the
+      // default) and sends it each time.
+      rememberOutputDir(chosen)
       await refreshStatus()
     } catch (error) {
       toast.error(t('settings:media.changeFailed'), {
@@ -481,3 +491,18 @@ export function MediaSettingsPanel() {
 }
 
 export default MediaSettingsPanel
+
+/** `<data>/images`, where the core puts images without a chosen folder. */
+async function defaultOutputDir(): Promise<string | undefined> {
+  try {
+    return (await getDiffusionPaths())?.imagesDir
+  } catch {
+    return undefined
+  }
+}
+
+function isSameFolder(a: string, b: string | undefined): boolean {
+  if (!b) return false
+  const trim = (path: string) => path.replace(/[\\/]+$/, '')
+  return trim(a) === trim(b)
+}

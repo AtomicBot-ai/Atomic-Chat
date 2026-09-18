@@ -204,8 +204,11 @@ describe('ensureDiffusionBackend', () => {
       if (command === 'plugin:llamacpp-upstream|get_supported_features') {
         return { cuda12: true, vulkan: true }
       }
-      if (command === 'plugin:llamacpp-upstream|available_disk_space') {
-        return 10 * 1024 ** 4
+      if (command === 'atomic_core_call') {
+        const call = args as { method: string; path: string; body: unknown }
+        expect(call).toMatchObject({ method: 'POST', path: '/disk/available' })
+        expect(typeof (call.body as { path: string }).path).toBe('string')
+        return { bytes: 10 * 1024 ** 4 }
       }
       return undefined
     })
@@ -345,13 +348,22 @@ describe('ensureDiffusionBackend', () => {
   it('refuses when the disk cannot hold the archive and its unpacked tree', async () => {
     mockIPC((command: string) => {
       if (command === 'plugin:llamacpp-upstream|get_supported_features') return {}
-      if (command === 'plugin:llamacpp-upstream|available_disk_space') return 1024
+      if (command === 'atomic_core_call') return { bytes: 1024 }
       return undefined
     })
     await expect(ensureDiffusionBackend()).rejects.toMatchObject({
       code: 'DISK_FULL',
     })
     expect(transfers).toEqual([])
+  })
+
+  it('goes ahead when the core cannot say how much room there is', async () => {
+    mockIPC((command: string) => {
+      if (command === 'plugin:llamacpp-upstream|get_supported_features') return {}
+      if (command === 'atomic_core_call') return { bytes: null }
+      return undefined
+    })
+    await expect(ensureDiffusionBackend()).resolves.toBeDefined()
   })
 
   it('names the host that no build serves', async () => {

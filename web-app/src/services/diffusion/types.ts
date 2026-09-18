@@ -1,15 +1,16 @@
 /**
  * Diffusion Service Types
  *
- * The seam between the Images (and later Video) pages and the native
- * `tauri-plugin-atomic-diffusion` plugin, which supervises a resident
- * `sd-server` (stable-diffusion.cpp) process, runs generation jobs against its
- * `/sdcpp/v1/*` API, and owns the gallery on disk.
+ * The seam between the Images (and later Video) pages and the core's image
+ * generation (`atomic-chat-core`, `src/diffusion/`), which supervises a
+ * resident `sd-server` (stable-diffusion.cpp) process, runs generation jobs
+ * against its `/sdcpp/v1/*` API, and owns the gallery on disk.
  *
  * This file is the contract for three implementations that are written
- * against it independently: the Rust plugin (command names, argument names and
- * payload shapes — all camelCase over the bridge), `TauriDiffusionService`, and
- * the UI. Change it deliberately.
+ * against it independently: the core (`src/contracts/diffusion.ts` mirrors it
+ * field for field; the routes under `/atomic/v1/diffusion/*` take these shapes
+ * as camelCase bodies), `TauriDiffusionService`, and the UI. Change it
+ * deliberately.
  *
  * Model *downloads* are not part of this seam: they go through the ordinary
  * `download-extension` pipeline (`lib/diffusion/models.ts`), and the plugin is
@@ -44,7 +45,7 @@ export type DiffusionModality = 'image' | 'video'
 export type DiffusionTextEncoderField = 'llm' | 'qwen2vl' | 'clip_l' | 't5xxl'
 
 /**
- * Resolved on-disk files for one checkpoint, handed to `load_diffusion_model`.
+ * Resolved on-disk files for one checkpoint, handed to `loadModel`.
  * Absolute paths. Only `diffusionModel` is required.
  */
 export type DiffusionModelFiles = {
@@ -131,7 +132,7 @@ export type LoadedDiffusionModel = {
   loadedAtMs: number
 }
 
-/** Native error codes, SCREAMING_SNAKE from the plugin. */
+/** Native error codes, SCREAMING_SNAKE from the core (`DiffusionErrorCode` there). */
 export type NativeDiffusionErrorCode =
   | 'ENGINE_MISSING'
   | 'ENGINE_INSTALL_FAILED'
@@ -370,9 +371,14 @@ export type DiffusionBackendInstallRecord = {
   dir: string
 }
 
-/** One-time plugin configuration, sent when the web app binds the service. */
+/**
+ * The core's image-generation configuration. It lives only in the core's
+ * memory and each `configure` replaces all of it, so the app sends every
+ * setting each time: on bind, on a settings change and on every
+ * `atomic-core://snapshot`.
+ */
 export type DiffusionConfig = {
-  /** The app data folder; the plugin derives `diffusion/`, `images/`, `videos/` from it. */
+  /** The app data folder, which must be the core's own; `diffusion/` and `images/` live in it. */
   dataFolder: string
   /** Override for the gallery output dir; omit for `<dataFolder>/images`. */
   outputDir?: string
@@ -391,16 +397,22 @@ export type DiffusionEvent =
       message: string
       details?: string
     }
+  /**
+   * The core generation that held the configuration is gone and a new one
+   * attached (the desktop seam raises this from the relay's snapshot): the
+   * output folder and idle interval have to be sent again.
+   */
+  | { type: 'reset'; generation: number | null }
 
 /**
- * Plugin command surface. Every method maps 1:1 onto
- * `invoke('plugin:atomic-diffusion|<snake_case name>')`.
+ * The service surface. Every method maps 1:1 onto one core control route
+ * (`TauriDiffusionService` names them).
  */
 export interface DiffusionService {
   /** True when this build ships the native plugin at all. */
   isSupported(): boolean
 
-  /** Must be called once before anything else; idempotent. */
+  /** Must be called before anything else; idempotent, and replaces the whole config. */
   configure(config: DiffusionConfig): Promise<DiffusionStatus>
   getStatus(): Promise<DiffusionStatus>
 

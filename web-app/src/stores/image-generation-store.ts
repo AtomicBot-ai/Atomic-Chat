@@ -118,6 +118,11 @@ type ImageGenerationState = {
   refreshStatus: () => Promise<void>
   refreshCatalog: () => Promise<void>
   refreshModelFiles: () => Promise<void>
+  /**
+   * Configure the core again with every setting it keeps in memory: the idle
+   * interval and the chosen output folder. After a residency setting changes,
+   * and on a new core attachment.
+   */
   applyIdleSettings: () => Promise<void>
 
   installEngine: (opts?: { force?: boolean }) => Promise<void>
@@ -333,7 +338,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
         unsubscribe = service.subscribe((event) => get().handleEvent(event))
 
         try {
-          const status = await configureDiffusion(idleOverrides())
+          const status = await configureCore()
           set({ status })
         } catch (error) {
           console.error('[images] configure failed:', error)
@@ -464,6 +469,20 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
             }
             return
           }
+          case 'reset': {
+            // A new core generation knows nothing: neither the output folder
+            // nor the idle interval, nor a job that was running. The relay
+            // also sends this on a reattach or a resync to the same core,
+            // which still holds its configuration; the configure below sends
+            // every setting the app keeps, so it restores a new core and
+            // changes nothing on the old one. Take its status as the truth.
+            void get().applyIdleSettings().then(() => {
+              if (get().status?.model.state !== 'loaded') {
+                set({ capabilities: null })
+              }
+            })
+            return
+          }
         }
       },
 
@@ -496,7 +515,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
 
       applyIdleSettings: async () => {
         try {
-          set({ status: await configureDiffusion(idleOverrides()) })
+          set({ status: await configureCore() })
         } catch (error) {
           console.error('[images] idle settings not applied:', error)
         }
@@ -768,10 +787,52 @@ export const useImageGenerationStore = create<ImageGenerationState>()(
   }
 )
 
-/** Idle-unload seconds from the settings, for `configureDiffusion`. */
-function idleOverrides(): { idleUnloadSecs: number } {
-  const { keepModelLoaded, idleUnloadMinutes } = useImageSetting.getState()
-  return { idleUnloadSecs: keepModelLoaded ? 0 : idleUnloadMinutes * 60 }
+/**
+ * Every setting the core must be given again on each configure, for
+ * `configureDiffusion`: it keeps them only in memory and replaces all of them
+ * at once, so a setting left out here is reset to the core's default.
+ */
+function coreSettings(): { idleUnloadSecs: number; outputDir?: string } {
+  const { keepModelLoaded, idleUnloadMinutes, outputDir } =
+    useImageSetting.getState()
+  const folder = typeof outputDir === 'string' ? outputDir.trim() : ''
+  return {
+    idleUnloadSecs: keepModelLoaded ? 0 : idleUnloadMinutes * 60,
+    ...(folder ? { outputDir: folder } : {}),
+  }
+}
+
+/**
+ * Configure the core with `coreSettings`. A stored folder the core can no
+ * longer create (a drive that is not plugged in) must not take image
+ * generation down: configure again without it, which means the default
+ * folder, and keep the choice for the next configure.
+ */
+async function configureCore(): Promise<DiffusionStatus> {
+  const settings = coreSettings()
+  try {
+    return await configureDiffusion(settings)
+  } catch (error) {
+    if (settings.outputDir === undefined || !isFolderFailure(error)) throw error
+    console.warn(
+      `[images] output folder ${settings.outputDir} not usable, using the default:`,
+      error
+    )
+    return configureDiffusion({ idleUnloadSecs: settings.idleUnloadSecs })
+  }
+}
+
+/**
+ * How the core reports a folder it cannot create: an I/O failure (INTERNAL) or
+ * a full disk. A core that is down, or that refuses the data folder, fails the
+ * same way without the folder, so retrying would only hide the real error.
+ */
+function isFolderFailure(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined
+  return code === 'INTERNAL' || code === 'DISK_FULL'
 }
 
 /** Test seam: drop the waiters of a previous test. */

@@ -1,6 +1,6 @@
 /**
- * Where local image generation keeps its files, and the one-time plugin
- * configuration that tells the native side the same thing.
+ * Where local image generation keeps its files, and the configuration that
+ * tells the core the same thing.
  *
  * Layout under the app data folder (approved paths, see DEVELOP.md):
  *
@@ -94,8 +94,11 @@ export async function getDiffusionPaths(): Promise<DiffusionPaths> {
 }
 
 /**
- * Bind the plugin to the data folder. Idempotent; call it once when the
- * Images provider mounts and again after the data folder is relocated.
+ * Configure the core's image generation: the data folder plus the settings
+ * the core keeps only in memory. Each call replaces the core's whole
+ * configuration, and an absent `outputDir` means `<dataFolder>/images`, so a
+ * caller passes every setting it wants kept; the image-generation store does,
+ * when it binds, on a new core attachment and after a setting changes.
  */
 export async function configureDiffusion(
   overrides: { outputDir?: string; idleUnloadSecs?: number } = {}

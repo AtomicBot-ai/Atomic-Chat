@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: (...args: unknown[]) => listen(...args),
 }))
 
-const { TauriDiffusionService, EVENT_MAP, PLUGIN } = await import('../tauri')
+const { TauriDiffusionService, EVENT_MAP, RESET_EVENT } = await import('../tauri')
 type DiffusionEvent = import('../types').DiffusionEvent
 type DiffusionStatus = import('../types').DiffusionStatus
 
@@ -22,32 +22,40 @@ const status: DiffusionStatus = {
   idleUnloadSecs: 600,
 }
 
+type Call = { method: string; path: string; body: unknown }
+
 describe('TauriDiffusionService commands', () => {
-  let calls: Array<[string, InvokeArgs | undefined]>
+  let calls: Call[]
   let service: InstanceType<typeof TauriDiffusionService>
 
   beforeEach(() => {
     calls = []
     mockIPC((command: string, args?: InvokeArgs) => {
-      calls.push([command, args])
-      switch (command) {
-        case `${PLUGIN}|configure`:
-        case `${PLUGIN}|get_status`:
-        case `${PLUGIN}|set_output_dir`:
+      expect(command).toBe('atomic_core_call')
+      const call = args as Call
+      calls.push(call)
+      const route = `${call.method} ${call.path.split('?')[0]}`
+      switch (route) {
+        case 'PUT /diffusion/config':
+        case 'GET /diffusion/status':
+        case 'PUT /diffusion/output-dir':
           return status
-        case `${PLUGIN}|generate`:
+        case 'POST /diffusion/jobs':
           return { jobId: 'job-1' }
-        case `${PLUGIN}|get_job`:
-          return null
-        case `${PLUGIN}|cancel_job`:
+        case 'GET /diffusion/jobs/job-1':
+          return { job: null }
+        case 'POST /diffusion/jobs/job-1/cancel':
           return { cancelled: true, serverStopped: false }
-        case `${PLUGIN}|list_installed_backends`:
-        case `${PLUGIN}|list_model_files`:
-          return []
-        case `${PLUGIN}|list_gallery`:
+        case 'GET /diffusion/backends':
+          return { backends: [{ tag: 't', backendId: 'macos-arm64' }] }
+        case 'GET /diffusion/model-files':
+          return { files: [{ relativePath: 'z-image/x.gguf' }] }
+        case 'GET /diffusion/gallery':
           return { items: [], hasMore: false, total: 0 }
+        case 'GET /diffusion/gallery/job-1-00':
+          return { item: { id: 'job-1-00' } }
         default:
-          return undefined
+          return {}
       }
     })
     service = new TauriDiffusionService()
@@ -57,7 +65,7 @@ describe('TauriDiffusionService commands', () => {
     expect(service.isSupported()).toBe(true)
   })
 
-  it('names every command in snake_case with the interface parameters as args', async () => {
+  it('calls one core route per operation, with the interface parameters as the body', async () => {
     await service.configure({ dataFolder: '/data', idleUnloadSecs: 600 })
     await service.getStatus()
     await service.finalizeBackendInstall({
@@ -76,6 +84,7 @@ describe('TauriDiffusionService commands', () => {
     await service.getJob('job-1')
     await service.cancelJob('job-1')
     await service.listGallery({ offset: 0, limit: 60 })
+    await service.listGallery({ offset: 60, limit: 60, includeArchived: true })
     await service.getGalleryItem('job-1-00')
     await service.deleteGalleryItems(['job-1-00', 'job-1-01'])
     await service.setGalleryFlags('job-1-00', { pinned: true })
@@ -83,34 +92,38 @@ describe('TauriDiffusionService commands', () => {
     await service.setOutputDir('/elsewhere')
 
     expect(calls).toEqual([
-      [`${PLUGIN}|configure`, { config: { dataFolder: '/data', idleUnloadSecs: 600 } }],
-      [`${PLUGIN}|get_status`, {}],
-      [
-        `${PLUGIN}|finalize_backend_install`,
-        {
-          args: {
-            dir: '/data/diffusion/backends/t/macos-arm64',
-            tag: 't',
-            backendId: 'macos-arm64',
-            backend: 'metal',
-            engine: 'sd-cpp',
-          },
+      { method: 'PUT', path: '/diffusion/config', body: { dataFolder: '/data', idleUnloadSecs: 600 } },
+      { method: 'GET', path: '/diffusion/status', body: null },
+      {
+        method: 'POST',
+        path: '/diffusion/backends/finalize',
+        body: {
+          dir: '/data/diffusion/backends/t/macos-arm64',
+          tag: 't',
+          backendId: 'macos-arm64',
+          backend: 'metal',
+          engine: 'sd-cpp',
         },
-      ],
-      [`${PLUGIN}|list_installed_backends`, {}],
-      [`${PLUGIN}|remove_backend`, { dir: '/old' }],
-      [`${PLUGIN}|list_model_files`, {}],
-      [`${PLUGIN}|delete_model_file`, { path: '/data/diffusion/models/z-image/x.gguf' }],
-      [`${PLUGIN}|unload_model`, {}],
-      [`${PLUGIN}|touch_idle`, {}],
-      [`${PLUGIN}|get_job`, { jobId: 'job-1' }],
-      [`${PLUGIN}|cancel_job`, { jobId: 'job-1' }],
-      [`${PLUGIN}|list_gallery`, { options: { offset: 0, limit: 60 } }],
-      [`${PLUGIN}|get_gallery_item`, { id: 'job-1-00' }],
-      [`${PLUGIN}|delete_gallery_items`, { ids: ['job-1-00', 'job-1-01'] }],
-      [`${PLUGIN}|set_gallery_flags`, { id: 'job-1-00', flags: { pinned: true } }],
-      [`${PLUGIN}|export_gallery_item`, { id: 'job-1-00', targetPath: '/tmp/out.png' }],
-      [`${PLUGIN}|set_output_dir`, { path: '/elsewhere' }],
+      },
+      { method: 'GET', path: '/diffusion/backends', body: null },
+      { method: 'POST', path: '/diffusion/backends/remove', body: { dir: '/old' } },
+      { method: 'GET', path: '/diffusion/model-files', body: null },
+      {
+        method: 'POST',
+        path: '/diffusion/model-files/delete',
+        body: { path: '/data/diffusion/models/z-image/x.gguf' },
+      },
+      { method: 'POST', path: '/diffusion/model/unload', body: null },
+      { method: 'POST', path: '/diffusion/idle/touch', body: null },
+      { method: 'GET', path: '/diffusion/jobs/job-1', body: null },
+      { method: 'POST', path: '/diffusion/jobs/job-1/cancel', body: null },
+      { method: 'GET', path: '/diffusion/gallery?offset=0&limit=60', body: null },
+      { method: 'GET', path: '/diffusion/gallery?offset=60&limit=60&includeArchived=true', body: null },
+      { method: 'GET', path: '/diffusion/gallery/job-1-00', body: null },
+      { method: 'POST', path: '/diffusion/gallery/delete', body: { ids: ['job-1-00', 'job-1-01'] } },
+      { method: 'PATCH', path: '/diffusion/gallery/job-1-00/flags', body: { pinned: true } },
+      { method: 'POST', path: '/diffusion/gallery/job-1-00/export', body: { targetPath: '/tmp/out.png' } },
+      { method: 'PUT', path: '/diffusion/output-dir', body: { path: '/elsewhere' } },
     ])
   })
 
@@ -139,19 +152,38 @@ describe('TauriDiffusionService commands', () => {
     await service.getCapabilities()
 
     expect(calls).toEqual([
-      [`${PLUGIN}|load_model`, { request: load }],
-      [`${PLUGIN}|generate`, { request: generate }],
-      [`${PLUGIN}|get_capabilities`, {}],
+      { method: 'POST', path: '/diffusion/model/load', body: load },
+      { method: 'POST', path: '/diffusion/jobs', body: generate },
+      { method: 'GET', path: '/diffusion/capabilities', body: null },
     ])
   })
 
-  it('returns what the plugin answers', async () => {
+  it('returns what the core answers, unwrapping the four envelopes', async () => {
     await expect(service.getStatus()).resolves.toEqual(status)
     await expect(service.cancelJob('job-1')).resolves.toEqual({
       cancelled: true,
       serverStopped: false,
     })
-    await expect(service.getJob('missing')).resolves.toBeNull()
+    await expect(service.getJob('job-1')).resolves.toBeNull()
+    await expect(service.listInstalledBackends()).resolves.toEqual([{ tag: 't', backendId: 'macos-arm64' }])
+    await expect(service.listModelFiles()).resolves.toEqual([{ relativePath: 'z-image/x.gguf' }])
+    await expect(service.getGalleryItem('job-1-00')).resolves.toEqual({ id: 'job-1-00' })
+  })
+
+  it('escapes ids in paths', async () => {
+    await service.getJob('a/b c')
+    expect(calls[0]?.path).toBe('/diffusion/jobs/a%2Fb%20c')
+  })
+
+  it('passes a core refusal through, so the banner can route on its code', async () => {
+    mockIPC(() => {
+      throw { code: 'JOB_BUSY', message: 'An image is already being generated.', details: 'job-1' }
+    })
+    await expect(service.generate({ prompt: 'x', width: 512, height: 512, steps: 4, cfgScale: 1, batchSize: 1 })).rejects.toEqual({
+      code: 'JOB_BUSY',
+      message: 'An image is already being generated.',
+      details: 'job-1',
+    })
   })
 })
 
@@ -162,7 +194,7 @@ describe('TauriDiffusionService.subscribe', () => {
     listen.mockReset()
   })
 
-  it('listens on the four plugin events and stamps the discriminant', async () => {
+  it('listens on the four relayed core events and stamps the discriminant', async () => {
     const handlers = new Map<string, (event: { payload: unknown }) => void>()
     listen.mockImplementation(async (name: string, handler: (event: { payload: unknown }) => void) => {
       handlers.set(name, handler)
@@ -172,13 +204,16 @@ describe('TauriDiffusionService.subscribe', () => {
     new TauriDiffusionService().subscribe((event) => received.push(event))
     await Promise.resolve()
 
-    expect([...handlers.keys()]).toEqual(Object.keys(EVENT_MAP))
-    handlers.get('atomic-diffusion://progress')!({
+    expect([...handlers.keys()]).toEqual([...Object.keys(EVENT_MAP), RESET_EVENT])
+    handlers.get('atomic-core://diffusion:progress')!({
       payload: { jobId: 'job-1', progress: { phase: 'sampling', step: 3, totalSteps: 8 } },
     })
-    handlers.get('atomic-diffusion://error')!({
+    handlers.get('atomic-core://diffusion:error')!({
       payload: { code: 'OUT_OF_MEMORY', message: 'boom' },
     })
+    // A new core generation attached: the store has to configure it again.
+    handlers.get(RESET_EVENT)!({ payload: { generation: 3, snapshot: {} } })
+    handlers.get(RESET_EVENT)!({ payload: {} })
     expect(received).toEqual([
       {
         type: 'progress',
@@ -186,11 +221,13 @@ describe('TauriDiffusionService.subscribe', () => {
         progress: { phase: 'sampling', step: 3, totalSteps: 8 },
       },
       { type: 'error', code: 'OUT_OF_MEMORY', message: 'boom' },
+      { type: 'reset', generation: 3 },
+      { type: 'reset', generation: null },
     ])
   })
 
   it('detaches each listener once, even when unsubscribed twice', async () => {
-    const unlistens = Object.keys(EVENT_MAP).map(() => vi.fn())
+    const unlistens = [...Object.keys(EVENT_MAP), RESET_EVENT].map(() => vi.fn())
     let index = 0
     listen.mockImplementation(async () => unlistens[index++])
 
@@ -199,7 +236,7 @@ describe('TauriDiffusionService.subscribe', () => {
     expect(unsubscribe()).toBeUndefined()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1, 1])
+    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1, 1, 1])
   })
 
   it('still detaches listeners whose registration finishes after unsubscribe', async () => {
@@ -217,6 +254,6 @@ describe('TauriDiffusionService.subscribe', () => {
     resolvers.forEach((resolve, i) => resolve(unlistens[i]))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1, 1])
+    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1, 1, 1])
   })
 })
