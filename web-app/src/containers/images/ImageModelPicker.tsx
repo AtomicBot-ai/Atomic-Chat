@@ -3,9 +3,7 @@ import {
   IconChevronDown,
   IconLoader2,
   IconPhoto,
-  IconPlayerStopFilled,
 } from '@tabler/icons-react'
-import { toast } from 'sonner'
 
 import {
   Popover,
@@ -16,12 +14,12 @@ import { ModelLogo } from '@/containers/ModelLogo'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { parseArtifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageModelSelector } from './ImageModelSelector'
-import { Button } from '@/components/ui/button'
 
 type ImageModelPickerProps = {
   open: boolean
@@ -46,47 +44,37 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const runtimeArtifactId = loadedArtifactId ?? loadingArtifactId
   const runtime = useImageArtifact(runtimeArtifactId ?? '')
   const workflow = useImageForm((state) => state.workflow)
-  const generating = useImageGenerationStore((state) => state.generating)
-  const unloadModel = useImageGenerationStore((state) => state.unloadModel)
   const runtimeLoading =
     Boolean(runtimeArtifactId) &&
     (status?.model.state === 'loading' || runtime.loading)
   const runtimeLoaded =
     Boolean(loadedArtifactId) && status?.model.state === 'loaded'
-  const showRuntime = runtimeLoading || runtimeLoaded
+  const runtimeFamilyId =
+    runtime.family?.id ?? parseArtifactId(runtimeArtifactId ?? '')?.family ?? null
+  const showRuntime =
+    (runtimeLoading || runtimeLoaded) &&
+    (runtimeFamilyId === null ||
+      familySupportsWorkflow(runtimeFamilyId, workflow))
 
-  // The header is runtime status, not remembered selection. Until a model is
-  // actually starting or running it intentionally says “Select image model”.
-  const unsupported =
-    showRuntime &&
-    runtime.family !== null &&
-    !familySupportsWorkflow(runtime.family.id, workflow)
+  // The header is runtime status, not remembered selection. An incompatible
+  // resident model is not a valid choice for this workflow, so ask for one.
 
   const loadedName = status?.model.loaded?.displayName ?? null
   const name = showRuntime
     ? (runtime.family?.name ?? loadedName ?? t('images:model.select'))
     : t('images:model.select')
-  const detail = runtimeLoading
-    ? t('images:model.loading')
-    : runtimeLoaded && runtime.quant
-      ? runtime.quant.label
-      : null
-  const stateLabel = runtimeLoaded ? t('images:model.loaded') : null
-
-  const stopSelected = async () => {
-    const toastId = toast.loading(t('images:model.stoppingToast'))
-    await unloadModel()
-    const stillLoaded =
-      useImageGenerationStore.getState().status?.model.state === 'loaded'
-    if (stillLoaded) {
-      toast.error(t('images:model.stopFailed', { name }), { id: toastId })
-    } else {
-      toast.success(t('images:model.stoppedToast', { name }), { id: toastId })
-    }
-  }
+  const detail = showRuntime
+    ? runtimeLoading
+      ? t('images:model.loading')
+      : runtimeLoaded && runtime.quant
+        ? runtime.quant.label
+        : null
+    : null
+  const stateLabel =
+    showRuntime && runtimeLoaded ? t('images:model.loaded') : null
 
   return (
-    <div className="flex w-full min-w-0 items-center gap-2">
+    <div className="flex w-full min-w-0 items-center">
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
           <button
@@ -118,17 +106,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             {detail && (
               <span className="shrink-0 text-muted-foreground">{detail}</span>
             )}
-            {unsupported && (
-              <span
-                className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
-                data-testid="image-model-unsupported"
-              >
-                {t('images:model.notForWorkflow', {
-                  workflow: t(`images:workflow.${workflow}.label`),
-                })}
-              </span>
-            )}
-            {runtimeLoading ? (
+            {showRuntime && runtimeLoading ? (
               <IconLoader2
                 size={14}
                 className="shrink-0 animate-spin text-muted-foreground"
@@ -154,20 +132,6 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           <ImageModelSelector variant="page" workflow={workflow} />
         </PopoverContent>
       </Popover>
-      {runtimeLoaded && (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          className="size-9 shrink-0 rounded-xl"
-          disabled={generating}
-          aria-label={t('images:model.unload')}
-          title={t('images:model.unload')}
-          onClick={() => void stopSelected()}
-        >
-          <IconPlayerStopFilled size={15} />
-        </Button>
-      )}
     </div>
   )
 })

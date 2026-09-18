@@ -12,6 +12,8 @@ import type {
 } from '@/services/diffusion/types'
 
 export const MAX_IMAGE_RUNS = 20
+/** Safe renderer-wide range used before a loaded model reports capabilities. */
+export const MAX_IMAGE_BATCH = 4
 
 /** A picked source image: where it is and how big, for the size maths. */
 export type ImageSourceFile = {
@@ -132,6 +134,26 @@ export function randomSeed(): number {
   return buffer[0] % 2_147_483_647
 }
 
+/**
+ * v1 persisted unsent prompt text. Strip it during the one-time schema bump so
+ * an update cannot restore an old draft into a new app process. Everything
+ * else in this store is a reusable image-generation choice and stays intact.
+ */
+const migrateImageForm = (persistedState: unknown) => {
+  if (
+    !persistedState ||
+    typeof persistedState !== 'object' ||
+    Array.isArray(persistedState)
+  ) {
+    return {}
+  }
+
+  const next = { ...persistedState } as Record<string, unknown>
+  delete next.prompt
+  delete next.negativePrompt
+  return next
+}
+
 const clampInt = (value: number, lo: number, hi: number) =>
   Math.min(Math.max(Math.round(value), lo), hi)
 
@@ -215,10 +237,9 @@ export const useImageForm = create<ImageFormState>()(
     {
       name: localStorageKey.imageForm,
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      migrate: migrateImageForm,
       partialize: (state) => ({
-        prompt: state.prompt,
-        negativePrompt: state.negativePrompt,
         negativeOpen: state.negativeOpen,
         width: state.width,
         height: state.height,
@@ -230,6 +251,7 @@ export const useImageForm = create<ImageFormState>()(
         seedText: state.seedText,
         batchSize: state.batchSize,
         runs: state.runs,
+        workflow: state.workflow,
         strength: state.strength,
         brushSize: state.brushSize,
         expandPercent: state.expandPercent,

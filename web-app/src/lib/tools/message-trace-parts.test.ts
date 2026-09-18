@@ -95,7 +95,7 @@ describe('buildTraceBlocks activity projection', () => {
     ])
   })
 
-  it('hides the placeholder activity while reasoning is still streaming', () => {
+  it('keeps Working visible while reasoning is still streaming', () => {
     const message = {
       id: 'assistant-reasoning-live',
       role: 'assistant',
@@ -110,10 +110,11 @@ describe('buildTraceBlocks activity projection', () => {
 
     expect(buildTraceBlocks(message, { ensureActivity: true })).toEqual([
       expect.objectContaining({ kind: 'reasoning', streaming: true }),
+      expect.objectContaining({ kind: 'activity', tools: [] }),
     ])
   })
 
-  it('restores the live activity once reasoning finishes', () => {
+  it('keeps the live activity after a reasoning part finishes', () => {
     const message = {
       id: 'assistant-reasoning-done',
       role: 'assistant',
@@ -231,16 +232,15 @@ describe('buildTraceBlocks activity projection', () => {
     ])
   })
 
-  it('lets the streaming answer stand in for the live shimmer', () => {
+  it('keeps live activity mounted while the answer streams', () => {
     const message = {
       id: 'assistant-answer-live',
       role: 'assistant',
       parts: [{ type: 'text', text: 'Hey! How' }],
     } as UIMessage
 
-    // Stepping aside at the first token is what keeps the answer from jumping
-    // up a line when the stream ends and the block would otherwise vanish.
     expect(buildTraceBlocks(message, { ensureActivity: true })).toEqual([
+      expect.objectContaining({ kind: 'activity', tools: [] }),
       expect.objectContaining({ kind: 'text', text: 'Hey! How' }),
     ])
   })
@@ -289,4 +289,40 @@ describe('buildTraceBlocks activity projection', () => {
       }),
     ])
   })
+
+  it.each(['running', 'awaiting_approval', 'awaiting_folder_access'])(
+    'keeps an empty %s run live unless its caller marks it historical',
+    (status) => {
+      const message = {
+        id: 'agent-wait',
+        role: 'assistant',
+        parts: [],
+        metadata: {
+          agent_run: { run_id: 'wait', status, tools: [], loops: [] },
+        },
+      } as UIMessage
+      expect(buildTraceBlocks(message)).toEqual([
+        expect.objectContaining({
+          kind: 'activity',
+          key: 'agent-wait-activity',
+        }),
+      ])
+      expect(buildTraceBlocks(message, { ensureActivity: false })).toEqual([])
+    }
+  )
+
+  it.each(['idle', 'finished', 'failed', 'cancelled'])(
+    'does not invent live activity for an empty %s run',
+    (status) => {
+      const message = {
+        id: 'agent-inactive',
+        role: 'assistant',
+        parts: [],
+        metadata: {
+          agent_run: { run_id: 'inactive', status, tools: [], loops: [] },
+        },
+      } as UIMessage
+      expect(buildTraceBlocks(message)).toEqual([])
+    }
+  )
 })

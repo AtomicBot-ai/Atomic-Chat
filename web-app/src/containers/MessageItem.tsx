@@ -14,7 +14,6 @@ import {
   ReasoningTrigger,
   ReasoningViewport,
 } from '@/components/ai-elements/reasoning'
-import { Shimmer } from '@/components/ai-elements/shimmer'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { IconAlertCircle, IconPencil, IconRefresh } from '@tabler/icons-react'
@@ -27,7 +26,11 @@ import { AttachmentChip } from '@/containers/AttachmentChip'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { buildTraceBlocks } from '@/lib/tools/message-trace-parts'
+import {
+  buildTraceBlocks,
+  isAgentTurnActive,
+} from '@/lib/tools/message-trace-parts'
+import type { AgentRunSummary } from '@/types/agent'
 import { ToolActivityGroup } from '@/components/ai-elements/tools/activity-group'
 import { TraceBlock } from '@/lib/tools/types'
 import {
@@ -121,28 +124,30 @@ export const MessageItem = memo(
     const getThinkingMessage = useCallback(
       (thinking: boolean, duration?: number) => {
         if (thinking) {
-          return (
-            <Shimmer duration={2}>
-              {duration
-                ? t('activity.thinkingFor', { count: duration })
-                : t('activity.thinking')}
-            </Shimmer>
-          )
+          return t('activity.thinkingFor', { count: duration ?? 1 })
         }
-        if (!duration) {
-          return <p>{t('activity.reasoned')}</p>
+        if (duration === undefined) {
+          return t('activity.reasoned')
         }
-        return <p>{t('activity.thoughtFor', { count: duration })}</p>
+        return t('activity.thoughtFor', { count: duration })
       },
       [t]
     )
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+    const agentRunStatus = (
+      message.metadata as { agent_run?: AgentRunSummary } | undefined
+    )?.agent_run?.status
+    // Agent metadata owns its lifecycle; Chat's transport flags can lag a
+    // terminal agent event or go idle while permission is being requested.
     const isRequestActive =
       isLastMessage &&
       message.role === 'assistant' &&
-      (requestActive ??
-        (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED))
+      (agentRunStatus !== undefined
+        ? isAgentTurnActive(agentRunStatus)
+        : (requestActive ??
+          (status === CHAT_STATUS.STREAMING ||
+            status === CHAT_STATUS.SUBMITTED)))
     const isAgentMessage = Boolean(
       (message.metadata as { agent_run?: unknown } | undefined)?.agent_run
     )
@@ -383,21 +388,24 @@ export const MessageItem = memo(
     }
 
     const renderReasoningBlock = (block: ReasoningTraceBlock) => {
-      const streaming = isRequestActive && block.streaming
+      // A reasoning part commonly reports `done` while the same turn pauses
+      // for tools. The disclosure belongs to the enclosing turn, so it must
+      // not finalize and restart as individual reasoning parts come and go.
+      const reasoningActive = isRequestActive
 
       return (
         <Reasoning
           key={block.key}
           className="mb-5"
-          isStreaming={streaming}
+          isStreaming={reasoningActive}
           defaultOpen={false}
         >
           <ReasoningTrigger getThinkingMessage={getThinkingMessage} />
           <ReasoningViewport
-            ref={streaming ? reasoningContainerRef : null}
-            onScroll={streaming ? onReasoningScroll : undefined}
+            ref={reasoningActive ? reasoningContainerRef : null}
+            onScroll={reasoningActive ? onReasoningScroll : undefined}
           >
-            <ReasoningContent isStreaming={streaming}>
+            <ReasoningContent isStreaming={reasoningActive}>
               {block.items.map((item) => item.text).join('\n\n')}
             </ReasoningContent>
           </ReasoningViewport>
@@ -405,46 +413,29 @@ export const MessageItem = memo(
       )
     }
 
-    const renderActivityBlock = (block: ActivityTraceBlock, index: number) => {
-      const agentStatus = block.agentSummary?.status
-      const active =
-        isRequestActive &&
-        (!agentStatus ||
-          agentStatus === 'running' ||
-          agentStatus === 'awaiting_approval')
+    const renderActivityBlock = (block: ActivityTraceBlock) => {
+      const active = isRequestActive
       const error = block.agentSummary?.error
-      // One live indicator at a time (ATO-529): a running call spins on its
-      // own line, a thinking stream says "Thinking...", and a Chat answer
-      // streaming below signals itself. "Working" only covers the gaps between
-      // them — for an agent run, every step that produces no text.
-      const toolRunning = block.tools.some(
-        ({ state }) =>
-          state === 'input-streaming' || state === 'input-available'
-      )
-      const reasoningLive = traceBlocks.some(
-        (other) => other.kind === 'reasoning' && other.streaming
-      )
-      const answerBelow = traceBlocks
-        .slice(index + 1)
-        .some((other) => other.kind === 'text')
-      const showWorking =
-        active &&
-        !toolRunning &&
-        !reasoningLive &&
-        (Boolean(block.agentSummary) || !answerBelow)
+      // Pending agent calls already have input-available parts. Permission
+      // waits must still say Working until the run resumes executing them.
+      const awaitingPermission =
+        agentRunStatus === 'awaiting_approval' ||
+        agentRunStatus === 'awaiting_folder_access'
 
-      if (!block.tools.length && !error && !showWorking) {
+      if (!block.tools.length && !error && !active) {
         return null
       }
 
       return (
         <div key={block.key} className="not-prose mb-3">
-          <ToolActivityGroup
-            tools={block.tools}
-            active={active}
-            working={showWorking}
-            onRetry={onRegenerate ? handleRegenerate : undefined}
-          />
+          {(block.tools.length > 0 || active) && (
+            <ToolActivityGroup
+              tools={block.tools}
+              active={active}
+              working={awaitingPermission}
+              onRetry={onRegenerate ? handleRegenerate : undefined}
+            />
+          )}
           {error &&
             (() => {
               const copy = agentErrorCopy(error)
@@ -510,7 +501,7 @@ export const MessageItem = memo(
             case 'reasoning':
               return renderReasoningBlock(block)
             case 'activity':
-              return renderActivityBlock(block, index)
+              return renderActivityBlock(block)
             default:
               return null
           }

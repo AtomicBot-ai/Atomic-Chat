@@ -83,6 +83,27 @@ describe('agent file links', () => {
     expect(linked).not.toContain(`[${path}]`)
   })
 
+  it('links a home-relative shorthand for an absolute macOS path', () => {
+    const path = '/Users/atomic/Desktop/uncensored-ai-models.pdf'
+
+    expect(
+      linkAgentFileReferences(
+        '👉 ** ~/Desktop/uncensored-ai-models.pdf**',
+        [path]
+      )
+    ).toBe(
+      `👉 ** [uncensored-ai-models.pdf](https://atomic.local/open-file?path=${encodeURIComponent(path)})**`
+    )
+  })
+
+  it('links a home-relative shorthand for an absolute Linux path', () => {
+    const path = '/home/atomic/Documents/report.pdf'
+
+    expect(linkAgentFileReferences('Open ~/Documents/report.pdf', [path])).toBe(
+      `Open [report.pdf](https://atomic.local/open-file?path=${encodeURIComponent(path)})`
+    )
+  })
+
   it('links an attachment by its original filename', () => {
     const path = '/thread/agent-attachments/turn/01.pdf'
 
@@ -116,15 +137,26 @@ describe('agent file links', () => {
     )
   })
 
+  it('does not link an ambiguous home-relative shorthand', () => {
+    const first = '/Users/one/Desktop/summary.txt'
+    const second = '/Users/two/Desktop/summary.txt'
+
+    expect(
+      linkAgentFileReferences('Open ~/Desktop/summary.txt.', [first, second])
+    ).toBe('Open ~/Desktop/summary.txt.')
+  })
+
   it('does not rewrite existing links or code', () => {
-    const path = '/tmp/summary.txt'
+    const path = '/Users/atomic/Desktop/summary.txt'
 
     expect(
       linkAgentFileReferences(
-        '`summary.txt` [summary.txt](https://example.com)',
+        '`~/Desktop/summary.txt` [~/Desktop/summary.txt](https://example.com)\n```text\n~/Desktop/summary.txt\n```',
         [path]
       )
-    ).toBe('`summary.txt` [summary.txt](https://example.com)')
+    ).toBe(
+      '`~/Desktop/summary.txt` [~/Desktop/summary.txt](https://example.com)\n```text\n~/Desktop/summary.txt\n```'
+    )
   })
 
   it('decodes only Atomic Chat file hrefs', () => {

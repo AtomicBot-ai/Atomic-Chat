@@ -1,3 +1,4 @@
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { localStorageKey } from '@/constants/localStorage'
@@ -22,8 +23,10 @@ describe('useImageForm', () => {
     })
   })
 
-  it('persists the knobs but never the images, the mask or the workflow', () => {
+  it('persists durable settings but never prompts or source inputs', () => {
     useImageForm.setState({
+      prompt: 'An unsent image prompt',
+      negativePrompt: 'An unsent negative prompt',
       workflow: 'inpaint',
       strength: 0.4,
       expandPercent: 40,
@@ -34,10 +37,107 @@ describe('useImageForm', () => {
     const stored = JSON.parse(localStorage.getItem(localStorageKey.imageForm) ?? '{}')
     expect(stored.state.strength).toBe(0.4)
     expect(stored.state.expandPercent).toBe(40)
-    expect(stored.state).not.toHaveProperty('workflow')
+    expect(stored.state.workflow).toBe('inpaint')
+    expect(stored.state).not.toHaveProperty('prompt')
+    expect(stored.state).not.toHaveProperty('negativePrompt')
     expect(stored.state).not.toHaveProperty('sourceImage')
     expect(stored.state).not.toHaveProperty('maskBase64')
     expect(stored.state).not.toHaveProperty('referenceImages')
+  })
+
+  it('keeps prompt text when the Images route remounts in one session', () => {
+    const firstMount = renderHook(() =>
+      useImageForm((state) => state.prompt)
+    )
+    act(() => {
+      useImageForm.getState().patch({ prompt: 'Keep this between routes' })
+    })
+    firstMount.unmount()
+
+    const secondMount = renderHook(() =>
+      useImageForm((state) => state.prompt)
+    )
+    expect(secondMount.result.current).toBe('Keep this between routes')
+  })
+
+  it('rehydrates durable settings but starts prompts empty after a relaunch', async () => {
+    useImageForm.setState({
+      prompt: 'Do not restore this',
+      negativePrompt: 'Do not restore this either',
+      workflow: 'upscale',
+      width: 1536,
+      height: 1024,
+      steps: 31,
+      cfgScale: 4.5,
+      seedText: '8675309',
+      strength: 0.45,
+    })
+    const persisted = localStorage.getItem(localStorageKey.imageForm)
+    expect(persisted).not.toBeNull()
+
+    useImageForm.setState({
+      ...DEFAULT_IMAGE_FORM,
+      ...DEFAULT_WORKFLOW_KNOBS,
+    })
+    localStorage.setItem(localStorageKey.imageForm, persisted!)
+    await useImageForm.persist.rehydrate()
+
+    const state = useImageForm.getState()
+    expect(state.prompt).toBe('')
+    expect(state.negativePrompt).toBe('')
+    expect(state.workflow).toBe('upscale')
+    expect(state.width).toBe(1536)
+    expect(state.height).toBe(1024)
+    expect(state.steps).toBe(31)
+    expect(state.cfgScale).toBe(4.5)
+    expect(state.seedText).toBe('8675309')
+    expect(state.strength).toBe(0.45)
+  })
+
+  it('migrates v1 records by removing old prompts without clearing settings', async () => {
+    const legacy = JSON.stringify({
+      version: 1,
+      state: {
+        prompt: 'Legacy positive prompt',
+        negativePrompt: 'Legacy negative prompt',
+        negativeOpen: true,
+        workflow: 'edit',
+        width: 768,
+        height: 512,
+        steps: 24,
+        cfgScale: 3,
+        seedText: '1234',
+        runs: 3,
+        strength: 0.25,
+      },
+    })
+
+    useImageForm.setState({
+      ...DEFAULT_IMAGE_FORM,
+      ...DEFAULT_WORKFLOW_KNOBS,
+    })
+    localStorage.setItem(localStorageKey.imageForm, legacy)
+    await useImageForm.persist.rehydrate()
+
+    const state = useImageForm.getState()
+    expect(state.prompt).toBe('')
+    expect(state.negativePrompt).toBe('')
+    expect(state.negativeOpen).toBe(true)
+    expect(state.workflow).toBe('edit')
+    expect(state.width).toBe(768)
+    expect(state.height).toBe(512)
+    expect(state.steps).toBe(24)
+    expect(state.cfgScale).toBe(3)
+    expect(state.seedText).toBe('1234')
+    expect(state.runs).toBe(3)
+    expect(state.strength).toBe(0.25)
+
+    const migrated = JSON.parse(
+      localStorage.getItem(localStorageKey.imageForm) ?? '{}'
+    )
+    expect(migrated.version).toBe(2)
+    expect(migrated.state).not.toHaveProperty('prompt')
+    expect(migrated.state).not.toHaveProperty('negativePrompt')
   })
 
   it('drops the mask when the source changes and on Clear mask', () => {
@@ -67,6 +167,15 @@ describe('useImageForm', () => {
     const state = useImageForm.getState()
     expect(state.workflow).toBe('edit')
     expect(state.width).toBe(1008)
+  })
+
+  it('clamps batch size to a loaded model without discarding a valid draft', () => {
+    useImageForm.setState({ batchSize: 3 })
+    useImageForm.getState().clampTo(makeCapabilities({ maxBatch: 4 }))
+    expect(useImageForm.getState().batchSize).toBe(3)
+
+    useImageForm.getState().clampTo(makeCapabilities({ maxBatch: 1 }))
+    expect(useImageForm.getState().batchSize).toBe(1)
   })
 
   it('resets the workflow knobs with the rest of the numbers', () => {

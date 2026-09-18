@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UIMessage } from 'ai'
 import { MessageItem } from './MessageItem'
 import {
   Conversation,
@@ -10,6 +11,8 @@ import { useReasoningAutoScroll } from '@/hooks/useReasoningAutoScroll'
 import { seedServiceHub } from '@/test/service-hub'
 import {
   expectNoHorizontalOverflow,
+  expectOneLine,
+  expectVerticallyCentered,
   setFontSize,
   setTheme,
   settle,
@@ -88,16 +91,22 @@ function viewport(container: HTMLElement) {
   )!.parentElement!
 }
 
-async function prepare(testCase: (typeof cases)[number], text = longText) {
+async function prepare(
+  testCase: (typeof cases)[number],
+  text = longText,
+  open = true
+) {
   await page.viewport(testCase.width, 800)
   setFontSize(testCase.fontSize)
   setTheme(testCase.theme)
   const result = render(<Harness text={text} />)
   await act(async () => {
     await document.fonts.ready
-    fireEvent.click(
-      result.container.querySelector('[data-slot="collapsible-trigger"]')!
-    )
+    if (open) {
+      fireEvent.click(
+        result.container.querySelector('[data-slot="collapsible-trigger"]')!
+      )
+    }
     await frame()
     const outer = screen.getByTestId('history').parentElement!.parentElement!
     const deadline = performance.now() + 3000
@@ -116,10 +125,204 @@ async function prepare(testCase: (typeof cases)[number], text = longText) {
 }
 
 describe('Live reasoning geometry (Chromium)', () => {
-  it('starts as one compact closed status row', async () => {
+  it.each(cases)(
+    '$width / $fontSize / $theme: stable rows and adjacent chevrons through reasoning, tools, gaps and final',
+    async ({ width, fontSize, theme }) => {
+      await page.viewport(width, 800)
+      setFontSize(fontSize)
+      setTheme(theme)
+      const thought: UIMessage['parts'][number] = {
+        type: 'reasoning',
+        text: 'Plan the lookup.',
+        state: 'done',
+      }
+      const tool = (id: string, state: string, query: string) =>
+        ({
+          type: 'tool-web_search_exa',
+          toolCallId: id,
+          state,
+          input: { query },
+          ...(state === 'output-available' ? { output: [] } : {}),
+        }) as UIMessage['parts'][number]
+      const first = tool('first', 'output-available', 'first query')
+      const second = tool('second', 'output-available', 'second query')
+      const phases = [
+        { parts: [thought], label: 'Working', active: true },
+        {
+          parts: [thought, tool('first', 'input-available', 'first query')],
+          label: 'Searching',
+          active: true,
+        },
+        { parts: [thought, first], label: 'Working', active: true },
+        {
+          parts: [
+            thought,
+            first,
+            tool(
+              'second',
+              'input-streaming',
+              'Ausführliche Untersuchung '.repeat(20)
+            ),
+          ],
+          label: 'Searching',
+          active: true,
+        },
+        { parts: [thought, first, second], label: 'Working', active: true },
+        {
+          parts: [thought, first, second],
+          label: 'Completed 2 actions',
+          active: false,
+        },
+      ]
+      const item = (phase: (typeof phases)[number]) =>
+        withTranslations(
+          <div style={{ marginLeft: 256, padding: 24 }}>
+            <MessageItem
+              message={{
+                id: 'lifecycle-layout',
+                role: 'assistant',
+                parts: phase.parts,
+              }}
+              isFirstMessage={false}
+              isLastMessage
+              status={phase.active ? 'streaming' : 'ready'}
+              requestActive={phase.active}
+              hideActions
+            />
+            <div data-testid="lifecycle-anchor">Answer position</div>
+          </div>
+        )
+      const { container, rerender } = render(item(phases[0]))
+      await act(async () => {
+        await document.fonts.ready
+        await frame()
+        await frame()
+      })
+      const thinking = screen.getByRole('button', { name: /Thinking for/ })
+      const activity = screen
+        .getByTestId('tool-activity-group')
+        .querySelector('button')!
+      const anchor = screen
+        .getByTestId('lifecycle-anchor')
+        .getBoundingClientRect().top
+      const rowHeight = activity.getBoundingClientRect().height
+      for (const phase of phases) {
+        rerender(item(phase))
+        await act(async () => {
+          await frame()
+          await frame()
+        })
+        expect(activity).toHaveTextContent(phase.label)
+        expect(activity).toBe(
+          screen.getByTestId('tool-activity-group').querySelector('button')
+        )
+        expect(thinking).toBe(
+          screen.getByRole('button', {
+            name: phase.active ? /Thinking for/ : /Thought for/,
+          })
+        )
+        expect(thinking.querySelector('.text-transparent')).toBeNull()
+        expect(activity.getBoundingClientRect().height).toBeCloseTo(
+          rowHeight,
+          0
+        )
+        expect(
+          screen.getByTestId('lifecycle-anchor').getBoundingClientRect().top
+        ).toBeCloseTo(anchor, 0)
+        expect(viewport(container).getBoundingClientRect().height).toBe(0)
+
+        for (const trigger of [thinking, activity]) {
+          const chevron = trigger.querySelector(
+            '.lucide-chevron-down, .lucide-chevron-right'
+          )
+          if (!chevron) continue // No disclosure before the first tool exists.
+          const summary = chevron.previousElementSibling as HTMLElement
+          const gap = parseFloat(
+            getComputedStyle(chevron.parentElement!).columnGap
+          )
+          expect(
+            chevron.getBoundingClientRect().left -
+              summary.getBoundingClientRect().right
+          ).toBeCloseTo(gap, 0)
+          expectVerticallyCentered(chevron, summary)
+          const textElement =
+            (summary.firstElementChild as HTMLElement | null) ?? summary
+          expectOneLine(textElement)
+          if (textElement.scrollWidth <= textElement.clientWidth) {
+            const text = document.createRange()
+            text.selectNodeContents(textElement)
+            expect(
+              chevron.getBoundingClientRect().left -
+                text.getBoundingClientRect().right
+            ).toBeCloseTo(gap, 0)
+          }
+        }
+        expectNoHorizontalOverflow(container)
+      }
+      expect(screen.getAllByText('Completed 2 actions')).toHaveLength(1)
+      expect(
+        screen.getAllByRole('button', { name: /Thought for/ })
+      ).toHaveLength(1)
+    }
+  )
+
+  it('keeps reasoning and activity chevrons immediately beside their summaries', async () => {
     await page.viewport(1024, 800)
-    const result = render(<Harness text={longText} />)
-    await settle()
+    setFontSize('20px')
+    const { container } = render(
+      withTranslations(
+        <div className="w-[720px] p-6">
+          <MessageItem
+            message={{
+              id: 'adjacent-chevrons',
+              role: 'assistant',
+              parts: [
+                {
+                  type: 'reasoning',
+                  text: 'Plan the lookup.',
+                  state: 'done',
+                },
+                {
+                  type: 'tool-mcp.search',
+                  toolCallId: 'search-1',
+                  state: 'output-available',
+                  input: { query: 'layout' },
+                  output: { ok: true },
+                },
+              ],
+            }}
+            isFirstMessage={false}
+            isLastMessage
+            status="ready"
+            hideActions
+          />
+        </div>
+      )
+    )
+    await act(async () => {
+      await document.fonts.ready
+      await frame()
+      await frame()
+    })
+
+    for (const selector of ['.lucide-chevron-down', '.lucide-chevron-right']) {
+      const chevron = container.querySelector<SVGElement>(selector)!
+      const summary = chevron.previousElementSibling as HTMLElement
+      const wrapper = chevron.parentElement!
+      const trigger = wrapper.parentElement!
+      const summaryBox = summary.getBoundingClientRect()
+      const chevronBox = chevron.getBoundingClientRect()
+      const triggerBox = trigger.getBoundingClientRect()
+      const gap = parseFloat(getComputedStyle(wrapper).columnGap)
+
+      expect(chevronBox.left - summaryBox.right).toBeCloseTo(gap, 0)
+      expect(triggerBox.right - chevronBox.right).toBeGreaterThan(100)
+    }
+    expectNoHorizontalOverflow(container)
+  })
+
+  it('starts as one compact closed status row', async () => {
+    const result = await prepare(cases[0], longText, false)
     const panel = viewport(result.container)
 
     expect(panel.getBoundingClientRect().height).toBe(0)
@@ -129,11 +332,12 @@ describe('Live reasoning geometry (Chromium)', () => {
   })
 
   it.each(cases)(
-    '$width / $fontSize / $theme: reserves height and follows fully visible tail lines',
+    '$width / $fontSize / $theme: closed reasoning stays compact during token growth',
     async (testCase) => {
       const { container, rerender, panel } = await prepare(
         testCase,
-        'First short line.'
+        'First short line.',
+        false
       )
       const initialHeight = panel.getBoundingClientRect().height
       const anchor = screen.getByTestId('end').getBoundingClientRect().bottom
@@ -152,49 +356,24 @@ describe('Live reasoning geometry (Chromium)', () => {
           initialHeight,
           0
         )
-        expect(panel.getBoundingClientRect().height).toBeLessThanOrEqual(180)
-        expect(
-          panel.scrollHeight - panel.clientHeight - panel.scrollTop
-        ).toBeLessThanOrEqual(1)
+        expect(panel.getBoundingClientRect().height).toBe(0)
         expect(
           screen.getByTestId('end').getBoundingClientRect().bottom
         ).toBeCloseTo(anchor, 0)
         expectNoHorizontalOverflow(container)
       }
-      const tail = panel.querySelector(
-        '[data-streaming-reasoning]'
-      )!.firstChild!
-      const range = document.createRange()
-      range.setStart(
-        tail,
-        tail.textContent!.length - 'Final visible tail'.length
-      )
-      range.setEnd(tail, tail.textContent!.length)
-      const ink = range.getBoundingClientRect()
-      expect(ink.bottom).toBeLessThanOrEqual(
-        panel.getBoundingClientRect().bottom - 4
-      )
-      expect(ink.top).toBeGreaterThan(panel.getBoundingClientRect().top)
-      expect(panel.getAttribute('data-overflow-bottom')).toBe('false')
-
-      panel.scrollTop -= 80
-      fireEvent.scroll(panel)
-      await frame()
-      const readerTop = panel.scrollTop
-      expect(panel.getAttribute('data-overflow-bottom')).toBe('true')
-      expect(getComputedStyle(panel).maskImage).toContain('100%')
-      rerender(
-        <Harness
-          text={
-            longText + 'x'.repeat(700) + '\nFinal visible tail\nMore tokens'
-          }
-        />
+      fireEvent.click(
+        container.querySelector('[data-slot="collapsible-trigger"]')!
       )
       await act(async () => {
         await frame()
         await frame()
       })
-      expect(panel.scrollTop).toBe(readerTop)
+      expect(panel.getBoundingClientRect().height).toBeGreaterThan(1000)
+      expect(
+        panel.querySelector('[data-streaming-reasoning]')!.textContent
+      ).toContain('Final visible tail')
+      expectNoHorizontalOverflow(container)
     }
   )
 
@@ -249,9 +428,9 @@ describe('Live reasoning geometry (Chromium)', () => {
       await act(async () => {
         await settle()
       })
-      expect(panel.getBoundingClientRect().height).toBeGreaterThan(
-        liveHeight * 2
-      )
+      expect(panel.getBoundingClientRect().height).toBeGreaterThan(0)
+      expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight + 1)
+      expect(panel.querySelector('[data-streamdown="strong"]')).not.toBeNull()
       expect(screen.getByText('Original reasoning')).toBeTruthy()
       expectNoHorizontalOverflow(container)
     }

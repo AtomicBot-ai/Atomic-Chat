@@ -148,6 +148,75 @@ const UnmemoizedCodePre: Components['pre'] = ({ children }) => {
 // Cache for normalized LaTeX content
 const latexCache = new Map<string, string>()
 
+const repairStrongMarkers = (text: string): string =>
+  text.replace(
+    /\*\*([ \t]*)([^*\r\n]*?[^\s*])([ \t]*)\*\*/g,
+    (match, leading: string, value: string, trailing: string) =>
+      leading || trailing ? `**${value}**` : match
+  )
+
+/** Repair whitespace inside strong markers while leaving Markdown code intact. */
+const normalizeMalformedStrong = (input: string): string => {
+  let fence: { marker: string; length: number } | null = null
+  const chunks = input.split(/(\n)/)
+
+  return chunks
+    .map((line, index) => {
+      if (index % 2 === 1) return line
+
+      const fenceRun = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1]
+      if (fence) {
+        const closingRun = line.match(
+          /^ {0,3}(`+|~+)[ \t]*\r?$/
+        )?.[1]
+        if (
+          closingRun?.[0] === fence.marker &&
+          closingRun.length >= fence.length
+        ) {
+          fence = null
+        }
+        return line
+      }
+      if (fenceRun) {
+        fence = { marker: fenceRun[0], length: fenceRun.length }
+        return line
+      }
+
+      let result = ''
+      let cursor = 0
+      while (cursor < line.length) {
+        const codeStart = line.indexOf('`', cursor)
+        if (codeStart < 0) {
+          result += repairStrongMarkers(line.slice(cursor))
+          break
+        }
+
+        result += repairStrongMarkers(line.slice(cursor, codeStart))
+        let runEnd = codeStart + 1
+        while (line[runEnd] === '`') runEnd += 1
+        const delimiter = line.slice(codeStart, runEnd)
+        let codeEnd = line.indexOf(delimiter, runEnd)
+        while (
+          codeEnd >= 0 &&
+          (line[codeEnd - 1] === '`' ||
+            line[codeEnd + delimiter.length] === '`')
+        ) {
+          codeEnd = line.indexOf(delimiter, codeEnd + delimiter.length)
+        }
+        if (codeEnd < 0) {
+          result += line.slice(codeStart)
+          break
+        }
+
+        const afterCode = codeEnd + delimiter.length
+        result += line.slice(codeStart, afterCode)
+        cursor = afterCode
+      }
+      return result
+    })
+    .join('')
+}
+
 /**
  * Optimized preprocessor: normalize LaTeX fragments into $ / $$.
  * Uses caching to avoid reprocessing the same content.
@@ -222,7 +291,7 @@ function RenderMarkdownComponent({
 
   const normalizedContent = useMemo(() => {
     const prepared = enableHtmlPreview ? wrapBareHtmlDocument(content) : content
-    return normalizeLatex(prepared)
+    return normalizeLatex(normalizeMalformedStrong(prepared))
   }, [content, enableHtmlPreview])
   const thetaMarked = useRef(false)
   const streamedThisMountRef = useRef(Boolean(isStreaming))
@@ -361,13 +430,15 @@ function RenderMarkdownComponent({
     normalizedContent.includes('$$') ||
     /(^|[^\\])\$[^$\n]+\$/.test(normalizedContent)
   const containsUrl = /(?:https?:\/\/|www\.)/i.test(normalizedContent)
+  const containsStrong = /\*\*(?=\S)[^\r\n]*?\S\*\*/.test(normalizedContent)
 
   if (
     content.length > 0 &&
     content.length < 32 &&
     !components &&
     !containsMath &&
-    !containsUrl
+    !containsUrl &&
+    !containsStrong
   ) {
     return (
       <div

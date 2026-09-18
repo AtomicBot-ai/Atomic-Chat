@@ -15,8 +15,14 @@ use crate::core::{
 
 pub(crate) const SEARCH_TOOL_NAME: &str = "web_search_exa";
 pub(crate) const FETCH_TOOL_NAME: &str = "web_fetch_exa";
-const SEARCH_UNAVAILABLE: &str = "Web search is temporarily unavailable. Try again.";
-const FETCH_UNAVAILABLE: &str = "Web page fetch is temporarily unavailable. Try again.";
+// These errors are fed back to the model. Telling it to "try again" made a
+// provider outage look like a string of independent failures as the model
+// immediately rephrased the same search several times. A later user turn will
+// still retry the providers normally; only the current tool loop should stop.
+const SEARCH_UNAVAILABLE: &str =
+    "Web search is temporarily unavailable. Do not retry web search in this turn; use existing results or explain the limitation.";
+const FETCH_UNAVAILABLE: &str =
+    "Web page fetch is temporarily unavailable. Do not retry page fetches in this turn; use existing content or explain the limitation.";
 
 pub(crate) fn is_bundled_config(name: &str, config: &Value) -> bool {
     name == "exa"
@@ -183,5 +189,14 @@ mod tests {
         assert_eq!(tools[0].name, SEARCH_TOOL_NAME);
         assert_eq!(tools[1].name, FETCH_TOOL_NAME);
         assert_eq!(tools[1].input_schema["required"], json!(["urls"]));
+    }
+
+    #[test]
+    fn provider_outage_messages_stop_same_turn_retry_loops() {
+        for message in [SEARCH_UNAVAILABLE, FETCH_UNAVAILABLE] {
+            assert!(message.contains("Do not retry"));
+            assert!(message.contains("in this turn"));
+            assert!(!message.ends_with("Try again."));
+        }
     }
 }

@@ -264,6 +264,7 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## UI / UX (76)
 
+- **2026-09-18** — [Preserve gallery selection during image generation](2026-09-18-image-viewer-live-selection.md)
 - **2026-09-17** — [Describe collapsed tool calls with localized human actions](2026-09-17-tool-call-friendly-copy.md)
 - **2026-09-17** — [Dock inline approvals to the composer border](2026-09-17-agent-approval-composer-stack.md)
 - **2026-09-17** — [Show connector actions according to configuration state](2026-09-17-connector-card-state-actions.md)

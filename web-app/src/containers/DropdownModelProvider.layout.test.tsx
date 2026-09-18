@@ -35,7 +35,6 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 // the main panel. Keep the actual Radix portal, status, avatar and slider.
 vi.mock('./ModelPickerDownloads', () => ({
   HuggingFaceAction: () => null,
-  HuggingFacePicks: () => null,
   ModelPickerEmptyState: () => null,
 }))
 vi.mock('./dialogs/AddCloudProviderDialog', () => ({

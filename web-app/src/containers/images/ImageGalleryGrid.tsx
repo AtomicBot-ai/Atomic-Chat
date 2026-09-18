@@ -18,6 +18,8 @@ type ImageGalleryGridProps = {
   pendingSize?: { width: number; height: number }
   pendingProgress?: ImageJobProgress | null
   pendingStartedAtMs?: number
+  pendingSelected?: boolean
+  onSelectPending?: () => void
   onSelect: (id: string, modifiers: { shift: boolean; meta: boolean }) => void
   onOpen: (id: string) => void
   onLoadMore: () => void
@@ -38,6 +40,8 @@ export const ImageGalleryGrid = memo(function ImageGalleryGrid({
   pendingSize = { width: 1024, height: 1024 },
   pendingProgress = null,
   pendingStartedAtMs = Date.now(),
+  pendingSelected = false,
+  onSelectPending,
   onSelect,
   onOpen,
   onLoadMore,
@@ -63,15 +67,24 @@ export const ImageGalleryGrid = memo(function ImageGalleryGrid({
     <div className="space-y-3" data-testid="image-gallery-grid">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
         {Array.from({ length: pendingCount }, (_, index) => (
-          <ImageGenerationPlaceholder
+          <button
             key={`pending-${index}`}
-            variant="tile"
-            width={pendingSize.width}
-            height={pendingSize.height}
-            progress={pendingProgress}
-            startedAtMs={pendingStartedAtMs}
-            index={index}
-          />
+            type="button"
+            className="min-w-0 cursor-pointer rounded-lg outline-none hover:ring-2 hover:ring-border focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={t('images:progress.generatingImage')}
+            aria-pressed={pendingSelected}
+            data-testid={`gallery-pending-${index}`}
+            onClick={onSelectPending}
+          >
+            <ImageGenerationPlaceholder
+              variant="tile"
+              width={pendingSize.width}
+              height={pendingSize.height}
+              progress={pendingProgress}
+              startedAtMs={pendingStartedAtMs}
+              index={index}
+            />
+          </button>
         ))}
         {items.map((item) => (
           <ImageGalleryTile

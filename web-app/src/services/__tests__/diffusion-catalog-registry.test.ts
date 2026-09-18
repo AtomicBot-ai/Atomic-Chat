@@ -333,7 +333,6 @@ describe('baseline and lookups', () => {
       'flux.1',
       'flux.1-uncensored',
       'flux.1-abliterated',
-      'flux.1-frankenstein',
       'flux.1-nsfw-realism',
       'flux.1-krea',
       'qwen-image',
@@ -347,6 +346,15 @@ describe('baseline and lookups', () => {
     expect(findQuant(klein!, 'q4_k_m')?.recommended).toBe(true)
     expect(findQuant(klein!, 'q2_k')).toBeUndefined()
     expect(findFamily(baseline, 'sdxl')).toBeUndefined()
+  })
+
+  it('rejects the incompatible Frankenstein checkpoint from remote catalogs', () => {
+    const raw = manifest()
+    raw.families[0].id = 'flux.1-frankenstein'
+
+    expect(() => parseDiffusionCatalog(raw)).toThrow(
+      'Diffusion catalog carries no usable family'
+    )
   })
 
   it('uses CFG rather than distilled guidance for NSFW Realism', () => {

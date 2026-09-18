@@ -100,7 +100,14 @@ describe('ImagePromptForm', () => {
       width: 1024,
       height: 1024,
     })
-    expect(screen.getByTestId('image-job-progress')).toBeInTheDocument()
+    expect(screen.queryByTestId('image-job-progress')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('image-progress-slot')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('image-stop'))
+    expect(screen.getByTestId('image-stop')).toBeDisabled()
+    expect(screen.getByTestId('image-stop')).toHaveTextContent(
+      'images:form.stopping'
+    )
 
     await act(async () => {
       fake.emit({
@@ -189,6 +196,67 @@ describe('ImagePromptForm', () => {
     expect(screen.getByTestId('image-generate')).toBeDisabled()
   })
 
+  it('keeps Batch size editable before a model is loaded', async () => {
+    useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+    render(<ImagePromptForm />)
+
+    const batch = screen.getByRole('spinbutton', {
+      name: 'images:form.batchSize',
+    })
+    expect(batch).toBeEnabled()
+    await userEvent.clear(batch)
+    await userEvent.type(batch, '3')
+    fireEvent.blur(batch)
+    expect(useImageForm.getState().batchSize).toBe(3)
+  })
+
+  it('clamps an offline Batch size when a restrictive model loads', async () => {
+    useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+    useImageForm.setState({ batchSize: 3 })
+    render(<ImagePromptForm />)
+
+    act(() => {
+      useImageGenerationStore.setState({
+        status: makeLoadedStatus(Q4_ID),
+        capabilities: makeCapabilities({ maxBatch: 1 }),
+      })
+    })
+
+    await waitFor(() => expect(useImageForm.getState().batchSize).toBe(1))
+    expect(
+      screen.getByRole('spinbutton', { name: 'images:form.batchSize' })
+    ).toHaveValue(1)
+    expect(
+      screen.getByRole('spinbutton', { name: 'images:form.batchSize' })
+    ).toBeDisabled()
+  })
+
+  it('retains an offline Batch size supported by the loaded model', async () => {
+    useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+    useImageForm.setState({ batchSize: 3 })
+    render(<ImagePromptForm />)
+
+    act(() => {
+      useImageGenerationStore.setState({
+        status: makeLoadedStatus(Q4_ID),
+        capabilities: makeCapabilities({ maxBatch: 4 }),
+      })
+    })
+
+    await waitFor(() => expect(useImageForm.getState().batchSize).toBe(3))
+    expect(
+      screen.getByRole('spinbutton', { name: 'images:form.batchSize' })
+    ).toHaveValue(3)
+  })
+
+  it('does not render a second model Stop beside the top picker', () => {
+    render(<ImagePromptForm />)
+    expect(
+      screen.queryByRole('button', { name: 'images:model.unload' })
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('image-generate')).toBeInTheDocument()
+  })
+
   it('does not present a remembered model as running', () => {
     useImageGenerationStore.setState({
       status: makeStatus(),
@@ -204,25 +272,17 @@ describe('ImagePromptForm', () => {
     )
   })
 
-  it('offers a compatible model instead of blocking an unsupported workflow', async () => {
+  it('requires a compatible picker selection without a workflow warning card', () => {
     useImageForm.setState({ workflow: 'edit' })
-    useImageGenerationStore.setState({
-      status: makeStatus(),
-      capabilities: null,
-    })
+    useImageForm.setState({ prompt: 'change the sky' })
     render(<ImagePromptForm />)
 
     expect(
-      screen.getByTestId('image-workflow-model-notice')
-    ).toBeInTheDocument()
-    await userEvent.click(
-      screen.getByRole('button', {
-        name: 'images:workflow.chooseCompatibleModel',
-      })
+      screen.queryByTestId('image-workflow-model-notice')
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('image-models-toggle')).toHaveTextContent(
+      'images:model.select'
     )
-    expect(screen.getByTestId('image-models-toggle')).toHaveAttribute(
-      'aria-expanded',
-      'true'
-    )
+    expect(screen.getByTestId('image-generate')).toBeDisabled()
   })
 })

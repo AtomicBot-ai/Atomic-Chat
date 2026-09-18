@@ -3,7 +3,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
   within,
 } from '@testing-library/react'
 import {
@@ -21,9 +20,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { VOICE_MODEL_ID } from '@/constants/voice'
-import type { CatalogModel, ModelsService } from '@/services/models/types'
+import { route } from '@/constants/routes'
+import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
-import { resetModelPickerDownloadsForTest } from '../ModelPickerDownloads'
+
+const navigate = vi.hoisted(() => vi.fn())
 
 vi.mock('@/hooks/useModelProvider', () => ({ useModelProvider: vi.fn() }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -31,13 +32,15 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
     t: (key: string, vars?: Record<string, unknown>) => {
       if (key === 'common:selectAModel') return 'Select Model'
       if (key === 'common:searchModels') return 'Search models...'
-      if (key === 'common:searchModelsHuggingFace')
-        return 'Search models on Hugging Face...'
+      if (key === 'common:modelPicker.downloadFromHuggingFace')
+        return 'Download from Hugging Face'
+      if (key === 'common:modelPicker.noRunnableModels')
+        return 'No runnable models yet.'
       return vars ? `${key}:${JSON.stringify(vars)}` : key
     },
   }),
 }))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 vi.mock('@/hooks/useFavoriteModel', () => ({
   useFavoriteModel: () => ({ favoriteModels: [] }),
 }))
@@ -64,8 +67,6 @@ class MockResizeObserver {
   unobserve() {}
   disconnect() {}
 }
-
-const searchHuggingFaceCandidates = vi.fn()
 
 const localProvider = (models: Partial<Model>[] = []): ModelProvider =>
   ({
@@ -107,16 +108,7 @@ const runningDownload = (id: string) => ({
   speed: { bytesPerSecond: 1, atBytes: 25, atTime: Date.now() },
 })
 
-const hfCandidate = (repo: string): CatalogModel =>
-  ({
-    model_name: repo,
-    developer: repo.split('/')[0],
-    description: '',
-    downloads: 1,
-    is_mlx: false,
-  }) as CatalogModel
-
-describe('DropdownModelProvider installed model picker', () => {
+describe('DropdownModelProvider runnable model picker', () => {
   beforeAll(() => {
     global.ResizeObserver = MockResizeObserver
   })
@@ -125,7 +117,6 @@ describe('DropdownModelProvider installed model picker', () => {
     vi.clearAllMocks()
     localStorage.clear()
     vi.stubGlobal('IS_MACOS', false)
-    resetModelPickerDownloadsForTest()
     useDownloadStore.setState({
       downloads: {},
       localDownloadingModels: new Set(),
@@ -134,7 +125,6 @@ describe('DropdownModelProvider installed model picker', () => {
       resumeParams: {},
       downloadOriginByModelId: {},
     })
-    searchHuggingFaceCandidates.mockResolvedValue([])
     seedServiceHub({
       models: {
         getActiveModels: vi.fn().mockResolvedValue([]),
@@ -142,7 +132,6 @@ describe('DropdownModelProvider installed model picker', () => {
         checkMmprojExistsAndUpdateOffloadMMprojSetting: vi
           .fn()
           .mockResolvedValue(undefined),
-        searchHuggingFaceCandidates,
       } as unknown as ModelsService,
     })
     mockProviders([localProvider()])
@@ -169,11 +158,11 @@ describe('DropdownModelProvider installed model picker', () => {
     render(<DropdownModelProvider />)
 
     expect(screen.getByTestId('model-picker-empty')).toHaveTextContent(
-      'No installed models yet.'
+      'No runnable models yet.'
     )
     expect(
       screen.getAllByRole('button', {
-        name: 'Download models from Hugging Face',
+        name: 'Download from Hugging Face',
       })
     ).toHaveLength(1)
     expect(screen.queryByTestId('model-picker-routes')).not.toBeInTheDocument()
@@ -188,16 +177,33 @@ describe('DropdownModelProvider installed model picker', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('lists and filters installed chat models only', () => {
+  it('lists and searches runnable local, cloud, and Codex chat models only', () => {
     mockProviders([
       localProvider([
         { id: 'Qwen3-Chat', capabilities: ['completion'] },
         { id: EMBEDDING_MODEL_ID, embedding: true },
         { id: VOICE_MODEL_ID },
+        { id: 'mmproj-Qwen3' },
+        { id: 'llamacpp-backend-metal' },
         { id: 'Missing-Chat', missing: true },
         { id: 'Image-Only', capabilities: ['image-generation'] },
+        { id: 'Video-Only', capabilities: ['text-to-video'] },
       ]),
-      cloudProvider([{ id: 'Cloud-Only-Model' }]),
+      cloudProvider([{ id: 'Cloud-GPT-4o', capabilities: ['completion'] }]),
+      {
+        provider: 'chatgpt',
+        active: true,
+        api_key: '',
+        models: [{ id: 'gpt-5.1-codex', capabilities: [] }],
+        settings: [],
+      } as ModelProvider,
+      {
+        provider: 'anthropic',
+        active: true,
+        api_key: '',
+        models: [{ id: 'Disconnected-Claude', capabilities: ['completion'] }],
+        settings: [{ key: 'api-key' }],
+      } as ModelProvider,
       {
         provider: 'stable-diffusion',
         active: true,
@@ -209,18 +215,29 @@ describe('DropdownModelProvider installed model picker', () => {
     render(<DropdownModelProvider />)
 
     expect(screen.getByText('Qwen3 Chat')).toBeInTheDocument()
-    expect(screen.queryByText('Cloud Only Model')).not.toBeInTheDocument()
+    expect(screen.getByText('Cloud GPT 4o')).toBeInTheDocument()
+    expect(screen.getAllByTitle('gpt-5.1-codex').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Disconnected Claude')).not.toBeInTheDocument()
     expect(screen.queryByText('Missing Chat')).not.toBeInTheDocument()
     expect(screen.queryByText('Image Only')).not.toBeInTheDocument()
+    expect(screen.queryByText('Video Only')).not.toBeInTheDocument()
     expect(screen.queryByText('Flux Image')).not.toBeInTheDocument()
     expect(screen.queryByText(EMBEDDING_MODEL_ID)).not.toBeInTheDocument()
     expect(screen.queryByText(VOICE_MODEL_ID)).not.toBeInTheDocument()
+    expect(screen.queryByText('mmproj Qwen3')).not.toBeInTheDocument()
+    expect(screen.queryByText('llamacpp backend metal')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('Search models...'), {
+      target: { value: 'codex' },
+    })
+    expect(screen.getAllByTitle('gpt-5.1-codex').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Qwen3 Chat')).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('Search models...'), {
       target: { value: 'qwen' },
     })
     expect(screen.getByText('Qwen3 Chat')).toBeInTheDocument()
-    expect(searchHuggingFaceCandidates).not.toHaveBeenCalled()
+    expect(screen.queryByText('GPT 5.1 Codex')).not.toBeInTheDocument()
   })
 
   it('shows only active text-model downloads', () => {
@@ -252,48 +269,31 @@ describe('DropdownModelProvider installed model picker', () => {
     render(<DropdownModelProvider />)
 
     fireEvent.change(screen.getByPlaceholderText('Search models...'), {
-      target: { value: 'llama' },
+      target: { value: 'mistral' },
     })
 
     expect(screen.getByTestId('model-picker-empty')).toHaveTextContent(
-      'common:noModelsFoundFor:{"searchValue":"llama"}'
+      'common:noModelsFoundFor:{"searchValue":"mistral"}'
     )
     expect(
       screen.getByRole('button', {
-        name: 'Download models from Hugging Face',
+        name: 'Download from Hugging Face',
       })
     ).toBeVisible()
-    expect(searchHuggingFaceCandidates).not.toHaveBeenCalled()
   })
 
-  it('enters Hugging Face search only after the footer action is clicked', async () => {
-    searchHuggingFaceCandidates.mockResolvedValue([
-      hfCandidate('unsloth/Qwen3-8B-GGUF'),
-    ])
+  it('closes toward the full Model Hub instead of entering embedded HF search', () => {
     render(<DropdownModelProvider />)
-
-    fireEvent.change(screen.getByPlaceholderText('Search models...'), {
-      target: { value: 'qwen' },
-    })
-    expect(searchHuggingFaceCandidates).not.toHaveBeenCalled()
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Download models from Hugging Face',
+        name: 'Download from Hugging Face',
       })
     )
+
+    expect(navigate).toHaveBeenCalledWith({ to: route.hub.index })
     expect(
-      screen.queryByRole('button', {
-        name: 'Download models from Hugging Face',
-      })
+      screen.queryByPlaceholderText('Search models on Hugging Face...')
     ).not.toBeInTheDocument()
-
-    const input = screen.getByPlaceholderText(
-      'Search models on Hugging Face...'
-    )
-    fireEvent.change(input, { target: { value: 'qwen' } })
-
-    await waitFor(() => expect(searchHuggingFaceCandidates).toHaveBeenCalled())
-    expect(await screen.findByText('Qwen3 8B')).toBeInTheDocument()
   })
 })

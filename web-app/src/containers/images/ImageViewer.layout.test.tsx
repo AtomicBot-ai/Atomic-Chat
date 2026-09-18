@@ -7,8 +7,9 @@ import { DEFAULT_IMAGE_FORM, useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import { settle } from '@/test/layout'
+import { expectNoHorizontalOverflow, settle, setFontSize, setTheme, withTranslations } from '@/test/layout'
 import { ImageGenerationPage } from './ImageGenerationPage'
+import { ImageViewer } from './ImageViewer'
 
 const route = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -72,12 +73,6 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@tauri-apps/api/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tauri-apps/api/core')>()),
   convertFileSrc: (path: string) => path,
-}))
-vi.mock('@/i18n/react-i18next-compat', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('@/i18n/react-i18next-compat')
-  >()),
-  useTranslation: () => ({ t: (key: string) => key }),
 }))
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -178,8 +173,48 @@ describe('image viewer page geometry', () => {
     })
   })
 
+  it.each([
+    { width: 1536, height: 512, viewport: 1280, font: '16px', theme: 'light' as const },
+    { width: 512, height: 1536, viewport: 1024, font: '20px', theme: 'dark' as const },
+  ])('clips the contained $width × $height bitmap at $viewport px with a sidebar', async ({ width, height, viewport, font, theme }) => {
+    await page.viewport(viewport, 800)
+    setFontSize(font)
+    setTheme(theme)
+    const path = 'data:image/svg+xml,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#67809f"/></svg>`
+    )
+    const view = render(withTranslations(
+      <div style={{ marginLeft: 256, width: viewport - 256, height: 600 }}>
+        <ImageViewer item={{ ...squareItem, width, height, path }} selectedIds={[]} onOfferLoad={vi.fn()} />
+      </div>
+    ))
+    const image = screen.getByAltText<HTMLImageElement>('square regression image')
+    await image.decode()
+    await settle(view.container)
+    const region = screen.getByTestId('image-viewer-region').getBoundingClientRect()
+    const box = image.getBoundingClientRect()
+    const badge = screen.getByTestId('image-dimension-badge').getBoundingClientRect()
+    const scale = Math.min(region.width / width, region.height / height)
+    expect(box.width).toBeCloseTo(width * scale, 1)
+    expect(box.height).toBeCloseTo(height * scale, 1)
+    expect(box.top).toBeCloseTo(region.top, 1)
+    expect(box.left + box.width / 2).toBeCloseTo(region.left + region.width / 2, 1)
+    expect(badge.top).toBeCloseTo(box.top + 8, 1)
+    expect(badge.right).toBeCloseTo(box.right - 8, 1)
+    expect(parseFloat(getComputedStyle(image).borderRadius)).toBeGreaterThan(0)
+    expect(getComputedStyle(image).overflow).toBe('hidden')
+    expectNoHorizontalOverflow(view.container)
+    fireEvent.click(image)
+    const fullscreen = screen.getByTestId('image-fullscreen').querySelector('img')!
+    await fullscreen.decode()
+    const fullscreenBox = fullscreen.getBoundingClientRect()
+    expect(fullscreenBox.width / fullscreenBox.height).toBeCloseTo(width / height, 2)
+    expect(fullscreenBox.width).toBeLessThanOrEqual(viewport * 0.9 + 1)
+    expect(fullscreenBox.height).toBeLessThanOrEqual(800 * 0.9 + 1)
+  })
+
   it('keeps a 1024 square large, top-contained, and stable after Use as source', async () => {
-    render(<RoutedImagePage />)
+    render(withTranslations(<RoutedImagePage />))
     await waitFor(() => expect(useImageForm.getState().workflow).toBe('create'))
 
     const root = screen.getByTestId('image-generation-page')
@@ -199,6 +234,12 @@ describe('image viewer page geometry', () => {
     expect(initialImage.top).toBeCloseTo(initialRegion.top, 1)
     expect(getComputedStyle(image).objectFit).toBe('contain')
     expect(getComputedStyle(image).objectPosition).toMatch(/0(%|px)/)
+    // The rounded element must follow the bitmap, including its letterboxed
+    // edges; rounding the full viewer region leaves the bitmap square.
+    expect(initialImage.width).toBeCloseTo(containedSquareSize, 1)
+    expect(initialImage.height).toBeCloseTo(containedSquareSize, 1)
+    expect(parseFloat(getComputedStyle(image).borderTopLeftRadius)).toBeGreaterThan(0)
+    expect(getComputedStyle(image).overflow).toBe('hidden')
     expect(section.scrollHeight).toBeLessThanOrEqual(section.clientHeight + 1)
     expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight + 1)
 

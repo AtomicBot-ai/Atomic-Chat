@@ -983,7 +983,7 @@ mod tests {
         failed_exa_startup(&app).await;
         assert_eq!(
             composer_search(&app).await.unwrap_err(),
-            "Web search is temporarily unavailable. Try again."
+            "Web search is temporarily unavailable. Do not retry web search in this turn; use existing results or explain the limitation."
         );
         assert!(app
             .state::<crate::core::state::AppState>()

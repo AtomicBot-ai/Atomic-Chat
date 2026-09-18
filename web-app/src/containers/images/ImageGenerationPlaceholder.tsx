@@ -14,8 +14,59 @@ type ImageGenerationPlaceholderProps = {
   index?: number
 }
 
-const DOT_GRID_SIZE = 15
-const DOT_FIELD_RADIUS = 44
+type Translation = ReturnType<typeof useTranslation>['t']
+
+type ProgressCopy = {
+  status: string
+  detail: string | null
+}
+
+/**
+ * Sampling owns the numeric step label only while there are steps left. Once
+ * sampling is complete, the renderer's phase is more truthful than `20/20`:
+ * VAE decode, post-processing and the gallery write can all take noticeable
+ * time. Older/ambiguous progress falls back to an honest finalizing state.
+ */
+function progressCopy(
+  progress: ImageJobProgress | null,
+  t: Translation
+): ProgressCopy {
+  const phase = progress?.phase ?? 'queued'
+  const hasSteps = Boolean(progress && progress.totalSteps > 0)
+  const samplingComplete = Boolean(
+    progress && hasSteps && progress.step >= progress.totalSteps
+  )
+
+  if (phase === 'decoding') {
+    return { status: t('images:progress.phase.decoding'), detail: null }
+  }
+  if (phase === 'postprocessing') {
+    return { status: t('images:progress.phase.postprocessing'), detail: null }
+  }
+  if (phase === 'saving') {
+    return { status: t('images:progress.phase.saving'), detail: null }
+  }
+  if (samplingComplete) {
+    return { status: t('images:progress.finalizingImage'), detail: null }
+  }
+  if (phase === 'sampling' && progress && hasSteps) {
+    return {
+      status: t('images:progress.generatingImage'),
+      detail: t('images:progress.step', {
+        step: progress.step,
+        total: progress.totalSteps,
+      }),
+    }
+  }
+
+  return {
+    status: t('images:progress.generatingImage'),
+    detail: t(`images:progress.phase.${phase}`),
+  }
+}
+
+const DOT_GRID_SIZE = 19
+const DOT_FIELD_RADIUS = 46
 const DOT_WAVE_SECONDS = 2.8
 
 const DOTS = Array.from({ length: DOT_GRID_SIZE * DOT_GRID_SIZE }, (_, index) => {
@@ -34,9 +85,12 @@ const DOTS = Array.from({ length: DOT_GRID_SIZE * DOT_GRID_SIZE }, (_, index) =>
   const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2)
   const angleTurn = angle / (Math.PI * 2)
   const phase = (radius * 1.35 + angleTurn * 0.26) % 1
-  const restOpacity = 0.22 + (1 - radius) * 0.2
-  const ringStrength = Math.exp(-Math.pow((radius - 0.7) / 0.24, 2))
-  const staticOpacity = 0.18 + ringStrength * 0.48 + (1 - radius) * 0.08
+  // A broad falloff fades the perimeter even at the crest of the wave,
+  // avoiding a bright, sharply cut circular edge as the field rotates.
+  const falloff = Math.exp(-Math.pow(radius / 0.72, 4))
+  const restOpacity = (0.24 + (1 - radius) * 0.12) * falloff
+  const ringStrength = Math.exp(-Math.pow((radius - 0.48) / 0.4, 2))
+  const staticOpacity = (0.28 + ringStrength * 0.3) * falloff
 
   return {
     x,
@@ -44,6 +98,8 @@ const DOTS = Array.from({ length: DOT_GRID_SIZE * DOT_GRID_SIZE }, (_, index) =>
     style: {
       '--dot-delay': `${-(phase * DOT_WAVE_SECONDS).toFixed(3)}s`,
       '--dot-rest-opacity': restOpacity.toFixed(3),
+      '--dot-peak-opacity': (0.82 * falloff).toFixed(3),
+      '--dot-blur': `${(radius * radius * 0.45).toFixed(3)}px`,
       '--dot-low-opacity': (restOpacity * 0.42).toFixed(3),
       '--dot-fall-opacity': (restOpacity * 0.78).toFixed(3),
       '--dot-static-opacity': staticOpacity.toFixed(3),
@@ -57,7 +113,7 @@ function DottedGenerationField({ compact = false }: { compact?: boolean }) {
       viewBox="0 0 100 100"
       className={cn(
         'generation-dotted-field shrink-0 text-foreground/70',
-        compact ? 'size-14' : 'size-28'
+        compact ? 'generation-dotted-field--tile' : 'generation-dotted-field--viewer'
       )}
       data-testid="generation-dotted-field"
       data-reduced-motion-fallback="static"
@@ -106,14 +162,11 @@ export const ImageGenerationPlaceholder = memo(
       0,
       Math.round((progress?.elapsedMs ?? Math.max(0, now - startedAtMs)) / 1000)
     )
-    const step = progress?.totalSteps
-      ? t('images:progress.step', {
-          step: progress.step,
-          total: progress.totalSteps,
-        })
-      : t(`images:progress.phase.${progress?.phase ?? 'queued'}`)
+    const copy = progressCopy(progress, t)
     const elapsed = t('images:progress.elapsed', { seconds: elapsedSeconds })
-    const generatingImage = t('images:progress.generatingImage')
+    const announcement = copy.detail
+      ? `${copy.status}. ${copy.detail}.`
+      : copy.status
 
     if (variant === 'tile') {
       return (
@@ -131,13 +184,7 @@ export const ImageGenerationPlaceholder = memo(
             className="sr-only"
             data-testid="image-generation-progress-announcement"
           >
-            {generatingImage}. {step}.
-          </span>
-          <span
-            className="absolute inset-x-2 bottom-2 truncate text-center text-[10px] text-muted-foreground/80"
-            aria-hidden="true"
-          >
-            {step}
+            {announcement}
           </span>
         </div>
       )
@@ -163,19 +210,19 @@ export const ImageGenerationPlaceholder = memo(
             className="sr-only"
             data-testid="image-generation-progress-announcement"
           >
-            {generatingImage}. {step}.
+            {announcement}
           </span>
           <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-4"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-4 [container-type:size]"
             aria-hidden="true"
           >
             <DottedGenerationField />
             <div className="space-y-0.5 text-center">
               <p className="text-xs font-medium text-foreground/80">
-                {generatingImage}
+                {copy.status}
               </p>
               <p className="text-[11px] tabular-nums text-muted-foreground/80">
-                {step} · {elapsed}
+                {copy.detail ? `${copy.detail} · ${elapsed}` : elapsed}
               </p>
             </div>
           </div>

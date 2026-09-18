@@ -20,6 +20,7 @@ type ToolActivityGroupProps = {
   errorMessage?: string
   /** The enclosing agent turn is still running or awaiting approval. */
   active?: boolean
+  /** The live turn is waiting for permission, even if a call has its input. */
   working?: boolean
   onRetry?: () => void
 }
@@ -44,8 +45,12 @@ export function ToolActivityGroup({
   // The newest running call owns the headline. Older calls may remain in an
   // input state when a loop guard ends the turn; `active` prevents that stale
   // state from looking like work is still happening after the composer opens.
-  const runningTool = active ? [...tools].reverse().find(isRunning) : undefined
-  const live = Boolean(active && (runningTool || working))
+  const runningTool =
+    active && !working ? [...tools].reverse().find(isRunning) : undefined
+  // Completion is a turn-level state, not a tool-level state. Between calls,
+  // during reasoning, while an answer streams, and while approval is pending,
+  // the turn is still live and must fall back to Working rather than Completed.
+  const live = active
   // A live turn stays one stable row. The user can opt into the detailed
   // timeline, but new tool calls never expand it and shove the answer around.
   const [open, setOpen] = useState(false)
@@ -57,7 +62,7 @@ export function ToolActivityGroup({
         runningTool.state,
         t
       )
-    : working
+    : live
       ? t('activity.working')
       : errorMessage
         ? errorMessage
@@ -66,13 +71,14 @@ export function ToolActivityGroup({
           : t('activity.working')
 
   const hasDetails = tools.length > 0 || Boolean(errorMessage)
-  const StatusIcon = errorMessage
-    ? CircleAlert
-    : runningTool
-      ? toolIcon(runningTool.toolName, runningTool.presentation.kind)
-      : working
-        ? Loader2
-        : ListChecks
+  const StatusIcon =
+    errorMessage && !live
+      ? CircleAlert
+      : runningTool
+        ? toolIcon(runningTool.toolName, runningTool.presentation.kind)
+        : live
+          ? Loader2
+          : ListChecks
 
   return (
     <Collapsible
@@ -93,15 +99,27 @@ export function ToolActivityGroup({
             errorMessage && !live && 'text-destructive'
           )}
         />
-        <span className="min-w-0 flex-1 truncate">
-          {live ? <Shimmer duration={2}>{summary}</Shimmer> : summary}
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate">
+            {live ? (
+              <Shimmer
+                as="span"
+                className="block max-w-full truncate"
+                duration={2}
+              >
+                {summary}
+              </Shimmer>
+            ) : (
+              summary
+            )}
+          </span>
+          {hasDetails && (
+            <ChevronRight
+              aria-hidden="true"
+              className="size-3.5 shrink-0 transition-transform group-data-[state=open]/activity:rotate-90"
+            />
+          )}
         </span>
-        {hasDetails && (
-          <ChevronRight
-            aria-hidden="true"
-            className="size-3.5 shrink-0 transition-transform group-data-[state=open]/activity:rotate-90"
-          />
-        )}
       </CollapsibleTrigger>
 
       <CollapsibleContent className="relative pb-1 pt-0.5">

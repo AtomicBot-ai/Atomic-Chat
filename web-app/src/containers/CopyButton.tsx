@@ -3,7 +3,13 @@ import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 import { useState } from 'react'
 import { copyToClipboard } from '@/lib/clipboard'
 
-export const CopyButton = ({ text }: { text: string }) => {
+export const CopyButton = ({
+  text,
+  ariaLabel,
+}: {
+  text: string
+  ariaLabel?: string
+}) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -19,6 +25,7 @@ export const CopyButton = ({ text }: { text: string }) => {
       variant="ghost"
       size="icon-xs"
       onClick={handleCopy}
+      aria-label={ariaLabel}
     >
       {copied ? (
         <>

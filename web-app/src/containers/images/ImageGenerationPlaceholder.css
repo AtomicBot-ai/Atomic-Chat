@@ -7,11 +7,22 @@
 
 .generation-dot {
   opacity: var(--dot-rest-opacity);
+  filter: blur(var(--dot-blur));
   transform-box: fill-box;
   transform-origin: center;
   animation: generation-dot-wave 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite
     both;
   animation-delay: var(--dot-delay);
+}
+
+.generation-dotted-field--tile {
+  width: 96%;
+  height: 96%;
+}
+
+.generation-dotted-field--viewer {
+  width: min(12rem, 55cqw, 55cqh);
+  height: min(12rem, 55cqw, 55cqh);
 }
 
 @keyframes generation-field-drift {
@@ -28,7 +39,7 @@
   }
 
   35% {
-    opacity: 0.92;
+    opacity: var(--dot-peak-opacity);
     transform: scale(1.16);
   }
 

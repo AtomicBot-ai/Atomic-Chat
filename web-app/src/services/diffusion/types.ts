@@ -36,7 +36,6 @@ export type DiffusionFamilyId =
   | 'flux.1'
   | 'flux.1-uncensored'
   | 'flux.1-abliterated'
-  | 'flux.1-frankenstein'
   | 'flux.1-nsfw-realism'
   | 'flux.1-krea'
   | 'qwen-image'
@@ -266,6 +265,7 @@ export type ImageJobPhase =
   | 'encoding'
   | 'sampling'
   | 'decoding'
+  | 'postprocessing'
   | 'saving'
 
 export type ImageJobProgress = {

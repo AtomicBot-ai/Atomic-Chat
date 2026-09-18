@@ -101,6 +101,45 @@ describe('image-generation-store', () => {
   })
 
   describe('run loop', () => {
+    it.each(['gallery', 'live'] as const)(
+      'honors the %s preview selection across repeated job completions',
+      async (mode) => {
+        const gallery = useImageGalleryStore.getState()
+        gallery.prepend([makeItem({ id: 'ready-00' })])
+        gallery.select('ready-00')
+        let run = 0
+        fake.generate.mockImplementation(async (request) => {
+          const id = `new-${++run}`
+          if (run === 1) {
+            // A new Generate action resets a previous deliberate selection.
+            expect(useImageGalleryStore.getState().viewerMode).toBe('live')
+            gallery.select('ready-00')
+            if (mode === 'live') gallery.selectLive()
+          } else {
+            expect(useImageGalleryStore.getState().viewerMode).toBe(mode)
+          }
+          emitLater(fake, () => ({
+            type: 'job',
+            job: makeJob({
+              id, state: 'completed', request,
+              outputs: [makeItem({ id: `${id}-00` })],
+            }),
+          }))
+          return { jobId: id }
+        })
+
+        await useImageGenerationStore.getState().startGeneration({
+          request: makeRequest(), runs: 2, baseSeed: 100,
+        })
+
+        expect(useImageGenerationStore.getState().generating).toBe(false)
+        expect(useImageGalleryStore.getState().items).toHaveLength(3)
+        expect(useImageGalleryStore.getState().selectedId).toBe(
+          mode === 'gallery' ? 'ready-00' : 'new-2-00'
+        )
+      }
+    )
+
     it('advances the seed by the batch size per run and prepends every batch', async () => {
       let n = 0
       fake.generate.mockImplementation(async (request) => {
@@ -274,7 +313,7 @@ describe('image-generation-store', () => {
       expect(useImageGenerationStore.getState().generating).toBe(false)
     })
 
-    it('tracks progress events for the job in flight', async () => {
+    it('tracks final sampling, decode, post-process and save events through completion', async () => {
       fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
       const done = useImageGenerationStore.getState().startGeneration({
         request: makeRequest(),
@@ -284,26 +323,43 @@ describe('image-generation-store', () => {
       await waitFor(() =>
         expect(useImageGenerationStore.getState().currentJob?.id).toBe('job-1')
       )
+      const progress = {
+        phase: 'sampling' as const,
+        step: 8,
+        totalSteps: 8,
+        fraction: 0.97,
+        etaSeconds: null,
+        batchIndex: 0,
+        batchSize: 1,
+        elapsedMs: 2000,
+      }
+      for (const phase of [
+        'sampling',
+        'decoding',
+        'postprocessing',
+        'saving',
+      ] as const) {
+        fake.emit({
+          type: 'progress',
+          jobId: 'job-1',
+          progress: { ...progress, phase },
+        })
+        expect(useImageGenerationStore.getState().currentJob).toMatchObject({
+          state: 'generating',
+          progress: { phase, step: 8, totalSteps: 8, etaSeconds: null },
+        })
+      }
       fake.emit({
-        type: 'progress',
-        jobId: 'job-1',
-        progress: {
-          phase: 'sampling',
-          step: 3,
-          totalSteps: 8,
-          fraction: 0.4,
-          etaSeconds: 6,
-          batchIndex: 0,
-          batchSize: 1,
-          elapsedMs: 2000,
-        },
+        type: 'job',
+        job: makeJob({
+          id: 'job-1',
+          state: 'completed',
+          outputs: [makeItem({ id: 'job-1-00' })],
+        }),
       })
-      expect(useImageGenerationStore.getState().currentJob).toMatchObject({
-        state: 'generating',
-        progress: { step: 3, totalSteps: 8 },
-      })
-      fake.emit({ type: 'job', job: makeJob({ id: 'job-1', state: 'completed' }) })
       await done
+      expect(useImageGenerationStore.getState().currentJob).toBeNull()
+      expect(useImageGalleryStore.getState().items[0]?.id).toBe('job-1-00')
     })
   })
 

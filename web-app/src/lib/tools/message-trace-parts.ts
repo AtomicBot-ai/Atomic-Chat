@@ -5,12 +5,14 @@ import { presentTool } from './registry'
 
 type ActivityTraceBlock = Extract<TraceBlock, { kind: 'activity' }>
 
-/** Agent run states after which nothing more will happen on the run. */
-const TERMINAL_AGENT_STATUSES = new Set<AgentRunSummary['status']>([
-  'finished',
-  'failed',
-  'cancelled',
-])
+/** Permission waits belong to the same turn as running tools and reasoning. */
+export function isAgentTurnActive(status: AgentRunSummary['status']): boolean {
+  return (
+    status === 'running' ||
+    status === 'awaiting_approval' ||
+    status === 'awaiting_folder_access'
+  )
+}
 
 /**
  * Whether an activity block has anything behind its header: tool calls (the
@@ -152,29 +154,21 @@ export function buildTraceBlocks(
   // Whether the block is still reporting live work: the turn this message
   // belongs to is in flight, or its agent run has not reached an end state.
   const isLive =
-    options.ensureActivity === true ||
-    (agentRun !== undefined && !TERMINAL_AGENT_STATUSES.has(agentRun.status))
+    options.ensureActivity ??
+    (agentRun !== undefined && isAgentTurnActive(agentRun.status))
 
   // What the block is allowed to be:
   //
   //  - Something to expand — tool calls, agent loops, a run's error. Shown
   //    whenever it exists; that list is the only place those are traced.
-  //  - A live "Working" shimmer, for the wait before anything visible arrives.
-  //    For a Chat turn it steps aside once output does: "Thinking..." already
-  //    signals a live thinking stream, and a streaming answer signals itself,
-  //    so a shimmer on top of either is a second spinner. Stepping aside at the
-  //    first token rather than at the end also means the answer does not jump
-  //    up a line the moment the stream finishes. An agent run keeps it — its
-  //    shimmer covers steps that produce no text.
+  //  - A live "Working" row before the first call and between calls. It remains
+  //    mounted through reasoning and answer streaming so activity never looks
+  //    complete, disappears, and then restarts while the enclosing turn lives.
   //  - Never a bare "Worked for 2.9s" once the turn is over (ATO-534). With
   //    nothing to expand it only restated the "Thought for" header right above
   //    it. The duration stays in the message metadata for telemetry.
-  const hasVisibleOutput =
-    reasoningStreaming || blocks.some((block) => block.kind === 'text')
   const hasDetails = activityHasDetails({ tools, agentSummary: agentRun })
-  const showActivity =
-    activityIndex >= 0 &&
-    (hasDetails || (isLive && (agentRun !== undefined || !hasVisibleOutput)))
+  const showActivity = activityIndex >= 0 && (hasDetails || isLive)
 
   if (showActivity) {
     blocks.splice(activityIndex, 0, {

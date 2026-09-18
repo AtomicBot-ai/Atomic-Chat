@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -26,11 +27,9 @@ vi.mock('@/containers/HeaderPage', () => ({
 vi.mock('../ImagePromptForm', () => ({
   ImagePromptForm: () => <div data-testid="image-prompt-form" />,
 }))
-vi.mock('../ImageViewer', () => ({
-  ImageViewer: () => <div data-testid="image-viewer" />,
-}))
-vi.mock('../ImageGalleryGrid', () => ({
-  ImageGalleryGrid: () => <div data-testid="image-gallery-grid" />,
+vi.mock('@tauri-apps/api/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tauri-apps/api/core')>()),
+  convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
 }))
 vi.mock('../ImageModelSelector', () => ({
   ImageModelSelector: () => <div data-testid="image-model-selector" />,
@@ -153,5 +152,137 @@ describe('ImageGenerationPage', () => {
     expect(screen.getByTestId('image-generation-preview')).toBeInTheDocument()
     expect(screen.queryByTestId('image-empty-state')).not.toBeInTheDocument()
     expect(screen.getByTestId('image-gallery-grid')).toBeInTheDocument()
+  })
+
+  const renderRunningPage = async () => {
+    fake.gallery = [makeItem({ id: 'ready-00' })]
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      installedArtifacts: [completeArtifact],
+      generating: true,
+      generationStartedAtMs: 1_000,
+      currentJob: makeJob({ state: 'generating' }),
+    })
+    await renderPage()
+  }
+
+  it('lets a ready thumbnail open the full viewer while generation continues', async () => {
+    await renderRunningPage()
+    fireEvent.click(screen.getByTestId('gallery-tile-ready-00'))
+
+    const viewer = screen.getByTestId('image-viewer')
+    expect(viewer.querySelector('img')).toHaveAttribute(
+      'src', 'asset://localhost/%2Fdata%2Fimages%2Fready-00.png'
+    )
+    expect(within(viewer).getByTestId('image-recipe-trigger')).toBeEnabled()
+    for (const action of ['saveAs', 'useAsSource', 'reveal']) {
+      expect(within(viewer).getByRole('button', { name: `images:viewer.${action}` })).toBeEnabled()
+    }
+    expect(within(viewer).getByTestId('image-viewer-delete')).toBeEnabled()
+    expect(screen.queryByTestId('image-generation-preview')).not.toBeInTheDocument()
+    expect(screen.getByTestId('image-generation-tile-0')).toBeInTheDocument()
+    expect(useImageGenerationStore.getState().generating).toBe(true)
+    expect(fake.cancelJob).not.toHaveBeenCalled()
+  })
+
+  it('returns to live progress when a pending thumbnail is selected by keyboard', async () => {
+    await renderRunningPage()
+    fireEvent.click(screen.getByTestId('gallery-tile-ready-00'))
+    const pending = screen.getByTestId('gallery-pending-0')
+    expect(pending).toHaveAttribute('aria-pressed', 'false')
+    pending.focus()
+    await userEvent.keyboard('{Enter}')
+
+    expect(pending).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('image-generation-preview')).toBeInTheDocument()
+    expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
+    expect(screen.getByTestId('gallery-tile-ready-00')).not.toHaveAttribute('data-current')
+    expect(useImageGenerationStore.getState().generating).toBe(true)
+  })
+
+  it('preserves a deliberate ready selection when a job completes', async () => {
+    await renderRunningPage()
+    fireEvent.click(screen.getByTestId('gallery-tile-ready-00'))
+    act(() => {
+      useImageGalleryStore.getState().prepend([makeItem({ id: 'new-00' })])
+      useImageGenerationStore.setState({ generating: false, currentJob: null })
+    })
+
+    expect(screen.getByTestId('image-viewer').querySelector('img')).toHaveAttribute(
+      'src', 'asset://localhost/%2Fdata%2Fimages%2Fready-00.png'
+    )
+    expect(screen.getByTestId('gallery-tile-new-00')).toBeInTheDocument()
+    expect(screen.queryByTestId('gallery-pending-0')).not.toBeInTheDocument()
+    expect(useImageGalleryStore.getState().selectedId).toBe('ready-00')
+  })
+
+  it('shows the new result on completion after returning to the pending preview', async () => {
+    await renderRunningPage()
+    fireEvent.click(screen.getByTestId('gallery-tile-ready-00'))
+    fireEvent.click(screen.getByTestId('gallery-pending-0'))
+    act(() => {
+      useImageGalleryStore.getState().prepend([makeItem({ id: 'new-00' })])
+      useImageGenerationStore.setState({ generating: false, currentJob: null })
+    })
+
+    expect(screen.getByTestId('image-viewer').querySelector('img')).toHaveAttribute(
+      'src', 'asset://localhost/%2Fdata%2Fimages%2Fnew-00.png'
+    )
+    expect(screen.queryByTestId('image-generation-preview')).not.toBeInTheDocument()
+  })
+
+  it('keeps finalization live while ready-image selection remains independent', async () => {
+    await renderRunningPage()
+    const baseProgress = {
+      phase: 'sampling' as const,
+      step: 20,
+      totalSteps: 20,
+      fraction: 0.97,
+      etaSeconds: null,
+      batchIndex: 0,
+      batchSize: 1,
+      elapsedMs: 12_000,
+    }
+
+    act(() => {
+      useImageGenerationStore.getState().handleEvent({
+        type: 'progress',
+        jobId: 'job-1',
+        progress: baseProgress,
+      })
+    })
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      'images:progress.finalizingImage'
+    )
+    expect(screen.getByTestId('image-generation-preview')).not.toHaveTextContent(
+      'images:progress.step'
+    )
+
+    fireEvent.click(screen.getByTestId('gallery-tile-ready-00'))
+    act(() => {
+      for (const phase of ['decoding', 'postprocessing', 'saving'] as const) {
+        useImageGenerationStore.getState().handleEvent({
+          type: 'progress',
+          jobId: 'job-1',
+          progress: { ...baseProgress, phase },
+        })
+      }
+    })
+    expect(screen.getByTestId('image-viewer').querySelector('img')).toHaveAttribute(
+      'src', 'asset://localhost/%2Fdata%2Fimages%2Fready-00.png'
+    )
+
+    fireEvent.click(screen.getByTestId('gallery-pending-0'))
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      'images:progress.phase.saving'
+    )
+
+    act(() => {
+      useImageGalleryStore.getState().prepend([makeItem({ id: 'new-00' })])
+      useImageGenerationStore.setState({ generating: false, currentJob: null })
+    })
+    expect(screen.getByTestId('image-viewer').querySelector('img')).toHaveAttribute(
+      'src', 'asset://localhost/%2Fdata%2Fimages%2Fnew-00.png'
+    )
   })
 })

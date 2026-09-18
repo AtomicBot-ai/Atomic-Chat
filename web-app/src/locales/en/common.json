@@ -266,12 +266,8 @@
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
   "modelPicker": {
-    "huggingFace": "Hugging Face",
-    "searchingHuggingFace": "Searching Hugging Face…",
-    "huggingFaceUnavailable": "Couldn't reach Hugging Face. Check your connection and try again.",
-    "noGgufFile": "No GGUF file in this repo",
-    "noMlxFile": "No MLX weights in this repo",
-    "mlxUnavailable": "MLX engine is unavailable",
+    "downloadFromHuggingFace": "Download from Hugging Face",
+    "noRunnableModels": "No runnable models yet.",
     "providerSettings": "Settings for {{provider}}",
     "downloadSize": "Download {{size}}"
   },
@@ -325,7 +321,6 @@
   "temporaryChatTooltip": "Temporary chat won't appear in your history",
   "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
   "searchModels": "Search models...",
-  "searchModelsHuggingFace": "Search models on Hugging Face...",
   "searchStyles": "Search styles...",
   "createAssistant": "Create Assistant",
   "enterApiKey": "Enter API Key",

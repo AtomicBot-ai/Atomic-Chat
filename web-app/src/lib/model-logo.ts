@@ -106,7 +106,6 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
   'flux.1': 'bfl',
   'flux.1-uncensored': 'bfl',
   'flux.1-abliterated': 'bfl',
-  'flux.1-frankenstein': 'bfl',
   'flux.1-nsfw-realism': 'bfl',
   'flux.1-krea': 'bfl',
   'qwen-image': 'qwen',

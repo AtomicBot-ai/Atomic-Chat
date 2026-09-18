@@ -15,6 +15,11 @@ function referenceNames(reference: AgentFileReference): string[] {
     : [pathBasename]
 }
 
+function homeRelativePath(path: string): string | null {
+  const match = path.match(/^\/(?:Users|home)\/[^/]+(\/.*)$/)
+  return match ? `~${match[1]}` : null
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -110,6 +115,7 @@ export function linkAgentFileReferences(
 
   const displayNamesByPath = new Map<string, string>()
   const nameCounts = new Map<string, number>()
+  const homeRelativeCounts = new Map<string, number>()
   for (const reference of uniqueReferences.values()) {
     displayNamesByPath.set(
       reference.path,
@@ -118,11 +124,25 @@ export function linkAgentFileReferences(
     for (const name of referenceNames(reference)) {
       nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1)
     }
+    const homeRelative = homeRelativePath(reference.path)
+    if (homeRelative) {
+      homeRelativeCounts.set(
+        homeRelative,
+        (homeRelativeCounts.get(homeRelative) ?? 0) + 1
+      )
+    }
   }
 
   const references = new Map<string, string>()
+  const cleanPathLabels = new Set<string>()
   for (const reference of uniqueReferences.values()) {
     references.set(reference.path, reference.path)
+    cleanPathLabels.add(reference.path)
+    const homeRelative = homeRelativePath(reference.path)
+    if (homeRelative && homeRelativeCounts.get(homeRelative) === 1) {
+      references.set(homeRelative, reference.path)
+      cleanPathLabels.add(homeRelative)
+    }
     for (const name of referenceNames(reference)) {
       if (nameCounts.get(name) === 1) references.set(name, reference.path)
     }
@@ -144,7 +164,7 @@ export function linkAgentFileReferences(
         const path = references.get(label)
         if (!path) return label
         const displayLabel =
-          label === path
+          cleanPathLabels.has(label)
             ? (displayNamesByPath.get(path) ?? agentPathBasename(path))
             : label
         return `[${displayLabel}](${FILE_LINK_PREFIX}${encodeURIComponent(path)})`

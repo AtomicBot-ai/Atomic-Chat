@@ -19,7 +19,6 @@ import {
   useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
-import { Shimmer } from './shimmer'
 
 type ReasoningContextValue = {
   isStreaming: boolean
@@ -93,32 +92,42 @@ export const Reasoning = memo(
     })
     const [duration, setDuration] = useControllableState({
       prop: durationProp,
-      defaultProp: undefined,
+      defaultProp: isStreaming ? 1 : undefined,
     })
 
-    const [startTime, setStartTime] = useState<number | null>(null)
+    const [startTime, setStartTime] = useState<number | null>(() =>
+      isStreaming ? performance.now() : null
+    )
     const streamedThisMountRef = useRef(isStreaming)
     if (isStreaming) streamedThisMountRef.current = true
     const [readerReopened, setReaderReopened] = useState(false)
 
-    // Track duration while streaming so the compact closed header remains
-    // visibly alive without exposing the entire token stream by default.
+    // Use elapsed monotonic time, so wall-clock corrections cannot freeze or
+    // jump the timer while the enclosing turn moves through tools and waits.
     useEffect(() => {
       if (isStreaming) {
         if (startTime === null) {
-          setStartTime(Date.now())
+          setStartTime(performance.now())
+          setDuration((current) => Math.max(current ?? 0, 1))
           return
         }
-        const update = () =>
-          setDuration(Math.max(1, Math.ceil((Date.now() - startTime) / MS_IN_S)))
+        const update = () => {
+          const elapsed = Math.max(
+            1,
+            Math.ceil((performance.now() - startTime) / MS_IN_S)
+          )
+          setDuration((current) => Math.max(current ?? 0, elapsed))
+        }
         update()
         const timer = window.setInterval(update, MS_IN_S)
         return () => window.clearInterval(timer)
       }
       if (startTime !== null) {
-        setDuration(
-          Math.max(1, Math.ceil((Date.now() - startTime) / MS_IN_S))
+        const elapsed = Math.max(
+          1,
+          Math.ceil((performance.now() - startTime) / MS_IN_S)
         )
+        setDuration((current) => Math.max(current ?? 0, elapsed))
         setStartTime(null)
       }
     }, [isStreaming, startTime, setDuration])
@@ -190,17 +199,13 @@ export type ReasoningTriggerProps = ComponentProps<
 }
 
 const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
-  if (isStreaming || duration === 0) {
-    return (
-      <Shimmer duration={2}>
-        {duration ? `Thinking for ${duration}s…` : 'Thinking…'}
-      </Shimmer>
-    )
+  if (isStreaming) {
+    return `Thinking for ${duration ?? 1}s…`
   }
   if (duration === undefined) {
-    return <p>Thought for a few seconds</p>
+    return 'Thought for a few seconds'
   }
-  return <p>Thought for {duration} seconds</p>
+  return `Thought for ${duration}s`
 }
 
 export const ReasoningTrigger = memo(
@@ -215,7 +220,7 @@ export const ReasoningTrigger = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          'flex min-h-6 w-full items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground',
+          'flex min-h-6 w-full min-w-0 items-center gap-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground',
           className
         )}
         {...props}
@@ -223,13 +228,17 @@ export const ReasoningTrigger = memo(
         {children ?? (
           <>
             <IconBulb className="size-[18px] shrink-0" stroke={1.8} />
-            {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
-              className={cn(
-                'size-4 transition-transform',
-                isOpen ? 'rotate-180' : 'rotate-0'
-              )}
-            />
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate">
+                {getThinkingMessage(isStreaming, duration)}
+              </span>
+              <ChevronDownIcon
+                className={cn(
+                  'size-4 shrink-0 transition-transform',
+                  isOpen ? 'rotate-180' : 'rotate-0'
+                )}
+              />
+            </span>
           </>
         )}
       </CollapsibleTrigger>

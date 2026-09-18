@@ -12,7 +12,6 @@ import {
   isLocalEngineProvider,
   isProviderConnected,
 } from '@/lib/cloud-providers'
-import { highlightFzfMatch } from '@/utils/highlight'
 import { ModelSourceBadge } from '@/components/ModelSourceBadge'
 import {
   IconChevronDown,
@@ -56,17 +55,40 @@ import { downloadKind } from '@/lib/telemetry'
 import { isAnswerableModel } from '@/lib/answerable-model'
 import {
   HuggingFaceAction,
-  HuggingFacePicks,
   ModelPickerEmptyState,
 } from '@/containers/ModelPickerDownloads'
 
-/** Only installed, in-process text engines belong in the composer picker. */
+/** Active local engines and connected remote providers can answer from here. */
 const isPickerSection = (provider: ModelProvider): boolean =>
   provider.active &&
-  isLocalEngineProvider(provider) &&
-  !/(?:diffusion|image)/i.test(provider.provider)
+  !/(?:diffusion|image|video)/i.test(provider.provider) &&
+  (isLocalEngineProvider(provider) || isProviderConnected(provider))
 
-/** Models used for embeddings or transcription cannot answer a chat turn. */
+const NON_CHAT_CAPABILITIES = new Set([
+  'diffusion',
+  'embedding',
+  'embeddings',
+  'image',
+  'image-generation',
+  'rerank',
+  'reranking',
+  'speech-to-text',
+  'text-embedding',
+  'text-to-image',
+  'text-to-speech',
+  'text-to-video',
+  'transcription',
+  'video',
+  'video-generation',
+  'voice',
+])
+
+const hasArtifactToken = (id: string): boolean =>
+  /(?:^|[/:._-])(?:backend|diffusion|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
+    id
+  )
+
+/** Models used for media, embeddings, transcription, or support cannot chat. */
 const isPickerModel = (model: Model): boolean => {
   const capabilities = new Set(
     (model.capabilities ?? []).map((capability) => capability.toLowerCase())
@@ -75,16 +97,17 @@ const isPickerModel = (model: Model): boolean => {
     isAnswerableModel(model) &&
     model.id !== VOICE_MODEL_ID &&
     !model.embedding &&
-    !capabilities.has('diffusion') &&
-    !capabilities.has('image-generation') &&
-    !capabilities.has('text-to-image')
+    !hasArtifactToken(model.id) &&
+    ![...capabilities].some((capability) =>
+      NON_CHAT_CAPABILITIES.has(capability)
+    )
   )
 }
 
 /** The global download panel also carries engines, diffusion, and sidecars. */
 const isChatModelDownload = (id: string): boolean => {
   if (id === EMBEDDING_MODEL_ID || id === VOICE_MODEL_ID) return false
-  if (id.startsWith('mmproj') || id.startsWith('llamacpp')) return false
+  if (hasArtifactToken(id)) return false
   return downloadKind(id) === 'model'
 }
 
@@ -93,7 +116,6 @@ interface SearchableModel {
   model: Model
   searchStr: string
   value: string
-  highlightedId?: string
 }
 
 // Helper functions for localStorage
@@ -125,7 +147,6 @@ type DropdownModelProviderProps = {
  * yet the row would only say "Select a model", so the list opens straight away.
  */
 type PickerView = 'main' | 'models'
-type SearchMode = 'installed' | 'huggingFace'
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
   className,
@@ -153,7 +174,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Search state
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
-  const [searchMode, setSearchMode] = useState<SearchMode>('installed')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<PickerView>(() =>
     selectedModel?.id ? 'main' : 'models'
@@ -433,12 +453,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       if (!open) {
         requestAnimationFrame(() => {
           setSearchValue('')
-          setSearchMode('installed')
         })
       } else {
         // Every opening starts from the model row; the list is a step in.
         setView(selectedModel?.id ? 'main' : 'models')
-        setSearchMode('installed')
       }
     },
     [selectedModel?.id]
@@ -476,7 +494,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
         // Create search string with model id, provider, and capabilities
         const searchStr =
-          `${modelItem.id} ${providerTitle} ${provider.provider} ${capabilitiesString}`.toLowerCase()
+          `${compactModelDisplayName(modelItem)} ${modelItem.id} ${providerTitle} ${provider.provider} ${capabilitiesString}`.toLowerCase()
 
         items.push({
           provider,
@@ -538,8 +556,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) =>
-        `${compactModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
+      selector: (item) => item.searchStr,
     })
   }, [searchableItems])
 
@@ -571,20 +588,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const filteredItems = useMemo(() => {
     if (!searchValue) return searchableItems
 
-    return fzfInstance.find(searchValue.toLowerCase()).map((result) => {
-      const item = result.item
-      const positions = Array.from(result.positions) || []
-      const highlightedId = highlightFzfMatch(
-        item.model.id,
-        positions,
-        'text-accent'
-      )
-
-      return {
-        ...item,
-        highlightedId,
-      }
-    })
+    return fzfInstance
+      .find(searchValue.toLowerCase())
+      .map((result) => result.item)
   }, [searchableItems, searchValue, fzfInstance])
 
   // Group filtered items by provider, excluding favorites when not searching
@@ -710,7 +716,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       {/* The composer pill: the model, with the reasoning level as its
-          subtitle. Its width follows the label, and the panel anchors to its
+          subtitle. Its selected width is fixed and the panel anchors to its
           right edge so the mic and Send beside it hold still. The status dot
           (ATO-530) sits in the pill but outside the trigger — it is a button
           of its own, and a button cannot live inside another. */}
@@ -718,7 +724,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         data-testid="model-picker-pill-shell"
         className={cn(
           'inline-flex h-7 shrink-0 overflow-hidden rounded-full',
-          compact && selectedModel?.id ? 'w-20' : 'w-32',
+          compact && selectedModel?.id
+            ? 'w-20'
+            : selectedModel?.id
+              ? 'w-[10.5rem]'
+              : 'w-32',
           className
         )}
       >
@@ -775,8 +785,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           view === 'models' &&
             cn(
               'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
-              searchMode === 'installed' &&
-                pickerEmpty &&
+              pickerEmpty &&
                 !searchValue.trim() &&
                 activeDownloads.length === 0
                 ? 'max-h-[min(22rem,calc(100dvh-12rem))]'
@@ -832,7 +841,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           <div
             className={cn(
               'flex min-h-0 flex-col',
-              searchMode === 'installed' && pickerEmpty && !searchValue.trim()
+              pickerEmpty && !searchValue.trim()
                 ? 'w-full'
                 : 'size-full'
             )}
@@ -844,14 +853,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={t('common:back')}
-                onClick={() => {
-                  if (searchMode === 'huggingFace') {
-                    setSearchMode('installed')
-                    setSearchValue('')
-                    return
-                  }
-                  setView('main')
-                }}
+                onClick={() => setView('main')}
               >
                 <IconChevronLeft size={16} className="text-muted-foreground" />
               </Button>
@@ -859,11 +861,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 ref={searchInputRef}
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
-                placeholder={t(
-                  searchMode === 'huggingFace'
-                    ? 'common:searchModelsHuggingFace'
-                    : 'common:searchModels'
-                )}
+                placeholder={t('common:searchModels')}
                 className="min-w-0 flex-1 pr-6 text-sm font-normal outline-0"
               />
               {searchValue.length > 0 && (
@@ -881,7 +879,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 height and scrolls inside it. */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className={cn(!pickerEmpty && 'py-1')}>
-                {searchMode === 'installed' && activeDownloads.length > 0 && (
+                {activeDownloads.length > 0 && (
                   <div
                     className="m-1.5 rounded-sm bg-secondary/30 py-1"
                     data-testid="model-picker-downloading"
@@ -930,83 +928,78 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                   </div>
                 )}
                 {/* Favorites section - only show when browsing installed models. */}
-                {searchMode === 'installed' &&
-                  !searchValue &&
-                  favoriteItems.length > 0 && (
-                    <div className="bg-secondary/30 rounded-sm m-2 py-1">
-                      {/* Favorites header */}
-                      <div className="flex items-center gap-1.5 px-2 py-1">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {t('common:favorites')}
-                        </span>
-                      </div>
-
-                      {/* Favorite models */}
-                      {favoriteItems.map((searchableModel) => {
-                        const isSelected =
-                          selectedModel?.id === searchableModel.model.id &&
-                          selectedProvider === searchableModel.provider.provider
-
-                        return (
-                          <button
-                            type="button"
-                            role="radio"
-                            aria-checked={isSelected}
-                            key={`fav-${searchableModel.value}`}
-                            title={searchableModel.model.id}
-                            onClick={() => handleSelect(searchableModel)}
-                            className={cn(
-                              'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
-                              'hover:bg-secondary/40',
-                              isSelected && 'bg-secondary/50'
-                            )}
-                          >
-                            <span
-                              aria-hidden="true"
-                              className={cn(
-                                'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
-                                isSelected
-                                  ? 'border-blue-500'
-                                  : 'border-muted-foreground/40'
-                              )}
-                              data-testid={`model-selection-${searchableModel.value}`}
-                            >
-                              {isSelected && (
-                                <span className="size-2 rounded-full bg-blue-500" />
-                              )}
-                            </span>
-                            <div className="flex min-w-0 flex-1 items-center gap-1">
-                              <div className="shrink-0">
-                                <ProvidersAvatar
-                                  provider={searchableModel.provider}
-                                />
-                              </div>
-                              <span className="text-sm truncate">
-                                {qualifiedModelDisplayName(
-                                  searchableModel.model
-                                )}
-                              </span>
-                              {searchableModel.model.source && (
-                                <ModelSourceBadge
-                                  source={searchableModel.model.source}
-                                  className="shrink-0"
-                                />
-                              )}
-                            </div>
-                          </button>
-                        )
-                      })}
+                {!searchValue && favoriteItems.length > 0 && (
+                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                    {/* Favorites header */}
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {t('common:favorites')}
+                      </span>
                     </div>
-                  )}
+
+                    {/* Favorite models */}
+                    {favoriteItems.map((searchableModel) => {
+                      const isSelected =
+                        selectedModel?.id === searchableModel.model.id &&
+                        selectedProvider === searchableModel.provider.provider
+
+                      return (
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          key={`fav-${searchableModel.value}`}
+                          title={searchableModel.model.id}
+                          onClick={() => handleSelect(searchableModel)}
+                          className={cn(
+                            'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
+                            'hover:bg-secondary/40',
+                            isSelected && 'bg-secondary/50'
+                          )}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
+                              isSelected
+                                ? 'border-blue-500'
+                                : 'border-muted-foreground/40'
+                            )}
+                            data-testid={`model-selection-${searchableModel.value}`}
+                          >
+                            {isSelected && (
+                              <span className="size-2 rounded-full bg-blue-500" />
+                            )}
+                          </span>
+                          <div className="flex min-w-0 flex-1 items-center gap-1">
+                            <div className="shrink-0">
+                              <ProvidersAvatar
+                                provider={searchableModel.provider}
+                              />
+                            </div>
+                            <span className="text-sm truncate">
+                              {qualifiedModelDisplayName(searchableModel.model)}
+                            </span>
+                            {searchableModel.model.source && (
+                              <ModelSourceBadge
+                                source={searchableModel.model.source}
+                                className="shrink-0"
+                              />
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
 
                 {/* Divider between favorites and regular providers */}
-                {searchMode === 'installed' && favoriteItems.length > 0 && (
+                {favoriteItems.length > 0 && (
                   <div className="border-b mx-2"></div>
                 )}
 
                 {/* Regular provider sections */}
-                {searchMode === 'installed' &&
-                  Object.entries(groupedItems).map(([providerKey, models]) => {
+                {Object.entries(groupedItems).map(([providerKey, models]) => {
                     const providerInfo = providers.find(
                       (p) => p.provider === providerKey
                     )
@@ -1124,26 +1117,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                         })}
                       </div>
                     )
-                  })}
+                })}
 
-                {/* Installed search stays local. Hugging Face is mounted only
-                    after the footer action explicitly changes modes. */}
-                {searchMode === 'huggingFace' ? (
-                  <HuggingFacePicks query={searchValue} localEmpty />
-                ) : pickerEmpty || Object.keys(groupedItems).length === 0 ? (
+                {pickerEmpty || Object.keys(groupedItems).length === 0 ? (
                   <ModelPickerEmptyState query={searchValue} />
                 ) : null}
               </div>
             </div>
-            {searchMode === 'installed' && (
-              <HuggingFaceAction
-                onClick={() => {
-                  setSearchMode('huggingFace')
-                  setSearchValue('')
-                  requestAnimationFrame(() => searchInputRef.current?.focus())
-                }}
-              />
-            )}
+            <HuggingFaceAction
+              onClick={() => {
+                setOpen(false)
+                void navigate({ to: route.hub.index })
+              }}
+            />
           </div>
         )}
       </PopoverContent>

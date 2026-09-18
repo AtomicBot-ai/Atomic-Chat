@@ -382,6 +382,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       // blank form that lets the user submit a second job on top.
       const active = get().status?.activeJob
       if (active && !isTerminal(active) && !get().generating) {
+        useImageGalleryStore.getState().selectLive()
         set({
           currentJob: active,
           generating: true,
@@ -732,6 +733,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         }
       }
       const runsTotal = Math.max(1, Math.floor(runs))
+      useImageGalleryStore.getState().selectLive()
       set({
         generating: true,
         generationStartedAtMs: Date.now(),

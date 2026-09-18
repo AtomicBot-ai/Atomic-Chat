@@ -4,7 +4,6 @@ import {
   IconChevronDown,
   IconCircleCheckFilled,
   IconLoader2,
-  IconPlayerPlay,
   IconPlayerStopFilled,
   IconTrash,
 } from '@tabler/icons-react'
@@ -49,9 +48,8 @@ type ImageModelSelectorProps = {
   /** `dialog` hides Remove and keeps the list short; `page` is the full manager. */
   variant?: 'page' | 'dialog'
   /**
-   * The workflow the list is picked for. Families that cannot run it are
-   * listed last, marked, and cannot be run or fetched from here — the setup
-   * wizard passes nothing and offers everything.
+   * The workflow the list is picked for. Only families that can run it are
+   * offered — the setup wizard passes nothing and offers everything.
    */
   workflow?: ImageWorkflowId
   className?: string
@@ -78,22 +76,17 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   const installedArtifacts = useImageGenerationStore(
     (state) => state.installedArtifacts
   )
-  const { profile } = useHardwareTier()
 
-  const fits = (family: DiffusionCatalogFamily) =>
-    workflow === undefined || familySupportsWorkflow(family.id, workflow)
-
-  // Families that can run the workflow first; the rest stay visible so the
-  // user sees what would need switching, but sink to the bottom.
   const families = useMemo(
     () =>
       (catalog?.families ?? [])
         .filter(
           (family) =>
-            family.modality === 'image' && family.engines.includes('sdcpp')
-        )
-        .sort((a, b) => Number(fits(b)) - Number(fits(a))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+            family.modality === 'image' &&
+            family.engines.includes('sdcpp') &&
+            (workflow === undefined ||
+              familySupportsWorkflow(family.id, workflow))
+        ),
     [catalog, workflow]
   )
 
@@ -116,7 +109,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
       else available.push([family, family.transformer.quants])
     }
     return { installed, available }
-  }, [families, installedIds, profile])
+  }, [families, installedIds])
 
   if (!catalog) {
     return (
@@ -166,24 +159,14 @@ export const ImageModelSelector = memo(function ImageModelSelector({
       {sections.installed.length > 0 && (
         <Section title={t('images:model.installed')}>
           {sections.installed.map(([family, quants]) => (
-            <FamilyBlock
-              key={family.id}
-              family={family}
-              quants={quants}
-              unsupportedFor={fits(family) ? null : (workflow ?? null)}
-            />
+            <FamilyBlock key={family.id} family={family} quants={quants} />
           ))}
         </Section>
       )}
       {sections.available.length > 0 && (
         <Section title={t('images:model.available')}>
           {sections.available.map(([family, quants]) => (
-            <FamilyBlock
-              key={family.id}
-              family={family}
-              quants={quants}
-              unsupportedFor={fits(family) ? null : (workflow ?? null)}
-            />
+            <FamilyBlock key={family.id} family={family} quants={quants} />
           ))}
         </Section>
       )}
@@ -283,7 +266,7 @@ function SetupFamilyRow({
                     </span>
                     <FitBadge
                       fit={fit}
-                      className="rounded-none border-0 bg-transparent p-0 text-[10px] dark:bg-transparent"
+                      className="px-2 py-0.5 text-[10px]"
                     />
                     <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
                       {t('images:model.sizeGb', {
@@ -300,7 +283,7 @@ function SetupFamilyRow({
           </DropdownMenu>
           <FitBadge
             fit={artifact.fit}
-            className="rounded-none border-0 bg-transparent p-0 font-medium dark:bg-transparent"
+            className="px-2 py-0.5 text-[10px]"
           />
           <span aria-hidden>·</span>
           <span>
@@ -346,11 +329,9 @@ function Section({
 type FamilyBlockProps = {
   family: DiffusionCatalogFamily
   quants: DiffusionCatalogQuant[]
-  /** The workflow this family cannot run, when the list is picked for one. */
-  unsupportedFor: ImageWorkflowId | null
 }
 
-function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
+function FamilyBlock({ family, quants }: FamilyBlockProps) {
   const { t } = useTranslation()
   const { profile } = useHardwareTier()
   const installedArtifacts = useImageGenerationStore(
@@ -393,7 +374,6 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
   const quant = quants.find((item) => item.id === quantId) ?? quants[0]
   const id = quant ? artifactId(family.id, quant.id) : ''
   const artifact = useImageArtifact(id)
-  const disabled = unsupportedFor !== null
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [removing, setRemoving] = useState(false)
 
@@ -459,12 +439,10 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
   return (
     <div
       className={cn(
-        'rounded-lg px-2.5 py-1 transition-colors duration-150 ease-out hover:bg-secondary/50',
-        artifact.loaded && 'bg-secondary/70 hover:bg-secondary/70',
-        disabled && 'opacity-60'
+        'rounded-lg px-2.5 py-2 transition-colors duration-150 ease-out hover:bg-secondary/50',
+        artifact.loaded && 'bg-secondary/70 hover:bg-secondary/70'
       )}
       data-testid={`family-${family.id}`}
-      data-unsupported={unsupportedFor ?? undefined}
       data-artifact-id={id}
     >
       <div className="flex items-start gap-2.5">
@@ -475,15 +453,8 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           className="mt-0.5 size-7 rounded-md"
         />
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-sm font-medium leading-4">
-            <span className="truncate">{family.name}</span>
-            {unsupportedFor && (
-              <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                {t('images:model.notForWorkflow', {
-                  workflow: t(`images:workflow.${unsupportedFor}.label`),
-                })}
-              </span>
-            )}
+          <p className="truncate text-sm font-medium leading-4">
+            {family.name}
           </p>
           {family.description && (
             <p
@@ -494,11 +465,38 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
               {family.description}
             </p>
           )}
+          {(!artifact.complete || artifact.downloading) && (
+            <div
+              className="mt-1.5 flex min-w-0 items-center gap-2"
+              data-testid="image-model-download-meta"
+            >
+              <FitBadge
+                fit={artifact.fit}
+                className="shrink-0 px-2 py-0.5 text-[10px]"
+              />
+              <span className="min-w-0 truncate text-[11px] tabular-nums text-muted-foreground">
+                {artifact.downloading
+                  ? t('images:model.progress', {
+                      current: formatBytes(
+                        artifact.currentBytes,
+                        artifact.downloadTotalBytes
+                      ),
+                      total: formatBytes(
+                        artifact.downloadTotalBytes,
+                        artifact.downloadTotalBytes
+                      ),
+                    })
+                  : t('images:model.sizeGb', {
+                      size: gb(artifact.totalBytes),
+                    })}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       <div
-        className="mt-1 flex min-w-0 items-center gap-1.5 pl-9"
+        className="mt-3 flex min-w-0 items-center gap-1.5 pl-9"
         data-testid={`artifact-${id}`}
         data-compact-row="true"
       >
@@ -506,16 +504,14 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-muted/55 px-1.5 text-left transition-colors hover:bg-muted/80"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 font-mono text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted"
               aria-label={t('images:model.pick', {
                 name: family.name,
                 quant: quant.label,
               })}
-              disabled={generating || disabled}
+              disabled={generating}
             >
-              <span className="shrink-0 rounded-[5px] bg-secondary px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
-                {quant.label}
-              </span>
+              <span className="shrink-0">{quant.label}</span>
               <IconChevronDown
                 size={13}
                 className="shrink-0 text-muted-foreground"
@@ -551,7 +547,7 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
                   </span>
                   <FitBadge
                     fit={fit}
-                    className="shrink-0 rounded-none border-0 bg-transparent p-0 text-[10px] font-medium dark:bg-transparent"
+                    className="shrink-0 px-2 py-0.5 text-[10px]"
                   />
                   <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
                     {t('images:model.sizeGb', { size: gb(totalBytes) })}
@@ -569,28 +565,9 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <FitBadge
-          fit={artifact.fit}
-          className="shrink-0 rounded-none border-0 bg-transparent p-0 text-[10px] font-medium dark:bg-transparent"
-        />
-        <span className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted-foreground">
-          {artifact.downloading
-            ? t('images:model.progress', {
-                current: formatBytes(
-                  artifact.currentBytes,
-                  artifact.downloadTotalBytes
-                ),
-                total: formatBytes(
-                  artifact.downloadTotalBytes,
-                  artifact.downloadTotalBytes
-                ),
-              })
-            : t('images:model.sizeGb', {
-                size: gb(artifact.totalBytes),
-              })}
-        </span>
+        <span className="min-w-0 flex-1" />
 
-        {!disabled && (!artifact.complete || artifact.downloading) && (
+        {(!artifact.complete || artifact.downloading) && (
           <ImageArtifactDownloadButton
             artifact={artifact}
             variant="primary"
@@ -602,15 +579,13 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           <Button
             size="sm"
             className="h-7 w-16 justify-center"
-            disabled={artifact.loading || generating || disabled}
+            disabled={artifact.loading || generating}
             onClick={() => void start()}
             aria-label={t('images:model.load')}
           >
             {artifact.loading ? (
               <IconLoader2 size={14} className="animate-spin" />
-            ) : (
-              <IconPlayerPlay size={14} />
-            )}
+            ) : null}
             {artifact.loading
               ? t('images:model.loading')
               : t('images:model.load')}

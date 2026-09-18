@@ -10,7 +10,6 @@ import { useNavigate } from '@tanstack/react-router'
 import {
   IconChevronDown,
   IconChevronRight,
-  IconInfoCircle,
   IconRestore,
   IconSettings,
 } from '@tabler/icons-react'
@@ -37,7 +36,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { route } from '@/constants/routes'
-import { MAX_IMAGE_RUNS, useImageForm } from '@/hooks/useImageForm'
+import {
+  MAX_IMAGE_BATCH,
+  MAX_IMAGE_RUNS,
+  useImageForm,
+} from '@/hooks/useImageForm'
 import { useImageGeneration } from '@/hooks/useImageGeneration'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import {
@@ -49,16 +52,14 @@ import {
   type ImageOffloadOverride,
 } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { parseArtifactId } from '@/lib/diffusion/models'
 import type { DimConstraints } from '@/lib/diffusion/size'
-import { familySupportsWorkflow, workflowSpec } from '@/lib/diffusion/workflows'
+import { workflowSpec } from '@/lib/diffusion/workflows'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageField, ImageFieldHint } from './ImageField'
 import { ImageWorkflowInputs } from './ImageWorkflowInputs'
 import { WORKFLOW_ICONS } from './workflowIcons'
 import { ImageGenerateButton } from './ImageGenerateButton'
-import { ImageJobProgress } from './ImageJobProgress'
 import { ImageModelPicker } from './ImageModelPicker'
 import { ImageParamSlider } from './ImageParamSlider'
 import { ImageSeedField } from './ImageSeedField'
@@ -128,7 +129,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     setEngineOverride,
     evictChatModel,
     setEvictChatModel,
-    selectedArtifactId,
   } = useImageSetting(
     useShallow((state) => ({
       advancedOpen: state.advancedOpen,
@@ -143,11 +143,9 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       setEngineOverride: state.setEngineOverride,
       evictChatModel: state.evictChatModel,
       setEvictChatModel: state.setEvictChatModel,
-      selectedArtifactId: state.selectedArtifactId,
     }))
   )
   const engine = useImageEngine()
-  const status = useImageGenerationStore((state) => state.status)
   const capabilities = useImageGenerationStore((state) => state.capabilities)
   const applyIdleSettings = useImageGenerationStore(
     (state) => state.applyIdleSettings
@@ -171,7 +169,10 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       }
     : FALLBACK_CONSTRAINTS
   const [minSteps, maxSteps] = capabilities?.ranges.steps ?? FALLBACK_STEPS
-  const maxBatch = Math.max(1, capabilities?.maxBatch ?? 1)
+  const maxBatch = Math.max(
+    1,
+    capabilities?.maxBatch ?? MAX_IMAGE_BATCH
+  )
   const showNegative = capabilities?.supportsNegativePrompt ?? false
   // Families distilled to run at cfg 1 have no classifier-free guidance to
   // tune; the slider would be a knob that does nothing.
@@ -184,14 +185,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
   const spec = workflowSpec(form.workflow)
   const WorkflowIcon = WORKFLOW_ICONS[form.workflow]
   const isEdit = form.workflow === 'edit'
-  const selectedFamily =
-    parseArtifactId(selectedArtifactId ?? '')?.family ?? null
-  const workflowModelMismatch =
-    status?.model.state === 'loaded'
-      ? !capabilities?.workflows.includes(form.workflow)
-      : selectedFamily !== null &&
-        !familySupportsWorkflow(selectedFamily, form.workflow)
-
   const idleLabel = (minutes: number) =>
     minutes === 0
       ? t('settings:media.idleNever')
@@ -295,36 +288,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           className="space-y-2.5 rounded-2xl border bg-secondary/20 p-2.5"
           data-testid="image-prompt-card"
         >
-          {workflowModelMismatch && (
-            <div
-              className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5"
-              data-testid="image-workflow-model-notice"
-            >
-              <IconInfoCircle
-                size={17}
-                className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-400"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium">
-                  {t('images:workflow.compatibleModelTitle', {
-                    workflow: t(`images:workflow.${form.workflow}.label`),
-                  })}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                  {t('images:workflow.compatibleModelDescription')}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setModelsOpen(true)}
-              >
-                {t('images:workflow.chooseCompatibleModel')}
-              </Button>
-            </div>
-          )}
           <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
           <ImageField
             htmlFor="image-prompt"
@@ -344,26 +307,14 @@ export const ImagePromptForm = memo(function ImagePromptForm({
               className="min-h-20 resize-none rounded-xl bg-background px-3.5 py-2.5"
             />
           </ImageField>
-          <div className="flex min-h-15 flex-col gap-1">
-            <ImageGenerateButton
-              generating={generation.generating}
-              stopRequested={generation.stopRequested}
-              disabledReason={generation.disabledReason}
-              imageCount={form.batchSize * form.runs}
-              onGenerate={() => void generation.generate()}
-              onStop={() => void generation.stop()}
-            />
-            <div className="min-h-5" data-testid="image-progress-slot">
-              {generation.generating && (
-                <ImageJobProgress
-                  job={generation.job}
-                  runsTotal={generation.runsTotal}
-                  runsDone={generation.runsDone}
-                  stopping={generation.stopRequested}
-                />
-              )}
-            </div>
-          </div>
+          <ImageGenerateButton
+            generating={generation.generating}
+            stopRequested={generation.stopRequested}
+            disabledReason={generation.disabledReason}
+            imageCount={form.batchSize * form.runs}
+            onGenerate={() => void generation.generate()}
+            onStop={() => void generation.stop()}
+          />
         </div>
 
         {showNegative && (
@@ -470,7 +421,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
             min={1}
             max={maxBatch}
             step={1}
-            disabled={busy || maxBatch === 1}
+            disabled={busy || (capabilities !== null && maxBatch === 1)}
             onChange={(batchSize) => form.patch({ batchSize })}
           />
           <ImageParamSlider

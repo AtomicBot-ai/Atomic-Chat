@@ -8,347 +8,322 @@ import {
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from '@vitest/browser/context'
+
 import DropdownModelProvider from './DropdownModelProvider'
-import { resetModelPickerDownloadsForTest } from './ModelPickerDownloads'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import type { CatalogModel, ModelsService } from '@/services/models/types'
-import i18n from '@/i18n/setup'
-import { getProviderTitle } from '@/lib/utils'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { route } from '@/constants/routes'
 import {
   DEFAULT_FONT_SIZE,
   XL_FONT_SIZE,
   expectNoHorizontalOverflow,
   expectOneLine,
-  expectSameWidth,
   setFontSize,
   setTheme,
   settle,
   withTranslations,
 } from '@/test/layout'
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => () => {} }))
-vi.mock('@/hooks/useRecommendedDownloads', () => ({
-  useRecommendedListDownloads: () => ({ items: [], isLoading: false }),
+const testState = vi.hoisted(() => ({
+  effort: '',
+  navigate: vi.fn(),
 }))
-vi.mock('@/containers/SetupScreen', () => ({
-  describeRecommendationFit: () => null,
-}))
-vi.mock('@/containers/dialogs/AddCloudProviderDialog', () => ({
-  AddCloudProviderDialog: () => null,
-  selectCloudGalleryProviders: () => [],
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => testState.navigate,
 }))
 vi.mock('@/containers/ModelSupportStatus', () => ({
   ModelSupportStatus: () => null,
-}))
-vi.mock('@/containers/InferenceServerStatus', () => ({
-  InferenceServerStatusLine: () => null,
 }))
 vi.mock('@/containers/ActiveModelIndicator', () => ({
   ActiveModelIndicator: () => null,
 }))
 vi.mock('@/containers/ReasoningEffortPanel', () => ({ default: () => null }))
 vi.mock('@/hooks/useReasoningEffort', () => ({
-  useReasoningEffort: () => ({ levelLabel: '' }),
+  useReasoningEffort: () => ({ levelLabel: testState.effort }),
 }))
 
-const repo = 'community/Qwen3-235B-A22B-Instruct-2507-Long-Context'
-const candidate = (is_mlx: boolean): CatalogModel => ({
-  model_name: repo,
-  is_mlx,
-  description: '',
-  downloads: 1,
-})
-const search = vi.fn()
-const translate = i18n.t
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
-})
+const localModel = {
+  id: 'community/Qwen3-235B-A22B-Instruct-2507-Long-Context.gguf',
+  capabilities: ['completion'],
+} as Model
+
+const pickerProviders = [
+  {
+    provider: 'llamacpp-upstream',
+    active: true,
+    models: [
+      localModel,
+      { id: 'mmproj-Qwen3-f16.gguf' },
+      { id: 'Qwen3-sidecar.gguf' },
+      { id: 'llamacpp-backend-metal' },
+      { id: 'Whisper-voice-model', capabilities: ['transcription'] },
+      { id: 'Flux-image-model', capabilities: ['image-generation'] },
+      { id: 'Missing-chat.gguf', missing: true },
+    ],
+    settings: [],
+  },
+  {
+    provider: 'openai',
+    active: true,
+    api_key: 'sk-layout',
+    models: [{ id: 'gpt-4.1-cloud', capabilities: ['completion'] }],
+    settings: [{ key: 'api-key' }],
+  },
+  {
+    provider: 'chatgpt',
+    active: true,
+    api_key: '',
+    models: [{ id: 'gpt-5.1-codex', capabilities: [] }],
+    settings: [],
+  },
+  {
+    provider: 'anthropic',
+    active: true,
+    api_key: '',
+    models: [{ id: 'disconnected-claude', capabilities: ['completion'] }],
+    settings: [{ key: 'api-key' }],
+  },
+  {
+    provider: 'stable-diffusion',
+    active: true,
+    persist: true,
+    models: [{ id: 'flux-schnell' }],
+    settings: [],
+  },
+  {
+    provider: 'inactive-provider',
+    active: false,
+    api_key: 'configured',
+    models: [{ id: 'inactive-chat', capabilities: ['completion'] }],
+    settings: [],
+  },
+] as unknown as ModelProvider[]
+
+const setProviders = (
+  providers: ModelProvider[],
+  selectedProvider = '',
+  selectedModel?: Model
+) => {
+  useModelProvider.setState({ providers, selectedProvider, selectedModel })
+}
+
+const trigger = () =>
+  document.querySelector(
+    '[data-test-id="model-picker-trigger"]'
+  ) as HTMLButtonElement
+
+async function openModelList() {
+  fireEvent.click(trigger())
+  const changeModel = screen.queryByRole('button', { name: 'Change model' })
+  if (changeModel) fireEvent.click(changeModel)
+  return screen.findByPlaceholderText('Search models...')
+}
 
 beforeEach(() => {
-  vi.stubGlobal('IS_MACOS', true)
-  resetModelPickerDownloadsForTest()
+  testState.effort = ''
+  testState.navigate.mockReset()
+  useModelLoad.setState({ modelSelectionDeferred: true })
   useDownloadStore.setState({
     downloads: {},
     localDownloadingModels: new Set(),
     pausedDownloads: new Set(),
   })
-  useModelProvider.setState({
-    providers: [],
-    selectedProvider: '',
-    selectedModel: undefined,
-  })
+  setProviders([])
   seedServiceHub({
     models: {
-      searchHuggingFaceCandidates: search,
       getActiveModels: async () => [],
       checkMmprojExists: async () => false,
-      fetchHuggingFaceRepo: async () => ({ siblings: [] }),
-      convertHfRepoToCatalogModel: () => ({
-        ...candidate(false),
-        quants: [
-          {
-            model_id: 'layout-Q4_K_M',
-            path: 'https://example.test/model.gguf',
-            file_size: '19.7 GB',
-          },
-        ],
-      }),
-      pullModelWithMetadata: async () => undefined,
+      checkMmprojExistsAndUpdateOffloadMMprojSetting: async () => undefined,
     } as unknown as ModelsService,
   })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('model selector geometry', () => {
   for (const width of [1024, 1280, 390]) {
     for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
       for (const theme of ['light', 'dark'] as const) {
-        it(`${width}px, ${font}, ${theme}: wide, stable, scrollable results and aligned actions`, async () => {
+        it(`${width}px, ${font}, ${theme}: combines runnable sources in one bounded picker`, async () => {
           await page.viewport(width, 800)
           setFontSize(font)
           setTheme(theme)
-          const provider =
-            'A very long custom model provider name for local inference'
-          useModelProvider.setState({
-            selectedProvider: provider,
-            providers: [
-              {
-                provider,
-                active: true,
-                persist: true,
-                models: [{ id: repo, capabilities: [] }],
-                settings: [],
-              },
-            ] as unknown as ModelProvider[],
-          })
-          let resolve!: (models: CatalogModel[]) => void
-          const pendingSearch = new Promise<CatalogModel[]>((done) => {
-            resolve = done
-          })
-          search.mockImplementation(
-            (_query: string, _token: string, _limit: number, format: string) =>
-              pendingSearch.then((models) =>
-                models.filter((model) => model.is_mlx === (format === 'mlx'))
-              )
-          )
+          setProviders(pickerProviders)
+
           render(
             withTranslations(
-              <div
-                style={{
-                  position: 'fixed',
-                  bottom: 24,
-                  right: 24,
-                  left: width > 600 ? 280 : 16,
-                }}
-              >
+              <div style={{ position: 'fixed', bottom: 24, right: 24 }}>
                 <DropdownModelProvider />
               </div>
             )
           )
-          fireEvent.click(
-            document.querySelector('[data-test-id="model-picker-trigger"]')!
+
+          const emptyLabel = trigger().querySelector<HTMLElement>('.truncate')!
+          expect(emptyLabel.textContent).toBe('Select Model')
+          expectOneLine(emptyLabel)
+          expect(emptyLabel.scrollWidth).toBeLessThanOrEqual(
+            emptyLabel.clientWidth + 1
           )
-          const input = screen.getByPlaceholderText('Search models...')
-          const panel = input.closest(
+
+          const search = await openModelList()
+          const panel = search.closest(
             '[data-slot="popover-content"]'
           ) as HTMLElement
           await settle(panel)
-          await settle(panel)
           const bounds = panel.getBoundingClientRect()
-          expect(bounds.width).toBeGreaterThanOrEqual(
-            Math.min(352, width - 32) - 1
-          )
+          expect(bounds.width).toBeCloseTo(Math.min(352, width - 32), 0)
           expect(bounds.left).toBeGreaterThanOrEqual(8)
           expect(bounds.right).toBeLessThanOrEqual(width)
-          const title = within(panel).getByTitle(getProviderTitle(provider))
-          // Long provider names may truncate at the largest accessibility
-          // font size, but the complete value remains available as a title.
-          expect(title).toHaveAttribute('title', getProviderTitle(provider))
-          const gear = title.parentElement!.parentElement!
-            .lastElementChild as HTMLElement
-          const dot = title.parentElement!.querySelector('.rounded-full')!
-          expect(
-            gear.getBoundingClientRect().left -
-              dot.getBoundingClientRect().right
-          ).toBeGreaterThanOrEqual(12)
-          expect(getComputedStyle(gear).backgroundColor).toBe(
-            'rgba(0, 0, 0, 0)'
-          )
-          await userEvent.hover(gear)
-          expect(getComputedStyle(gear).backgroundColor).not.toBe(
-            'rgba(0, 0, 0, 0)'
-          )
-          await userEvent.unhover(gear)
-          await waitFor(() =>
-            expect(getComputedStyle(gear).backgroundColor).toBe(
-              'rgba(0, 0, 0, 0)'
-            )
-          )
-          // Tab enters keyboard modality; focus the provider gear in that modality.
-          await userEvent.tab()
-          gear.focus()
-          expect(gear.matches(':focus-visible')).toBe(true)
-          expect(getComputedStyle(gear).backgroundColor).not.toBe(
-            'rgba(0, 0, 0, 0)'
-          )
-          gear.blur()
           expectNoHorizontalOverflow(panel)
-          const footer = screen.getByRole('button', {
-            name: 'Download models from Hugging Face',
+
+          for (const provider of [
+            'llama.cpp',
+            'OpenAI',
+            'ChatGPT subscription (Codex)',
+          ]) {
+            expect(within(panel).getByTitle(provider)).toBeVisible()
+          }
+          for (const id of [
+            localModel.id,
+            'gpt-4.1-cloud',
+            'gpt-5.1-codex',
+          ]) {
+            expect(within(panel).getAllByTitle(id).length).toBeGreaterThan(0)
+          }
+          for (const id of [
+            'mmproj-Qwen3-f16.gguf',
+            'Qwen3-sidecar.gguf',
+            'llamacpp-backend-metal',
+            'Whisper-voice-model',
+            'Flux-image-model',
+            'Missing-chat.gguf',
+            'disconnected-claude',
+            'flux-schnell',
+            'inactive-chat',
+          ]) {
+            expect(within(panel).queryAllByTitle(id)).toHaveLength(0)
+          }
+
+          fireEvent.change(search, { target: { value: 'codex' } })
+          expect(
+            within(panel).getAllByTitle('gpt-5.1-codex').length
+          ).toBeGreaterThan(0)
+          expect(within(panel).queryAllByTitle(localModel.id)).toHaveLength(0)
+          fireEvent.change(search, { target: { value: 'OpenAI' } })
+          expect(
+            within(panel).getAllByTitle('gpt-4.1-cloud').length
+          ).toBeGreaterThan(0)
+          fireEvent.change(search, { target: { value: 'qwen' } })
+          expect(
+            within(panel).getAllByTitle(localModel.id).length
+          ).toBeGreaterThan(0)
+          expect(
+            within(panel).queryAllByTitle('gpt-5.1-codex')
+          ).toHaveLength(0)
+
+          const footer = within(panel).getByRole('button', {
+            name: 'Download from Hugging Face',
           })
           expectOneLine(
-            within(footer).getByText('Download models from Hugging Face')
+            within(footer).getByText('Download from Hugging Face')
           )
-          fireEvent.click(footer)
-          const huggingFaceInput = screen.getByPlaceholderText(
-            'Search models on Hugging Face...'
-          )
-          fireEvent.change(huggingFaceInput, { target: { value: 'qwen' } })
-          await waitFor(() => expect(resolve).toBeTypeOf('function'))
-          const pending = panel.getBoundingClientRect()
-          await act(async () =>
-            resolve(
-              Array.from({ length: 12 }, (_, i) => ({
-                ...candidate(i % 2 === 1),
-                model_name: `${repo}-${Math.floor(i / 2)}`,
-              }))
-            )
-          )
-          await waitFor(() =>
-            expect(
-              screen.getAllByTestId('model-picker-download-row')
-            ).toHaveLength(12)
-          )
-          await settle(panel)
-          expect(panel.getBoundingClientRect().height).toBeCloseTo(
-            pending.height,
-            0
-          )
-          expect(panel.getBoundingClientRect().top).toBeCloseTo(pending.top, 0)
-          expectSameWidth([
-            panel,
-            { getBoundingClientRect: () => bounds } as Element,
-          ])
-          const rows = screen.getAllByTestId('model-picker-download-row')
-          expect(
-            rows.map((row) => within(row).getByText(/^(GGUF|MLX)$/).textContent)
-          ).toEqual(
-            Array.from({ length: 12 }, (_, i) => (i % 2 ? 'MLX' : 'GGUF'))
-          )
-          const actions = rows.map((row) => within(row).getByRole('button'))
-          expectSameWidth(actions)
-          expect(
-            new Set(
-              actions.map((button) =>
-                Math.round(button.getBoundingClientRect().right)
-              )
-            ).size
-          ).toBe(1)
-          expectNoHorizontalOverflow(panel)
-          const scroller = rows[0].closest('.overflow-y-auto') as HTMLElement
-          expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
-          scroller.scrollTop = scroller.scrollHeight
-          expect(scroller.scrollTop).toBeGreaterThan(0)
+          expect(footer.getBoundingClientRect().height).toBeCloseTo(44, 0)
+          const footerStyle = getComputedStyle(footer)
+          expect(footerStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+          expect(parseFloat(footerStyle.borderTopWidth)).toBeGreaterThan(0)
+          const logo = within(footer).getByRole('img', {
+            name: 'Hugging Face',
+          }).parentElement as HTMLElement
+          expect(logo.getBoundingClientRect().width).toBeCloseTo(28, 0)
+          expect(logo.getBoundingClientRect().height).toBeCloseTo(28, 0)
         })
       }
     }
   }
-})
 
-for (const width of [1024, 390]) {
-  for (const theme of ['light', 'dark'] as const) {
-    it(`empty selector ${width}px ${theme}: keeps the full trigger and explicit HF results compact`, async () => {
-      await page.viewport(width, 800)
-      setFontSize(XL_FONT_SIZE)
-      setTheme(theme)
-      vi.spyOn(i18n, 't').mockImplementation((key, options) =>
-        key === 'chat:replyGate.download'
-          ? 'Herunterladen'
-          : translate(key, options)
+  it('gives the Hub action a real hover state and leaves the picker to navigate', async () => {
+    await page.viewport(1024, 800)
+    setFontSize(DEFAULT_FONT_SIZE)
+    setTheme('light')
+    setProviders(pickerProviders)
+    render(
+      withTranslations(
+        <div className="fixed bottom-6 right-6">
+          <DropdownModelProvider />
+        </div>
       )
-      useModelProvider.setState({
-        providers: [
-          {
-            provider: 'llamacpp-upstream',
-            active: true,
-            models: [],
-            settings: [],
-          },
-        ] as unknown as ModelProvider[],
-      })
-      let resolve!: (models: CatalogModel[]) => void
-      const pending = new Promise<CatalogModel[]>((done) => {
-        resolve = done
-      })
-      search.mockImplementation(
-        (_query: string, _token: string, _limit: number, format: string) =>
-          pending.then((models) =>
-            models.filter((model) => model.is_mlx === (format === 'mlx'))
-          )
-      )
-      render(
-        withTranslations(
-          <div style={{ position: 'fixed', bottom: 24, right: 24 }}>
-            <DropdownModelProvider />
-          </div>
-        )
-      )
-      fireEvent.click(
-        document.querySelector('[data-test-id="model-picker-trigger"]')!
-      )
-      const input = screen.getByPlaceholderText('Search models...')
-      const panel = input.closest(
-        '[data-slot="popover-content"]'
-      ) as HTMLElement
-      await new Promise<void>((done) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => done()))
-      )
-      await settle(panel)
-      const triggerLabel = document.querySelector<HTMLElement>(
-        '[data-test-id="model-picker-trigger"] .truncate'
-      )!
-      expect(triggerLabel.textContent).toBe('Select Model')
-      expectOneLine(triggerLabel)
-      const footer = screen.getByRole('button', {
-        name: 'Download models from Hugging Face',
-      })
-      expectNoHorizontalOverflow(footer)
-      fireEvent.click(footer)
-      const huggingFaceInput = screen.getByPlaceholderText(
-        'Search models on Hugging Face...'
-      )
-      fireEvent.change(huggingFaceInput, { target: { value: 'qwen' } })
-      await new Promise<void>((done) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => done()))
-      )
-      const before = panel.getBoundingClientRect()
-      await act(async () =>
-        resolve(
-          Array.from({ length: 12 }, (_, i) => ({
-            ...candidate(i % 2 === 1),
-            model_name: `${repo}-${Math.floor(i / 2)}`,
-          }))
-        )
-      )
-      await waitFor(() =>
-        expect(screen.getAllByTestId('model-picker-download-row')).toHaveLength(
-          12
-        )
-      )
-      await settle(panel)
-      expect(panel.getBoundingClientRect().height).toBeCloseTo(before.height, 0)
-      expectSameWidth(
-        screen
-          .getAllByTestId('model-picker-download-row')
-          .map((row) => within(row).getByRole('button'))
-      )
-      const rows = screen.getAllByTestId('model-picker-download-row')
-      const scroller = rows[0].closest('.overflow-y-auto') as HTMLElement
-      expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
-      expectSameWidth(rows.map((row) => within(row).getByRole('button')))
-      expectNoHorizontalOverflow(panel)
+    )
+
+    const search = await openModelList()
+    const panel = search.closest('[data-slot="popover-content"]') as HTMLElement
+    const footer = within(panel).getByRole('button', {
+      name: 'Download from Hugging Face',
     })
-  }
-}
+    await userEvent.unhover(footer)
+    const beforeHover = getComputedStyle(footer).backgroundColor
+    await userEvent.hover(footer)
+    await waitFor(() =>
+      expect(getComputedStyle(footer).backgroundColor).not.toBe(beforeHover)
+    )
+
+    await act(async () => {
+      fireEvent.click(footer)
+    })
+    expect(testState.navigate).toHaveBeenCalledWith({ to: route.hub.index })
+    expect(
+      screen.queryByPlaceholderText('Search models on Hugging Face...')
+    ).toBeNull()
+  })
+
+  it('widens the selected-model reading area without moving mic or Send', async () => {
+    await page.viewport(1024, 800)
+    setFontSize(XL_FONT_SIZE)
+    setTheme('dark')
+    testState.effort = 'Medium'
+    setProviders(pickerProviders, 'llamacpp-upstream', localModel)
+
+    render(
+      withTranslations(
+        <div className="fixed bottom-6 right-6 flex items-center gap-2">
+          <DropdownModelProvider />
+          <button type="button" aria-label="Microphone" className="size-8" />
+          <button type="button" aria-label="Send" className="size-8" />
+        </div>
+      )
+    )
+
+    const shell = screen.getByTestId('model-picker-pill-shell')
+    const name = trigger().querySelector<HTMLElement>('.truncate')!
+    const effort = within(trigger()).getByText('Medium')
+    const mic = screen.getByRole('button', { name: 'Microphone' })
+    const send = screen.getByRole('button', { name: 'Send' })
+    const fixedPositions = [mic, send].map(
+      (element) => element.getBoundingClientRect().left
+    )
+
+    expect(shell.getBoundingClientRect().width).toBeCloseTo(168, 0)
+    // The 168 px shell is 40 px wider than the old 128 px shell, all of
+    // which goes to the model-name slot because effort and controls stay put.
+    expect(name.clientWidth).toBeGreaterThanOrEqual(55)
+    expectOneLine(name)
+    expectOneLine(effort)
+
+    fireEvent.click(trigger())
+    await screen.findByRole('dialog')
+    expect([mic, send].map((el) => el.getBoundingClientRect().left)).toEqual(
+      fixedPositions
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Change model' }))
+    await screen.findByPlaceholderText('Search models...')
+    expect([mic, send].map((el) => el.getBoundingClientRect().left)).toEqual(
+      fixedPositions
+    )
+  })
+})

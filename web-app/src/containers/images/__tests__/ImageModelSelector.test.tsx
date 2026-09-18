@@ -112,44 +112,28 @@ describe('ImageModelSelector', () => {
     })
   })
 
-  it('marks the families that cannot run the picked workflow and lists them last', () => {
-    const klein = {
-      ...Z_IMAGE,
-      id: 'flux.2-klein' as const,
-      name: 'FLUX.2 Klein 4B',
-    }
-    useImageGenerationStore.setState({ catalog: makeCatalog([Z_IMAGE, klein]) })
-    render(<ImageModelSelector workflow="edit" />)
+  it.each(['reference', 'edit'] as const)(
+    'lists only the one compatible family for the %s workflow',
+    (workflow) => {
+      const klein = {
+        ...Z_IMAGE,
+        id: 'flux.2-klein' as const,
+        name: 'FLUX.2 Klein 4B',
+      }
+      useImageGenerationStore.setState({
+        catalog: makeCatalog([Z_IMAGE, klein]),
+      })
+      render(<ImageModelSelector workflow={workflow} />)
 
-    // One family is one row: an installed quant wins over alternate downloads.
-    const installed = screen
-      .getByRole('heading', { name: 'images:model.installed' })
-      .closest('section')!
-    const available = screen
-      .getByRole('heading', { name: 'images:model.available' })
-      .closest('section')!
-    for (const zImage of screen.getAllByTestId('family-z-image')) {
-      expect(zImage).toHaveAttribute('data-unsupported', 'edit')
+      const kleinBlock = screen.getByTestId('family-flux.2-klein')
+      expect(kleinBlock).toBeInTheDocument()
+      expect(screen.queryByTestId('family-z-image')).not.toBeInTheDocument()
       expect(
-        within(zImage).getByText('images:model.notForWorkflow')
-      ).toBeInTheDocument()
-      expect(
-        within(zImage).getAllByRole('button', { name: 'images:model.pick' })[0]
-      ).toBeDisabled()
+        screen.queryByText('images:model.notForWorkflow')
+      ).not.toBeInTheDocument()
+      expect(screen.getAllByTestId(/^family-/)).toHaveLength(1)
     }
-    // The installed quant cannot run this workflow.
-    expect(
-      within(installed).getByRole('button', { name: 'images:model.load' })
-    ).toBeDisabled()
-    expect(
-      within(available).queryByTestId('family-z-image')
-    ).not.toBeInTheDocument()
-
-    const kleinBlock = screen.getByTestId('family-flux.2-klein')
-    expect(kleinBlock).not.toHaveAttribute('data-unsupported')
-    const blocks = within(available).getAllByTestId(/^family-/)
-    expect(blocks[0]).toHaveAttribute('data-testid', 'family-flux.2-klein')
-  })
+  )
 
   it('offers every family for a workflow they all run', () => {
     render(<ImageModelSelector workflow="inpaint" />)
@@ -171,10 +155,12 @@ describe('ImageModelSelector', () => {
     expect(
       screen.queryByRole('heading', { name: 'images:model.available' })
     ).not.toBeInTheDocument()
-    // The size shown is the whole artifact, side files included.
     expect(
-      within(installed).getByText(/images:model.sizeGb/)
-    ).toBeInTheDocument()
+      within(installed).queryByText(/images:model.sizeGb/)
+    ).not.toBeInTheDocument()
+    expect(
+      within(installed).queryByTestId('image-model-download-meta')
+    ).not.toBeInTheDocument()
   })
 
   it('opens on the best quant and preserves a picked alternative in one dropdown', async () => {
@@ -210,6 +196,15 @@ describe('ImageModelSelector', () => {
     expect(
       within(row).getByRole('button', { name: 'images:model.load' })
     ).toHaveAttribute('data-variant', 'default')
+    expect(
+      within(row)
+        .getByRole('button', { name: 'images:model.load' })
+        .querySelector('svg')
+    ).toBeNull()
+    const quantTrigger = within(row).getByRole('button', {
+      name: 'images:model.pick',
+    })
+    expect(quantTrigger.querySelector('[class*="bg-secondary"]')).toBeNull()
     const remove = within(row).getByRole('button', {
       name: 'images:model.remove',
     })
@@ -221,11 +216,15 @@ describe('ImageModelSelector', () => {
     useImageGenerationStore.setState({ modelFiles: [], installedArtifacts: [] })
     render(<ImageModelSelector />)
     const row = screen.getByTestId(`artifact-${Q4_ID}`)
+    const family = screen.getByTestId('family-z-image')
 
     expect(row).toHaveAttribute('data-compact-row', 'true')
     expect(
       within(row).getByRole('button', { name: 'images:model.download' })
     ).toHaveAttribute('data-variant', 'default')
+    const meta = within(family).getByTestId('image-model-download-meta')
+    expect(within(meta).getByText('images:model.sizeGb')).toBeInTheDocument()
+    expect(meta.querySelector('[class*="bg-transparent"]')).toBeNull()
   })
 
   it('does not add recommendation badges when no quant fits this machine', () => {
@@ -305,17 +304,18 @@ describe('ImageModelSelector', () => {
     })
     render(<ImageModelSelector />)
     const row = screen.getByTestId(`artifact-${Q4_ID}`)
+    const family = screen.getByTestId('family-z-image')
 
     const pick = within(row).getByRole('button', { name: 'images:model.pick' })
-    expect(within(row).getByText('images:model.progress')).toBeInTheDocument()
+    expect(within(family).getByText('images:model.progress')).toBeInTheDocument()
     expect(within(pick).queryByText('images:model.progress')).not.toBeInTheDocument()
-    expect(within(row).queryByText('images:model.sizeGb')).not.toBeInTheDocument()
+    expect(within(family).queryByText('images:model.sizeGb')).not.toBeInTheDocument()
     // Progress is the cancel button alone, with no second line stacked under it.
     const cancel = within(row).getByRole('button', {
       name: 'common:cancelDownload',
     })
     expect(cancel).toHaveTextContent('18%')
-    expect(within(row).getAllByText('images:model.progress')).toHaveLength(1)
+    expect(within(family).getAllByText('images:model.progress')).toHaveLength(1)
   })
 
   it('tells the user when the catalog has not arrived', () => {

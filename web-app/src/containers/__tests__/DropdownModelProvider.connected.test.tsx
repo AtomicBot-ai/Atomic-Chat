@@ -129,7 +129,7 @@ const renderPicker = () => {
   return result
 }
 
-describe('DropdownModelProvider - installed local providers only', () => {
+describe('DropdownModelProvider - runnable local and connected providers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(useFavoriteModel).mockReturnValue({
@@ -169,7 +169,7 @@ describe('DropdownModelProvider - installed local providers only', () => {
     expect(providerHeaders()).toEqual(['llamacpp-upstream'])
   })
 
-  it('leaves out a signed-in subscription and its remote models', () => {
+  it('includes a signed-in ChatGPT subscription and its Codex models', () => {
     renderWith([
       local,
       {
@@ -178,8 +178,8 @@ describe('DropdownModelProvider - installed local providers only', () => {
       },
     ])
 
-    expect(providerHeaders()).toEqual(['llamacpp-upstream'])
-    expect(screen.queryByTitle('gpt-5.1-codex')).not.toBeInTheDocument()
+    expect(providerHeaders()).toEqual(['chatgpt', 'llamacpp-upstream'])
+    expect(screen.getAllByTitle('gpt-5.1-codex').length).toBeGreaterThan(0)
   })
 
   it('waits for a loopback server to answer before giving it a section', () => {
@@ -202,10 +202,10 @@ describe('DropdownModelProvider - installed local providers only', () => {
       local,
       { ...ollama, models: [{ id: 'llama3', capabilities: ['completion'] }] },
     ])
-    expect(providerHeaders()).toEqual(['llamacpp-upstream'])
+    expect(providerHeaders()).toEqual(['llamacpp-upstream', 'ollama'])
   })
 
-  it('leaves out a keyed cloud provider and its models', () => {
+  it('includes a keyed cloud provider and its models', () => {
     renderWith([
       local,
       {
@@ -217,8 +217,8 @@ describe('DropdownModelProvider - installed local providers only', () => {
       },
     ])
 
-    expect(providerHeaders()).toEqual(['llamacpp-upstream'])
-    expect(screen.queryByTitle('claude-opus-5')).not.toBeInTheDocument()
+    expect(providerHeaders()).toEqual(['anthropic', 'llamacpp-upstream'])
+    expect(screen.getAllByTitle('claude-opus-5').length).toBeGreaterThan(0)
   })
 
   describe('a cloud selection kept across launches', () => {
@@ -252,9 +252,8 @@ describe('DropdownModelProvider - installed local providers only', () => {
       const selectModelProvider = renderSelected([local, openaiKeyed])
 
       expect(selectModelProvider).not.toHaveBeenCalled()
-      // The selection survives in the trigger, but remote models do not enter
-      // the installed-model list.
-      expect(providerHeaders()).toEqual(['llamacpp-upstream'])
+      // The same readiness check keeps both the selection and its picker row.
+      expect(providerHeaders()).toEqual(['llamacpp-upstream', 'openai'])
       expect(screen.getAllByTitle('gpt-4o').length).toBeGreaterThanOrEqual(1)
     })
 

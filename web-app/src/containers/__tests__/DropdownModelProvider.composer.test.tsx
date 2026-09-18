@@ -237,7 +237,9 @@ describe('DropdownModelProvider - the composer pill', () => {
 
     expect(pill()).toHaveTextContent('Qwen 3')
     expect(pill()).toHaveTextContent('common:reasoningEffort.medium')
-    expect(screen.getByTestId('model-picker-pill-shell')).toHaveClass('w-32')
+    expect(screen.getByTestId('model-picker-pill-shell')).toHaveClass(
+      'w-[10.5rem]'
+    )
     expect(screen.getByTestId('model-picker-pill-shell')).not.toHaveClass(
       'transition-[width]'
     )

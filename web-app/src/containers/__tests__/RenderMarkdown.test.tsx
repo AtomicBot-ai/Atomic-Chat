@@ -16,6 +16,41 @@ Object.assign(navigator, {
 })
 
 describe('RenderMarkdown', () => {
+  it('repairs whitespace just inside strong markers', () => {
+    const { container } = render(
+      <RenderMarkdown content="** uncensored-ai-models.pdf **" />
+    )
+
+    expect(
+      container.querySelector('[data-streamdown="strong"]')
+    ).toHaveTextContent('uncensored-ai-models.pdf')
+    expect(container.querySelector('.markdown')).not.toHaveTextContent('**')
+  })
+
+  it('does not repair strong markers inside inline or fenced code', async () => {
+    const content = [
+      'Rendered: ** answer **.',
+      '',
+      'Inline: `** inline **`',
+      '',
+      '```text',
+      '** fenced **',
+      '```',
+    ].join('\n')
+    const { container, findByText } = render(
+      <RenderMarkdown content={content} />
+    )
+
+    expect(
+      container.querySelector('[data-streamdown="strong"]')
+    ).toHaveTextContent('answer')
+    expect(container.querySelector('code')).toHaveTextContent('** inline **')
+    await findByText('** fenced **', { exact: false })
+    expect(
+      container.querySelector('[data-streamdown="code-block"]')
+    ).toHaveTextContent('** fenced **')
+  })
+
   it('turns bare URLs into visibly styled links', () => {
     const { container } = render(
       <RenderMarkdown

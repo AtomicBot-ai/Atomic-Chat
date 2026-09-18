@@ -8,7 +8,7 @@ import type { DiffusionCatalog } from './diffusion-catalog-registry'
 
 export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
   schema_version: 1,
-  updated_at: '2026-09-18T15:42:32Z',
+  updated_at: '2026-09-18T17:05:33Z',
   families: [
     {
       id: 'z-image',
@@ -420,89 +420,6 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       ],
       defaults: {
         steps: 20,
-        cfg_scale: 1,
-        guidance: 3.5,
-        sampling_method: 'euler',
-        width: 1024,
-        height: 1024,
-      },
-      ranges: {
-        steps: [4, 50],
-        dims: [256, 2048],
-        dim_multiple: 16,
-      },
-      capabilities: {
-        negative_prompt: false,
-        guidance: true,
-        workflows: ['create'],
-      },
-    },
-    {
-      id: 'flux.1-frankenstein',
-      name: 'FLUX.1 Frankenstein',
-      developer: 'ND911',
-      modality: 'image',
-      description:
-        'Realistic uncensored FLUX.1 merge tuned for detailed people and scenes.',
-      license: 'apache-2.0',
-      engines: ['sdcpp'],
-      transformer: {
-        repo: 'ND911/Test_Frankenstein',
-        quants: [
-          {
-            id: 'q4_k',
-            label: 'Q4_K',
-            filename: 'frankenstein_00001_Q4_K.gguf',
-            bytes: 6912265184,
-            sha256:
-              '222908db2afa4f5fa80b1f675529be5e7ffb1ab9527a51084f5c3005f3c3f410',
-            recommended: true,
-          },
-          {
-            id: 'q6_k',
-            label: 'Q6_K',
-            filename: 'frankenstein_00001_Q6_K.gguf',
-            bytes: 9828797408,
-            sha256:
-              'ca58fa71e3b74024d8f2dbfa53328a2e53e43a1d869bc68e7530028e421bd53b',
-          },
-          {
-            id: 'q8_0',
-            label: 'Q8_0',
-            filename: 'frankenstein_00001_Q8_0.gguf',
-            bytes: 12694899680,
-            sha256:
-              'ec38a3967448d04ffa1bf93619c6edd1de0b9f1853960d2cf92d1592fd47d3d0',
-          },
-        ],
-      },
-      vae: {
-        repo: 'unsloth/Z-Image-Turbo-ComfyUI',
-        filename: 'split_files/vae/ae.safetensors',
-        bytes: 335304388,
-        sha256:
-          'afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38',
-      },
-      text_encoders: [
-        {
-          repo: 'unsloth/flux-text-encoders',
-          filename: 'clip_l.safetensors',
-          bytes: 246144152,
-          sha256:
-            '660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd',
-          field: 'clip_l',
-        },
-        {
-          repo: 'unsloth/flux-text-encoders',
-          filename: 't5xxl_fp16.safetensors',
-          bytes: 9787841024,
-          sha256:
-            '6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635',
-          field: 't5xxl',
-        },
-      ],
-      defaults: {
-        steps: 12,
         cfg_scale: 1,
         guidance: 3.5,
         sampling_method: 'euler',

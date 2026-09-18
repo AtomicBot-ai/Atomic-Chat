@@ -105,9 +105,16 @@ describe('Image studio form geometry', () => {
 
     const slot = screen.getByTestId('image-generate-slot')
     const card = screen.getByTestId('image-prompt-card')
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    expect(screen.getByTestId('image-models-toggle')).toHaveClass('flex-1')
     const before = slot.getBoundingClientRect()
     const cardHeight = card.getBoundingClientRect().height
     expect(before.height).toBe(36)
+    const cardStyle = getComputedStyle(card)
+    expect(card.getBoundingClientRect().bottom - before.bottom).toBeCloseTo(
+      parseFloat(cardStyle.paddingBottom) + parseFloat(cardStyle.borderBottomWidth),
+      1
+    )
 
     act(() => {
       useImageGenerationStore.setState({
@@ -126,12 +133,14 @@ describe('Image studio form geometry', () => {
       .getByTestId('image-generate-slot')
       .getBoundingClientRect()
     expect(screen.getByTestId('image-stop')).toBeVisible()
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1)
     expect(after.left).toBeCloseTo(before.left, 1)
     expect(after.top).toBeCloseTo(before.top, 1)
     expect(after.width).toBeCloseTo(before.width, 1)
     expect(after.height).toBeCloseTo(before.height, 1)
     expect(card.getBoundingClientRect().height).toBeCloseTo(cardHeight, 1)
-    expect(screen.getByTestId('image-job-progress').getBoundingClientRect().height).toBeLessThanOrEqual(20)
+    expect(screen.queryByTestId('image-job-progress')).toBeNull()
+    expect(screen.queryByTestId('image-progress-slot')).toBeNull()
   })
 
   it('reserves the gutter across workflow growth and animates Advanced without a horizontal jump', async () => {
@@ -222,7 +231,7 @@ describe('Image model page-row geometry', () => {
     await seedImageStudio()
   })
 
-  it('keeps installed and available rows equally compact with black primary actions', async () => {
+  it('separates model metadata from controls and keeps primary actions compact', async () => {
     const availableFamily = {
       ...Z_IMAGE,
       id: 'flux.2-klein' as const,
@@ -258,19 +267,36 @@ describe('Image model page-row geometry', () => {
     })
     const remove = within(installed).getByRole('button', { name: 'Remove' })
 
-    expect(within(installed).getByText('Good fit')).toBeVisible()
+    expect(within(installed).queryByText('Good fit')).toBeNull()
+    expect(within(installed).queryByText(/GB/)).toBeNull()
+    expect(within(available).getByText('Good fit')).toBeVisible()
+    expect(within(available).getByText(/GB/)).toBeVisible()
     for (const subtitle of screen.getAllByTestId('image-model-subtitle')) {
       expectOneLine(subtitle)
     }
-    expect(installed.getBoundingClientRect().height).toBeLessThanOrEqual(72)
-    expect(available.getBoundingClientRect().height).toBeCloseTo(
-      installed.getBoundingClientRect().height,
-      1
+    const installedSubtitle = within(installed).getByTestId(
+      'image-model-subtitle'
     )
+    const installedControls = within(installed).getByTestId(
+      `artifact-${Q4_ID}`
+    )
+    expect(
+      installedControls.getBoundingClientRect().top -
+        installedSubtitle.getBoundingClientRect().bottom
+    ).toBeGreaterThanOrEqual(10)
     expect(run.getBoundingClientRect().height).toBe(28)
     expect(download.getBoundingClientRect().height).toBe(28)
     expect(remove.getBoundingClientRect().width).toBe(24)
     expect(remove.getBoundingClientRect().height).toBe(24)
+    expect(run.querySelector('svg')).toBeNull()
+
+    const quantTrigger = within(installed).getByRole('button', {
+      name: /Select/,
+    })
+    const quantText = within(quantTrigger).getByText('Q4_K_M')
+    expect(getComputedStyle(quantText).backgroundColor).toBe(
+      'rgba(0, 0, 0, 0)'
+    )
 
     const channels = getComputedStyle(run).backgroundColor.match(/\d+(?:\.\d+)?/g)
     expect(channels).not.toBeNull()

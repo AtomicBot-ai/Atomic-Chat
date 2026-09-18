@@ -538,6 +538,25 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "apiTitle": "Image generation API",
+    "apiEndpoint": "OpenAI-compatible endpoint",
+    "apiCopyEndpoint": "Copy image API endpoint",
+    "apiRequirements": "Requirements",
+    "apiServerRunning": "Local API Server is running",
+    "apiServerStopped": "Local API Server must be started",
+    "apiModelLoaded": "An image model is loaded",
+    "apiModelMissing": "Load an image model before sending a request",
+    "apiRequirementsHint": "The public endpoint stays stable; Atomic Chat keeps the image engine's random internal port private.",
+    "apiOpenSettings": "Open API settings",
+    "apiAuthentication": "Authentication",
+    "apiAuthRequired": "Send Authorization: Bearer YOUR_API_KEY or X-Api-Key: YOUR_API_KEY. The key is configured in API settings.",
+    "apiAuthDisabled": "No authentication header is required while the API key in API settings is empty.",
+    "apiContract": "Request and response contract",
+    "apiRequestContract": "JSON request: prompt is required. model may name the loaded image model; n accepts 1–4; size accepts auto or WIDTHxHEIGHT from 256 to 2048 in multiples of 16. response_format must be b64_json. seed and negative_prompt are optional.",
+    "apiResponseContract": "200 response: created plus data[].b64_json PNGs. atomic includes job_id, seed, and local gallery paths.",
+    "apiErrorContract": "Generation errors use { error: { message, type, param, code } }. Proxy authentication and Trusted Hosts rejections are plain-text 401 and 403 responses. Other common statuses: 400 invalid request, 429 busy, 503 image model not loaded, and 504 timeout.",
+    "apiCurlExample": "curl example",
+    "apiCopyCurl": "Copy curl example"
   }
 }

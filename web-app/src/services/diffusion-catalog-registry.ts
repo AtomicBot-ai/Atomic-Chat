@@ -128,7 +128,6 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'flux.1',
   'flux.1-uncensored',
   'flux.1-abliterated',
-  'flux.1-frankenstein',
   'flux.1-nsfw-realism',
   'flux.1-krea',
   'qwen-image',

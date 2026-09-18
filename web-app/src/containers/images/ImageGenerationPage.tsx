@@ -16,6 +16,7 @@ import { artifactId } from '@/lib/diffusion/models'
 import { cn } from '@/lib/utils'
 import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { useImageGalleryStore } from '@/stores/image-gallery-store'
 import { ImageEmptyState } from './ImageEmptyState'
 import { ImageErrorBanner } from './ImageErrorBanner'
 import { ImageGalleryGrid } from './ImageGalleryGrid'
@@ -46,6 +47,8 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const gallery = useImageGallery()
+  const viewerMode = useImageGalleryStore((state) => state.viewerMode)
+  const selectLive = useImageGalleryStore((state) => state.selectLive)
   const engine = useImageEngine()
   const status = useImageGenerationStore((state) => state.status)
   const generating = useImageGenerationStore((state) => state.generating)
@@ -71,6 +74,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const [modelsOpen, setModelsOpen] = useState(false)
 
   const modelLoaded = status?.model.state === 'loaded'
+  const showLivePreview = generating && viewerMode === 'live'
   const pendingSize = {
     width: currentJob?.request.width || draftWidth,
     height: currentJob?.request.height || draftHeight,
@@ -227,7 +231,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
               className="min-h-0 min-w-0 flex-[3] overflow-hidden"
               data-testid="image-viewer-section"
             >
-              {generating ? (
+              {showLivePreview ? (
                 <ImageGenerationPlaceholder
                   variant="viewer"
                   width={pendingSize.width}
@@ -263,14 +267,16 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
                 <ImageGalleryGrid
                   items={gallery.items}
-                  selectedId={gallery.selectedId}
-                  selectedIds={gallery.selectedIds}
+                  selectedId={showLivePreview ? null : gallery.selectedId}
+                  selectedIds={showLivePreview ? [] : gallery.selectedIds}
                   hasMore={gallery.hasMore}
                   loading={gallery.loading}
                   pendingCount={pendingCount}
                   pendingSize={pendingSize}
                   pendingProgress={currentJob?.progress ?? null}
                   pendingStartedAtMs={pendingStartedAtMs}
+                  pendingSelected={showLivePreview}
+                  onSelectPending={selectLive}
                   onSelect={gallery.toggleSelect}
                   onOpen={gallery.select}
                   onLoadMore={() => void gallery.loadMore()}
