@@ -6,6 +6,8 @@
  * core a host, a port and a key, and that the core serves a model the app knows.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { coreSessions } from '../harness/chat.js'
+import { readLock } from '../harness/core.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
@@ -101,4 +103,67 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server', () => {
       await expect(fetch(`${baseUrl}/models`, { headers: authorized })).rejects.toThrow()
     })
   })
+})
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server when the core dies', () => {
+  let session: Session
+  let baseUrl = ''
+
+  beforeAll(async () => {
+    session = await startSession('local-api-recovery', {
+      prepare: async (profile) => {
+        await installFakeBackend(profile, { reply: REPLY })
+        await writeFakeModel(profile, MODEL_ID)
+      },
+      apiServer: { apiKey: API_KEY },
+    })
+    baseUrl = `http://127.0.0.1:${session.apiPort}/v1`
+  })
+
+  afterAll(async () => {
+    if (session) expect(await endSession(session)).toEqual([])
+  })
+
+  it('is listening again, on the same address and key, without the user doing anything', async () => {
+    await withArtifacts(session, async () => {
+      const browser = session.app.browser
+      const dataFolder = session.profile.dataFolder
+      const authorized = { authorization: `Bearer ${API_KEY}` }
+      const models = () => fetch(`${baseUrl}/models`, { headers: authorized }).then((r) => r.status, () => 0)
+
+      await browser.$('[data-testid="chat-input"]').waitForDisplayed({ timeout: 60_000 })
+      await browser.$('a=API').click()
+      await browser.$('button=Start server').click()
+      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      expect(await models()).toBe(200)
+
+      // The listener belongs to the core, so it dies with it.
+      const firstCore = (await readLock(dataFolder))!
+      process.kill(firstCore.pid, 'SIGKILL')
+      await expect.poll(models, { timeout: 15_000, interval: 250 }).toBe(0)
+
+      // The app's supervisor starts another core, and the app — which knows the
+      // user had the server running — has it listen again: same port, same key.
+      await expect.poll(models, { timeout: 90_000, interval: 500 }).toBe(200)
+      const secondCore = (await readLock(dataFolder))!
+      expect(secondCore.instance_id).not.toBe(firstCore.instance_id)
+      expect((await fetch(`${baseUrl}/models`)).status).toBe(401)
+
+      // A listener is not yet a server: the core serves the sessions it has, and
+      // the model's session died with the core. The app loads it again.
+      await expect.poll(() => coreSessions(dataFolder).then((all) => all.map((one) => one.model_id)), { timeout: 60_000 }).toEqual([MODEL_ID])
+
+      // A client that was mid-script simply carries on.
+      const completion = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { ...authorized, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: MODEL_ID, stream: true, messages: [{ role: 'user', content: 'ping' }] }),
+      })
+      expect(completion.status).toBe(200)
+      expect((await streamedText(completion)).text).toBe(REPLY)
+
+      // And the page still tells the truth about it.
+      await browser.$('button=Stop server').waitForDisplayed({ timeout: 15_000 })
+    })
+  }, 300_000)
 })

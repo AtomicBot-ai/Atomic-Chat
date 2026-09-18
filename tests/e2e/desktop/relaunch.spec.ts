@@ -43,13 +43,15 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the app restarting itself', () => {
       const previous = (await readLock(dataFolder))!
       expect(previous.state).toBe('ready')
 
-      // The same call the updater and the settings pages make. It does not
-      // answer: the process it would answer from is going away.
-      await session.app.browser
-        .execute(() => {
+      // The same call the updater and the settings pages make — scheduled rather
+      // than made, so that this command is answered before the process that
+      // answers it goes away; a WebDriver request caught mid-exit is retried by
+      // the client for minutes.
+      await session.app.browser.execute(() => {
+        setTimeout(() => {
           void (window as unknown as { core?: { api?: { relaunch?: () => unknown } } }).core?.api?.relaunch?.()
-        })
-        .catch(() => undefined)
+        }, 500)
+      })
       await followRelaunch(session.app)
       const relaunchedAt = Date.now()
 
