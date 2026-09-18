@@ -186,6 +186,10 @@ libc = "0.2"
 # The zbus backend is pure Rust and this crate already depends on zbus 5
 # below, so this adds no system dependency. Q5 approved either one.
 zbus-secret-service-keyring-store = "1"
+# zbus-secret-service-keyring-store 1.0.1 disables secret-service's crypto
+# defaults, so Linux must select one crypto implementation explicitly. Feature
+# unification makes this apply to the store's transitive secret-service crate.
+secret-service = { version = "5.2", default-features = false, features = ["crypto-rust"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 notify-rust = "4"
 
