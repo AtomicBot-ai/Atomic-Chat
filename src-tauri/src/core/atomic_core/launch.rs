@@ -22,9 +22,11 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Overrides the binary the app would otherwise start. This is how a developer
 /// runs the core from source against a dev build of the app:
-/// `ATOMIC_CORE_CMD="bun run ../atomic-chat-core/src/cli/bin.ts" yarn dev`.
-/// `bin.ts`, not `main.ts`: `main.ts` is the injectable command table and has no
-/// side effects on import, so running it starts nothing.
+/// `ATOMIC_CORE_CMD="bun run /abs/path/atomic-chat-core/src/app-daemon.ts" yarn dev`.
+/// `app-daemon.ts`, not the CLI entry `src/cli/bin.ts`: the app accepts only an
+/// app-scope core, and the CLI's `daemon` starts a CLI-scope one. The path must be
+/// absolute: the core inherits the app's working directory (`src-tauri/` under
+/// `tauri dev`).
 pub const CORE_COMMAND_ENV: &str = "ATOMIC_CORE_CMD";
 
 /// The bundled core, under the app's resource directory.
