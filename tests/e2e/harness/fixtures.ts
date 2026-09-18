@@ -7,6 +7,8 @@
  * the core's own test doubles, and copying them here would let the copy drift
  * from the process protocol the core actually expects.
  */
+import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -75,6 +77,97 @@ export async function writeFakeModel(profile: Profile, modelId: string): Promise
       '',
     ].join('\n')
   )
+}
+
+export interface CloudRequest {
+  method: string
+  path: string
+  /** What came in the Authorization header, verbatim; '' when absent. */
+  authorization: string
+  status: number
+}
+
+export interface FakeCloud {
+  baseUrl: string
+  /** Every request the endpoint received, in order. */
+  requests: () => CloudRequest[]
+  stop: () => Promise<void>
+}
+
+/**
+ * A stand-in for a cloud provider: an OpenAI-compatible endpoint on loopback,
+ * inside the test process so that a test can read what was sent to it. It
+ * answers 401 without the right bearer key, lists one model and streams a fixed
+ * reply — all a provider has to do for the app to connect and chat.
+ */
+export async function startFakeCloud(options: {
+  apiKey: string
+  model: string
+  reply: string
+}): Promise<FakeCloud> {
+  const seen: CloudRequest[] = []
+  const server = createServer((req, res) => {
+    const path = (req.url ?? '').split('?')[0] ?? ''
+    const authorization = req.headers.authorization ?? ''
+    const finish = (status: number, headers: Record<string, string>, body: string) => {
+      seen.push({ method: req.method ?? '', path, authorization, status })
+      res.writeHead(status, headers)
+      res.end(body)
+    }
+    const json = (status: number, body: unknown) =>
+      finish(status, { 'content-type': 'application/json' }, JSON.stringify(body))
+
+    let raw = ''
+    req.on('data', (chunk: Buffer) => (raw += chunk.toString()))
+    req.on('end', () => {
+      if (authorization !== `Bearer ${options.apiKey}`) {
+        return json(401, { error: { message: 'Incorrect API key provided', type: 'invalid_request_error' } })
+      }
+      if (req.method === 'GET' && path === '/v1/models') {
+        return json(200, { object: 'list', data: [{ id: options.model, object: 'model', owned_by: 'e2e' }] })
+      }
+      if (req.method === 'POST' && path === '/v1/chat/completions') {
+        const wantsStream = (JSON.parse(raw || '{}') as { stream?: boolean }).stream === true
+        const chunk = (delta: object, finishReason: string | null) => ({
+          id: 'chatcmpl-e2e',
+          object: 'chat.completion.chunk',
+          created: 1_700_000_000,
+          model: options.model,
+          choices: [{ index: 0, delta, finish_reason: finishReason }],
+        })
+        if (!wantsStream) {
+          return json(200, {
+            id: 'chatcmpl-e2e',
+            object: 'chat.completion',
+            created: 1_700_000_000,
+            model: options.model,
+            choices: [{ index: 0, message: { role: 'assistant', content: options.reply }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 3, completion_tokens: 3, total_tokens: 6 },
+          })
+        }
+        const words = options.reply.split(' ')
+        const frames = [
+          ...words.map((word, i) => chunk(i === 0 ? { role: 'assistant', content: word } : { content: ` ${word}` }, null)),
+          chunk({}, 'stop'),
+        ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+        return finish(200, { 'content-type': 'text/event-stream' }, `${frames.join('')}data: [DONE]\n\n`)
+      }
+      return json(404, { error: { message: `no route for ${req.method} ${path}` } })
+    })
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  const port = typeof address === 'object' && address ? address.port : 0
+  return {
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    requests: () => [...seen],
+    stop: async () => {
+      server.closeAllConnections()
+      server.close()
+      await once(server, 'close')
+    },
+  }
 }
 
 /**

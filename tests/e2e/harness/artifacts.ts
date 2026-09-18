@@ -34,6 +34,7 @@ export async function captureFailure(
         text: document.body.innerText,
         storageKeys: Object.keys(localStorage),
         errors: (window as unknown as { __atomic_e2e_errors?: string[] }).__atomic_e2e_errors ?? null,
+        console: (window as unknown as { __atomic_e2e_console?: string[] }).__atomic_e2e_console ?? null,
       }))
       await writeFile(join(dir, 'page.json'), JSON.stringify(page, null, 2))
     })

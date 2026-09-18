@@ -194,6 +194,22 @@ const ERROR_COLLECTOR_SCRIPT: &str = "(function () {
     var reason = event.reason;
     errors.push('unhandled rejection: ' + (reason && reason.stack ? reason.stack : String(reason)));
   });
+  // The page's own console, newest last, bounded. The app does not forward it
+  // to its log, and it is where the frontend explains what it just did.
+  var lines = (window.__atomic_e2e_console = []);
+  ['info', 'warn', 'error'].forEach(function (level) {
+    var original = console[level];
+    console[level] = function () {
+      try {
+        var text = Array.prototype.map.call(arguments, function (a) {
+          return a instanceof Error ? a.stack || a.message : typeof a === 'string' ? a : JSON.stringify(a);
+        }).join(' ');
+        lines.push(level + ': ' + text.slice(0, 600));
+        if (lines.length > 400) lines.shift();
+      } catch (e) {}
+      return original.apply(console, arguments);
+    };
+  });
 })();";
 
 /// Prepares every webview of the run: always the error collector, and the

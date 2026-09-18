@@ -5,8 +5,15 @@
 import { freePort, launchApp, type RunningApp } from './app.js'
 import { captureFailure } from './artifacts.js'
 import { stopCore } from './core.js'
-import { reapFakeBackends } from './fixtures.js'
-import { listProcesses } from './platform.js'
+import {
+  FAKE_BACKEND,
+  FAKE_BACKEND_VERSION,
+  FAKE_PROVIDER,
+  installFakeBackend,
+  installedBackends,
+  reapFakeBackends,
+} from './fixtures.js'
+import { CAN_RUN_FAKE_BACKEND, listProcesses } from './platform.js'
 import { operatorStateChanges, snapshotOperatorState, type OperatorSnapshot } from './invariants.js'
 import { createProfile, sweepStaleProfiles, type Profile } from './profile.js'
 
@@ -37,6 +44,11 @@ export async function startSession(
     webviewSeed: options.webviewSeed,
   })
   try {
+    // Every profile gets a backend, whether or not the scenario loads a model:
+    // on a profile without one the upstream extension downloads and installs
+    // the real thing on first launch, without asking. A scenario's own
+    // `prepare` may install it again with other options; the last one wins.
+    if (CAN_RUN_FAKE_BACKEND) await installFakeBackend(profile)
     await options.prepare?.(profile)
     const app = await launchApp(profile.env)
     return { name, profile, apiPort, app, operatorBefore, watchers: [] }
@@ -97,8 +109,15 @@ export async function endSession(session: Session): Promise<string[]> {
       // exited on its own meanwhile
     }
   }
+  // Anything but the fixture pack was installed behind the scenario's back —
+  // including a half-finished `*.incoming-*` staging folder.
+  const expectedBackend = `${FAKE_PROVIDER}:${FAKE_BACKEND_VERSION}/${FAKE_BACKEND}`
+  const foreignBackends = CAN_RUN_FAKE_BACKEND
+    ? (await installedBackends(session.profile.dataFolder)).filter((b) => b !== expectedBackend)
+    : []
   await session.profile.destroy()
   return [
+    ...foreignBackends.map((b) => `backend installed during the run: ${b}`),
     ...leaked.map((p) => `process left running (core: ${coreStop}): ${p.pid} ${p.command.slice(0, 140)}`),
     ...(await operatorStateChanges(session.operatorBefore)),
   ]

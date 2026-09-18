@@ -125,6 +125,24 @@ export async function send(session: Session, prompt: string): Promise<void> {
   })
 }
 
+/**
+ * Chooses an item from a dropdown menu, from the keyboard. These menus open on
+ * `pointerdown`, which the embedded WebDriver's click does not produce; Enter on
+ * the focused trigger opens them the way it does for a user without a mouse.
+ */
+export async function chooseFromMenu(session: Session, trigger: string, item: string): Promise<void> {
+  const browser = session.app.browser
+  const button = browser.$(trigger)
+  await button.waitForDisplayed({ timeout: 15_000 })
+  await browser.execute((el) => (el as unknown as HTMLElement).focus(), await button)
+  await browser.keys('Enter')
+  const entry = browser.$(`//*[@role="menuitem"][starts-with(normalize-space(.), "${item}")]`)
+  await entry.waitForDisplayed({ timeout: 10_000 })
+  await browser.execute((el) => (el as unknown as HTMLElement).focus(), await entry)
+  await browser.keys('Enter')
+  await entry.waitForExist({ reverse: true, timeout: 10_000 })
+}
+
 export const CRASH_TOAST = 'Model crashed during generation'
 
 /**

@@ -63,10 +63,13 @@ title: "Drive the desktop UI through an embedded WebDriver on an isolated profil
   stand-in HOME, an MCP config with no servers, and the core's own fake
   llama-server from the sibling `atomic-chat-core` checkout, installed as
   `b99999/macos-arm64` so that it is always the newest backend and nothing is
-  ever downloaded in its place. It refuses a binary without the isolation marker,
+  ever downloaded in its place — in every profile, model or not, because on a
+  profile without a backend the upstream extension installs the real one on
+  first launch. It refuses a binary without the isolation marker,
   `make test-app-e2e` refuses a build older than its sources, every scenario ends
   by asserting that the operator's profile, CLI and WebKit stores are unchanged
-  and that no process started from the profile outlived it, and teardown stops
+  that no backend was installed during the run and that no process started from
+  the profile outlived it, and teardown stops
   the app before the core because a live app restarts a stopped core. The core
   is asked to shut down with `force`: a killed app's registration stays attached
   for some 45 s, an unforced shutdown is refused meanwhile, and killing the core
