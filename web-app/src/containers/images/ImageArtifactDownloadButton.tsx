@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { IconDownload, IconX } from '@tabler/icons-react'
+import { IconX } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -61,7 +61,6 @@ export const ImageArtifactDownloadButton = memo(
           onRequestDownload ? onRequestDownload() : void artifact.download()
         }
       >
-        <IconDownload size={16} />
         {artifact.installed && !artifact.complete
           ? t('images:model.finishDownload')
           : t('images:model.download')}

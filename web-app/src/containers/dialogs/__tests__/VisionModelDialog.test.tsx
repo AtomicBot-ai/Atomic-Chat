@@ -10,7 +10,14 @@ const mocks = vi.hoisted(() => ({
   isLoading: false,
   downloads: {} as Record<
     string,
-    { id: string; progress: number; total: number }
+    {
+      id: string
+      name: string
+      progress: number
+      current: number
+      total: number
+      speed: { bytesPerSecond: number; atBytes: number; atTime: number }
+    }
   >,
 }))
 
@@ -55,13 +62,20 @@ vi.mock('@/hooks/useVisionDownloads', () => ({
 
 vi.mock('@/hooks/useDownloadStore', () => {
   const useDownloadStore = (
-    selector?: (value: { downloads: typeof mocks.downloads }) => unknown
+    selector?: (value: {
+      downloads: typeof mocks.downloads
+      pausedDownloads: Set<string>
+    }) => unknown
   ) =>
     selector
-      ? selector({ downloads: mocks.downloads })
-      : { downloads: mocks.downloads }
+      ? selector({ downloads: mocks.downloads, pausedDownloads: new Set() })
+      : { downloads: mocks.downloads, pausedDownloads: new Set() }
   return { useDownloadStore }
 })
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({ models: () => ({ abortDownload: vi.fn() }) }),
+}))
 
 import { VisionModelDialog } from '../VisionModelDialog'
 
@@ -150,14 +164,22 @@ describe('VisionModelDialog', () => {
       })
     )
     expect(mocks.items[0].start).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
 
     // The store reports progress; the row wears it and the button goes dark.
     mocks.items = [{ ...mocks.items[0], isDownloading: true }, mocks.items[1]]
     mocks.downloads = {
       'Gemma 4 E4B-Q4_K_M': {
         id: 'Gemma 4 E4B-Q4_K_M',
+        name: 'Gemma 4 E4B-Q4_K_M',
         progress: 0.42,
-        total: 1,
+        current: 4.2 * 1024 ** 3,
+        total: 10 * 1024 ** 3,
+        speed: {
+          bytesPerSecond: 100 * 1024 ** 2,
+          atBytes: 0,
+          atTime: 0,
+        },
       },
     }
     rerender(
@@ -169,16 +191,12 @@ describe('VisionModelDialog', () => {
       />
     )
 
-    expect(
-      screen.getByText('chat:visionGate.downloadingPercent:{"percent":42}')
-    ).toBeVisible()
+    expect(screen.getByText(/42% · 4\.20 \/ 10\.00 GB/)).toBeVisible()
     expect(
       screen.getByRole('button', {
-        name: 'chat:visionGate.downloadLabel:{"name":"Gemma 4 E4B"}',
+        name: 'common:cancelDownload',
       })
-    ).toBeDisabled()
-    // The dialog stays up: the download is the thing the user is waiting for.
-    expect(onOpenChange).not.toHaveBeenCalled()
+    ).toHaveTextContent('common:cancel')
   })
 
   it('hands the model over once its download has been imported', () => {

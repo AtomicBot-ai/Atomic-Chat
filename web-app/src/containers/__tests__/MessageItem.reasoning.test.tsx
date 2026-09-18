@@ -147,6 +147,9 @@ describe('MessageItem live reasoning viewport', () => {
       />
     )
 
+    fireEvent.click(
+      screen.getByRole('button', { name: /activity\.thinking/ })
+    )
     expect(screen.getByText('Preparing files')).toHaveClass('font-semibold')
     expect(screen.getByText('Creating folder')).toHaveClass('font-semibold')
     expect(container.querySelector('[data-streaming-reasoning]')).toHaveTextContent(
@@ -177,7 +180,7 @@ describe('MessageItem live reasoning viewport', () => {
     expect(container.querySelector('.border-dotted')).toBeNull()
   })
 
-  it('streams at full height, closes on finish and expands on reader request', () => {
+  it('keeps live reasoning closed by default and preserves an explicit open on finish', () => {
     const text =
       '**Full reasoning starts here**\n\n' +
       'A line of reasoning.\n'.repeat(500)
@@ -205,22 +208,38 @@ describe('MessageItem live reasoning viewport', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
     const { container, rerender } = render(item(true))
     const viewport = container.querySelector('[data-reasoning-viewport]')!
-    expect(viewport).toHaveAttribute('data-state', 'open')
-    expect(viewport).toHaveAttribute('data-bounded', 'false')
+    expect(viewport).toHaveAttribute('data-state', 'closed')
+    expect(viewport).toHaveAttribute('data-bounded', 'true')
     expect(
       screen.getByRole('button', { name: /activity.thinking/ })
-    ).toHaveAttribute('aria-expanded', 'true')
+    ).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /activity\.thinking/ })
+    )
+    expect(viewport).toHaveAttribute('data-state', 'open')
 
     now.mockReturnValue(6200)
     rerender(item(false))
-    expect(viewport).toHaveAttribute('data-state', 'closed')
-    expect(viewport).toHaveAttribute('data-bounded', 'true')
+    expect(viewport).toHaveAttribute('data-state', 'open')
+    expect(viewport).toHaveAttribute('data-bounded', 'false')
     expect(screen.getByText('Final answer')).toBeVisible()
     expect(
       screen.getByRole('button', { name: 'activity.thoughtFor 6' })
-    ).toHaveAttribute('aria-expanded', 'false')
+    ).toHaveAttribute('aria-expanded', 'true')
     expect(container.querySelector('[data-streamdown="strong"]')).toBeNull()
+    expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'activity.thoughtFor 6' }).parentElement
+    ).toHaveClass('mb-5')
 
+    // An explicit close/reopen opts into the finished Markdown rendering.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /activity.reasoned|activity.thoughtFor/,
+      })
+    )
+    expect(viewport).toHaveAttribute('data-state', 'closed')
     fireEvent.click(
       screen.getByRole('button', {
         name: /activity.reasoned|activity.thoughtFor/,
@@ -229,5 +248,19 @@ describe('MessageItem live reasoning viewport', () => {
     expect(viewport).toHaveAttribute('data-state', 'open')
     expect(viewport).toHaveAttribute('data-bounded', 'false')
     expect(screen.getByText('Full reasoning starts here')).toBeVisible()
+  })
+
+  it('keeps breathing room between reasoning, answer, and actions', () => {
+    const { container } = renderItem(withReasoning)
+
+    expect(
+      screen.getByRole('button', { name: /activity.reasoned/ }).parentElement
+    ).toHaveClass('mb-5')
+    expect(screen.getByTestId('assistant-message-actions')).toHaveClass('mt-3')
+    expect(screen.getByTestId('assistant-message-actions')).toHaveClass(
+      'min-h-6'
+    )
+    expect(screen.getByText('Pick the second one.')).toBeVisible()
+    expect(container.querySelector('.mb-5')).not.toBeNull()
   })
 })

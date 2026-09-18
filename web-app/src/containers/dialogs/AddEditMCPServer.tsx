@@ -342,9 +342,6 @@ export default function AddEditMCPServer({
       <DialogContent
         className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl"
         showCloseButton={false}
-        onInteractOutside={(e) => {
-          e.preventDefault()
-        }}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">

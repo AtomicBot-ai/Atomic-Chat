@@ -63,6 +63,8 @@ import {
   availableReasoningLevels,
   buildReasoningRequestFields,
   canDisableReasoning,
+  buildCloudReasoningRequestFields,
+  isCloudReasoningProvider,
   buildRemoteReasoningRequestFields,
   usesTemplateReasoningKwargs,
 } from '@/lib/reasoning-effort'
@@ -924,7 +926,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           effectiveProviderName === 'llamacpp' ||
           effectiveProviderName === 'llamacpp-upstream' ||
           effectiveProviderName === 'mlx' ||
-          effectiveProviderName === 'chatgpt'
+          (effectiveProviderName === 'chatgpt' &&
+            reasoningControls?.supportsThinking)
         ) {
           Object.assign(
             reasoningOverride,
@@ -932,6 +935,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               activeReasoningBudget,
               effectiveProviderName,
               reasoningControls
+            )
+          )
+        } else if (isCloudReasoningProvider(effectiveProviderName)) {
+          Object.assign(
+            reasoningOverride,
+            buildCloudReasoningRequestFields(
+              activeReasoningBudget,
+              effectiveProviderName
             )
           )
         } else if (usesTemplateReasoningKwargs(effectiveProviderName)) {

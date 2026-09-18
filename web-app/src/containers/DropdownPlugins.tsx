@@ -299,20 +299,11 @@ export default memo(function DropdownPlugins({
     if (!entry.config) {
       return <Switch checked disabled aria-label={label} />
     }
-    if (isServerPending(entry.key)) {
-      return (
-        <span className="inline-flex w-8.5 justify-center">
-          <IconLoader2
-            size={16}
-            className="animate-spin text-muted-foreground"
-          />
-        </span>
-      )
-    }
     return (
       <Switch
         aria-label={label}
         checked={entry.active}
+        disabled={isServerPending(entry.key)}
         onCheckedChange={(checked) => {
           void toggleServer(entry.key, entry.config as MCPServerConfig, checked)
         }}
@@ -470,7 +461,7 @@ export default memo(function DropdownPlugins({
         <DropDrawerContent
           side="top"
           align="start"
-          className="overflow-hidden! min-w-64"
+          className="w-72 min-w-72 overflow-hidden!"
           onClick={(e) => e.stopPropagation()}
           // Closing to open the tools dialog must not hand focus back to the
           // trigger: its tooltip opens on focus and would sit over the dialog.
@@ -485,7 +476,7 @@ export default memo(function DropdownPlugins({
           <DropDrawerSeparator />
           {/* Vertical only: WebKit lets a scrollable list be dragged sideways
             on a horizontal swipe even with nothing to scroll to. */}
-          <div className="max-h-72 overflow-y-auto overflow-x-hidden overscroll-x-none">
+          <div className="max-h-72 overflow-y-auto overflow-x-hidden overscroll-x-none [scrollbar-gutter:stable]">
             <Collapsible open={connectorsOpen} onOpenChange={setConnectorsOpen}>
               <SectionHeader
                 label={t('common:connectors')}

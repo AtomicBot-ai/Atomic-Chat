@@ -54,6 +54,22 @@ const QWEN_3_6_35B_A3B: LadderEntry = {
   descriptionKey: 'hub:recMathReasoning',
 }
 
+const GPT_OSS_120B: LadderEntry = {
+  repo: 'unsloth/gpt-oss-120b-GGUF',
+  title: 'GPT-OSS 120B',
+  quant: 'Q8_0',
+  sizeGb: 58.4,
+  descriptionKey: 'hub:recMathReasoning',
+}
+
+const NEMOTRON_3_SUPER_120B: LadderEntry = {
+  repo: 'unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF',
+  title: 'Nemotron 3 Super 120B A12B',
+  quant: 'Q4_K_M',
+  sizeGb: 60.1,
+  descriptionKey: 'hub:recMathReasoning',
+}
+
 /**
  * What we recommend, per hardware tier (ATO-463).
  *
@@ -148,6 +164,8 @@ export const RECOMMENDATION_LADDER: Readonly<
   vram_48: QWEN_3_6_35B_A3B,
   vram_64: QWEN_3_6_35B_A3B,
   vram_64_plus: QWEN_3_6_35B_A3B,
+  vram_128: GPT_OSS_120B,
+  vram_128_plus: NEMOTRON_3_SUPER_120B,
   // Below 16 GiB a Mac gets a rung lighter than a PC with the same number on
   // it: the Metal ceiling is hard, and unified memory is shared with
   // everything else the machine is doing, whereas VRAM on a card is the
@@ -165,6 +183,8 @@ export const RECOMMENDATION_LADDER: Readonly<
   unified_48: QWEN_3_6_35B_A3B,
   unified_64: QWEN_3_6_35B_A3B,
   unified_64_plus: QWEN_3_6_35B_A3B,
+  unified_128: GPT_OSS_120B,
+  unified_128_plus: NEMOTRON_3_SUPER_120B,
 }
 
 /**

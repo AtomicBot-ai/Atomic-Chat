@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   useEffect,
-  useLayoutEffect,
   useState,
   useRef,
   useMemo,
@@ -30,7 +29,6 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
-  IconDownload,
   IconLoader2,
   IconSettings,
   IconX,
@@ -55,12 +53,16 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
-import { compactModelDisplayName } from '@/lib/model-display-name'
+import {
+  compactModelDisplayName,
+  qualifiedModelDisplayName,
+} from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
+import { cancelDownload } from '@/lib/downloadCancellation'
 import {
   HuggingFacePicks,
   ModelPickerEmptyState,
@@ -78,8 +80,8 @@ const SUBSCRIPTION_PROVIDER = 'chatgpt'
  * owns its own scrollbar, like Welcome, so a short list never leaves a blank
  * floor while a long list never pushes the routes out of view.
  */
-const EMPTY_PANEL_CLASS = 'max-h-[min(32rem,calc(100dvh-12rem))]'
-const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(32rem,calc(100dvh-12rem))]'
+const EMPTY_PANEL_CLASS = 'h-[min(22rem,calc(100dvh-12rem))]'
+const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(22rem,calc(100dvh-12rem))]'
 
 /**
  * Which providers may list models in the picker.
@@ -128,6 +130,7 @@ const visionProbeCache = new Map<string, boolean>()
 
 type DropdownModelProviderProps = {
   className?: string
+  compact?: boolean
 }
 
 /**
@@ -139,6 +142,7 @@ type PickerView = 'main' | 'models'
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
   className,
+  compact: compactOverride,
 }: DropdownModelProviderProps) {
   const providers = useModelProvider((state) => state.providers)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
@@ -161,8 +165,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   // Search state
   const [open, setOpen] = useState(false)
-  const pillContentRef = useRef<HTMLDivElement>(null)
-  const [pillWidth, setPillWidth] = useState<number>()
   const [searchValue, setSearchValue] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<PickerView>(() =>
@@ -185,7 +187,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // down to, so "Select a model" stays.
   const leftBarOpen = useLeftPanel((state) => state.open)
   const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
-  const compact = leftBarOpen && rightBarOpen && !!selectedModel?.id
+  const compact =
+    (compactOverride ?? (leftBarOpen && rightBarOpen)) && !!selectedModel?.id
 
   // Helper function to check if a model exists in providers
   // The persisted cloud selection is usable when its provider is on, still
@@ -464,16 +467,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     setSearchValue('')
     searchInputRef.current?.focus()
   }, [])
-
-  // Jump to the Hub to download a local model. Carry over whatever the user
-  // already typed so the Hub search is prefilled instead of starting blank.
-  const onDownloadModel = useCallback(() => {
-    setOpen(false)
-    navigate({
-      to: route.hub.index,
-      search: searchValue.trim() ? { q: searchValue.trim() } : {},
-    })
-  }, [navigate, searchValue])
 
   // The cloud routes of the empty list open the same dialog the reply gate
   // and onboarding open. It lives beside the panel, not in it: the panel
@@ -777,26 +770,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   )
 
   const provider = getProviderByName(selectedProvider)
-
-  // Keep the composer's mic and Send in motion with the pill instead of
-  // teleporting them when a long model name becomes "Select Model" on unload.
-  // The inner row keeps its intrinsic width; the outer shell animates the real
-  // flex width, so neighbouring controls move smoothly too.
-  useLayoutEffect(() => {
-    const node = pillContentRef.current
-    if (!node) return
-    const measure = () => {
-      const next = Math.ceil(node.getBoundingClientRect().width)
-      if (next > 0) {
-        setPillWidth((current) => (current === next ? current : next))
-      }
-    }
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
+  const detailDisplayModel = selectedModel
+    ? qualifiedModelDisplayName(selectedModel)
+    : displayModel
 
   if (!providers.length) return null
 
@@ -810,14 +786,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       <div
         data-testid="model-picker-pill-shell"
         className={cn(
-          'inline-flex h-7 shrink-0 overflow-hidden rounded-full transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+          'inline-flex h-7 shrink-0 overflow-hidden rounded-full',
+          compact ? 'w-20' : 'w-44',
           className
         )}
-        style={pillWidth ? { width: pillWidth } : undefined}
       >
         <div
-          ref={pillContentRef}
-          className="inline-flex h-7 w-max max-w-64 shrink-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70"
+          className="inline-flex h-7 w-full min-w-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70"
         >
           <ActiveModelIndicator className="ml-1.5" />
           <PopoverTrigger asChild>
@@ -827,7 +802,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               aria-label={compact ? displayModel : undefined}
               data-test-id="model-picker-trigger"
               className={cn(
-                'inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2',
+                'inline-flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-full pr-2',
                 selectedModel?.id ? 'pl-1.5' : 'pl-2.5'
               )}
             >
@@ -871,12 +846,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
             cn(
-              'w-[min(32rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
+              'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
               pickerEmpty
                 ? searchValue.trim()
                   ? EMPTY_SEARCH_PANEL_CLASS
                   : EMPTY_PANEL_CLASS
-                : 'h-[min(24rem,calc(100dvh-12rem))]'
+                : 'h-[min(22rem,calc(100dvh-12rem))]'
             )
         )}
         align="end"
@@ -901,13 +876,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 </div>
               )}
               <span
-                title={displayModel}
+                title={detailDisplayModel}
                 className={cn(
                   'min-w-0 flex-1 truncate font-medium',
                   !selectedModel?.id && 'text-muted-foreground'
                 )}
               >
-                {displayModel}
+                {detailDisplayModel}
               </span>
               {/* No level here: the effort heading right below says it. */}
               <ModelSupportStatus
@@ -981,12 +956,24 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm" title={download.id}>
-                              {compactModelDisplayName({ id: download.id } as Model)}
+                              {qualifiedModelDisplayName({ id: download.id } as Model)}
                             </div>
                             <div className="truncate text-xs text-muted-foreground" title={formatDownloadReadout(t, download)}>
                               {formatDownloadReadout(t, download)}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            className="h-auto shrink-0 cursor-pointer px-1 text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-4"
+                            onClick={() =>
+                              cancelDownload(
+                                { id: download.id, name: download.id },
+                                serviceHub
+                              )
+                            }
+                          >
+                            {t('common:cancel')}
+                          </button>
                         </div>
                       )
                     })}
@@ -1026,7 +1013,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               />
                             </div>
                             <span className="text-sm truncate">
-                              {compactModelDisplayName(searchableModel.model)}
+                              {qualifiedModelDisplayName(searchableModel.model)}
                             </span>
                             {searchableModel.model.source && (
                               <ModelSourceBadge
@@ -1157,7 +1144,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 className="text-sm truncate"
                                 title={searchableModel.model.id}
                               >
-                                {compactModelDisplayName(searchableModel.model)}
+                                {qualifiedModelDisplayName(searchableModel.model)}
                               </span>
                               {searchableModel.model.source && (
                                 <ModelSourceBadge
@@ -1219,22 +1206,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               </div>
             </div>
 
-            {/* Download CTA — shortcut into the Hub so users can grab a local
-              model without leaving the selector first. Not with nothing to
-              pick: that panel is the download, and its Hugging Face row is
-              the way into the Hub. */}
-            {!pickerEmpty && (
-              <div className="shrink-0 border-t p-1.5 mt-auto">
-                <button
-                  type="button"
-                  onClick={onDownloadModel}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
-                >
-                  <IconDownload size={16} className="shrink-0" />
-                  <span>{t('common:downloadModel')}</span>
-                </button>
-              </div>
-            )}
           </div>
         )}
       </PopoverContent>

@@ -14,15 +14,16 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { VOICE_MODEL_ID } from '@/constants/voice'
 import { ConfirmWontFitDownload } from '@/containers/ConfirmWontFitDownload'
-import { ModelLogo } from '@/containers/ModelLogo'
 import { RecommendedDownloadRow } from '@/containers/RecommendedDownloadRow'
 import { RouteRow } from '@/containers/RouteRow'
 import {
@@ -100,6 +101,9 @@ export type ReplyModelGateResolution = {
   resolution?: ReplyResolution
   /** The model being started, for the composer's status line. */
   modelLabel?: string
+  /** Downloads this queued message is waiting for. Used to distinguish an
+   *  imported model from a cancelled transfer without losing the draft. */
+  downloadModelIds?: string[]
 }
 
 type ReplyModelGateProps = {
@@ -197,7 +201,7 @@ export function ReplyModelGate({
   }, [open])
 
   const resolve = useCallback(
-    (outcome: ReplyGateOutcome) => {
+    (outcome: ReplyGateOutcome, downloadModelIds?: string[]) => {
       if (!session) return
       resolvedRef.current = true
       const resolution = {
@@ -205,12 +209,27 @@ export function ReplyModelGate({
         branch: session.branch,
         decidedInMs: Date.now() - openedAtRef.current,
         openedAtMs: openedAtRef.current,
+        ...(downloadModelIds?.length ? { downloadModelIds } : {}),
       }
       captureReplyGateOutcome(resolution)
       callbacksRef.current.onResolved(resolution)
     },
     [session]
   )
+
+  const dismissQueuedDownload = useCallback(() => {
+    if (!session) return
+    // The in-flight download has already been recorded as the gate outcome.
+    // Cancelling it is a queue cancellation, not a second funnel outcome.
+    resolvedRef.current = true
+    callbacksRef.current.onDismissed({
+      outcome: 'dismissed',
+      branch: session.branch,
+      decidedInMs: Date.now() - openedAtRef.current,
+      openedAtMs: openedAtRef.current,
+    })
+    onOpenChange(false)
+  }, [onOpenChange, session])
 
   // A resolved widget closes because its work is under way, or because the
   // composer closed it once the model came up — not because the user gave up.
@@ -299,6 +318,8 @@ export function ReplyModelGate({
               onConnectCloud={() => openCloudDialog('gallery')}
               onConnectSubscription={() => openCloudDialog('subscription')}
               onBrowseHub={handleBrowseHub}
+              onAcknowledge={() => onOpenChange(false)}
+              onCancelQueuedDownload={dismissQueuedDownload}
             />
           )}
         </DialogContent>
@@ -332,14 +353,18 @@ function ReplyModelGateBody({
   onConnectCloud,
   onConnectSubscription,
   onBrowseHub,
+  onAcknowledge,
+  onCancelQueuedDownload,
 }: {
   branch: ReplyGateBranch
   target?: ReplyModelOption
   providers: ModelProvider[]
-  onResolve: (outcome: ReplyGateOutcome) => void
+  onResolve: (outcome: ReplyGateOutcome, downloadModelIds?: string[]) => void
   onConnectCloud: () => void
   onConnectSubscription: () => void
   onBrowseHub: () => void
+  onAcknowledge: () => void
+  onCancelQueuedDownload: () => void
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -347,6 +372,20 @@ function ReplyModelGateBody({
     (state) => state.selectModelProvider
   )
   const [startingKey, setStartingKey] = useState<string | null>(null)
+  const inFlight = useInFlightChatDownloads()
+  const waitingForDownloadRef = useRef(false)
+  const lastInFlightRef = useRef<InFlightDownload[]>([])
+  if (branch === 'none' && inFlight.length > 0) {
+    waitingForDownloadRef.current = true
+    lastInFlightRef.current = inFlight
+  }
+  // Import removes the transfer just before the refreshed provider appears.
+  // Hold the wait surface through that short handoff instead of flashing the
+  // recommendation catalogue back into the dialog.
+  const waitingForDownload =
+    branch === 'none' && waitingForDownloadRef.current
+  const displayedDownloads =
+    inFlight.length > 0 ? inFlight : lastInFlightRef.current
 
   const start = useCallback(
     (option: ReplyModelOption, outcome: ReplyGateOutcome) => {
@@ -382,12 +421,16 @@ function ReplyModelGateBody({
       ? t('chat:replyGate.startingTitle', {
           name: autoStartTarget?.label ?? '',
         })
-      : t('chat:replyGate.emptyTitle')
+      : waitingForDownload
+        ? t('chat:replyGate.downloadingTitle')
+        : t('chat:replyGate.emptyTitle')
 
   const description =
     branch === 'auto_start'
       ? t('chat:replyGate.startingDescription')
-      : t('chat:replyGate.emptyDescription')
+      : waitingForDownload
+        ? t('chat:replyGate.downloadingDescription')
+        : t('chat:replyGate.emptyDescription')
 
   return (
     <>
@@ -407,8 +450,12 @@ function ReplyModelGateBody({
 
       {branch === 'none' && (
         <RecommendedDownloads
-          onStarted={() => onResolve('download')}
-          onInFlight={() => onResolve('download_in_flight')}
+          inFlight={displayedDownloads}
+          onStarted={(modelId) => onResolve('download', [modelId])}
+          onInFlight={(modelIds) =>
+            onResolve('download_in_flight', modelIds)
+          }
+          onCancelQueuedDownload={onCancelQueuedDownload}
         />
       )}
 
@@ -426,6 +473,14 @@ function ReplyModelGateBody({
           ) : null
         }
       />
+
+      {waitingForDownload && (
+        <DialogFooter>
+          <Button type="button" onClick={onAcknowledge}>
+            {t('chat:replyGate.gotIt')}
+          </Button>
+        </DialogFooter>
+      )}
     </>
   )
 }
@@ -529,12 +584,16 @@ function inFlightHint(
  * while saying nothing about it read as if the app had forgotten.
  */
 function RecommendedDownloads({
+  inFlight,
   onStarted,
   onInFlight,
+  onCancelQueuedDownload,
 }: {
-  onStarted: () => void
+  inFlight: InFlightDownload[]
+  onStarted: (modelId: string) => void
   /** A chat model was already downloading when the list came up. */
-  onInFlight: () => void
+  onInFlight: (modelIds: string[]) => void
+  onCancelQueuedDownload: () => void
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -542,7 +601,6 @@ function RecommendedDownloads({
   // A red row's Download asks first; see ConfirmWontFitDownload.
   const { guardWontFit, confirmation: wontFit } = useConfirmWontFitDownload()
   const { items: recommended, isLoading } = useRecommendedListDownloads()
-  const inFlight = useInFlightChatDownloads()
   // The card lookup has no failure state of its own; past this the routes
   // below are the offer, and a spinner with nothing behind it comes down.
   const [gaveUp, setGaveUp] = useState(false)
@@ -560,17 +618,52 @@ function RecommendedDownloads({
   useEffect(() => {
     if (!hasInFlight || armedRef.current) return
     armedRef.current = true
-    onInFlight()
-  }, [hasInFlight, onInFlight])
+    onInFlight(inFlight.map((download) => download.id))
+  }, [hasInFlight, inFlight, onInFlight])
+
+  if (hasInFlight) {
+    return (
+      <div
+        className="flex flex-col gap-2"
+        data-testid="reply-gate-downloading"
+      >
+        <span className="shrink-0 text-left text-xs font-medium text-muted-foreground">
+          {t('chat:replyGate.downloadingSection')}
+        </span>
+        <div className="rounded-lg border bg-secondary/50 px-3 py-2">
+          <div className="flex flex-col divide-y divide-border/60">
+            {inFlight.map((download) => (
+              <RouteRow
+                layout="onboarding"
+                key={download.id}
+                icon={<Loader2 className="animate-spin" />}
+                iconClassName="rounded-full bg-transparent [&>svg]:size-5"
+                title={prettyModelName(download.id)}
+                hint={inFlightHint(t, download)}
+                action={t('common:cancel')}
+                textAction
+                label={t('common:cancelDownload')}
+                onClick={() => {
+                  void cancelDownload(
+                    { id: download.id, name: download.id },
+                    serviceHub
+                  )
+                  onCancelQueuedDownload()
+                }}
+                data-testid="reply-gate-recommended-in-flight"
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // The running download is its own row at the top; the recommendation for
   // the same file must not appear a second time beneath it. The lead stays
   // the lead only while it is still on offer — with it downloading, no other
   // row is "best fit".
-  const inFlightIds = new Set(inFlight.map((d) => d.id))
-  const items = recommended.filter(
-    (item) => !inFlightIds.has(item.variant.model_id)
-  )
+  const items = recommended
 
   // The section label onboarding gives the same list, so the block is named.
   const heading = (
@@ -579,7 +672,7 @@ function RecommendedDownloads({
     </span>
   )
 
-  if (items.length === 0 && inFlight.length === 0) {
+  if (items.length === 0) {
     if (!isLoading || gaveUp) return null
     return (
       <div className="flex flex-col gap-2" data-testid="reply-gate-recommended">
@@ -601,30 +694,6 @@ function RecommendedDownloads({
           however long the list is — the onboarding rule, at a dialog's height. */}
       <div className="max-h-[min(40vh,22rem)] overflow-y-auto overscroll-y-contain rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]">
         <div className="flex flex-col divide-y divide-border/60">
-          {inFlight.map((download) => (
-            <RouteRow
-              layout="onboarding"
-              key={download.id}
-              icon={
-                <ModelLogo
-                  name={download.id}
-                  fallback="huggingface"
-                  className="size-8 rounded-full border-0 bg-transparent dark:bg-transparent"
-                />
-              }
-              title={prettyModelName(download.id)}
-              hint={inFlightHint(t, download)}
-              action={t('common:cancel')}
-              label={t('common:cancelDownload')}
-              onClick={() =>
-                cancelDownload(
-                  { id: download.id, name: download.id },
-                  serviceHub
-                )
-              }
-              data-testid="reply-gate-recommended-in-flight"
-            />
-          ))}
           {items.map((item) => {
             const hero = item === recommended[0]
             return (
@@ -653,7 +722,7 @@ function RecommendedDownloads({
                     },
                     () => {
                       if (!item.start()) return
-                      onStarted()
+                      onStarted(item.variant.model_id)
                     }
                   )
                 }}

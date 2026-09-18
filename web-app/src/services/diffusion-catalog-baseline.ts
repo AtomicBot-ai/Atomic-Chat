@@ -8,7 +8,7 @@ import type { DiffusionCatalog } from './diffusion-catalog-registry'
 
 export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
   "schema_version": 1,
-  "updated_at": "2026-09-10T20:00:00Z",
+  "updated_at": "2026-09-18T10:40:00Z",
   "families": [
     {
       "id": "z-image",
@@ -297,6 +297,78 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       }
     },
     {
+      "id": "flux.1-uncensored",
+      "name": "FLUX.1 Anime Uncensored",
+      "developer": "Zuntan",
+      "modality": "image",
+      "description": "Uncensored anime-focused FLUX.1 variant. May generate adult content; use responsibly and legally.",
+      "license": "flux-1-dev-non-commercial-license",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "Zuntan/FluxDev8AnimeNsfw",
+        "quants": [
+          {
+            "id": "q4_k_s",
+            "label": "Q4_K_S",
+            "filename": "FluxDev8AnimeNsfw-Q4_K_S.gguf",
+            "bytes": 6805988640,
+            "sha256": "17f36122c695419e5a25773fa73c38b9d316366854a307705a38df6b82511714",
+            "recommended": true
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/Z-Image-Turbo-ComfyUI",
+        "filename": "split_files/vae/ae.safetensors",
+        "bytes": 335304388,
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+      },
+      "text_encoders": [
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "clip_l.safetensors",
+          "bytes": 246144152,
+          "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+          "field": "clip_l"
+        },
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "t5xxl_fp16.safetensors",
+          "bytes": 9787841024,
+          "sha256": "6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635",
+          "field": "t5xxl"
+        }
+      ],
+      "defaults": {
+        "steps": 8,
+        "cfg_scale": 1,
+        "guidance": 3.5,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          4,
+          50
+        ],
+        "dims": [
+          256,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": true,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
       "id": "qwen-image",
       "name": "Qwen-Image",
       "developer": "Qwen",
@@ -378,7 +450,7 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
         ],
         "dims": [
           256,
-          2048
+          1024
         ],
         "dim_multiple": 16
       },

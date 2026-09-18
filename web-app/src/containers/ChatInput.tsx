@@ -61,9 +61,10 @@ import {
 } from '@/containers/ReplyModelGate'
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
+import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
-import type { ChatStatus } from 'ai'
+import { generateId, type ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
@@ -194,6 +195,8 @@ const ChatInput = memo(function ChatInput({
   chatStatus,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerAnchorRef = useRef<HTMLDivElement>(null)
+  const [compactComposer, setCompactComposer] = useState(false)
   const agentSkillTokenRef = useRef<HTMLSpanElement>(null)
   const [agentSkillTokenWidth, setAgentSkillTokenWidth] = useState(0)
   const [isFocused, setIsFocused] = useState(false)
@@ -239,6 +242,17 @@ const ChatInput = memo(function ChatInput({
   )
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  // Import completion refreshes the provider library without selecting or
+  // starting the new model. A compact primitive revision lets the queued-send
+  // effect below notice that its download has become an installed model.
+  const modelLibraryRevision = useModelProvider((state) =>
+    state.providers
+      .map(
+        (provider) =>
+          `${provider.provider}:${provider.models.map((model) => model.id).join(',')}`
+      )
+      .join('|')
+  )
 
   // Keys per-composer state (voice, workspace, approval mode). Composers use
   // a placeholder key until the real thread exists — the project composer its
@@ -305,6 +319,19 @@ const ChatInput = memo(function ChatInput({
   useLayoutEffect(() => {
     setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
   }, [selectedAgentSkill])
+
+  useLayoutEffect(() => {
+    const element = composerAnchorRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const update = (width: number) => setCompactComposer(width < 620)
+    update(element.getBoundingClientRect().width)
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (typeof width === 'number') update(width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!preselectedAgentSkillName) {
@@ -635,12 +662,14 @@ const ChatInput = memo(function ChatInput({
   const transferAttachments = useChatAttachments(
     (state) => state.transferAttachments
   )
-  const { downloads, localDownloadingModels } = useDownloadStore(
+  const { downloads, localDownloadingModels, resumableDownloads } =
+    useDownloadStore(
     useShallow((state) => ({
       downloads: state.downloads,
       localDownloadingModels: state.localDownloadingModels,
+      resumableDownloads: state.resumableDownloads,
     }))
-  )
+    )
 
   useEffect(() => {
     attachmentsKeyRef.current = attachmentsKey
@@ -1192,15 +1221,83 @@ const ChatInput = memo(function ChatInput({
 
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
+      const canRunFromRoot =
+        Boolean(initialMessage) &&
+        !projectId &&
+        !onSubmit &&
+        attachments.length === 0 &&
+        (resolution.outcome === 'download' ||
+          resolution.outcome === 'download_in_flight') &&
+        (resolution.downloadModelIds?.length ?? 0) > 0
+
+      if (canRunFromRoot) {
+        useDeferredFirstSend.getState().enqueue({
+          id: generateId(),
+          prompt: usePrompt.getState().prompt,
+          downloadModelIds: resolution.downloadModelIds!,
+          createdAt: Date.now(),
+        })
+        // Keep the fast path local while New Chat is still mounted. The root
+        // queue is its navigation-safe backup and takes over only if the user
+        // leaves this route before the download finishes.
+        setQueuedSend(resolution)
+        return
+      }
+      // Choosing a cloud key/subscription or importing a folder supersedes a
+      // previously armed first-download queue.
+      useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    []
+    [attachments.length, initialMessage, onSubmit, projectId]
   )
 
   const handleReplyGateDismissed = useCallback(() => {
+    useDeferredFirstSend.getState().clear()
     setQueuedSend(null)
     setReplyGateOpen(false)
+    useDeferredFirstSend.getState().clear()
   }, [])
+
+  // A download deliberately lands in the library without auto-starting: an
+  // import must not interrupt an unrelated active chat. A queued Send is the
+  // exception because it is explicit intent to use that exact first model.
+  // Once the imported id appears in the refreshed provider list, select and
+  // start it; the existing readiness effect below sends the preserved draft.
+  useEffect(() => {
+    const ids = queuedSend?.downloadModelIds ?? []
+    if (ids.length === 0 || selectedModel) return
+
+    const providers = useModelProvider.getState().providers
+    const imported = ids.some((id) =>
+      providers.some((provider) =>
+        provider.models.some(
+          (model) => model.id === id || model.id === id.replace(/\//g, '\\')
+        )
+      )
+    )
+    if (!imported) return
+
+    const resumed = tryAutoStart()
+    if (!resumed) return
+    setQueuedSend((current) =>
+      current
+        ? {
+            ...current,
+            resolution: resumed.resolution,
+            modelLabel: resumed.modelLabel,
+          }
+        : current
+    )
+  }, [modelLibraryRevision, queuedSend, selectedModel, tryAutoStart])
+
+  // Cancelling from the global download panel must disarm the queued Send as
+  // well. The draft itself remains untouched in the composer.
+  useEffect(() => {
+    const ids = queuedSend?.downloadModelIds ?? []
+    if (ids.some((id) => resumableDownloads.has(id))) {
+      setQueuedSend(null)
+    }
+  }, [queuedSend, resumableDownloads])
 
   useEffect(() => {
     if (!queuedSend) return
@@ -2684,6 +2781,7 @@ const ChatInput = memo(function ChatInput({
     // the send button. Writing to a model that is still downloading is the
     // whole point of ATO-460, so the composer has to stay reachable.
     <div
+      ref={composerAnchorRef}
       data-composer-anchor
       className={cn('relative mx-auto w-full max-w-3xl', containerClassName)}
     >
@@ -2749,7 +2847,7 @@ const ChatInput = memo(function ChatInput({
                         return (
                           <div
                             key={`${att.type}-${idx}-${att.name}`}
-                            className="relative"
+                            className="group/attachment relative"
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -2811,12 +2909,14 @@ const ChatInput = memo(function ChatInput({
                             </Tooltip>
 
                             {!showAttachmentLoader && (
-                              <div
-                                className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                              <button
+                                type="button"
+                                aria-label={`Remove ${att.name}`}
+                                className="absolute -right-1.5 -top-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full bg-foreground text-background opacity-0 shadow-sm transition-opacity group-hover/attachment:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 onClick={() => handleRemoveAttachment(idx)}
                               >
-                                <IconX className="text-neutral-200" size={14} />
-                              </div>
+                                <IconX size={13} />
+                              </button>
                             )}
                           </div>
                         )
@@ -3140,6 +3240,7 @@ const ChatInput = memo(function ChatInput({
                       gates the agent's dangerous tools AND the MCP/RAG calls
                       of the chat pipeline (see lib/mcp-approval.ts). */}
                   <AgentApprovalModeSelect
+                    compact={compactComposer}
                     mode={approvalMode}
                     onChange={handleApprovalModeChange}
                     menuTitle={t('chat:agentApprovals.menuTitle')}
@@ -3322,30 +3423,43 @@ const ChatInput = memo(function ChatInput({
                   {agentModeEnabled && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div
-                          className={cn(
-                            'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
-                            agentBlockReason && 'opacity-60'
-                          )}
-                          data-testid="agent-mode-chip"
-                        >
-                          <RobotHeadIcon
-                            size={16}
-                            className="text-secondary-foreground"
-                          />
-                          <span className="text-xs text-secondary-foreground">
-                            {t('chat:agentMode.agent')}
-                          </span>
+                        {compactComposer ? (
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             size="icon-xs"
-                            className="rounded-full size-5"
+                            className="mb-1 rounded-full"
                             aria-label={t('chat:agentMode.turnOff')}
                             onClick={() => setAgentModeEnabled(false)}
+                            data-testid="agent-mode-chip"
                           >
-                            <IconX size={12} />
+                            <RobotHeadIcon size={16} />
                           </Button>
-                        </div>
+                        ) : (
+                          <div
+                            className={cn(
+                              'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
+                              agentBlockReason && 'opacity-60'
+                            )}
+                            data-testid="agent-mode-chip"
+                          >
+                            <RobotHeadIcon
+                              size={16}
+                              className="text-secondary-foreground"
+                            />
+                            <span className="text-xs text-secondary-foreground">
+                              {t('chat:agentMode.agent')}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              className="rounded-full size-5"
+                              aria-label={t('chat:agentMode.turnOff')}
+                              onClick={() => setAgentModeEnabled(false)}
+                            >
+                              <IconX size={12} />
+                            </Button>
+                          </div>
+                        )}
                       </TooltipTrigger>
                       {agentBlockReason && (
                         <TooltipContent>
@@ -3368,7 +3482,10 @@ const ChatInput = memo(function ChatInput({
                     on, how hard it thinks — its panel holds the effort slider,
                     whose first stop switches thinking off, and leads into the
                     model list. */}
-                <DropdownModelProvider className="mb-1" />
+                <DropdownModelProvider
+                  className="mb-1"
+                  compact={compactComposer}
+                />
 
                 {/* Beside Send, which is where users expect a microphone.
                     Note this cluster has no streaming guard of its own (the

@@ -9,6 +9,7 @@ import {
   Panel,
   PanelGroup,
   PanelResizeHandle,
+  type ImperativePanelHandle,
   type ImperativePanelGroupHandle,
 } from 'react-resizable-panels'
 import { AnimatePresence, motion } from 'motion/react'
@@ -69,8 +70,8 @@ const CORNER_BUTTON_CLASS =
   'flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none ring-ring transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2'
 
 const RIGHT_PANEL_TRANSITION = {
-  duration: 0.2,
-  ease: 'linear' as const,
+  duration: 0.18,
+  ease: [0.23, 1, 0.32, 1] as [number, number, number, number],
 }
 
 function cssLengthToPixels(value: string): number | undefined {
@@ -108,6 +109,7 @@ export function AgentWorkspaceLayout({
   const openSettings = useRunSettingsPanel((state) => state.open)
   const closeSettings = useRunSettingsPanel((state) => state.close)
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null)
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null)
   const workspaceRef = useRef<HTMLElement>(null)
   const sidebarWidth = useRef(useLeftPanel.getState().width)
   const workspaceKeyRef = useRef<string | undefined>(undefined)
@@ -223,6 +225,10 @@ export function AgentWorkspaceLayout({
   useLayoutEffect(() => {
     if (!isDesktop) return
 
+    if (rightPanel === null) {
+      sidebarPanelRef.current?.collapse()
+    }
+
     const previewSize = hasPreview ? 24 : 0
     const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width
     const sidebarWidthPx = cssLengthToPixels(sidebarWidth.current)
@@ -296,7 +302,7 @@ export function AgentWorkspaceLayout({
           order={1}
           defaultSize={initialChatSize}
           minSize={32}
-          className="transition-[flex-grow] duration-200 ease-linear"
+          className="min-w-0"
         >
           <div className="flex h-full min-w-0">{children}</div>
         </Panel>
@@ -308,7 +314,7 @@ export function AgentWorkspaceLayout({
           minSize={24}
           collapsedSize={0}
           collapsible
-          className="overflow-hidden transition-[flex-grow] duration-200 ease-linear"
+          className="overflow-hidden"
         >
           <AnimatePresence initial={false}>
             {hasPreview && (
@@ -330,15 +336,16 @@ export function AgentWorkspaceLayout({
           onDragging={snapRightPanelClosed}
         />
         <Panel
+          ref={sidebarPanelRef}
           id="agent-sidebar"
           order={3}
           defaultSize={initialSidebarSize}
-          minSize={rightPanelMinSize}
+          minSize={rightPanel === null ? 0 : rightPanelMinSize}
           maxSize={40}
           collapsedSize={0}
           collapsible
           onCollapse={collapseRightPanel}
-          className="min-w-0 overflow-hidden transition-[flex-grow] duration-200 ease-linear"
+          className="min-w-0 overflow-hidden"
         >
           <AnimatePresence initial={false}>
             {rightPanel === 'files' && (

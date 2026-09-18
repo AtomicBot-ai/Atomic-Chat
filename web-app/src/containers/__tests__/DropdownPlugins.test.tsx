@@ -3,6 +3,13 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 
+const toast = vi.hoisted(() => ({
+  loading: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast }))
+
 // `mcp-connectors:` keys resolve to the English strings so a row's tagline is
 // asserted as the words the user reads; every other key stays a key.
 vi.mock('@/i18n/react-i18next-compat', async () => {
@@ -326,12 +333,48 @@ describe('DropdownPlugins', () => {
       })
     )
     expect(useMCPServers.getState().mcpServers.resend.active).toBe(true)
+    expect(toast.loading).toHaveBeenCalledWith(
+      'common:connectorsMenu.starting',
+      expect.objectContaining({
+        id: 'connector-toggle-resend',
+        description: 'common:connectorsMenu.connecting',
+      })
+    )
+    expect(toast.success).toHaveBeenCalledWith(
+      'common:connectorsMenu.ready',
+      { id: 'connector-toggle-resend' }
+    )
     // A tool the user switched off stays off across a restart; the tools
     // dialog is where that shows and where it is undone.
     expect(useToolAvailable.getState().disabledTools['thread-1']).toEqual([
       'resend::send_email',
       'exa::search',
     ])
+  })
+
+  it('keeps the switch visible while connection progress lives in the snackbar', async () => {
+    let finish!: () => void
+    activateMCPServer.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve))
+    )
+    useMCPServers.setState({
+      mcpServers: {
+        resend: { command: 'npx', args: [], env: {}, active: false },
+      },
+    })
+
+    renderDropdown()
+    const connectorSwitch = screen.getByRole('switch', { name: 'Resend' })
+    await userEvent.click(connectorSwitch)
+
+    expect(connectorSwitch).toBeChecked()
+    expect(connectorSwitch).toBeDisabled()
+    expect(document.querySelector('.animate-spin')).toBeNull()
+    expect(toast.loading).toHaveBeenCalled()
+
+    finish()
+    await waitFor(() => expect(connectorSwitch).toBeEnabled())
+    expect(toast.success).toHaveBeenCalled()
   })
 
   it('disconnects a server when switched off', async () => {

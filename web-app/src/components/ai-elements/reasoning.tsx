@@ -24,6 +24,7 @@ import { Shimmer } from './shimmer'
 type ReasoningContextValue = {
   isStreaming: boolean
   isOpen: boolean
+  preferPlainText: boolean
   setIsOpen: (open: boolean) => void
   duration: number | undefined
 }
@@ -96,50 +97,50 @@ export const Reasoning = memo(
     })
 
     const [startTime, setStartTime] = useState<number | null>(null)
-    const wasStreamingRef = useRef(isStreaming)
+    const streamedThisMountRef = useRef(isStreaming)
+    if (isStreaming) streamedThisMountRef.current = true
+    const [readerReopened, setReaderReopened] = useState(false)
 
-    // Track duration when streaming starts and ends
+    // Track duration while streaming so the compact closed header remains
+    // visibly alive without exposing the entire token stream by default.
     useEffect(() => {
       if (isStreaming) {
         if (startTime === null) {
           setStartTime(Date.now())
+          return
         }
-      } else if (startTime !== null) {
-        setDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
+        const update = () =>
+          setDuration(Math.max(1, Math.ceil((Date.now() - startTime) / MS_IN_S)))
+        update()
+        const timer = window.setInterval(update, MS_IN_S)
+        return () => window.clearInterval(timer)
+      }
+      if (startTime !== null) {
+        setDuration(
+          Math.max(1, Math.ceil((Date.now() - startTime) / MS_IN_S))
+        )
         setStartTime(null)
       }
     }, [isStreaming, startTime, setDuration])
 
-    // The panel auto-closes when the turn ends. Committing that only from the
-    // effect below would first render the finished trace as Markdown and then
-    // unmount it on the very next commit — 657ms of frozen UI on an
-    // 80k-character trace in WebKit, for a subtree nobody ever sees. Deriving
-    // the closed state here keeps that render from happening at all; the
-    // effect still commits it.
-    const justFinishedStreaming = wasStreamingRef.current && !isStreaming
-    const openState = justFinishedStreaming ? false : isOpen
-
-    // Auto-close when streaming ends (only when transitioning from streaming to not streaming)
-    useEffect(() => {
-      if (wasStreamingRef.current && !isStreaming) {
-        // Streaming just ended, auto-close
-        setIsOpen(false)
-      }
-      wasStreamingRef.current = isStreaming
-    }, [isStreaming, setIsOpen])
-
     const handleOpenChange = (newOpen: boolean) => {
+      if (!isStreaming && newOpen && !isOpen) setReaderReopened(true)
       setIsOpen(newOpen)
     }
 
     const contextValue = useMemo(
       () => ({
         isStreaming,
-        isOpen: openState,
+        isOpen,
+        // A live trace stays as the lightweight streaming render after the
+        // model finishes. Keeping it open preserves the page height and avoids
+        // a scroll jump; closing and opening it explicitly opts into Markdown.
+        preferPlainText:
+          streamedThisMountRef.current && !isStreaming && !readerReopened,
         setIsOpen,
         duration,
       }),
-      [isStreaming, openState, setIsOpen, duration]
+      [isStreaming, isOpen, readerReopened, setIsOpen, duration]
     )
 
     return (
@@ -147,7 +148,7 @@ export const Reasoning = memo(
         <Collapsible
           className={cn('not-prose mb-4', className)}
           onOpenChange={handleOpenChange}
-          open={openState}
+          open={isOpen}
           {...props}
         >
           {children}
@@ -190,7 +191,11 @@ export type ReasoningTriggerProps = ComponentProps<
 
 const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
   if (isStreaming || duration === 0) {
-    return <Shimmer duration={1}>Thinking...</Shimmer>
+    return (
+      <Shimmer duration={2}>
+        {duration ? `Thinking for ${duration}s…` : 'Thinking…'}
+      </Shimmer>
+    )
   }
   if (duration === undefined) {
     return <p>Thought for a few seconds</p>
@@ -210,14 +215,14 @@ export const ReasoningTrigger = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
+          'flex min-h-6 w-full items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground',
           className
         )}
         {...props}
       >
         {children ?? (
           <>
-            <IconBulb className="size-4" />
+            <IconBulb className="size-[18px] shrink-0" stroke={1.8} />
             {getThinkingMessage(isStreaming, duration)}
             <ChevronDownIcon
               className={cn(
@@ -246,11 +251,11 @@ export const ReasoningContent = memo(
     isStreaming = false,
     ...props
   }: ReasoningContentProps) => {
-    const { isOpen } = useReasoning()
+    const { isOpen, preferPlainText } = useReasoning()
     // Radix keeps the content mounted for the collapse animation, so a panel
     // that is on its way closed would still pay for the full Markdown parse.
     // Only a panel a reader can actually read is worth parsing.
-    const showMarkdown = !isStreaming && isOpen
+    const showMarkdown = !isStreaming && isOpen && !preferPlainText
     const normalizedChildren = normalizeReasoningMarkdown(children)
     const formatStreaming =
       normalizedChildren.length <= STREAMING_REASONING_FORMAT_LIMIT

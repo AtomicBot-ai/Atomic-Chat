@@ -533,6 +533,20 @@ pub fn list_attachments(
     conn: &Connection,
     limit: Option<usize>,
 ) -> Result<Vec<AttachmentFileInfo>, VectorDBError> {
+    // Opening a collection path creates an empty SQLite file. Before the first
+    // ingest establishes the embedding dimension and full schema, that file
+    // legitimately has no `files` table. A read of an empty project is an
+    // empty list, not a database error; do not create schema from this read
+    // because the vector dimension is not known yet.
+    let files_table_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'files')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !files_table_exists {
+        return Ok(Vec::new());
+    }
+
     let query = if let Some(lim) = limit {
         format!(
             "SELECT id, path, name, type, size, chunk_count FROM files LIMIT {}",

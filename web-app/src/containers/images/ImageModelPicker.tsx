@@ -71,7 +71,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           aria-label={t('images:model.select')}
           aria-expanded={open}
           data-testid="image-models-toggle"
-          className="inline-flex h-8 min-w-0 max-w-full shrink items-center gap-1.5 rounded-full pr-2 pl-1.5 text-sm transition-colors hover:bg-secondary/60"
+          className="inline-flex h-10 w-full min-w-0 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
         >
           {selected.family ? (
             <ModelLogo
@@ -125,7 +125,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
         sideOffset={6}
         // A heavier shadow than the default: the panel opens over the form,
         // which is the same white, and must read as lifted off it.
-        className="max-h-[min(60vh,480px)] w-[400px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
+        className="max-h-[min(60vh,480px)] w-[380px] max-w-[calc(100vw-2rem)] origin-[var(--radix-popover-content-transform-origin)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
       >
         <ImageModelSelector variant="page" workflow={workflow} />
       </PopoverContent>

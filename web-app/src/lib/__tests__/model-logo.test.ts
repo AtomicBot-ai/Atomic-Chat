@@ -85,8 +85,9 @@ describe('modelFamilyLogoSrc', () => {
       '/images/model-provider/nvidia.svg'
     )
     expect(modelFamilyLogoSrc('unsloth/gpt-oss-20b-GGUF')).toBe(
-      '/images/model-provider/openai.svg'
+      '/svg/openai-mark.svg'
     )
+    expect(isMonochromeFamilyLogo('/svg/openai-mark.svg')).toBe(true)
     expect(modelFamilyLogoSrc('ibm-granite/granite-4.0-h-tiny-GGUF')).toBe(
       '/svg/ibm.svg'
     )

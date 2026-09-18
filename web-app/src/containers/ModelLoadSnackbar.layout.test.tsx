@@ -92,6 +92,12 @@ describe.each(['light', 'dark'] as const)(
           name: CANCEL,
           exact: true,
         })
+        expect(cancel).toHaveClass(
+          'bg-transparent!',
+          'border-0!',
+          'p-0!',
+          'shadow-none!'
+        )
         const initialCancelLeft = cancel.getBoundingClientRect().left
         for (const phase of ['starting', 'restarting'] as const) {
           for (const { progress } of modelLoadStages) {

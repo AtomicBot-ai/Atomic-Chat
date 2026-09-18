@@ -615,7 +615,18 @@ describe('CustomChatTransport reasoning override', () => {
     expect(override?.chat_template_kwargs).toEqual({ enable_thinking: false })
   })
 
-  it('leaves a provider with its own reasoning API alone', async () => {
+  it('sends the selected effort to a cloud provider without model metadata', async () => {
+    const openai = await captureReasoningOverride({
+      provider: 'openai',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'high',
+    })
+
+    expect(openai).toEqual({ reasoning_effort: 'high' })
+  })
+
+  it('uses the Anthropic thinking budget for cloud effort', async () => {
     const override = await captureReasoningOverride({
       provider: 'anthropic',
       reasoning: undefined,
@@ -623,7 +634,20 @@ describe('CustomChatTransport reasoning override', () => {
       reasoningBudget: 'high',
     })
 
-    expect(override).toBeUndefined()
+    expect(override).toEqual({
+      thinking: { type: 'enabled', budget_tokens: 8192 },
+    })
+  })
+
+  it('uses the OpenRouter reasoning envelope', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'openrouter',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'max',
+    })
+
+    expect(override).toEqual({ reasoning: { effort: 'xhigh' } })
   })
 })
 

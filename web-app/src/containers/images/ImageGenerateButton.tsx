@@ -43,7 +43,7 @@ export const ImageGenerateButton = memo(function ImageGenerateButton({
         type="button"
         variant="outline"
         size="lg"
-        className="min-w-44 px-8"
+        className="w-full px-8 transition-transform duration-150 ease-out active:scale-[0.985]"
         disabled={stopRequested}
         onClick={onStop}
         data-testid="image-stop"
@@ -62,7 +62,7 @@ export const ImageGenerateButton = memo(function ImageGenerateButton({
     <Button
       type="button"
       size="lg"
-      className="min-w-44 px-8 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
+      className="w-full px-8 transition-transform duration-150 ease-out active:scale-[0.985] disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
       disabled={disabledReason !== null}
       onClick={onGenerate}
       data-testid="image-generate"

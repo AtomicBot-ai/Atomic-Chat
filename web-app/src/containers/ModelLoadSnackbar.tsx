@@ -70,6 +70,8 @@ export function ModelLoadSnackbar() {
           icon:
             'size-4 shrink-0 overflow-hidden [&_.sonner-loading-wrapper]:size-4 [&_.sonner-loading-wrapper]:overflow-hidden [&_.sonner-spinner]:size-4',
           content: 'min-w-0',
+          actionButton:
+            'h-auto! border-0! bg-transparent! p-0! font-normal! text-muted-foreground! shadow-none! hover:bg-transparent! hover:text-foreground! hover:underline underline-offset-4',
         },
         description: i18n.t('common:modelLoad.loadingIntoMemory'),
         duration: Infinity,

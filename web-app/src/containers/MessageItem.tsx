@@ -17,7 +17,7 @@ import {
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { IconPencil, IconRefresh } from '@tabler/icons-react'
+import { IconAlertCircle, IconPencil, IconRefresh } from '@tabler/icons-react'
 import { AudioPlayer } from '@/containers/AudioPlayer'
 import { InlineMessageEditor } from '@/containers/InlineMessageEditor'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
@@ -28,7 +28,7 @@ import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { buildTraceBlocks } from '@/lib/tools/message-trace-parts'
-import { ToolRenderer } from '@/components/ai-elements/tools/tool-renderer'
+import { ToolActivityGroup } from '@/components/ai-elements/tools/activity-group'
 import { TraceBlock } from '@/lib/tools/types'
 import {
   agentFilePathFromHref,
@@ -37,6 +37,7 @@ import {
   linkAgentFileReferences,
 } from '@/lib/agent-file-links'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { agentErrorCopy } from '@/lib/agent-error-copy'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -120,7 +121,13 @@ export const MessageItem = memo(
     const getThinkingMessage = useCallback(
       (thinking: boolean, duration?: number) => {
         if (thinking) {
-          return <Shimmer duration={1}>{t('activity.thinking')}</Shimmer>
+          return (
+            <Shimmer duration={2}>
+              {duration
+                ? t('activity.thinkingFor', { count: duration })
+                : t('activity.thinking')}
+            </Shimmer>
+          )
         }
         if (!duration) {
           return <p>{t('activity.reasoned')}</p>
@@ -172,7 +179,7 @@ export const MessageItem = memo(
                       href={href}
                       {...props}
                       className={cn(
-                        'font-medium text-primary underline decoration-primary/60 underline-offset-2 hover:decoration-primary',
+                        'font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
                         props.className
                       )}
                     onClick={(event) => {
@@ -381,9 +388,9 @@ export const MessageItem = memo(
       return (
         <Reasoning
           key={block.key}
-          className="mb-1"
+          className="mb-5"
           isStreaming={streaming}
-          defaultOpen={streaming}
+          defaultOpen={false}
         >
           <ReasoningTrigger getThinkingMessage={getThinkingMessage} />
           <ReasoningViewport
@@ -431,38 +438,44 @@ export const MessageItem = memo(
         return null
       }
 
-      // Every call is its own line, straight in the message: no "Worked for"
-      // or "Called N tools" disclosure to open before the reader can see what
-      // ran. A line opens only its own parameters and output.
       return (
-        <div key={block.key} className="not-prose mb-3 flex flex-col">
-          {block.tools.map((tool) => (
-            <ToolRenderer
-              key={tool.key}
-              toolName={tool.toolName}
-              presentation={tool.presentation}
-              state={tool.state}
-              onRetry={onRegenerate ? handleRegenerate : undefined}
-            />
-          ))}
-          {loops.map((loop, loopIndex) => (
-            <div
-              key={`${block.key}-loop-${loopIndex}`}
-              className="py-1 text-xs text-muted-foreground"
-            >
-              {loop.message}
-            </div>
-          ))}
-          {error && (
-            <div className="py-1 text-xs text-destructive">
-              {error.message}
-            </div>
-          )}
-          {showWorking && (
-            <Shimmer duration={1} className="py-1 text-sm">
-              {t('activity.working')}
-            </Shimmer>
-          )}
+        <div key={block.key} className="not-prose mb-3">
+          <ToolActivityGroup
+            tools={block.tools}
+            loopMessages={loops.map((loop) => loop.message)}
+            working={showWorking}
+            onRetry={onRegenerate ? handleRegenerate : undefined}
+          />
+          {error && (() => {
+            const copy = agentErrorCopy(error)
+            return (
+              <div
+                role="alert"
+                className="mt-3 flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3"
+                data-testid="agent-error-card"
+              >
+                <IconAlertCircle
+                  size={18}
+                  className="mt-0.5 shrink-0 text-destructive"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{t(copy.titleKey)}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {t(copy.bodyKey)}
+                  </p>
+                </div>
+                {onRegenerate && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRegenerate}
+                  >
+                    {t('chat:agentError.retry')}
+                  </Button>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )
     }
@@ -539,7 +552,10 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
-          <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs mt-1">
+          <div
+            className="mt-3 flex min-h-6 flex-wrap items-center gap-2 text-xs text-muted-foreground"
+            data-testid="assistant-message-actions"
+          >
             <div
               className={cn(
                 'flex items-center gap-1',

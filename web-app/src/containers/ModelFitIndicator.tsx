@@ -9,7 +9,7 @@ import type { FitLevel } from '@/containers/SetupScreenHelpers'
 
 /**
  * The small badge beside a model's name that says whether it fits this
- * machine's memory: a verdict — Good fit, Tight fit, Won't fit — on a green, amber or
+ * machine's memory: a verdict — Good fit, Might fit, Won't fit — on a green, amber or
  * red pill, in the style of the source badges the rows found on disk wear.
  * The colour is never the only signal, since the word changes with it. The
  * badge is a button whose accessible name reads the level's full label and

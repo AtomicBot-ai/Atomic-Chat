@@ -41,7 +41,7 @@ const ROUTES: Record<
 > = {
   ENGINE_MISSING: ['install', null],
   ENGINE_INSTALL_FAILED: ['install', null],
-  ENGINE_CRASHED: ['retry', 'openSettings'],
+  ENGINE_CRASHED: ['reduceSize', 'retry'],
   MODEL_MISSING: ['download', null],
   SIDE_FILE_MISSING: ['download', null],
   MODEL_LOAD_FAILED: ['retry', 'openSettings'],

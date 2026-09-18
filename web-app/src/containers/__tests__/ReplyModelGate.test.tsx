@@ -859,26 +859,34 @@ describe('ReplyModelGate', () => {
   describe('with a download already under way', () => {
     const inFlight = 'LiquidAI/LFM2.5-1.2B-Q4_K_M'
 
-    it('leads with it, shows its progress, and lets it be cancelled', async () => {
-      // Started from onboarding, the Hub, anywhere: the widget used to offer
-      // other models to download and never mentioned this one.
+    it('shows a focused wait state, arms the message, and lets it be cancelled', async () => {
       seedRunningDownload(inFlight)
-      const { onResolved } = renderGate([unconnectedCloud()])
+      const { onResolved, onDismissed, onOpenChange } = renderGate([
+        unconnectedCloud(),
+      ])
 
-      const lead = await screen.findByTestId('reply-gate-recommended-lead')
-      const rows = recommendedRows()
-      expect(rows[0]).toHaveAttribute(
-        'data-testid',
+      const waitState = await screen.findByTestId('reply-gate-downloading')
+      const row = within(waitState).getByTestId(
         'reply-gate-recommended-in-flight'
       )
-      expect(rows[0]).toHaveTextContent('LFM2.5 1.2B')
+      expect(row).toHaveTextContent('LFM2.5 1.2B')
       // The panel's readout: percent, bytes, time left.
-      expect(rows[0]).toHaveTextContent(
+      expect(row).toHaveTextContent(
         '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
       )
-      expect(rows[1]).toBe(lead)
+      expect(screen.getByText('chat:replyGate.downloadingTitle')).toBeVisible()
+      expect(
+        screen.getByText('chat:replyGate.downloadingDescription')
+      ).toBeVisible()
+      // A second catalogue is the confusing part: alternatives remain, model
+      // recommendations do not.
+      expect(screen.queryByTestId('reply-gate-recommended')).toBeNull()
+      expect(screen.getByTestId('reply-gate-routes')).toBeVisible()
+      expect(
+        screen.getByRole('button', { name: 'chat:replyGate.gotIt' })
+      ).toBeVisible()
 
-      const cancel = within(rows[0]).getByRole('button', {
+      const cancel = within(row).getByRole('button', {
         name: 'common:cancelDownload',
       })
       expect(cancel).toHaveTextContent('common:cancel')
@@ -888,6 +896,7 @@ describe('ReplyModelGate', () => {
         expect.objectContaining({
           outcome: 'download_in_flight',
           branch: 'none',
+          downloadModelIds: [inFlight],
         })
       )
 
@@ -896,18 +905,10 @@ describe('ReplyModelGate', () => {
       expect(useDownloadStore.getState().resumableDownloads.has(inFlight)).toBe(
         true
       )
-      // The downloader confirms the stop and the store drops the entry; the
-      // recommendations stay so another model can be picked.
-      act(() => useDownloadStore.getState().removeDownload(inFlight))
-      expect(
-        screen.queryByTestId('reply-gate-recommended-in-flight')
-      ).toBeNull()
-      expect(screen.getByTestId('reply-gate-recommended-lead')).toBe(lead)
-      expect(
-        within(lead).getByRole('button', {
-          name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
-        })
-      ).toBeEnabled()
+      expect(onDismissed).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'dismissed', branch: 'none' })
+      )
+      expect(onOpenChange).toHaveBeenCalledWith(false)
     })
 
     it('does not list the model twice when it is also the recommendation', async () => {
@@ -925,6 +926,21 @@ describe('ReplyModelGate', () => {
           name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
         })
       ).toBeNull()
+    })
+
+    it('closes on Got it without dropping the queued message', async () => {
+      seedRunningDownload(inFlight)
+      const { onResolved, onDismissed, onOpenChange } = renderGate([
+        unconnectedCloud(),
+      ])
+
+      await waitFor(() => expect(onResolved).toHaveBeenCalled())
+      fireEvent.click(
+        screen.getByRole('button', { name: 'chat:replyGate.gotIt' })
+      )
+
+      expect(onOpenChange).toHaveBeenCalledWith(false)
+      expect(onDismissed).not.toHaveBeenCalled()
     })
 
     it('says so before the first byte, and while paused', async () => {

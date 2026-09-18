@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useState,
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
@@ -56,6 +57,7 @@ import { ImageWorkflowInputs } from './ImageWorkflowInputs'
 import { WORKFLOW_ICONS } from './workflowIcons'
 import { ImageGenerateButton } from './ImageGenerateButton'
 import { ImageJobProgress } from './ImageJobProgress'
+import { ImageModelPicker } from './ImageModelPicker'
 import { ImageParamSlider } from './ImageParamSlider'
 import { ImageSeedField } from './ImageSeedField'
 import { ImageSizeControl } from './ImageSizeControl'
@@ -70,6 +72,8 @@ const FALLBACK_STEPS: [number, number] = [1, 50]
 
 type ImagePromptFormProps = {
   className?: string
+  modelsOpen?: boolean
+  onModelsOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -83,6 +87,8 @@ type ImagePromptFormProps = {
  */
 export const ImagePromptForm = memo(function ImagePromptForm({
   className,
+  modelsOpen: controlledModelsOpen,
+  onModelsOpenChange,
 }: ImagePromptFormProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -142,6 +148,9 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     (state) => state.applyIdleSettings
   )
   const generation = useImageGeneration()
+  const [internalModelsOpen, setInternalModelsOpen] = useState(false)
+  const modelsOpen = controlledModelsOpen ?? internalModelsOpen
+  const setModelsOpen = onModelsOpenChange ?? setInternalModelsOpen
 
   // A model just loaded: fold the draft into what it accepts.
   useEffect(() => {
@@ -267,29 +276,55 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           disabled={busy}
         />
 
-        <ImageField
-          htmlFor="image-prompt"
-          label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}
-        >
-          <Textarea
-            id="image-prompt"
-            value={form.prompt}
-            placeholder={t(
-              isEdit
-                ? 'images:form.instructionPlaceholder'
-                : 'images:form.promptPlaceholder'
-            )}
-            onChange={(event) => form.patch({ prompt: event.target.value })}
-            onKeyDown={onPromptKeyDown}
-            rows={4}
-            className="min-h-24 resize-none rounded-2xl px-4 py-3"
+        <div className="space-y-3 rounded-2xl border bg-secondary/20 p-3">
+          <ImageModelPicker
+            open={modelsOpen}
+            onOpenChange={setModelsOpen}
           />
-          <p className="text-[11px] text-muted-foreground/80">
-            {IS_MACOS
-              ? t('images:form.shortcutMac')
-              : t('images:form.shortcut')}
-          </p>
-        </ImageField>
+          <ImageField
+            htmlFor="image-prompt"
+            label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}
+          >
+            <Textarea
+              id="image-prompt"
+              value={form.prompt}
+              placeholder={t(
+                isEdit
+                  ? 'images:form.instructionPlaceholder'
+                  : 'images:form.promptPlaceholder'
+              )}
+              onChange={(event) => form.patch({ prompt: event.target.value })}
+              onKeyDown={onPromptKeyDown}
+              rows={4}
+              className="min-h-24 resize-none rounded-xl bg-background px-4 py-3"
+            />
+            <p className="text-[11px] text-muted-foreground/80">
+              {IS_MACOS
+                ? t('images:form.shortcutMac')
+                : t('images:form.shortcut')}
+            </p>
+          </ImageField>
+          <div className="flex min-h-[74px] flex-col gap-2">
+            <ImageGenerateButton
+              generating={generation.generating}
+              stopRequested={generation.stopRequested}
+              disabledReason={generation.disabledReason}
+              imageCount={form.batchSize * form.runs}
+              onGenerate={() => void generation.generate()}
+              onStop={() => void generation.stop()}
+            />
+            <div className="min-h-7">
+              {generation.generating && (
+                <ImageJobProgress
+                  job={generation.job}
+                  runsTotal={generation.runsTotal}
+                  runsDone={generation.runsDone}
+                  stopping={generation.stopRequested}
+                />
+              )}
+            </div>
+          </div>
+        </div>
 
         {showNegative && (
           <Collapsible
@@ -516,26 +551,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
         </Collapsible>
       </div>
 
-      {/* Pinned under the scroll, so Generate is always in reach. */}
-      <div className="relative flex shrink-0 flex-col items-center gap-2 px-6 pt-2 pb-4">
-        <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-t from-background to-transparent" />
-        <ImageGenerateButton
-          generating={generation.generating}
-          stopRequested={generation.stopRequested}
-          disabledReason={generation.disabledReason}
-          imageCount={form.batchSize * form.runs}
-          onGenerate={() => void generation.generate()}
-          onStop={() => void generation.stop()}
-        />
-        {generation.generating && (
-          <ImageJobProgress
-            job={generation.job}
-            runsTotal={generation.runsTotal}
-            runsDone={generation.runsDone}
-            stopping={generation.stopRequested}
-          />
-        )}
-      </div>
     </form>
   )
 })

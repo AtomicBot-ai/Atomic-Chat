@@ -256,15 +256,13 @@ describe('ModelPickerEmptyState', () => {
         { ...hfCandidate(repo), is_mlx: true },
       ])
       const { unmount } = renderEmptyState('qwen')
-      await screen.findAllByText(repo)
-      let rows = screen.getAllByTestId('model-picker-hugging-face-row')
+      let rows = await screen.findAllByTestId('model-picker-hugging-face-row')
       expect(rows).toHaveLength(macos ? 2 : 1)
       expect(within(rows[0]).getByText('GGUF')).toBeVisible()
       if (macos) expect(within(rows[1]).getByText('MLX')).toBeVisible()
       unmount()
       render(<HuggingFacePicks query="qwen" localEmpty />)
-      await screen.findAllByText(repo)
-      rows = screen.getAllByTestId('model-picker-download-row')
+      rows = await screen.findAllByTestId('model-picker-download-row')
       expect(rows).toHaveLength(macos ? 2 : 1)
       expect(within(rows[0]).getByText('GGUF')).toBeVisible()
       if (macos) expect(within(rows[1]).getByText('MLX')).toBeVisible()
@@ -291,17 +289,14 @@ describe('ModelPickerEmptyState', () => {
       get: () => ({ import: importModel }),
     } as never)
     renderEmptyState('qwen')
-    await screen.findAllByText(repo)
-    const rows = screen.getAllByTestId('model-picker-hugging-face-row')
+    const rows = await screen.findAllByTestId('model-picker-hugging-face-row')
     fireEvent.click(within(rows[1]).getByRole('button'))
     await waitFor(() =>
       expect(
         within(rows[1]).getByRole('button', { name: 'common:cancelDownload' })
       ).toBeEnabled()
     )
-    expect(rows[1]).toHaveTextContent('common:downloadPanel.preparing')
     expect(within(rows[0]).getByRole('button')).toBeEnabled()
-    expect(rows[0]).not.toHaveTextContent('common:downloadPanel.preparing')
     expect(importModel).toHaveBeenCalledWith('Qwen3-8B', {
       modelPath: `https://huggingface.co/${repo}/resolve/main/model.safetensors`,
       files: [
@@ -325,18 +320,15 @@ describe('ModelPickerEmptyState', () => {
       siblings: [{ rfilename: 'model.gguf' }],
     })
     renderEmptyState('qwen')
-    await screen.findAllByText(repo)
-    const rows = screen.getAllByTestId('model-picker-hugging-face-row')
+    const rows = await screen.findAllByTestId('model-picker-hugging-face-row')
     fireEvent.click(within(rows[1]).getByRole('button'))
     await waitFor(() =>
-      expect(rows[1]).toHaveTextContent('common:modelPicker.noMlxFile')
+      expect(within(rows[1]).getByRole('button')).toBeDisabled()
     )
-    expect(within(rows[1]).getByRole('button')).toBeDisabled()
     expect(within(rows[0]).getByRole('button')).toBeEnabled()
-    expect(rows[0]).not.toHaveTextContent('common:modelPicker.noGgufFile')
   })
 
-  it('lists every recommended model under its label, each with a mark, its fit and its size', () => {
+  it('lists compact recommendations with a mark, fit and action only', () => {
     const lead = recommended(
       'AtomicChat/Qwen3.5-4B-GGUF',
       'Qwen3.5 4B',
@@ -352,7 +344,7 @@ describe('ModelPickerEmptyState', () => {
 
     // The same lead + staff-pick list Welcome renders.
     expect(useRecommendedListDownloads).toHaveBeenCalled()
-    expect(screen.getByText('setup:recommend.title')).toBeInTheDocument()
+    expect(screen.queryByText('setup:recommend.title')).toBeNull()
 
     const rows = recommendedRows()
     expect(rows).toHaveLength(3)
@@ -363,6 +355,7 @@ describe('ModelPickerEmptyState', () => {
     expect(rows[0]).toHaveTextContent('Qwen3.5 4B')
     expect(rows[0]).not.toHaveTextContent('setup:recommend.defaultSummary')
     expect(rows[1]).not.toHaveTextContent('setup:recommend.defaultSummary')
+    expect(rows[0].querySelector('p')).toBeNull()
 
     // A mark on every row: the family's logo, Hugging Face's for the rest.
     expect(
@@ -386,11 +379,12 @@ describe('ModelPickerEmptyState', () => {
       })
     ).toBeInTheDocument()
 
-    // The size sits beside the badge; every action is the same compact verb.
+    // Size and summary stay out of this compact picker; every action is the
+    // same compact verb.
     const leadButton = within(rows[0]).getByRole('button', {
       name: 'chat:replyGate.downloadLabel:{"name":"Qwen3.5 4B"}',
     })
-    expect(rows[0]).toHaveTextContent('2.5 GB')
+    expect(rows[0]).not.toHaveTextContent('2.5 GB')
     expect(leadButton).toHaveTextContent(/^hub:download$/)
     expect(leadButton).toHaveAttribute('data-variant', 'default')
     expect(
@@ -417,7 +411,7 @@ describe('ModelPickerEmptyState', () => {
     expect(row.querySelector('[data-fit]')).toBeNull()
   })
 
-  it('shows a running download in its row without turning the row into a cancel control', () => {
+  it('removes a running download from recommendations to avoid a duplicate row', () => {
     const lead = recommended(
       'AtomicChat/Qwen3.5-4B-GGUF',
       'Qwen3.5 4B',
@@ -436,20 +430,7 @@ describe('ModelPickerEmptyState', () => {
 
     renderEmptyState()
 
-    const [row] = recommendedRows()
-    expect(row).toHaveTextContent('common:downloadPanel.preparing')
-    const loading = within(row)
-      .getByText('setup:downloading')
-      .closest('button')!
-    expect(loading).toBeDisabled()
-    expect(loading).toHaveTextContent('setup:downloading')
-
-    // Bytes arrive: percent, bytes, time left — the panel's readout.
-    act(() => seedRunningDownload(lead.variant.model_id))
-    expect(row).toHaveTextContent(
-      '10% · 0.16 / 1.58 GB · common:downloadPanel.left:{"eta":"1m 00s"}'
-    )
-
+    expect(screen.queryByTestId('model-picker-recommended')).toBeNull()
     expect(mocks.abortDownload).not.toHaveBeenCalled()
   })
 
@@ -473,14 +454,14 @@ describe('ModelPickerEmptyState', () => {
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
 
     expect(rows[0]).toHaveTextContent('setup:cloudStep.subscriptionTitle')
-    expect(rows[0]).toHaveTextContent('setup:cloudStep.subscriptionHint')
+    expect(rows[0]).not.toHaveTextContent('setup:cloudStep.subscriptionHint')
     const connect = within(rows[0]).getByRole('button', {
       name: 'setup:cloudStep.subscriptionTrigger',
     })
     expect(connect).toHaveTextContent('setup:cloudStep.connect')
 
     expect(rows[1]).toHaveTextContent('setup:cloudStep.providerTitle')
-    expect(rows[1]).toHaveTextContent('setup:cloudStep.providerHint')
+    expect(rows[1]).not.toHaveTextContent('setup:cloudStep.providerHint')
     const add = within(rows[1]).getByRole('button', {
       name: 'setup:cloudStep.trigger',
     })
@@ -524,7 +505,7 @@ describe('ModelPickerEmptyState', () => {
 
     // Results land as the same rows as the recommendations: mark, name, the
     // repo under it, Download.
-    await screen.findByText('unsloth/Qwen3-8B-GGUF')
+    await screen.findByText('Qwen3 8B')
     const rows = within(card).getAllByTestId('model-picker-hugging-face-row')
     expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('Qwen3 8B')

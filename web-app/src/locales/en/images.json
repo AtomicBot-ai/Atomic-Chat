@@ -49,18 +49,19 @@
     "done": "Done",
     "doneBlocked": "Install the engine and at least one model first.",
     "intro": {
-      "title": "Make images on this computer",
-      "description": "Type a prompt, pick a size, and the image is rendered locally.",
-      "bulletLocal": "Runs on this computer — prompts never leave it.",
-      "bulletRecipes": "Every image keeps its settings, so you can redo or tweak it.",
-      "bulletApi": "Also available to other apps at localhost:1337/v1/images."
+      "title": "Create images locally",
+      "description": "Turn an idea into an image without sending your prompt anywhere.",
+      "bulletLocal": "Describe what you want to see in your own words.",
+      "bulletRecipes": "Choose a size, then refine or reuse any result.",
+      "bulletApi": "Your prompts and generated images stay on this computer."
     },
     "engine": {
-      "title": "Install the image engine",
-      "description": "A small renderer (stable-diffusion.cpp) built for this computer.",
-      "rowTitle": "stable-diffusion.cpp",
-      "rowDescription": "Build for {{backend}} · downloaded once, updated with the app.",
-      "install": "Install",
+      "title": "Get the image engine",
+      "description": "Atomic Chat will install the renderer matched to this computer.",
+      "rowTitle": "Image engine",
+      "rowDescription": "Runs image generation securely on this computer.",
+      "readyDescription": "Ready to generate images on this computer.",
+      "install": "Install engine",
       "installed": "Installed",
       "unsupported": "There is no image engine build for this computer yet.",
       "unsupportedShort": "Not available",
@@ -70,16 +71,18 @@
       "note": "About 100 MB. Installed under the app data folder."
     },
     "model": {
-      "title": "Get an image model",
-      "description": "Pick a model and size that fits your memory. Bigger is slower.",
+      "title": "Choose an image model",
+      "description": "We picked the best version of each model for this computer.",
       "diskNote": "Models are 4–12 GB. Shared files are downloaded once."
     },
     "card": {
-      "title": "Set up image generation",
-      "description": "Two things are needed before the first image: the engine and a model.",
+      "title": "Create your first image",
+      "description": "A private image studio that runs on your computer. Two quick downloads are all it needs.",
       "engine": "Install the image engine",
-      "model": "Download an image model",
-      "button": "Set up"
+      "engineDescription": "The small renderer that creates images locally.",
+      "model": "Choose an image model",
+      "modelDescription": "Pick the look and quality you want to generate with.",
+      "button": "Start setup"
     }
   },
   "model": {
@@ -94,6 +97,7 @@
     "pick": "Select {{name}} {{quant}}",
     "sizeGb": "{{size}} GB",
     "recommended": "Recommended",
+    "downloaded": "Downloaded",
     "incomplete": "Incomplete",
     "load": "Run",
     "loading": "Starting…",
@@ -126,6 +130,13 @@
     "gatedHint": "This model is gated on Hugging Face. Add a token with access in",
     "gatedLink": "General settings.",
     "download": "Download"
+  },
+  "download": {
+    "finishingModel": "Finishing image model",
+    "finishingEngine": "Finishing image engine",
+    "checkingFiles": "Checking the downloaded files…",
+    "modelReady": "Image model is ready",
+    "engineReady": "Image engine is ready"
   },
   "form": {
     "prompt": "Prompt",
@@ -335,8 +346,8 @@
       "body": "The download or unpacking failed. Check your connection and disk space, then try again."
     },
     "ENGINE_CRASHED": {
-      "title": "The renderer stopped unexpectedly",
-      "body": "sd-server exited during the job. Generating again restarts it; if it keeps happening, try a smaller model."
+      "title": "The GPU stopped this render",
+      "body": "The image engine has been reset. Use a smaller resolution, then try again."
     },
     "MODEL_MISSING": {
       "title": "The model file is missing",

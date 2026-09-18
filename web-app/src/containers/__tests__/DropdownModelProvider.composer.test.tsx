@@ -238,6 +238,43 @@ describe('DropdownModelProvider - the composer pill', () => {
 
     expect(pill()).toHaveTextContent('Qwen 3')
     expect(pill()).toHaveTextContent('common:reasoningEffort.medium')
+    expect(screen.getByTestId('model-picker-pill-shell')).toHaveClass('w-44')
+    expect(screen.getByTestId('model-picker-pill-shell')).not.toHaveClass(
+      'transition-[width]'
+    )
+  })
+
+  it('keeps the composer name compact and shows the author in both inner layers', () => {
+    const namespacedModel = {
+      id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',
+      capabilities: ['completion'],
+      reasoning: { supportsThinking: true },
+    } as Model
+    const namespacedProvider = {
+      provider: 'llamacpp-upstream',
+      active: true,
+      api_key: '',
+      models: [namespacedModel],
+      settings: [],
+    } as ModelProvider
+    mockModelProvider({
+      providers: [namespacedProvider],
+      selectedProvider: namespacedProvider.provider,
+      selectedModel: namespacedModel,
+      getProviderByName: vi.fn(() => namespacedProvider),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+
+    render(<DropdownModelProvider />)
+
+    expect(pill()).toHaveTextContent('LFM2.5 2.6B')
+    expect(pill()).not.toHaveTextContent('LiquidAI/')
+    expect(modelRow()).toHaveTextContent('LiquidAI/LFM2.5 2.6B')
+
+    fireEvent.click(modelRow()!)
+    expect(screen.getByText('LiquidAI/LFM2.5 2.6B')).toBeVisible()
   })
 
   it('opens on the model row with the effort slider under it', () => {
@@ -282,6 +319,9 @@ describe('DropdownModelProvider - the composer pill', () => {
     fireEvent.click(modelRow()!)
 
     expect(searchField()).toBeInTheDocument()
+    expect(screen.getByTestId('popover-content')).toHaveClass(
+      'w-[min(22rem,calc(100dvw-2rem))]'
+    )
     expect(screen.getByText('Other')).toBeInTheDocument()
     expect(screen.queryByRole('slider')).toBeNull()
 
@@ -342,6 +382,7 @@ describe('DropdownModelProvider - the composer pill', () => {
     expect(
       within(pill()).getByTestId('provider-avatar-llamacpp-upstream')
     ).toBeInTheDocument()
+    expect(screen.getByTestId('model-picker-pill-shell')).toHaveClass('w-20')
   })
 
   it('keeps the name with one bar open, or with nothing to fold down to', () => {

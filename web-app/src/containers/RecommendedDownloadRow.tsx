@@ -14,6 +14,7 @@ type RecommendedDownloadRowProps = {
   'downloading'?: boolean
   'disabled'?: boolean
   'onDownload': () => void
+  'compact'?: boolean
   'data-testid'?: string
 }
 
@@ -29,6 +30,7 @@ export function RecommendedDownloadRow({
   downloading = item.isDownloading,
   disabled = false,
   onDownload,
+  compact = false,
   'data-testid': testId,
 }: RecommendedDownloadRowProps) {
   const { t } = useTranslation()
@@ -82,6 +84,7 @@ export function RecommendedDownloadRow({
       disabled={disabled || item.isDownloading}
       onDownload={onDownload}
       buttonLabel={t('hub:download')}
+      compact={compact}
       buttonAriaLabel={t('chat:replyGate.downloadLabel', {
         name: item.title,
       })}

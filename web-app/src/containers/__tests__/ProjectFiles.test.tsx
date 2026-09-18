@@ -119,6 +119,20 @@ describe('ProjectFiles', () => {
     )
   })
 
+  it('treats an uninitialized project database as an empty project', async () => {
+    mocks.listAttachmentsForProject.mockRejectedValue({
+      DatabaseError: 'no such table: files',
+    })
+    seedServiceHub()
+
+    render(<ProjectFiles projectId="new-project" lng="en" />)
+
+    await waitFor(() =>
+      expect(screen.getByText('common:projects.filesDescription')).toBeTruthy()
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('waits for the attachments extension instead of flashing an error', async () => {
     useAttachments.setState({ enabled: false })
     seedServiceHub()

@@ -15,7 +15,10 @@ import { ModelLogo } from '@/containers/ModelLogo'
 import { RouteRow } from '@/containers/RouteRow'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useVisionDownloads } from '@/hooks/useVisionDownloads'
+import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cancelDownload } from '@/lib/downloadCancellation'
+import { formatDownloadReadout } from '@/lib/downloadFormat'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 
 /** How long the list may take to resolve before the dialog stops waiting. */
@@ -114,8 +117,10 @@ function VisionModelDialogBody({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const serviceHub = useServiceHub()
   const { items, isLoading } = useVisionDownloads()
   const downloads = useDownloadStore((state) => state.downloads)
+  const pausedDownloads = useDownloadStore((state) => state.pausedDownloads)
   // The card lookup has no failure state of its own; past this the empty
   // line and the Hub row are the offer.
   const [gaveUp, setGaveUp] = useState(false)
@@ -125,10 +130,14 @@ function VisionModelDialogBody({
     return () => clearTimeout(timer)
   }, [isLoading, gaveUp])
 
-  const progressFor = (modelId: string) => {
+  const downloadFor = (modelId: string) => {
     const entry = Object.values(downloads).find((d) => d.id === modelId)
-    if (!entry || entry.total <= 0) return null
-    return Math.round((entry.progress ?? 0) * 100)
+    if (!entry) return null
+    return {
+      ...entry,
+      bytesPerSecond: entry.speed?.bytesPerSecond ?? 0,
+      paused: pausedDownloads.has(modelId),
+    }
   }
 
   const handleBrowseHub = () => {
@@ -179,17 +188,15 @@ function VisionModelDialogBody({
           >
             <div className="flex flex-col divide-y divide-border/60">
               {items.map((item, index) => {
-                const progress = item.isDownloading
-                  ? progressFor(item.variant.model_id)
+                const activeDownload = item.isDownloading
+                  ? downloadFor(item.variant.model_id)
                   : null
                 const reason = `${t('chat:visionGate.visionCapable')} · ${t(item.hint)}`
                 const hint = item.installed
                   ? t('chat:visionGate.installedHint')
                   : item.isDownloading
-                    ? progress !== null
-                      ? t('chat:visionGate.downloadingPercent', {
-                          percent: progress,
-                        })
+                    ? activeDownload
+                      ? formatDownloadReadout(t, activeDownload)
                       : t('chat:visionGate.downloading')
                     : item.sizeLabel
                       ? t('chat:visionGate.rowHint', {
@@ -215,25 +222,40 @@ function VisionModelDialogBody({
                     action={
                       item.installed
                         ? t('chat:visionGate.use')
-                        : t('chat:visionGate.download')
+                        : item.isDownloading
+                          ? t('common:cancel')
+                          : t('chat:visionGate.download')
                     }
                     label={
                       item.installed
                         ? t('chat:visionGate.useLabel', { name: item.title })
-                        : t('chat:visionGate.downloadLabel', {
-                            name: item.title,
-                          })
+                        : item.isDownloading
+                          ? t('common:cancelDownload')
+                          : t('chat:visionGate.downloadLabel', {
+                              name: item.title,
+                            })
                     }
                     primary={index === 0}
-                    disabled={item.isDownloading}
+                    textAction={item.isDownloading}
                     onClick={() => {
                       if (item.installed) {
                         onUse(item.variant.model_id)
                         return
                       }
+                      if (item.isDownloading) {
+                        cancelDownload(
+                          {
+                            id: item.variant.model_id,
+                            name: item.variant.model_id,
+                          },
+                          serviceHub
+                        )
+                        return
+                      }
                       const started = item.start()
                       if (!started) return
                       onDownloadStarted(started)
+                      onClose()
                     }}
                     data-testid={
                       index === 0

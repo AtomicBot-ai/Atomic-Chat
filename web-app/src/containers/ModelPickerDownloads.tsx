@@ -183,16 +183,18 @@ function PickerSection({
   children,
   'data-testid': testId,
 }: {
-  'label': string
+  'label'?: string
   'className'?: string
   'children': ReactNode
   'data-testid': string
 }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <span className="px-1 text-xs font-medium text-muted-foreground">
-        {label}
-      </span>
+      {label && (
+        <span className="px-1 text-xs font-medium text-muted-foreground">
+          {label}
+        </span>
+      )}
       <div
         className={cn(
           'rounded-lg border bg-secondary/50 px-3 py-2 [&_.line-clamp-1]:truncate',
@@ -231,6 +233,7 @@ function PickerRecommendedRow({
       progressText={inFlight ? inFlightHint(t, inFlight) : null}
       downloading={inFlight !== null}
       onDownload={() => item.start()}
+      compact
       data-testid={
         hero
           ? 'model-picker-recommended-lead'
@@ -249,6 +252,15 @@ function PickerRecommendedRow({
 function RecommendedModels() {
   const { t } = useTranslation()
   const { items, isLoading } = useRecommendedListDownloads()
+  const downloads = useDownloadStore((state) => state.downloads)
+  const localDownloadingModels = useDownloadStore(
+    (state) => state.localDownloadingModels
+  )
+  const visibleItems = items.filter(
+    (item) =>
+      !downloads[item.variant.model_id] &&
+      !localDownloadingModels.has(item.variant.model_id)
+  )
   const [gaveUp, setGaveUp] = useState(false)
   useEffect(() => {
     if (!isLoading || gaveUp) return
@@ -256,11 +268,10 @@ function RecommendedModels() {
     return () => clearTimeout(timer)
   }, [isLoading, gaveUp])
 
-  if (items.length === 0) {
+  if (visibleItems.length === 0) {
     if (!isLoading || gaveUp) return null
     return (
       <PickerSection
-        label={t('setup:recommend.title')}
         data-testid="model-picker-recommended"
       >
         <StatusLine text={t('chat:replyGate.findingRecommendation')} spinning />
@@ -270,12 +281,11 @@ function RecommendedModels() {
 
   return (
     <PickerSection
-      label={t('setup:recommend.title')}
       className="max-h-[min(42vh,20rem)] overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]"
       data-testid="model-picker-recommended"
     >
       <div className="flex flex-col divide-y divide-border/60">
-        {items.map((item, index) => (
+        {visibleItems.map((item, index) => (
           <PickerRecommendedRow
             key={item.repo}
             item={item}
@@ -731,6 +741,7 @@ function HuggingFaceRouteRow({
   )
   return (
     <RouteRow
+      compact
       icon={modelMark(repo)}
       title={title}
       meta={<FormatBadge candidate={candidate} />}
@@ -760,6 +771,7 @@ function HuggingFaceRouteRow({
           : `${t('chat:replyGate.downloadLabel', { name: title })} (${candidateFormat(candidate)})`
       }
       disabled={!inFlight && (busy || unavailable)}
+      textAction={Boolean(inFlight)}
       onClick={() => {
         if (inFlight) {
           cancelDownload({ id: inFlight.id, name: inFlight.id }, serviceHub)
@@ -861,6 +873,7 @@ function PickerRoutes({
         {subscriptionOffered && (
           <RouteRow
             layout="onboarding"
+            compact
             icon={<ChatGptMark />}
             title={t('setup:cloudStep.subscriptionTitle')}
             hint={t('setup:cloudStep.subscriptionHint')}
@@ -873,6 +886,7 @@ function PickerRoutes({
         {hasCloudProviders && (
           <RouteRow
             layout="onboarding"
+            compact
             icon={<Cloud />}
             title={t('setup:cloudStep.providerTitle')}
             hint={t('setup:cloudStep.providerHint')}

@@ -810,7 +810,7 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('stays on the screen while the download runs, however long it takes', async () => {
+    it('enters chat immediately while the download continues globally', async () => {
       const { unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
@@ -818,16 +818,21 @@ describe('SetupScreen', () => {
         vi.advanceTimersByTime(30_000)
       })
 
-      expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: 'setup:downloading' })
-      ).toBeInTheDocument()
-      expect(mocks.navigate).not.toHaveBeenCalled()
-      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBeNull()
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/',
+        replace: true,
+        search: {
+          threadModel: {
+            id: variantId,
+            provider: 'llamacpp-upstream',
+          },
+        },
+      })
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
       unmount()
     })
 
-    it('puts the Download button back when the download is cancelled', async () => {
+    it('does not reopen onboarding when the chat download is cancelled', async () => {
       const { unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
@@ -835,30 +840,20 @@ describe('SetupScreen', () => {
         await mocks.abortDownload(variantId)
       })
 
-      const download = screen.getByRole('button', { name: /hub:download/ })
-      expect(download).toBeEnabled()
-      expect(
-        screen.queryByRole('button', { name: 'setup:downloading' })
-      ).not.toBeInTheDocument()
-      // The list is still here: the same row, or another, can be started.
-      fireEvent.click(download)
-      expect(mocks.pullModelWithMetadata).toHaveBeenCalledTimes(2)
-      await act(async () => {
-        vi.advanceTimersByTime(30_000)
-      })
-      expect(mocks.navigate).not.toHaveBeenCalled()
-      expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
+      expect(mocks.abortDownload).toHaveBeenCalledWith(variantId)
+      expect(mocks.navigate).toHaveBeenCalledTimes(1)
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
       unmount()
     })
 
-    it('enters the chat once the model has landed in the library', async () => {
+    it('does not navigate again when the model later lands in the library', async () => {
       const { rerender, unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
       await act(async () => {
         vi.advanceTimersByTime(3_000)
       })
-      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(mocks.navigate).toHaveBeenCalledTimes(1)
 
       // The bytes land: the panel drops the transfer, the provider lists it.
       installInLibrary(variantId)
@@ -888,7 +883,7 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('enters the chat when the import event lands before the library does', async () => {
+    it('ignores the later import event after immediate download handoff', async () => {
       seedServiceHub({
         models: {
           pullModelWithMetadata: mocks.pullModelWithMetadata,
@@ -911,8 +906,8 @@ describe('SetupScreen', () => {
         onImported!({ modelId: variantId })
       })
 
-      // Navigation and the success toast happen immediately; provider refresh
-      // and loading are handed to the root DataProvider.
+      // Navigation happens on click; the later import only updates the library
+      // through the root DataProvider and must not create a second handoff.
       expect(mocks.navigate.mock.calls).toHaveLength(1)
       expect(mocks.navigate.mock.calls[0][0].search.threadModel).toEqual({
         id: variantId,
@@ -924,14 +919,14 @@ describe('SetupScreen', () => {
         'onboarding_completed',
         expect.objectContaining({ exit_path: 'download_started' })
       )
-      expect(toast.success).toHaveBeenCalledWith(
+      expect(toast.success).not.toHaveBeenCalledWith(
         'common:toast.downloadAndVerificationComplete.title',
-        expect.objectContaining({ id: 'download-complete' })
+        expect.anything()
       )
       unmount()
     })
 
-    it('lets a download that lands after Skip be, and leaves the chat alone', async () => {
+    it('lets the download handoff win if Skip is clicked after it', async () => {
       const { rerender, unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
@@ -945,7 +940,7 @@ describe('SetupScreen', () => {
       expect(mocks.navigate.mock.calls).toHaveLength(1)
       expect(
         mocks.navigate.mock.calls[0][0].search?.threadModel
-      ).toBeUndefined()
+      ).toEqual({ id: variantId, provider: 'llamacpp-upstream' })
       unmount()
     })
   })
@@ -1293,9 +1288,16 @@ describe('SetupScreen', () => {
           vi.advanceTimersByTime(3_000)
         })
 
-        // No timed handoff: the list stays until the bytes land.
-        expect(mocks.navigate).not.toHaveBeenCalled()
-        expect(screen.getByText('setup:welcomeTitle')).toBeInTheDocument()
+        expect(mocks.navigate).toHaveBeenCalledWith({
+          to: '/',
+          replace: true,
+          search: {
+            threadModel: {
+              id: 'gemma-4-12B-it-GGUF-Q4_K_M',
+              provider: 'llamacpp-upstream',
+            },
+          },
+        })
         unmount()
       } finally {
         vi.useRealTimers()
@@ -1842,7 +1844,7 @@ describe('SetupScreen', () => {
 
       it('says the verdict in a word on the name line, never under it', async () => {
         // The circled glyph drifted out of line from row to row and said
-        // nothing without a hover. A verdict does — Good fit, Tight fit, Won't fit —
+        // nothing without a hover. A verdict does — Good fit, Might fit, Won't fit —
         // beside the name on the name's own line, where the name truncates
         // before the badge wraps.
         mocks.hardwareTier.tier = 'unified_16'
@@ -1940,16 +1942,16 @@ describe('SetupScreen', () => {
       })
 
       it.each([
-        ['ok', 'Good fit', 'This model should run smoothly on your device.'],
+        ['ok', 'Good fit', 'Full offload likely possible on your system.'],
         [
           'warn',
-          'Tight fit',
-          'This model may run slowly because it uses most of your memory.',
+          'Might fit',
+          'Within the last GB of VRAM headroom, so loading can fail if other apps are using GPU memory.',
         ],
         [
           'no',
           'Won’t fit',
-          'This model is too large for your device and probably won’t start.',
+          'Exceeds combined VRAM and system RAM budget.',
         ],
       ])(
         'exposes the %s memory sentence by keyboard',

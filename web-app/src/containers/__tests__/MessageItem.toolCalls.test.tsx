@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from 'ai'
 import { MessageItem } from '../MessageItem'
@@ -47,7 +48,7 @@ beforeEach(() => {
 
 // ATO-529: every call used to hide behind "Worked for" → "Called N tools".
 describe('MessageItem tool calls', () => {
-  it('lists every call of a finished turn without a disclosure to open', () => {
+  it('groups a finished turn and reveals individually expandable calls', async () => {
     renderLast(
       {
         id: 'a1',
@@ -68,14 +69,22 @@ describe('MessageItem tool calls', () => {
       'ready'
     )
 
-    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(2)
+    const group = screen.getByTestId('tool-activity-group')
+    const activity = within(group).getByRole('button', { expanded: false })
+    expect(activity).toHaveTextContent('activity.completedActions')
+    expect(activity.querySelector('svg')).toHaveClass('size-[18px]')
+    expect(within(group).getAllByRole('button')).toHaveLength(1)
+    await userEvent.click(activity)
+    expect(
+      within(group).getAllByRole('button', { expanded: false })
+    ).toHaveLength(2)
     expect(screen.queryByText('web_search_exa')).not.toBeInTheDocument()
     expect(screen.queryByText('os.fs.read')).not.toBeInTheDocument()
     expect(screen.queryByText(/activity\.workedFor/)).not.toBeInTheDocument()
     expect(screen.queryByText(/activity\.calledTool/)).not.toBeInTheDocument()
   })
 
-  it('lets a running call be the only live indicator', () => {
+  it('keeps a running call compact until the user opens its timeline', async () => {
     renderLast(
       {
         id: 'a2',
@@ -85,11 +94,28 @@ describe('MessageItem tool calls', () => {
       'streaming'
     )
 
+    expect(screen.getByTestId('tool-activity-group')).toHaveAttribute(
+      'data-state',
+      'closed'
+    )
     expect(
-      screen.getByRole('button', { expanded: false })
-    ).toBeInTheDocument()
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument()
+      within(screen.getByTestId('tool-activity-group')).getAllByRole('button')
+    ).toHaveLength(1)
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0)
     expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
+    expect(
+      within(screen.getByTestId('tool-activity-group')).getByRole('button')
+        .textContent
+    ).toContain('toolCall')
+
+    await userEvent.click(
+      within(screen.getByTestId('tool-activity-group')).getByRole('button')
+    )
+    expect(screen.getByTestId('tool-activity-group')).toHaveAttribute(
+      'data-state',
+      'open'
+    )
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1)
   })
 
   it('shows Working between calls, and drops it once the answer streams', () => {
@@ -135,8 +161,9 @@ describe('MessageItem tool calls', () => {
       'ready'
     )
 
-    expect(
-      screen.getByText('model server returned 400')
-    ).toBeInTheDocument()
+    expect(screen.getByTestId('agent-error-card')).toHaveTextContent(
+      'chat:agentError.genericTitle'
+    )
+    expect(screen.queryByText('model server returned 400')).not.toBeInTheDocument()
   })
 })

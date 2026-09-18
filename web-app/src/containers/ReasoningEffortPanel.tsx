@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import * as SliderPrimitive from '@radix-ui/react-slider'
 
 import {
@@ -76,25 +76,24 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
         ? 'off'
         : modelLevels[0]
     : undefined
-  const levelLabel = level ? t(`common:reasoningEffort.${level}`) : undefined
-
-  const isMax = level === 'max'
   const lastIndex = levels.length - 1
   const levelIndex = level ? levels.indexOf(level) : 0
 
-  // Where the thumb actually sits, in sub-steps. Free-running under the
-  // pointer, pinned to the level everywhere else. The ref shadows the state so
-  // a pointer-up can read the position it was left at without a stale closure.
+  // While a pointer is down the thumb follows the fine-grained scale locally.
+  // The model preference is committed from Radix's exact final value on
+  // release. Keeping those two jobs separate avoids WebKit's pointer-up /
+  // lost-capture ordering resetting cloud effort back to its previous level.
   const [dragging, setDragging] = useState(false)
   const [position, setPosition] = useState(levelIndex * SUBSTEPS)
-  const positionRef = useRef(position)
-  const moveTo = useCallback((next: number) => {
-    positionRef.current = next
-    setPosition(next)
-  }, [])
-  useEffect(() => {
-    if (!dragging) moveTo(levelIndex * SUBSTEPS)
-  }, [dragging, levelIndex, moveTo])
+  const previewIndex = dragging
+    ? clampIndex(Math.round(position / SUBSTEPS), lastIndex)
+    : levelIndex
+  const displayLevel = levels[previewIndex] ?? level
+  const levelLabel = displayLevel
+    ? t(`common:reasoningEffort.${displayLevel}`)
+    : undefined
+  const isMax = displayLevel === 'max'
+  const sliderPosition = dragging ? position : levelIndex * SUBSTEPS
 
   // Radix only learns the thumb's width after its first paint, and then nudges
   // `left` by half of it. With the glide already live that correction plays as
@@ -134,16 +133,16 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
     [levels, level, enabled, setDisableReasoning, setReasoningBudget]
   )
 
-  /** End of a pointer pass: back onto the nearest level, gliding as it goes. */
-  const settle = useCallback(() => {
-    setDragging(false)
-    const index = clampIndex(
-      Math.round(positionRef.current / SUBSTEPS),
-      lastIndex
-    )
-    moveTo(index * SUBSTEPS)
-    applyIndex(index)
-  }, [applyIndex, lastIndex, moveTo])
+  /** Commit the exact value Radix reports at the end of a pointer pass. */
+  const commitPosition = useCallback(
+    (next: number) => {
+      const index = clampIndex(Math.round(next / SUBSTEPS), lastIndex)
+      applyIndex(index)
+      setPosition(index * SUBSTEPS)
+      setDragging(false)
+    },
+    [applyIndex, lastIndex]
+  )
 
   // Arrow/Home/End move a whole level: Radix would otherwise step by one
   // sub-step, which on this scale is an invisible nudge. Preventing the default
@@ -164,7 +163,7 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
     event.preventDefault()
     const index = clampIndex(target, lastIndex)
     setDragging(false)
-    moveTo(index * SUBSTEPS)
+    setPosition(index * SUBSTEPS)
     applyIndex(index)
   }
 
@@ -183,12 +182,12 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
           {levels.map((option, index) => (
             <span
               key={option}
-              aria-hidden={option !== level}
+              aria-hidden={option !== displayLevel}
               className={cn(
                 'col-start-1 row-start-1 font-medium transition-[opacity,translate,color] duration-150 ease-out motion-reduce:transition-none',
-                option === level
+                option === displayLevel
                   ? 'translate-y-0 opacity-100'
-                  : index < levelIndex
+                  : index < previewIndex
                     ? '-translate-y-1 opacity-0'
                     : 'translate-y-1 opacity-0',
                 option === 'max' && 'text-blue-500'
@@ -220,23 +219,13 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
             min={0}
             max={lastIndex * SUBSTEPS}
             step={1}
-            value={[position]}
-            // Free-running starts at the first move, not at the press:
-            // a click on the track still glides to where it landed, and
-            // only an actual drag pins the thumb to the pointer.
-            onPointerMove={(event) => {
-              const target = event.target as Element
-              if (target.hasPointerCapture?.(event.pointerId)) setDragging(true)
-            }}
-            onPointerUp={settle}
-            onPointerCancel={settle}
-            onLostPointerCapture={settle}
+            value={[sliderPosition]}
             onKeyDown={handleKeyDown}
             onValueChange={([next]) => {
-              moveTo(next)
-              applyIndex(Math.round(next / SUBSTEPS))
+              setDragging(true)
+              setPosition(next)
             }}
-            onValueCommit={settle}
+            onValueCommit={([next]) => commitPosition(next)}
           >
             <SliderPrimitive.Track className="bg-muted relative h-6 w-full grow rounded-full">
               <SliderPrimitive.Range
@@ -275,7 +264,7 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
             <SliderPrimitive.Thumb
               aria-label={t('common:reasoningEffort.title')}
               aria-valuemin={0}
-              aria-valuenow={levelIndex}
+              aria-valuenow={previewIndex}
               aria-valuemax={lastIndex}
               aria-valuetext={levelLabel}
               className="bg-background ring-ring/50 block h-5 w-6 rounded-lg shadow-md outline-hidden transition-shadow duration-200 ease-out hover:shadow-lg focus-visible:ring-4"
