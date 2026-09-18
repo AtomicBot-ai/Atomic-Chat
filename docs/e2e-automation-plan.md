@@ -32,7 +32,9 @@ the second llama.cpp provider run by the core. A document journey attaches a
 file, has the core embed it, and has the model retrieve from it through a tool
 call — the scripted backend can now make one. An MCP journey runs a tool from a
 stdio server with and without the user's approval, and an agent journey runs the
-Rust loop on a local model through a read, a write and a folder-access question. It narrows the driver choice below — the embedded WebDriver
+Rust loop on a local model through a read, a write and a folder-access question.
+The Local API is checked across a core crash, the app across its own restart, and
+MLX through a scripted `mlx-server`. It narrows the driver choice below — the embedded WebDriver
 plugin with the plain `webdriverio` client, without the Tauri service — and
 records why in
 [Drive the desktop UI through an embedded WebDriver on an isolated profile](decisions/2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md).

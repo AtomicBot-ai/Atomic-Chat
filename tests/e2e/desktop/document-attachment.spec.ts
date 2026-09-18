@@ -82,7 +82,21 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a document attached for retrieval', () =
         }
       })()
       await send(session, 'what do the notes say')
-      await pageShows(session, REPLY, 90_000, 2)
+      // Seen about once in a dozen long runs, never alone: the turn that should
+      // call `retrieve` ends empty — no tool block, no text, no third request.
+      // Unexplained so far; when it happens again this says what the thread
+      // store and the console held.
+      await pageShows(session, REPLY, 90_000, 2).catch(async (error) => {
+        const threadsDir = join(dataFolder, 'threads')
+        const ids = await readdir(threadsDir)
+        console.log('DIAG store', (await readFile(join(threadsDir, ids[0]!, 'messages.jsonl'), 'utf8')).slice(-1500))
+        const state = await session.app.browser.execute(() => {
+          const w = window as unknown as { __atomic_e2e_console?: string[] }
+          return (w.__atomic_e2e_console ?? []).filter((l) => /tool|Tool|RAG|retrieve|abort|Abort/.test(l)).slice(-12)
+        })
+        console.log('DIAG console', JSON.stringify(state))
+        throw error
+      })
 
       // The thread's collection lives in the data folder, with everything else
       // that moves when the folder is moved and goes when the app is reset —
