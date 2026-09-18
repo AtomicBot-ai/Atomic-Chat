@@ -5,6 +5,7 @@ import {
   REMOTE_ACCESS_TONE,
   buildLanAccessUrls,
   buildRemoteApiUrl,
+  isCoreFailure,
   isRemoteAccessActionAllowed,
   lanAccessMessage,
   lanAccessState,
@@ -30,7 +31,7 @@ const status = (
 })
 
 describe('normalizeRemoteAccessStatus', () => {
-  it('reads the camelCase shape serde sends', () => {
+  it('reads the camelCase shape the core sends', () => {
     expect(
       normalizeRemoteAccessStatus({
         state: 'online',
@@ -52,7 +53,7 @@ describe('normalizeRemoteAccessStatus', () => {
     })
   })
 
-  it('reads snake_case too, so a serde rename cannot blank the page', () => {
+  it('reads snake_case too, so a renamed field cannot blank the page', () => {
     expect(
       normalizeRemoteAccessStatus({
         state: 'off',
@@ -146,7 +147,7 @@ describe('lanAccessState', () => {
 })
 
 describe('buildLanAccessUrls', () => {
-  it('builds one URL per address, in the order Rust gave them', () => {
+  it('builds one URL per address, in the order the core gave them', () => {
     expect(buildLanAccessUrls(['192.168.1.20', '10.0.0.7'], 1337, '/v1')).toEqual(
       ['http://192.168.1.20:1337/v1', 'http://10.0.0.7:1337/v1']
     )
@@ -295,14 +296,14 @@ describe('toFailureCode', () => {
 })
 
 describe('parseRemoteAccessRejection', () => {
-  it('recognises the one blocking reason', () => {
+  it('recognises the one blocking reason, bare as `coreCall` rethrows it', () => {
     expect(parseRemoteAccessRejection('server_stopped')).toEqual({
       kind: 'blocked',
       blockReason: 'server_stopped',
     })
   })
 
-  it('reads a code from a bare string, the way Tauri rejects', () => {
+  it('reads a code from a bare string', () => {
     expect(parseRemoteAccessRejection('cloudflared_unavailable')).toEqual({
       kind: 'failed',
       code: 'cloudflared_unavailable',
@@ -332,6 +333,70 @@ describe('parseRemoteAccessRejection', () => {
       kind: 'failed',
       code: 'unknown',
     })
+  })
+
+  it.each([
+    [
+      'CORE_UNREACHABLE',
+      'The Atomic Chat core did not answer.',
+      'core_unreachable',
+    ],
+    [
+      'CORE_NOT_RUNNING',
+      'The Atomic Chat core is stopping or has stopped.',
+      'core_not_running',
+    ],
+    ['HTTP_502', 'Bad gateway from 10.0.0.7:1337', 'http_502'],
+  ])(
+    'reports a core failure by its code, %s, never by its message',
+    (code, message, expected) => {
+      const rejection = parseRemoteAccessRejection({
+        code,
+        message,
+        details: 'connect ECONNREFUSED 127.0.0.1:39123',
+      })
+
+      expect(rejection).toEqual({ kind: 'failed', code: expected })
+      expect(JSON.stringify(rejection)).not.toMatch(/Atomic Chat|10\.0|127\.0/)
+    }
+  )
+
+  it('still collapses a core code that is not shaped like one', () => {
+    expect(
+      parseRemoteAccessRejection({
+        code: 'quiet-river.trycloudflare.com',
+        message: 'The Atomic Chat core did not answer.',
+      })
+    ).toEqual({ kind: 'failed', code: 'unknown' })
+  })
+})
+
+describe('isCoreFailure', () => {
+  it.each([
+    [{ code: 'CORE_UNREACHABLE', message: 'The core did not answer.' }],
+    [{ code: 'CORE_START_FAILED', message: 'It keeps stopping.', details: '' }],
+    [{ code: 'HTTP_502', message: 'Bad gateway' }],
+    // A core without the route refuses it like any other request.
+    [
+      {
+        code: 'INVALID_ARGUMENT',
+        message: 'No such control route: /atomic/v1/remote-access',
+      },
+    ],
+  ])('recognises the relay failure %j', (error) => {
+    expect(isCoreFailure(error)).toBe(true)
+  })
+
+  it.each([
+    // A `REMOTE_ACCESS_*` refusal as `coreCall` rethrows it.
+    ['server_stopped'],
+    [new Error('malformed_status')],
+    [{ message: 'no code' }],
+    [{ code: 502, message: 'a numeric code' }],
+    [null],
+    [undefined],
+  ])('does not take %j for one', (error) => {
+    expect(isCoreFailure(error)).toBe(false)
   })
 })
 

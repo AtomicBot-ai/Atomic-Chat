@@ -41,6 +41,12 @@ const ONLINE: RemoteAccessStatus = {
   url: 'https://quiet-river.trycloudflare.com',
 }
 
+/** What the relay rejects with when the core did not answer. */
+const CORE_UNREACHABLE = {
+  code: 'CORE_UNREACHABLE',
+  message: 'The Atomic Chat core did not answer.',
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((res) => {
@@ -207,6 +213,111 @@ describe('remote access actions', () => {
     warn.mockRestore()
   })
 
+  it('keeps the last status through a core that did not answer', async () => {
+    const { app, hub } = makeHub()
+    // The server is still up, so the tunnel in front of it may be too.
+    useAppState.setState({ serverStatus: 'running' })
+    tunnel().applyStatus(ONLINE, 'event')
+    app.getRemoteAccessStatus.mockRejectedValue(CORE_UNREACHABLE)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await refreshRemoteAccessStatus(hub)
+
+    expect(tunnel().unavailable).toBe(false)
+    expect(tunnel().status).toEqual(ONLINE)
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it.each([
+    ['starting', STARTING],
+    ['online', ONLINE],
+    ['stopping', { ...ONLINE, state: 'stopping' } as RemoteAccessStatus],
+  ])(
+    'forgets a tunnel kept as %s once the core is down and the server with it',
+    async (_label, kept) => {
+      const { app, hub } = makeHub()
+      tunnel().applyStatus(kept, 'event')
+      // The core died with the server in it and will not be started again.
+      useAppState.setState({ serverStatus: 'stopped' })
+      app.getRemoteAccessStatus.mockRejectedValue({
+        code: 'CORE_START_FAILED',
+        message: 'The Atomic Chat core keeps stopping.',
+      })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await refreshRemoteAccessStatus(hub)
+
+      // Unknown, not a dead URL and not "not in this build".
+      expect(tunnel().status).toBeNull()
+      expect(tunnel().startedAt).toBeNull()
+      expect(tunnel().unavailable).toBe(false)
+      warn.mockRestore()
+    }
+  )
+
+  it('keeps a tunnel that is off through the same outage', async () => {
+    const { app, hub } = makeHub()
+    const stopped: RemoteAccessStatus = {
+      ...OFF,
+      blockReason: 'server_stopped',
+      canStart: false,
+    }
+    tunnel().applyStatus(stopped, 'event')
+    useAppState.setState({ serverStatus: 'stopped' })
+    app.getRemoteAccessStatus.mockRejectedValue(CORE_UNREACHABLE)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await refreshRemoteAccessStatus(hub)
+
+    expect(tunnel().status).toEqual(stopped)
+    expect(tunnel().unavailable).toBe(false)
+    warn.mockRestore()
+  })
+
+  it('stays unknown, not unavailable, when the core is down before the first status', async () => {
+    const { app, hub } = makeHub()
+    app.getRemoteAccessStatus.mockRejectedValue({
+      code: 'CORE_START_FAILED',
+      message: 'The Atomic Chat core keeps stopping.',
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await refreshRemoteAccessStatus(hub)
+
+    expect(tunnel().unavailable).toBe(false)
+    expect(tunnel().status).toBeNull()
+    warn.mockRestore()
+  })
+
+  it('reports remote access unavailable for a reply that is not a status', async () => {
+    const { app, hub } = makeHub()
+    // What `services/app/tauri.ts` rejects with for such a reply.
+    app.getRemoteAccessStatus.mockRejectedValue(new Error('malformed_status'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await refreshRemoteAccessStatus(hub)
+
+    expect(tunnel().unavailable).toBe(true)
+    warn.mockRestore()
+  })
+
+  it('takes a core without the route for a failed call, not a missing feature', async () => {
+    const { app, hub } = makeHub()
+    // What the core answers (404) for a control route it does not serve.
+    app.getRemoteAccessStatus.mockRejectedValue({
+      code: 'INVALID_ARGUMENT',
+      message: 'No such control route: /atomic/v1/remote-access',
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await refreshRemoteAccessStatus(hub)
+
+    expect(tunnel().unavailable).toBe(false)
+    expect(tunnel().status).toBeNull()
+    warn.mockRestore()
+  })
+
   it('starts the tunnel and says who asked', async () => {
     const { app, hub } = makeHub()
 
@@ -273,6 +384,30 @@ describe('remote access actions', () => {
     ])
   })
 
+  it('reports a start the core did not answer by its code, not its message', async () => {
+    const { app, hub } = makeHub()
+    tunnel().applyStatus(OFF, 'event')
+    // A POST is not retried, so this one fails even if the read after it
+    // reaches a relaunched core.
+    app.startRemoteAccess.mockRejectedValue(CORE_UNREACHABLE)
+
+    await expect(startRemoteAccess(hub, 'auto')).resolves.toBe(false)
+
+    expect(tunnel().lastError).toEqual({
+      kind: 'failed',
+      code: 'core_unreachable',
+    })
+    expect(tunnel().unavailable).toBe(false)
+    expect(eventsNamed('remote_access_start')).toEqual([
+      {
+        trigger_source: 'auto',
+        start_result: 'failed',
+        failure_code: 'core_unreachable',
+      },
+    ])
+    expect(JSON.stringify(capture.mock.calls)).not.toContain('Atomic Chat')
+  })
+
   it('stops the tunnel', async () => {
     const { app, hub } = makeHub()
     tunnel().applyStatus(ONLINE, 'event')
@@ -286,7 +421,7 @@ describe('remote access actions', () => {
     ])
   })
 
-  it('reports a stop that Rust could not confirm', async () => {
+  it('reports a stop that the core could not confirm', async () => {
     const { app, hub } = makeHub()
     tunnel().applyStatus(ONLINE, 'event')
     const stuck: RemoteAccessStatus = {
@@ -355,7 +490,7 @@ describe('restartLocalApiServer', () => {
     }),
     stop: vi.fn(async () => {
       useAppState.getState().setServerStatus('stopped')
-      // Rust takes the tunnel down with the server and says so.
+      // The core takes the tunnel down with the server and says so.
       tunnel().applyStatus(
         { ...OFF, blockReason: 'server_stopped', canStart: false },
         'event'

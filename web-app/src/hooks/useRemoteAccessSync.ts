@@ -16,8 +16,18 @@ import { normalizeRemoteAccessStatus } from '@/lib/remoteLan'
 import { REMOTE_ACCESS_STATUS_EVENT } from '@/types/remoteAccess'
 
 /**
- * Keeps `useRemoteAccessStore` in step with the tunnel Rust owns, and starts
- * the tunnel on its own when the user asked for that.
+ * The relay's snapshot, sent whenever it attaches to a core (a relaunched one,
+ * or the same one again after a lost stream) or resyncs with it. A relaunched
+ * core has no tunnel while the same one may still have its tunnel up, so the
+ * status is re-read either way rather than assumed; this is also what fills
+ * the card back in after the core was out of reach.
+ */
+const CORE_ATTACHED_EVENT = 'atomic-core://snapshot'
+
+/**
+ * Keeps `useRemoteAccessStore` in step with the tunnel the core owns
+ * (`/atomic/v1/remote-access*`), and starts the tunnel on its own when the
+ * user asked for that.
  *
  * Mounted once at the root rather than by the settings page: the tunnel lives
  * for the whole session, and "Start automatically" has to work with the page
@@ -41,23 +51,33 @@ export function useRemoteAccessSync(): void {
     if (!enabled) return
 
     let cancelled = false
-    let detach: (() => void) | undefined
+    const detach: Array<() => void> = []
+    const subscribe = (
+      name: string,
+      handler: (event: { payload: unknown }) => void
+    ) => {
+      serviceHub
+        .events()
+        .listen<unknown>(name, handler)
+        .then((unlisten) => {
+          if (cancelled) unlisten()
+          else detach.push(unlisten)
+        })
+        .catch((error) => {
+          console.warn('Remote access events unavailable:', error)
+        })
+    }
 
-    // Rust emits on every transition; the URL arrives seconds after Start and
-    // nothing else would tell the page.
-    serviceHub
-      .events()
-      .listen<unknown>(REMOTE_ACCESS_STATUS_EVENT, (event) => {
-        const status = normalizeRemoteAccessStatus(event.payload)
-        if (status) useRemoteAccessStore.getState().applyStatus(status, 'event')
-      })
-      .then((unlisten) => {
-        if (cancelled) unlisten()
-        else detach = unlisten
-      })
-      .catch((error) => {
-        console.warn('Remote access events unavailable:', error)
-      })
+    // The core emits `remote-access:status` on every transition, relayed as
+    // `atomic-core://remote-access:status`; the URL arrives seconds after
+    // Start and nothing else would tell the page.
+    subscribe(REMOTE_ACCESS_STATUS_EVENT, (event) => {
+      const status = normalizeRemoteAccessStatus(event.payload)
+      if (status) useRemoteAccessStore.getState().applyStatus(status, 'event')
+    })
+    subscribe(CORE_ATTACHED_EVENT, () => {
+      void refreshRemoteAccessStatus(serviceHub)
+    })
 
     void refreshRemoteAccessStatus(serviceHub)
 
@@ -67,7 +87,7 @@ export function useRemoteAccessSync(): void {
 
     return () => {
       cancelled = true
-      detach?.()
+      for (const unlisten of detach) unlisten()
       window.removeEventListener('focus', handleFocus)
     }
   }, [enabled, serviceHub])
@@ -81,7 +101,7 @@ export function useRemoteAccessSync(): void {
     if (previous === serverStatus) return
 
     void (async () => {
-      // Rust drops the tunnel with the server and reports a different
+      // The core drops the tunnel with the server and reports a different
       // `blockReason`/`canStart` once it is back, so every transition is worth
       // a re-read — and the auto-start below must not decide on a stale state.
       await refreshRemoteAccessStatus(serviceHub)

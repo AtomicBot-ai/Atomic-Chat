@@ -38,6 +38,10 @@ pub struct CoreCommand {
     /// The app's bundled sidecar binaries (`<resources>/resources/bin`): where the core finds
     /// `mlx-server` and `foundation-models-server` once it owns those runtimes.
     pub resources_dir: Option<String>,
+    /// The bundled `cloudflared` (a Tauri `externalBin`, so it sits next to the app's own
+    /// executable, not under `resources/bin`). The core runs the Remote Access tunnel with it;
+    /// without one it reports `cloudflared_unavailable`.
+    pub cloudflared_bin: Option<String>,
 }
 
 impl CoreCommand {
@@ -54,6 +58,10 @@ impl CoreCommand {
         if let Some(resources) = &self.resources_dir {
             args.push("--resources-dir".into());
             args.push(resources.clone());
+        }
+        if let Some(cloudflared) = &self.cloudflared_bin {
+            args.push("--cloudflared-bin".into());
+            args.push(cloudflared.clone());
         }
         args
     }
@@ -120,6 +128,7 @@ pub fn resolve_core_command(
             program,
             prefix: parts.collect(),
             resources_dir: Some(sidecar_resources_dir(resource_dir)),
+            cloudflared_bin: bundled_cloudflared().map(|p| p.to_string_lossy().to_string()),
         });
     }
 
@@ -138,7 +147,24 @@ pub fn resolve_core_command(
         program: bundled.to_string_lossy().to_string(),
         prefix: Vec::new(),
         resources_dir: Some(sidecar_resources_dir(resource_dir)),
+        cloudflared_bin: bundled_cloudflared().map(|p| p.to_string_lossy().to_string()),
     })
+}
+
+#[cfg(windows)]
+const CLOUDFLARED_FILE_NAME: &str = "cloudflared.exe";
+#[cfg(not(windows))]
+const CLOUDFLARED_FILE_NAME: &str = "cloudflared";
+
+/// The bundled `cloudflared`, or `None` when this build does not carry one (a dev build that
+/// skipped `download:bin`, or a platform without the sidecar).
+pub fn bundled_cloudflared() -> Option<PathBuf> {
+    bundled_cloudflared_next_to(&std::env::current_exe().ok()?)
+}
+
+fn bundled_cloudflared_next_to(executable: &Path) -> Option<PathBuf> {
+    let candidate = executable.parent()?.join(CLOUDFLARED_FILE_NAME);
+    candidate.is_file().then_some(candidate)
 }
 
 /// Where the MLX and Foundation Models plugins looked for their servers: `<resources>/resources/bin`.
@@ -419,6 +445,7 @@ mod tests {
             program: "core".into(),
             prefix: vec![],
             resources_dir: Some("/app/resources/bin".into()),
+            cloudflared_bin: None,
         };
 
         assert_eq!(
@@ -432,11 +459,43 @@ mod tests {
     }
 
     #[test]
+    fn the_daemon_argv_names_the_bundled_cloudflared_only_when_it_is_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("Atomic Chat");
+        std::fs::write(&executable, b"").unwrap();
+        assert_eq!(bundled_cloudflared_next_to(&executable), None);
+
+        let sidecar = dir.path().join(CLOUDFLARED_FILE_NAME);
+        std::fs::write(&sidecar, b"").unwrap();
+        assert_eq!(bundled_cloudflared_next_to(&executable), Some(sidecar.clone()));
+
+        let command = CoreCommand {
+            program: "core".into(),
+            prefix: vec![],
+            resources_dir: None,
+            cloudflared_bin: Some(sidecar.to_string_lossy().to_string()),
+        };
+        assert_eq!(
+            command.daemon_args(Path::new("/data")),
+            vec![
+                "daemon".to_string(),
+                "--data-folder".into(),
+                "/data".into(),
+                "--control-port".into(),
+                "0".into(),
+                "--cloudflared-bin".into(),
+                sidecar.to_string_lossy().to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn the_daemon_argv_pins_the_folder_and_lets_the_os_pick_the_port() {
         let command = CoreCommand {
             program: "core".into(),
             prefix: vec!["run".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         assert_eq!(
@@ -459,6 +518,7 @@ mod tests {
             program: "atomic-core-that-does-not-exist".into(),
             prefix: Vec::new(),
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(200))
@@ -476,6 +536,7 @@ mod tests {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "exit 3".into(), "sh".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(500))
@@ -502,6 +563,7 @@ mod tests {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "exit 0".into(), "sh".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
         let _ = launch_and_wait(&command, dir.path(), Duration::from_millis(300)).await;
         let child = std::process::Command::new("/bin/sh")
@@ -528,6 +590,7 @@ mod tests {
                 "sh".into(),
             ],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(500))
@@ -548,6 +611,7 @@ mod tests {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "sleep 30".into(), "sh".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(300))
