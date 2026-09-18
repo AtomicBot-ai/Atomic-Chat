@@ -19,6 +19,7 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { ensureProjectsLoaded } from '@/hooks/useThreadManagement'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { shouldAttemptAutoStart, switchToModel } from '@/utils/switchModel'
@@ -64,6 +65,33 @@ export function applyAtomicCoreServerState(payload: { running: boolean; port: nu
     useAppState.getState().setServerStatus('running')
   } else if (!payload.running) {
     useAppState.getState().setServerStatus('stopped')
+  }
+}
+
+/**
+ * A recovered listener needs its model back. The core's public server loads nothing by itself: it
+ * serves the sessions that exist, and answers 503 "No models are available" when there are none.
+ * When the core dies, its sessions die with it; the app has the new core listen again on the same
+ * address (`recover_public_server`), and without this an outside client would find the server up
+ * and unusable for as long as nobody touched the app. The model is the one the server was last
+ * started with, or the user's default for it — what "Start server" itself would have loaded.
+ */
+export async function restoreServerModelAfterRecovery(
+  modelsService: Parameters<typeof ensureModelForServer>[0]['modelsService']
+): Promise<void> {
+  const { lastServerModels, defaultModelLocalApiServer } =
+    useLocalApiServer.getState()
+  const wanted = lastServerModels[0] ?? defaultModelLocalApiServer
+  try {
+    const result = await ensureModelForServer({
+      modelsService,
+      modelOverride: wanted,
+    })
+    if (result.status === 'no_model_available') {
+      console.warn('[LocalAPI] recovered server has no model to load')
+    }
+  } catch (error) {
+    console.warn('[LocalAPI] could not reload the model for the recovered server:', error)
   }
 }
 
@@ -807,6 +835,10 @@ export function DataProvider() {
             (event) => {
               coreServerWasRunning = event.payload.owner === 'core' && event.payload.running
               applyAtomicCoreServerState(event.payload)
+              // A generation comes only with a listener rebuilt on a new core.
+              if (coreServerWasRunning && event.payload.generation != null) {
+                void restoreServerModelAfterRecovery(serviceHub.models())
+              }
             }
           ),
         ])
@@ -828,7 +860,7 @@ export function DataProvider() {
       cancelled = true
       unlistenCoreSessionEvents.forEach((unsubscribe) => void unsubscribe())
     }
-  }, [])
+  }, [serviceHub])
 
   // Auto-start Local API Server on app startup, but only re-attach to an
   // already-running server or raise the proxy for a model that is already

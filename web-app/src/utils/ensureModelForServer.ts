@@ -29,7 +29,7 @@ export interface EnsureModelDeps {
  * every GGUF from the shared models dir, so prefer an active provider before
  * settling for a deactivated one (e.g. TurboQuant, disabled on fresh installs).
  */
-function findProviderForModel(modelId: string): ModelProvider | undefined {
+export function findProviderForModel(modelId: string): ModelProvider | undefined {
   const { providers } = useModelProvider.getState()
   const owns = (p: ModelProvider) =>
     p?.models?.some((m: { id: string }) => m.id === modelId)

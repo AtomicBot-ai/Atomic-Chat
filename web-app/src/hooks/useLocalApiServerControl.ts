@@ -3,14 +3,16 @@ import { toast } from 'sonner'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { MODEL_LOAD_WATCHDOG_MS, withTimeout } from '@/lib/utils'
 import {
   hydrateActiveModelsForRunningServer,
   syncActiveModelsFromEngines,
 } from '@/utils/activeModelsSync'
-import { ensureModelForServer } from '@/utils/ensureModelForServer'
+import {
+  ensureModelForServer,
+  findProviderForModel,
+} from '@/utils/ensureModelForServer'
 import {
   setLocalApiServerRunning,
   stopLocalApiServer,
@@ -83,11 +85,12 @@ export function useLocalApiServerControl() {
 
           const activeModels = await serviceHub.models().getActiveModels()
           if (activeModels && activeModels.length > 0) {
-            const allProviders = useModelProvider.getState().providers
+            // Both llama.cpp providers list the same models folder, so "the first
+            // provider that has this id" named TurboQuant — off on a fresh install,
+            // with no backend — for a model the default provider was running. An
+            // active provider is preferred, as it is when the model is loaded.
             const serverModels = activeModels.flatMap((id: string) => {
-              const provider = allProviders.find((p) =>
-                p?.models?.some((m: { id: string }) => m.id === id)
-              )
+              const provider = findProviderForModel(id)
               return provider ? [{ model: id, provider: provider.provider }] : []
             })
             if (serverModels.length > 0) setLastServerModels(serverModels)
