@@ -91,6 +91,15 @@ describe('HTTPS proxy settings — Test connection', () => {
 
     expect(invoke).not.toHaveBeenCalled()
     expect(toastWarning).toHaveBeenCalled()
+    // The warning tells the user what is missing, not a generic failure.
+    expect(toastWarning.mock.calls[0]).toEqual([
+      'settings:httpsProxy.proxy',
+      { description: 'settings:httpsProxy.testNeedsUrl' },
+    ])
+    expect(toastError).not.toHaveBeenCalled()
+    // No test was started, so the button never leaves its idle label.
+    expect(screen.getByText('settings:httpsProxy.test')).toBeTruthy()
+    expect(screen.queryByText('settings:httpsProxy.testing')).toBeNull()
   })
 
   it('tests the address typed in the form, even before the proxy is enabled', async () => {
@@ -118,7 +127,18 @@ describe('HTTPS proxy settings — Test connection', () => {
         no_proxy: ['localhost', '127.0.0.1'],
       },
     })
-    expect(toastSuccess).toHaveBeenCalled()
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+    // A pass is reported as the "OK" toast, with nothing else raised.
+    expect(toastSuccess.mock.calls[0]).toEqual([
+      'settings:httpsProxy.testOk',
+      { description: 'settings:httpsProxy.testOkDesc' },
+    ])
+    expect(toastError).not.toHaveBeenCalled()
+    expect(toastWarning).not.toHaveBeenCalled()
+    // Once the result is in, the button is back to its idle label.
+    await waitFor(() =>
+      expect(screen.getByText('settings:httpsProxy.test')).toBeTruthy()
+    )
   })
 
   it('reports a refused proxy as an error, not a success', async () => {
@@ -151,6 +171,11 @@ describe('HTTPS proxy settings — Test connection', () => {
 
     await waitFor(() => expect(toastWarning).toHaveBeenCalled())
     expect(toastSuccess).not.toHaveBeenCalled()
+    // It is the dedicated "bypassed" warning, not the empty-address one.
+    expect(toastWarning.mock.calls[0]).toEqual([
+      'settings:httpsProxy.testBypassed',
+      { description: 'settings:httpsProxy.testBypassedDesc' },
+    ])
   })
 
   it('surfaces a rejected invoke instead of hanging on the spinner', async () => {

@@ -529,13 +529,28 @@ describe('load progress and cancel', () => {
 
   it('says it is unloading the model that was serving before loading the next', async () => {
     appState.activeModels = ['shared-model']
-    const serviceHub = hubWith({ startModel: vi.fn().mockResolvedValue(undefined) })
+    const stopAllModelsExcept = vi.fn().mockResolvedValue(undefined)
+    const startModel = vi.fn().mockResolvedValue(undefined)
+    const serviceHub = hubWith({ stopAllModelsExcept, startModel })
 
     await switchToModel({ modelId: 'broken-model', providerName: 'mlx', serviceHub })
 
     expect(appState.setLoadingModelProgress).toHaveBeenCalledWith({
       kind: 'unloadingPrevious',
     })
+    // The status reads as a restart of a serving engine, not a cold start.
+    expect(appState.updateLoadingModel.mock.calls[0]).toEqual([
+      true,
+      { modelId: 'broken-model', kind: 'restart' },
+    ])
+    // The unload is the only step this load reports, and the status shows it
+    // before the serving model goes down and before the next one loads.
+    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual([
+      { kind: 'unloadingPrevious' },
+    ])
+    const [shownAt] = appState.setLoadingModelProgress.mock.invocationCallOrder
+    expect(shownAt).toBeLessThan(stopAllModelsExcept.mock.invocationCallOrder[0])
+    expect(shownAt).toBeLessThan(startModel.mock.invocationCallOrder[0])
     appState.activeModels = []
   })
 

@@ -159,6 +159,21 @@ describe('EngineUpdateBanner', () => {
     )
 
     expect(open).toHaveBeenCalledWith(OFFER.releaseNotesUrl)
+    expect(open.mock.calls).toEqual([[OFFER.releaseNotesUrl]])
+    // Reading the notes is not an answer to the offer: the banner stays up
+    // with "Update" still live, nothing is downloaded, and the offer is
+    // neither snoozed nor dismissed.
+    expect(screen.getByText('updater:engine.title')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:update' })
+    ).toBeEnabled()
+    expect(downloadRecommendedBackend).not.toHaveBeenCalled()
+    expect(
+      JSON.parse(
+        localStorage.getItem(engineUpdateOfferKey(OFFER.provider)) ?? 'null'
+      )
+    ).toEqual(OFFER)
+    expect(isEngineUpdateSnoozed(OFFER, Date.now())).toBe(false)
   })
 
   it('stands down while the app-update banner holds the corner', async () => {

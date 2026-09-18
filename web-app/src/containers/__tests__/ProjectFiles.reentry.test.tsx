@@ -88,6 +88,30 @@ describe('ProjectFiles re-entry while an upload is in flight', () => {
 
     expect(openDialog).toHaveBeenCalledTimes(1)
     expect(ingest).toHaveBeenCalledTimes(1)
+
+    // The one ingest that did run is the picked file, for this project.
+    const [ingestedProjectId, ingestedAttachment] = ingest.mock.calls[0]
+    expect(ingestedProjectId).toBe('p1')
+    expect(ingestedAttachment).toEqual({
+      name: 'notes.md',
+      path: '/tmp/notes.md',
+      fileType: 'md',
+      size: 10,
+      type: 'document',
+    })
+
+    // The re-clicks left the component in the single in-flight state: the
+    // dropzone still shows the indexing hint and stays disabled, and the
+    // Upload button still reads "uploading" and cannot be pressed.
+    expect(
+      screen.getByText('common:projects.uploadingHint').parentElement
+    ).toHaveAttribute('aria-disabled', 'true')
+    expect(
+      screen.getByRole('button', { name: 'common:projects.uploading' })
+    ).toBeDisabled()
+    expect(
+      screen.queryByText('common:projects.filesDescription')
+    ).not.toBeInTheDocument()
   })
 
   it('marks the dropzone as disabled so the state is visible, not just inert', async () => {
