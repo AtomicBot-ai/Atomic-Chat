@@ -119,18 +119,6 @@ vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ addFolder: vi.fn() }),
 }))
 
-// What the loaded image model can do; `null` means nothing is loaded.
-const imageWorkflows = vi.hoisted(() => ({
-  supported: null as string[] | null,
-}))
-vi.mock('@/hooks/useImageWorkflowAvailability', () => ({
-  useImageWorkflowAvailability: () => ({
-    isAvailable: (id: string) =>
-      imageWorkflows.supported === null ||
-      imageWorkflows.supported.includes(id),
-  }),
-}))
-
 const IMAGE_WORKFLOW_LINKS: Array<[string, string]> = [
   ['images:workflow.create.label', '/images/'],
   ['images:workflow.transform.label', '/images/transform'],
@@ -146,7 +134,6 @@ describe('NavMain', () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/' } as never)
     useLeftPanel.setState({ pluginsExpanded: false, imagesExpanded: false })
     platform.mediaGeneration = true
-    imageWorkflows.supported = null
   })
 
   it('puts Images right after Models on desktop', () => {
@@ -236,8 +223,7 @@ describe('NavMain', () => {
     ).toHaveAttribute('data-active', 'false')
   })
 
-  it('disables the workflows the loaded model cannot run', () => {
-    imageWorkflows.supported = ['create', 'transform']
+  it('keeps every workflow link available when the loaded model cannot run it', () => {
     useLeftPanel.setState({ imagesExpanded: true })
 
     render(<NavMain />)
@@ -248,10 +234,14 @@ describe('NavMain', () => {
     const inpaint = screen
       .getByText('images:workflow.inpaint.label')
       .closest('a')
-    expect(inpaint).toHaveAttribute('aria-disabled', 'true')
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
-    inpaint?.dispatchEvent(click)
-    expect(click.defaultPrevented).toBe(true)
+    expect(inpaint).not.toHaveAttribute('aria-disabled')
+    expect(inpaint).toHaveAttribute('href', '/images/inpaint')
+    expect(
+      screen.getByText('images:workflow.reference.label').closest('a')
+    ).toHaveAttribute('href', '/images/reference')
+    expect(
+      screen.getByText('images:workflow.edit.label').closest('a')
+    ).toHaveAttribute('href', '/images/edit')
   })
 
   it('shows every section on the unified sidebar', () => {

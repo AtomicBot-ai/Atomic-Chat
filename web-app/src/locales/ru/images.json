@@ -39,8 +39,11 @@
       "title": "Edit",
       "hint": "Change an image with an instruction"
     },
-    "unavailable": "The loaded model cannot do this",
-    "unavailableSelected": "The selected model cannot do this"
+    "unavailable": "Запущенная модель не поддерживает этот режим",
+    "unavailableSelected": "Выбранная модель не поддерживает этот режим",
+    "compatibleModelTitle": "Для режима «{{workflow}}» нужна совместимая модель",
+    "compatibleModelDescription": "Выберите ниже подходящую модель, затем скачайте или запустите её.",
+    "chooseCompatibleModel": "Выбрать модель"
   },
   "setup": {
     "step": "Step {{current}} of {{total}}",
@@ -138,9 +141,9 @@
     "download": "Download"
   },
   "download": {
-    "finishingModel": "Завершаем установку модели",
+    "finishingModel": "Проверяем модель изображений",
     "finishingEngine": "Завершаем установку движка",
-    "checkingFiles": "Проверяем загруженные файлы…",
+    "checkingFiles": "Проверяем, что загруженные файлы готовы к работе…",
     "modelReady": "Модель изображений готова",
     "engineReady": "Движок изображений готов"
   },

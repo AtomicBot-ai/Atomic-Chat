@@ -7,6 +7,7 @@ import {
   makeFakeDiffusion,
   makeJob,
   makeLoadedStatus,
+  makeStatus,
   Q4_ID,
   type FakeDiffusion,
 } from '@/lib/diffusion/__tests__/image-fixtures'
@@ -34,7 +35,8 @@ describe('ImagePromptForm', () => {
   let fake: FakeDiffusion
 
   beforeAll(() => {
-    global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+    global.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver
   })
 
   beforeEach(async () => {
@@ -85,7 +87,10 @@ describe('ImagePromptForm', () => {
     expect(screen.getByTestId('image-job-progress')).toBeInTheDocument()
 
     await act(async () => {
-      fake.emit({ type: 'job', job: makeJob({ id: 'job-1', state: 'completed' }) })
+      fake.emit({
+        type: 'job',
+        job: makeJob({ id: 'job-1', state: 'completed' }),
+      })
     })
     await waitFor(() =>
       expect(screen.getByTestId('image-generate')).toBeInTheDocument()
@@ -94,12 +99,16 @@ describe('ImagePromptForm', () => {
 
   it('hides the negative prompt and CFG for a distilled model that has neither', async () => {
     render(<ImagePromptForm />)
-    expect(screen.queryByText('images:form.negativePrompt')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('images:form.negativePrompt')
+    ).not.toBeInTheDocument()
 
     await act(async () => {
       await userEvent.click(screen.getByTestId('image-advanced-toggle'))
     })
-    expect(screen.getByRole('spinbutton', { name: 'images:form.steps' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('spinbutton', { name: 'images:form.steps' })
+    ).toBeInTheDocument()
     expect(screen.queryByText('images:form.cfgScale')).not.toBeInTheDocument()
     expect(screen.queryByText('images:form.guidance')).not.toBeInTheDocument()
   })
@@ -109,7 +118,13 @@ describe('ImagePromptForm', () => {
       capabilities: makeCapabilities({
         supportsNegativePrompt: true,
         supportsGuidance: true,
-        defaults: { steps: 20, cfgScale: 4, guidance: 3.5, width: 1024, height: 1024 },
+        defaults: {
+          steps: 20,
+          cfgScale: 4,
+          guidance: 3.5,
+          width: 1024,
+          height: 1024,
+        },
       }),
     })
     useImageSetting.setState({ advancedOpen: true })
@@ -120,7 +135,12 @@ describe('ImagePromptForm', () => {
   })
 
   it('resets the knobs to the model defaults but keeps the prompt', async () => {
-    useImageForm.setState({ prompt: 'keep me', steps: 3, width: 512, height: 512 })
+    useImageForm.setState({
+      prompt: 'keep me',
+      steps: 3,
+      width: 512,
+      height: 512,
+    })
     useImageSetting.setState({ advancedOpen: true })
     render(<ImagePromptForm />)
 
@@ -132,7 +152,9 @@ describe('ImagePromptForm', () => {
     expect(state.prompt).toBe('keep me')
     expect(state.steps).toBe(8)
     expect(state.width).toBe(1024)
-    expect(screen.getByRole('spinbutton', { name: 'images:form.steps' })).toHaveValue(8)
+    expect(
+      screen.getByRole('spinbutton', { name: 'images:form.steps' })
+    ).toHaveValue(8)
   })
 
   it('snaps a leftover size to what the loaded model accepts', () => {
@@ -149,5 +171,42 @@ describe('ImagePromptForm', () => {
     useImageForm.setState({ prompt: 'something' })
     render(<ImagePromptForm />)
     expect(screen.getByTestId('image-generate')).toBeDisabled()
+  })
+
+  it('does not present a remembered model as running', () => {
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      capabilities: null,
+    })
+    render(<ImagePromptForm />)
+
+    expect(screen.getByTestId('image-models-toggle')).toHaveTextContent(
+      'images:model.select'
+    )
+    expect(screen.getByTestId('image-models-toggle')).not.toHaveTextContent(
+      'Z-Image Turbo'
+    )
+  })
+
+  it('offers a compatible model instead of blocking an unsupported workflow', async () => {
+    useImageForm.setState({ workflow: 'edit' })
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      capabilities: null,
+    })
+    render(<ImagePromptForm />)
+
+    expect(
+      screen.getByTestId('image-workflow-model-notice')
+    ).toBeInTheDocument()
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'images:workflow.chooseCompatibleModel',
+      })
+    )
+    expect(screen.getByTestId('image-models-toggle')).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
   })
 })

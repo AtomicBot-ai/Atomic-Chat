@@ -40,7 +40,10 @@
       "hint": "Change an image with an instruction"
     },
     "unavailable": "The loaded model cannot do this",
-    "unavailableSelected": "The selected model cannot do this"
+    "unavailableSelected": "The selected model cannot do this",
+    "compatibleModelTitle": "{{workflow}} needs a compatible model",
+    "compatibleModelDescription": "Choose a model below that supports this workflow, then download or run it.",
+    "chooseCompatibleModel": "Choose model"
   },
   "setup": {
     "step": "Step {{current}} of {{total}}",
@@ -138,9 +141,9 @@
     "download": "Download"
   },
   "download": {
-    "finishingModel": "Finishing image model",
+    "finishingModel": "Checking image model",
     "finishingEngine": "Finishing image engine",
-    "checkingFiles": "Checking the downloaded files…",
+    "checkingFiles": "Making sure the downloaded files are ready to use…",
     "modelReady": "Image model is ready",
     "engineReady": "Image engine is ready"
   },

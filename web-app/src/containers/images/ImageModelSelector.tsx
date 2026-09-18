@@ -1,5 +1,7 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import {
+  IconCheck,
+  IconChevronDown,
   IconCircleCheckFilled,
   IconLoader2,
   IconPlayerPlay,
@@ -10,6 +12,12 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -17,14 +25,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import ImageDownloadPlanDialog from '@/containers/dialogs/ImageDownloadPlanDialog'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { recommendedQuant } from '@/lib/diffusion/fit'
+import { fitForQuant, recommendedQuant } from '@/lib/diffusion/fit'
 import { artifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { formatBytes } from '@/lib/downloadFormat'
@@ -55,12 +62,10 @@ type ImageModelSelectorProps = {
 const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
 
 /**
- * Installed / Available checkpoints, one row per quant, with a fit badge for
- * this machine and Download / Load / Unload / Remove.
- *
- * Picking a quant that is not on disk opens the download plan first — a
- * family's side files can be several GB, and shared between families, so the
- * user sees what will actually be fetched before anything moves.
+ * Installed / Available image models. Each family stays one compact card;
+ * its quantizations live in a dropdown instead of expanding the list into a
+ * file manager. Downloading starts immediately and includes every side file
+ * required by the selected checkpoint.
  */
 export const ImageModelSelector = memo(function ImageModelSelector({
   variant = 'page',
@@ -73,7 +78,6 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   const installedArtifacts = useImageGenerationStore(
     (state) => state.installedArtifacts
   )
-  const [planFor, setPlanFor] = useState<string | null>(null)
   const { profile } = useHardwareTier()
 
   const fits = (family: DiffusionCatalogFamily) =>
@@ -99,29 +103,27 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   )
 
   const sections = useMemo(() => {
-    const installed: Array<[DiffusionCatalogFamily, DiffusionCatalogQuant[]]> = []
-    const available: Array<[DiffusionCatalogFamily, DiffusionCatalogQuant[]]> = []
+    const installed: Array<[DiffusionCatalogFamily, DiffusionCatalogQuant[]]> =
+      []
+    const available: Array<[DiffusionCatalogFamily, DiffusionCatalogQuant[]]> =
+      []
     for (const family of families) {
-      // One family, one row. Prefer what is already on disk; otherwise show
-      // the quant selected for this machine. Alternate quants remain an
-      // implementation detail instead of turning the picker into a file list.
       const have = family.transformer.quants.find((quant) =>
         installedIds.has(artifactId(family.id, quant.id))
       )
-      const recommended = recommendedQuant(family, profile, {
-        teOnCpu: IS_MACOS,
-      })
-      const choice = have ?? recommended ?? family.transformer.quants[0]
-      if (!choice) continue
-      if (have) installed.push([family, [choice]])
-      else available.push([family, [choice]])
+      if (family.transformer.quants.length === 0) continue
+      if (have) installed.push([family, family.transformer.quants])
+      else available.push([family, family.transformer.quants])
     }
     return { installed, available }
   }, [families, installedIds, profile])
 
   if (!catalog) {
     return (
-      <p className="text-sm text-muted-foreground" data-testid="image-models-loading">
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid="image-models-loading"
+      >
         {t('images:model.loadingCatalog')}
       </p>
     )
@@ -146,15 +148,17 @@ export const ImageModelSelector = memo(function ImageModelSelector({
 
     return (
       <div
-        className={cn('space-y-1 rounded-xl border bg-secondary/20 p-1', className)}
+        className={cn(
+          'space-y-1 rounded-xl border bg-secondary/20 p-1',
+          className
+        )}
         data-testid="image-model-selector"
       >
-        {choices.map(({ family, quant }, index) => (
+        {choices.map(({ family, quant }) => (
           <SetupFamilyRow
             key={family.id}
             family={family}
             quant={quant}
-            recommended={index === 0}
             onDownloadStarted={onDownloadStarted}
           />
         ))}
@@ -168,7 +172,10 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   }
 
   return (
-    <div className={cn('space-y-2', className)} data-testid="image-model-selector">
+    <div
+      className={cn('space-y-2', className)}
+      data-testid="image-model-selector"
+    >
       {sections.installed.length > 0 && (
         <Section title={t('images:model.installed')}>
           {sections.installed.map(([family, quants]) => (
@@ -176,9 +183,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
               key={family.id}
               family={family}
               quants={quants}
-              variant={variant}
-              unsupportedFor={fits(family) ? null : workflow ?? null}
-              onRequestDownload={setPlanFor}
+              unsupportedFor={fits(family) ? null : (workflow ?? null)}
             />
           ))}
         </Section>
@@ -190,9 +195,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
               key={family.id}
               family={family}
               quants={quants}
-              variant={variant}
-              unsupportedFor={fits(family) ? null : workflow ?? null}
-              onRequestDownload={setPlanFor}
+              unsupportedFor={fits(family) ? null : (workflow ?? null)}
             />
           ))}
         </Section>
@@ -202,12 +205,6 @@ export const ImageModelSelector = memo(function ImageModelSelector({
           {t('images:model.noneInCatalog')}
         </p>
       )}
-      <ImageDownloadPlanDialog
-        artifactId={planFor}
-        onOpenChange={(open) => {
-          if (!open) setPlanFor(null)
-        }}
-      />
     </div>
   )
 })
@@ -215,12 +212,10 @@ export const ImageModelSelector = memo(function ImageModelSelector({
 function SetupFamilyRow({
   family,
   quant,
-  recommended,
   onDownloadStarted,
 }: {
   family: DiffusionCatalogFamily
   quant: DiffusionCatalogQuant
-  recommended: boolean
   onDownloadStarted?: (artifactId: string) => void
 }) {
   const { t } = useTranslation()
@@ -248,21 +243,16 @@ function SetupFamilyRow({
         className="size-8 rounded-lg"
       />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 text-sm font-medium">
-          <span className="truncate">{family.name}</span>
-          {recommended && (
-            <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-              {t('images:model.recommended')}
-            </span>
-          )}
-        </p>
+        <p className="truncate text-sm font-medium">{family.name}</p>
         <div className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
           <FitBadge
             fit={artifact.fit}
             className="rounded-none border-0 bg-transparent p-0 font-medium dark:bg-transparent"
           />
           <span aria-hidden>·</span>
-          <span>{t('images:model.sizeGb', { size: gb(artifact.totalBytes) })}</span>
+          <span>
+            {t('images:model.sizeGb', { size: gb(artifact.totalBytes) })}
+          </span>
         </div>
       </div>
       {artifact.complete ? (
@@ -302,112 +292,100 @@ function Section({
 type FamilyBlockProps = {
   family: DiffusionCatalogFamily
   quants: DiffusionCatalogQuant[]
-  variant: 'page' | 'dialog'
   /** The workflow this family cannot run, when the list is picked for one. */
   unsupportedFor: ImageWorkflowId | null
-  onRequestDownload: (artifactId: string) => void
 }
 
-function FamilyBlock({
-  family,
-  quants,
-  variant,
-  unsupportedFor,
-  onRequestDownload,
-}: FamilyBlockProps) {
+function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
   const { t } = useTranslation()
   const { profile } = useHardwareTier()
-  // Over every quant of the family, not just this section's: the badge must
-  // sit on the same row whether that row is listed as installed or available.
-  const recommendedId = useMemo(
-    () => recommendedQuant(family, profile, { teOnCpu: IS_MACOS })?.id ?? null,
-    [family, profile]
+  const installedArtifacts = useImageGenerationStore(
+    (state) => state.installedArtifacts
   )
-
-  return (
-    <div
-      data-testid={`family-${family.id}`}
-      data-unsupported={unsupportedFor ?? undefined}
-      className={cn(unsupportedFor && 'opacity-60')}
-    >
-      <div className="flex items-center gap-2.5 px-2 py-1">
-        <ModelLogo
-          icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
-          name={family.name}
-          author={family.developer}
-          className="size-7 rounded-md"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-sm font-medium leading-tight">
-            <span className="truncate">{family.name}</span>
-            {unsupportedFor && (
-              <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                {t('images:model.notForWorkflow', {
-                  workflow: t(`images:workflow.${unsupportedFor}.label`),
-                })}
-              </span>
-            )}
-          </p>
-          {family.description && (
-            <p className="truncate text-[11px] leading-snug text-muted-foreground" title={family.description}>
-              {family.description}
-            </p>
-          )}
-        </div>
-      </div>
-      {/* Indented to the family name, so the quants read as its children. */}
-      <ul className="space-y-0.5 pl-[38px]">
-        {quants.map((quant) => (
-          <ArtifactRow
-            key={quant.id}
-            family={family}
-            quant={quant}
-            recommended={quant.id === recommendedId}
-            variant={variant}
-            disabled={unsupportedFor !== null}
-            onRequestDownload={onRequestDownload}
-          />
-        ))}
-      </ul>
-    </div>
+  const selectedArtifactId = useImageSetting(
+    (state) => state.selectedArtifactId
   )
-}
-
-type ArtifactRowProps = {
-  family: DiffusionCatalogFamily
-  quant: DiffusionCatalogQuant
-  /** The quant this machine should run, per {@link recommendedQuant}. */
-  recommended: boolean
-  variant: 'page' | 'dialog'
-  /** The family cannot run the current workflow: no pick, run or fetch from here. */
-  disabled?: boolean
-  onRequestDownload: (artifactId: string) => void
-}
-
-function ArtifactRow({
-  family,
-  quant,
-  recommended,
-  variant,
-  disabled = false,
-  onRequestDownload,
-}: ArtifactRowProps) {
-  const { t } = useTranslation()
-  const id = artifactId(family.id, quant.id)
-  const artifact = useImageArtifact(id)
-  const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
   )
   const unloadModel = useImageGenerationStore((state) => state.unloadModel)
   const generating = useImageGenerationStore((state) => state.generating)
+  const installedIds = useMemo(
+    () => new Set(installedArtifacts.map((item) => item.id)),
+    [installedArtifacts]
+  )
+  const initialQuantId = useMemo(() => {
+    const persisted = quants.find(
+      (quant) => artifactId(family.id, quant.id) === selectedArtifactId
+    )
+    const installed = quants.find((quant) =>
+      installedIds.has(artifactId(family.id, quant.id))
+    )
+    return (
+      persisted ??
+      installed ??
+      recommendedQuant(family, profile, { teOnCpu: IS_MACOS }) ??
+      quants[0]
+    )?.id
+  }, [family, installedIds, profile, quants, selectedArtifactId])
+  const [quantId, setQuantId] = useState(initialQuantId ?? quants[0]?.id ?? '')
+
+  useEffect(() => {
+    if (!quants.some((quant) => quant.id === quantId)) {
+      setQuantId(initialQuantId ?? quants[0]?.id ?? '')
+    }
+  }, [initialQuantId, quantId, quants])
+
+  const quant = quants.find((item) => item.id === quantId) ?? quants[0]
+  const id = quant ? artifactId(family.id, quant.id) : ''
+  const artifact = useImageArtifact(id)
+  const disabled = unsupportedFor !== null
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [removing, setRemoving] = useState(false)
-  const selected = selectedArtifactId === id
 
-  const pick = () => {
+  if (!quant) return null
+
+  const selectQuant = (nextQuantId: string) => {
+    setQuantId(nextQuantId)
+  }
+
+  const download = () => {
     setSelectedArtifactId(id)
-    if (!artifact.complete && !artifact.downloading) onRequestDownload(id)
+    void artifact.download()
+  }
+
+  const start = async () => {
+    if (!artifact.complete || artifact.loading || artifact.loaded) return
+    setSelectedArtifactId(id)
+    const toastId = toast.loading(t('images:model.startingToast'))
+    await artifact.load()
+    const loadedId =
+      useImageGenerationStore.getState().status?.model.loaded?.modelId
+    if (loadedId === id) {
+      toast.success(t('images:model.startedToast', { name: family.name }), {
+        id: toastId,
+      })
+    } else {
+      toast.error(t('images:model.startFailed', { name: family.name }), {
+        id: toastId,
+      })
+    }
+  }
+
+  const stop = async () => {
+    const toastId = toast.loading(t('images:model.stoppingToast'))
+    await unloadModel()
+    const stillLoaded =
+      useImageGenerationStore.getState().status?.model.state === 'loaded'
+    if (stillLoaded) {
+      toast.error(t('images:model.stopFailed', { name: family.name }), {
+        id: toastId,
+      })
+    } else {
+      toast.success(t('images:model.stoppedToast', { name: family.name }), {
+        id: toastId,
+      })
+    }
   }
 
   const remove = async () => {
@@ -425,81 +403,149 @@ function ArtifactRow({
   }
 
   return (
-    <li
+    <div
       className={cn(
-        'flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/50',
-        selected && 'bg-secondary hover:bg-secondary'
+        'rounded-lg px-2.5 py-2 transition-colors duration-150 ease-out hover:bg-secondary/50',
+        artifact.loaded && 'bg-secondary/70 hover:bg-secondary/70',
+        disabled && 'opacity-60'
       )}
-      data-testid={`artifact-${id}`}
-      data-selected={selected ? 'true' : undefined}
+      data-testid={`family-${family.id}`}
+      data-unsupported={unsupportedFor ?? undefined}
+      data-artifact-id={id}
     >
-      <button
-        type="button"
-        className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
-        onClick={pick}
-        disabled={disabled}
-        aria-pressed={selected}
-        aria-label={t('images:model.pick', {
-          name: family.name,
-          quant: quant.label,
-        })}
-      >
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium">{quant.label}</span>
-          {recommended && (
-            <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
-              {t('images:model.recommended')}
-            </span>
+      <div className="flex items-start gap-2.5">
+        <ModelLogo
+          icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
+          name={family.name}
+          author={family.developer}
+          className="mt-0.5 size-7 rounded-md"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-sm font-medium leading-tight">
+            <span className="truncate">{family.name}</span>
+            {unsupportedFor && (
+              <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                {t('images:model.notForWorkflow', {
+                  workflow: t(`images:workflow.${unsupportedFor}.label`),
+                })}
+              </span>
+            )}
+          </p>
+          {family.description && (
+            <p
+              className="mt-0.5 truncate text-[11px] leading-snug text-muted-foreground"
+              title={family.description}
+            >
+              {family.description}
+            </p>
           )}
-          {artifact.installed && !artifact.complete && !artifact.downloading && (
-            <span className="text-xs text-amber-600 dark:text-amber-400">
-              {t('images:model.incomplete')}
-            </span>
-          )}
-        </span>
-        {/* Its own line in every state, so the size turning into a byte count
-            mid-download changes text, not the row's height. The fit badge
-            sits here too, so the first line stays short beside the buttons. */}
-        <span
-          className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
-          aria-live={artifact.downloading ? 'polite' : undefined}
-        >
-          {/* The fit as coloured words, not a third pill beside the badge
-              and the button. */}
-          <FitBadge
-            fit={artifact.fit}
-            className="rounded-none border-0 bg-transparent p-0 font-medium dark:bg-transparent"
-          />
-          <span aria-hidden>·</span>
-          {artifact.downloading
-            ? t('images:model.progress', {
-                current: formatBytes(
-                  artifact.currentBytes,
-                  artifact.downloadTotalBytes
-                ),
-                total: formatBytes(
-                  artifact.downloadTotalBytes,
-                  artifact.downloadTotalBytes
-                ),
-              })
-            : t('images:model.sizeGb', { size: gb(artifact.totalBytes) })}
-        </span>
-      </button>
+        </div>
+      </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
-        {!(disabled && !artifact.downloading) && (
+      <div
+        className="mt-2 flex items-center gap-1.5 pl-9"
+        data-testid={`artifact-${id}`}
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-muted/45 px-2 text-left transition-colors hover:bg-muted/70"
+              aria-label={t('images:model.pick', {
+                name: family.name,
+                quant: quant.label,
+              })}
+              disabled={generating || disabled}
+            >
+              <span className="shrink-0 rounded-[5px] bg-secondary px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
+                {quant.label}
+              </span>
+              <FitBadge
+                fit={artifact.fit}
+                className="shrink-0 rounded-none border-0 bg-transparent p-0 text-[10px] font-medium dark:bg-transparent"
+              />
+              <span className="min-w-0 truncate text-[11px] tabular-nums text-muted-foreground">
+                {artifact.downloading
+                  ? t('images:model.progress', {
+                      current: formatBytes(
+                        artifact.currentBytes,
+                        artifact.downloadTotalBytes
+                      ),
+                      total: formatBytes(
+                        artifact.downloadTotalBytes,
+                        artifact.downloadTotalBytes
+                      ),
+                    })
+                  : t('images:model.sizeGb', {
+                      size: gb(artifact.totalBytes),
+                    })}
+              </span>
+              <IconChevronDown
+                size={14}
+                className="ml-auto shrink-0 text-muted-foreground"
+              />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            sideOffset={4}
+            className="w-[260px] max-w-[calc(100vw-3rem)] p-1"
+          >
+            {quants.map((option) => {
+              const optionId = artifactId(family.id, option.id)
+              const fit = fitForQuant(family, option, profile, {
+                teOnCpu: IS_MACOS,
+              }).fit
+              const totalBytes =
+                option.bytes +
+                (family.vae?.bytes ?? 0) +
+                family.text_encoders.reduce(
+                  (sum, encoder) => sum + encoder.bytes,
+                  0
+                )
+              return (
+                <DropdownMenuItem
+                  key={option.id}
+                  className="gap-2 py-2"
+                  data-testid={`quant-${optionId}`}
+                  onSelect={() => selectQuant(option.id)}
+                >
+                  <span className="w-[62px] shrink-0 rounded-[5px] bg-secondary px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold text-muted-foreground">
+                    {option.label}
+                  </span>
+                  <FitBadge
+                    fit={fit}
+                    className="shrink-0 rounded-none border-0 bg-transparent p-0 text-[10px] font-medium dark:bg-transparent"
+                  />
+                  <span className="ml-auto whitespace-nowrap text-[11px] tabular-nums text-muted-foreground">
+                    {t('images:model.sizeGb', { size: gb(totalBytes) })}
+                  </span>
+                  <IconCheck
+                    size={14}
+                    className={cn(
+                      'shrink-0',
+                      option.id === quant.id ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {!disabled && (!artifact.complete || artifact.downloading) && (
           <ImageArtifactDownloadButton
             artifact={artifact}
-            onRequestDownload={() => onRequestDownload(id)}
+            onRequestDownload={download}
           />
         )}
-        {artifact.complete && !artifact.loaded && (
+        {artifact.complete && !artifact.downloading && !artifact.loaded && (
           <Button
             size="sm"
             variant="outline"
-            className="w-24 justify-center"
+            className="w-20 justify-center"
             disabled={artifact.loading || generating || disabled}
-            onClick={() => void artifact.load()}
+            onClick={() => void start()}
             aria-label={t('images:model.load')}
           >
             {artifact.loading ? (
@@ -507,23 +553,25 @@ function ArtifactRow({
             ) : (
               <IconPlayerPlay size={14} />
             )}
-            {artifact.loading ? t('images:model.loading') : t('images:model.load')}
+            {artifact.loading
+              ? t('images:model.loading')
+              : t('images:model.load')}
           </Button>
         )}
         {artifact.loaded && (
           <Button
             size="sm"
             variant="outline"
-            className="w-24 justify-center"
+            className="w-20 justify-center"
             disabled={generating}
-            onClick={() => void unloadModel()}
+            onClick={() => void stop()}
             aria-label={t('images:model.unload')}
           >
             <IconPlayerStopFilled size={14} />
             {t('images:model.unload')}
           </Button>
         )}
-        {variant === 'page' && artifact.installed && !artifact.downloading && (
+        {artifact.installed && !artifact.downloading && (
           <Button
             variant="ghost"
             size="icon-xs"
@@ -531,7 +579,7 @@ function ArtifactRow({
             aria-label={t('images:model.remove')}
             onClick={() => setConfirmRemove(true)}
           >
-            <IconTrash size={16} className="text-muted-foreground" />
+            <IconTrash size={15} className="text-muted-foreground" />
           </Button>
         )}
       </div>
@@ -545,10 +593,16 @@ function ArtifactRow({
                 quant: quant.label,
               })}
             </DialogTitle>
-            <DialogDescription>{t('images:model.removeDescription')}</DialogDescription>
+            <DialogDescription>
+              {t('images:model.removeDescription')}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setConfirmRemove(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirmRemove(false)}
+            >
               {t('common:cancel')}
             </Button>
             <Button
@@ -562,7 +616,7 @@ function ArtifactRow({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </li>
+    </div>
   )
 }
 

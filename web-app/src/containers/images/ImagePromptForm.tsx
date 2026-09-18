@@ -10,6 +10,7 @@ import { useNavigate } from '@tanstack/react-router'
 import {
   IconChevronDown,
   IconChevronRight,
+  IconInfoCircle,
   IconRestore,
   IconSettings,
 } from '@tabler/icons-react'
@@ -48,8 +49,9 @@ import {
   type ImageOffloadOverride,
 } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { parseArtifactId } from '@/lib/diffusion/models'
 import type { DimConstraints } from '@/lib/diffusion/size'
-import { workflowSpec } from '@/lib/diffusion/workflows'
+import { familySupportsWorkflow, workflowSpec } from '@/lib/diffusion/workflows'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageField, ImageFieldHint } from './ImageField'
@@ -126,6 +128,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     setEngineOverride,
     evictChatModel,
     setEvictChatModel,
+    selectedArtifactId,
   } = useImageSetting(
     useShallow((state) => ({
       advancedOpen: state.advancedOpen,
@@ -140,9 +143,11 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       setEngineOverride: state.setEngineOverride,
       evictChatModel: state.evictChatModel,
       setEvictChatModel: state.setEvictChatModel,
+      selectedArtifactId: state.selectedArtifactId,
     }))
   )
   const engine = useImageEngine()
+  const status = useImageGenerationStore((state) => state.status)
   const capabilities = useImageGenerationStore((state) => state.capabilities)
   const applyIdleSettings = useImageGenerationStore(
     (state) => state.applyIdleSettings
@@ -179,6 +184,13 @@ export const ImagePromptForm = memo(function ImagePromptForm({
   const spec = workflowSpec(form.workflow)
   const WorkflowIcon = WORKFLOW_ICONS[form.workflow]
   const isEdit = form.workflow === 'edit'
+  const selectedFamily =
+    parseArtifactId(selectedArtifactId ?? '')?.family ?? null
+  const workflowModelMismatch =
+    status?.model.state === 'loaded'
+      ? !capabilities?.workflows.includes(form.workflow)
+      : selectedFamily !== null &&
+        !familySupportsWorkflow(selectedFamily, form.workflow)
 
   const idleLabel = (minutes: number) =>
     minutes === 0
@@ -277,10 +289,37 @@ export const ImagePromptForm = memo(function ImagePromptForm({
         />
 
         <div className="space-y-3 rounded-2xl border bg-secondary/20 p-3">
-          <ImageModelPicker
-            open={modelsOpen}
-            onOpenChange={setModelsOpen}
-          />
+          {workflowModelMismatch && (
+            <div
+              className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5"
+              data-testid="image-workflow-model-notice"
+            >
+              <IconInfoCircle
+                size={17}
+                className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-400"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium">
+                  {t('images:workflow.compatibleModelTitle', {
+                    workflow: t(`images:workflow.${form.workflow}.label`),
+                  })}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  {t('images:workflow.compatibleModelDescription')}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setModelsOpen(true)}
+              >
+                {t('images:workflow.chooseCompatibleModel')}
+              </Button>
+            </div>
+          )}
+          <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
           <ImageField
             htmlFor="image-prompt"
             label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}
@@ -538,19 +577,23 @@ export const ImagePromptForm = memo(function ImagePromptForm({
                   aria-label={t('settings:media.keepLoaded')}
                 />
               </div>
-              <button
+              <Button
                 type="button"
-                className="flex items-center gap-1 self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+                variant="outline"
+                size="sm"
+                className="w-full justify-between rounded-lg"
                 onClick={() => void navigate({ to: route.settings.media })}
               >
-                {t('images:form.mediaSettings')}
+                <span className="flex items-center gap-2">
+                  <IconSettings size={14} className="text-muted-foreground" />
+                  {t('images:form.mediaSettings')}
+                </span>
                 <IconChevronRight size={14} />
-              </button>
+              </Button>
             </div>
           </CollapsibleContent>
         </Collapsible>
       </div>
-
     </form>
   )
 })

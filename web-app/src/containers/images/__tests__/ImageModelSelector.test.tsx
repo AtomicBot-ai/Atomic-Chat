@@ -18,7 +18,13 @@ import { seedServiceHub } from '@/test/service-hub'
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    loading: vi.fn(() => 'toast-id'),
+    success: vi.fn(),
+  },
+}))
 vi.mock('@/lib/diffusion/arbiter', () => ({
   acquireGpuForDiffusion: vi.fn(async () => ({ evicted: [] })),
 }))
@@ -40,7 +46,11 @@ const hardware = vi.hoisted(() => ({
   profile: null as import('@/lib/hardware-tier').HardwareProfile | null,
 }))
 vi.mock('@/hooks/useHardwareTier', () => ({
-  useHardwareTier: () => ({ tier: 'vram_8', profile: hardware.profile, ready: true }),
+  useHardwareTier: () => ({
+    tier: 'vram_8',
+    profile: hardware.profile,
+    ready: true,
+  }),
 }))
 
 const gpuWith = (budgetMib: number) => ({
@@ -73,7 +83,8 @@ describe('ImageModelSelector', () => {
   const q4Files = makeFilesFor(Z_IMAGE, 'q4_k_m')
 
   beforeAll(() => {
-    global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+    global.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver
   })
 
   beforeEach(async () => {
@@ -102,21 +113,37 @@ describe('ImageModelSelector', () => {
   })
 
   it('marks the families that cannot run the picked workflow and lists them last', () => {
-    const klein = { ...Z_IMAGE, id: 'flux.2-klein' as const, name: 'FLUX.2 Klein 4B' }
+    const klein = {
+      ...Z_IMAGE,
+      id: 'flux.2-klein' as const,
+      name: 'FLUX.2 Klein 4B',
+    }
     useImageGenerationStore.setState({ catalog: makeCatalog([Z_IMAGE, klein]) })
     render(<ImageModelSelector workflow="edit" />)
 
     // One family is one row: an installed quant wins over alternate downloads.
-    const installed = screen.getByRole('heading', { name: 'images:model.installed' }).closest('section')!
-    const available = screen.getByRole('heading', { name: 'images:model.available' }).closest('section')!
+    const installed = screen
+      .getByRole('heading', { name: 'images:model.installed' })
+      .closest('section')!
+    const available = screen
+      .getByRole('heading', { name: 'images:model.available' })
+      .closest('section')!
     for (const zImage of screen.getAllByTestId('family-z-image')) {
       expect(zImage).toHaveAttribute('data-unsupported', 'edit')
-      expect(within(zImage).getByText('images:model.notForWorkflow')).toBeInTheDocument()
-      expect(within(zImage).getAllByRole('button', { name: 'images:model.pick' })[0]).toBeDisabled()
+      expect(
+        within(zImage).getByText('images:model.notForWorkflow')
+      ).toBeInTheDocument()
+      expect(
+        within(zImage).getAllByRole('button', { name: 'images:model.pick' })[0]
+      ).toBeDisabled()
     }
     // The installed quant cannot run this workflow.
-    expect(within(installed).getByRole('button', { name: 'images:model.load' })).toBeDisabled()
-    expect(within(available).queryByTestId('family-z-image')).not.toBeInTheDocument()
+    expect(
+      within(installed).getByRole('button', { name: 'images:model.load' })
+    ).toBeDisabled()
+    expect(
+      within(available).queryByTestId('family-z-image')
+    ).not.toBeInTheDocument()
 
     const kleinBlock = screen.getByTestId('family-flux.2-klein')
     expect(kleinBlock).not.toHaveAttribute('data-unsupported')
@@ -129,43 +156,60 @@ describe('ImageModelSelector', () => {
     for (const zImage of screen.getAllByTestId('family-z-image')) {
       expect(zImage).not.toHaveAttribute('data-unsupported')
     }
-    expect(screen.getByRole('button', { name: 'images:model.load' })).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: 'images:model.load' })
+    ).toBeEnabled()
   })
 
   it('shows one configuration per family, preferring what is on disk', () => {
     render(<ImageModelSelector />)
-    const installed = screen.getByRole('heading', { name: 'images:model.installed' }).closest('section')!
+    const installed = screen
+      .getByRole('heading', { name: 'images:model.installed' })
+      .closest('section')!
     expect(within(installed).getByText('Q4_K_M')).toBeInTheDocument()
     expect(within(installed).queryByText('Q8_0')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { name: 'images:model.available' })
     ).not.toBeInTheDocument()
     // The size shown is the whole artifact, side files included.
-    expect(within(installed).getByText(/images:model.sizeGb/)).toBeInTheDocument()
+    expect(
+      within(installed).getByText(/images:model.sizeGb/)
+    ).toBeInTheDocument()
   })
 
-  it("badges the catalog's pick when this machine can run it", () => {
+  it('opens on the best quant and keeps every alternative in one dropdown', async () => {
     // 16 GiB: Q4 needs ~7.8 GiB with its encoder and activations (ok), Q8 ~11.6 (maybe).
     hardware.profile = gpuWith(16 * 1024)
     render(<ImageModelSelector />)
+    const row = screen.getByTestId(`artifact-${Q4_ID}`)
+    expect(within(row).getByText('Q4_K_M')).toBeInTheDocument()
     expect(
-      within(screen.getByTestId(`artifact-${Q4_ID}`)).getByText('images:model.recommended')
-    ).toBeInTheDocument()
-    expect(screen.queryByTestId(`artifact-${Q8_ID}`)).not.toBeInTheDocument()
+      screen.queryByText('images:model.recommended')
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(
+      within(row).getByRole('button', { name: 'images:model.pick' })
+    )
+    expect(screen.getByTestId(`quant-${Q4_ID}`)).toBeInTheDocument()
+    expect(screen.getByTestId(`quant-${Q8_ID}`)).toBeInTheDocument()
   })
 
-  it('recommends nothing when no quant fits this machine', () => {
+  it('does not add recommendation badges when no quant fits this machine', () => {
     // 6 GiB: even Q4 is past the offload threshold.
     hardware.profile = gpuWith(6 * 1024)
     render(<ImageModelSelector />)
-    expect(screen.queryByText('images:model.recommended')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('images:model.recommended')
+    ).not.toBeInTheDocument()
   })
 
   it('loads an installed quant and then offers Unload instead', async () => {
     render(<ImageModelSelector />)
     const row = screen.getByTestId(`artifact-${Q4_ID}`)
     await act(async () => {
-      await userEvent.click(within(row).getByRole('button', { name: 'images:model.load' }))
+      await userEvent.click(
+        within(row).getByRole('button', { name: 'images:model.load' })
+      )
     })
     expect(fake.loadModel.mock.calls[0][0].modelId).toBe(Q4_ID)
     await waitFor(() =>
@@ -178,7 +222,7 @@ describe('ImageModelSelector', () => {
     expect(useImageSetting.getState().selectedArtifactId).toBe(Q4_ID)
   })
 
-  it('shows the download plan before fetching a quant that is not on disk', async () => {
+  it('downloads every required file immediately after one click', async () => {
     useImageGenerationStore.setState({
       modelFiles: [],
       installedArtifacts: [],
@@ -186,25 +230,12 @@ describe('ImageModelSelector', () => {
     render(<ImageModelSelector />)
     await act(async () => {
       await userEvent.click(
-        within(screen.getByTestId(`artifact-${Q4_ID}`)).getByRole('button', {
-          name: 'images:model.pick',
-        })
+        screen.getByRole('button', { name: 'images:model.download' })
       )
     })
 
-    // First download includes the transformer and its shared side files.
-    const entries = await screen.findByTestId('plan-entries')
-    const rows = within(entries).getAllByRole('listitem')
-    expect(rows.map((row) => row.getAttribute('data-present'))).toEqual([
-      'false',
-      'false',
-      'false',
-    ])
-    expect(screen.getByTestId('plan-total')).toBeInTheDocument()
-
-    await act(async () => {
-      await userEvent.click(screen.getByTestId('plan-download'))
-    })
+    expect(screen.queryByTestId('plan-entries')).not.toBeInTheDocument()
+    await waitFor(() => expect(transfer.download).toHaveBeenCalledTimes(1))
     expect(transfer.download.mock.calls[0][1]).toBe('q4_k_m')
     expect(useImageSetting.getState().selectedArtifactId).toBe(Q4_ID)
   })
@@ -220,7 +251,9 @@ describe('ImageModelSelector', () => {
       )
     })
     await act(async () => {
-      await userEvent.click(screen.getByRole('button', { name: 'images:model.remove' }))
+      await userEvent.click(
+        screen.getByRole('button', { name: 'images:model.remove' })
+      )
     })
     await waitFor(() =>
       expect(
@@ -241,9 +274,13 @@ describe('ImageModelSelector', () => {
 
     const pick = within(row).getByRole('button', { name: 'images:model.pick' })
     expect(within(pick).getByText('images:model.progress')).toBeInTheDocument()
-    expect(within(pick).queryByText('images:model.sizeGb')).not.toBeInTheDocument()
+    expect(
+      within(pick).queryByText('images:model.sizeGb')
+    ).not.toBeInTheDocument()
     // Progress is the cancel button alone, with no second line stacked under it.
-    const cancel = within(row).getByRole('button', { name: 'common:cancelDownload' })
+    const cancel = within(row).getByRole('button', {
+      name: 'common:cancelDownload',
+    })
     expect(cancel).toHaveTextContent('18%')
     expect(within(row).getAllByText('images:model.progress')).toHaveLength(1)
   })

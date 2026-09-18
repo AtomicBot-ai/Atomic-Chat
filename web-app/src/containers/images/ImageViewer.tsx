@@ -6,7 +6,6 @@ import {
   IconChevronRight,
   IconDeviceFloppy,
   IconFolderOpen,
-  IconMaximize,
   IconPhoto,
   IconPhotoUp,
   IconTrash,
@@ -71,7 +70,9 @@ export const ImageViewer = memo(function ImageViewer({
   const runs = useImageForm((state) => state.runs)
   const setSourceImage = useImageForm((state) => state.setSourceImage)
   const workflow = useImageForm((state) => state.workflow)
-  const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
+  const selectedArtifactId = useImageSetting(
+    (state) => state.selectedArtifactId
+  )
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
   )
@@ -178,10 +179,11 @@ export const ImageViewer = memo(function ImageViewer({
       {/* The grid row gives the image a definite box, so `max-h-full` holds
           and a tall image can never slide under the toolbar. */}
       <div className="relative flex min-h-0 min-w-0 items-center justify-center">
-        {/* Spans the box for keyboard focus; only the picture takes the pointer. */}
+        {/* The button hugs the rendered image, so metadata can sit on the
+            picture itself instead of taking space in the action toolbar. */}
         <button
           type="button"
-          className="pointer-events-none flex size-full items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/image relative grid max-h-full max-w-full rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t('images:viewer.fullscreen')}
           onClick={() => {
             setFullscreen(true)
@@ -193,8 +195,11 @@ export const ImageViewer = memo(function ImageViewer({
             alt={item.recipe.prompt}
             decoding="async"
             draggable={false}
-            className="pointer-events-auto max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md"
+            className="col-start-1 row-start-1 max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md"
           />
+          <span className="pointer-events-none col-start-1 row-start-1 m-2 self-start justify-self-end rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
+            {item.width}×{item.height}
+          </span>
         </button>
 
         {/* Stepping arrows, shown when the pointer is over the canvas. */}
@@ -273,17 +278,6 @@ export const ImageViewer = memo(function ImageViewer({
               ? t('images:viewer.deleteCount', { count: selectedIds.length })
               : t('images:viewer.delete')}
           </span>
-        </Button>
-        <span className="hidden px-2 font-mono text-xs tabular-nums text-muted-foreground @[40rem]:inline">
-          {item.width}×{item.height}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('images:viewer.fullscreen')}
-          onClick={() => setFullscreen(true)}
-        >
-          <IconMaximize size={16} />
         </Button>
       </div>
 

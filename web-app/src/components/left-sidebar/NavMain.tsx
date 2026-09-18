@@ -1,11 +1,6 @@
-import { useEffect, useRef, type MouseEvent } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import {
   Collapsible,
   CollapsibleContent,
@@ -46,7 +41,6 @@ import { WORKFLOW_ICONS } from '@/containers/images/workflowIcons'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useImageWorkflowAvailability } from '@/hooks/useImageWorkflowAvailability'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
@@ -83,8 +77,6 @@ export function NavMain() {
   const setPluginsExpanded = useLeftPanel((state) => state.setPluginsExpanded)
   const imagesExpanded = useLeftPanel((state) => state.imagesExpanded)
   const setImagesExpanded = useLeftPanel((state) => state.setImagesExpanded)
-  const { isAvailable: isWorkflowAvailable, unavailableReason } =
-    useImageWorkflowAvailability()
   const { addFolder } = useThreadManagement()
   const projectDialogOpen = useProjectDialog((state) => state.open)
   const setProjectDialogOpen = useProjectDialog((state) => state.setOpen)
@@ -194,57 +186,27 @@ export function NavMain() {
                 <SidebarMenuSub data-testid="images-submenu">
                   {IMAGE_WORKFLOWS.map((workflow) => {
                     const Icon = WORKFLOW_ICONS[workflow.id]
-                    const available = isWorkflowAvailable(workflow.id)
                     const active =
                       workflow.id === 'create'
                         ? pathname === '/images' || pathname === '/images/'
                         : pathname.startsWith(workflow.path)
-                    const link = (
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={active}
-                        className={cn(
-                          'data-[active=true]:bg-sidebar-foreground/15',
-                          !available && 'opacity-50'
-                        )}
-                      >
-                        <Link
-                          to={workflow.path}
-                          aria-disabled={!available || undefined}
-                          onClick={(event: MouseEvent) => {
-                            if (!available) event.preventDefault()
-                          }}
-                        >
-                          <Icon
-                            size={14}
-                            className="shrink-0 text-foreground/70"
-                          />
-                          <span>
-                            {t(`images:workflow.${workflow.id}.label`)}
-                          </span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    )
                     return (
                       <SidebarMenuSubItem key={workflow.id}>
-                        {available ? (
-                          link
-                        ) : (
-                          <Tooltip>
-                            {/* The wrapper takes the hover: a disabled
-                                sub-button swallows pointer events. */}
-                            <TooltipTrigger asChild>
-                              <span className="block">{link}</span>
-                            </TooltipTrigger>
-                            <TooltipContent side="right">
-                              {t(
-                                unavailableReason === 'selected'
-                                  ? 'images:workflow.unavailableSelected'
-                                  : 'images:workflow.unavailable'
-                              )}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={active}
+                          className="data-[active=true]:bg-sidebar-foreground/15"
+                        >
+                          <Link to={workflow.path}>
+                            <Icon
+                              size={14}
+                              className="shrink-0 text-foreground/70"
+                            />
+                            <span>
+                              {t(`images:workflow.${workflow.id}.label`)}
+                            </span>
+                          </Link>
+                        </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     )
                   })}

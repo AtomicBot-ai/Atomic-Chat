@@ -1,9 +1,8 @@
 import { memo, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { IconLoader2, IconPhoto, IconSettings } from '@tabler/icons-react'
+import { IconLoader2, IconPhoto } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
 import HeaderPage from '@/containers/HeaderPage'
 import { route } from '@/constants/routes'
 import { useImageEngine } from '@/hooks/useImageEngine'
@@ -126,7 +125,12 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           }
           return
         case 'reduceSize':
-          patchForm({ width: 768, height: 768, aspect: 'square', portrait: false })
+          patchForm({
+            width: 768,
+            height: 768,
+            aspect: 'square',
+            portrait: false,
+          })
           return
         case 'pickSmallerQuant':
           setModelsOpen(true)
@@ -142,21 +146,13 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     <HeaderPage>
       <div
         className={cn(
-          'flex w-full items-center justify-between gap-2 pr-3',
+          'flex w-full items-center gap-2 pr-3',
           !IS_MACOS && 'pr-30'
         )}
       >
         <span className="font-studio text-base font-medium">
           {t('images:page.title')}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('common:media')}
-          onClick={() => void navigate({ to: route.settings.media })}
-        >
-          <IconSettings size={16} />
-        </Button>
       </div>
     </HeaderPage>
   )
@@ -229,7 +225,8 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
                 <span className="tabular-nums">{gallery.total}</span>
                 {gallery.selectedIds.length > 1 && (
                   <span>
-                    · {t('images:gallery.selectedCount', {
+                    ·{' '}
+                    {t('images:gallery.selectedCount', {
                       count: gallery.selectedIds.length,
                     })}
                   </span>
