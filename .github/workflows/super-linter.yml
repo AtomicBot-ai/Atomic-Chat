@@ -41,3 +41,13 @@ jobs:
           # wherever they appear. Markdown style is covered by markdownlint
           # (.github/linters/.markdownlint.json).
           VALIDATE_NATURAL_LANGUAGE: false
+          # ts-standard runs against super-linter's own bundled tsconfig
+          # (/action/lib/.automation/tsconfig.json), which includes none of this
+          # repository's files, so it cannot parse any of them:
+          #   Parsing error: ESLint was configured to run on <file> using
+          #   parserOptions.project: .../action/lib/.automation/tsconfig.json
+          #   However, that TSConfig does not include this file.
+          # It also enforces standardjs style, which contradicts this
+          # repository's Prettier configuration. TYPESCRIPT_ES (eslint) passes
+          # and stays on; TypeScript is gated properly by `make verify`.
+          VALIDATE_TYPESCRIPT_STANDARD: false
