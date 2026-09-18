@@ -84,12 +84,18 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a document attached for retrieval', () =
       await send(session, 'what do the notes say')
       await pageShows(session, REPLY, 90_000, 2)
 
-      const dbDir = join(session.profile.home, 'Library', 'Application Support', 'Atomic Chat', 'data', 'db')
+      // The thread's collection lives in the data folder, with everything else
+      // that moves when the folder is moved and goes when the app is reset —
+      // not in the fixed place under the home directory it used to be in.
+      const dbDir = join(dataFolder, 'db')
+      const legacyDir = join(session.profile.home, 'Library', 'Application Support', 'Atomic Chat', 'data', 'db')
       const collections = async () => (await readdir(dbDir).catch(() => [] as string[])).filter((n) => n.startsWith('attachments_'))
       await expect.poll(collections, { timeout: 60_000 }).toHaveLength(1)
 
       watching = false
       await watcher
+
+      expect((await readdir(legacyDir).catch(() => [] as string[])).filter((n) => n.startsWith('attachments_'))).toEqual([])
 
       // The core ran the embedding model as a process of its own, in embedding mode.
       expect(embeddingRuns.size).toBeGreaterThan(0)

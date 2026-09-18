@@ -43,6 +43,8 @@ export interface FakeBackendOptions {
   version?: string
   /** The local provider to install it for; the upstream llama.cpp one unless a scenario runs another. */
   provider?: string
+  /** Scripted answers of the raw `/completion` endpoint, in order — what an agent loop reads its steps from. `{{seen:TEXT}}` becomes yes/no: whether the prompt held TEXT. */
+  completionSteps?: string[]
   /** One scripted tool turn: call this tool when the app offers it, then repeat its result after the reply. */
   toolCall?: { name: string; arguments?: Record<string, unknown> }
 }

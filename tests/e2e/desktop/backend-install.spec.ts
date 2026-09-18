@@ -78,9 +78,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('installing a backend from a file', () =>
       await install.click()
 
       // The page says so, the binary is where the core looks for it, and the
-      // provider's setting now names the new pair. (The core's own settings store
-      // keeps `version_backend: none` throughout; the app names the backend when
-      // it asks for a load, which is what the chat below checks.)
+      // provider's setting now names the new pair. The core's copy of that
+      // setting follows with the next load, which is when the app hands its
+      // settings over; it is checked after the chat below.
       await pageShows(session, `${NEW_TAG}-bin-${FAKE_BACKEND}`, 60_000)
       expect((await stat(join(backends, NEW_TAG, FAKE_BACKEND, 'build', 'bin', 'llama-server'))).mode & 0o111).not.toBe(0)
       await pageShows(session, NEW_BACKEND, 30_000)
@@ -101,6 +101,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('installing a backend from a file', () =>
       await send(session, 'and now')
       await pageShows(session, NEW_REPLY, 90_000)
       expect(await runningExe(dataFolder)).toContain(`${NEW_TAG}/`)
+      const coreSettings = JSON.parse(await readFile(join(dataFolder, 'atomic-core', 'settings.json'), 'utf8')) as {
+        providers?: Record<string, Record<string, unknown>>
+      }
+      expect(coreSettings.providers?.[FAKE_PROVIDER]?.version_backend).toBe(NEW_BACKEND)
     })
   })
 })
