@@ -361,6 +361,15 @@ pub async fn shutdown<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Undo `shutdown` when the app is staying up after all — a data-folder move that failed after
+/// the core had been stopped for it.
+pub async fn resume<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(client) = app.try_state::<AtomicCoreClient>() {
+        let _gate = client.transition.lock().await;
+        client.start(app).await;
+    }
+}
+
 /// Any control route, with the token attached here.
 ///
 /// `body` is passed through untouched: the control API's request shapes are its

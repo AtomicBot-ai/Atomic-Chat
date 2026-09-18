@@ -2878,7 +2878,9 @@ pub fn configure_codex(
     let final_content = if cleaned.trim().is_empty() {
         format!("{}\n{}", head, block)
     } else {
-        format!("{}\n{}\n{}", head, cleaned.trim_end(), block)
+        // `trim`, not `trim_end`: stripping the previous head block leaves its line break at the
+        // front of what remains, and keeping it made the file two lines longer on every run.
+        format!("{}\n{}\n{}", head, cleaned.trim(), block)
     };
 
     std::fs::write(&path, final_content)
@@ -5173,11 +5175,17 @@ pub fn configure_atomic_agent(
 /// using a just-configured agent in one click. The terminal stays open after
 /// the command (it launches an interactive TUI agent like codex/claude).
 #[tauri::command]
+#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
 pub fn open_agent_terminal(command: String, proxy: Option<ProxyEnv>) -> Result<(), String> {
     let command = command.trim().to_string();
     if command.is_empty() {
         return Err("Empty terminal command".to_string());
     }
+
+    // An end-to-end build must not open terminal windows on the desktop of
+    // whoever runs the tests; it writes down what it would have run instead.
+    #[cfg(feature = "e2e")]
+    return crate::core::e2e::record_terminal(&crate::core::e2e::data_root(), &command);
 
     #[cfg(target_os = "macos")]
     {

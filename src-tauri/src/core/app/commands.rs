@@ -5,7 +5,7 @@ use std::{
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{
-    constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive, models::AppConfiguration,
+    constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive_except, models::AppConfiguration,
 };
 use crate::core::state::AppState;
 
@@ -281,14 +281,33 @@ pub fn get_user_home_path<R: Runtime>(app: AppHandle<R>) -> String {
     get_app_configurations(app.clone()).data_folder
 }
 
+/// What the core keeps in `atomic-core/` about the process that is running now, as opposed to what
+/// it keeps for the user (settings, credentials, the optimal-backend record). A copy of the lock
+/// names a live pid, and the core judges a lock stale by its pid alone, so the app restarted on the
+/// new folder would wait for that process to give up a folder it never served; the token is the
+/// live core's control secret; the journal and the claims describe processes of the old folder.
+const CORE_RUNTIME_STATE: [&str; 4] = [
+    "atomic-core/instance.lock",
+    "atomic-core/control-token",
+    "atomic-core/processes.json",
+    "atomic-core/model-claims",
+];
+
 #[tauri::command]
-pub fn change_app_data_folder<R: Runtime>(
+pub async fn change_app_data_folder<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     new_data_folder: String,
 ) -> Result<(), String> {
     // Get current data folder path
     let current_data_folder = get_jan_data_folder_path(app_handle.clone());
     let new_data_folder_path = PathBuf::from(&new_data_folder);
+
+    // Check if this is a parent directory to avoid infinite recursion
+    if current_data_folder.exists() && new_data_folder_path.starts_with(&current_data_folder) {
+        return Err(
+            "New data folder cannot be a subdirectory of the current data folder".to_string(),
+        );
+    }
 
     // Create the new data folder if it doesn't exist
     if !new_data_folder_path.exists() {
@@ -298,20 +317,26 @@ pub fn change_app_data_folder<R: Runtime>(
 
     // Copy all files from the old folder to the new one
     if current_data_folder.exists() {
-        log::info!("Copying data from {current_data_folder:?} to {new_data_folder_path:?}");
+        // The core serves one data folder for as long as it runs, and the restart that follows a
+        // move replaces this process without the exit handler that stops the core. Stop it here,
+        // before its folder is copied from under it: the copy is then of settled files, and the
+        // app that comes up on the new folder starts a core of its own at once.
+        #[cfg(desktop)]
+        crate::core::atomic_core::commands::shutdown(&app_handle).await;
 
-        // Check if this is a parent directory to avoid infinite recursion
-        if new_data_folder_path.starts_with(&current_data_folder) {
-            return Err(
-                "New data folder cannot be a subdirectory of the current data folder".to_string(),
-            );
-        }
-        copy_dir_recursive(
+        log::info!("Copying data from {current_data_folder:?} to {new_data_folder_path:?}");
+        let runtime_state = CORE_RUNTIME_STATE.map(std::path::Path::new);
+        if let Err(e) = copy_dir_recursive_except(
             &current_data_folder,
             &new_data_folder_path,
             &[".uvx", ".npx", "openclaw"],
-        )
-        .map_err(|e| format!("Failed to copy data to new folder: {e}"))?;
+            &runtime_state,
+        ) {
+            // The app stays up on the old folder, so it needs its core back.
+            #[cfg(desktop)]
+            crate::core::atomic_core::commands::resume(&app_handle).await;
+            return Err(format!("Failed to copy data to new folder: {e}"));
+        }
     } else {
         log::info!("Current data folder does not exist, nothing to copy");
     }

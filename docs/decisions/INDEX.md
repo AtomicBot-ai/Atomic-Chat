@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-261 records, 2026-05-19 → 2026-09-17.
+285 records, 2026-05-19 → 2026-09-18.
 
 ---
 
@@ -134,7 +134,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (52)
+## llama.cpp providers & backend selection (54)
+
+- **2026-09-18** — [Honour "Ignore SSL certificates" for proxied plugin requests](2026-09-18-honour-ignore-ssl-for-proxied-plugin-requests.md)
+- **2026-09-18** — [Preserve the resolved backend during provider settings writes](2026-09-18-preserve-resolved-backend-during-settings-writes.md)
 
 - **2026-09-14** — [One GPU VRAM floor for every OS](2026-09-14-one-gpu-vram-floor-for-every-os.md)
 - **2026-08-21** — [Gate CUDA 13 on NVIDIA compute capability, not the driver version alone](2026-08-21-gate-cuda-13-on-nvidia-compute-capability-not-driver-alone.md)
@@ -237,8 +240,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (14)
+## Packaging, installers, autostart & platform policy (15)
 
+- **2026-09-18** — [Keep the HTTP plugin's JS client on the Rust plugin's version](2026-09-18-keep-the-http-plugin-js-client-on-the-rust-plugin-version.md)
 - **2026-09-04** — [Sanitize the AppImage environment before launching host processes](2026-09-04-sanitize-appimage-environment-before-launching-host-processes.md)
 - **2026-08-19** — [Leave launch at startup off for new installs](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
 - **2026-08-05** — [Default autostart on only for clean desktop installs](2026-08-05-default-autostart-on-only-for-clean-desktop-installs.md)
@@ -254,7 +258,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (36)
+## UI / UX (38)
+
+- **2026-09-18** — [Keep a reply the user stopped](2026-09-18-keep-a-reply-the-user-stopped.md)
+- **2026-09-18** — [Release chat after context growth stops](2026-09-18-release-chat-after-context-growth-stops.md)
 
 - **2026-09-11** — [List the Hub picks under the onboarding offer](2026-09-11-list-the-hub-picks-under-the-onboarding-offer.md)
 - **2026-09-11** — [Pick the model and its reasoning effort from one composer pill](2026-09-11-pick-the-model-and-its-effort-from-one-composer-pill.md)
@@ -296,8 +303,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (18)
+## Inference core extraction — atomic-chat-core (19)
 
+- **2026-09-18** — [Stop the core before moving the data folder](2026-09-18-stop-the-core-before-moving-the-data-folder.md)
 - **2026-09-17** — [Keep app mirrors coherent and import the pre-core optimum](2026-09-17-preserve-stage6-mirrors-and-optimal-cache.md)
 - **2026-09-17** — [The core owns every desktop runtime unconditionally](2026-09-17-the-core-owns-every-desktop-runtime-unconditionally.md)
 - **2026-09-17** — [Lease runtime loads across owner handover](2026-09-17-lease-runtime-loads-across-handover.md)

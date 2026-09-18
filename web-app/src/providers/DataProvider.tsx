@@ -92,7 +92,13 @@ export type CoreSessionDiedPayload = {
  * forget the cached port, mark the model inactive, and tell the user why generation stopped.
  */
 export function handleCoreSessionDied(
-  payload: CoreSessionDiedPayload | undefined
+  payload: CoreSessionDiedPayload | undefined,
+  // What the message depends on besides the event, which carries neither: a
+  // reply being produced, and the platform. Parameters so both can be tested.
+  context: { generating: boolean; macos: boolean } = {
+    generating: isAnyChatBusy(),
+    macos: IS_MACOS,
+  }
 ): void {
   console.warn('[LocalAPI] atomic-core session:died:', payload)
   const provider = payload?.provider ?? 'llamacpp-upstream'
@@ -113,13 +119,24 @@ export function handleCoreSessionDied(
       setActiveModels(activeModels.filter((id) => id !== modelId))
     }
   }
-  const llamaCpp = provider === 'llamacpp' || provider === 'llamacpp-upstream'
-  toast.error('Model crashed during generation', {
-    id: `session-died-${modelId ?? 'unknown'}`,
-    description: llamaCpp
-      ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
-      : "The model's backend process exited unexpectedly. Try reloading the model.",
-  })
+  // The core reports every exit of a loaded model, whether or not anything was
+  // being generated, so the title only says "during generation" when a reply
+  // was. The Vulkan advice is for llama.cpp where Vulkan backends exist; on
+  // macOS the backend is Metal and there is no CPU backend to switch to.
+  const vulkanAdvice =
+    (provider === 'llamacpp' || provider === 'llamacpp-upstream') &&
+    !context.macos
+  toast.error(
+    context.generating
+      ? 'Model crashed during generation'
+      : 'Model stopped unexpectedly',
+    {
+      id: `session-died-${modelId ?? 'unknown'}`,
+      description: vulkanAdvice
+        ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
+        : "The model's backend process exited unexpectedly. Try reloading the model.",
+    }
+  )
 }
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {

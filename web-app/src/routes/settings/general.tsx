@@ -233,10 +233,15 @@ function General() {
             setIsDialogOpen(false)
           } catch (error) {
             console.error(error)
+            // A refused command arrives as the string Rust returned, which says
+            // what went wrong (no permission, no space, a folder inside the
+            // current one); only something else falls back to the general text.
             toast.error(
               error instanceof Error
                 ? error.message
-                : t('settings:general.failedToRelocateDataFolder')
+                : typeof error === 'string' && error
+                  ? error
+                  : t('settings:general.failedToRelocateDataFolder')
             )
           }
         }, 1000)

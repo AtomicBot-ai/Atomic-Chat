@@ -108,6 +108,60 @@ const isUsableCtxLen = (value: unknown): boolean => {
   return typeof n === 'number' && Number.isFinite(n) && n > 0
 }
 
+type ModelProbe = { tools: boolean; reasoning?: ReasoningControls }
+type ProbedEngine = {
+  isToolSupported: (modelId: string) => Promise<boolean>
+  getReasoningControls: (modelId: string) => Promise<ReasoningControls>
+}
+
+const PROBE_TTL_MS = 60_000
+const probeCache = new Map<string, { at: number; result: Promise<ModelProbe> }>()
+
+/** Test hook: forget every cached probe. */
+export const resetModelProbeCache = () => probeCache.clear()
+
+/**
+ * Whether a model takes tools and which reasoning controls it has. Both are read
+ * out of the model file by the engine, and `getProviders()` asks for every model
+ * of every engine on each call — every three seconds while the provider page
+ * waits for a backend to be configured. One answer per model per minute, a
+ * failure included: a file that cannot be parsed is reported once, not on
+ * every poll. The size is part of the key so that a replaced file is asked anew.
+ */
+export function probeModel(
+  providerName: string,
+  engine: ProbedEngine,
+  model: { id: string; sizeBytes?: number },
+  want: { tools: boolean; reasoning: boolean }
+): Promise<ModelProbe> {
+  const key = JSON.stringify([providerName, model.id, model.sizeBytes ?? null, want])
+  const cached = probeCache.get(key)
+  if (cached && Date.now() - cached.at < PROBE_TTL_MS) return cached.result
+
+  const result = (async (): Promise<ModelProbe> => {
+    const probe: ModelProbe = { tools: false }
+    if (want.tools) {
+      try {
+        probe.tools = Boolean(await engine.isToolSupported(model.id))
+      } catch (error) {
+        console.warn(`Failed to check tool support for model ${model.id}:`, error)
+        // Continue without tool capabilities if check fails
+      }
+    }
+    if (want.reasoning) {
+      try {
+        probe.reasoning = await engine.getReasoningControls(model.id)
+      } catch (error) {
+        console.warn(`Failed to detect reasoning controls for model ${model.id}:`, error)
+        // Continue without an effort selector if detection fails
+      }
+    }
+    return probe
+  })()
+  probeCache.set(key, { at: Date.now(), result })
+  return result
+}
+
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
     // Tauri implementation uses Tauri's fetch to avoid CORS issues
@@ -178,20 +232,12 @@ export class TauriProvidersService extends DefaultProvidersService {
               if ('capabilities' in model && Array.isArray(model.capabilities)) {
                 capabilities = [...(model.capabilities as string[])]
               }
-              if (!capabilities.includes(ModelCapabilities.TOOLS)) {
-                try {
-                  const toolSupported = await value.isToolSupported(model.id)
-                  if (toolSupported) {
-                    capabilities.push(ModelCapabilities.TOOLS)
-                  }
-                } catch (error) {
-                  console.warn(
-                    `Failed to check tool support for model ${model.id}:`,
-                    error
-                  )
-                  // Continue without tool capabilities if check fails
-                }
-              }
+              // Both answers come from the model file; see `probeModel`.
+              const probe = await probeModel(providerName, value, model, {
+                tools: !capabilities.includes(ModelCapabilities.TOOLS),
+                reasoning: !model.embedding,
+              })
+              if (probe.tools) capabilities.push(ModelCapabilities.TOOLS)
 
               // Add embeddings capability for embedding models
               if (model.embedding && !capabilities.includes(ModelCapabilities.EMBEDDINGS)) {
@@ -200,18 +246,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
               // Which reasoning knobs the model's chat template understands.
               // Drives the effort selector in the chat input.
-              let reasoning: ReasoningControls | undefined
-              if (!model.embedding) {
-                try {
-                  reasoning = await value.getReasoningControls(model.id)
-                } catch (error) {
-                  console.warn(
-                    `Failed to detect reasoning controls for model ${model.id}:`,
-                    error
-                  )
-                  // Continue without an effort selector if detection fails
-                }
-              }
+              const reasoning = probe.reasoning
 
               return {
                 id: model.id,
