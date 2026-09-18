@@ -24,6 +24,12 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'get_local_http',
+  // Built-in Radium Media engine lifecycle. Desktop only: the bundled
+  // stable-diffusion.cpp sidecar is not registered on mobile.
+  'media_engine_install',
+  'media_engine_start',
+  'media_engine_status',
+  'media_engine_stop',
   // Radium Media provider credentials, in the OS credential store. Desktop
   // only on purpose: mobile has no media providers, and shipping a credential
   // surface it does not need would widen the attack surface for nothing.
