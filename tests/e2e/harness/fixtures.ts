@@ -41,6 +41,10 @@ export interface FakeBackendOptions {
   mode?: string
   /** The release tag to install it as; `FAKE_BACKEND_VERSION` unless a scenario needs an older one. */
   version?: string
+  /** The local provider to install it for; the upstream llama.cpp one unless a scenario runs another. */
+  provider?: string
+  /** One scripted tool turn: call this tool when the app offers it, then repeat its result after the reply. */
+  toolCall?: { name: string; arguments?: Record<string, unknown> }
 }
 
 export async function installFakeBackend(
@@ -59,28 +63,70 @@ export async function installFakeBackend(
   })
 }
 
+/** A GGUF file with no tensors and the given string metadata — all the app ever reads from one. */
+function ggufWith(metadata: Record<string, string>): Buffer {
+  const text = (value: string) => {
+    const bytes = Buffer.from(value, 'utf8')
+    const length = Buffer.alloc(8)
+    length.writeBigUInt64LE(BigInt(bytes.length))
+    return Buffer.concat([length, bytes])
+  }
+  const header = Buffer.alloc(24)
+  header.write('GGUF', 0, 'ascii')
+  header.writeUInt32LE(3, 4) // version
+  header.writeBigUInt64LE(0n, 8) // tensor count
+  header.writeBigUInt64LE(BigInt(Object.keys(metadata).length), 16)
+  const stringType = Buffer.alloc(4)
+  stringType.writeUInt32LE(8)
+  return Buffer.concat([
+    header,
+    ...Object.entries(metadata).flatMap(([key, value]) => [text(key), stringType, text(value)]),
+  ])
+}
+
+export interface FakeModelOptions {
+  /**
+   * Give the file a chat template that mentions tools. The app decides from the
+   * template whether a model can call tools, and offers document attachments
+   * only for one that can.
+   */
+  tools?: boolean
+  /** Mark it as an embedding model, which the core then loads with `--embedding`. */
+  embedding?: boolean
+}
+
 /**
- * A model directory the app lists and the core loads. The weights are filler:
- * neither side needs a GGUF header for a text model, only a file as large as
- * `model_size_bytes` says. `embedding: false` keeps the extension from trying
- * to read metadata out of that filler to find out.
+ * A model directory the app lists and the core loads. By default the weights
+ * are filler: neither side needs a GGUF header for a text model, only a file as
+ * large as `model_size_bytes` says. `embedding` is always written, which keeps
+ * the extension from trying to read metadata out of that filler to find out.
  */
-export async function writeFakeModel(profile: Profile, modelId: string): Promise<void> {
+export async function writeFakeModel(profile: Profile, modelId: string, options: FakeModelOptions = {}): Promise<void> {
   const dir = join(profile.dataFolder, 'llamacpp', 'models', ...modelId.split('/'))
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, 'model.gguf'), Buffer.alloc(64, 0x47))
+  const weights = options.tools
+    ? ggufWith({ 'general.architecture': 'llama', 'tokenizer.chat_template': '{{ messages }}{% if tools %}{{ tools }}{% endif %}' })
+    : Buffer.alloc(64, 0x47)
+  await writeFile(join(dir, 'model.gguf'), weights)
   await writeFile(
     join(dir, 'model.yml'),
     [
       `model_path: llamacpp/models/${modelId}/model.gguf`,
       `name: ${modelId}`,
-      'size_bytes: 64',
-      'model_size_bytes: 64',
-      'embedding: false',
+      `size_bytes: ${weights.length}`,
+      `model_size_bytes: ${weights.length}`,
+      `embedding: ${options.embedding === true}`,
       '',
     ].join('\n')
   )
 }
+
+/**
+ * The model the app embeds documents with. It is looked up by this id and, when
+ * missing, downloaded from Hugging Face on first use; placing it keeps a run
+ * off the network.
+ */
+export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
 export interface CloudRequest {
   method: string

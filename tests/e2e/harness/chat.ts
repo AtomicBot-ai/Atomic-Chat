@@ -56,14 +56,20 @@ export async function waitForChat(session: Session): Promise<void> {
  * though both llama.cpp providers share the models folder. The row is the
  * `div`; the `span` inside it repeats the title.
  */
-export async function pickModel(session: Session, modelId: string): Promise<void> {
+export async function pickModel(session: Session, modelId: string, provider?: string): Promise<void> {
   const browser = session.app.browser
   const trigger = browser.$('[data-test-id="model-picker-trigger"]')
   const change = browser.$('button[aria-label="Change model"]')
-  const row = browser.$(`div[title="${modelId}"]`)
+  // Both llama.cpp providers list the same model folder, so with both enabled a
+  // model has a row under each; a provider narrows the pick to its group, which
+  // is the block around that provider's settings gear.
+  const rowSelector = provider
+    ? `//*[@data-test-id="provider-settings-${provider}"]/../..//div[@title="${modelId}"]`
+    : `div[title="${modelId}"]`
+  const row = browser.$(rowSelector)
   // Queried afresh on every look: a `$$` result is resolved once and then
   // keeps answering with what it found the first time.
-  const rowCount = () => browser.$$(`div[title="${modelId}"]`).length
+  const rowCount = () => browser.$$(rowSelector).length
   const shows = async (element: typeof row) => (await element.isExisting()) && (await element.isDisplayed())
 
   // Open it, and make sure it stayed open. A page that is still settling — a
