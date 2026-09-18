@@ -24,6 +24,13 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'get_local_http',
+  // The built-in media engine's server. Desktop only on purpose: it installs
+  // and supervises a local engine process, which the mobile targets have no
+  // way to run - the same reason the local llama.cpp server is desktop only.
+  'media_engine_install',
+  'media_engine_start',
+  'media_engine_status',
+  'media_engine_stop',
   // Radium Media provider credentials, in the OS credential store. Desktop
   // only on purpose: mobile has no media providers, and shipping a credential
   // surface it does not need would widen the attack surface for nothing.
