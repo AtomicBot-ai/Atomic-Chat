@@ -7,7 +7,12 @@ import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   pullModelWithMetadata: vi.fn(() => Promise.resolve()),
+  switchToModel: vi.fn(() => Promise.resolve()),
   toastError: vi.fn(),
+}))
+
+vi.mock('@/utils/switchModel', () => ({
+  switchToModel: mocks.switchToModel,
 }))
 
 vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }))
@@ -69,7 +74,11 @@ describe('ModelDownloadAction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
-    useModelProvider.setState({ providers: [] })
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
     seedServiceHub({
       models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
     })
@@ -81,12 +90,24 @@ describe('ModelDownloadAction', () => {
     expect(downloadButton()).toHaveAttribute('data-variant', 'default')
   })
 
-  it('downloads a variant that fits without asking', () => {
+  it('downloads a variant without selecting or starting it', () => {
+    const selectedModel = {
+      id: 'already-selected',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      selectedProvider: 'openai',
+      selectedModel,
+    })
     render(<ModelDownloadAction variant={variant} model={model} asButton />)
 
     fireEvent.click(downloadButton())
 
     expect(mocks.pullModelWithMetadata).toHaveBeenCalled()
+    expect(useModelProvider.getState().selectedProvider).toBe('openai')
+    expect(useModelProvider.getState().selectedModel).toBe(selectedModel)
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

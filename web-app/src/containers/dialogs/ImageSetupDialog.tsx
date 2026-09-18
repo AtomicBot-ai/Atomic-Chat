@@ -2,17 +2,15 @@ import { memo, useCallback } from 'react'
 import {
   IconAdjustmentsHorizontal,
   IconCircleCheckFilled,
-  IconCpu,
   IconLoader2,
   IconLock,
   IconPhoto,
   IconSparkles,
   IconX,
 } from '@tabler/icons-react'
-// Lucide's image glyph, not Tabler's photo: it is the one the sidebar row uses.
-import { ImageIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ImageIcon } from '@/components/animated-icon/image'
 import {
   Dialog,
   DialogContent,
@@ -90,38 +88,40 @@ function IntroStep() {
  * Engine row: install state on the right, progress while the archive comes
  * down, and the reason when this host has no supported build.
  */
-export const ImageEngineBlock = memo(function ImageEngineBlock({
-  onInstallStarted,
-}: {
-  onInstallStarted?: () => void
-}) {
+export const ImageEngineBlock = memo(function ImageEngineBlock() {
   const { t } = useTranslation()
   const engine = useImageEngine()
   const percent =
     engine.progress.total > 0
       ? Math.round((engine.progress.transferred / engine.progress.total) * 100)
       : 0
-  const unsupported = engine.hostBackendId === null
+  const unsupported =
+    engine.hostBackendId === null && !engine.resolvingHostBackend
 
   const action = engine.installing ? (
-    <div className="flex flex-col items-end gap-1">
-      <span className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
-        <IconLoader2 size={14} className="animate-spin" />
+    <div
+      className="relative flex h-8 w-28 items-center justify-center overflow-hidden rounded-md border bg-background text-xs font-semibold tabular-nums"
+      aria-live="polite"
+      data-testid="image-engine-progress"
+    >
+      <span
+        className="absolute inset-y-0 left-0 bg-primary/15 transition-[width] duration-200"
+        style={{ width: `${percent}%` }}
+      />
+      <span className="relative flex items-center gap-1.5">
+        <IconLoader2 size={14} className="animate-spin" aria-hidden />
         {percent}%
       </span>
-      {engine.progress.total > 0 && (
-        <p className="text-right text-xs tabular-nums text-muted-foreground" aria-live="polite">
-          {formatProgressPair(
-            engine.progress.transferred,
-            engine.progress.total
-          )}
-        </p>
-      )}
     </div>
   ) : engine.installed ? (
     <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
       <IconCircleCheckFilled size={16} />
       {t('images:setup.engine.installed')}
+    </span>
+  ) : engine.resolvingHostBackend ? (
+    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <IconLoader2 size={14} className="animate-spin" aria-hidden />
+      {t('images:setup.engine.checking')}
     </span>
   ) : unsupported ? (
     <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -133,7 +133,6 @@ export const ImageEngineBlock = memo(function ImageEngineBlock({
       size="sm"
       onClick={() => {
         void engine.startInstall()
-        onInstallStarted?.()
       }}
       data-testid="image-engine-install"
     >
@@ -141,9 +140,11 @@ export const ImageEngineBlock = memo(function ImageEngineBlock({
     </Button>
   )
 
-  const description =
+  const description: React.ReactNode =
     engine.install.state === 'installed'
       ? t('images:setup.engine.readyDescription')
+      : engine.installing
+        ? t('images:setup.engine.installingDescription')
       : engine.hostBackendId
         ? t('images:setup.engine.rowDescription')
         : undefined
@@ -152,11 +153,22 @@ export const ImageEngineBlock = memo(function ImageEngineBlock({
     <VoiceSetupRow
       media={
         <VoiceSetupRowIcon>
-          <IconCpu size={20} />
+          <img
+            src="/images/model-provider/llamacpp.svg"
+            alt=""
+            aria-hidden
+            className="size-6 object-contain"
+          />
         </VoiceSetupRowIcon>
       }
       title={t('images:setup.engine.rowTitle')}
-      description={description}
+      description={
+        description ? (
+          <span className="block truncate whitespace-nowrap">
+            {description}
+          </span>
+        ) : undefined
+      }
       action={action}
       footer={
         engine.progress.error ? (
@@ -168,6 +180,13 @@ export const ImageEngineBlock = memo(function ImageEngineBlock({
           <p className="text-xs leading-snug text-muted-foreground">
             {engine.hostBackendReason ?? t('images:setup.engine.unsupported')}
           </p>
+        ) : engine.installing && engine.progress.total > 0 ? (
+          <p className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+            {formatProgressPair(
+              engine.progress.transferred,
+              engine.progress.total
+            )}
+          </p>
         ) : undefined
       }
     />
@@ -176,21 +195,33 @@ export const ImageEngineBlock = memo(function ImageEngineBlock({
 
 const STEPS = [
   {
-    icon: ImageIcon,
     title: 'images:setup.intro.title',
     description: 'images:setup.intro.description',
   },
   {
-    icon: IconCpu,
     title: 'images:setup.engine.title',
     description: 'images:setup.engine.description',
   },
   {
-    icon: IconPhoto,
     title: 'images:setup.model.title',
     description: 'images:setup.model.description',
   },
 ] as const
+
+function SetupHeaderIcon({ step }: { step: ImageSetupStep }) {
+  if (step === 0) return <ImageIcon size={32} aria-hidden />
+  if (step === 1) {
+    return (
+      <img
+        src="/images/model-provider/llamacpp.svg"
+        alt=""
+        aria-hidden
+        className="size-8 object-contain"
+      />
+    )
+  }
+  return <IconPhoto size={28} aria-hidden />
+}
 
 /**
  * Three-step first-run flow: what it does, install the engine, get a model.
@@ -228,8 +259,6 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
     closeSetup()
   }, [closeSetup, ready, setSetupCompleted])
 
-  const StepIcon = STEPS[step].icon
-
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? openSetup(step) : dismiss())}>
       <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
@@ -238,7 +267,7 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
           className="items-center text-center sm:text-center"
         >
           <div className="mb-2 grid size-14 place-items-center rounded-2xl border bg-secondary/60 shadow-sm">
-            <StepIcon size={27} className="text-foreground" strokeWidth={1.75} />
+            <SetupHeaderIcon step={step} />
           </div>
           <DialogTitle>{t(STEPS[step].title)}</DialogTitle>
           <DialogDescription
@@ -260,13 +289,10 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
         >
           {step === 0 && <IntroStep />}
           {step === 1 && (
-            <ImageEngineBlock onInstallStarted={closeSetup} />
+            <ImageEngineBlock />
           )}
           {step === 2 && (
-            <ImageModelSelector
-              variant="dialog"
-              onDownloadStarted={closeSetup}
-            />
+            <ImageModelSelector variant="dialog" />
           )}
         </div>
 
@@ -301,7 +327,11 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
                 )}
               </Tooltip>
             ) : (
-              <Button size="sm" onClick={() => go(step + 1)}>
+              <Button
+                size="sm"
+                disabled={step === 1 && !engineInstalled}
+                onClick={() => go(step + 1)}
+              >
                 {t('images:setup.next')}
               </Button>
             )}

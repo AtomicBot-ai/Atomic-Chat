@@ -184,6 +184,27 @@ export const availableReasoningLevels = (
   return levels.length ? levels : ['low', 'medium', 'high']
 }
 
+/**
+ * Effort levels exposed by the selected model/provider pair.
+ *
+ * Explicit model metadata is authoritative, including an explicit
+ * `supportsThinking: false`. Provider inference is only a fallback for remote
+ * catalogues that do not publish per-model reasoning metadata at all.
+ */
+export const reasoningLevelsForModel = (
+  provider: string | undefined,
+  controls?: ReasoningControls
+): ReasoningEffortLevel[] => {
+  if (controls !== undefined) return availableReasoningLevels(controls)
+  if (
+    isCloudReasoningProvider(provider) ||
+    usesTemplateReasoningKwargs(provider)
+  ) {
+    return ALL_LEVELS
+  }
+  return []
+}
+
 /** Clamp a stored level onto what this model offers. */
 export const resolveReasoningLevel = (
   level: ReasoningEffortLevel,

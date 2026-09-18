@@ -60,11 +60,13 @@
     },
     "engine": {
       "title": "Установите движок изображений",
-      "description": "Atomic Chat установит рендерер, подходящий этому компьютеру.",
-      "rowTitle": "Движок изображений",
-      "rowDescription": "Безопасно создаёт изображения на этом компьютере.",
-      "readyDescription": "Готов создавать изображения на этом компьютере.",
-      "install": "Установить движок",
+      "description": "Установите stable-diffusion.cpp для локальной генерации.",
+      "rowTitle": "stable-diffusion.cpp",
+      "rowDescription": "Локальный движок изображений для этого компьютера.",
+      "installingDescription": "Устанавливаем stable-diffusion.cpp…",
+      "readyDescription": "Готов к локальной генерации изображений.",
+      "install": "Установить",
+      "checking": "Проверяем…",
       "installed": "Installed",
       "unsupported": "There is no image engine build for this computer yet.",
       "unsupportedShort": "Not available",
@@ -85,7 +87,8 @@
       "engineDescription": "Небольшой рендерер для локального создания изображений.",
       "model": "Выберите модель",
       "modelDescription": "Выберите стиль и качество будущих изображений.",
-      "button": "Начать настройку"
+      "button": "Начать настройку",
+      "downloadModel": "Скачать модель"
     }
   },
   "model": {
@@ -143,7 +146,8 @@
   "download": {
     "finishingModel": "Проверяем модель изображений",
     "finishingEngine": "Завершаем установку движка",
-    "checkingFiles": "Проверяем, что загруженные файлы готовы к работе…",
+    "checkingFiles": "Проверяем загруженные файлы…",
+    "readyAfterCheck": "Готово к работе после проверки.",
     "modelReady": "Модель изображений готова",
     "engineReady": "Движок изображений готов"
   },

@@ -1,24 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconDownload, IconLoader2 } from '@tabler/icons-react'
-import { Cloud, FolderPlus, Search } from 'lucide-react'
 import { EngineManager } from '@janhq/core'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/shallow'
 
-import { ChatGptMark } from '@/components/icons/chatgpt-mark'
 import { Button } from '@/components/ui/button'
 import { ModelLogo } from '@/containers/ModelLogo'
-import { RouteRow } from '@/containers/RouteRow'
-import { selectCloudGalleryProviders } from '@/containers/dialogs/AddCloudProviderDialog'
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardware } from '@/hooks/useHardware'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { isProviderConnected } from '@/lib/cloud-providers'
 import {
-  cancelDownload,
   isDownloadCancellationError,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
@@ -30,9 +23,7 @@ import {
 import { getMemoryBudgetBytes, pickDownloadQuant } from '@/lib/model-card'
 import { prettyModelName } from '@/lib/model-display-name'
 import { getPreferredMmprojModel } from '@/lib/models'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
-import { cn, sanitizeModelId } from '@/lib/utils'
+import { sanitizeModelId } from '@/lib/utils'
 import type {
   CatalogModel,
   HuggingFaceFeedFormat,
@@ -44,18 +35,7 @@ const HF_SEARCH_DEBOUNCE_MS = 300
 const HF_MIN_QUERY_LENGTH = 3
 /** Rows one search answers with. */
 const HF_SEARCH_LIMIT = 6
-/**
- * `HF_SEARCH_LIMIT` rows plus the card's padding, held from the card's first
- * empty frame: the status line, the rows and the "nothing found" line all
- * take the same room, so the routes under the card never move while the
- * user types, the search loads or the query is cleared.
- */
-const HF_RESULTS_HEIGHT_CLASS = 'h-[21rem] min-h-[21rem] overflow-y-auto'
-/** The subscription the routes offer by name — the reply gate's. */
-const SUBSCRIPTION_PROVIDER = 'chatgpt'
-/** `ModelLogo` drawn as a bare 32 px mark in a `RouteRow`'s icon slot. */
-const MARK_CLASS =
-  'size-8 rounded-full border-0 bg-transparent dark:bg-transparent'
+const HUGGING_FACE_ACTION_LABEL = 'Download models from Hugging Face'
 
 // Module-level, like the Hub feed's detail cache: the list unmounts whenever
 // the panel closes, and a repo resolved once must not be asked for again, nor
@@ -165,50 +145,6 @@ function StatusLine({ text, spinning }: { text: string; spinning?: boolean }) {
     </div>
   )
 }
-
-/**
- * A labelled card of rows — the reply gate's card, with the section label
- * onboarding puts over its list.
- */
-function PickerSection({
-  label,
-  className,
-  children,
-  'data-testid': testId,
-}: {
-  'label'?: string
-  'className'?: string
-  'children': ReactNode
-  'data-testid': string
-}) {
-  return (
-    <section className="flex flex-col gap-1.5">
-      {label && (
-        <span className="px-1 text-xs font-medium text-muted-foreground">
-          {label}
-        </span>
-      )}
-      <div
-        className={cn(
-          'rounded-lg border bg-secondary/50 px-3 py-2 [&_.line-clamp-1]:truncate',
-          className
-        )}
-        data-testid={testId}
-      >
-        {children}
-      </div>
-    </section>
-  )
-}
-
-/**
- * A model's mark for a row. Through `ModelLogo` so single-colour marks
- * (Liquid's LFM among them) are tinted and survive a dark background; the
- * Hugging Face mark stands in for a family without a logo.
- */
-const modelMark = (repo: string) => (
-  <ModelLogo name={repo} fallback="huggingface" className={MARK_CLASS} />
-)
 
 type HuggingFaceStatus = 'idle' | 'searching' | 'done' | 'failed'
 
@@ -560,14 +496,7 @@ function HuggingFaceRow({
   )
 }
 
-/**
- * Hugging Face's compatible repos for the typed query, under the local matches of
- * the normal list — a search with no local hit was a dead end ("No models
- * found") with nothing to download from.
- *
- * The local "No models found" line survives only when both sides have
- * nothing; a search that could not reach Hugging Face says that instead.
- */
+/** Hugging Face results for the picker's explicitly entered download mode. */
 export function HuggingFacePicks({
   query,
   localEmpty,
@@ -586,7 +515,7 @@ export function HuggingFacePicks({
     </div>
   ) : null
 
-  if (!eligible) return noModels
+  if (!eligible) return query.trim() ? noModels : null
   if (status === 'searching') {
     return (
       <div className="px-2">
@@ -627,253 +556,40 @@ export function HuggingFacePicks({
   )
 }
 
-/**
- * One Hugging Face repo as a panel row: the same shape as the recommended
- * rows above it — mark, name, the repo id as its line, Download — and the
- * same Cancel once its download runs. Plain "Download": the size is not
- * known until the repo is resolved on the click.
- */
-function HuggingFaceRouteRow({
-  candidate,
-  busy,
-  unavailable,
-  onDownload,
-}: {
-  candidate: CatalogModel
-  busy: boolean
-  unavailable: boolean
-  onDownload: () => void
-}) {
-  const { t } = useTranslation()
-  const serviceHub = useServiceHub()
-  const repo = candidate.model_name
-  const title = prettyModelName(repo) || repo
-  const inFlight = useInFlightDownload(
-    startedVariantByRepo.get(candidateKey(candidate))
-  )
+export function HuggingFaceAction({ onClick }: { onClick: () => void }) {
   return (
-    <RouteRow
-      compact
-      icon={modelMark(repo)}
-      title={title}
-      meta={<FormatBadge candidate={candidate} />}
-      hint={
-        inFlight
-          ? inFlightHint(t, inFlight)
-          : unavailable
-            ? t(
-                candidate.is_mlx
-                  ? 'common:modelPicker.noMlxFile'
-                  : 'common:modelPicker.noGgufFile'
-              )
-            : repo
-      }
-      action={
-        inFlight ? (
-          t('common:cancel')
-        ) : busy ? (
-          <IconLoader2 className="animate-spin" aria-hidden />
-        ) : (
-          <IconDownload size={15} aria-hidden />
-        )
-      }
-      label={
-        inFlight
-          ? t('common:cancelDownload')
-          : `${t('chat:replyGate.downloadLabel', { name: title })} (${candidateFormat(candidate)})`
-      }
-      disabled={!inFlight && (busy || unavailable)}
-      textAction={Boolean(inFlight)}
-      iconAction={!inFlight}
-      onClick={() => {
-        if (inFlight) {
-          cancelDownload({ id: inFlight.id, name: inFlight.id }, serviceHub)
-          return
-        }
-        onDownload()
-      }}
-      data-testid="model-picker-hugging-face-row"
-    />
-  )
-}
-
-/**
- * The search's answer in the empty state, in the recommendations' place: a
- * card that reserves the rows' height before it has any, so the status
- * line, the rows and the "nothing found" line all take the same room.
- */
-function HuggingFaceResults({ query }: { query: string }) {
-  const { t } = useTranslation()
-  const { eligible, status, results, busyRepo, unavailable, download } =
-    useHuggingFaceSearch(query)
-
-  let body: ReactNode
-  if (!eligible || (status === 'done' && results.length === 0)) {
-    body = (
-      <StatusLine text={t('common:noModelsFoundFor', { searchValue: query })} />
-    )
-  } else if (status === 'searching') {
-    body = (
-      <StatusLine
-        text={t('common:modelPicker.searchingHuggingFace')}
-        spinning
-      />
-    )
-  } else if (status === 'failed') {
-    body = <StatusLine text={t('common:modelPicker.huggingFaceUnavailable')} />
-  } else {
-    body = (
-      <div className="flex flex-col divide-y divide-border/60">
-        {results.map((candidate) => (
-          <HuggingFaceRouteRow
-            key={candidateKey(candidate)}
-            candidate={candidate}
-            busy={busyRepo === candidateKey(candidate)}
-            unavailable={unavailable.has(candidateKey(candidate))}
-            onDownload={() => void download(candidate)}
-          />
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <PickerSection
-      label={t('common:modelPicker.huggingFace')}
-      className={HF_RESULTS_HEIGHT_CLASS}
-      data-testid="model-picker-hugging-face"
-    >
-      {body}
-    </PickerSection>
-  )
-}
-
-/**
- * The other ways to get a model, as rows — the reply gate's `ModelRoutes`,
- * row for row, so the selector, the reply gate and onboarding read as one
- * product. Each cloud route is hidden only when it cannot do anything: the
- * API-key route when no cloud provider is connectable at all, the
- * subscription when this platform cannot serve the OAuth callback or the
- * account is already signed in. The Hub route is always there.
- */
-function PickerRoutes({
-  onBrowseHuggingFace,
-  onConnectCloud,
-  onConnectSubscription,
-  onImportLocal,
-}: {
-  onBrowseHuggingFace: () => void
-  onConnectCloud: () => void
-  onConnectSubscription: () => void
-  onImportLocal: () => void
-}) {
-  const { t } = useTranslation()
-  const providers = useModelProvider((state) => state.providers)
-
-  const hasCloudProviders = useMemo(
-    () => selectCloudGalleryProviders(providers).length > 0,
-    [providers]
-  )
-
-  const subscriptionOffered = useMemo(() => {
-    if (!PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION]) return false
-    const provider = providers.find((p) => p.provider === SUBSCRIPTION_PROVIDER)
-    return !!provider && !isProviderConnected(provider)
-  }, [providers])
-
-  return (
-    <div
-      className="overflow-y-auto rounded-lg border bg-secondary/50 px-3 py-2 [scrollbar-gutter:stable]"
-      data-testid="model-picker-routes"
-    >
-      <div className="flex flex-col divide-y divide-border/60">
-        <RouteRow
-          layout="onboarding"
-          compact
-          icon={<Search />}
-          title={t('setup:cloudStep.huggingFaceTitle')}
-          hint={t('setup:cloudStep.huggingFaceHint')}
-          action={t('setup:cloudStep.browse')}
-          label={t('setup:cloudStep.huggingFaceTrigger')}
-          onClick={onBrowseHuggingFace}
-          data-testid="model-picker-hugging-face-route"
+    <div className="shrink-0 border-t p-1.5">
+      <button
+        type="button"
+        aria-label={HUGGING_FACE_ACTION_LABEL}
+        onClick={onClick}
+        className="flex h-9 w-full items-center justify-center gap-2 rounded-md px-2 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="model-picker-hugging-face-action"
+      >
+        <ModelLogo
+          author="Hugging Face"
+          fallback="huggingface"
+          className="size-5 rounded-none border-0 bg-transparent dark:bg-transparent"
         />
-        {subscriptionOffered && (
-          <RouteRow
-            layout="onboarding"
-            compact
-            icon={<ChatGptMark />}
-            title={t('setup:cloudStep.subscriptionTitle')}
-            hint={t('setup:cloudStep.subscriptionHint')}
-            action={t('setup:cloudStep.connect')}
-            label={t('setup:cloudStep.subscriptionTrigger')}
-            onClick={onConnectSubscription}
-            data-testid="model-picker-subscription"
-          />
-        )}
-        {hasCloudProviders && (
-          <RouteRow
-            layout="onboarding"
-            compact
-            icon={<Cloud />}
-            title={t('setup:cloudStep.providerTitle')}
-            hint={t('setup:cloudStep.providerHint')}
-            action={t('setup:cloudStep.addApiKey')}
-            label={t('setup:cloudStep.trigger')}
-            onClick={onConnectCloud}
-            data-testid="model-picker-cloud-key"
-          />
-        )}
-        <RouteRow
-          layout="onboarding"
-          compact
-          icon={<FolderPlus />}
-          title={t('chat:replyGate.folderTitle')}
-          hint={t('chat:replyGate.folderHint')}
-          action={t('setup:cloudStep.add')}
-          label={t('chat:replyGate.addFolder')}
-          onClick={onImportLocal}
-          data-testid="model-picker-local-import"
-        />
-      </div>
+        <span>{HUGGING_FACE_ACTION_LABEL}</span>
+      </button>
     </div>
   )
 }
 
-/**
- * What the composer's model list shows when there is nothing to pick: the
- * reply gate's list, in the panel. The recommended models for this machine
- * under their label, then the other ways to get one; a typed query swaps
- * the recommendations for Hugging Face's answer and leaves the routes where
- * they were. The panel is the download — there is no second "Download a
- * model" row under it.
- */
-export function ModelPickerEmptyState({
-  query,
-  onBrowseHuggingFace,
-  onConnectCloud,
-  onConnectSubscription,
-  onImportLocal,
-}: {
-  query: string
-  onBrowseHuggingFace: () => void
-  onConnectCloud: () => void
-  onConnectSubscription: () => void
-  onImportLocal: () => void
-}) {
+/** Concise installed-model empty/search state; the footer owns the action. */
+export function ModelPickerEmptyState({ query }: { query: string }) {
   const searching = query.trim().length > 0
+  const { t } = useTranslation()
   return (
-    <div className="flex flex-col gap-2 p-2" data-testid="model-picker-empty">
-      {searching ? (
-        <HuggingFaceResults query={query} />
-      ) : (
-        <PickerRoutes
-          onBrowseHuggingFace={onBrowseHuggingFace}
-          onConnectCloud={onConnectCloud}
-          onConnectSubscription={onConnectSubscription}
-          onImportLocal={onImportLocal}
-        />
-      )}
+    <div className="px-3 py-4" data-testid="model-picker-empty">
+      <StatusLine
+        text={
+          searching
+            ? t('common:noModelsFoundFor', { searchValue: query })
+            : 'No installed models yet.'
+        }
+      />
     </div>
   )
 }

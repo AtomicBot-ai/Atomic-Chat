@@ -54,6 +54,8 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
   const {
     enabled,
     canDisable,
+    preferenceDisabled,
+    hasModel,
     levels: modelLevels,
     level: storedLevel,
   } = useReasoningEffort()
@@ -122,15 +124,28 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
   const applyIndex = useCallback(
     (index: number) => {
       const next = levels[clampIndex(index, levels.length - 1)]
-      if (!next || next === level) return
+      if (!next) return
       if (next === 'off') {
+        if (next === level) return
         setDisableReasoning(true)
         return
       }
-      if (!enabled) setDisableReasoning(false)
+      // A required-thinking API displays its weakest effort even while a
+      // fresh profile still carries the global `disableReasoning: true`
+      // default. Clear that persisted flag when the user chooses an effort;
+      // otherwise the capability resolver keeps forcing the first level and
+      // the slider appears to snap back until a local model has been used.
+      if (preferenceDisabled) setDisableReasoning(false)
+      if (next === level && !preferenceDisabled) return
       setReasoningBudget(next)
     },
-    [levels, level, enabled, setDisableReasoning, setReasoningBudget]
+    [
+      levels,
+      level,
+      preferenceDisabled,
+      setDisableReasoning,
+      setReasoningBudget,
+    ]
   )
 
   /** Commit the exact value Radix reports at the end of a pointer pass. */
@@ -167,7 +182,26 @@ const ReasoningEffortPanel = memo(function ReasoningEffortPanel({
     applyIndex(index)
   }
 
-  if (!level) return null
+  if (!hasModel) return null
+
+  if (!level) {
+    return (
+      <div
+        className={cn(className, 'opacity-60')}
+        data-test-id="reasoning-effort-panel"
+        aria-disabled="true"
+      >
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground">
+            {t('common:reasoningEffort.title')}
+          </span>
+          <span className="font-medium text-muted-foreground">
+            {t('common:reasoningEffort.unavailable')}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={className} data-test-id="reasoning-effort-panel">

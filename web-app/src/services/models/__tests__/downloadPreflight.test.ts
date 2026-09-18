@@ -100,6 +100,7 @@ describe('pullModelWithMetadata disk-space preflight', () => {
       pausedDownloads: new Set(),
       resumeParams: {},
       downloadOriginByModelId: {},
+      downloadRequestOriginByModelId: {},
     })
     service = new DefaultModelsService()
   })
@@ -135,6 +136,9 @@ describe('pullModelWithMetadata disk-space preflight', () => {
     expect(after.downloads['big-q4_k_m']).toBeUndefined()
     expect(after.localDownloadingModels.has('big-q4_k_m')).toBe(false)
     expect(after.downloadOriginByModelId['big-q4_k_m']).toBeUndefined()
+    expect(
+      after.downloadRequestOriginByModelId['big-q4_k_m']
+    ).toBeUndefined()
     expect(after.resumeParams['big-q4_k_m']).toBeUndefined()
     // One plain-language toast, not the download-failed one.
     expect(mockToast.error).toHaveBeenCalledTimes(1)

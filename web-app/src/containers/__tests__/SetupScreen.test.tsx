@@ -316,6 +316,8 @@ describe('SetupScreen', () => {
       downloads: {},
       localDownloadingModels: new Set(),
       resumableDownloads: new Set(),
+      downloadOriginByModelId: {},
+      downloadRequestOriginByModelId: {},
     })
     mocks.recommended = []
     mocks.staffPicks = []
@@ -810,7 +812,7 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('enters chat immediately while the download continues globally', async () => {
+    it('enters chat without selecting the model while the download continues globally', async () => {
       const { unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
@@ -821,14 +823,15 @@ describe('SetupScreen', () => {
       expect(mocks.navigate).toHaveBeenCalledWith({
         to: '/',
         replace: true,
-        search: {
-          threadModel: {
-            id: variantId,
-            provider: 'llamacpp-upstream',
-          },
-        },
+        search: {},
       })
       expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(mocks.modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      expect(
+        useDownloadStore.getState().downloadRequestOriginByModelId[variantId]
+      ).toBe('standalone')
       unmount()
     })
 
@@ -865,14 +868,10 @@ describe('SetupScreen', () => {
 
       expect(mocks.leftPanel.open).toBe(true)
       expect(mocks.navigate.mock.calls).toHaveLength(1)
-      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toEqual({
-        id: variantId,
-        provider: 'llamacpp-upstream',
-      })
-      expect(
-        JSON.parse(localStorage.getItem(localStorageKey.lastUsedModel) ?? '{}')
-          .model
-      ).toBe(variantId)
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toBeUndefined()
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(mocks.modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
       // A picked model is a finished setup — the reminder must stay disarmed.
       expect(mocks.reminder.pending).toBe(false)
 
@@ -909,10 +908,9 @@ describe('SetupScreen', () => {
       // Navigation happens on click; the later import only updates the library
       // through the root DataProvider and must not create a second handoff.
       expect(mocks.navigate.mock.calls).toHaveLength(1)
-      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toEqual({
-        id: variantId,
-        provider: 'llamacpp-upstream',
-      })
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toBeUndefined()
+      expect(mocks.modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
       // Reported as the download exit it is, not as an import of a model
       // another app left on disk.
       expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
@@ -940,7 +938,7 @@ describe('SetupScreen', () => {
       expect(mocks.navigate.mock.calls).toHaveLength(1)
       expect(
         mocks.navigate.mock.calls[0][0].search?.threadModel
-      ).toEqual({ id: variantId, provider: 'llamacpp-upstream' })
+      ).toBeUndefined()
       unmount()
     })
   })
@@ -1291,12 +1289,7 @@ describe('SetupScreen', () => {
         expect(mocks.navigate).toHaveBeenCalledWith({
           to: '/',
           replace: true,
-          search: {
-            threadModel: {
-              id: 'gemma-4-12B-it-GGUF-Q4_K_M',
-              provider: 'llamacpp-upstream',
-            },
-          },
+          search: {},
         })
         unmount()
       } finally {

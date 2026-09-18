@@ -108,6 +108,43 @@ export function diffusionDownloadTaskId(artifact: string): string {
   return `${TASK_ID_PREFIX}${sanitizeTaskId(artifact)}`
 }
 
+export function isDiffusionModelDownloadTaskId(id: string): boolean {
+  return id.startsWith(TASK_ID_PREFIX)
+}
+
+export type ResolvedDiffusionDownloadTask = {
+  artifactId: string
+  family: DiffusionCatalogFamily
+  quant: DiffusionCatalogQuant
+}
+
+/**
+ * Resolve the sanitized task id shown by the global download panel back to
+ * the catalog entry that created it.
+ *
+ * This deliberately regenerates ids instead of trying to split the task id:
+ * both `.` and `:` become `_`, and family and quant ids may already contain
+ * underscores. If a malformed catalog makes two entries collapse to the same
+ * task id, returning null is safer than resuming the wrong checkpoint.
+ */
+export function resolveDiffusionDownloadTaskId(
+  catalog: DiffusionCatalog,
+  taskId: string
+): ResolvedDiffusionDownloadTask | null {
+  if (!isDiffusionModelDownloadTaskId(taskId)) return null
+
+  let resolved: ResolvedDiffusionDownloadTask | null = null
+  for (const family of catalog.families) {
+    for (const quant of family.transformer.quants) {
+      const id = artifactId(family.id, quant.id)
+      if (diffusionDownloadTaskId(id) !== taskId) continue
+      if (resolved) return null
+      resolved = { artifactId: id, family, quant }
+    }
+  }
+  return resolved
+}
+
 /** `unsloth/Z-Image-Turbo-ComfyUI` → `unsloth--Z-Image-Turbo-ComfyUI`. */
 export function sharedRepoDir(repo: string): string {
   return repo.replace(/\//g, '--')

@@ -60,6 +60,8 @@ export const MlxModelDownloadAction = memo(
       removeLocalDownloadingModel,
       markResumableDownload,
       clearResumableDownload,
+      setDownloadOrigin,
+      clearDownloadOrigin,
     } = useDownloadStore()
 
     // Construct the model ID - use just the sanitized model name if developer is same as org
@@ -142,6 +144,7 @@ export const MlxModelDownloadAction = memo(
     const handleDownloadMlxModel = useCallback(async () => {
       clearResumableDownload(modelId)
       addLocalDownloadingModel(modelId)
+      setDownloadOrigin(modelId, model.model_name, 'standalone')
 
       const modelPath = `${model.developer}/${modelName}`
       try {
@@ -200,6 +203,7 @@ export const MlxModelDownloadAction = memo(
         console.error('Error downloading MLX model:', error)
         markResumableDownload(modelId)
         removeLocalDownloadingModel(modelId)
+        clearDownloadOrigin(modelId)
         if (
           wasDownloadCancellationRequested(modelId) ||
           isDownloadCancellationError(error)
@@ -217,6 +221,8 @@ export const MlxModelDownloadAction = memo(
       addLocalDownloadingModel,
       removeLocalDownloadingModel,
       clearResumableDownload,
+      setDownloadOrigin,
+      clearDownloadOrigin,
       markResumableDownload,
       resumableDownloads,
       modelId,

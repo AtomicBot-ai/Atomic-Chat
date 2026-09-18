@@ -355,6 +355,8 @@ describe('ReplyModelGate', () => {
       resumableDownloads: new Set(),
       pausedDownloads: new Set(),
       resumeParams: {},
+      downloadOriginByModelId: {},
+      downloadRequestOriginByModelId: {},
     })
     mocks.chatgptSubscriptionAvailable = true
     hardwareMock.tier = 'vram_8'
@@ -631,6 +633,11 @@ describe('ReplyModelGate', () => {
     expect(onResolved).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'download', branch: 'none' })
     )
+    expect(
+      useDownloadStore.getState().downloadRequestOriginByModelId[
+        'AtomicChat/Qwen3.5-4B-Q4_K_M'
+      ]
+    ).toBe('reply-gate')
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
@@ -913,6 +920,9 @@ describe('ReplyModelGate', () => {
           downloadModelIds: [inFlight],
         })
       )
+      expect(
+        useDownloadStore.getState().downloadRequestOriginByModelId[inFlight]
+      ).toBe('reply-gate')
 
       fireEvent.click(cancel)
       expect(mocks.abortDownload).toHaveBeenCalledWith(inFlight)

@@ -6,9 +6,7 @@ use std::path::Path;
 
 use serde_json::{json, Map, Value};
 
-use crate::state::{
-    DiffusionBackend, FamilyDefaults, ImageGenerateRequest, OffloadPolicy, ServerSpec,
-};
+use crate::state::{FamilyDefaults, ImageGenerateRequest, OffloadPolicy, ServerSpec};
 
 /// The request's images already turned into base64 by the job runner, so
 /// this module stays free of I/O.
@@ -23,22 +21,6 @@ pub struct ResolvedInputs {
 /// Kill switch for the Metal text-encoder placement (`1`/`true` keeps the
 /// encoder on Metal).
 pub const METAL_TE_GPU_ENV: &str = "ATOMIC_DIFFUSION_METAL_TE_GPU";
-
-/// FLUX.1 GGUF checkpoints can overflow intermediate Metal values and still
-/// return a formally valid, fully white PNG. These are the upstream sd.cpp
-/// troubleshooting values: inputs are scaled before matrix multiplication and
-/// compensated afterwards, preserving the intended output magnitude.
-pub fn numerical_stability_flags(family: &str, backend: DiffusionBackend) -> Vec<String> {
-    if backend == DiffusionBackend::Metal && family.starts_with("flux.1") {
-        return vec![
-            "--linear-scale".into(),
-            "0.0078125".into(),
-            "--attn-scale".into(),
-            "0.0078125".into(),
-        ];
-    }
-    Vec::new()
-}
 
 /// Translate the memory policy into sd.cpp offload flags.
 ///
@@ -473,16 +455,6 @@ mod tests {
                 "--vae-tiling"
             ]
         );
-    }
-
-    #[test]
-    fn flux_one_on_metal_gets_nan_overflow_protection() {
-        assert_eq!(
-            numerical_stability_flags("flux.1-uncensored", DiffusionBackend::Metal),
-            vec!["--linear-scale", "0.0078125", "--attn-scale", "0.0078125"]
-        );
-        assert!(numerical_stability_flags("flux.1", DiffusionBackend::Cpu).is_empty());
-        assert!(numerical_stability_flags("z-image", DiffusionBackend::Metal).is_empty());
     }
 
     #[test]

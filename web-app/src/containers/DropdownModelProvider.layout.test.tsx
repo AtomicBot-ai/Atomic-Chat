@@ -12,6 +12,7 @@ import { TranslationContext } from '@/i18n/context'
 import i18n from '@/i18n/setup'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { seedServiceHub } from '@/test/service-hub'
+import { qualifiedModelDisplayName } from '@/lib/model-display-name'
 import {
   expectNoHorizontalOverflow,
   expectOneLine,
@@ -33,6 +34,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 // These other picker views require backend/catalog services, not used by
 // the main panel. Keep the actual Radix portal, status, avatar and slider.
 vi.mock('./ModelPickerDownloads', () => ({
+  HuggingFaceAction: () => null,
   HuggingFacePicks: () => null,
   ModelPickerEmptyState: () => null,
 }))
@@ -94,23 +96,9 @@ async function openPanel(translatedLabels = false) {
 
 function checkContents(panel: HTMLElement) {
   expectNoHorizontalOverflow(panel)
-  const status = panel.querySelector<HTMLElement>(
-    '[data-test-id="inference-server-status-line"]'
-  )!
-  expect(status.textContent).toBe(
-    'No model loaded — the first message will start one'
-  )
-  expect(getComputedStyle(status).whiteSpace).toBe('normal')
-  expect(status.scrollWidth).toBeLessThanOrEqual(status.clientWidth + 1)
-  expect(status.scrollHeight).toBeLessThanOrEqual(status.clientHeight + 1)
-  expect(status.getBoundingClientRect().height).toBeLessThanOrEqual(
-    parseFloat(getComputedStyle(status).lineHeight) * 2 +
-      parseFloat(getComputedStyle(status).paddingBottom) +
-      1
-  )
   const row = screen.getByRole('button', { name: 'Change model' })
   const title = row.querySelector<HTMLElement>('.truncate')!
-  expect(title.getAttribute('title')).toBe(model.displayName)
+  expect(title.getAttribute('title')).toBe(qualifiedModelDisplayName(model))
   expectOneLine(title)
   for (const label of ['Faster', 'Smarter'])
     expectOneLine(screen.getByText(label))
@@ -123,16 +111,16 @@ function checkContents(panel: HTMLElement) {
   expectSameWidth([effort, track])
   // Consistent 16 px horizontal insets for explanatory text and the scale.
   const bounds = panel.getBoundingClientRect()
-  for (const element of [status, effort]) {
+  for (const element of [effort]) {
     const box = element.getBoundingClientRect()
     const style = getComputedStyle(element)
     expect(box.left + parseFloat(style.paddingLeft) - bounds.left).toBeCloseTo(
-      17,
+      13,
       0
     )
     expect(
       bounds.right - box.right + parseFloat(style.paddingRight)
-    ).toBeCloseTo(17, 0)
+    ).toBeCloseTo(13, 0)
   }
   expect(screen.getByRole('slider').getAttribute('aria-valuetext')).toBe('Off')
 }
@@ -169,8 +157,8 @@ describe('composer model settings popover geometry', () => {
           setTheme(theme)
           const panel = await openPanel()
           const box = panel.getBoundingClientRect()
-          expect(box.width).toBeGreaterThanOrEqual(440)
-          expect(box.width).toBeLessThanOrEqual(480)
+          expect(box.width).toBeGreaterThanOrEqual(351)
+          expect(box.width).toBeLessThanOrEqual(352)
           expect(box.left).toBeGreaterThanOrEqual(16)
           expect(box.right).toBeLessThanOrEqual(width - 16)
           checkContents(panel)
@@ -200,15 +188,12 @@ describe('composer model settings popover geometry', () => {
       await act(async () => {
         useAppState.setState(app)
       })
-      const status = panel.querySelector<HTMLElement>(
-        '[data-test-id="inference-server-status-line"]'
-      )!
-      // Loading indicators intentionally animate forever; settle only the
-      // status text whose geometry is being measured.
-      await act(async () => {
-        await settle(status)
-      })
-      expect(status.scrollWidth).toBeLessThanOrEqual(status.clientWidth + 1)
+      await act(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          )
+      )
       expect(panel.getBoundingClientRect().width).toBe(initialWidth)
       expectNoHorizontalOverflow(panel)
     }

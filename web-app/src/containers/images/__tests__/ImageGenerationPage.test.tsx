@@ -102,6 +102,19 @@ describe('ImageGenerationPage', () => {
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
   })
 
+  it('never opens setup automatically on a first visit', async () => {
+    useImageSetting.setState({ setupCompleted: false })
+    useImageGenerationStore.setState({
+      setupOpen: false,
+      status: makeStatus({ install: { state: 'not-installed' } }),
+    })
+
+    await renderPage()
+
+    expect(screen.getByTestId('image-setup-card')).toBeInTheDocument()
+    expect(useImageGenerationStore.getState().setupOpen).toBe(false)
+  })
+
   it('keeps existing images in view next to the setup card', async () => {
     fake.gallery = [makeItem()]
     useImageGenerationStore.setState({

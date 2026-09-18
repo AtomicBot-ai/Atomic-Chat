@@ -158,14 +158,10 @@ describe('DropdownModelProvider - provider ordering', () => {
     cleanup()
   })
 
-  it('renders turboquant last, below the remote providers', () => {
+  it('renders local engines only and keeps turboquant last', () => {
     renderPicker()
 
-    expect(providerHeaderOrder()).toEqual([
-      'llamacpp-upstream',
-      'openai',
-      'llamacpp',
-    ])
+    expect(providerHeaderOrder()).toEqual(['llamacpp-upstream', 'llamacpp'])
   })
 
   it('leaves out an engine with no models, so the ones with models lead', () => {
@@ -195,19 +191,12 @@ describe('DropdownModelProvider - provider ordering', () => {
 
     renderPicker()
 
-    expect(providerHeaderOrder()).toEqual([
-      'llamacpp-upstream',
-      'openai',
-      'llamacpp',
-    ])
+    expect(providerHeaderOrder()).toEqual(['llamacpp-upstream', 'llamacpp'])
   })
 
-  it('keeps upstream and turboquant apart', () => {
+  it('never uses a remote provider to separate local engines', () => {
     renderPicker()
 
-    const order = providerHeaderOrder()
-    expect(
-      Math.abs(order.indexOf('llamacpp') - order.indexOf('llamacpp-upstream'))
-    ).toBeGreaterThan(1)
+    expect(providerHeaderOrder()).not.toContain('openai')
   })
 })

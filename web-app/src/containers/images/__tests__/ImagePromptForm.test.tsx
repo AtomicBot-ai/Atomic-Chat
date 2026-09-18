@@ -67,10 +67,25 @@ describe('ImagePromptForm', () => {
     expect(useImageForm.getState().prompt).toBe('a cat')
   })
 
+  it('omits the shortcut hint and gives Seed the slider label hierarchy', () => {
+    render(<ImagePromptForm />)
+
+    expect(screen.queryByText('images:form.shortcut')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('images:form.shortcutMac')
+    ).not.toBeInTheDocument()
+    for (const key of ['images:form.steps', 'images:form.seed']) {
+      const label = screen.getByText(key).closest('label')
+      expect(label).toHaveClass('text-xs', 'font-medium', 'text-foreground')
+      expect(label).not.toHaveClass('text-muted-foreground')
+    }
+  })
+
   it('submits on Ctrl+Enter and swaps Generate for Stop while the job runs', async () => {
     fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
     useImageForm.setState({ prompt: 'a lighthouse', steps: 8 })
     render(<ImagePromptForm />)
+    const actionSlot = screen.getByTestId('image-generate-slot')
 
     fireEvent.keyDown(screen.getByLabelText('images:form.prompt'), {
       key: 'Enter',
@@ -78,6 +93,7 @@ describe('ImagePromptForm', () => {
     })
 
     expect(await screen.findByTestId('image-stop')).toBeInTheDocument()
+    expect(screen.getByTestId('image-generate-slot')).toBe(actionSlot)
     expect(fake.generate.mock.calls[0][0]).toMatchObject({
       prompt: 'a lighthouse',
       steps: 8,

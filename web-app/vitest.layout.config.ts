@@ -56,7 +56,14 @@ export default defineConfig({
   // mounted React (which otherwise surfaces as spurious invalid-hook errors).
   optimizeDeps: {
     ...app.optimizeDeps,
-    include: [...new Set([...(app.optimizeDeps?.include ?? []), 'path'])],
+    include: [
+      ...new Set([
+        ...(app.optimizeDeps?.include ?? []),
+        'path',
+        '@radix-ui/react-progress',
+        '@tauri-apps/api/webview',
+      ]),
+    ],
   },
   // The app's defines read Tauri's env, which is not set here; the jsdom
   // suite's test-time values (`IS_MACOS: false`, `VERSION: 'test'`, ...)

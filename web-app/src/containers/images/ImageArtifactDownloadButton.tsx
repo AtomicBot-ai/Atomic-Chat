@@ -4,11 +4,13 @@ import { IconX } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ImageArtifactState } from '@/hooks/useImageArtifact'
+import { cn } from '@/lib/utils'
 
 type ImageArtifactDownloadButtonProps = {
   artifact: ImageArtifactState
-  /** Primary in the setup wizard, outline in the selector list. */
+  /** Visual hierarchy chosen by the setup or compact selector row. */
   variant?: 'primary' | 'outline'
+  className?: string
   /** Called instead of downloading straight away — the selector shows the plan dialog first. */
   onRequestDownload?: () => void
 }
@@ -22,6 +24,7 @@ export const ImageArtifactDownloadButton = memo(
   function ImageArtifactDownloadButton({
     artifact,
     variant = 'outline',
+    className,
     onRequestDownload,
   }: ImageArtifactDownloadButtonProps) {
     const { t } = useTranslation()
@@ -36,7 +39,10 @@ export const ImageArtifactDownloadButton = memo(
           size="sm"
           onClick={() => void artifact.cancelDownload()}
           aria-label={t('common:cancelDownload')}
-          className="group relative w-24 justify-center overflow-hidden font-semibold"
+          className={cn(
+            'group relative w-24 justify-center overflow-hidden font-semibold',
+            className
+          )}
         >
           <span
             className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
@@ -57,6 +63,7 @@ export const ImageArtifactDownloadButton = memo(
       <Button
         variant={variant === 'primary' ? 'default' : 'outline'}
         size="sm"
+        className={className}
         onClick={() =>
           onRequestDownload ? onRequestDownload() : void artifact.download()
         }

@@ -2,12 +2,9 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
-  ALL_LEVELS,
-  availableReasoningLevels,
   canDisableReasoning,
-  isCloudReasoningProvider,
+  reasoningLevelsForModel,
   resolveReasoningLevel,
-  usesTemplateReasoningKwargs,
   type ReasoningEffortLevel,
 } from '@/lib/reasoning-effort'
 
@@ -32,7 +29,7 @@ export const useReasoningEffort = () => {
   )
   const enabled = !disableReasoning || !canDisable
 
-  // No model picked yet, or one without a thinking phase: no scale, so no
+  // No model picked yet, or one explicitly without a thinking phase: no
   // level on the pill. The stored preference is kept for the next pick.
   //
   // A model on a self-hosted or user-added OpenAI-compatible provider reaches
@@ -40,16 +37,11 @@ export const useReasoningEffort = () => {
   // the local backends, and there is no template to read here. Its thinking
   // phase is still driven by chat-template kwargs, and reasoning ships off, so
   // without a scale there is no way to switch it back on (ATO-527). Offer the
-  // full one: a model with no thinking phase simply ignores the kwargs.
-  const levels: ReasoningEffortLevel[] = !selectedModel
-    ? []
-    : selectedModel.reasoning
-      ? availableReasoningLevels(selectedModel.reasoning)
-      : isCloudReasoningProvider(selectedProvider)
-        ? ALL_LEVELS
-      : usesTemplateReasoningKwargs(selectedProvider)
-        ? ALL_LEVELS
-        : []
+  // full one only when no explicit model capability is available: an explicit
+  // `supportsThinking: false` always wins over provider inference.
+  const levels: ReasoningEffortLevel[] = selectedModel
+    ? reasoningLevelsForModel(selectedProvider, selectedModel.reasoning)
+    : []
   const effectiveBudget =
     !canDisable && disableReasoning ? levels[0] : reasoningBudget
   const level =
@@ -64,5 +56,14 @@ export const useReasoningEffort = () => {
     ? t(`common:reasoningEffort.${shownLevel}`)
     : undefined
 
-  return { enabled, canDisable, levels, level, shownLevel, levelLabel }
+  return {
+    enabled,
+    canDisable,
+    preferenceDisabled: disableReasoning,
+    hasModel: Boolean(selectedModel),
+    levels,
+    level,
+    shownLevel,
+    levelLabel,
+  }
 }

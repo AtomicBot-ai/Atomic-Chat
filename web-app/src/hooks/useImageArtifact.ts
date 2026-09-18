@@ -6,6 +6,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fitForQuant } from '@/lib/diffusion/fit'
+import { isDownloadCancellationError } from '@/lib/downloadCancellation'
 import {
   cancelArtifactDownload,
   diffusionDownloadTaskId,
@@ -120,6 +121,9 @@ export function useImageArtifact(id: string): ImageArtifactState {
       })
       await refreshModelFiles()
     } catch (error) {
+      // Pause and Cancel stop the same underlying transfer. Their global
+      // panel feedback owns those states; neither is a failed model download.
+      if (isDownloadCancellationError(error)) return
       console.error('[images] artifact download failed:', error)
       toast.error(t('images:model.downloadFailed', { name: family.name }), {
         description: error instanceof Error ? error.message : String(error),

@@ -19,6 +19,7 @@ import {
   deleteArtifact,
   diffusionDownloadTaskId,
   downloadArtifact,
+  resolveDiffusionDownloadTaskId,
   listInstalledArtifacts,
   parseArtifactId,
   planArtifactDeletion,
@@ -135,6 +136,61 @@ describe('artifact ids', () => {
     const taskId = diffusionDownloadTaskId('flux.1:q4_k_m')
     expect(taskId).toBe('diffusion-model-flux_1_q4_k_m')
     expect(taskId).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+
+  it('resolves a sanitized task id through the catalog without splitting it', () => {
+    const realism: DiffusionCatalogFamily = {
+      ...zImage,
+      id: 'flux.1-nsfw-realism',
+      transformer: {
+        ...zImage.transformer,
+        quants: [
+          {
+            id: 'q8_0',
+            label: 'Q8_0',
+            filename: 'realism-Q8_0.gguf',
+            bytes: 1,
+          },
+        ],
+      },
+    }
+    const taskId = 'diffusion-model-flux_1-nsfw-realism_q8_0'
+
+    expect(
+      resolveDiffusionDownloadTaskId(
+        { ...catalog, families: [...catalog.families, realism] },
+        taskId
+      )
+    ).toMatchObject({
+      artifactId: 'flux.1-nsfw-realism:q8_0',
+      family: { id: 'flux.1-nsfw-realism' },
+      quant: { id: 'q8_0' },
+    })
+  })
+
+  it('refuses an unknown or ambiguous sanitized task id', () => {
+    const ambiguous: DiffusionCatalogFamily = {
+      ...zImage,
+      transformer: {
+        ...zImage.transformer,
+        quants: [
+          zImage.transformer.quants[0],
+          {
+            ...zImage.transformer.quants[0],
+            id: 'q4.k.m',
+          },
+        ],
+      },
+    }
+    expect(
+      resolveDiffusionDownloadTaskId(catalog, 'diffusion-model-missing_q4')
+    ).toBeNull()
+    expect(
+      resolveDiffusionDownloadTaskId(
+        { ...catalog, families: [ambiguous] },
+        'diffusion-model-z-image_q4_k_m'
+      )
+    ).toBeNull()
   })
 
   it('flattens a repo id into one shared folder name', () => {
@@ -401,7 +457,11 @@ describe('buildLoadRequest', () => {
 })
 
 describe('downloadArtifact', () => {
-  const transfers: Array<{ items: unknown[]; taskId: string }> = []
+  const transfers: Array<{
+    items: unknown[]
+    taskId: string
+    resume: boolean
+  }> = []
   const cancelled: string[] = []
   let onDiskNow: DiffusionModelFile[]
 
@@ -417,9 +477,10 @@ describe('downloadArtifact', () => {
               downloadFiles: async (
                 items: unknown[],
                 taskId: string,
-                onProgress?: (t: number, total: number) => void
+                onProgress?: (t: number, total: number) => void,
+                resume = false
               ) => {
-                transfers.push({ items, taskId })
+                transfers.push({ items, taskId, resume })
                 onProgress?.(1, 2)
               },
               cancelDownload: async (taskId: string) => {
@@ -445,6 +506,7 @@ describe('downloadArtifact', () => {
 
     expect(transfers).toHaveLength(1)
     expect(transfers[0].taskId).toBe('diffusion-model-z-image_q4_k_m')
+    expect(transfers[0].resume).toBe(false)
     expect(transfers[0].items).toEqual([
       {
         url: 'https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/main/z-image-turbo-Q4_K_M.gguf',
@@ -463,6 +525,16 @@ describe('downloadArtifact', () => {
     expect(progress).toEqual([1])
     expect(plan.entries.every((e) => e.present)).toBe(true)
     expect(plan.missingBytes).toBe(0)
+  })
+
+  it('passes resume through to the diffusion transfer', async () => {
+    await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+
+    expect(transfers).toHaveLength(1)
+    expect(transfers[0]).toMatchObject({
+      taskId: 'diffusion-model-z-image_q4_k_m',
+      resume: true,
+    })
   })
 
   it('does not transfer anything when the artifact is complete', async () => {

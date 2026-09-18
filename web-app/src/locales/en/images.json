@@ -59,12 +59,14 @@
       "bulletApi": "Your prompts and generated images stay on this computer."
     },
     "engine": {
-      "title": "Get the image engine",
-      "description": "Atomic Chat will install the renderer matched to this computer.",
-      "rowTitle": "Image engine",
-      "rowDescription": "Runs image generation securely on this computer.",
-      "readyDescription": "Ready to generate images on this computer.",
-      "install": "Install engine",
+      "title": "Install the image engine",
+      "description": "Install stable-diffusion.cpp to create images locally.",
+      "rowTitle": "stable-diffusion.cpp",
+      "rowDescription": "Local image engine for this computer.",
+      "installingDescription": "Installing stable-diffusion.cpp…",
+      "readyDescription": "Ready to create images locally.",
+      "install": "Install",
+      "checking": "Checking…",
       "installed": "Installed",
       "unsupported": "There is no image engine build for this computer yet.",
       "unsupportedShort": "Not available",
@@ -85,7 +87,8 @@
       "engineDescription": "The small renderer that creates images locally.",
       "model": "Choose an image model",
       "modelDescription": "Pick the look and quality you want to generate with.",
-      "button": "Start setup"
+      "button": "Start setup",
+      "downloadModel": "Download model"
     }
   },
   "model": {
@@ -143,7 +146,8 @@
   "download": {
     "finishingModel": "Checking image model",
     "finishingEngine": "Finishing image engine",
-    "checkingFiles": "Making sure the downloaded files are ready to use…",
+    "checkingFiles": "Verifying the downloaded files…",
+    "readyAfterCheck": "Ready to use after this check.",
     "modelReady": "Image model is ready",
     "engineReady": "Image engine is ready"
   },

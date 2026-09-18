@@ -9,7 +9,10 @@ import {
   pickPreferredVariant,
   publisherKey,
 } from '@/containers/SetupScreenHelpers'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
+import {
+  useDownloadStore,
+  type DownloadRequestOrigin,
+} from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -49,8 +52,11 @@ export type RecommendedDownload = {
   /** How that size sits in this machine's memory; `null` when either is unknown. */
   fit: MemoryFit | null
   isDownloading: boolean
-  /** Starts the download. Returns the model id started, or `null` if it could not. */
-  start: () => string | null
+  /**
+   * Starts the download. Passive surfaces use the default; a blocked Send is
+   * the only caller allowed to opt into the reply-gate handoff.
+   */
+  start: (requestOrigin?: DownloadRequestOrigin) => string | null
 }
 
 type DownloadSpec = {
@@ -80,6 +86,7 @@ function useDownloadBuilder() {
     resumableDownloads,
     addLocalDownloadingModel,
     clearResumableDownload,
+    setDownloadOrigin,
   } = useDownloadStore()
 
   return useCallback(
@@ -103,9 +110,10 @@ function useDownloadBuilder() {
         isDownloading:
           localDownloadingModels.has(variant.model_id) ||
           Object.values(downloads).some((d) => d.id === variant.model_id),
-        start: () => {
+        start: (requestOrigin = 'standalone') => {
           clearResumableDownload(variant.model_id)
           addLocalDownloadingModel(variant.model_id)
+          setDownloadOrigin(variant.model_id, model.model_name, requestOrigin)
           serviceHub
             .models()
             .pullModelWithMetadata(
@@ -127,6 +135,7 @@ function useDownloadBuilder() {
       resumableDownloads,
       addLocalDownloadingModel,
       clearResumableDownload,
+      setDownloadOrigin,
       serviceHub,
       huggingfaceToken,
     ]

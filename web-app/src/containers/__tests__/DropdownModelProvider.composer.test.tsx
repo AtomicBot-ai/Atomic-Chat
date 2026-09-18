@@ -156,8 +156,7 @@ const pill = () =>
   document.querySelector('[data-test-id="model-picker-trigger"]') as HTMLElement
 const modelRow = () =>
   screen.queryByRole('button', { name: 'common:changeModel' })
-const searchField = () =>
-  screen.queryByPlaceholderText('common:searchModelsHuggingFace')
+const searchField = () => screen.queryByPlaceholderText('common:searchModels')
 
 describe('DropdownModelProvider - the composer pill', () => {
   beforeAll(() => {

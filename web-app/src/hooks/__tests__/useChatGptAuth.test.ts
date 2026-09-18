@@ -38,4 +38,16 @@ describe('subscriptionModelToProviderModel', () => {
       offValue: 'none',
     })
   })
+
+  it('marks a subscription model without declared efforts as unsupported', () => {
+    const model = subscriptionModelToProviderModel({
+      id: 'gpt-no-effort',
+      display_name: 'GPT No Effort',
+      vision: false,
+      reasoning_efforts: [],
+      listed: true,
+    })
+
+    expect(model.reasoning).toEqual({ supportsThinking: false })
+  })
 })

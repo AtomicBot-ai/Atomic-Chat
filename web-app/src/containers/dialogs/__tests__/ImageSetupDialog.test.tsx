@@ -90,6 +90,11 @@ describe('ImageSetupDialog', () => {
     })
     expect(useImageGenerationStore.getState().setupStep).toBe(1)
     expect(screen.getByText('images:setup.engine.title')).toBeInTheDocument()
+    expect(screen.getByText('images:setup.next')).toBeDisabled()
+
+    act(() => {
+      useImageGenerationStore.setState({ status: makeStatus() })
+    })
 
     await act(async () => {
       await userEvent.click(screen.getByText('images:setup.next'))
@@ -119,7 +124,7 @@ describe('ImageSetupDialog', () => {
     }
   })
 
-  it('starts the engine install and dismisses the wizard', async () => {
+  it('keeps the wizard open while installing and reaches the installed state', async () => {
     install.ensure.mockImplementation(async () => {
       fake.getStatus.mockResolvedValue(makeStatus())
       return {
@@ -140,8 +145,11 @@ describe('ImageSetupDialog', () => {
     })
 
     await waitFor(() =>
-      expect(useImageGenerationStore.getState().setupOpen).toBe(false)
+      expect(useImageGenerationStore.getState().status?.install.state).toBe(
+        'installed'
+      )
     )
+    expect(useImageGenerationStore.getState().setupOpen).toBe(true)
     expect(useImageGenerationStore.getState().status?.install.state).toBe('installed')
   })
 
@@ -150,6 +158,7 @@ describe('ImageSetupDialog', () => {
       setupStep: 1,
       hostBackendId: null,
       hostBackendReason: 'Intel Macs are not supported.',
+      hostBackendResolved: true,
     })
     render(<ImageSetupDialog />)
     expect(screen.getByText('Intel Macs are not supported.')).toBeInTheDocument()

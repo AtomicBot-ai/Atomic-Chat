@@ -161,6 +161,7 @@
   "reasoningToggleDisabled": "Ризонинг выключен",
   "reasoningEffort": {
     "title": "Усилие",
+    "unavailable": "Недоступно для этой модели",
     "ariaLabel": "Уровень мышления: {{level}}",
     "faster": "Быстрее",
     "smarter": "Умнее",
@@ -510,6 +511,9 @@
     "downloadCancelled": {
       "title": "Загрузка отменена",
       "description": "Процесс загрузки был отменен."
+    },
+    "downloadResumed": {
+      "title": "Загрузка возобновлена"
     },
     "downloadFailed": {
       "title": "Ошибка загрузки",

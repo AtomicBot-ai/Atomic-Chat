@@ -177,10 +177,10 @@ describe('ImageModelSelector', () => {
     ).toBeInTheDocument()
   })
 
-  it('opens on the best quant and keeps every alternative in one dropdown', async () => {
+  it('opens on the best quant and preserves a picked alternative in one dropdown', async () => {
     // 16 GiB: Q4 needs ~7.8 GiB with its encoder and activations (ok), Q8 ~11.6 (maybe).
     hardware.profile = gpuWith(16 * 1024)
-    render(<ImageModelSelector />)
+    const view = render(<ImageModelSelector />)
     const row = screen.getByTestId(`artifact-${Q4_ID}`)
     expect(within(row).getByText('Q4_K_M')).toBeInTheDocument()
     expect(
@@ -192,6 +192,40 @@ describe('ImageModelSelector', () => {
     )
     expect(screen.getByTestId(`quant-${Q4_ID}`)).toBeInTheDocument()
     expect(screen.getByTestId(`quant-${Q8_ID}`)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId(`quant-${Q8_ID}`))
+    expect(screen.getByTestId('family-z-image')).toHaveAttribute(
+      'data-artifact-id',
+      Q8_ID
+    )
+    view.rerender(<ImageModelSelector />)
+    expect(screen.getByTestId(`artifact-${Q8_ID}`)).toBeInTheDocument()
+  })
+
+  it('uses compact page rows with primary actions and icon-only removal', () => {
+    render(<ImageModelSelector />)
+    const row = screen.getByTestId(`artifact-${Q4_ID}`)
+
+    expect(row).toHaveAttribute('data-compact-row', 'true')
+    expect(
+      within(row).getByRole('button', { name: 'images:model.load' })
+    ).toHaveAttribute('data-variant', 'default')
+    const remove = within(row).getByRole('button', {
+      name: 'images:model.remove',
+    })
+    expect(remove).toHaveAttribute('data-size', 'icon-xs')
+    expect(remove).not.toHaveTextContent('images:model.remove')
+  })
+
+  it('keeps available rows equally compact with a primary Download action', () => {
+    useImageGenerationStore.setState({ modelFiles: [], installedArtifacts: [] })
+    render(<ImageModelSelector />)
+    const row = screen.getByTestId(`artifact-${Q4_ID}`)
+
+    expect(row).toHaveAttribute('data-compact-row', 'true')
+    expect(
+      within(row).getByRole('button', { name: 'images:model.download' })
+    ).toHaveAttribute('data-variant', 'default')
   })
 
   it('does not add recommendation badges when no quant fits this machine', () => {
@@ -273,10 +307,9 @@ describe('ImageModelSelector', () => {
     const row = screen.getByTestId(`artifact-${Q4_ID}`)
 
     const pick = within(row).getByRole('button', { name: 'images:model.pick' })
-    expect(within(pick).getByText('images:model.progress')).toBeInTheDocument()
-    expect(
-      within(pick).queryByText('images:model.sizeGb')
-    ).not.toBeInTheDocument()
+    expect(within(row).getByText('images:model.progress')).toBeInTheDocument()
+    expect(within(pick).queryByText('images:model.progress')).not.toBeInTheDocument()
+    expect(within(row).queryByText('images:model.sizeGb')).not.toBeInTheDocument()
     // Progress is the cancel button alone, with no second line stacked under it.
     const cancel = within(row).getByRole('button', {
       name: 'common:cancelDownload',

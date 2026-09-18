@@ -4,9 +4,9 @@ import {
   IconDownload,
   IconSparkles,
 } from '@tabler/icons-react'
-import { ImageIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ImageIcon } from '@/components/animated-icon/image'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
@@ -36,6 +36,10 @@ export const ImageSetupCard = memo(function ImageSetupCard({
   )
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const unsupported = hostBackendId === null && Boolean(hostBackendReason)
+  const primaryStep: ImageSetupStep = engineInstalled ? 2 : 0
+  const primaryLabel = engineInstalled
+    ? t('images:setup.card.downloadModel')
+    : t('images:setup.card.button')
 
   const rows: Array<{
     step: ImageSetupStep
@@ -64,7 +68,7 @@ export const ImageSetupCard = memo(function ImageSetupCard({
     >
       <div className="flex flex-col items-center text-center">
         <div className="mb-5 grid size-16 place-items-center rounded-2xl border bg-secondary/60 shadow-sm">
-          <ImageIcon size={30} strokeWidth={1.75} />
+          <ImageIcon size={32} aria-hidden />
         </div>
         <h1 className="font-studio text-3xl font-semibold tracking-tight">
           {t('images:setup.card.title')}
@@ -80,10 +84,9 @@ export const ImageSetupCard = memo(function ImageSetupCard({
           <li key={row.step}>
             <button
               type="button"
-              disabled={unsupported}
               onClick={() => openSetup(row.step)}
               className={cn(
-                'group flex h-full w-full items-start gap-3 rounded-xl border bg-background p-4 text-left transition-colors hover:border-foreground/20 hover:bg-secondary/40 disabled:pointer-events-none disabled:opacity-60'
+                'group flex h-full w-full items-start gap-3 rounded-xl border bg-background p-4 text-left transition-colors hover:border-foreground/20 hover:bg-secondary/40'
               )}
             >
               <span
@@ -109,12 +112,11 @@ export const ImageSetupCard = memo(function ImageSetupCard({
       <Button
         size="lg"
         className="mx-auto flex min-w-48"
-        disabled={unsupported}
-        onClick={() => openSetup(engineInstalled ? 2 : 1)}
+        onClick={() => openSetup(primaryStep)}
         data-testid="image-setup-open"
       >
         {engineInstalled ? <IconDownload size={17} /> : <IconSparkles size={17} />}
-        {t('images:setup.card.button')}
+        {primaryLabel}
       </Button>
     </div>
   )

@@ -173,17 +173,19 @@ export const ImageViewer = memo(function ImageViewer({
 
   return (
     <div
-      className="group/viewer @container grid h-full grid-rows-[minmax(0,1fr)_auto] gap-2 px-6 pt-4 pb-2"
+      className="group/viewer @container grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden px-6 pt-4 pb-2"
       data-testid="image-viewer"
     >
-      {/* The grid row gives the image a definite box, so `max-h-full` holds
-          and a tall image can never slide under the toolbar. */}
-      <div className="relative flex min-h-0 min-w-0 items-center justify-center">
-        {/* The button hugs the rendered image, so metadata can sit on the
-            picture itself instead of taking space in the action toolbar. */}
+      {/* Keep the control itself definite-sized. If it shrink-wraps the
+          intrinsic bitmap, percentage max sizes become circular and can be
+          recomputed differently after a workflow route change. */}
+      <div
+        className="relative flex min-h-0 min-w-0 items-start justify-center overflow-hidden"
+        data-testid="image-viewer-region"
+      >
         <button
           type="button"
-          className="group/image relative grid max-h-full max-w-full rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/image relative grid size-full min-h-0 min-w-0 overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t('images:viewer.fullscreen')}
           onClick={() => {
             setFullscreen(true)
@@ -195,7 +197,7 @@ export const ImageViewer = memo(function ImageViewer({
             alt={item.recipe.prompt}
             decoding="async"
             draggable={false}
-            className="col-start-1 row-start-1 max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md animate-in fade-in-0 zoom-in-95 duration-500"
+            className="col-start-1 row-start-1 size-full min-h-0 min-w-0 cursor-zoom-in rounded-lg object-contain object-top shadow-md animate-in fade-in-0 zoom-in-95 duration-500"
           />
           <span className="pointer-events-none col-start-1 row-start-1 m-2 self-start justify-self-end rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
             {item.width}×{item.height}

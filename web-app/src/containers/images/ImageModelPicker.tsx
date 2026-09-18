@@ -95,7 +95,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             aria-label={t('images:model.select')}
             aria-expanded={open}
             data-testid="image-models-toggle"
-            className="inline-flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
+            className="inline-flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
           >
             {showRuntime && runtime.family ? (
               <ModelLogo
@@ -159,7 +159,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           type="button"
           variant="outline"
           size="icon-sm"
-          className="size-10 shrink-0 rounded-xl"
+          className="size-9 shrink-0 rounded-xl"
           disabled={generating}
           aria-label={t('images:model.unload')}
           title={t('images:model.unload')}

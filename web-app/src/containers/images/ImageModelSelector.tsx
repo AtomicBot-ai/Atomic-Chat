@@ -130,21 +130,9 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   }
 
   if (variant === 'dialog') {
-    const choices = families
-      .map((family) => ({
-        family,
-        quant:
-          recommendedQuant(family, profile, { teOnCpu: IS_MACOS }) ??
-          family.transformer.quants[0],
-      }))
-      .filter(
-        (
-          choice
-        ): choice is {
-          family: DiffusionCatalogFamily
-          quant: DiffusionCatalogQuant
-        } => Boolean(choice.quant)
-      )
+    const choices = families.filter(
+      (family) => family.transformer.quants.length > 0
+    )
 
     return (
       <div
@@ -154,11 +142,10 @@ export const ImageModelSelector = memo(function ImageModelSelector({
         )}
         data-testid="image-model-selector"
       >
-        {choices.map(({ family, quant }) => (
+        {choices.map((family) => (
           <SetupFamilyRow
             key={family.id}
             family={family}
-            quant={quant}
             onDownloadStarted={onDownloadStarted}
           />
         ))}
@@ -211,14 +198,20 @@ export const ImageModelSelector = memo(function ImageModelSelector({
 
 function SetupFamilyRow({
   family,
-  quant,
   onDownloadStarted,
 }: {
   family: DiffusionCatalogFamily
-  quant: DiffusionCatalogQuant
   onDownloadStarted?: (artifactId: string) => void
 }) {
   const { t } = useTranslation()
+  const { profile } = useHardwareTier()
+  const initialQuant =
+    recommendedQuant(family, profile, { teOnCpu: IS_MACOS }) ??
+    family.transformer.quants[0]
+  const [quantId, setQuantId] = useState(initialQuant?.id ?? '')
+  const quant =
+    family.transformer.quants.find((item) => item.id === quantId) ??
+    family.transformer.quants[0]!
   const id = artifactId(family.id, quant.id)
   const artifact = useImageArtifact(id)
   const setSelectedArtifactId = useImageSetting(
@@ -233,18 +226,78 @@ function SetupFamilyRow({
 
   return (
     <div
-      className="flex min-h-16 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out hover:bg-background"
+      className="flex min-h-24 items-start gap-3 rounded-lg px-3 py-3 transition-colors duration-150 ease-out hover:bg-background"
       data-testid={`artifact-${id}`}
     >
       <ModelLogo
         icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
         name={family.name}
         author={family.developer}
-        className="size-8 rounded-lg"
+        className="size-9 rounded-lg"
       />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{family.name}</p>
-        <div className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+        {family.description && (
+          <p
+            className="mt-0.5 truncate text-[11px] leading-snug text-muted-foreground"
+            title={family.description}
+          >
+            {family.description}
+          </p>
+        )}
+        <div className="mt-2 flex min-w-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-muted/60 px-2 font-mono text-[11px] font-semibold transition-colors hover:bg-muted"
+                aria-label={t('images:model.pick', {
+                  name: family.name,
+                  quant: quant.label,
+                })}
+              >
+                {quant.label}
+                <IconChevronDown size={13} aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 p-1">
+              {family.transformer.quants.map((option) => {
+                const fit = fitForQuant(family, option, profile, {
+                  teOnCpu: IS_MACOS,
+                }).fit
+                const totalBytes =
+                  option.bytes +
+                  (family.vae?.bytes ?? 0) +
+                  family.text_encoders.reduce(
+                    (sum, encoder) => sum + encoder.bytes,
+                    0
+                  )
+                return (
+                  <DropdownMenuItem
+                    key={option.id}
+                    className="gap-2 py-2"
+                    onSelect={() => setQuantId(option.id)}
+                  >
+                    <span className="w-16 font-mono text-[11px] font-semibold">
+                      {option.label}
+                    </span>
+                    <FitBadge
+                      fit={fit}
+                      className="rounded-none border-0 bg-transparent p-0 text-[10px] dark:bg-transparent"
+                    />
+                    <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+                      {t('images:model.sizeGb', {
+                        size: gb(totalBytes),
+                      })}
+                    </span>
+                    {option.id === quant.id && (
+                      <IconCheck size={14} className="shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <FitBadge
             fit={artifact.fit}
             className="rounded-none border-0 bg-transparent p-0 font-medium dark:bg-transparent"
@@ -263,6 +316,7 @@ function SetupFamilyRow({
       ) : (
         <ImageArtifactDownloadButton
           artifact={artifact}
+          variant="primary"
           onRequestDownload={start}
         />
       )}
@@ -284,7 +338,7 @@ function Section({
       <h3 className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h3>
-      <div className="space-y-2">{children}</div>
+      <div className="space-y-1">{children}</div>
     </section>
   )
 }
@@ -405,7 +459,7 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
   return (
     <div
       className={cn(
-        'rounded-lg px-2.5 py-2 transition-colors duration-150 ease-out hover:bg-secondary/50',
+        'rounded-lg px-2.5 py-1 transition-colors duration-150 ease-out hover:bg-secondary/50',
         artifact.loaded && 'bg-secondary/70 hover:bg-secondary/70',
         disabled && 'opacity-60'
       )}
@@ -421,7 +475,7 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           className="mt-0.5 size-7 rounded-md"
         />
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-sm font-medium leading-tight">
+          <p className="flex items-center gap-2 text-sm font-medium leading-4">
             <span className="truncate">{family.name}</span>
             {unsupportedFor && (
               <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
@@ -433,8 +487,9 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           </p>
           {family.description && (
             <p
-              className="mt-0.5 truncate text-[11px] leading-snug text-muted-foreground"
+              className="truncate text-[11px] leading-3.5 text-muted-foreground"
               title={family.description}
+              data-testid="image-model-subtitle"
             >
               {family.description}
             </p>
@@ -443,14 +498,15 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
       </div>
 
       <div
-        className="mt-2 flex items-center gap-1.5 pl-9"
+        className="mt-1 flex min-w-0 items-center gap-1.5 pl-9"
         data-testid={`artifact-${id}`}
+        data-compact-row="true"
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-muted/45 px-2 text-left transition-colors hover:bg-muted/70"
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-muted/55 px-1.5 text-left transition-colors hover:bg-muted/80"
               aria-label={t('images:model.pick', {
                 name: family.name,
                 quant: quant.label,
@@ -460,29 +516,9 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
               <span className="shrink-0 rounded-[5px] bg-secondary px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
                 {quant.label}
               </span>
-              <FitBadge
-                fit={artifact.fit}
-                className="shrink-0 rounded-none border-0 bg-transparent p-0 text-[10px] font-medium dark:bg-transparent"
-              />
-              <span className="min-w-0 truncate text-[11px] tabular-nums text-muted-foreground">
-                {artifact.downloading
-                  ? t('images:model.progress', {
-                      current: formatBytes(
-                        artifact.currentBytes,
-                        artifact.downloadTotalBytes
-                      ),
-                      total: formatBytes(
-                        artifact.downloadTotalBytes,
-                        artifact.downloadTotalBytes
-                      ),
-                    })
-                  : t('images:model.sizeGb', {
-                      size: gb(artifact.totalBytes),
-                    })}
-              </span>
               <IconChevronDown
-                size={14}
-                className="ml-auto shrink-0 text-muted-foreground"
+                size={13}
+                className="shrink-0 text-muted-foreground"
               />
             </button>
           </DropdownMenuTrigger>
@@ -533,17 +569,39 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <FitBadge
+          fit={artifact.fit}
+          className="shrink-0 rounded-none border-0 bg-transparent p-0 text-[10px] font-medium dark:bg-transparent"
+        />
+        <span className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-muted-foreground">
+          {artifact.downloading
+            ? t('images:model.progress', {
+                current: formatBytes(
+                  artifact.currentBytes,
+                  artifact.downloadTotalBytes
+                ),
+                total: formatBytes(
+                  artifact.downloadTotalBytes,
+                  artifact.downloadTotalBytes
+                ),
+              })
+            : t('images:model.sizeGb', {
+                size: gb(artifact.totalBytes),
+              })}
+        </span>
+
         {!disabled && (!artifact.complete || artifact.downloading) && (
           <ImageArtifactDownloadButton
             artifact={artifact}
+            variant="primary"
+            className="h-7 shrink-0 px-2.5"
             onRequestDownload={download}
           />
         )}
         {artifact.complete && !artifact.downloading && !artifact.loaded && (
           <Button
             size="sm"
-            variant="outline"
-            className="w-20 justify-center"
+            className="h-7 w-16 justify-center"
             disabled={artifact.loading || generating || disabled}
             onClick={() => void start()}
             aria-label={t('images:model.load')}
@@ -562,7 +620,7 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           <Button
             size="sm"
             variant="outline"
-            className="w-20 justify-center"
+            className="h-7 w-16 justify-center"
             disabled={generating}
             onClick={() => void stop()}
             aria-label={t('images:model.unload')}
@@ -575,6 +633,7 @@ function FamilyBlock({ family, quants, unsupportedFor }: FamilyBlockProps) {
           <Button
             variant="ghost"
             size="icon-xs"
+            className="size-6 shrink-0"
             disabled={generating}
             aria-label={t('images:model.remove')}
             onClick={() => setConfirmRemove(true)}

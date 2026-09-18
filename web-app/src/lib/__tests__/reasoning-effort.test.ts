@@ -9,6 +9,7 @@ import {
   buildRemoteReasoningRequestFields,
   modelEffortValue,
   isCloudReasoningProvider,
+  reasoningLevelsForModel,
   resolveReasoningLevel,
   usesTemplateReasoningKwargs,
 } from '../reasoning-effort'
@@ -71,6 +72,27 @@ describe('availableReasoningLevels', () => {
       'high',
       'xhigh',
       'max',
+    ])
+  })
+})
+
+describe('reasoningLevelsForModel', () => {
+  it('uses provider inference only when model metadata is absent', () => {
+    expect(reasoningLevelsForModel('openai', undefined)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(reasoningLevelsForModel('chatgpt', NON_THINKING)).toEqual([])
+  })
+
+  it('uses a subscription model\'s declared effort levels', () => {
+    expect(reasoningLevelsForModel('chatgpt', GPT_OSS)).toEqual([
+      'low',
+      'medium',
+      'high',
     ])
   })
 })

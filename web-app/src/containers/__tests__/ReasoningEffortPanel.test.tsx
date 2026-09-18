@@ -91,7 +91,7 @@ describe('ReasoningEffortPanel', () => {
     })
   })
 
-  it('renders nothing for a model without a thinking phase', () => {
+  it('explicitly disables effort for a model without a thinking phase', () => {
     selectedModel.current = {
       id: 'llama3',
       reasoning: { supportsThinking: false },
@@ -99,7 +99,11 @@ describe('ReasoningEffortPanel', () => {
 
     const { container } = render(<ReasoningEffortPanel />)
 
-    expect(container).toBeEmptyDOMElement()
+    expect(container.firstElementChild).toHaveAttribute('aria-disabled', 'true')
+    expect(
+      screen.getByText('common:reasoningEffort.unavailable')
+    ).toBeVisible()
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument()
   })
 
   it('sits on its first stop, Off, while reasoning is off', () => {
@@ -192,6 +196,43 @@ describe('ReasoningEffortPanel', () => {
       screen.queryByText('common:reasoningEffort.off')
     ).not.toBeInTheDocument()
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '3')
+  })
+
+  it('persists subscription effort on a cloud-only clean profile', () => {
+    selectedModel.current = {
+      id: 'gpt-6-astra',
+      reasoning: {
+        supportsThinking: true,
+        canDisable: false,
+        effortKwarg: 'reasoning_effort',
+        effortValues: ['low', 'medium', 'high', 'xhigh'],
+      },
+    }
+    selectedProvider.current = 'chatgpt'
+    // The persisted defaults on a fresh profile, before any local model has
+    // been installed, selected, or given a chance to clear the off flag.
+    useGeneralSetting.setState({
+      disableReasoning: true,
+      reasoningBudget: 'medium',
+    })
+
+    render(<ReasoningEffortPanel />)
+    const slider = screen.getByRole('slider')
+    expect(slider).toHaveAttribute('aria-valuenow', '0')
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      'common:reasoningEffort.low'
+    )
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+
+    expect(useGeneralSetting.getState().disableReasoning).toBe(false)
+    expect(useGeneralSetting.getState().reasoningBudget).toBe('medium')
+    expect(slider).toHaveAttribute('aria-valuenow', '1')
+    expect(slider).toHaveAttribute(
+      'aria-valuetext',
+      'common:reasoningEffort.medium'
+    )
   })
 
   it('starts an always-thinking local model at Low instead of lying about Off', () => {

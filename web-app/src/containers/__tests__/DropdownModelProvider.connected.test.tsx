@@ -47,7 +47,9 @@ vi.mock('@/lib/platform/const', () => ({
 }))
 
 vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Popover: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="popover-trigger">{children}</div>
   ),
@@ -127,7 +129,7 @@ const renderPicker = () => {
   return result
 }
 
-describe('DropdownModelProvider - connected providers only', () => {
+describe('DropdownModelProvider - installed local providers only', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(useFavoriteModel).mockReturnValue({
@@ -167,16 +169,17 @@ describe('DropdownModelProvider - connected providers only', () => {
     expect(providerHeaders()).toEqual(['llamacpp-upstream'])
   })
 
-  it('lists a signed-in subscription, which carries no API key of its own', () => {
-    // The bearer token lives in the Rust backend; the model list arriving on
-    // sign-in is what "connected" means here.
+  it('leaves out a signed-in subscription and its remote models', () => {
     renderWith([
       local,
-      { ...subscriptionSignedOut, models: [{ id: 'gpt-5.1-codex', capabilities: [] }] },
+      {
+        ...subscriptionSignedOut,
+        models: [{ id: 'gpt-5.1-codex', capabilities: [] }],
+      },
     ])
 
-    expect(providerHeaders()).toEqual(['llamacpp-upstream', 'chatgpt'])
-    expect(screen.getAllByTitle('gpt-5.1-codex').length).toBeGreaterThan(0)
+    expect(providerHeaders()).toEqual(['llamacpp-upstream'])
+    expect(screen.queryByTitle('gpt-5.1-codex')).not.toBeInTheDocument()
   })
 
   it('waits for a loopback server to answer before giving it a section', () => {
@@ -199,10 +202,10 @@ describe('DropdownModelProvider - connected providers only', () => {
       local,
       { ...ollama, models: [{ id: 'llama3', capabilities: ['completion'] }] },
     ])
-    expect(providerHeaders()).toEqual(['llamacpp-upstream', 'ollama'])
+    expect(providerHeaders()).toEqual(['llamacpp-upstream'])
   })
 
-  it('keeps a keyed cloud provider and its models', () => {
+  it('leaves out a keyed cloud provider and its models', () => {
     renderWith([
       local,
       {
@@ -214,8 +217,8 @@ describe('DropdownModelProvider - connected providers only', () => {
       },
     ])
 
-    expect(providerHeaders()).toEqual(['llamacpp-upstream', 'anthropic'])
-    expect(screen.getAllByTitle('claude-opus-5').length).toBeGreaterThan(0)
+    expect(providerHeaders()).toEqual(['llamacpp-upstream'])
+    expect(screen.queryByTitle('claude-opus-5')).not.toBeInTheDocument()
   })
 
   describe('a cloud selection kept across launches', () => {
@@ -249,10 +252,9 @@ describe('DropdownModelProvider - connected providers only', () => {
       const selectModelProvider = renderSelected([local, openaiKeyed])
 
       expect(selectModelProvider).not.toHaveBeenCalled()
-      // The kept selection is what the picker shows: its provider has a
-      // section and the model is listed in it.
-      expect(providerHeaders()).toEqual(['llamacpp-upstream', 'openai'])
-      // Once in the trigger, once in the list: the selection survived.
+      // The selection survives in the trigger, but remote models do not enter
+      // the installed-model list.
+      expect(providerHeaders()).toEqual(['llamacpp-upstream'])
       expect(screen.getAllByTitle('gpt-4o').length).toBeGreaterThanOrEqual(1)
     })
 

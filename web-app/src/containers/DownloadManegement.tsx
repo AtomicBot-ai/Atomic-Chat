@@ -1,10 +1,12 @@
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { IconCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -31,6 +33,13 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
+import {
+  downloadArtifact,
+  isDiffusionModelDownloadTaskId,
+  resolveDiffusionDownloadTaskId,
+} from '@/lib/diffusion/models'
+import { cancelTransfer } from '@/services/diffusion/transfer'
+import { useImageGenerationStore } from '@/stores/image-generation-store'
 
 type DiffusionDownloadKind = 'model' | 'engine'
 
@@ -93,6 +102,8 @@ export function DownloadManagement() {
     peakDownloads: 0,
   })
   const serviceHub = useServiceHub()
+  const imageCatalog = useImageGenerationStore((state) => state.catalog)
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const {
     downloads,
     updateProgress,
@@ -303,17 +314,29 @@ export function DownloadManagement() {
   const onFileDownloadError = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
-      clearPausedDownload(state.modelId)
-      clearResumeParams(state.modelId)
-      removeDownload(state.modelId)
-      removeLocalDownloadingModel(state.modelId)
-      clearDownloadOrigin(state.modelId)
 
       const anyState = state as unknown as {
         error?: string
         downloadType?: string
       }
       const err = anyState?.error || ''
+
+      // Stopping a diffusion transfer for Pause rejects its in-flight
+      // download promise. Keep the row and its last progress intact; a real
+      // network/disk failure while paused still follows the normal path.
+      if (
+        useDownloadStore.getState().pausedDownloads.has(state.modelId) &&
+        isDownloadCancellationError(err)
+      ) {
+        markResumableDownload(state.modelId)
+        return
+      }
+
+      clearPausedDownload(state.modelId)
+      clearResumeParams(state.modelId)
+      removeDownload(state.modelId)
+      removeLocalDownloadingModel(state.modelId)
+      clearDownloadOrigin(state.modelId)
 
       const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
@@ -474,6 +497,19 @@ export function DownloadManagement() {
 
       const diffusionKind = diffusionDownloadKind(event.modelId)
       if (diffusionKind) {
+        const description =
+          diffusionKind === 'model' ? (
+            <span className="block">
+              <span className="block">
+                {t('images:download.checkingFiles')}
+              </span>
+              <span className="block whitespace-nowrap">
+                {t('images:download.readyAfterCheck')}
+              </span>
+            </span>
+          ) : (
+            t('images:download.checkingFiles')
+          )
         toast.loading(
           t(
             diffusionKind === 'model'
@@ -482,7 +518,7 @@ export function DownloadManagement() {
           ),
           {
             id: `model-validation-started-${event.modelId}`,
-            description: t('images:download.checkingFiles'),
+            description,
             duration: Infinity,
           }
         )
@@ -764,13 +800,46 @@ export function DownloadManagement() {
         markPausedDownload(download.name)
         markResumableDownload(download.name)
       }
-      void serviceHub.models().abortDownload(download.name)
+      if (isDiffusionModelDownloadTaskId(download.id)) {
+        void cancelTransfer(download.id)
+      } else {
+        void serviceHub.models().abortDownload(download.name)
+      }
     },
     [markPausedDownload, markResumableDownload, serviceHub]
   )
 
   const handleResumeDownload = useCallback(
     (download: { id: string; name: string }) => {
+      const diffusionTarget = imageCatalog
+        ? resolveDiffusionDownloadTaskId(imageCatalog, download.id)
+        : null
+      if (diffusionTarget) {
+        clearPausedDownload(download.id)
+        if (download.id !== download.name) clearPausedDownload(download.name)
+        markResumableDownload(download.id)
+        toast.success(t('common:toast.downloadResumed.title'), {
+          icon: (
+            <IconCheck
+              size={16}
+              className="text-blue-500 dark:text-blue-400"
+              aria-hidden
+            />
+          ),
+          duration: 2500,
+        })
+        void downloadArtifact(
+          diffusionTarget.family,
+          diffusionTarget.quant.id,
+          { resume: true, hfToken: huggingfaceToken }
+        ).catch((error) => {
+          // downloadArtifact emits the ordinary transfer-error event first;
+          // that listener owns the existing user-facing failure path.
+          console.error('[DownloadManagement] diffusion resume failed:', error)
+        })
+        return
+      }
+
       const params = resumeParams[download.id] ?? resumeParams[download.name]
       if (!params) {
         // No stored params (e.g. resumed after an app restart). Fall back to
@@ -800,7 +869,15 @@ export function DownloadManagement() {
           console.error('[DownloadManagement] resume failed:', error)
         })
     },
-    [resumeParams, clearPausedDownload, markResumableDownload, serviceHub, t]
+    [
+      imageCatalog,
+      huggingfaceToken,
+      resumeParams,
+      clearPausedDownload,
+      markResumableDownload,
+      serviceHub,
+      t,
+    ]
   )
 
   // Shared with the composer's reply widget, which offers the same Cancel on

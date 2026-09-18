@@ -177,6 +177,7 @@
   "reasoningToggleDisabled": "Reasoning disabled",
   "reasoningEffort": {
     "title": "Effort",
+    "unavailable": "Unavailable for this model",
     "ariaLabel": "Thinking effort: {{level}}",
     "faster": "Faster",
     "smarter": "Smarter",
@@ -558,6 +559,9 @@
     "downloadCancelled": {
       "title": "Download Cancelled",
       "description": "The download process was cancelled"
+    },
+    "downloadResumed": {
+      "title": "Download resumed"
     },
     "downloadFailed": {
       "title": "Download Failed",

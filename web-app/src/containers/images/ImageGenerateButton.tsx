@@ -36,55 +36,50 @@ export const ImageGenerateButton = memo(function ImageGenerateButton({
   onStop,
 }: ImageGenerateButtonProps) {
   const { t } = useTranslation()
-
-  if (generating) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        className="w-full px-8 transition-transform duration-150 ease-out active:scale-[0.985]"
-        disabled={stopRequested}
-        onClick={onStop}
-        data-testid="image-stop"
-      >
-        {stopRequested ? (
-          <IconLoader2 size={16} className="animate-spin" />
-        ) : (
-          <IconPlayerStopFilled size={16} />
-        )}
-        {stopRequested ? t('images:form.stopping') : t('images:form.stop')}
-      </Button>
-    )
-  }
+  const disabled = generating ? stopRequested : disabledReason !== null
 
   const button = (
     <Button
       type="button"
-      size="lg"
-      className="w-full px-8 transition-transform duration-150 ease-out active:scale-[0.985] disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
-      disabled={disabledReason !== null}
-      onClick={onGenerate}
-      data-testid="image-generate"
+      variant={generating ? 'outline' : 'default'}
+      size="default"
+      className="h-9 w-full px-6 transition-transform duration-150 ease-out active:scale-[0.985] disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
+      disabled={disabled}
+      onClick={generating ? onStop : onGenerate}
+      data-testid={generating ? 'image-stop' : 'image-generate'}
     >
-      <IconSparkles size={16} />
-      {imageCount > 1
-        ? t('images:form.generateCount', { count: imageCount })
-        : t('images:form.generate')}
+      {generating ? (
+        stopRequested ? (
+          <IconLoader2 size={16} className="animate-spin" />
+        ) : (
+          <IconPlayerStopFilled size={16} />
+        )
+      ) : (
+        <IconSparkles size={16} />
+      )}
+      {generating
+        ? stopRequested
+          ? t('images:form.stopping')
+          : t('images:form.stop')
+        : imageCount > 1
+          ? t('images:form.generateCount', { count: imageCount })
+          : t('images:form.generate')}
     </Button>
   )
 
-  if (!disabledReason) return button
-
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex">{button}</span>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{t(`images:form.disabled.${disabledReason}`)}</p>
-      </TooltipContent>
-    </Tooltip>
+    <div className="h-9 w-full" data-testid="image-generate-slot">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="block h-full w-full">{button}</span>
+        </TooltipTrigger>
+        {!generating && disabledReason && (
+          <TooltipContent>
+            <p>{t(`images:form.disabled.${disabledReason}`)}</p>
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </div>
   )
 })
 

@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 
 import {
   makeCatalog,
@@ -131,6 +132,17 @@ describe('useImageArtifact', () => {
     expect(transfer.download.mock.calls[0][1]).toBe('q8_0')
     expect(result.current.complete).toBe(true)
     expect(result.current.installed?.missing).toEqual([])
+  })
+
+  it('does not report pause or cancel as a failed image-model download', async () => {
+    transfer.download.mockRejectedValueOnce(new Error('Download cancelled'))
+    const { result } = renderHook(() => useImageArtifact(Q8_ID))
+
+    await act(async () => {
+      await result.current.download()
+    })
+
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('loads through the store and reports as loaded afterwards', async () => {

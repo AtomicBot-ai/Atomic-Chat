@@ -32,7 +32,8 @@ const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/\brnj\b/i, '/svg/essentialai-color.svg'],
   [/\bphi-?\d/i, '/svg/microsoft-color.svg'],
   // Image and video checkpoints. Z-Image is from Tongyi-MAI, not the Qwen
-  // model family, so it deliberately falls back to the publisher's “T”.
+  // model family, so it has its own mark rather than inheriting Qwen.
+  [/\bz[- ]?image/i, '/svg/z-image.svg'],
   [/\bflux[.-]?\d/i, '/svg/bfl.svg'],
   [/\bwan-?\d/i, '/svg/qwen-color.svg'],
   [/\bltx-?(video|\d)/i, '/svg/lightricks.svg'],
@@ -51,6 +52,7 @@ const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set([
   '/svg/bfl.svg',
   '/svg/lightricks.svg',
   '/svg/openai-mark.svg',
+  '/svg/z-image.svg',
 ])
 
 // Explicit icon keys addressable from the staff-picks manifest. Curators pick
@@ -89,6 +91,7 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   wan: '/svg/qwen-color.svg',
   lightricks: '/svg/lightricks.svg',
   ltx: '/svg/lightricks.svg',
+  'z-image': '/svg/z-image.svg',
   huggingface: '/images/model-provider/huggingface.svg',
 }
 

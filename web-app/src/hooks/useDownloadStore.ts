@@ -42,6 +42,16 @@ export interface DownloadResumeParams {
   skipVerification?: boolean
 }
 
+/**
+ * Why a text-model download was started.
+ *
+ * A download is passive unless a blocked Send explicitly adopts it. Keeping
+ * this separate from `downloadOriginByModelId` is intentional: that map names
+ * the Hugging Face card/repository for collision handling, while this map
+ * carries the user intent that is allowed to select/start the model later.
+ */
+export type DownloadRequestOrigin = 'standalone' | 'reply-gate'
+
 // Zustand store for thinking block state
 export type DownloadState = {
   downloads: { [id: string]: DownloadProgressProps }
@@ -57,6 +67,9 @@ export type DownloadState = {
   // fixes the root cause; this map keeps the UI honest for clients on
   // an older cached catalog.
   downloadOriginByModelId: { [modelId: string]: string }
+  downloadRequestOriginByModelId: {
+    [modelId: string]: DownloadRequestOrigin
+  }
   // ATO-154: ids the user has paused (vs cancelled). A paused id keeps its
   // `downloads[id]` entry so the popover row survives, and makes the
   // stop/error listeners early-return instead of cleaning up.
@@ -80,7 +93,15 @@ export type DownloadState = {
   clearPausedDownload: (modelId: string) => void
   setResumeParams: (modelId: string, params: DownloadResumeParams) => void
   clearResumeParams: (modelId: string) => void
-  setDownloadOrigin: (modelId: string, modelName: string) => void
+  setDownloadOrigin: (
+    modelId: string,
+    modelName: string,
+    requestOrigin?: DownloadRequestOrigin
+  ) => void
+  setDownloadRequestOrigin: (
+    modelId: string,
+    requestOrigin: DownloadRequestOrigin
+  ) => void
   clearDownloadOrigin: (modelId: string) => void
 }
 
@@ -94,6 +115,7 @@ export const useDownloadStore = create<DownloadState>((set) => ({
   pausedDownloads: new Set(),
   resumeParams: {},
   downloadOriginByModelId: {},
+  downloadRequestOriginByModelId: {},
   removeDownload: (id: string) =>
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -202,21 +224,48 @@ export const useDownloadStore = create<DownloadState>((set) => ({
       return { resumeParams: rest }
     }),
 
-  setDownloadOrigin: (modelId: string, modelName: string) =>
+  setDownloadOrigin: (
+    modelId: string,
+    modelName: string,
+    requestOrigin: DownloadRequestOrigin = 'standalone'
+  ) =>
     set((state) => ({
       downloadOriginByModelId: {
         ...state.downloadOriginByModelId,
         [modelId]: modelName,
       },
+      downloadRequestOriginByModelId: {
+        ...state.downloadRequestOriginByModelId,
+        [modelId]: requestOrigin,
+      },
+    })),
+
+  // A Send may intentionally adopt a transfer that was already running from
+  // the Hub/reminder. That is the only promotion from passive to reply-gated.
+  setDownloadRequestOrigin: (modelId, requestOrigin) =>
+    set((state) => ({
+      downloadRequestOriginByModelId: {
+        ...state.downloadRequestOriginByModelId,
+        [modelId]: requestOrigin,
+      },
     })),
 
   clearDownloadOrigin: (modelId: string) =>
     set((state) => {
-      if (!(modelId in state.downloadOriginByModelId)) {
+      if (
+        !(modelId in state.downloadOriginByModelId) &&
+        !(modelId in state.downloadRequestOriginByModelId)
+      ) {
         return state
       }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [modelId]: _, ...rest } = state.downloadOriginByModelId
-      return { downloadOriginByModelId: rest }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [modelId]: __, ...requestOrigins } =
+        state.downloadRequestOriginByModelId
+      return {
+        downloadOriginByModelId: rest,
+        downloadRequestOriginByModelId: requestOrigins,
+      }
     }),
 }))

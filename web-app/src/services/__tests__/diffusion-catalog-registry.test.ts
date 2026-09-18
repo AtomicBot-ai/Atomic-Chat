@@ -348,4 +348,18 @@ describe('baseline and lookups', () => {
     expect(findQuant(klein!, 'q2_k')).toBeUndefined()
     expect(findFamily(baseline, 'sdxl')).toBeUndefined()
   })
+
+  it('uses CFG rather than distilled guidance for NSFW Realism', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'flux.1-nsfw-realism'
+    )
+
+    expect(family?.defaults.cfg_scale).toBe(3.5)
+    expect(family?.defaults.guidance).toBeUndefined()
+    expect(family?.capabilities).toMatchObject({
+      negative_prompt: true,
+      guidance: false,
+    })
+  })
 })

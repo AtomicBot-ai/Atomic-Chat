@@ -96,6 +96,8 @@ type ImageGenerationState = {
   /** The backend id the host qualifies for, or null when this machine cannot run the engine. */
   hostBackendId: string | null
   hostBackendReason: string | null
+  /** True once host compatibility has been checked; null is otherwise ambiguous. */
+  hostBackendResolved: boolean
 
   currentJob: ImageJob | null
   runsTotal: number
@@ -199,6 +201,7 @@ const initial = {
   paths: null as DiffusionPaths | null,
   hostBackendId: null as string | null,
   hostBackendReason: null as string | null,
+  hostBackendResolved: false,
   currentJob: null as ImageJob | null,
   runsTotal: 0,
   runsDone: 0,
@@ -357,11 +360,21 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           ),
         selectDiffusionBackendForHost()
           .then(({ backendId, reason }) =>
-            set({ hostBackendId: backendId, hostBackendReason: reason ?? null })
+            set({
+              hostBackendId: backendId,
+              hostBackendReason: reason ?? null,
+              hostBackendResolved: true,
+            })
           )
-          .catch((error) =>
+          .catch((error) => {
             console.error('[images] backend selection failed:', error)
-          ),
+            set({
+              hostBackendId: null,
+              hostBackendReason:
+                error instanceof Error ? error.message : String(error),
+              hostBackendResolved: true,
+            })
+          }),
       ])
 
       // Adopt a job that was running before this page (or this window)
@@ -535,7 +548,6 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
               engineInstall: { ...state.engineInstall, transferred, total },
             })),
         })
-        set({ engineInstall: emptyInstall })
         captureImageEngineInstall({
           install_status: 'completed',
           backend: record.backendId,
@@ -543,6 +555,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           error_code: null,
         })
         await get().refreshStatus()
+        set({ engineInstall: emptyInstall })
       } catch (error) {
         const described = toDiffusionError(error)
         set({ engineInstall: { ...emptyInstall, error: described } })

@@ -110,17 +110,14 @@ describe('model selector geometry', () => {
           setFontSize(font)
           setTheme(theme)
           const provider =
-            theme === 'dark' && width === 1024
-              ? 'chatgpt'
-              : theme === 'dark' && width === 1280
-                ? 'llamacpp-upstream'
-                : 'A very long custom model provider name for local inference'
+            'A very long custom model provider name for local inference'
           useModelProvider.setState({
             selectedProvider: provider,
             providers: [
               {
                 provider,
                 active: true,
+                persist: true,
                 models: [{ id: repo, capabilities: [] }],
                 settings: [],
               },
@@ -153,9 +150,7 @@ describe('model selector geometry', () => {
           fireEvent.click(
             document.querySelector('[data-test-id="model-picker-trigger"]')!
           )
-          const input = screen.getByPlaceholderText(
-            'Search models on Hugging Face...'
-          )
+          const input = screen.getByPlaceholderText('Search models...')
           const panel = input.closest(
             '[data-slot="popover-content"]'
           ) as HTMLElement
@@ -163,7 +158,7 @@ describe('model selector geometry', () => {
           await settle(panel)
           const bounds = panel.getBoundingClientRect()
           expect(bounds.width).toBeGreaterThanOrEqual(
-            Math.min(480, width - 32) - 1
+            Math.min(352, width - 32) - 1
           )
           expect(bounds.left).toBeGreaterThanOrEqual(8)
           expect(bounds.right).toBeLessThanOrEqual(width)
@@ -200,7 +195,17 @@ describe('model selector geometry', () => {
           )
           gear.blur()
           expectNoHorizontalOverflow(panel)
-          fireEvent.change(input, { target: { value: 'qwen' } })
+          const footer = screen.getByRole('button', {
+            name: 'Download models from Hugging Face',
+          })
+          expectOneLine(
+            within(footer).getByText('Download models from Hugging Face')
+          )
+          fireEvent.click(footer)
+          const huggingFaceInput = screen.getByPlaceholderText(
+            'Search models on Hugging Face...'
+          )
+          fireEvent.change(huggingFaceInput, { target: { value: 'qwen' } })
           await waitFor(() => expect(resolve).toBeTypeOf('function'))
           const pending = panel.getBoundingClientRect()
           await act(async () =>
@@ -254,7 +259,7 @@ describe('model selector geometry', () => {
 
 for (const width of [1024, 390]) {
   for (const theme of ['light', 'dark'] as const) {
-    it(`empty selector ${width}px ${theme}: reserves search geometry and scrolls both formats`, async () => {
+    it(`empty selector ${width}px ${theme}: keeps the full trigger and explicit HF results compact`, async () => {
       await page.viewport(width, 800)
       setFontSize(XL_FONT_SIZE)
       setTheme(theme)
@@ -293,9 +298,7 @@ for (const width of [1024, 390]) {
       fireEvent.click(
         document.querySelector('[data-test-id="model-picker-trigger"]')!
       )
-      const input = screen.getByPlaceholderText(
-        'Search models on Hugging Face...'
-      )
+      const input = screen.getByPlaceholderText('Search models...')
       const panel = input.closest(
         '[data-slot="popover-content"]'
       ) as HTMLElement
@@ -303,17 +306,24 @@ for (const width of [1024, 390]) {
         requestAnimationFrame(() => requestAnimationFrame(() => done()))
       )
       await settle(panel)
-      fireEvent.change(input, { target: { value: 'qwen' } })
-      // Switching from the content-sized recommendation view to the reserved
-      // search geometry is one deliberate transition. Measure stability from
-      // its settled loading frame through the arriving results.
+      const triggerLabel = document.querySelector<HTMLElement>(
+        '[data-test-id="model-picker-trigger"] .truncate'
+      )!
+      expect(triggerLabel.textContent).toBe('Select Model')
+      expectOneLine(triggerLabel)
+      const footer = screen.getByRole('button', {
+        name: 'Download models from Hugging Face',
+      })
+      expectNoHorizontalOverflow(footer)
+      fireEvent.click(footer)
+      const huggingFaceInput = screen.getByPlaceholderText(
+        'Search models on Hugging Face...'
+      )
+      fireEvent.change(huggingFaceInput, { target: { value: 'qwen' } })
       await new Promise<void>((done) =>
         requestAnimationFrame(() => requestAnimationFrame(() => done()))
       )
-      const card = screen.getByTestId('model-picker-hugging-face')
-      const routes = screen.getByTestId('model-picker-routes')
-      const before = card.getBoundingClientRect()
-      const routesTop = routes.getBoundingClientRect().top
+      const before = panel.getBoundingClientRect()
       await act(async () =>
         resolve(
           Array.from({ length: 12 }, (_, i) => ({
@@ -323,56 +333,20 @@ for (const width of [1024, 390]) {
         )
       )
       await waitFor(() =>
-        expect(
-          screen.getAllByTestId('model-picker-hugging-face-row')
-        ).toHaveLength(12)
+        expect(screen.getAllByTestId('model-picker-download-row')).toHaveLength(
+          12
+        )
       )
       await settle(panel)
-      expect(card.getBoundingClientRect().height).toBe(before.height)
-      expect(routes.getBoundingClientRect().top).toBe(routesTop)
-      expect(card.scrollHeight).toBeGreaterThan(card.clientHeight)
+      expect(panel.getBoundingClientRect().height).toBeCloseTo(before.height, 0)
       expectSameWidth(
         screen
-          .getAllByTestId('model-picker-hugging-face-row')
+          .getAllByTestId('model-picker-download-row')
           .map((row) => within(row).getByRole('button'))
       )
-      const rows = screen.getAllByTestId('model-picker-hugging-face-row')
-      const resultRight = Math.round(
-        within(rows[0]).getByRole('button').getBoundingClientRect().right
-      )
-      const routeButtons = within(routes).queryAllByRole('button')
-      if (routeButtons.length > 0) {
-        expect(
-          new Set(
-            routeButtons.map((button) =>
-              Math.round(button.getBoundingClientRect().right)
-            )
-          )
-        ).toEqual(new Set([resultRight]))
-      }
-      fireEvent.click(within(rows[0]).getByRole('button'))
-      await waitFor(() =>
-        expect(
-          within(rows[0]).getByRole('button', { name: 'Cancel download' })
-            .textContent
-        ).toBe('Cancel')
-      )
-      act(() =>
-        useDownloadStore.setState({
-          downloads: {
-            'layout-Q4_K_M': {
-              id: 'layout-Q4_K_M',
-              name: 'layout-Q4_K_M',
-              progress: 1,
-              current: 19.7 * 1024 ** 3,
-              total: 19.7 * 1024 ** 3,
-              speed: { bytesPerSecond: 0 },
-            },
-          } as never,
-        })
-      )
-      const progress = within(rows[0]).getByText(/100%.*19.7/)
-      expectOneLine(progress)
+      const rows = screen.getAllByTestId('model-picker-download-row')
+      const scroller = rows[0].closest('.overflow-y-auto') as HTMLElement
+      expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
       expectSameWidth(rows.map((row) => within(row).getByRole('button')))
       expectNoHorizontalOverflow(panel)
     })

@@ -192,7 +192,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     cleanup()
   })
 
-  it.each(['llamacpp', 'llamacpp-upstream', 'chatgpt'])(
+  it.each(['llamacpp', 'llamacpp-upstream'])(
     'gives %s an accessible settings button with transparent rest and a separated status slot',
     (provider) => {
       const configured = { ...mockProviders[0], provider }
@@ -396,19 +396,20 @@ describe('DropdownModelProvider - Display Name Integration', () => {
   })
 
   it('keeps a long provider title on one line and leaves the gear after it', () => {
-    // "ChatGPT subscription (Codex)" is the longest title in the catalogue;
-    // unconstrained it wrapped to two lines and pushed the dot and the gear.
+    // A future in-process engine can carry a long display name; it must not
+    // wrap and push the status dot or settings control.
     const chatgptProviders: ModelProvider[] = [
       {
-        provider: 'chatgpt',
+        provider: 'a-very-long-local-inference-engine-name',
         active: true,
         models: [{ id: 'gpt-5-codex', capabilities: ['completion'] }],
         settings: [],
+        persist: true,
       },
-    ]
+    ] as ModelProvider[]
     mockModelProvider({
       providers: chatgptProviders,
-      selectedProvider: 'chatgpt',
+      selectedProvider: 'a-very-long-local-inference-engine-name',
       selectedModel: chatgptProviders[0].models[0],
       getProviderByName: vi.fn((name: string) =>
         chatgptProviders.find((p) => p.provider === name)
@@ -420,9 +421,12 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
     renderPicker()
 
-    const title = screen.getByText('ChatGPT subscription (Codex)')
+    const title = screen.getByText('A-very-long-local-inference-engine-name')
     expect(title).toHaveClass('truncate')
-    expect(title).toHaveAttribute('title', 'ChatGPT subscription (Codex)')
+    expect(title).toHaveAttribute(
+      'title',
+      'A-very-long-local-inference-engine-name'
+    )
 
     const header = title.parentElement?.parentElement
     expect(header).not.toBeNull()

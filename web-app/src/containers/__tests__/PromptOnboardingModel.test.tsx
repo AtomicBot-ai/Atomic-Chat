@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   setPending: vi.fn(),
   addLocalDownloadingModel: vi.fn(),
   clearResumableDownload: vi.fn(),
+  setDownloadOrigin: vi.fn(),
   pullModelWithMetadata: vi.fn(),
   captureReminder: vi.fn(),
   localDownloadingModels: new Set<string>(),
@@ -63,6 +64,7 @@ vi.mock('@/hooks/useDownloadStore', () => ({
     resumableDownloads: new Set<string>(),
     addLocalDownloadingModel: mocks.addLocalDownloadingModel,
     clearResumableDownload: mocks.clearResumableDownload,
+    setDownloadOrigin: mocks.setDownloadOrigin,
   }),
 }))
 

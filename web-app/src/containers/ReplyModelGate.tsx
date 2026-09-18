@@ -604,6 +604,9 @@ function RecommendedDownloads({
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
+  const setDownloadRequestOrigin = useDownloadStore(
+    (state) => state.setDownloadRequestOrigin
+  )
   const { profile } = useHardwareTier()
   // A red row's Download asks first; see ConfirmWontFitDownload.
   const { guardWontFit, confirmation: wontFit } = useConfirmWontFitDownload()
@@ -625,8 +628,14 @@ function RecommendedDownloads({
   useEffect(() => {
     if (!hasInFlight || armedRef.current) return
     armedRef.current = true
-    onInFlight(inFlight.map((download) => download.id))
-  }, [hasInFlight, inFlight, onInFlight])
+    const modelIds = inFlight.map((download) => download.id)
+    // Send explicitly adopts these otherwise-passive transfers for this
+    // message. Their completion may now select/start the exact queued model.
+    modelIds.forEach((modelId) =>
+      setDownloadRequestOrigin(modelId, 'reply-gate')
+    )
+    onInFlight(modelIds)
+  }, [hasInFlight, inFlight, onInFlight, setDownloadRequestOrigin])
 
   if (hasInFlight) {
     return (
@@ -725,7 +734,7 @@ function RecommendedDownloads({
                         : null,
                     },
                     () => {
-                      if (!item.start()) return
+                      if (!item.start('reply-gate')) return
                       onStarted(item.variant.model_id)
                     }
                   )

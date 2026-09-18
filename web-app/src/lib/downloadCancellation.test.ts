@@ -73,6 +73,17 @@ describe('cancelDownload', () => {
     ).toBe(true)
   })
 
+  it('cancels diffusion artifacts through their download-extension task id', () => {
+    const id = 'diffusion-model-flux_1-nsfw-realism_q8_0'
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    expect(extensionCancel).toHaveBeenCalledWith(id)
+    expect(abortDownload).not.toHaveBeenCalled()
+    expect(useDownloadStore.getState().resumableDownloads.has(id)).toBe(true)
+    expect(wasDownloadCancellationRequested(id)).toBe(true)
+  })
+
   it('marks both keys when the row id and the transfer name differ', () => {
     cancelDownload({ id: 'row-id', name: 'transfer-name' }, serviceHub)
 

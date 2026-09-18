@@ -626,6 +626,17 @@ describe('CustomChatTransport reasoning override', () => {
     expect(openai).toEqual({ reasoning_effort: 'high' })
   })
 
+  it('sends no effort for an explicitly unsupported subscription model', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'chatgpt',
+      reasoning: { supportsThinking: false },
+      disableReasoning: true,
+      reasoningBudget: 'medium',
+    })
+
+    expect(override).toBeUndefined()
+  })
+
   it('uses the Anthropic thinking budget for cloud effort', async () => {
     const override = await captureReasoningOverride({
       provider: 'anthropic',

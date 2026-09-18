@@ -9,15 +9,11 @@ import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
 import {
-  isCloudProvider,
   isLocalEngineProvider,
   isProviderConnected,
 } from '@/lib/cloud-providers'
 import { highlightFzfMatch } from '@/utils/highlight'
-import {
-  ModelSourceBadge,
-  MissingModelBadge,
-} from '@/components/ModelSourceBadge'
+import { ModelSourceBadge } from '@/components/ModelSourceBadge'
 import {
   IconChevronDown,
   IconChevronLeft,
@@ -39,8 +35,8 @@ import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
-import { isKnownProvider } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { VOICE_MODEL_ID } from '@/constants/voice'
 import { DEFAULT_CTX_LEN } from '@/lib/context-size'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
@@ -56,44 +52,41 @@ import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
 import { cancelDownload } from '@/lib/downloadCancellation'
+import { downloadKind } from '@/lib/telemetry'
+import { isAnswerableModel } from '@/lib/answerable-model'
 import {
+  HuggingFaceAction,
   HuggingFacePicks,
   ModelPickerEmptyState,
 } from '@/containers/ModelPickerDownloads'
-import {
-  AddCloudProviderDialog,
-  type CloudProviderSaveResult,
-} from '@/containers/dialogs/AddCloudProviderDialog'
 
-/** The subscription the empty list offers by name — the reply gate's. */
-const SUBSCRIPTION_PROVIDER = 'chatgpt'
-
-/**
- * The empty panel is content-sized up to a hard viewport cap. The model card
- * owns its own scrollbar, like Welcome, so a short list never leaves a blank
- * floor while a long list never pushes the routes out of view.
- */
-const EMPTY_PANEL_CLASS = 'max-h-[min(22rem,calc(100dvh-12rem))]'
-const EMPTY_SEARCH_PANEL_CLASS = 'h-[min(22rem,calc(100dvh-12rem))]'
-
-/**
- * Which providers may list models in the picker.
- *
- * Local engines may — they are the app's own runtimes. A cloud provider only
- * once it is actually connected: the registry ships every catalogue entry
- * `active: true`, so without this the picker is a wall of providers the user
- * never set up (the ChatGPT subscription among them) burying the ones they did.
- *
- * Custom providers are judged on their models, as they are everywhere else:
- * they may legitimately need no key.
- *
- * Eligible is not enough for a section: one is rendered only when it has a
- * model to pick (see `groupedItems`).
- */
+/** Only installed, in-process text engines belong in the composer picker. */
 const isPickerSection = (provider: ModelProvider): boolean =>
-  isLocalEngineProvider(provider) ||
-  isProviderConnected(provider) ||
-  (!isKnownProvider(provider.provider) && provider.models.length > 0)
+  provider.active &&
+  isLocalEngineProvider(provider) &&
+  !/(?:diffusion|image)/i.test(provider.provider)
+
+/** Models used for embeddings or transcription cannot answer a chat turn. */
+const isPickerModel = (model: Model): boolean => {
+  const capabilities = new Set(
+    (model.capabilities ?? []).map((capability) => capability.toLowerCase())
+  )
+  return (
+    isAnswerableModel(model) &&
+    model.id !== VOICE_MODEL_ID &&
+    !model.embedding &&
+    !capabilities.has('diffusion') &&
+    !capabilities.has('image-generation') &&
+    !capabilities.has('text-to-image')
+  )
+}
+
+/** The global download panel also carries engines, diffusion, and sidecars. */
+const isChatModelDownload = (id: string): boolean => {
+  if (id === EMBEDDING_MODEL_ID || id === VOICE_MODEL_ID) return false
+  if (id.startsWith('mmproj') || id.startsWith('llamacpp')) return false
+  return downloadKind(id) === 'model'
+}
 
 interface SearchableModel {
   provider: ModelProvider
@@ -132,6 +125,7 @@ type DropdownModelProviderProps = {
  * yet the row would only say "Select a model", so the list opens straight away.
  */
 type PickerView = 'main' | 'models'
+type SearchMode = 'installed' | 'huggingFace'
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
   className,
@@ -159,6 +153,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Search state
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
+  const [searchMode, setSearchMode] = useState<SearchMode>('installed')
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<PickerView>(() =>
     selectedModel?.id ? 'main' : 'models'
@@ -436,10 +431,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     (open: boolean) => {
       setOpen(open)
       if (!open) {
-        requestAnimationFrame(() => setSearchValue(''))
+        requestAnimationFrame(() => {
+          setSearchValue('')
+          setSearchMode('installed')
+        })
       } else {
         // Every opening starts from the model row; the list is a step in.
         setView(selectedModel?.id ? 'main' : 'models')
+        setSearchMode('installed')
       }
     },
     [selectedModel?.id]
@@ -461,53 +460,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     searchInputRef.current?.focus()
   }, [])
 
-  // The cloud routes of the empty list open the same dialog the reply gate
-  // and onboarding open. It lives beside the panel, not in it: the panel
-  // closes as the dialog takes focus, and a dialog inside it would go too.
-  const [cloudDialog, setCloudDialog] = useState<{
-    open: boolean
-    /** Set to land on one provider's sign-in instead of the gallery. */
-    provider?: string
-  }>({ open: false })
-
-  const openCloudDialog = useCallback(
-    (provider?: string) => {
-      onOpenChange(false)
-      setCloudDialog({ open: true, provider })
-    },
-    [onOpenChange]
-  )
-
-  // A key saved, or a subscription signed in: pick the provider's model the
-  // way the reply gate does, and let `switchToModel` register it.
-  const handleCloudConnected = useCallback(
-    ({ providerName, modelId }: CloudProviderSaveResult) => {
-      if (!modelId) return
-      selectModelProvider(providerName, modelId)
-      switchToModel({ modelId, providerName, serviceHub }).catch((error) => {
-        console.error('[DropdownModelProvider] cloud switch failed:', error)
-      })
-    },
-    [selectModelProvider, serviceHub]
-  )
-
   // Create searchable items from all models
   const searchableItems = useMemo(() => {
     const items: SearchableModel[] = []
 
     providers.forEach((provider) => {
-      if (!provider.active) return
+      if (!isPickerSection(provider)) return
 
       provider.models.forEach((modelItem) => {
-        // Skip embedding models - they can't be used for chat
-        if (modelItem.embedding || modelItem.id === EMBEDDING_MODEL_ID) return
-
-        // Skip catalogue entries for providers the user has not set up.
-        // `isProviderConnected` is the check, not a bare `api_key` test: a
-        // subscription carries its token in the backend and a loopback server
-        // (Ollama, LM Studio) needs none, so keying off `api_key` alone hid
-        // their models even while they were signed in and serving.
-        if (!isPickerSection(provider)) return
+        if (!isPickerModel(modelItem)) return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
@@ -529,10 +490,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     return items
   }, [providers])
 
-  // Nothing to pick at all — no local model downloaded, no cloud provider
-  // connected. The list is then the reply gate's download panel, whatever
-  // is typed: a search has nothing local to filter and answers from
-  // Hugging Face instead.
+  // Nothing installed to pick. Downloads remain visible above this state.
   const pickerEmpty = searchableItems.length === 0
 
   const activeDownloads = useMemo(() => {
@@ -572,7 +530,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         })
       }
     }
-    return [...rows.values()]
+    return [...rows.values()].filter((download) =>
+      isChatModelDownload(download.id)
+    )
   }, [downloads, localDownloadingModels, pausedDownloads])
 
   // Create Fzf instance for fuzzy search
@@ -632,31 +592,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     const groups: Record<string, SearchableModel[]> = {}
 
     if (!searchValue) {
-      const activeProviders = providers
-        .filter((p) => p.active && isPickerSection(p))
-        .sort((a, b) => {
-          // Local providers first. Empty sections are dropped below, so this
-          // only ever orders engines that have something to pick.
-          const aIsLocal = isLocalEngineProvider(a)
-          const bIsLocal = isLocalEngineProvider(b)
-          if (aIsLocal !== bIsLocal) return aIsLocal ? -1 : 1
-
-          // Custom providers without API key but with models should be treated like "have API key"
-          const aIsPredefined = isKnownProvider(a.provider)
-          const bIsPredefined = isKnownProvider(b.provider)
-          const aHasApiKeyOrCustomModel =
-            (a.api_key?.length ?? 0) > 0 ||
-            (!aIsPredefined && a.models.length > 0)
-          const bHasApiKeyOrCustomModel =
-            (b.api_key?.length ?? 0) > 0 ||
-            (!bIsPredefined && b.models.length > 0)
-          // Providers with API keys or custom with models filled second
-          if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1
-          if (!aHasApiKeyOrCustomModel && bHasApiKeyOrCustomModel) return 1
-
-          // Sort remaining by provider name
-          return a.provider.localeCompare(b.provider)
-        })
+      const activeProviders = providers.filter(isPickerSection).sort((a, b) => {
+        return a.provider.localeCompare(b.provider)
+      })
 
       activeProviders.forEach((provider) => {
         groups[provider.provider] = []
@@ -780,7 +718,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         data-testid="model-picker-pill-shell"
         className={cn(
           'inline-flex h-7 shrink-0 overflow-hidden rounded-full',
-          compact ? 'w-20' : selectedModel?.id ? 'w-32' : 'w-24',
+          compact && selectedModel?.id ? 'w-20' : 'w-32',
           className
         )}
       >
@@ -801,7 +739,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                   <ProvidersAvatar provider={provider} className="size-4" />
                 </div>
               )}
-              {!compact && (
+              {(!compact || !selectedModel?.id) && (
                 <span
                   key={displayModel}
                   className={cn(
@@ -837,10 +775,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           view === 'models' &&
             cn(
               'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
-              pickerEmpty
-                ? searchValue.trim()
-                  ? EMPTY_SEARCH_PANEL_CLASS
-                  : EMPTY_PANEL_CLASS
+              searchMode === 'installed' &&
+                pickerEmpty &&
+                !searchValue.trim() &&
+                activeDownloads.length === 0
+                ? 'max-h-[min(22rem,calc(100dvh-12rem))]'
                 : 'h-[min(22rem,calc(100dvh-12rem))]'
             )
         )}
@@ -848,7 +787,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         side="top"
         sideOffset={8}
         avoidCollisions
-        collisionPadding={32}
+        collisionPadding={16}
       >
         {view === 'main' ? (
           <div className="flex min-w-0 flex-col p-3">
@@ -893,7 +832,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           <div
             className={cn(
               'flex min-h-0 flex-col',
-              pickerEmpty && !searchValue.trim() ? 'w-full' : 'size-full'
+              searchMode === 'installed' && pickerEmpty && !searchValue.trim()
+                ? 'w-full'
+                : 'size-full'
             )}
           >
             {/* Search input, with the way back to the model row. */}
@@ -903,7 +844,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={t('common:back')}
-                onClick={() => setView('main')}
+                onClick={() => {
+                  if (searchMode === 'huggingFace') {
+                    setSearchMode('installed')
+                    setSearchValue('')
+                    return
+                  }
+                  setView('main')
+                }}
               >
                 <IconChevronLeft size={16} className="text-muted-foreground" />
               </Button>
@@ -911,7 +859,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 ref={searchInputRef}
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
-                placeholder={t('common:searchModelsHuggingFace')}
+                placeholder={t(
+                  searchMode === 'huggingFace'
+                    ? 'common:searchModelsHuggingFace'
+                    : 'common:searchModels'
+                )}
                 className="min-w-0 flex-1 pr-6 text-sm font-normal outline-0"
               />
               {searchValue.length > 0 && (
@@ -929,7 +881,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 height and scrolls inside it. */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className={cn(!pickerEmpty && 'py-1')}>
-                {activeDownloads.length > 0 && (
+                {searchMode === 'installed' && activeDownloads.length > 0 && (
                   <div
                     className="m-1.5 rounded-sm bg-secondary/30 py-1"
                     data-testid="model-picker-downloading"
@@ -977,58 +929,42 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                     })}
                   </div>
                 )}
-                {/* Favorites section - only show when not searching */}
-                {!searchValue && favoriteItems.length > 0 && (
-                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
-                    {/* Favorites header */}
-                    <div className="flex items-center gap-1.5 px-2 py-1">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {t('common:favorites')}
-                      </span>
-                    </div>
+                {/* Favorites section - only show when browsing installed models. */}
+                {searchMode === 'installed' &&
+                  !searchValue &&
+                  favoriteItems.length > 0 && (
+                    <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                      {/* Favorites header */}
+                      <div className="flex items-center gap-1.5 px-2 py-1">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {t('common:favorites')}
+                        </span>
+                      </div>
 
-                    {/* Favorite models */}
-                    {favoriteItems.map((searchableModel) => {
-                      const isSelected =
-                        selectedModel?.id === searchableModel.model.id &&
-                        selectedProvider === searchableModel.provider.provider
+                      {/* Favorite models */}
+                      {favoriteItems.map((searchableModel) => {
+                        const isSelected =
+                          selectedModel?.id === searchableModel.model.id &&
+                          selectedProvider === searchableModel.provider.provider
 
-                      return (
-                        <div
-                          key={`fav-${searchableModel.value}`}
-                          title={searchableModel.model.id}
-                          onClick={() => handleSelect(searchableModel)}
-                          className={cn(
-                            'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                            'hover:bg-secondary/40',
-                            isSelected && 'bg-secondary/50'
-                          )}
-                        >
-                          <div className="flex items-center gap-1 flex-1 min-w-0">
-                            <div className="shrink-0 -ml-1">
-                              <ProvidersAvatar
-                                provider={searchableModel.provider}
-                              />
-                            </div>
-                            <span className="text-sm truncate">
-                              {qualifiedModelDisplayName(searchableModel.model)}
-                            </span>
-                            {searchableModel.model.source && (
-                              <ModelSourceBadge
-                                source={searchableModel.model.source}
-                                className="shrink-0"
-                              />
+                        return (
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            key={`fav-${searchableModel.value}`}
+                            title={searchableModel.model.id}
+                            onClick={() => handleSelect(searchableModel)}
+                            className={cn(
+                              'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
+                              'hover:bg-secondary/40',
+                              isSelected && 'bg-secondary/50'
                             )}
-                            {searchableModel.model.missing && (
-                              <MissingModelBadge
-                                source={searchableModel.model.source}
-                                className="shrink-0"
-                              />
-                            )}
+                          >
                             <span
                               aria-hidden="true"
                               className={cn(
-                                'ml-auto flex size-3.5 shrink-0 items-center justify-center rounded-full border',
+                                'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
                                 isSelected
                                   ? 'border-blue-500'
                                   : 'border-muted-foreground/40'
@@ -1039,109 +975,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 <span className="size-2 rounded-full bg-blue-500" />
                               )}
                             </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Divider between favorites and regular providers */}
-                {favoriteItems.length > 0 && (
-                  <div className="border-b mx-2"></div>
-                )}
-
-                {/* Regular provider sections */}
-                {Object.entries(groupedItems).map(([providerKey, models]) => {
-                  const providerInfo = providers.find(
-                    (p) => p.provider === providerKey
-                  )
-
-                  if (!providerInfo) return null
-
-                  return (
-                    <div
-                      key={providerKey}
-                      className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
-                    >
-                      {/* Provider header */}
-                      <div className="flex items-center justify-between gap-3 px-2 py-1">
-                        {/* `min-w-0` on the group and the span is what lets
-                            a long title ("ChatGPT subscription (Codex)")
-                            ellipsise instead of wrapping and pushing the
-                            dot and the gear off their line. */}
-                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <ProvidersAvatar
-                            provider={providerInfo}
-                            className="size-4.5 shrink-0"
-                          />
-                          <span
-                            className="text-sm font-medium text-muted-foreground min-w-0 truncate"
-                            title={getProviderTitle(providerInfo.provider)}
-                          >
-                            {getProviderTitle(providerInfo.provider)}
-                          </span>
-                          {providerInfo.provider === selectedProvider && (
-                            <span className="size-2 rounded-full bg-green-500 shrink-0" />
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          aria-label={t('common:modelPicker.providerSettings', {
-                            provider: getProviderTitle(providerInfo.provider),
-                          })}
-                          className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-transparent transition-colors duration-200 ease-in-out hover:bg-secondary-foreground/8 focus-visible:bg-secondary-foreground/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            // Cloud providers are set up on `/cloud`; local
-                            // engines keep their Settings detail page.
-                            if (isCloudProvider(providerInfo)) {
-                              navigate({
-                                to: route.cloud.index,
-                                search: { provider: providerInfo.provider },
-                              })
-                            } else {
-                              navigate({
-                                to: route.settings.providers,
-                                params: {
-                                  providerName: providerInfo.provider,
-                                },
-                              })
-                            }
-                            setOpen(false)
-                          }}
-                        >
-                          <IconSettings
-                            size={16}
-                            className="text-muted-foreground"
-                          />
-                        </button>
-                      </div>
-
-                      {/* Models for this provider */}
-                      {models.map((searchableModel) => {
-                        const isSelected =
-                          selectedModel?.id === searchableModel.model.id &&
-                          selectedProvider === searchableModel.provider.provider
-
-                        return (
-                          <div
-                            key={searchableModel.value}
-                            title={searchableModel.model.id}
-                            onClick={() => handleSelect(searchableModel)}
-                            className={cn(
-                              'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                              'hover:bg-secondary/40',
-                              isSelected &&
-                                'bg-secondary/60 hover:bg-secondary/60'
-                            )}
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span
-                                className="text-sm truncate"
-                                title={searchableModel.model.id}
-                              >
+                            <div className="flex min-w-0 flex-1 items-center gap-1">
+                              <div className="shrink-0">
+                                <ProvidersAvatar
+                                  provider={searchableModel.provider}
+                                />
+                              </div>
+                              <span className="text-sm truncate">
                                 {qualifiedModelDisplayName(
                                   searchableModel.model
                                 )}
@@ -1152,16 +992,107 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                   className="shrink-0"
                                 />
                               )}
-                              {searchableModel.model.missing && (
-                                <MissingModelBadge
-                                  source={searchableModel.model.source}
-                                  className="shrink-0"
-                                />
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                {/* Divider between favorites and regular providers */}
+                {searchMode === 'installed' && favoriteItems.length > 0 && (
+                  <div className="border-b mx-2"></div>
+                )}
+
+                {/* Regular provider sections */}
+                {searchMode === 'installed' &&
+                  Object.entries(groupedItems).map(([providerKey, models]) => {
+                    const providerInfo = providers.find(
+                      (p) => p.provider === providerKey
+                    )
+
+                    if (!providerInfo) return null
+
+                    return (
+                      <div
+                        key={providerKey}
+                        className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
+                      >
+                        {/* Provider header */}
+                        <div className="flex items-center justify-between gap-3 px-2 py-1">
+                          {/* `min-w-0` lets long engine titles ellipsise instead
+                              of wrapping and pushing the status or gear away. */}
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <ProvidersAvatar
+                              provider={providerInfo}
+                              className="size-4.5 shrink-0"
+                            />
+                            <span
+                              className="text-sm font-medium text-muted-foreground min-w-0 truncate"
+                              title={getProviderTitle(providerInfo.provider)}
+                            >
+                              {getProviderTitle(providerInfo.provider)}
+                            </span>
+                            {providerInfo.provider === selectedProvider && (
+                              <span className="size-2 rounded-full bg-green-500 shrink-0" />
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            aria-label={t(
+                              'common:modelPicker.providerSettings',
+                              {
+                                provider: getProviderTitle(
+                                  providerInfo.provider
+                                ),
+                              }
+                            )}
+                            className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-transparent transition-colors duration-200 ease-in-out hover:bg-secondary-foreground/8 focus-visible:bg-secondary-foreground/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigate({
+                                to: route.settings.providers,
+                                params: {
+                                  providerName: providerInfo.provider,
+                                },
+                              })
+                              setOpen(false)
+                            }}
+                          >
+                            <IconSettings
+                              size={16}
+                              className="text-muted-foreground"
+                            />
+                          </button>
+                        </div>
+
+                        {/* Models for this provider */}
+                        {models.map((searchableModel) => {
+                          const isSelected =
+                            selectedModel?.id === searchableModel.model.id &&
+                            selectedProvider ===
+                              searchableModel.provider.provider
+
+                          return (
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
+                              key={searchableModel.value}
+                              title={searchableModel.model.id}
+                              onClick={() => handleSelect(searchableModel)}
+                              className={cn(
+                                'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
+                                'hover:bg-secondary/40',
+                                isSelected &&
+                                  'bg-secondary/60 hover:bg-secondary/60'
                               )}
+                            >
                               <span
                                 aria-hidden="true"
                                 className={cn(
-                                  'ml-auto flex size-3.5 shrink-0 items-center justify-center rounded-full border',
+                                  'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
                                   isSelected
                                     ? 'border-blue-500'
                                     : 'border-muted-foreground/40'
@@ -1172,58 +1103,50 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                   <span className="size-2 rounded-full bg-blue-500" />
                                 )}
                               </span>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <span
+                                  className="text-sm truncate"
+                                  title={searchableModel.model.id}
+                                >
+                                  {qualifiedModelDisplayName(
+                                    searchableModel.model
+                                  )}
+                                </span>
+                                {searchableModel.model.source && (
+                                  <ModelSourceBadge
+                                    source={searchableModel.model.source}
+                                    className="shrink-0"
+                                  />
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
 
-                {/* Nothing to pick: the list would be a blank panel, so it
-                      is the reply gate's — the models recommended for this
-                      device, the other ways to get one, and Hugging Face's
-                      answer to whatever is typed. Otherwise, under the
-                      local matches, Hugging Face's compatible repos for the
-                      query — a search with no local hit was a dead end
-                      ("No models found") with nothing to download from. */}
-                {pickerEmpty ? (
-                  <ModelPickerEmptyState
-                    query={searchValue}
-                    onBrowseHuggingFace={() => searchInputRef.current?.focus()}
-                    onConnectCloud={() => openCloudDialog()}
-                    onConnectSubscription={() =>
-                      openCloudDialog(SUBSCRIPTION_PROVIDER)
-                    }
-                    onImportLocal={() => {
-                      setOpen(false)
-                      void navigate({ to: route.settings.general })
-                    }}
-                  />
-                ) : (
-                  searchValue && (
-                    <HuggingFacePicks
-                      query={searchValue}
-                      localEmpty={Object.keys(groupedItems).length === 0}
-                    />
-                  )
-                )}
+                {/* Installed search stays local. Hugging Face is mounted only
+                    after the footer action explicitly changes modes. */}
+                {searchMode === 'huggingFace' ? (
+                  <HuggingFacePicks query={searchValue} localEmpty />
+                ) : pickerEmpty || Object.keys(groupedItems).length === 0 ? (
+                  <ModelPickerEmptyState query={searchValue} />
+                ) : null}
               </div>
             </div>
+            {searchMode === 'installed' && (
+              <HuggingFaceAction
+                onClick={() => {
+                  setSearchMode('huggingFace')
+                  setSearchValue('')
+                  requestAnimationFrame(() => searchInputRef.current?.focus())
+                }}
+              />
+            )}
           </div>
         )}
       </PopoverContent>
-
-      {/* Beside the panel, not in it (`Popover` renders no element of its
-            own): the panel closes as this takes focus, and a dialog inside
-            it would go with it. */}
-      <AddCloudProviderDialog
-        open={cloudDialog.open}
-        onOpenChange={(open) => setCloudDialog((prev) => ({ ...prev, open }))}
-        onKeySaved={handleCloudConnected}
-        initialProviderName={cloudDialog.provider}
-        duringOnboarding={false}
-      />
     </Popover>
   )
 })

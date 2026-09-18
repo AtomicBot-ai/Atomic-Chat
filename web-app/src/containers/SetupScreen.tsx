@@ -210,6 +210,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     removeLocalDownloadingModel,
     markResumableDownload,
     clearResumableDownload,
+    setDownloadOrigin,
+    clearDownloadOrigin,
   } = useDownloadStore()
   const serviceHub = useServiceHub()
   // Use the platform-active llama.cpp provider id. Windows only exposes
@@ -231,11 +233,18 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }))
   )
 
-  //* id → провайдер, чтобы после import-события знать, куда навигировать.
-  //* На Windows у нас только `llamacpp-upstream`; на macOS/Linux — `llamacpp`.
+  //* Import completion needs both the engine and whether the initiating action
+  //* was an explicit Run. A plain Download is tracked for cleanup only and
+  //* must never become a selection when its import event lands.
   type LocalLlamacppProvider = 'llamacpp' | 'llamacpp-upstream'
   const trackedImportIdsRef = useRef<
-    Map<string, LocalLlamacppProvider | 'mlx'>
+    Map<
+      string,
+      {
+        provider: LocalLlamacppProvider | 'mlx'
+        selectOnImport: boolean
+      }
+    >
   >(new Map())
   const hasNavigatedRef = useRef(false)
   // Wall clock for `onboarding_completed.duration_ms` — how long the user spent
@@ -702,10 +711,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     (catalog: CatalogModel, variant: ModelQuant, mmprojPath?: string) => {
       trackedImportIdsRef.current.set(
         variant.model_id,
-        LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
+        {
+          provider: LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider,
+          selectOnImport: false,
+        }
       )
       clearResumableDownload(variant.model_id)
       addLocalDownloadingModel(variant.model_id)
+      setDownloadOrigin(variant.model_id, catalog.model_name, 'standalone')
       serviceHub
         .models()
         .pullModelWithMetadata(
@@ -720,6 +733,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [
       addLocalDownloadingModel,
       clearResumableDownload,
+      setDownloadOrigin,
       serviceHub,
       huggingfaceToken,
       resumableDownloads,
@@ -732,9 +746,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       const mlxId = getMlxModelId(catalog)
       const modelPath = `${catalog.developer}/${catalog.model_name.split('/').pop()}`
 
-      trackedImportIdsRef.current.set(mlxId, 'mlx')
+      trackedImportIdsRef.current.set(mlxId, {
+        provider: 'mlx',
+        selectOnImport: false,
+      })
       clearResumableDownload(mlxId)
       addLocalDownloadingModel(mlxId)
+      setDownloadOrigin(mlxId, catalog.model_name, 'standalone')
 
       try {
         const repoInfo = await serviceHub
@@ -774,6 +792,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         trackedImportIdsRef.current.delete(mlxId)
         markResumableDownload(mlxId)
         removeLocalDownloadingModel(mlxId)
+        clearDownloadOrigin(mlxId)
         if (
           wasDownloadCancellationRequested(mlxId) ||
           isDownloadCancellationError(error)
@@ -790,6 +809,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       removeLocalDownloadingModel,
       markResumableDownload,
       clearResumableDownload,
+      setDownloadOrigin,
+      clearDownloadOrigin,
       serviceHub,
       huggingfaceToken,
       resumableDownloads,
@@ -800,8 +821,15 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   useEffect(() => {
     const handleImportedId = async (
       importedId: string,
-      providerName: LocalLlamacppProvider | 'mlx'
+      providerName: LocalLlamacppProvider | 'mlx',
+      selectOnImport: boolean
     ) => {
+      // Download completion is library-only. `DataProvider` refreshes the
+      // provider list globally; this screen owns only explicit Run handoffs.
+      if (!selectOnImport) {
+        trackedImportIdsRef.current.delete(importedId)
+        return
+      }
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
       captureOnboardingCompleted({
@@ -816,8 +844,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       trackedImportIdsRef.current.delete(importedId)
 
       const modelId = importedId
-      // Exit as soon as the import event says the model is on disk. Importing
-      // is library-only; the first Send (or an explicit Use) loads the model.
+      // This branch is reached only for an explicit Run/import action. Passive
+      // downloads returned above and are left for a later Send or Run.
       selectModelProvider(providerName, modelId)
 
       // A model another app left on disk was picked up and started without a
@@ -862,16 +890,24 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
 
     const onModelImported = (payload: { modelId: string }) => {
-      const provider = trackedImportIdsRef.current.get(payload.modelId)
-      if (!provider) return
-      void handleImportedId(payload.modelId, provider)
+      const tracked = trackedImportIdsRef.current.get(payload.modelId)
+      if (!tracked) return
+      void handleImportedId(
+        payload.modelId,
+        tracked.provider,
+        tracked.selectOnImport
+      )
     }
 
     //* MLX не всегда шлёт AppEvent.onModelImported — слушаем прямое событие загрузки
     const onMlxDownloadSuccess = (state: { modelId: string }) => {
-      const provider = trackedImportIdsRef.current.get(state.modelId)
-      if (provider !== 'mlx') return
-      void handleImportedId(state.modelId, 'mlx')
+      const tracked = trackedImportIdsRef.current.get(state.modelId)
+      if (tracked?.provider !== 'mlx') return
+      void handleImportedId(
+        state.modelId,
+        'mlx',
+        tracked.selectOnImport
+      )
     }
 
     events.on(AppEvent.onModelImported, onModelImported)
@@ -889,7 +925,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     }
   }, [navigate, selectModelProvider, t])
 
-  const enterChatForDownload = useCallback(
+  const enterChatWithModel = useCallback(
     (modelId: string, providerName: LocalLlamacppProvider | 'mlx') => {
       if (hasNavigatedRef.current) return
 
@@ -922,6 +958,33 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     },
     [navigate]
   )
+
+  // Download is not selection. Complete onboarding and leave the transfer in
+  // the global panel, but preserve the current/default model and do not put a
+  // `threadModel` in the route for ChatInput to auto-start on arrival.
+  const enterChatAfterDownloadStarted = useCallback(() => {
+    if (hasNavigatedRef.current) return
+
+    hasNavigatedRef.current = true
+    captureOnboardingCompleted({
+      exitPath: 'download_started',
+      hadAnyModel: true,
+      providerState: describeProviderState(
+        useModelProvider.getState().providers
+      ),
+      stepReached: stepReachedRef.current,
+      startedAtMs: onboardingStartedAtRef.current,
+    })
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    window.dispatchEvent(new Event('app:setup-completed'))
+    useLeftPanel.getState().setLeftPanel(true)
+
+    void navigate({
+      to: route.home,
+      replace: true,
+      search: {},
+    })
+  }, [navigate])
 
   // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
   const providerForCandidate = useCallback(
@@ -987,7 +1050,10 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
       setImportingLocalId(cand.id)
       // Only the chosen model is tracked, so only it triggers navigation.
-      trackedImportIdsRef.current.set(cand.id, providerName)
+      trackedImportIdsRef.current.set(cand.id, {
+        provider: providerName,
+        selectOnImport: true,
+      })
 
       // Deferred until the chosen model is handled (see handleImportedId).
       pendingBackgroundImportsRef.current = (localCandidates ?? []).filter(
@@ -1334,7 +1400,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           position: index,
         })
         void startMlxDownload(model)
-        enterChatForDownload(modelId, 'mlx')
+        enterChatAfterDownloadStarted()
       } else if (variant) {
         captureRecommendedModelClicked({
           modelId: variant.model_id,
@@ -1343,10 +1409,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
           position: index,
         })
         startDownload(model, variant, mmproj?.path)
-        enterChatForDownload(
-          variant.model_id,
-          LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider
-        )
+        enterChatAfterDownloadStarted()
       }
     }
 
@@ -1653,7 +1716,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                     importCandidatesInBackground(
                                       localCandidates ?? []
                                     )
-                                    enterChatForDownload(startId, provider)
+                                    enterChatWithModel(startId, provider)
                                   }}
                                   className={ONBOARDING_ROW_ACTION_CLASS}
                                 >

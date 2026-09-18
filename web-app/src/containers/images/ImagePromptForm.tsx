@@ -246,7 +246,10 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       }}
       data-testid="image-prompt-form"
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-4">
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-6 pt-4 pb-4 [scrollbar-gutter:stable]"
+        data-testid="image-form-scroller"
+      >
         {/* The sidebar names the section; this names what the column does. */}
         <div className="mb-1 flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -288,7 +291,10 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           disabled={busy}
         />
 
-        <div className="space-y-3 rounded-2xl border bg-secondary/20 p-3">
+        <div
+          className="space-y-2.5 rounded-2xl border bg-secondary/20 p-2.5"
+          data-testid="image-prompt-card"
+        >
           {workflowModelMismatch && (
             <div
               className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5"
@@ -334,16 +340,11 @@ export const ImagePromptForm = memo(function ImagePromptForm({
               )}
               onChange={(event) => form.patch({ prompt: event.target.value })}
               onKeyDown={onPromptKeyDown}
-              rows={4}
-              className="min-h-24 resize-none rounded-xl bg-background px-4 py-3"
+              rows={3}
+              className="min-h-20 resize-none rounded-xl bg-background px-3.5 py-2.5"
             />
-            <p className="text-[11px] text-muted-foreground/80">
-              {IS_MACOS
-                ? t('images:form.shortcutMac')
-                : t('images:form.shortcut')}
-            </p>
           </ImageField>
-          <div className="flex min-h-[74px] flex-col gap-2">
+          <div className="flex min-h-15 flex-col gap-1">
             <ImageGenerateButton
               generating={generation.generating}
               stopRequested={generation.stopRequested}
@@ -352,7 +353,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
               onGenerate={() => void generation.generate()}
               onStop={() => void generation.stop()}
             />
-            <div className="min-h-7">
+            <div className="min-h-5" data-testid="image-progress-slot">
               {generation.generating && (
                 <ImageJobProgress
                   job={generation.job}
@@ -499,7 +500,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           <CollapsibleTrigger asChild>
             <button
               type="button"
-              className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
               data-testid="image-advanced-toggle"
             >
               <span className="min-w-0 flex-1 text-xs font-medium">
@@ -514,7 +515,13 @@ export const ImagePromptForm = memo(function ImagePromptForm({
               />
             </button>
           </CollapsibleTrigger>
-          <CollapsibleContent className={collapsiblePanelAnimation}>
+          <CollapsibleContent
+            className={cn(
+              collapsiblePanelAnimation,
+              'duration-250 ease-out will-change-[height] motion-reduce:animate-none motion-reduce:duration-0'
+            )}
+            data-testid="image-advanced-panel"
+          >
             <div className="flex flex-col gap-3 pt-3">
               <AdvancedSelect
                 label={t('images:form.memory')}

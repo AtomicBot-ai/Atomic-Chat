@@ -8,7 +8,6 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Runtime, State};
 
-use crate::args::numerical_stability_flags;
 use crate::error::{DiffusionError, DiffusionErrorCode, DiffusionResult};
 use crate::events::SharedEmitter;
 use crate::gallery;
@@ -256,8 +255,6 @@ pub async fn load_model<R: Runtime>(
                 "Install the image engine first.",
             )
         })?;
-    let extra_args = numerical_stability_flags(&request.family, record.backend);
-
     let spec = ServerSpec {
         binary_dir: PathBuf::from(&record.dir),
         engine,
@@ -273,7 +270,10 @@ pub async fn load_model<R: Runtime>(
         ranges: request.ranges,
         offload: request.offload,
         threads: request.threads,
-        extra_args,
+        // Keep argv limited to options exposed by the bundled sd-server.
+        // M5 numerical stability is handled by GGML_METAL_TENSOR_DISABLE in
+        // process.rs; older d04e895 builds reject newer scaling flags.
+        extra_args: Vec::new(),
         startup_timeout: Duration::from_secs(
             request
                 .startup_timeout_secs

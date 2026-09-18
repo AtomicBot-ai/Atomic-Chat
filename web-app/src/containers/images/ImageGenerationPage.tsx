@@ -68,7 +68,6 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
   )
-  const setupCompleted = useImageSetting((state) => state.setupCompleted)
   const [modelsOpen, setModelsOpen] = useState(false)
 
   const modelLoaded = status?.model.state === 'loaded'
@@ -104,16 +103,6 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
       setModelsOpen(true)
     }
   }, [search.model, search.quant, setSelectedArtifactId])
-
-  // First visit with nothing set up: open the wizard rather than leave a
-  // page that does nothing.
-  useEffect(() => {
-    if (!setupCompleted && !ready && status && engine.hostBackendId !== null) {
-      openSetup(engine.installed ? 2 : 0)
-    }
-    // Only when readiness is first known.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status !== null, ready])
 
   const offerLoad = useCallback(
     (id: string) => {
@@ -200,7 +189,10 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   }
 
   return (
-    <div className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
+    <div
+      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      data-testid="image-generation-page"
+    >
       <div className="col-span-2 min-w-0">{header}</div>
 
       <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
@@ -216,7 +208,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
         )}
       </aside>
 
-      <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col">
+      <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col overflow-hidden">
         {lastError && (
           <div className="shrink-0 px-6 pt-3">
             <ImageErrorBanner
@@ -231,7 +223,10 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           <ImageEmptyState modelLoaded={modelLoaded} />
         ) : (
           <>
-            <div className="min-h-0 flex-[3]">
+            <div
+              className="min-h-0 min-w-0 flex-[3] overflow-hidden"
+              data-testid="image-viewer-section"
+            >
               {generating ? (
                 <ImageGenerationPlaceholder
                   variant="viewer"

@@ -1,8 +1,9 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useState, type CSSProperties } from 'react'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ImageJobProgress } from '@/services/diffusion/types'
 import { cn } from '@/lib/utils'
+import './ImageGenerationPlaceholder.css'
 
 type ImageGenerationPlaceholderProps = {
   variant: 'viewer' | 'tile'
@@ -13,20 +14,68 @@ type ImageGenerationPlaceholderProps = {
   index?: number
 }
 
-function GenerationPulse({ compact = false }: { compact?: boolean }) {
+const DOT_GRID_SIZE = 15
+const DOT_FIELD_RADIUS = 44
+const DOT_WAVE_SECONDS = 2.8
+
+const DOTS = Array.from({ length: DOT_GRID_SIZE * DOT_GRID_SIZE }, (_, index) => {
+  const column = index % DOT_GRID_SIZE
+  const row = Math.floor(index / DOT_GRID_SIZE)
+  const spacing = (DOT_FIELD_RADIUS * 2) / (DOT_GRID_SIZE - 1)
+  const x = 50 - DOT_FIELD_RADIUS + column * spacing
+  const y = 50 - DOT_FIELD_RADIUS + row * spacing
+  const dx = x - 50
+  const dy = y - 50
+  const distance = Math.hypot(dx, dy)
+
+  if (distance > DOT_FIELD_RADIUS) return null
+
+  const radius = distance / DOT_FIELD_RADIUS
+  const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2)
+  const angleTurn = angle / (Math.PI * 2)
+  const phase = (radius * 1.35 + angleTurn * 0.26) % 1
+  const restOpacity = 0.22 + (1 - radius) * 0.2
+  const ringStrength = Math.exp(-Math.pow((radius - 0.7) / 0.24, 2))
+  const staticOpacity = 0.18 + ringStrength * 0.48 + (1 - radius) * 0.08
+
+  return {
+    x,
+    y,
+    style: {
+      '--dot-delay': `${-(phase * DOT_WAVE_SECONDS).toFixed(3)}s`,
+      '--dot-rest-opacity': restOpacity.toFixed(3),
+      '--dot-low-opacity': (restOpacity * 0.42).toFixed(3),
+      '--dot-fall-opacity': (restOpacity * 0.78).toFixed(3),
+      '--dot-static-opacity': staticOpacity.toFixed(3),
+    } as CSSProperties,
+  }
+}).filter((dot): dot is NonNullable<typeof dot> => dot !== null)
+
+function DottedGenerationField({ compact = false }: { compact?: boolean }) {
   return (
-    <div
+    <svg
+      viewBox="0 0 100 100"
       className={cn(
-        'relative shrink-0 text-primary',
-        compact ? 'size-10' : 'size-20'
+        'generation-dotted-field shrink-0 text-foreground/70',
+        compact ? 'size-14' : 'size-28'
       )}
-      aria-hidden
+      data-testid="generation-dotted-field"
+      data-reduced-motion-fallback="static"
+      aria-hidden="true"
+      focusable="false"
     >
-      <span className="absolute inset-0 rounded-full border-2 border-dotted border-current opacity-25 motion-safe:animate-[spin_8s_linear_infinite]" />
-      <span className="absolute inset-[18%] rounded-full border-2 border-dotted border-current opacity-45 motion-safe:animate-[spin_5s_linear_infinite_reverse]" />
-      <span className="absolute inset-[38%] rounded-full bg-current opacity-60 motion-safe:animate-pulse" />
-      <span className="absolute inset-[46%] rounded-full bg-background" />
-    </div>
+      {DOTS.map((dot, index) => (
+        <circle
+          key={index}
+          className="generation-dot"
+          cx={dot.x}
+          cy={dot.y}
+          r="1.05"
+          fill="currentColor"
+          style={dot.style}
+        />
+      ))}
+    </svg>
   )
 }
 
@@ -63,19 +112,31 @@ export const ImageGenerationPlaceholder = memo(
           total: progress.totalSteps,
         })
       : t(`images:progress.phase.${progress?.phase ?? 'queued'}`)
+    const elapsed = t('images:progress.elapsed', { seconds: elapsedSeconds })
+    const generatingImage = t('images:progress.generatingImage')
 
     if (variant === 'tile') {
       return (
         <div
           className="relative aspect-square overflow-hidden rounded-lg border border-border/70 bg-secondary/35"
           data-testid={`image-generation-tile-${index}`}
-          aria-label={t('images:progress.generatingImage')}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          <div className="absolute inset-0 bg-primary/[0.06] motion-safe:animate-pulse" />
           <div className="absolute inset-0 flex items-center justify-center">
-            <GenerationPulse compact />
+            <DottedGenerationField compact />
           </div>
-          <span className="absolute inset-x-2 bottom-2 truncate text-center text-[10px] text-muted-foreground">
+          <span
+            className="sr-only"
+            data-testid="image-generation-progress-announcement"
+          >
+            {generatingImage}. {step}.
+          </span>
+          <span
+            className="absolute inset-x-2 bottom-2 truncate text-center text-[10px] text-muted-foreground/80"
+            aria-hidden="true"
+          >
             {step}
           </span>
         </div>
@@ -86,7 +147,9 @@ export const ImageGenerationPlaceholder = memo(
       <div
         className="flex size-full min-h-48 items-center justify-center px-6 py-4"
         data-testid="image-generation-preview"
+        role="status"
         aria-live="polite"
+        aria-atomic="true"
       >
         <div className="relative grid max-h-full max-w-full overflow-hidden rounded-xl border border-border/70 bg-secondary/25 shadow-sm">
           <svg
@@ -96,26 +159,25 @@ export const ImageGenerationPlaceholder = memo(
             className="col-start-1 row-start-1 max-h-full max-w-full"
             aria-hidden
           />
-          <div className="absolute inset-0 bg-primary/[0.06] motion-safe:animate-pulse" />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-            <GenerationPulse />
-            <div className="space-y-1 text-center">
-              <p className="text-sm font-medium">
-                {t('images:progress.generatingImage')}
+          <span
+            className="sr-only"
+            data-testid="image-generation-progress-announcement"
+          >
+            {generatingImage}. {step}.
+          </span>
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-4"
+            aria-hidden="true"
+          >
+            <DottedGenerationField />
+            <div className="space-y-0.5 text-center">
+              <p className="text-xs font-medium text-foreground/80">
+                {generatingImage}
               </p>
-              <p className="text-xs tabular-nums text-muted-foreground">
-                {step} ·{' '}
-                {t('images:progress.elapsed', { seconds: elapsedSeconds })}
+              <p className="text-[11px] tabular-nums text-muted-foreground/80">
+                {step} · {elapsed}
               </p>
             </div>
-          </div>
-          <div className="absolute inset-x-0 bottom-0 h-1 bg-muted" aria-hidden>
-            <div
-              className="h-full bg-primary transition-[width] duration-500 ease-out"
-              style={{
-                width: `${Math.max(2, Math.round((progress?.fraction ?? 0) * 100))}%`,
-              }}
-            />
           </div>
         </div>
       </div>

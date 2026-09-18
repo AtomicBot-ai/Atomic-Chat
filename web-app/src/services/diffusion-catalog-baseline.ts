@@ -8,7 +8,7 @@ import type { DiffusionCatalog } from './diffusion-catalog-registry'
 
 export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
   schema_version: 1,
-  updated_at: '2026-09-18T13:05:00Z',
+  updated_at: '2026-09-18T15:42:32Z',
   families: [
     {
       id: 'z-image',
@@ -570,8 +570,7 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       ],
       defaults: {
         steps: 12,
-        cfg_scale: 1,
-        guidance: 3.5,
+        cfg_scale: 3.5,
         sampling_method: 'euler',
         width: 1024,
         height: 1024,
@@ -582,8 +581,8 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
         dim_multiple: 16,
       },
       capabilities: {
-        negative_prompt: false,
-        guidance: true,
+        negative_prompt: true,
+        guidance: false,
         workflows: ['create'],
       },
     },

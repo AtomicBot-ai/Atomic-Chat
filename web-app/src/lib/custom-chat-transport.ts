@@ -60,11 +60,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
 import {
-  availableReasoningLevels,
   buildReasoningRequestFields,
   canDisableReasoning,
   buildCloudReasoningRequestFields,
   isCloudReasoningProvider,
+  reasoningLevelsForModel,
   buildRemoteReasoningRequestFields,
   usesTemplateReasoningKwargs,
 } from '@/lib/reasoning-effort'
@@ -855,8 +855,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           effectiveProviderName,
           reasoningControls
         )
-        const firstReasoningLevel =
-          availableReasoningLevels(reasoningControls)[0] ?? 'low'
+        const resolvedReasoningLevels = reasoningLevelsForModel(
+          effectiveProviderName,
+          reasoningControls
+        )
+        const firstReasoningLevel = resolvedReasoningLevels[0] ?? 'low'
         const activeReasoningBudget =
           !allowReasoningDisable &&
           (disableReasoning || reasoningBudget === 'off')
@@ -937,7 +940,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               reasoningControls
             )
           )
-        } else if (isCloudReasoningProvider(effectiveProviderName)) {
+        } else if (
+          isCloudReasoningProvider(effectiveProviderName) &&
+          resolvedReasoningLevels.length > 0
+        ) {
           Object.assign(
             reasoningOverride,
             buildCloudReasoningRequestFields(

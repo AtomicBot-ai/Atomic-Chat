@@ -1,5 +1,7 @@
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
+import { cancelTransfer } from '@/services/diffusion/transfer'
 
 const CANCEL_TTL_MS = 15000
 
@@ -38,10 +40,11 @@ export function clearDownloadCancellationRequested(id: string) {
  *
  * One place for the branching, so a Cancel offered anywhere else (the
  * composer's reply widget) stops the same transfer the panel would: backend
- * binaries (`llamacpp*`) and MLX repos (`mlx*`) run through the download
- * extension and are cancelled there; model files go through the model
- * service's abort. The store is marked first so the row can offer a resume,
- * and so the stop event that follows is read as a cancel, not a failure.
+ * binaries (`llamacpp*`), MLX repos (`mlx*`) and diffusion artifacts run
+ * through the download extension and are cancelled there; chat-model files
+ * go through the model service's abort. The store is marked first so the row
+ * can offer a resume, and so the stop event that follows is read as a cancel,
+ * not a failure.
  *
  * `id` and `name` are the same string for a model download; the panel keeps
  * both because the app update row does not.
@@ -58,7 +61,12 @@ export function cancelDownload(
     clearPausedDownload(key)
     clearResumeParams(key)
   }
-  if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
+  if (isDiffusionModelDownloadTaskId(download.id)) {
+    void cancelTransfer(download.id)
+  } else if (
+    download.id.startsWith('llamacpp') ||
+    download.id.startsWith('mlx')
+  ) {
     const downloadManager = window.core.extensionManager.getByName(
       '@janhq/download-extension'
     )
