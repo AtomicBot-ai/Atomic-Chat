@@ -1,0 +1,13 @@
+{
+  "name": "atomic-chat-desktop-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Desktop UI end-to-end tests. Installed with npm on its own, outside the app's yarn workspaces, so the app's dependency graph and yarn.lock stay untouched.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.3",
+    "webdriverio": "^9.20.0"
+  }
+}
