@@ -1,5 +1,12 @@
 import { memo } from 'react'
-import { IconChevronDown, IconLoader2, IconPhoto } from '@tabler/icons-react'
+import {
+  IconChevronDown,
+  IconLoader2,
+  IconPhoto,
+  IconPlayerPlay,
+  IconPlayerStopFilled,
+} from '@tabler/icons-react'
+import { toast } from 'sonner'
 
 import {
   Popover,
@@ -16,6 +23,7 @@ import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageModelSelector } from './ImageModelSelector'
+import { Button } from '@/components/ui/button'
 
 type ImageModelPickerProps = {
   open: boolean
@@ -36,6 +44,8 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
   const selected = useImageArtifact(selectedArtifactId ?? '')
   const workflow = useImageForm((state) => state.workflow)
+  const generating = useImageGenerationStore((state) => state.generating)
+  const unloadModel = useImageGenerationStore((state) => state.unloadModel)
   // The picked checkpoint cannot run this tab's workflow: say so where the
   // model is named, so the disabled Generate is not a mystery.
   const unsupported =
@@ -62,17 +72,43 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           ? t('images:model.notInstalled')
           : null
 
+  const startSelected = async () => {
+    if (!selected.complete || selected.loaded || loading) return
+    const toastId = toast.loading(t('images:model.startingToast'))
+    await selected.load()
+    const loadedId =
+      useImageGenerationStore.getState().status?.model.loaded?.modelId
+    if (loadedId === selected.id) {
+      toast.success(t('images:model.startedToast', { name }), { id: toastId })
+    } else {
+      toast.error(t('images:model.startFailed', { name }), { id: toastId })
+    }
+  }
+
+  const stopSelected = async () => {
+    const toastId = toast.loading(t('images:model.stoppingToast'))
+    await unloadModel()
+    const stillLoaded =
+      useImageGenerationStore.getState().status?.model.state === 'loaded'
+    if (stillLoaded) {
+      toast.error(t('images:model.stopFailed', { name }), { id: toastId })
+    } else {
+      toast.success(t('images:model.stoppedToast', { name }), { id: toastId })
+    }
+  }
+
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <button
+    <div className="flex w-full min-w-0 items-center gap-2">
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <button
           type="button"
           title={stateLabel ?? undefined}
           aria-label={t('images:model.select')}
           aria-expanded={open}
           data-testid="image-models-toggle"
-          className="inline-flex h-10 w-full min-w-0 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
-        >
+            className="inline-flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
+          >
           {selected.family ? (
             <ModelLogo
               icon={DIFFUSION_FAMILY_ICON_KEYS[selected.family.id]}
@@ -118,18 +154,45 @@ export const ImageModelPicker = memo(function ImageModelPicker({
               )}
             />
           )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        // A heavier shadow than the default: the panel opens over the form,
-        // which is the same white, and must read as lifted off it.
-        className="max-h-[min(60vh,480px)] w-[380px] max-w-[calc(100vw-2rem)] origin-[var(--radix-popover-content-transform-origin)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
-      >
-        <ImageModelSelector variant="page" workflow={workflow} />
-      </PopoverContent>
-    </Popover>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          sideOffset={6}
+          // A heavier shadow than the default: the panel opens over the form,
+          // which is the same white, and must read as lifted off it.
+          className="max-h-[min(60vh,480px)] w-[380px] max-w-[calc(100vw-2rem)] origin-[var(--radix-popover-content-transform-origin)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
+        >
+          <ImageModelSelector variant="page" workflow={workflow} />
+        </PopoverContent>
+      </Popover>
+      {selected.complete && (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          className="size-10 shrink-0 rounded-xl"
+          disabled={loading || generating}
+          aria-label={
+            selected.loaded ? t('images:model.unload') : t('images:model.load')
+          }
+          title={
+            selected.loaded ? t('images:model.unload') : t('images:model.load')
+          }
+          onClick={() =>
+            void (selected.loaded ? stopSelected() : startSelected())
+          }
+        >
+          {loading ? (
+            <IconLoader2 size={16} className="animate-spin" />
+          ) : selected.loaded ? (
+            <IconPlayerStopFilled size={15} />
+          ) : (
+            <IconPlayerPlay size={16} />
+          )}
+        </Button>
+      )}
+    </div>
   )
 })
 
