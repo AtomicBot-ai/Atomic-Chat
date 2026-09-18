@@ -336,9 +336,8 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Other (13)
+## Other (12)
 
-- **2026-09-18** — [Drive the desktop UI through an embedded WebDriver on an isolated profile](2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md)
 - **2026-09-16** — [Automate acceptance with layered Tauri evidence](2026-09-16-automate-acceptance-with-layered-tauri-evidence.md)
 - **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)

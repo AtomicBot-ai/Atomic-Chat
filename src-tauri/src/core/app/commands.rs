@@ -52,14 +52,7 @@ fn resolve_data_folder_from_config(config_file: &Path, default_folder: &Path) ->
 
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
 /// Mirrors the logic in get_configuration_file_path() using the dirs crate.
-#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
 pub fn resolve_config_file_path() -> PathBuf {
-    // An end-to-end build keeps its configuration inside the run's own root,
-    // and never prefers an existing legacy folder: that folder is the
-    // developer's real one.
-    #[cfg(feature = "e2e")]
-    return crate::core::e2e::config_file(&crate::core::e2e::data_root(), CONFIGURATION_FILE_NAME);
-
     let package_name = env!("CARGO_PKG_NAME");
 
     // On Linux, prefer the XDG config dir first (matches Tauri behaviour)
@@ -89,15 +82,8 @@ pub fn resolve_config_file_path() -> PathBuf {
 
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
 /// Reads AppConfiguration from the config file; falls back to the default location.
-#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
 pub fn resolve_jan_data_folder() -> PathBuf {
     let config_file = resolve_config_file_path();
-    #[cfg(feature = "e2e")]
-    return resolve_data_folder_from_config(
-        &config_file,
-        &crate::core::e2e::default_data_folder(&crate::core::e2e::data_root()),
-    );
-
     let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Atomic Chat".to_string());
     let data_dir = dirs::data_dir().unwrap_or_else(|| {
         let home = std::env::var("HOME")
@@ -203,11 +189,7 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
-    #[cfg(feature = "e2e")]
-    return crate::core::e2e::config_file(&crate::core::e2e::data_root(), CONFIGURATION_FILE_NAME);
-
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
         log::error!("Failed to get app data directory: {err}. Using home directory instead.");
 
@@ -245,13 +227,7 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 }
 
 #[tauri::command]
-#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
-    #[cfg(feature = "e2e")]
-    return crate::core::e2e::default_data_folder(&crate::core::e2e::data_root())
-        .to_string_lossy()
-        .into_owned();
-
     let mut path = app_handle.path().data_dir().unwrap_or_else(|err| {
         log::error!("Failed to get data directory: {err}. Falling back to home directory.");
         let home = std::env::var(if cfg!(target_os = "windows") {
