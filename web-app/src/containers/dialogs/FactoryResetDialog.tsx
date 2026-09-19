@@ -77,9 +77,8 @@ export function FactoryResetDialog({
               onClick={() => void handleReset()}
               size="sm"
               className="w-full sm:w-auto"
-              aria-label={
-                isResetting ? t('common:loading') : t('settings:general.reset')
-              }
+              aria-label={t('settings:general.reset')}
+              aria-busy={isResetting}
               disabled={isResetting}
             >
               {isResetting && (

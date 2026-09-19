@@ -26,10 +26,14 @@ describe('FactoryResetDialog', () => {
       await screen.findByRole('button', { name: 'settings:general.reset' })
     )
 
-    const loadingButton = screen.getByRole('button', { name: 'common:loading' })
+    const loadingButton = screen.getByRole('button', {
+      name: 'settings:general.reset',
+    })
     expect(onReset).toHaveBeenCalledTimes(1)
     expect(loadingButton).toBeDisabled()
+    expect(loadingButton).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByRole('button', { name: 'settings:general.cancel' })).toBeDisabled()
+    expect(screen.getByText('common:loading')).toBeInTheDocument()
     expect(screen.getByText('settings:general.factoryResetTitle')).toBeInTheDocument()
 
     resolveReset?.()
