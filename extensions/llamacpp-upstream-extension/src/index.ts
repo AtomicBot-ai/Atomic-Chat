@@ -4645,10 +4645,15 @@ export default class llamacpp_upstream_extension extends AIEngine {
     let streamError: Error | null = null
     let wakeUp: (() => void) | null = null
 
-    const channel = new Channel<{ data: string }>()
-    channel.onmessage = (event: { data: string }) => {
+    const channel = new Channel<{ data: string; done?: boolean }>()
+    channel.onmessage = (event: { data: string; done?: boolean }) => {
       logger.info('[stream] chunk received, length:', event.data.length)
-      rawChunks.push(event.data)
+      if (event.data) rawChunks.push(event.data)
+      // The end of the stream travels on the channel, after the last chunk and in
+      // order with it. The command's return takes another route to the webview and
+      // can overtake chunks still on their way; taken for the end, it closed a short
+      // reply before any of it had arrived.
+      if (event.done) streamDone = true
       if (wakeUp) {
         wakeUp()
         wakeUp = null
@@ -4681,11 +4686,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
     requestPromise
       .then((status) => {
         logger.info('[stream] invoke resolved, status:', status)
-        streamDone = true
-        if (wakeUp) {
-          wakeUp()
-          wakeUp = null
-        }
+        // Only a fallback, for a stream whose `done` message never comes.
+        setTimeout(() => {
+          streamDone = true
+          if (wakeUp) {
+            wakeUp()
+            wakeUp = null
+          }
+        }, 2_000)
       })
       .catch((e) => {
         logger.error('[stream] invoke rejected:', String(e))
