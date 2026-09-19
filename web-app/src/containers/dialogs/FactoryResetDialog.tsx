@@ -31,15 +31,17 @@ export function FactoryResetDialog({
   const handleReset = async () => {
     if (isResetting) return
 
+    let shouldClose = false
     setIsResetting(true)
     try {
       await onReset()
-      setIsOpen(false)
+      shouldClose = true
     } catch (error) {
       toast.error(t('settings:general.factoryResetFailed'))
       console.error('Factory reset failed:', error)
     } finally {
       setIsResetting(false)
+      if (shouldClose) setIsOpen(false)
     }
   }
 
@@ -47,7 +49,7 @@ export function FactoryResetDialog({
     <Dialog
       open={isOpen}
       onOpenChange={(open) => {
-        if (!isResetting || !open) {
+      if (!isResetting) {
           setIsOpen(open)
         }
       }}
