@@ -61,6 +61,9 @@ export function FactoryResetDialog({
         onPointerDownOutside={(e) => {
           if (isResetting) e.preventDefault()
         }}
+        onInteractOutside={(e) => {
+          if (isResetting) e.preventDefault()
+        }}
       >
         <DialogHeader>
           <DialogTitle>{t('settings:general.factoryResetTitle')}</DialogTitle>
