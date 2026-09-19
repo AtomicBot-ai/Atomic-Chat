@@ -228,15 +228,13 @@ describe('ReplyModelGate', () => {
     })
     fireEvent.click(download)
 
-    await waitFor(() =>
-      expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
-        'AtomicChat/Qwen3.5-4B-Q4_K_M',
-        'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
-        undefined,
-        '',
-        true,
-        false
-      )
+    expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+      'AtomicChat/Qwen3.5-4B-Q4_K_M',
+      'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
+      undefined,
+      '',
+      true,
+      false
     )
     expect(onResolved).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'download', branch: 'none' })
