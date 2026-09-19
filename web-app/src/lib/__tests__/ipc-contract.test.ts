@@ -24,9 +24,8 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'get_local_http',
-  // The built-in media engine's server. Desktop only on purpose: it installs
-  // and supervises a local engine process, which the mobile targets have no
-  // way to run - the same reason the local llama.cpp server is desktop only.
+  // Built-in media engine lifecycle commands. Desktop only on purpose: the
+  // shipped engine and its local process supervision do not exist on mobile.
   'media_engine_install',
   'media_engine_start',
   'media_engine_status',
