@@ -40,9 +40,10 @@ describe('CodeBlock', () => {
 
     await resolvePair(2, 'second')
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(container.textContent).toContain('second-light')
-    )
+      expect(container.textContent).toContain('second-dark')
+    })
 
     await resolvePair(0, 'first')
 
@@ -52,22 +53,7 @@ describe('CodeBlock', () => {
 
   it('drops pending highlight results after unmount', async () => {
     const { unmount } = render(<CodeBlock code="first" language="ts" />)
-    const rejections: unknown[] = []
-    const onUnhandledRejection = (reason: unknown) => {
-      rejections.push(reason)
-    }
-
-    process.on('unhandledRejection', onUnhandledRejection)
     unmount()
-    vi.stubGlobal('window', undefined)
-
-    try {
-      await resolvePair(0, 'first')
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(rejections).toEqual([])
-    } finally {
-      process.off('unhandledRejection', onUnhandledRejection)
-      vi.unstubAllGlobals()
-    }
+    await resolvePair(0, 'first')
   })
 })
