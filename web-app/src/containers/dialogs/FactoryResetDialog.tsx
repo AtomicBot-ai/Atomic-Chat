@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IconLoader2 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -24,9 +24,17 @@ export function FactoryResetDialog({
   children,
 }: FactoryResetDialogProps) {
   const { t } = useTranslation()
+  const isMountedRef = useRef(true)
   const resetButtonRef = useRef<HTMLButtonElement>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
+
+  useEffect(
+    () => () => {
+      isMountedRef.current = false
+    },
+    []
+  )
 
   const handleReset = async () => {
     if (isResetting) return
@@ -40,6 +48,7 @@ export function FactoryResetDialog({
       toast.error(t('settings:general.factoryResetFailed'))
       console.error('Factory reset failed:', error)
     } finally {
+      if (!isMountedRef.current) return
       setIsResetting(false)
       if (shouldClose) setIsOpen(false)
     }
