@@ -1,4 +1,5 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
+import { IconLoader2 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -13,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 
 interface FactoryResetDialogProps {
-  onReset: () => void
+  onReset: () => void | Promise<void>
   children: React.ReactNode
 }
 
@@ -23,19 +24,36 @@ export function FactoryResetDialog({
 }: FactoryResetDialogProps) {
   const { t } = useTranslation()
   const resetButtonRef = useRef<HTMLButtonElement>(null)
+  const [isOpen, setIsOpen] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
-  const handleReset = () => {
-    onReset()
+  const handleReset = async () => {
+    if (isResetting) return
+
+    setIsResetting(true)
+    try {
+      await onReset()
+      setIsOpen(false)
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleReset()
+      void handleReset()
     }
   }
 
   return (
-    <Dialog>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!isResetting) {
+          setIsOpen(open)
+        }
+      }}
+    >
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
         onOpenAutoFocus={(e) => {
@@ -50,27 +68,34 @@ export function FactoryResetDialog({
           </DialogDescription>
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="hover:no-underline w-full sm:w-auto"
+                disabled={isResetting}
               >
                 {t('settings:general.cancel')}
               </Button>
             </DialogClose>
-            <DialogClose asChild>
-              <Button
-                ref={resetButtonRef}
-                variant="destructive"
-                onClick={handleReset}
-                onKeyDown={handleKeyDown}
-                size="sm"
-                className="w-full sm:w-auto"
-                aria-label={t('settings:general.reset')}
-              >
-                {t('settings:general.reset')}
-              </Button>
-            </DialogClose>
+            <Button
+              ref={resetButtonRef}
+              variant="destructive"
+              onClick={() => void handleReset()}
+              onKeyDown={handleKeyDown}
+              size="sm"
+              className="w-full sm:w-auto"
+              aria-label={
+                isResetting ? t('common:loading') : t('settings:general.reset')
+              }
+              disabled={isResetting}
+            >
+              {isResetting && (
+                <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              {isResetting
+                ? t('common:loading')
+                : t('settings:general.reset')}
+            </Button>
           </DialogFooter>
         </DialogHeader>
       </DialogContent>

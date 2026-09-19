@@ -178,7 +178,6 @@ function General() {
       return
     }
     pausePolling()
-    // TODO: Loading indicator
     await serviceHub.app().factoryReset()
   }
 
