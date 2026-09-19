@@ -49,7 +49,7 @@ export function FactoryResetDialog({
     <Dialog
       open={isOpen}
       onOpenChange={(open) => {
-      if (!isResetting) {
+        if (!isResetting) {
           setIsOpen(open)
         }
       }}
