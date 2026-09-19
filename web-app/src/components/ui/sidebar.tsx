@@ -369,7 +369,7 @@ const SidebarRail = React.forwardRef<
   const { setWidth, state, width, setIsDraggingRail, toggleSidebar } =
     useSidebar()
 
-  const { dragRef, handleMouseDown } = useSidebarResize({
+  const { dragRef, handleClick, handleMouseDown } = useSidebarResize({
     direction: 'right',
     enableDrag,
     onResize: setWidth,
@@ -396,11 +396,7 @@ const SidebarRail = React.forwardRef<
       data-sidebar="rail"
       aria-label="Toggle or resize sidebar"
       onMouseDown={handleMouseDown}
-      onClick={(event) => {
-        if (event.detail === 0) {
-          toggleSidebar()
-        }
-      }}
+      onClick={handleClick}
       title="Click to toggle, drag to resize"
       className={cn(
         //* Без видимой линии (::after), только ресайз и курсор
