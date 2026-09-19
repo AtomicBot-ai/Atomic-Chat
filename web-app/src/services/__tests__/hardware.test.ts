@@ -3,15 +3,30 @@ import { TauriHardwareService } from '../hardware/tauri'
 import { HardwareData, SystemUsage } from '@/hooks/useHardware'
 import type { InvokeArgs } from '@tauri-apps/api/core'
 import { mockIPC } from '@tauri-apps/api/mocks'
+import { LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
 
 describe('TauriHardwareService', () => {
   let hardwareService: TauriHardwareService
   let ipcHandler: ReturnType<typeof vi.fn>
+  let mockExtensionManager: any
 
   beforeEach(() => {
     ipcHandler = vi.fn()
     mockIPC((command: string, args?: InvokeArgs) => ipcHandler(command, args))
     hardwareService = new TauriHardwareService()
+
+    mockExtensionManager = {
+      getByName: vi.fn(),
+    }
+
+    // Mock window.core
+    Object.defineProperty(window, 'core', {
+      value: {
+        extensionManager: mockExtensionManager,
+      },
+      writable: true,
+    })
+
     vi.clearAllMocks()
   })
 
@@ -190,23 +205,78 @@ describe('TauriHardwareService', () => {
     })
   })
 
+  describe('getLlamacppDevices', () => {
+    it('should return devices from llamacpp extension', async () => {
+      const mockDevices = [{ id: '0', name: 'GPU 0' }]
+      const mockExtension = {
+        getDevices: vi.fn().mockResolvedValue(mockDevices),
+      }
+      mockExtensionManager.getByName.mockReturnValue(mockExtension)
+
+      const result = await hardwareService.getLlamacppDevices()
+
+      expect(mockExtensionManager.getByName).toHaveBeenCalledWith(
+        LOCAL_LLAMACPP_EXTENSION_NAME
+      )
+      expect(mockExtension.getDevices).toHaveBeenCalled()
+      expect(result).toEqual(mockDevices)
+    })
+
+    it('should throw an error if llamacpp extension is not found', async () => {
+      mockExtensionManager.getByName.mockReturnValue(null)
+
+      await expect(hardwareService.getLlamacppDevices()).rejects.toThrow(
+        `llama.cpp extension '${LOCAL_LLAMACPP_EXTENSION_NAME}' not found`
+      )
+    })
+  })
+
   describe('setActiveGpus', () => {
     let consoleSpy: ReturnType<typeof vi.spyOn>
+    let mockExtension: any
 
     beforeEach(() => {
       consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      mockExtension = {
+        setActiveGpus: vi.fn().mockResolvedValue(undefined),
+      }
+      mockExtensionManager.getByName.mockReturnValue(mockExtension)
     })
 
     afterEach(() => {
       consoleSpy.mockRestore()
     })
 
-    it('should log the provided GPU data', async () => {
+    it('should delegate to llamacpp extension setActiveGpus', async () => {
       const gpuData = { gpus: [0, 1, 2] }
 
       await hardwareService.setActiveGpus(gpuData)
 
-      expect(consoleSpy).toHaveBeenCalledWith(gpuData)
+      expect(mockExtensionManager.getByName).toHaveBeenCalledWith(
+        LOCAL_LLAMACPP_EXTENSION_NAME
+      )
+      expect(mockExtension.setActiveGpus).toHaveBeenCalledWith(gpuData)
+    })
+
+    it('should throw an error if llamacpp extension is not found', async () => {
+      mockExtensionManager.getByName.mockReturnValue(null)
+      const gpuData = { gpus: [0] }
+
+      await expect(hardwareService.setActiveGpus(gpuData)).rejects.toThrow(
+        `llama.cpp extension '${LOCAL_LLAMACPP_EXTENSION_NAME}' not found`
+      )
+    })
+
+    it('should log and fallback if extension does not support setActiveGpus', async () => {
+      mockExtensionManager.getByName.mockReturnValue({})
+      const gpuData = { gpus: [0] }
+
+      await hardwareService.setActiveGpus(gpuData)
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'setActiveGpus is not supported by this extension version:',
+        gpuData
+      )
     })
 
     it('should handle empty GPU array', async () => {
@@ -214,7 +284,7 @@ describe('TauriHardwareService', () => {
 
       await hardwareService.setActiveGpus(gpuData)
 
-      expect(consoleSpy).toHaveBeenCalledWith(gpuData)
+      expect(mockExtension.setActiveGpus).toHaveBeenCalledWith(gpuData)
     })
 
     it('should handle single GPU', async () => {
@@ -222,7 +292,7 @@ describe('TauriHardwareService', () => {
 
       await hardwareService.setActiveGpus(gpuData)
 
-      expect(consoleSpy).toHaveBeenCalledWith(gpuData)
+      expect(mockExtension.setActiveGpus).toHaveBeenCalledWith(gpuData)
     })
 
     it('should complete successfully', async () => {
@@ -236,7 +306,9 @@ describe('TauriHardwareService', () => {
     it('should not throw any errors', async () => {
       const gpuData = { gpus: [0, 1, 2, 3] }
 
-      expect(() => hardwareService.setActiveGpus(gpuData)).not.toThrow()
+      await expect(
+        hardwareService.setActiveGpus(gpuData)
+      ).resolves.not.toThrow()
     })
   })
 
