@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { IconLoader2 } from '@tabler/icons-react'
+import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -34,6 +35,9 @@ export function FactoryResetDialog({
     try {
       await onReset()
       setIsOpen(false)
+    } catch (error) {
+      toast.error('Failed to reset Radium')
+      console.error('Factory reset failed:', error)
     } finally {
       setIsResetting(false)
     }
