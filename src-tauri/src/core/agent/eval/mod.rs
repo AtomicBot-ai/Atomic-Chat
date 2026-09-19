@@ -475,6 +475,8 @@ async fn run_task_sample(
             cancellation: &cancellation,
             session: &mut session,
             skill_registry,
+            cache_dir: workspace.clone(),
+            pty: None,
             bundled_script_runtime: None,
         },
         |event| {
