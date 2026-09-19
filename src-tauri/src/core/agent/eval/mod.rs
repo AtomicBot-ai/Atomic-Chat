@@ -450,6 +450,7 @@ async fn run_task_sample(
     }
     let mut capture = TaskCapture::default();
     let pty = PtyRegistry::new();
+    let _pty_guard = SamplePtyGuard::new(&pty, &session_id);
     let future = run_turn(
         RunTurnInput {
             run_id: &run_id,
@@ -618,6 +619,26 @@ async fn run_task_sample(
             };
             scored(prediction, &capture, started.elapsed().as_millis())
         }
+    }
+}
+
+struct SamplePtyGuard<'a> {
+    registry: &'a PtyRegistry,
+    session_id: String,
+}
+
+impl<'a> SamplePtyGuard<'a> {
+    fn new(registry: &'a PtyRegistry, session_id: &str) -> Self {
+        Self {
+            registry,
+            session_id: session_id.to_owned(),
+        }
+    }
+}
+
+impl Drop for SamplePtyGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self.registry.kill_session(&self.session_id);
     }
 }
 
