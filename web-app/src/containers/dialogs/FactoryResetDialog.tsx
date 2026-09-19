@@ -84,10 +84,13 @@ export function FactoryResetDialog({
               {isResetting && (
                 <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
               )}
-              {isResetting
-                ? t('common:loading')
-                : t('settings:general.reset')}
+              {t('settings:general.reset')}
             </Button>
+            {isResetting && (
+              <span className="sr-only" role="status" aria-live="polite">
+                {t('common:loading')}
+              </span>
+            )}
           </DialogFooter>
         </DialogHeader>
       </DialogContent>
