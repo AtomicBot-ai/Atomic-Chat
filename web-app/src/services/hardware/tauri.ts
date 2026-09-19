@@ -38,25 +38,12 @@ export class TauriHardwareService extends DefaultHardwareService {
 
     return llamacppExtension as {
       getDevices: () => Promise<DeviceList[]>
-      setActiveGpus?: (data: { gpus: number[] }) => Promise<void>
     }
   }
 
   async getLlamacppDevices(): Promise<DeviceList[]> {
     const llamacppExtension = this.getLlamacppExtension()
     return llamacppExtension.getDevices()
-  }
-
-  async setActiveGpus(data: { gpus: number[] }): Promise<void> {
-    const llamacppExtension = this.getLlamacppExtension()
-    if (typeof llamacppExtension.setActiveGpus === 'function') {
-      return llamacppExtension.setActiveGpus(data)
-    } else {
-      console.log(
-        'setActiveGpus is not supported by this extension version:',
-        data
-      )
-    }
   }
 
   async refreshHardwareInfo(): Promise<void> {
