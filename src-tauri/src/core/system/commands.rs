@@ -13,7 +13,7 @@ use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 #[cfg(not(windows))]
 use crate::core::process_env::sanitize_std_command;
 #[cfg(any(target_os = "linux", test))]
-use crate::core::process_env::{strip_appimage_std_command, APPIMAGE_RUNTIME_ENV_VARS};
+use crate::core::process_env::{strip_appimage_std_command, };
 use crate::core::state::AppState;
 
 fn is_safe_to_delete(path: &std::path::Path) -> bool {
