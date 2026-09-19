@@ -1,0 +1,12 @@
+--- web-app/src/containers/__tests__/ModelDownloadAction.test.tsx
++++ web-app/src/containers/__tests__/ModelDownloadAction.test.tsx
+@@ -104,8 +104,7 @@
+       'https://example.test/Qwen3.8-27B-Q8_0.gguf',
+       undefined,
+       '',
+       true,
+-      false,
+-      model
++      false
+     )
+   })
