@@ -46,19 +46,20 @@ export function FactoryResetDialog({
   }
 
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        if (!isResetting) {
-          setIsOpen(open)
-        }
-      }}
-    >
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
+        aria-busy={isResetting}
+        showCloseButton={!isResetting}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           resetButtonRef.current?.focus()
+        }}
+        onEscapeKeyDown={(e) => {
+          if (isResetting) e.preventDefault()
+        }}
+        onPointerDownOutside={(e) => {
+          if (isResetting) e.preventDefault()
         }}
       >
         <DialogHeader>
