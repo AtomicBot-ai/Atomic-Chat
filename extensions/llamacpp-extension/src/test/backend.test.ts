@@ -366,6 +366,19 @@ describe('isTurboQuantRelease', () => {
   })
 })
 
+describe('upstreamCudaBackendId', () => {
+  it('formats strings for typical CUDA versions', () => {
+    expect(upstreamCudaBackendId('13.3')).toBe('win-cuda-13.3-x64')
+    expect(upstreamCudaBackendId('12.4')).toBe('win-cuda-12.4-x64')
+    expect(upstreamCudaBackendId('11.8')).toBe('win-cuda-11.8-x64')
+  })
+
+  it('handles edge cases safely', () => {
+    expect(upstreamCudaBackendId('')).toBe('win-cuda--x64')
+    expect(upstreamCudaBackendId('invalid')).toBe('win-cuda-invalid-x64')
+  })
+})
+
 describe('TurboQuant cudart helpers', () => {
   it('maps clean Windows CUDA ids to toolkit minors and archive names', () => {
     expect(getCudaToolkitVersion('windows-x64-cuda-13.3')).toBe('13.3')
