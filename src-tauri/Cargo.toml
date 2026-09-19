@@ -186,6 +186,9 @@ libc = "0.2"
 # The zbus backend is pure Rust and this crate already depends on zbus 5
 # below, so this adds no system dependency. Q5 approved either one.
 zbus-secret-service-keyring-store = "1"
+# secret-service 5.x requires an explicit crypto backend feature. Keep Linux on
+# the pure-Rust path rather than adding an OpenSSL system dependency.
+secret-service = { version = "5.2.0", default-features = false, features = ["crypto-rust"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 notify-rust = "4"
 
