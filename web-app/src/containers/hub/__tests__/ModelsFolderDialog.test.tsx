@@ -24,6 +24,10 @@ vi.mock('sonner', () => ({
   },
 }))
 
+vi.mock('@/containers/LocalModelLocationsCard', () => ({
+  default: () => <div>Detected model locations</div>,
+}))
+
 import { ModelsFolderDialog } from '../ModelsFolderDialog'
 
 const DEFAULT = 'C:\\Users\\me\\AppData\\Roaming\\Radium\\data\\llamacpp\\models'
@@ -47,6 +51,7 @@ const openPanel = async () => {
 describe('ModelsFolderDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    globalThis.IS_TAURI = true
     getModelsFolder.mockResolvedValue({
       path: DEFAULT,
       default_path: DEFAULT,
@@ -71,6 +76,7 @@ describe('ModelsFolderDialog', () => {
 
     expect(screen.getByTestId('models-folder-path')).toHaveTextContent(DEFAULT)
     expect(screen.getByText('hub:modelsFolder.default')).toBeInTheDocument()
+    expect(screen.getByText('Detected model locations')).toBeInTheDocument()
     // Nothing to apply until a folder is chosen.
     expect(screen.getByRole('button', { name: 'hub:modelsFolder.apply' })).toBeDisabled()
   })
