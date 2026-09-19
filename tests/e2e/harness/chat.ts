@@ -190,10 +190,19 @@ export async function chooseFromMenu(session: Session, trigger: string, item: st
   const browser = session.app.browser
   const button = browser.$(trigger)
   await button.waitForExist({ timeout: 15_000 })
-  await browser.execute((el) => (el as unknown as HTMLElement).focus(), await button)
-  await browser.keys('Enter')
   const entry = browser.$(`//*[@role="menuitem"][starts-with(normalize-space(.), "${item}")]`)
-  await entry.waitForDisplayed({ timeout: 10_000 })
+  // Opened again only while it is shut: focus can be taken from the trigger
+  // between the two steps (a finishing reply returns it to the composer), and
+  // Enter then goes elsewhere. A second Enter on an open menu would pick from it.
+  await browser.waitUntil(
+    async () => {
+      if ((await entry.isExisting()) && (await entry.isDisplayed())) return true
+      await browser.execute((el) => (el as unknown as HTMLElement).focus(), await button)
+      await browser.keys('Enter')
+      return false
+    },
+    { timeout: 20_000, interval: 1_500, timeoutMsg: `the menu never offered "${item}"` }
+  )
   await browser.execute((el) => (el as unknown as HTMLElement).focus(), await entry)
   await browser.keys('Enter')
   await entry.waitForExist({ reverse: true, timeout: 10_000 })

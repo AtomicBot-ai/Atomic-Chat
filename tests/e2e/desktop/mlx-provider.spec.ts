@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { pageShows, pickModel, send, waitForChat } from '../harness/chat.js'
 import { coreRequest } from '../harness/core.js'
-import { installFakeMlxServer, MLX_PROVIDER, writeFakeMlxModel } from '../harness/mlx-server.js'
+import { installFakeMlxServer, MLX_PROVIDER, writeFakeMlxModel } from '../harness/bundled-sidecars.js'
 import { listProcesses } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
 

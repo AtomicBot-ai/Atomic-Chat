@@ -65,10 +65,14 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the API request log', () => {
       expect(page).toContain(`Reply${REPLY}`)
       expect(page).toContain('Stop reasonstop')
 
-      // The request refused for lack of a key is there too, as the one error.
-      expect(page).toContain('Requests2')
-      expect(page).toContain('Completed1')
-      expect(page).toContain('Errors1')
+      // The request refused for lack of a key is there too, as the one error. Its
+      // event is a separate one and may land a moment after the first row is open.
+      await expect
+        .poll(async () => (await pageText(session)).replace(/\s+/g, ' '), { timeout: 15_000 })
+        .toContain('Requests2')
+      const counted = (await pageText(session)).replace(/\s+/g, ' ')
+      expect(counted).toContain('Completed1')
+      expect(counted).toContain('Errors1')
     })
   })
 })
