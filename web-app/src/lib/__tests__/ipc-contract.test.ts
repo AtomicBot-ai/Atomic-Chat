@@ -29,6 +29,10 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   // surface it does not need would widen the attack surface for nothing.
   // See docs/decisions/2026-09-10-store-media-provider-credentials-in-the-os-
   // credential-store.md.
+  'media_engine_install',
+  'media_engine_start',
+  'media_engine_status',
+  'media_engine_stop',
   'media_secret_available',
   'media_secret_delete',
   'media_secret_get',

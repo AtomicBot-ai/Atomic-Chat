@@ -1,3 +1,0 @@
-1. **Understand**: The `upstreamCudaBackendId` function in `extensions/llamacpp-extension/src/backend.ts` constructs a string ID for upstream CUDA backends (`win-cuda-${toolkitVersion}-x64`). There is only one test case using it currently in a broader `describe` block. The requirement is to add tests specifically for this function.
-2. **Implement**: Add a dedicated `describe('upstreamCudaBackendId', () => { ... })` block in `extensions/llamacpp-extension/src/test/backend.test.ts` to test this function with multiple valid versions and edge cases (e.g. empty string, unexpected formats) to ensure complete coverage.
-3. **Pre-commit checks**: Run `yarn test:run backend.test.ts` to ensure it passes.

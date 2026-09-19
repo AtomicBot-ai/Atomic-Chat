@@ -114,6 +114,7 @@ describe('PromptOnboardingModel', () => {
         '',
         true,
         false,
+        catalogModel
       ],
     ])
     expect(mocks.setPending.mock.calls).toEqual([[false]])
