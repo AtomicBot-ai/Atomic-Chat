@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type { AppService } from '@/services/app/types'
@@ -38,6 +38,7 @@ const openDialog = vi.fn()
 const stopAllModels = vi.fn()
 const getProviders = vi.fn()
 const setProviders = vi.fn()
+const originalIsTauri = globalThis.IS_TAURI
 
 const openPanel = async () => {
   const user = userEvent.setup()
@@ -68,6 +69,10 @@ describe('ModelsFolderDialog', () => {
       providers: { getProviders } as unknown as ProvidersService,
     })
     useModelProvider.setState({ providers: [], setProviders })
+  })
+
+  afterEach(() => {
+    globalThis.IS_TAURI = originalIsTauri
   })
 
   it('shows where models are saved now', async () => {
