@@ -28,4 +28,28 @@ describe('SidebarRail', () => {
 
     expect(rail.closest('[data-state="collapsed"]')).toBeTruthy()
   })
+
+  it('toggles the sidebar from the keyboard', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <SidebarProvider defaultOpen>
+        <Sidebar>
+          <div>Sidebar content</div>
+          <SidebarRail />
+        </Sidebar>
+      </SidebarProvider>
+    )
+
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Toggle or resize sidebar' })).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+
+    expect(
+      screen
+        .getByRole('button', { name: 'Toggle or resize sidebar' })
+        .closest('[data-state="collapsed"]')
+    ).toBeTruthy()
+  })
 })
