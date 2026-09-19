@@ -26,6 +26,7 @@ use super::llm_client::{
 };
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::EditableRoots;
+use super::pty::PtyRegistry;
 use super::prompt::{
     build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
     DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
@@ -448,6 +449,7 @@ async fn run_task_sample(
         }
     }
     let mut capture = TaskCapture::default();
+    let pty = PtyRegistry::new();
     let future = run_turn(
         RunTurnInput {
             run_id: &run_id,
@@ -475,8 +477,8 @@ async fn run_task_sample(
             cancellation: &cancellation,
             session: &mut session,
             skill_registry,
-            cache_dir: workspace.clone(),
-            pty: None,
+            cache_dir: &workspace,
+            pty: &pty,
             bundled_script_runtime: None,
         },
         |event| {
