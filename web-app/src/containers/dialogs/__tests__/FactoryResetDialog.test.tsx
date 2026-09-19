@@ -68,7 +68,9 @@ describe('FactoryResetDialog', () => {
 
     await waitFor(() => expect(onReset).toHaveBeenCalledTimes(1))
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Failed to reset Radium')
+      expect(toast.error).toHaveBeenCalledWith(
+        'settings:general.factoryResetFailed'
+      )
     )
     expect(consoleError).toHaveBeenCalledWith('Factory reset failed:', error)
     expect(

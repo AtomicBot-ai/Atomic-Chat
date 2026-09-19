@@ -36,7 +36,7 @@ export function FactoryResetDialog({
       await onReset()
       setIsOpen(false)
     } catch (error) {
-      toast.error('Failed to reset Radium')
+      toast.error(t('settings:general.factoryResetFailed'))
       console.error('Factory reset failed:', error)
     } finally {
       setIsResetting(false)
