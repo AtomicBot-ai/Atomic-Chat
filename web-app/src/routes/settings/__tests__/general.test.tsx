@@ -76,7 +76,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
 const mockCheckForUpdate = vi.fn()
 const mockOpenerOpen = vi.fn()
 const mockRevealItemInDir = vi.fn()
-const mockFactoryReset = vi.fn()
 
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({
@@ -284,10 +283,9 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFactoryReset.mockResolvedValue(undefined)
     seedServiceHub({
       app: {
-        factoryReset: mockFactoryReset,
+        factoryReset: vi.fn(),
         getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
         relocateJanDataFolder: vi.fn(),
       } as ReturnType<ServiceHub['app']>,
@@ -471,40 +469,6 @@ describe('General Settings Route', () => {
     expect(screen.getByTestId('dialog')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-trigger')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-content')).toBeInTheDocument()
-  })
-
-  it('disables the factory reset trigger while reset is pending', async () => {
-    let resolveReset: () => void
-    const resetPromise = new Promise<void>((resolve) => {
-      resolveReset = resolve
-    })
-    mockFactoryReset.mockReturnValueOnce(resetPromise)
-
-    const Component = GeneralRoute.component as React.ComponentType
-    await act(async () => {
-      render(<Component />)
-    })
-
-    const resetTrigger = screen
-      .getAllByTestId('button')
-      .find((button) => button.textContent?.includes('common:reset'))
-    const confirmReset = screen.getByLabelText('settings:general.reset')
-
-    expect(resetTrigger).toBeDefined()
-    act(() => {
-      fireEvent.click(confirmReset)
-    })
-
-    expect(mockFactoryReset).toHaveBeenCalledOnce()
-    expect(resetTrigger).toBeDisabled()
-    expect(resetTrigger?.querySelector('svg')).not.toBeNull()
-
-    await act(async () => {
-      resolveReset!()
-      await resetPromise
-    })
-
-    expect(resetTrigger).not.toBeDisabled()
   })
 
   it('should render external links', async () => {

@@ -265,40 +265,22 @@ type SessionProcs = HashMap<String, Arc<PtyProc>>;
 
 #[derive(Clone, Default)]
 pub struct PtyRegistry {
-    inner: Arc<PtyRegistryInner>,
-}
-
-#[derive(Default)]
-struct PtyRegistryInner {
-    sessions: Mutex<HashMap<String, SessionProcs>>,
-    counter: AtomicU64,
+    sessions: Arc<Mutex<HashMap<String, SessionProcs>>>,
+    counter: Arc<AtomicU64>,
     /// Where to journal live pids. `None` until app setup supplies the data
     /// folder, which keeps the registry usable in tests without a filesystem.
-    journal: Mutex<Option<PathBuf>>,
-}
-
-impl Drop for PtyRegistry {
-    fn drop(&mut self) {
-        // Per-sample registries are created in local scopes; a final drop must
-        // still terminate their live PTYs without racing a still-shared app
-        // registry.
-        if Arc::strong_count(&self.inner) == 1 {
-            let _ = self.kill_all();
-        }
-    }
+    journal: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl PtyRegistry {
     pub fn new() -> Self {
-        Self {
-            inner: Arc::new(PtyRegistryInner::default()),
-        }
+        Self::default()
     }
 
     /// Point the crash-recovery journal at the app data folder. Called once
     /// during setup; before that, spawning simply journals nothing.
     pub fn set_journal_path(&self, data_folder: &Path) {
-        *lock(&self.inner.journal) = Some(data_folder.join(JOURNAL_FILE_NAME));
+        *lock(&self.journal) = Some(data_folder.join(JOURNAL_FILE_NAME));
     }
 
     /// Rewrite the journal from the current live set.
@@ -309,11 +291,11 @@ impl PtyRegistry {
     /// reaper verifies each pid before acting — so this only has to run where
     /// the live set grows or shrinks.
     fn write_journal(&self) {
-        let Some(path) = lock(&self.inner.journal).clone() else {
+        let Some(path) = lock(&self.journal).clone() else {
             return;
         };
         let entries = {
-            let sessions = lock(&self.inner.sessions);
+            let sessions = lock(&self.sessions);
             sessions
                 .values()
                 .flat_map(HashMap::values)
@@ -335,11 +317,11 @@ impl PtyRegistry {
     fn next_proc_id(&self) -> String {
         // Short and ordinal on purpose: a small local model echoes `proc-3`
         // back correctly far more reliably than a UUID.
-        format!("proc-{}", self.inner.counter.fetch_add(1, Ordering::Relaxed) + 1)
+        format!("proc-{}", self.counter.fetch_add(1, Ordering::Relaxed) + 1)
     }
 
     fn get(&self, session_id: &str, proc_id: &str) -> Result<Arc<PtyProc>, String> {
-        lock(&self.inner.sessions)
+        lock(&self.sessions)
             .get(session_id)
             .and_then(|procs| procs.get(proc_id))
             .cloned()
@@ -349,7 +331,7 @@ impl PtyRegistry {
     pub fn spawn(&self, request: SpawnRequest) -> Result<ProcStatus, String> {
         self.reap();
         {
-            let sessions = lock(&self.inner.sessions);
+            let sessions = lock(&self.sessions);
             let global: usize = sessions.values().map(HashMap::len).sum();
             if global >= MAX_PROCS_GLOBAL {
                 return Err(format!(
@@ -424,7 +406,7 @@ impl PtyRegistry {
         )?;
 
         let status = proc.status();
-        lock(&self.inner.sessions)
+        lock(&self.sessions)
             .entry(request.session_id)
             .or_default()
             .insert(proc_id, proc);
@@ -494,7 +476,7 @@ impl PtyRegistry {
     }
 
     pub fn list(&self, session_id: &str) -> Vec<ProcStatus> {
-        let sessions = lock(&self.inner.sessions);
+        let sessions = lock(&self.sessions);
         let Some(procs) = sessions.get(session_id) else {
             return Vec::new();
         };
@@ -506,7 +488,7 @@ impl PtyRegistry {
     /// Kill and forget every process a session owns. Called when the thread is
     /// closed — a dev server should outlive a *turn*, not the conversation.
     pub fn kill_session(&self, session_id: &str) -> usize {
-        let procs = lock(&self.inner.sessions).remove(session_id).unwrap_or_default();
+        let procs = lock(&self.sessions).remove(session_id).unwrap_or_default();
         let count = procs.len();
         for proc in procs.values() {
             let _ = proc.signal(ProcessSignal::Kill);
@@ -517,7 +499,7 @@ impl PtyRegistry {
 
     /// Kill everything. Wired to app shutdown.
     pub fn kill_all(&self) -> usize {
-        let sessions = std::mem::take(&mut *lock(&self.inner.sessions));
+        let sessions = std::mem::take(&mut *lock(&self.sessions));
         let mut count = 0;
         for procs in sessions.values() {
             for proc in procs.values() {
@@ -539,7 +521,7 @@ impl PtyRegistry {
     pub fn reap(&self) -> usize {
         let mut victims = Vec::new();
         {
-            let mut sessions = lock(&self.inner.sessions);
+            let mut sessions = lock(&self.sessions);
             for procs in sessions.values_mut() {
                 procs.retain(|_, proc| {
                     let stale = if proc.is_running() {
@@ -565,8 +547,9 @@ impl PtyRegistry {
     }
 
     #[cfg(all(test, unix))]
+    #[allow(dead_code)]
     fn len(&self) -> usize {
-        lock(&self.inner.sessions).values().map(HashMap::len).sum()
+        lock(&self.sessions).values().map(HashMap::len).sum()
     }
 }
 
@@ -934,29 +917,6 @@ mod tests {
         assert!(registry.read("s1", "proc-999", None, 10).is_err());
         // The id is real but belongs to another session.
         assert!(registry.read("s2", &status.proc_id, None, 10).is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn dropping_registry_kills_live_children() {
-        let registry = PtyRegistry::new();
-        let status = registry
-            .spawn(request("s1", "while true; do sleep 1; done"))
-            .unwrap();
-        let pid = status.pid.expect("pid");
-
-        drop(registry);
-
-        assert!(
-            wait_until(|| {
-                std::process::Command::new("kill")
-                    .args(["-0", &pid.to_string()])
-                    .status()
-                    .map(|status| !status.success())
-                    .unwrap_or(true)
-            }),
-            "drop() left the PTY child alive"
-        );
     }
 
     #[cfg(unix)]

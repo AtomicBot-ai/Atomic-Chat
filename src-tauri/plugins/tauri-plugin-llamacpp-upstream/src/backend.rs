@@ -393,6 +393,7 @@ pub struct SystemFeatures {
     // CUDA 11 release artifacts (the lowest tier shipped is CUDA 12.4),
     // so the field is accepted but never expanded into a supported backend
     // on the upstream Windows matrix.
+    #[allow(dead_code)]
     #[serde(default)]
     cuda11: bool,
     cuda12: bool,
@@ -403,6 +404,7 @@ pub struct SystemFeatures {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 pub struct SupportedBackendsResult {
     supported_backend_names: Vec<String>,
     merged_backends: Vec<BackendInfo>,
@@ -625,6 +627,7 @@ pub struct NvidiaInfo {
 
 #[derive(Deserialize)]
 pub struct VulkanInfo {
+    #[allow(dead_code)]
     api_version: String,
     /// PCI device id, the only gfx signal available on Windows (there is no
     /// `/sys/class/kfd` to read `gfx_target_version` from).
@@ -918,6 +921,7 @@ pub struct UpdateCheckResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct BackendConfigResult {
     pub best_available: String,
     pub effective_backend: String,

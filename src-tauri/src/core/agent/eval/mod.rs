@@ -26,7 +26,6 @@ use super::llm_client::{
 };
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::path_policy::EditableRoots;
-use super::pty::PtyRegistry;
 use super::prompt::{
     build_stable_prefix_for_profile, CapabilitiesSummary, SkillDescriptor,
     DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
@@ -449,8 +448,9 @@ async fn run_task_sample(
         }
     }
     let mut capture = TaskCapture::default();
-    let pty = PtyRegistry::new();
-    let _pty_guard = SamplePtyGuard::new(&pty, &session_id);
+    let sampling = SamplingOverrides::default();
+    let disabled_tools = std::collections::BTreeSet::new();
+    let pty = super::pty::PtyRegistry::default();
     let future = run_turn(
         RunTurnInput {
             run_id: &run_id,
@@ -465,9 +465,9 @@ async fn run_task_sample(
             trusted_read_roots: &[],
             max_steps,
             reasoning,
-            sampling: &SamplingOverrides::default(),
+            sampling: &sampling,
             mcp: None,
-            disabled_tools: &std::collections::BTreeSet::new(),
+            disabled_tools: &disabled_tools,
             auto_approve_mcp: true,
             docs: None,
             documents_note: None,
@@ -619,26 +619,6 @@ async fn run_task_sample(
             };
             scored(prediction, &capture, started.elapsed().as_millis())
         }
-    }
-}
-
-struct SamplePtyGuard<'a> {
-    registry: &'a PtyRegistry,
-    session_id: String,
-}
-
-impl<'a> SamplePtyGuard<'a> {
-    fn new(registry: &'a PtyRegistry, session_id: &str) -> Self {
-        Self {
-            registry,
-            session_id: session_id.to_owned(),
-        }
-    }
-}
-
-impl Drop for SamplePtyGuard<'_> {
-    fn drop(&mut self) {
-        let _ = self.registry.kill_session(&self.session_id);
     }
 }
 

@@ -185,7 +185,8 @@ libc = "0.2"
 # C library and would make libdbus-1-dev a NEW build requirement for Linux.
 # The zbus backend is pure Rust and this crate already depends on zbus 5
 # below, so this adds no system dependency. Q5 approved either one.
-zbus-secret-service-keyring-store = "1"
+zbus-secret-service-keyring-store = { version = "1" }
+secret-service = { version = "5.2.0", features = ["crypto-rust"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 notify-rust = "4"
 
