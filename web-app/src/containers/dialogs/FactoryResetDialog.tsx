@@ -39,12 +39,6 @@ export function FactoryResetDialog({
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      void handleReset()
-    }
-  }
-
   return (
     <Dialog
       open={isOpen}
@@ -81,7 +75,6 @@ export function FactoryResetDialog({
               ref={resetButtonRef}
               variant="destructive"
               onClick={() => void handleReset()}
-              onKeyDown={handleKeyDown}
               size="sm"
               className="w-full sm:w-auto"
               aria-label={
