@@ -448,9 +448,6 @@ async fn run_task_sample(
         }
     }
     let mut capture = TaskCapture::default();
-    let sampling = SamplingOverrides::default();
-    let disabled_tools = std::collections::BTreeSet::new();
-    let pty = super::pty::PtyRegistry::default();
     let future = run_turn(
         RunTurnInput {
             run_id: &run_id,
@@ -465,9 +462,9 @@ async fn run_task_sample(
             trusted_read_roots: &[],
             max_steps,
             reasoning,
-            sampling: &sampling,
+            sampling: &SamplingOverrides::default(),
             mcp: None,
-            disabled_tools: &disabled_tools,
+            disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
             docs: None,
             documents_note: None,
@@ -478,8 +475,6 @@ async fn run_task_sample(
             cancellation: &cancellation,
             session: &mut session,
             skill_registry,
-            cache_dir: &workspace,
-            pty: &pty,
             bundled_script_runtime: None,
         },
         |event| {

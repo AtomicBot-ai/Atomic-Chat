@@ -187,7 +187,6 @@ pub struct BackendInfo {
 
 #[derive(Deserialize)]
 pub struct SystemFeatures {
-    #[allow(dead_code)]
     cuda11: bool,
     cuda12: bool,
     cuda13: bool,
@@ -197,7 +196,6 @@ pub struct SystemFeatures {
 }
 
 #[derive(Serialize)]
-#[allow(dead_code)]
 pub struct SupportedBackendsResult {
     supported_backend_names: Vec<String>,
     merged_backends: Vec<BackendInfo>,
@@ -401,7 +399,6 @@ pub struct SupportedFeatures {
     avx: bool,
     avx2: bool,
     avx512: bool,
-    #[allow(dead_code)]
     cuda11: bool,
     cuda12: bool,
     cuda13: bool,
@@ -432,7 +429,6 @@ pub struct NvidiaInfo {
 
 #[derive(Deserialize)]
 pub struct VulkanInfo {
-    #[allow(dead_code)]
     api_version: String,
 }
 
@@ -790,7 +786,6 @@ pub struct UpdateCheckResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(dead_code)]
 pub struct BackendConfigResult {
     pub best_available: String,
     pub effective_backend: String,

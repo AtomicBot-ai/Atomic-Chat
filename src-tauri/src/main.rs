@@ -61,9 +61,5 @@ fn main() {
     }
 
     // Normal Tauri app startup
-    #[cfg(not(feature = "cli"))]
     app_lib::run();
-
-    #[cfg(feature = "cli")]
-    {}
 }

@@ -76,6 +76,7 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
 const mockCheckForUpdate = vi.fn()
 const mockOpenerOpen = vi.fn()
 const mockRevealItemInDir = vi.fn()
+const mockFactoryReset = vi.fn()
 
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({
@@ -285,7 +286,7 @@ describe('General Settings Route', () => {
     vi.clearAllMocks()
     seedServiceHub({
       app: {
-        factoryReset: vi.fn(),
+        factoryReset: mockFactoryReset,
         getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
         relocateJanDataFolder: vi.fn(),
       } as ReturnType<ServiceHub['app']>,
@@ -321,6 +322,36 @@ describe('General Settings Route', () => {
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
+  })
+
+  it('disables reset and shows progress while factory reset is pending', async () => {
+    let resolveReset: (() => void) | undefined
+    mockFactoryReset.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReset = resolve
+        })
+    )
+
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'settings:general.reset' })
+      )
+    })
+
+    const resetTrigger = screen.getByRole('button', { name: 'common:reset' })
+    expect(resetTrigger).toBeDisabled()
+    expect(resetTrigger.querySelector('.animate-spin')).toBeInTheDocument()
+
+    await act(async () => resolveReset?.())
+
+    expect(resetTrigger).toBeEnabled()
+    expect(resetTrigger.querySelector('.animate-spin')).not.toBeInTheDocument()
   })
 
   it('should render app version', async () => {
