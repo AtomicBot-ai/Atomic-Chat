@@ -70,6 +70,12 @@ export async function highlightCode(
   ]);
 }
 
+/**
+ * Renders syntax-highlighted code for both light and dark themes.
+ *
+ * Highlighting is asynchronous; pending results are discarded when the
+ * component unmounts or its highlighting inputs change.
+ */
 export const CodeBlock = ({
   code,
   language,
