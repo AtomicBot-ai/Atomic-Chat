@@ -119,8 +119,7 @@ export function useRecommendedLocalModel(): RecommendedLocalModel {
           getPreferredMmprojModel(model))?.path,
         huggingfaceToken,
         true,
-        resumableDownloads.has(variant.model_id),
-        model
+        resumableDownloads.has(variant.model_id)
       )
     return variant.model_id
   }, [
