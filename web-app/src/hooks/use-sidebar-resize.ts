@@ -146,6 +146,7 @@ export function useSidebarResize({
 	const startWidth = React.useRef(0);
 	const startX = React.useRef(0);
 	const isDragging = React.useRef(false);
+	const didDragInteraction = React.useRef(false);
 	const isInteractingWithRail = React.useRef(false);
 	const lastWidth = React.useRef(0);
 	const lastLoggedWidth = React.useRef(0);
@@ -277,6 +278,7 @@ export function useSidebarResize({
 			const deltaX = Math.abs(e.clientX - startX.current);
 			if (!isDragging.current && deltaX > 5) {
 				isDragging.current = true;
+				didDragInteraction.current = true;
 				setIsDraggingRail(true);
 			}
 
@@ -431,11 +433,6 @@ export function useSidebarResize({
 		const handleMouseUp = () => {
 			if (!isInteractingWithRail.current) return;
 
-			// Handle click (not drag) behavior
-			if (!isDragging.current && onToggle && enableToggle) {
-				onToggle();
-			}
-
 			// Reset all state
 			isDragging.current = false;
 			isInteractingWithRail.current = false;
@@ -477,9 +474,18 @@ export function useSidebarResize({
 		enableToggle,
 	]);
 
+	const handleClick = React.useCallback(() => {
+		if (!didDragInteraction.current && onToggle && enableToggle) {
+			onToggle();
+		}
+
+		didDragInteraction.current = false;
+	}, [enableToggle, onToggle]);
+
 	return {
 		dragRef,
 		isDragging,
+		handleClick,
 		handleMouseDown,
 	};
 }

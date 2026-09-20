@@ -545,12 +545,6 @@ impl PtyRegistry {
         }
         victims.len()
     }
-
-    #[cfg(all(test, unix))]
-    #[allow(dead_code)]
-    fn len(&self) -> usize {
-        lock(&self.sessions).values().map(HashMap::len).sum()
-    }
 }
 
 fn write_journal_file(path: &Path, entries: &[JournalEntry]) -> std::io::Result<()> {
