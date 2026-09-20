@@ -380,15 +380,36 @@ describe('upstreamCudaBackendId', () => {
 })
 
 describe('TurboQuant cudart helpers', () => {
-  it('maps clean Windows CUDA ids to toolkit minors and archive names', () => {
+  it('maps clean Windows CUDA ids to toolkit minors', () => {
     expect(getCudaToolkitVersion('windows-x64-cuda-13.3')).toBe('13.3')
     expect(getCudaToolkitVersion('windows-x64-cuda-12.4')).toBe('12.4')
     expect(getCudaToolkitVersion('windows-x64-cpu')).toBeNull()
     expect(getCudaToolkitVersion('linux-x64-vulkan')).toBeNull()
-    expect(getCudartArchiveName('windows-x64-cuda-13.3')).toBe(
-      'cudart-llama-bin-win-cuda-13.3-x64.zip'
-    )
     expect(upstreamCudaBackendId('13.3')).toBe('win-cuda-13.3-x64')
+  })
+
+  describe('getCudartArchiveName', () => {
+    it('returns the correct archive name for valid Windows CUDA backends', () => {
+      expect(getCudartArchiveName('windows-x64-cuda-13.3')).toBe(
+        'cudart-llama-bin-win-cuda-13.3-x64.zip'
+      )
+      expect(getCudartArchiveName('windows-x64-cuda-12.4')).toBe(
+        'cudart-llama-bin-win-cuda-12.4-x64.zip'
+      )
+    })
+
+    it('returns null for non-CUDA or non-Windows backends', () => {
+      expect(getCudartArchiveName('windows-x64-cpu')).toBeNull()
+      expect(getCudartArchiveName('linux-x64-vulkan')).toBeNull()
+      expect(getCudartArchiveName('macos-arm64')).toBeNull()
+      expect(getCudartArchiveName('linux-x64-cuda-12.4')).toBeNull()
+    })
+
+    it('returns null for empty or invalid strings', () => {
+      expect(getCudartArchiveName('')).toBeNull()
+      expect(getCudartArchiveName('   ')).toBeNull()
+      expect(getCudartArchiveName('random-string')).toBeNull()
+    })
   })
 
   it('builds ggml-org companion URLs from the pinned upstream tag', () => {
