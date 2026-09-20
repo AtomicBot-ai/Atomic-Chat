@@ -23,15 +23,36 @@ title: "secret-service uses the pure-Rust crypto backend, on the tokio runtime"
   the user under AGENTS.md rule 6; only `cbc` is a new crate name, the rest are
   current-generation versions of crates already present.
 
-- **Consequences:** the Linux build works, and the credential path stays pure Rust —
-  no C crypto is linked for it, so the store cannot break on a host OpenSSL upgrade.
-  The cost is sixteen more crates to keep patched, and RustCrypto's own timing-side-
-  channel posture rather than OpenSSL's. Watch for: `crypto-openssl` remains a viable
-  alternative — OpenSSL dev headers are already in `radium-ci.yml`'s apt list, so
-  choosing it would not have added a CI build requirement (an earlier claim of mine
-  that it would was wrong); the real argument for `crypto-rust` is keeping the
-  credential store free of a system-library dependency, not availability. Enabling
-  both features at once is possible in Cargo terms and pointless in practice.
+- **Consequences:** the Linux build works, and the credential path is pure Rust, so
+  RustCrypto's timing-side-channel posture applies to it rather than OpenSSL's. The
+  cost is sixteen more crates to keep patched. `aes` is pinned to 0.9.2: 0.9.3
+  declares `rust-version = "1.89"` and this crate promises 1.88, so Cargo refuses it
+  on the stated MSRV — CI never catches that, because the workflow installs latest
+  stable.
+
+- **On the rejected alternative — and two corrections.** `crypto-openssl` was rejected
+  for reasons that were both **wrong**, and the record should say so rather than
+  flatter the decision:
+
+  1. First claim: it would make OpenSSL a *new build requirement*. Wrong —
+     `radium-ci.yml` already installs `libssl-dev`.
+  2. Second claim: it would link a *host system* crypto library. Also wrong. `reqwest`
+     is declared with `native-tls-vendored` under
+     `cfg(not(any(target_os = "android", target_os = "ios")))`, which includes desktop
+     Linux, and `openssl-src` is already in the lockfile. Cargo feature unification
+     means `crypto-openssl` would have reused that vendored static build and linked no
+     host library either. Found by a review bot on PR #31, after this record was first
+     written.
+
+  So the honest comparison is: `crypto-openssl` adds approximately no new crates and
+  routes credential encryption through the C OpenSSL already compiled into the binary;
+  `crypto-rust` adds sixteen package versions and keeps that path in Rust. On "fewest
+  new dependencies" — the spirit of rule 6 — `crypto-openssl` is the better-argued
+  option. `crypto-rust` stands because it is what the user approved and because a
+  pure-Rust credential path is a defensible security default in itself, **not**
+  because it avoids a system dependency that `crypto-openssl` would have added. If
+  that trade is revisited, switching is one word in `Cargo.toml`. Enabling both
+  features at once is possible in Cargo terms and pointless in practice.
 
 - **Owner:** `team`.
 
