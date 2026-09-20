@@ -172,6 +172,9 @@ function HubContent() {
   )
   const hfCandidatesFetchedForRef = useRef<string>('')
   const exactRepoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // True once this component is gone; the exact-repo fetch checks it after its
+  // await, where clearing the timer no longer helps.
+  const exactRepoDisposedRef = useRef(false)
 
   const updateFilters = useCallback((next: HubFilterState) => {
     setFilters(next)
@@ -191,16 +194,22 @@ function HubContent() {
   }, [searchValue])
 
   // The exact-repo lookup is debounced through a ref rather than an effect, so
-  // nothing else cancels it: a pending 500ms timer outlives this component and
-  // its callback then writes state into a tree that is gone.
-  useEffect(
-    () => () => {
+  // nothing else cancels it. Two ways it can outlive this component, and
+  // clearing the timer only covers the first:
+  //   - the 500ms timer has not fired yet -> clearTimeout drops it;
+  //   - it has fired and the fetch is still in flight -> the timer is already
+  //     gone, so the continuation needs a flag to check after its await.
+  // Reset on mount, not just set on cleanup: StrictMode runs mount, cleanup,
+  // mount on the same instance, and a flag only ever set true would stay true.
+  useEffect(() => {
+    exactRepoDisposedRef.current = false
+    return () => {
+      exactRepoDisposedRef.current = true
       if (exactRepoTimeoutRef.current) {
         clearTimeout(exactRepoTimeoutRef.current)
       }
-    },
-    []
-  )
+    }
+  }, [])
 
   useEffect(() => {
     void fetchSources()
@@ -315,6 +324,7 @@ function HubContent() {
           const repoInfo = await serviceHub
             .models()
             .fetchHuggingFaceRepo(normalized, huggingfaceToken)
+          if (exactRepoDisposedRef.current) return
           if (repoInfo) {
             setHuggingFaceRepo(
               serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
@@ -323,7 +333,10 @@ function HubContent() {
         } catch (error) {
           console.error('Error fetching repository info:', error)
         } finally {
-          setIsSearching(false)
+          // `return` above still runs this, so it needs the check too.
+          if (!exactRepoDisposedRef.current) {
+            setIsSearching(false)
+          }
         }
       }, 500)
     },
