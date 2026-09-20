@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-254 records, 2026-05-19 → 2026-09-16.
+255 records, 2026-05-19 → 2026-09-19.
 
 <!-- Counted from the files on disk, not by arithmetic. Verified by counting *.md excluding INDEX and _TEMPLATE. -->
 
@@ -313,8 +313,9 @@ library on disk, and how the frozen surface is allowed to change.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (13)
+## Other (14)
 
+- **2026-09-19** — [`secret-service` uses the pure-Rust crypto backend, on the tokio runtime](2026-09-19-secret-service-uses-the-pure-rust-crypto-backend.md)
 - **2026-09-16** — [Structural provenance on `chunks`, document metadata on `files`; RAG assets get their own root](2026-09-16-rag-chunk-provenance-on-chunks-document-metadata-on-files.md)
 - **2026-09-15** — [Add a StructuredDocument IR beside `parse_document`, not instead of it](2026-09-15-add-a-structureddocument-ir-beside-parsedocument-not-instead.md)
 - **2026-09-13** — [Gate every upstream sync on a Fork features impact report](2026-09-13-gate-every-upstream-sync-on-a-fork-features-impact-report.md)
