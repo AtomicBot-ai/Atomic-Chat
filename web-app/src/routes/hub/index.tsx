@@ -175,6 +175,11 @@ function HubContent() {
   // True once this component is gone; the exact-repo fetch checks it after its
   // await, where clearing the timer no longer helps.
   const exactRepoDisposedRef = useRef(false)
+  // Bumped on every exact-repo call. Once a timer has fired its fetch is in
+  // flight and untracked, so a later call cannot cancel it - two lookups can
+  // be outstanding at once and resolve out of order. Without this, the slower
+  // one wins and shows a repo the search box no longer names.
+  const exactRepoRequestRef = useRef(0)
 
   const updateFilters = useCallback((next: HubFilterState) => {
     setFilters(next)
@@ -313,18 +318,39 @@ function HubContent() {
   const fetchExactRepo = useCallback(
     (rawValue: string) => {
       const normalized = rawValue.trim()
-      if (normalized.length < 3) return
+      // Every call supersedes the ones before it, this early return included:
+      // a query shortened back under the threshold must not be overwritten by
+      // the longer one the user has already abandoned.
+      const requestId = ++exactRepoRequestRef.current
+
+      const cancelPending = () => {
+        if (exactRepoTimeoutRef.current) {
+          clearTimeout(exactRepoTimeoutRef.current)
+          exactRepoTimeoutRef.current = null
+        }
+      }
+
+      if (normalized.length < 3) {
+        // Clearing `isSearching` here is what keeps the spinner honest: a fetch
+        // already in flight will see a newer `requestId` and skip its own
+        // `finally`, so nothing else would ever turn it off.
+        cancelPending()
+        setIsSearching(false)
+        return
+      }
 
       setIsSearching(true)
-      if (exactRepoTimeoutRef.current) {
-        clearTimeout(exactRepoTimeoutRef.current)
-      }
+      cancelPending()
       exactRepoTimeoutRef.current = setTimeout(async () => {
+        // Still the newest lookup, and the component still here.
+        const current = () =>
+          !exactRepoDisposedRef.current &&
+          requestId === exactRepoRequestRef.current
         try {
           const repoInfo = await serviceHub
             .models()
             .fetchHuggingFaceRepo(normalized, huggingfaceToken)
-          if (exactRepoDisposedRef.current) return
+          if (!current()) return
           if (repoInfo) {
             setHuggingFaceRepo(
               serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
@@ -334,7 +360,7 @@ function HubContent() {
           console.error('Error fetching repository info:', error)
         } finally {
           // `return` above still runs this, so it needs the check too.
-          if (!exactRepoDisposedRef.current) {
+          if (current()) {
             setIsSearching(false)
           }
         }
