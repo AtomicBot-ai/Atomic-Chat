@@ -190,6 +190,18 @@ function HubContent() {
     return () => clearTimeout(handler)
   }, [searchValue])
 
+  // The exact-repo lookup is debounced through a ref rather than an effect, so
+  // nothing else cancels it: a pending 500ms timer outlives this component and
+  // its callback then writes state into a tree that is gone.
+  useEffect(
+    () => () => {
+      if (exactRepoTimeoutRef.current) {
+        clearTimeout(exactRepoTimeoutRef.current)
+      }
+    },
+    []
+  )
+
   useEffect(() => {
     void fetchSources()
   }, [fetchSources])
