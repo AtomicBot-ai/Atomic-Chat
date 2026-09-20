@@ -24,6 +24,7 @@ import {
   IconLogs,
   IconCopy,
   IconCopyCheck,
+  IconLoader2,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
@@ -92,6 +93,7 @@ function General() {
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [cliPath, setCliPath] = useState<string | null>(null)
   const [isCliLoading, setIsCliLoading] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
   const canManageAutostart = IS_TAURI && !isDev()
 
@@ -177,9 +179,14 @@ function General() {
       toast.error(t('settings:general.couldNotResetRootDirectory'))
       return
     }
+    setIsResetting(true)
     pausePolling()
-    // TODO: Loading indicator
-    await serviceHub.app().factoryReset()
+
+    try {
+      await serviceHub.app().factoryReset()
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   const handleOpenLogs = async () => {
@@ -648,7 +655,8 @@ function General() {
                 })}
                 actions={
                   <FactoryResetDialog onReset={resetApp}>
-                    <Button variant="destructive" size="sm">
+                    <Button variant="destructive" size="sm" disabled={isResetting}>
+                      {isResetting && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {t('common:reset')}
                     </Button>
                   </FactoryResetDialog>
