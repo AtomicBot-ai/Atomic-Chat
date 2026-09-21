@@ -100,29 +100,46 @@ describe('ImageSetupDialog', () => {
     expect(screen.getByText('images:setup.intro.description')).toBeInTheDocument()
   })
 
-  it('walks forward and back through the three steps', async () => {
+  it('ends the tour at the engine: Done, never on to a model step', async () => {
     render(<ImageSetupDialog />)
     await act(async () => {
       await userEvent.click(screen.getByText('images:setup.next'))
     })
     expect(useImageGenerationStore.getState().setupStep).toBe(1)
     expect(screen.getByText('images:setup.engine.title')).toBeInTheDocument()
-    expect(screen.getByText('images:setup.next')).toBeDisabled()
+    expect(screen.queryByText('images:setup.next')).not.toBeInTheDocument()
+    expect(screen.getByTestId('image-setup-engine-done')).toBeDisabled()
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('images:setup.back'))
+    })
+    expect(useImageGenerationStore.getState().setupStep).toBe(0)
+    await act(async () => {
+      await userEvent.click(screen.getByText('images:setup.next'))
+    })
 
     act(() => {
       useImageGenerationStore.setState({ status: makeStatus() })
     })
 
+    // No model on disk: the studio's picker handles that, not the wizard.
     await act(async () => {
-      await userEvent.click(screen.getByText('images:setup.next'))
+      await userEvent.click(screen.getByTestId('image-setup-engine-done'))
     })
-    expect(useImageGenerationStore.getState().setupStep).toBe(2)
-    expect(screen.getByTestId('image-model-selector')).toBeInTheDocument()
-
-    await act(async () => {
-      await userEvent.click(screen.getByText('images:setup.back'))
-    })
+    expect(useImageGenerationStore.getState().setupOpen).toBe(false)
     expect(useImageGenerationStore.getState().setupStep).toBe(1)
+    expect(useImageSetting.getState().setupCompleted).toBe(true)
+  })
+
+  it('offers Back from the standalone model list only while the engine is owed', () => {
+    useImageGenerationStore.setState({ setupStep: 2 })
+    const { unmount } = render(<ImageSetupDialog />)
+    expect(screen.getByText('images:setup.back')).toBeInTheDocument()
+    unmount()
+
+    useImageGenerationStore.setState({ setupStep: 2, status: makeStatus() })
+    render(<ImageSetupDialog />)
+    expect(screen.queryByText('images:setup.back')).not.toBeInTheDocument()
   })
 
   it('keeps every step description short enough for its two-line slot', () => {

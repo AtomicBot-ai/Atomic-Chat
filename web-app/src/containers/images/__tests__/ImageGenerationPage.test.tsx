@@ -36,7 +36,9 @@ vi.mock('@/containers/HeaderPage', () => ({
   ),
 }))
 vi.mock('../ImagePromptForm', () => ({
-  ImagePromptForm: () => <div data-testid="image-prompt-form" />,
+  ImagePromptForm: ({ modelsOpen }: { modelsOpen?: boolean }) => (
+    <div data-testid="image-prompt-form" data-models-open={String(modelsOpen)} />
+  ),
 }))
 vi.mock('@tauri-apps/api/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tauri-apps/api/core')>()),
@@ -120,6 +122,42 @@ describe('ImageGenerationPage', () => {
     expect(screen.getByTestId('image-empty-state')).toHaveTextContent(
       'images:gallery.emptyNoModel'
     )
+  })
+
+  it('opens the studio as soon as the engine is in, and gets the model from its picker', async () => {
+    useImageGenerationStore.setState({ status: makeStatus() })
+    await renderPage()
+
+    expect(screen.queryByTestId('image-onboarding')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('image-setup-card')).not.toBeInTheDocument()
+    const form = screen.getByTestId('image-prompt-form')
+    expect(form).toHaveAttribute('data-models-open', 'false')
+
+    await userEvent.click(screen.getByTestId('image-empty-download'))
+    expect(form).toHaveAttribute('data-models-open', 'true')
+    expect(useImageGenerationStore.getState().setupOpen).toBe(false)
+  })
+
+  it('stops offering a download on the empty canvas once a model is on disk', async () => {
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      installedArtifacts: [completeArtifact],
+    })
+    await renderPage()
+
+    expect(screen.getByTestId('image-empty-state')).toBeInTheDocument()
+    expect(screen.queryByTestId('image-empty-download')).not.toBeInTheDocument()
+  })
+
+  it('keeps the setup card while the engine is missing, even with a model on disk', async () => {
+    useImageGenerationStore.setState({
+      status: makeStatus({ install: { state: 'not-installed' } }),
+      installedArtifacts: [completeArtifact],
+    })
+    await renderPage()
+
+    expect(screen.getByTestId('image-onboarding')).toBeInTheDocument()
+    expect(screen.queryByTestId('image-prompt-form')).not.toBeInTheDocument()
   })
 
   it('shows one centered setup card when nothing is installed', async () => {

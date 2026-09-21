@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,20 +32,13 @@ describe('ImageSetupCard', () => {
 
   afterEach(cleanup)
 
-  it('keeps both prerequisite cards clickable and starts the full setup flow', async () => {
+  it('opens the engine step from its row and the tour from the button', async () => {
     render(<ImageSetupCard />)
 
     await userEvent.click(screen.getByText('images:setup.card.engine'))
     expect(useImageGenerationStore.getState()).toMatchObject({
       setupOpen: true,
       setupStep: 1,
-    })
-
-    act(() => useImageGenerationStore.getState().closeSetup())
-    await userEvent.click(screen.getByText('images:setup.card.model'))
-    expect(useImageGenerationStore.getState()).toMatchObject({
-      setupOpen: true,
-      setupStep: 2,
     })
 
     act(() => useImageGenerationStore.getState().closeSetup())
@@ -59,18 +52,14 @@ describe('ImageSetupCard', () => {
     })
   })
 
-  it('jumps straight to model download once the engine is installed', async () => {
-    useImageGenerationStore.setState({ status: makeStatus() })
+  it('shows the model row as the road ahead, not as a way into the wizard', async () => {
     render(<ImageSetupCard />)
 
-    expect(screen.getByTestId('image-setup-open')).toHaveTextContent(
-      'images:setup.card.downloadModel'
-    )
-    await userEvent.click(screen.getByTestId('image-setup-open'))
-    expect(useImageGenerationStore.getState()).toMatchObject({
-      setupOpen: true,
-      setupStep: 2,
-    })
+    // Models are fetched from the studio's picker once the engine is in.
+    const row = screen.getByTestId('image-setup-row-model')
+    expect(within(row).queryByRole('button')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByText('images:setup.card.model'))
+    expect(useImageGenerationStore.getState().setupOpen).toBe(false)
   })
 
   it('still routes to engine setup when a model was downloaded first', async () => {

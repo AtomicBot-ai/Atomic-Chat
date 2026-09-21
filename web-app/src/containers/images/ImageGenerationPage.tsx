@@ -38,9 +38,9 @@ type ImageGenerationPageProps = {
 }
 
 /**
- * The form carries the model picker beside the prompt; below the header a settings column,
- * or the setup card until the prerequisites are met) sits beside the canvas,
- * split by one structural border — the same frame as the Model hub. The
+ * The form carries the model picker beside the prompt; below the header a
+ * settings column (or the setup card until the engine is installed) sits
+ * beside the canvas, split by one structural border — the same frame as the Model hub. The
  * error banner sits above the canvas, outside the scrolling grid and never
  * over the picture: its tint is translucent, and text on a photo is unreadable.
  */
@@ -98,11 +98,13 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     patchForm({ workflow })
   }, [workflow, patchForm])
 
-  const ready = engine.installed && hasModel
-  // Nothing to generate with and nothing to look at: one centered setup card
-  // instead of a form-column card beside an empty canvas. Existing images
-  // keep the gallery visible.
-  const onboarding = !ready && gallery.items.length === 0
+  // The engine is the only gate: models are fetched from the form's own
+  // picker, so the studio opens as soon as there is something to run them.
+  // No engine and nothing to look at: one centered setup card instead of a
+  // form-column card beside an empty canvas. Existing images keep the gallery
+  // visible.
+  const onboarding = !engine.installed && gallery.items.length === 0
+  const openModels = useCallback(() => setModelsOpen(true), [])
 
   // A deep link picks the checkpoint; the picker then shows its plan if it
   // is not on disk yet.
@@ -136,7 +138,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           openSetup(1)
           return
         case 'download':
-          openSetup(2)
+          // The picker lives in the form, which needs the engine first.
+          if (engine.installed) setModelsOpen(true)
+          else openSetup(1)
           return
         case 'openSettings':
           void navigate({ to: route.settings.media })
@@ -168,7 +172,16 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           return
       }
     },
-    [clearError, navigate, openSetup, patchForm, serviceHub, status?.outputDir, workflow]
+    [
+      clearError,
+      engine.installed,
+      navigate,
+      openSetup,
+      patchForm,
+      serviceHub,
+      status?.outputDir,
+      workflow,
+    ]
   )
 
   const errorLabelKeys =
@@ -219,7 +232,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
       <div className="col-span-2 min-w-0">{header}</div>
 
       <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
-        {ready ? (
+        {engine.installed ? (
           <ImagePromptForm
             modelsOpen={modelsOpen}
             onModelsOpenChange={setModelsOpen}
@@ -245,7 +258,12 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
 
         {gallery.initialized && gallery.items.length === 0 && !generating ? (
           <div className="min-h-0 flex-1">
-            <ImageEmptyState modelLoaded={modelLoaded} />
+            <ImageEmptyState
+              modelLoaded={modelLoaded}
+              onDownloadModel={
+                engine.installed && !hasModel ? openModels : undefined
+              }
+            />
           </div>
         ) : (
           <>

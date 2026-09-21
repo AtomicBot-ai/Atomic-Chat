@@ -1,16 +1,23 @@
 import { memo } from 'react'
-import { IconPhoto } from '@tabler/icons-react'
+import { IconDownload, IconPhoto } from '@tabler/icons-react'
 
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type ImageEmptyStateProps = {
   /** With no model resident the next step is picking one, not writing a prompt. */
   modelLoaded?: boolean
+  /** Set while no checkpoint is on disk: opens the form's model picker. */
+  onDownloadModel?: () => void
 }
 
-/** The canvas before the first image: what this page does, nothing to click. */
+/**
+ * The canvas before the first image: what this page does, and — until a model
+ * is on disk — the one click that gets one.
+ */
 export const ImageEmptyState = memo(function ImageEmptyState({
   modelLoaded = true,
+  onDownloadModel,
 }: ImageEmptyStateProps) {
   const { t } = useTranslation()
   return (
@@ -33,6 +40,12 @@ export const ImageEmptyState = memo(function ImageEmptyState({
           )}
         </p>
       </div>
+      {onDownloadModel && (
+        <Button onClick={onDownloadModel} data-testid="image-empty-download">
+          <IconDownload size={16} />
+          {t('images:setup.card.downloadModel')}
+        </Button>
+      )}
     </div>
   )
 })
