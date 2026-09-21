@@ -349,6 +349,29 @@ describe('strict parsing', () => {
       'edit',
     ])
   })
+
+  it('normalizes Qwen 2.1 to a 1024px default without narrowing explicit sizes', () => {
+    const qwen = sanitizeDiffusionFamily(
+      family({
+        id: 'qwen-image-2.1',
+        defaults: {
+          steps: 40,
+          cfg_scale: 6,
+          sampling_method: 'euler',
+          width: 2048,
+          height: 2048,
+        },
+        ranges: { steps: [1, 50], dims: [256, 2048], dim_multiple: 32 },
+      })
+    )
+    const other = sanitizeDiffusionFamily(
+      family({ defaults: { steps: 8, cfg_scale: 1, width: 2048, height: 1536 } })
+    )
+
+    expect(qwen?.defaults).toMatchObject({ width: 1024, height: 1024 })
+    expect(qwen?.ranges.dims).toEqual([256, 2048])
+    expect(other?.defaults).toMatchObject({ width: 2048, height: 1536 })
+  })
 })
 
 describe('baseline and lookups', () => {
@@ -423,8 +446,8 @@ describe('baseline and lookups', () => {
         steps: 40,
         cfg_scale: 6,
         sampling_method: 'euler',
-        width: 2048,
-        height: 2048,
+        width: 1024,
+        height: 1024,
       },
       ranges: {
         steps: [1, 50],

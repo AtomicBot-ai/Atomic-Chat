@@ -768,8 +768,8 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
         "steps": 40,
         "cfg_scale": 6,
         "sampling_method": "euler",
-        "width": 2048,
-        "height": 2048
+        "width": 1024,
+        "height": 1024
       },
       "ranges": {
         "steps": [

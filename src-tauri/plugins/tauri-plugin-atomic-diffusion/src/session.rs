@@ -360,8 +360,8 @@ mod tests {
                 guidance: None,
                 sampling_method: Some("euler".into()),
                 flow_shift: None,
-                width: 2048,
-                height: 2048,
+                width: 1024,
+                height: 1024,
             },
             ranges: crate::state::FamilyRanges {
                 steps: (1, 100),

@@ -46,6 +46,15 @@ const CACHE_TS_KEY = 'atomic_diffusion_catalog_cache_ts_v1'
 
 const FETCH_TIMEOUT_MS = 5000
 
+/**
+ * Qwen Image 2.1 can render at 2048, but using that as its load-time default
+ * makes a model switch silently replace the form's 1024px draft with a
+ * four-times-larger request. Keep 2048 available in the range, while making
+ * the default safe for interactive generation. Normalize remote/cache data
+ * too so clients are not dependent on the catalog refresh cadence.
+ */
+const QWEN_IMAGE_2_1_DEFAULT_DIM = 1024
+
 /** Catalog engine ids (manifest vocabulary; `sdcpp` maps to the `sd-cpp` engine). */
 export type DiffusionCatalogEngine = 'sdcpp' | 'diffusers'
 
@@ -338,6 +347,15 @@ export const sanitizeDiffusionFamily = (
   const capabilities = sanitizeCapabilities(raw.capabilities)
   if (!defaults || !ranges || !capabilities) return null
 
+  const normalizedDefaults =
+    raw.id === 'qwen-image-2.1'
+      ? {
+          ...defaults,
+          width: QWEN_IMAGE_2_1_DEFAULT_DIM,
+          height: QWEN_IMAGE_2_1_DEFAULT_DIM,
+        }
+      : defaults
+
   const developer = optionalString(raw.developer)
   const description = optionalString(raw.description)
   const license = optionalString(raw.license)
@@ -355,7 +373,7 @@ export const sanitizeDiffusionFamily = (
     ...(vae ? { vae } : {}),
     ...(raw.vae_format === 'flux2' ? { vae_format: 'flux2' as const } : {}),
     text_encoders: textEncoders,
-    defaults,
+    defaults: normalizedDefaults,
     ranges,
     capabilities,
   }
