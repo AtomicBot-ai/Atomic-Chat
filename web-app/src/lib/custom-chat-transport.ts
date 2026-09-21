@@ -905,10 +905,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               break
             case 'google':
             case 'gemini':
-              reasoningOverride.reasoning_effort = 'minimal'
-              reasoningOverride.extra_body = {
-                google: { thinking_config: { thinking_budget: 0 } },
-              }
+              // One field only: Gemini 400s on `reasoning_effort` plus a
+              // `thinking_config`. `none` is accepted by 2.5 Flash / Flash-Lite
+              // alone; 2.5 Pro and Gemini 3 cannot stop thinking, and
+              // `minimal` is their lowest level.
+              reasoningOverride.reasoning_effort = /^gemini-2\.5-flash/.test(
+                modelId
+              )
+                ? 'none'
+                : 'minimal'
               break
             case 'moonshot':
               // Moonshot (Kimi) accepts only high|low|medium|max|xhigh; rejects

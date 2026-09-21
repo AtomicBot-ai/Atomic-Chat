@@ -420,6 +420,7 @@ describe('CustomChatTransport reasoning override', () => {
 
   async function captureReasoningOverride(options: {
     provider: string
+    modelId?: string
     reasoning?: Record<string, unknown>
     disableReasoning: boolean
     reasoningBudget: string
@@ -431,7 +432,7 @@ describe('CustomChatTransport reasoning override', () => {
     useModelProvider.setState({
       selectedProvider: options.provider,
       selectedModel: {
-        id: 'fixture-model',
+        id: options.modelId ?? 'fixture-model',
         capabilities: [],
         settings: {},
         reasoning: options.reasoning,
@@ -659,6 +660,35 @@ describe('CustomChatTransport reasoning override', () => {
     })
 
     expect(override).toEqual({ reasoning: { effort: 'xhigh' } })
+  })
+
+  // Gemini 400s on `reasoning_effort` sent with a `thinking_config`, and on
+  // any effort above `high`.
+  it('sends Gemini a single reasoning_effort it accepts', async () => {
+    const on = await captureReasoningOverride({
+      provider: 'gemini',
+      modelId: 'gemini-3.1-pro-preview',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'max',
+    })
+    expect(on).toEqual({ reasoning_effort: 'high' })
+  })
+
+  it.each([
+    ['gemini-2.5-flash', 'none'],
+    ['gemini-2.5-flash-lite', 'none'],
+    ['gemini-2.5-pro', 'minimal'],
+    ['gemini-3-flash-preview', 'minimal'],
+  ])('switches %s down to %s when reasoning is off', async (modelId, effort) => {
+    const off = await captureReasoningOverride({
+      provider: 'gemini',
+      modelId,
+      reasoning: undefined,
+      disableReasoning: true,
+      reasoningBudget: 'medium',
+    })
+    expect(off).toEqual({ reasoning_effort: effort })
   })
 })
 

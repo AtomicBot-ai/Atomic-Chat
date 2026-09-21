@@ -334,11 +334,15 @@ describe('remote reasoning', () => {
     expect(buildCloudReasoningRequestFields('medium', 'anthropic')).toEqual({
       thinking: { type: 'enabled', budget_tokens: 4096 },
     })
-    expect(buildCloudReasoningRequestFields('xhigh', 'gemini')).toEqual({
-      reasoning_effort: 'xhigh',
-      extra_body: {
-        google: { thinking_config: { thinking_budget: 16384 } },
-      },
+    // Gemini takes `reasoning_effort` or a `thinking_config`, never both, and
+    // knows no level above `high`.
+    for (const level of ['xhigh', 'max'] as const) {
+      expect(buildCloudReasoningRequestFields(level, 'gemini')).toEqual({
+        reasoning_effort: 'high',
+      })
+    }
+    expect(buildCloudReasoningRequestFields('low', 'google')).toEqual({
+      reasoning_effort: 'low',
     })
     expect(buildCloudReasoningRequestFields('max', 'openrouter')).toEqual({
       reasoning: { effort: 'xhigh' },

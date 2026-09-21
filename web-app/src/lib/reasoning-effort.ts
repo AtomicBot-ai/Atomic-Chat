@@ -321,6 +321,13 @@ export const cloudReasoningEffortValue = (
   provider: string
 ): string => {
   if (provider === 'moonshot') return level
+  // Gemini tops out at `high` and rejects `xhigh` with a 400.
+  if (
+    (provider === 'google' || provider === 'gemini') &&
+    EFFORT_RANK[level] > EFFORT_RANK.high
+  ) {
+    return 'high'
+  }
   return CLOUD_EFFORT_VALUE[level]
 }
 
@@ -338,18 +345,9 @@ export const buildCloudReasoningRequestFields = (
       },
     }
   }
-  if (provider === 'google' || provider === 'gemini') {
-    return {
-      reasoning_effort: effort,
-      extra_body: {
-        google: {
-          thinking_config: {
-            thinking_budget: CLOUD_THINKING_TOKENS[level],
-          },
-        },
-      },
-    }
-  }
+  // Gemini takes the plain `reasoning_effort` below. Its OpenAI endpoint
+  // rejects a `thinking_config` sent alongside it with a 400 ("Expected one
+  // of either `reasoning_effort` or custom `thinking_config`; found both").
   if (provider === 'openrouter') {
     return { reasoning: { effort } }
   }
