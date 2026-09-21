@@ -172,6 +172,14 @@ function HubContent() {
   )
   const hfCandidatesFetchedForRef = useRef<string>('')
   const exactRepoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // True once this component is gone; the exact-repo fetch checks it after its
+  // await, where clearing the timer no longer helps.
+  const exactRepoDisposedRef = useRef(false)
+  // Bumped on every exact-repo call. Once a timer has fired its fetch is in
+  // flight and untracked, so a later call cannot cancel it - two lookups can
+  // be outstanding at once and resolve out of order. Without this, the slower
+  // one wins and shows a repo the search box no longer names.
+  const exactRepoRequestRef = useRef(0)
 
   const updateFilters = useCallback((next: HubFilterState) => {
     setFilters(next)
@@ -189,6 +197,24 @@ function HubContent() {
     const handler = setTimeout(() => setDebouncedSearchValue(searchValue), 80)
     return () => clearTimeout(handler)
   }, [searchValue])
+
+  // The exact-repo lookup is debounced through a ref rather than an effect, so
+  // nothing else cancels it. Two ways it can outlive this component, and
+  // clearing the timer only covers the first:
+  //   - the 500ms timer has not fired yet -> clearTimeout drops it;
+  //   - it has fired and the fetch is still in flight -> the timer is already
+  //     gone, so the continuation needs a flag to check after its await.
+  // Reset on mount, not just set on cleanup: StrictMode runs mount, cleanup,
+  // mount on the same instance, and a flag only ever set true would stay true.
+  useEffect(() => {
+    exactRepoDisposedRef.current = false
+    return () => {
+      exactRepoDisposedRef.current = true
+      if (exactRepoTimeoutRef.current) {
+        clearTimeout(exactRepoTimeoutRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     void fetchSources()
@@ -292,17 +318,39 @@ function HubContent() {
   const fetchExactRepo = useCallback(
     (rawValue: string) => {
       const normalized = rawValue.trim()
-      if (normalized.length < 3) return
+      // Every call supersedes the ones before it, this early return included:
+      // a query shortened back under the threshold must not be overwritten by
+      // the longer one the user has already abandoned.
+      const requestId = ++exactRepoRequestRef.current
+
+      const cancelPending = () => {
+        if (exactRepoTimeoutRef.current) {
+          clearTimeout(exactRepoTimeoutRef.current)
+          exactRepoTimeoutRef.current = null
+        }
+      }
+
+      if (normalized.length < 3) {
+        // Clearing `isSearching` here is what keeps the spinner honest: a fetch
+        // already in flight will see a newer `requestId` and skip its own
+        // `finally`, so nothing else would ever turn it off.
+        cancelPending()
+        setIsSearching(false)
+        return
+      }
 
       setIsSearching(true)
-      if (exactRepoTimeoutRef.current) {
-        clearTimeout(exactRepoTimeoutRef.current)
-      }
+      cancelPending()
       exactRepoTimeoutRef.current = setTimeout(async () => {
+        // Still the newest lookup, and the component still here.
+        const current = () =>
+          !exactRepoDisposedRef.current &&
+          requestId === exactRepoRequestRef.current
         try {
           const repoInfo = await serviceHub
             .models()
             .fetchHuggingFaceRepo(normalized, huggingfaceToken)
+          if (!current()) return
           if (repoInfo) {
             setHuggingFaceRepo(
               serviceHub.models().convertHfRepoToCatalogModel(repoInfo)
@@ -311,7 +359,10 @@ function HubContent() {
         } catch (error) {
           console.error('Error fetching repository info:', error)
         } finally {
-          setIsSearching(false)
+          // `return` above still runs this, so it needs the check too.
+          if (current()) {
+            setIsSearching(false)
+          }
         }
       }, 500)
     },
