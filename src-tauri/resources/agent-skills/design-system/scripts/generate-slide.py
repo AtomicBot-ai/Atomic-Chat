@@ -21,10 +21,9 @@ def _e(value, default=''):
 def _safe_url(url, default='#'):
     """Validate and escape a URL for use in href attributes.
 
-    Only allows http://, https://, #, and / schemes to prevent
-    javascript: URI injection (CWE-79).
+    Only allows the http and https schemes, plus the # and / prefixes, to prevent    javascript: URI injection (CWE-79).
     """
-    if url and str(url).strip().lower().startswith(('http://', 'https://', '#', '/')):
+    if url and str(url).strip().lower().startswith(('http://', 'https://', '#', '/')):  # DevSkim: ignore DS137138 - scheme allow-list, not an insecure request
         return escape(str(url), quote=True)
     return default
 
