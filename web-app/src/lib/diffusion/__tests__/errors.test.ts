@@ -12,6 +12,7 @@ import {
 /** Every code the contract declares, spelled out so a new one fails here. */
 const CONTRACT_CODES: NativeDiffusionErrorCode[] = [
   'ENGINE_MISSING',
+  'ENGINE_UPDATE_REQUIRED',
   'ENGINE_INSTALL_FAILED',
   'ENGINE_CRASHED',
   'MODEL_MISSING',
@@ -24,6 +25,7 @@ const CONTRACT_CODES: NativeDiffusionErrorCode[] = [
   'UNSUPPORTED_WORKFLOW',
   'INVALID_DIMENSIONS',
   'INVALID_REQUEST',
+  'INVALID_OUTPUT',
   'JOB_BUSY',
   'JOB_NOT_FOUND',
   'QUEUE_FULL',

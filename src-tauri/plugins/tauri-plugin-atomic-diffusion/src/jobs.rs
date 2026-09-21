@@ -28,7 +28,7 @@ use crate::session;
 use crate::state::{
     now_ms, tail_lines, DiffusionState, GalleryImageItem, ImageGenerateRequest, ImageJob,
     ImageJobPhase, ImageJobProgress, ImageJobState, ImageRecipe, ImageSource, ImageWorkflow,
-    JobRecord, RecipeEngine, RecipeModel, ServerSpec, MAX_BATCH,
+    JobRecord, RecipeEngine, RecipeModel, ServerSpec, SharedTail, MAX_BATCH,
 };
 
 pub const IMG_GEN_PATH: &str = "/sdcpp/v1/img_gen";
@@ -86,6 +86,16 @@ pub fn validate_request(request: &ImageGenerateRequest, spec: &ServerSpec) -> Di
             ));
         }
     }
+    if spec.backend == crate::state::DiffusionBackend::Metal
+        && spec.family == "qwen-image"
+        && u64::from(request.width) * u64::from(request.height) > 1024 * 1024
+    {
+        return Err(DiffusionError::with_details(
+            DiffusionErrorCode::InvalidDimensions,
+            "Qwen-Image is limited to about one megapixel on Apple GPUs. Choose a smaller resolution.",
+            format!("{}x{} exceeds the Metal-safe pixel budget", request.width, request.height),
+        ));
+    }
     let (min_steps, max_steps) = spec.ranges.steps;
     if request.steps < min_steps || request.steps > max_steps {
         return Err(DiffusionError::with_details(
@@ -119,10 +129,23 @@ pub fn validate_request(request: &ImageGenerateRequest, spec: &ServerSpec) -> Di
     if workflow == ImageWorkflow::Create {
         return Ok(());
     }
-    if !session::workflows_for_family(&spec.family).contains(&workflow) {
+    if spec.family == "qwen-image-2.1"
+        && workflow.uses_references()
+        && spec.files.llm_vision.is_none()
+    {
+        return Err(DiffusionError::with_details(
+            DiffusionErrorCode::SideFileMissing,
+            "Qwen Image 2.1 editing needs its Qwen3-VL vision projector.",
+            "Load the model with llmVision so sd.cpp receives --llm_vision.",
+        ));
+    }
+    if !session::workflows_for_spec(spec).contains(&workflow) {
         return Err(DiffusionError::with_details(
             DiffusionErrorCode::UnsupportedWorkflow,
-            format!("This model cannot run the {} workflow.", workflow_name(workflow)),
+            format!(
+                "This model cannot run the {} workflow.",
+                workflow_name(workflow)
+            ),
             spec.family.clone(),
         ));
     }
@@ -231,7 +254,11 @@ pub fn resolve_inputs(request: &ImageGenerateRequest) -> DiffusionResult<Resolve
     } else {
         inputs.init = Some(source);
         if workflow.uses_mask() {
-            inputs.mask = request.mask_image.as_ref().map(resolve_source).transpose()?;
+            inputs.mask = request
+                .mask_image
+                .as_ref()
+                .map(resolve_source)
+                .transpose()?;
         }
     }
     Ok(inputs)
@@ -617,6 +644,7 @@ struct SessionView {
     client: reqwest::Client,
     spec: ServerSpec,
     tag: String,
+    tail: SharedTail,
 }
 
 /// The resident session, respawned from `spec` when a cancel or crash took
@@ -635,10 +663,17 @@ async fn ensure_session(
                     client: session.client.clone(),
                     spec: session.spec.clone(),
                     tag: session.spec.tag.clone(),
+                    tail: session.tail.clone(),
                 });
             }
         }
     }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(cancelled());
+    }
+    let _load = state.load_lock.lock().await;
+    // An engine update may have invalidated the spec while this job waited.
+    // Resolve only after acquiring the same lock used by install/load/unload.
     if cancel.load(Ordering::SeqCst) {
         return Err(cancelled());
     }
@@ -648,7 +683,6 @@ async fn ensure_session(
             "Load an image model first.",
         )
     })?;
-    let _load = state.load_lock.lock().await;
     session::take_down_session(state).await;
     session::load_from_spec(state, emitter, spec, "respawn").await?;
     let guard = state.session.lock().await;
@@ -663,6 +697,7 @@ async fn ensure_session(
         client: session.client.clone(),
         spec: session.spec.clone(),
         tag: session.spec.tag.clone(),
+        tail: session.tail.clone(),
     })
 }
 
@@ -723,12 +758,7 @@ async fn execute(
     loop {
         attempts += 1;
         let view = ensure_session(state, emitter, &cancel).await?;
-        let body = build_img_gen_request(
-            &request,
-            &view.spec.defaults,
-            batch_seed,
-            &inputs,
-        );
+        let body = build_img_gen_request(&request, &view.spec.defaults, batch_seed, &inputs);
         let outcome = run_attempt(
             state, emitter, id, &request, &view, body, batch_seed, &cancel, started,
         )
@@ -793,6 +823,10 @@ async fn poll_job(
     started: Instant,
     rx: &mut UnboundedReceiver<String>,
 ) -> DiffusionResult<Attempt> {
+    // Only inspect diagnostics produced by this request. A recovered server may
+    // still carry old warnings in its bounded tail, and those must not poison a
+    // later successful render.
+    let attempt_tail_start = tail_lines(&view.tail).len();
     let submit = view
         .client
         .post(format!("{}{IMG_GEN_PATH}", view.base_url))
@@ -972,6 +1006,15 @@ async fn poll_job(
                 set_job_state(state, emitter, id, ImageJobState::Generating);
                 tracker.set_phase(ImageJobPhase::Saving);
                 set_progress(state, emitter, id, tracker.snapshot());
+                if let Some(err) = fatal_gpu_error_since(&view.tail, attempt_tail_start) {
+                    // Metal remains in an error state after an address fault.
+                    // Keeping this process alive makes every Retry fail
+                    // immediately, so retire it while preserving the model
+                    // spec; the next Generate respawns a clean server.
+                    session::stop_keeping_spec(state, emitter, "gpu-fault", Some(err.clone()))
+                        .await;
+                    return Err(err);
+                }
                 let pngs = decode_images(&job)?;
                 let outputs =
                     save_outputs(state, id, request, view, batch_seed, started, &pngs).await?;
@@ -987,6 +1030,11 @@ async fn poll_job(
                 })));
             }
             "failed" => {
+                if let Some(err) = fatal_gpu_error_since(&view.tail, attempt_tail_start) {
+                    session::stop_keeping_spec(state, emitter, "gpu-fault", Some(err.clone()))
+                        .await;
+                    return Err(err);
+                }
                 let code = job
                     .pointer("/error/code")
                     .and_then(|c| c.as_str())
@@ -1027,6 +1075,25 @@ async fn poll_job(
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
+}
+
+fn fatal_gpu_error_since(tail: &SharedTail, start: usize) -> Option<DiffusionError> {
+    let lines = tail_lines(tail);
+    let recent = lines
+        .get(start.min(lines.len())..)
+        .unwrap_or(&[])
+        .join("\n");
+    let lower = recent.to_ascii_lowercase();
+    let fatal = lower.contains("gpu address fault")
+        || lower.contains("backend is in error state")
+        || lower.contains("command buffer") && lower.contains("pagefault");
+    fatal.then(|| {
+        DiffusionError::with_details(
+            DiffusionErrorCode::EngineCrashed,
+            "The GPU stopped this render. The image engine was restarted; try again at a smaller resolution.",
+            diagnostic_tail(&lines[start.min(lines.len())..], 20, 1500),
+        )
+    })
 }
 
 async fn after_transport_error(
@@ -1102,6 +1169,14 @@ async fn save_outputs(
     started: Instant,
     pngs: &[Vec<u8>],
 ) -> DiffusionResult<(Vec<GalleryImageItem>, Vec<Vec<u8>>)> {
+    for png in pngs {
+        if gallery::is_blank_output(png)? {
+            return Err(DiffusionError::new(
+                DiffusionErrorCode::InvalidOutput,
+                "The image engine produced a blank frame. Nothing was saved.",
+            ));
+        }
+    }
     let output_dir = state.output_dir()?;
     let spec = &view.spec;
     let filename = std::path::Path::new(&spec.files.diffusion_model)
@@ -1135,10 +1210,11 @@ async fn save_outputs(
             flow_shift: request.flow_shift.or(spec.defaults.flow_shift),
             workflow: request.workflow(),
             // The effective value, so a recipe can be replayed as sent.
-            strength: request
-                .workflow()
-                .uses_init_image()
-                .then(|| request.strength.unwrap_or(request.workflow().default_strength())),
+            strength: request.workflow().uses_init_image().then(|| {
+                request
+                    .strength
+                    .unwrap_or(request.workflow().default_strength())
+            }),
             model: RecipeModel {
                 model_id: spec.model_id.clone(),
                 family: spec.family.clone(),
@@ -1283,6 +1359,31 @@ mod tests {
     use std::sync::Mutex;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn an_update_invalidating_a_spec_prevents_a_waiting_job_from_respawning_it() {
+        let state = DiffusionState::new();
+        state.set_spec(Some(spec()));
+        let guard = state.load_lock.lock().await;
+        let waiting_state = state.clone();
+        let waiting = tokio::spawn(async move {
+            ensure_session(
+                &waiting_state,
+                &RecordingEmitter::default(),
+                &AtomicBool::new(false),
+            )
+            .await
+            .err()
+            .unwrap()
+        });
+        tokio::task::yield_now().await;
+        state.set_spec(None);
+        drop(guard);
+        assert_eq!(
+            waiting.await.unwrap().code,
+            DiffusionErrorCode::ModelNotLoaded
+        );
+    }
 
     // -- a minimal HTTP/1.1 stub speaking /sdcpp/v1/* ------------------------
 
@@ -1609,7 +1710,22 @@ mod tests {
             );
             let mut klein = s.clone();
             klein.family = "flux.2-klein".into();
-            assert!(validate_request(&r, &klein).is_ok(), "{workflow:?} on klein");
+            assert!(
+                validate_request(&r, &klein).is_ok(),
+                "{workflow:?} on klein"
+            );
+            let mut qwen21 = s.clone();
+            qwen21.family = "qwen-image-2.1".into();
+            assert_eq!(
+                validate_request(&r, &qwen21).unwrap_err().code,
+                DiffusionErrorCode::SideFileMissing,
+                "{workflow:?} on Qwen Image 2.1 without --llm_vision"
+            );
+            qwen21.files.llm_vision = Some("/models/mmproj.gguf".into());
+            assert!(
+                validate_request(&r, &qwen21).is_ok(),
+                "{workflow:?} on Qwen Image 2.1 with --llm_vision"
+            );
             r.reference_images = Some(vec![ImageSource::Path {
                 path: "/nonexistent/ref.png".into(),
             }]);
@@ -1637,14 +1753,21 @@ mod tests {
         r.mask_image = Some(mask.clone());
         let inputs = resolve_inputs(&r).unwrap();
         assert_eq!(inputs.init.as_deref(), Some("UE5HPw=="));
-        assert_eq!(inputs.mask.as_deref(), Some("QUJD"), "data URL prefix stripped");
+        assert_eq!(
+            inputs.mask.as_deref(),
+            Some("QUJD"),
+            "data URL prefix stripped"
+        );
         assert!(inputs.refs.is_empty());
 
         r.workflow = Some(ImageWorkflow::Reference);
         r.reference_images = Some(vec![mask.clone()]);
         let inputs = resolve_inputs(&r).unwrap();
         assert!(inputs.init.is_none() && inputs.mask.is_none());
-        assert_eq!(inputs.refs, vec!["UE5HPw==".to_string(), "QUJD".to_string()]);
+        assert_eq!(
+            inputs.refs,
+            vec!["UE5HPw==".to_string(), "QUJD".to_string()]
+        );
 
         // Create reads nothing, whatever the request carries.
         r.workflow = None;

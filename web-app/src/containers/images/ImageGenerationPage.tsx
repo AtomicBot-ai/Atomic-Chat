@@ -1,9 +1,8 @@
 import { memo, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { IconLoader2, IconPhoto, IconSettings } from '@tabler/icons-react'
+import { IconLoader2, IconPhoto } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
 import HeaderPage from '@/containers/HeaderPage'
 import { route } from '@/constants/routes'
 import { useImageEngine } from '@/hooks/useImageEngine'
@@ -17,10 +16,11 @@ import { artifactId } from '@/lib/diffusion/models'
 import { cn } from '@/lib/utils'
 import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { useImageGalleryStore } from '@/stores/image-gallery-store'
 import { ImageEmptyState } from './ImageEmptyState'
 import { ImageErrorBanner } from './ImageErrorBanner'
 import { ImageGalleryGrid } from './ImageGalleryGrid'
-import { ImageModelPicker } from './ImageModelPicker'
+import { ImageGenerationPlaceholder } from './ImageGenerationPlaceholder'
 import { ImagePromptForm } from './ImagePromptForm'
 import { ImageSetupCard } from './ImageSetupCard'
 import { ImageViewer } from './ImageViewer'
@@ -38,7 +38,7 @@ type ImageGenerationPageProps = {
 }
 
 /**
- * The header carries the model picker; below it a settings column (the form,
+ * The form carries the model picker beside the prompt; below the header a settings column,
  * or the setup card until the prerequisites are met) sits beside the canvas,
  * split by one structural border — the same frame as the Model hub. The
  * error banner sits above the canvas, outside the scrolling grid and never
@@ -52,8 +52,15 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const gallery = useImageGallery()
+  const viewerMode = useImageGalleryStore((state) => state.viewerMode)
+  const selectLive = useImageGalleryStore((state) => state.selectLive)
   const engine = useImageEngine()
   const status = useImageGenerationStore((state) => state.status)
+  const generating = useImageGenerationStore((state) => state.generating)
+  const currentJob = useImageGenerationStore((state) => state.currentJob)
+  const generationStartedAtMs = useImageGenerationStore(
+    (state) => state.generationStartedAtMs
+  )
   const hasModel = useImageGenerationStore((state) =>
     state.installedArtifacts.some((artifact) => artifact.complete)
   )
@@ -63,13 +70,28 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const loadModel = useImageGenerationStore((state) => state.loadModel)
   const patchForm = useImageForm((state) => state.patch)
+  const draftWidth = useImageForm((state) => state.width)
+  const draftHeight = useImageForm((state) => state.height)
+  const draftBatchSize = useImageForm((state) => state.batchSize)
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
   )
-  const setupCompleted = useImageSetting((state) => state.setupCompleted)
   const [modelsOpen, setModelsOpen] = useState(false)
 
   const modelLoaded = status?.model.state === 'loaded'
+  const showLivePreview = generating && viewerMode === 'live'
+  const pendingSize = {
+    width: currentJob?.request.width || draftWidth,
+    height: currentJob?.request.height || draftHeight,
+  }
+  const pendingCount = generating
+    ? Math.max(1, currentJob?.request.batchSize ?? draftBatchSize)
+    : 0
+  const pendingStartedAtMs =
+    generationStartedAtMs ??
+    currentJob?.startedAtMs ??
+    currentJob?.createdAtMs ??
+    0
 
   // The route names the workflow; the form carries it into the request.
   useEffect(() => {
@@ -91,16 +113,6 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     }
   }, [search.model, search.quant, setSelectedArtifactId])
 
-  // First visit with nothing set up: open the wizard rather than leave a
-  // page that does nothing.
-  useEffect(() => {
-    if (!setupCompleted && !ready && status && engine.hostBackendId !== null) {
-      openSetup(engine.installed ? 2 : 0)
-    }
-    // Only when readiness is first known.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status !== null, ready])
-
   const offerLoad = useCallback(
     (id: string) => {
       toast.info(t('images:viewer.loadOffer'), {
@@ -117,6 +129,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     (action: DiffusionErrorAction) => {
       clearError()
       switch (action) {
+        case 'updateEngine':
+          void useImageGenerationStore.getState().updateEngine()
+          return
         case 'install':
           openSetup(1)
           return
@@ -139,7 +154,12 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
             patchForm({ upscaleFactor: Math.max(1.5, upscaleFactor - 0.5) })
             return
           }
-          patchForm({ width: 768, height: 768, aspect: 'square', portrait: false })
+          patchForm({
+            width: 768,
+            height: 768,
+            aspect: 'square',
+            portrait: false,
+          })
           return
         case 'pickSmallerQuant':
           setModelsOpen(true)
@@ -158,25 +178,13 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     <HeaderPage>
       <div
         className={cn(
-          'flex w-full items-center justify-between gap-2 pr-3',
+          'flex w-full items-center gap-2 pr-3',
           !IS_MACOS && 'pr-30'
         )}
       >
-        {ready ? (
-          <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
-        ) : (
-          <span className="font-studio text-base font-medium">
-            {t('images:page.title')}
-          </span>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('common:media')}
-          onClick={() => void navigate({ to: route.settings.media })}
-        >
-          <IconSettings size={16} />
-        </Button>
+        <span className="font-studio text-base font-medium">
+          {t('images:page.title')}
+        </span>
       </div>
     </HeaderPage>
   )
@@ -196,7 +204,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
             className="flex min-h-0 flex-1 overflow-y-auto"
             data-testid="image-onboarding"
           >
-            <ImageSetupCard className="m-auto w-full max-w-md" />
+            <ImageSetupCard className="m-auto" />
           </div>
         </div>
       </div>
@@ -204,12 +212,18 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   }
 
   return (
-    <div className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
+    <div
+      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      data-testid="image-generation-page"
+    >
       <div className="col-span-2 min-w-0">{header}</div>
 
       <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
         {ready ? (
-          <ImagePromptForm />
+          <ImagePromptForm
+            modelsOpen={modelsOpen}
+            onModelsOpenChange={setModelsOpen}
+          />
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <ImageSetupCard />
@@ -217,7 +231,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
         )}
       </aside>
 
-      <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col">
+      <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col overflow-hidden">
         {lastError && (
           <div className="shrink-0 px-6 pt-3">
             <ImageErrorBanner
@@ -229,28 +243,44 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           </div>
         )}
 
-        {gallery.initialized && gallery.items.length === 0 ? (
+        {gallery.initialized && gallery.items.length === 0 && !generating ? (
           <div className="min-h-0 flex-1">
             <ImageEmptyState modelLoaded={modelLoaded} />
           </div>
         ) : (
           <>
-            <div className="min-h-0 flex-[3]">
-              <ImageViewer
-                item={gallery.selected}
-                selectedIds={gallery.selectedIds}
-                onOfferLoad={offerLoad}
-              />
+            <div
+              className="min-h-0 min-w-0 flex-[3] overflow-hidden"
+              data-testid="image-viewer-section"
+            >
+              {showLivePreview ? (
+                <ImageGenerationPlaceholder
+                  variant="viewer"
+                  width={pendingSize.width}
+                  height={pendingSize.height}
+                  progress={currentJob?.progress ?? null}
+                  startedAtMs={pendingStartedAtMs}
+                />
+              ) : (
+                <ImageViewer
+                  item={gallery.selected}
+                  selectedIds={gallery.selectedIds}
+                  onOfferLoad={offerLoad}
+                />
+              )}
             </div>
             <div className="flex min-h-0 flex-[2] flex-col border-t border-border/60">
               <div className="flex shrink-0 items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
                 <IconPhoto size={14} />
                 {/* A bare number: the i18n layer has no plural forms. */}
                 <span>{t('images:gallery.title')}</span>
-                <span className="tabular-nums">{gallery.total}</span>
+                <span className="tabular-nums">
+                  {gallery.total + pendingCount}
+                </span>
                 {gallery.selectedIds.length > 1 && (
                   <span>
-                    · {t('images:gallery.selectedCount', {
+                    ·{' '}
+                    {t('images:gallery.selectedCount', {
                       count: gallery.selectedIds.length,
                     })}
                   </span>
@@ -259,10 +289,16 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
                 <ImageGalleryGrid
                   items={gallery.items}
-                  selectedId={gallery.selectedId}
-                  selectedIds={gallery.selectedIds}
+                  selectedId={showLivePreview ? null : gallery.selectedId}
+                  selectedIds={showLivePreview ? [] : gallery.selectedIds}
                   hasMore={gallery.hasMore}
                   loading={gallery.loading}
+                  pendingCount={pendingCount}
+                  pendingSize={pendingSize}
+                  pendingProgress={currentJob?.progress ?? null}
+                  pendingStartedAtMs={pendingStartedAtMs}
+                  pendingSelected={showLivePreview}
+                  onSelectPending={selectLive}
                   onSelect={gallery.toggleSelect}
                   onOpen={gallery.select}
                   onLoadMore={() => void gallery.loadMore()}

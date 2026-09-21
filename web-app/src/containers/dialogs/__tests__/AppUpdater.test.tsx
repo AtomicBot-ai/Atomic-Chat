@@ -24,7 +24,9 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ opener: () => ({ open }) }),
 }))
 
-const RELEASE_BODY = `## 🚀 New Features
+const RELEASE_BODY = `Atomic Chat 2.0.38 brings the desktop app to Windows and adds local image generation.
+
+## 🚀 New Features
 
 - Windows support — Atomic Chat is now available on Windows
 - Image generation. Run Stable Diffusion locally
@@ -66,13 +68,19 @@ describe('DialogAppUpdater', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows the version transition and a changelog preview', () => {
+  it('shows a wider version transition and changelog without a redundant subtitle', () => {
     render(<DialogAppUpdater />)
 
+    expect(screen.getByTestId('app-update-banner')).toHaveClass(
+      'w-[min(25rem,calc(100vw-1rem))]',
+      'bottom-[calc(1rem+var(--download-panel-offset,0px))]',
+      'z-40',
+      'transition-[bottom]'
+    )
     expect(screen.getByText('updater:app.title')).toBeInTheDocument()
     expect(screen.getByText('2.0.37')).toBeInTheDocument()
     expect(screen.getByText('2.0.38')).toBeInTheDocument()
-    expect(screen.getByText('updater:app.subtitle')).toBeInTheDocument()
+    expect(screen.queryByText('updater:app.subtitle')).not.toBeInTheDocument()
 
     // Four bullets fit; the fifth collapses into the "+N more" line.
     expect(screen.getByText('Windows support')).toBeInTheDocument()
@@ -109,7 +117,7 @@ describe('DialogAppUpdater', () => {
     await user.click(screen.getByRole('button', { name: 'updater:update' }))
 
     expect(downloadAndInstallUpdate).toHaveBeenCalledTimes(1)
-    expect(setRemindMeLater).toHaveBeenCalledWith(true)
+    expect(setRemindMeLater).not.toHaveBeenCalled()
   })
 
   it('puts the banner away on "Remind me later" and on the ×', async () => {
@@ -127,7 +135,108 @@ describe('DialogAppUpdater', () => {
     expect(downloadAndInstallUpdate).not.toHaveBeenCalled()
   })
 
-  it('opens the GitHub release page for the new version', async () => {
+  it('unfolds the full release notes in place on "Show release notes"', async () => {
+    const user = userEvent.setup()
+    render(<DialogAppUpdater />)
+
+    // The intro paragraph is not a bullet, so it never makes the preview.
+    const intro =
+      'Atomic Chat 2.0.38 brings the desktop app to Windows and adds local image generation.'
+    expect(screen.queryByText(intro)).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'updater:showReleaseNotes' })
+    )
+
+    expect(screen.getByText(intro)).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: '🚀 New Features' })
+    ).toBeInTheDocument()
+    // The fifth bullet, hidden behind "+1 more" in the preview, is in full.
+    expect(
+      screen.getByText('Agent skills. Teach the agent repeatable workflows')
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('updater:app.moreHighlights')
+    ).not.toBeInTheDocument()
+
+    // The toggle flips, the header and the actions stay put, and nothing
+    // left the app.
+    expect(
+      screen.getByRole('button', { name: 'updater:hideReleaseNotes' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:openRelease' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('updater:app.title')).toBeInTheDocument()
+    expect(screen.getByText('2.0.37')).toBeInTheDocument()
+    expect(screen.getByText('2.0.38')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:remindMeLater' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:update' })
+    ).toBeInTheDocument()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('"Open release" opens the GitHub release page for the new version', async () => {
+    const user = userEvent.setup()
+    render(<DialogAppUpdater />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'updater:showReleaseNotes' })
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'updater:openRelease' })
+    )
+
+    expect(open).toHaveBeenCalledWith(
+      'https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v2.0.38'
+    )
+    // Opening the page does not fold the notes back.
+    expect(
+      screen.getByRole('button', { name: 'updater:hideReleaseNotes' })
+    ).toBeInTheDocument()
+  })
+
+  it('folds back to the highlights preview on "Hide release notes"', async () => {
+    const user = userEvent.setup()
+    render(<DialogAppUpdater />)
+
+    await user.click(
+      screen.getByRole('button', { name: 'updater:showReleaseNotes' })
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'updater:hideReleaseNotes' })
+    )
+
+    expect(
+      screen.queryByText(
+        'Atomic Chat 2.0.38 brings the desktop app to Windows and adds local image generation.'
+      )
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'updater:openRelease' })
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Windows support')).toBeInTheDocument()
+    expect(screen.getByText('updater:app.moreHighlights')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:showReleaseNotes' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:remindMeLater' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'updater:update' })
+    ).toBeInTheDocument()
+  })
+
+  it('opens the GitHub release page directly when the release has no body', async () => {
+    updateState = {
+      ...baseState(),
+      updateInfo: { version: '2.0.38', body: '' },
+    }
     const user = userEvent.setup()
     render(<DialogAppUpdater />)
 
@@ -138,6 +247,13 @@ describe('DialogAppUpdater', () => {
     expect(open).toHaveBeenCalledWith(
       'https://github.com/AtomicBot-ai/Atomic-Chat/releases/tag/v2.0.38'
     )
+    // Nothing to unfold: the toggle keeps its label and no link appears.
+    expect(
+      screen.getByRole('button', { name: 'updater:showReleaseNotes' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'updater:openRelease' })
+    ).not.toBeInTheDocument()
   })
 
   it('disables "Update" while the download runs', () => {

@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { NavMain } from '../NavMain'
+import { LeftSidebar } from '..'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -11,10 +12,10 @@ vi.mock('@tanstack/react-router', () => ({
     to,
     ...props
   }: {
-    children: React.ReactNode
-    to: string
+    'children': React.ReactNode
+    'to': string
     'aria-disabled'?: boolean
-    onClick?: (event: React.MouseEvent) => void
+    'onClick'?: (event: React.MouseEvent) => void
   }) => (
     <a href={to} {...props}>
       {children}
@@ -29,6 +30,20 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/components/ui/sidebar', async () => {
   const { forwardRef } = await import('react')
   return {
+    Sidebar: ({ children }: { children: React.ReactNode }) => (
+      <aside>{children}</aside>
+    ),
+    SidebarContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="sidebar-content">{children}</div>
+    ),
+    SidebarFooter: ({ children }: { children: React.ReactNode }) => (
+      <footer>{children}</footer>
+    ),
+    SidebarHeader: ({ children }: { children: React.ReactNode }) => (
+      <header>{children}</header>
+    ),
+    SidebarTrigger: () => <button type="button">Toggle sidebar</button>,
+    SidebarRail: () => null,
     SidebarMenu: ({ children }: { children: React.ReactNode }) => (
       <ul>{children}</ul>
     ),
@@ -46,7 +61,7 @@ vi.mock('@/components/ui/sidebar', async () => {
       children,
       ...props
     }: {
-      children: React.ReactNode
+      'children': React.ReactNode
       'data-testid'?: string
     }) => (
       <ul data-testid="plugins-submenu" {...props}>
@@ -72,6 +87,30 @@ vi.mock('@/components/animated-icon/plug', () => ({
 
 vi.mock('@/components/animated-icon/cloud', () => ({
   CloudIcon: () => null,
+}))
+
+vi.mock('@/components/animated-icon/settings', () => ({
+  SettingsIcon: () => null,
+}))
+
+vi.mock('@/components/AppLogo', () => ({
+  AppLogo: () => <div>Atomic Chat</div>,
+}))
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => children,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
+}))
+
+vi.mock('../NavProjects', () => ({
+  NavProjects: () => (
+    <section aria-label="common:projects.title">common:projects.title</section>
+  ),
+}))
+
+vi.mock('../NavChats', () => ({
+  NavChats: () => <section aria-label="common:chats">common:chats</section>,
 }))
 
 vi.mock('@/containers/dialogs/SearchDialog', () => ({
@@ -119,15 +158,6 @@ vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({ addFolder: vi.fn() }),
 }))
 
-// What the loaded image model can do; `null` means nothing is loaded.
-const imageWorkflows = vi.hoisted(() => ({ supported: null as string[] | null }))
-vi.mock('@/hooks/useImageWorkflowAvailability', () => ({
-  useImageWorkflowAvailability: () => ({
-    isAvailable: (id: string) =>
-      imageWorkflows.supported === null || imageWorkflows.supported.includes(id),
-  }),
-}))
-
 const IMAGE_WORKFLOW_LINKS: Array<[string, string]> = [
   ['images:workflow.create.label', '/images/'],
   ['images:workflow.transform.label', '/images/transform'],
@@ -143,7 +173,6 @@ describe('NavMain', () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/' } as never)
     useLeftPanel.setState({ pluginsExpanded: false, imagesExpanded: false })
     platform.mediaGeneration = true
-    imageWorkflows.supported = null
   })
 
   it('puts Images right after Models on desktop', () => {
@@ -152,12 +181,12 @@ describe('NavMain', () => {
     const labels = screen
       .getAllByRole('listitem')
       .map((item) => item.textContent?.trim())
-    const models = labels.indexOf('common:models')
+    const models = labels.indexOf('common:modelHub')
     expect(models).toBeGreaterThanOrEqual(0)
     expect(labels[models + 1]).toBe('common:images')
-    expect(screen.getByText('common:images').closest('a')).toHaveAttribute(
-      'href',
-      '/images/'
+    expect(screen.getByTestId('images-disclosure')).toHaveAttribute(
+      'aria-expanded',
+      'false'
     )
   })
 
@@ -166,7 +195,7 @@ describe('NavMain', () => {
     render(<NavMain />)
 
     expect(screen.queryByText('common:images')).not.toBeInTheDocument()
-    expect(screen.getByText('common:models')).toBeInTheDocument()
+    expect(screen.getByText('common:modelHub')).toBeInTheDocument()
   })
 
   it('keeps the workflow list folded off the images page until the chevron is clicked', async () => {
@@ -184,6 +213,19 @@ describe('NavMain', () => {
       expect(link).toHaveAttribute('href', href)
     }
     expect(useLeftPanel.getState().imagesExpanded).toBe(true)
+  })
+
+  it('toggles Images from the whole row, not only the chevron glyph', async () => {
+    const user = userEvent.setup()
+    render(<NavMain />)
+
+    await user.click(screen.getByText('common:images'))
+    expect(screen.getByTestId('images-submenu')).toBeInTheDocument()
+    expect(useLeftPanel.getState().imagesExpanded).toBe(true)
+
+    await user.click(screen.getByText('common:images'))
+    expect(screen.queryByTestId('images-submenu')).not.toBeInTheDocument()
+    expect(useLeftPanel.getState().imagesExpanded).toBe(false)
   })
 
   it('opens the workflow list on the images route and highlights the current workflow', () => {
@@ -214,12 +256,13 @@ describe('NavMain', () => {
       screen.getByText('images:workflow.create.label').closest('[data-active]')
     ).toHaveAttribute('data-active', 'true')
     expect(
-      screen.getByText('images:workflow.transform.label').closest('[data-active]')
+      screen
+        .getByText('images:workflow.transform.label')
+        .closest('[data-active]')
     ).toHaveAttribute('data-active', 'false')
   })
 
-  it('disables the workflows the loaded model cannot run', () => {
-    imageWorkflows.supported = ['create', 'transform']
+  it('keeps every workflow link available when the loaded model cannot run it', () => {
     useLeftPanel.setState({ imagesExpanded: true })
 
     render(<NavMain />)
@@ -227,24 +270,58 @@ describe('NavMain', () => {
     expect(
       screen.getByText('images:workflow.transform.label').closest('a')
     ).not.toHaveAttribute('aria-disabled')
-    const inpaint = screen.getByText('images:workflow.inpaint.label').closest('a')
-    expect(inpaint).toHaveAttribute('aria-disabled', 'true')
-    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
-    inpaint?.dispatchEvent(click)
-    expect(click.defaultPrevented).toBe(true)
+    const inpaint = screen
+      .getByText('images:workflow.inpaint.label')
+      .closest('a')
+    expect(inpaint).not.toHaveAttribute('aria-disabled')
+    expect(inpaint).toHaveAttribute('href', '/images/inpaint')
+    expect(
+      screen.getByText('images:workflow.reference.label').closest('a')
+    ).toHaveAttribute('href', '/images/reference')
+    expect(
+      screen.getByText('images:workflow.edit.label').closest('a')
+    ).toHaveAttribute('href', '/images/edit')
   })
 
   it('shows every section on the unified sidebar', () => {
     render(<NavMain />)
 
     expect(screen.getByText('common:newChat')).toBeInTheDocument()
-    expect(screen.getByText('common:models')).toBeInTheDocument()
+    expect(screen.getByText('common:modelHub')).toBeInTheDocument()
     expect(screen.getByText('common:cloud')).toBeInTheDocument()
     expect(screen.getByText('common:plugins')).toBeInTheDocument()
     expect(screen.getByText('common:projects.new')).toBeInTheDocument()
     expect(screen.getByText('common:launch')).toBeInTheDocument()
     expect(screen.getByText('common:api')).toBeInTheDocument()
     expect(screen.queryByText('common:newTask')).not.toBeInTheDocument()
+  })
+
+  it('renders the main navigation in order with New Project last before the separate Projects section', () => {
+    render(<LeftSidebar />)
+
+    const mainMenu = screen.getByText('common:newChat').closest('ul')
+    expect(mainMenu).not.toBeNull()
+    expect(
+      within(mainMenu!).getAllByRole('listitem').map((item) => item.textContent)
+    ).toEqual([
+      'common:newChat',
+      'common:modelHub',
+      'common:images',
+      'common:cloud',
+      'common:plugins',
+      'common:launch',
+      'common:api',
+      'common:projects.new',
+    ])
+
+    const projectsSection = screen.getByRole('region', {
+      name: 'common:projects.title',
+    })
+    expect(mainMenu).not.toContainElement(projectsSection)
+    expect(
+      mainMenu!.compareDocumentPosition(projectsSection) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
   })
 
   it('keeps Connectors and Skills tucked inside the collapsed Plugins group', () => {

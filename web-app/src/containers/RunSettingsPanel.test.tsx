@@ -1,22 +1,19 @@
-import { DEFAULT_CTX_LEN } from '@janhq/core'
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RunSettingsPanel } from '@/containers/RunSettingsPanel'
-import { defaultAssistant, useAssistant } from '@/hooks/useAssistant'
-import { formatContextSize } from '@/hooks/useModelContextLength'
+import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
 import type { ServiceHub } from '@/services'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { toast } from 'sonner'
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn() },
+}))
 
 class MockResizeObserver {
   observe() {}
@@ -213,15 +210,32 @@ describe('RunSettingsPanel', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('hides the model section for providers without a context knob', () => {
-    seedModel('openai')
-    render(<RunSettingsPanel onClose={onClose} />)
+  it.each(['openai', 'chatgpt'])(
+    'shows only assistant and system prompt controls for cloud provider %s',
+    (provider) => {
+      seedModel(provider)
+      render(<RunSettingsPanel onClose={onClose} />)
 
-    expect(screen.queryByText('chat:runSettings.model')).not.toBeInTheDocument()
-    expect(
-      screen.getByText('assistants:paramCategory.penalties')
-    ).toBeInTheDocument()
-  })
+      expect(screen.getByText('Writer')).toBeInTheDocument()
+      expect(
+        screen.getByLabelText('assistants:instructions')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('chat:runSettings.model')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('assistants:paramCategory.sampling')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('assistants:paramCategory.penalties')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', {
+          name: 'chat:runSettings.resetSampling',
+        })
+      ).not.toBeInTheDocument()
+    }
+  )
 
   it('puts dragged sliders back on the defaults in one click', () => {
     const createAssistant = vi.fn().mockResolvedValue(undefined)
@@ -242,7 +256,12 @@ describe('RunSettingsPanel', () => {
           name: 'Writer',
           avatar: '✍️',
           instructions: 'Be terse.',
-          parameters: { temperature: 1.5, top_p: 0.35, min_p: 0.83, stream: false },
+          parameters: {
+            temperature: 1.5,
+            top_p: 0.35,
+            min_p: 0.83,
+            stream: false,
+          },
           sampling_overridden: true,
         } as unknown as Assistant,
       ],
@@ -279,96 +298,32 @@ describe('RunSettingsPanel', () => {
       expect.objectContaining({ id: 'writer', sampling_overridden: false })
     )
 
-    // Nothing is left to reset; the model's load options were never part of it.
+    expect(toast.success).toHaveBeenCalledWith(
+      'chat:runSettings.resetSuccess',
+      {
+        description: 'chat:runSettings.resetSuccessDescription',
+      }
+    )
+
+    // The action stays discoverable/clickable even while already on defaults;
+    // the model's load options were never part of it.
     expect(
       screen.getByRole('button', { name: 'chat:runSettings.resetSampling' })
-    ).toBeDisabled()
+    ).toBeEnabled()
     expect(
       useModelProvider.getState().selectedModel?.settings?.ngl.controller_props
         .value
     ).toBe(99)
   })
 
-  it('puts the model load options back on their defaults and restarts a loaded model', async () => {
-    const stopModel = vi.fn().mockResolvedValue({ success: true })
-    const startModel = vi.fn().mockResolvedValue(undefined)
-    seedServiceHub({
-      models: {
-        stopModel,
-        startModel,
-        getActiveModels: vi.fn().mockResolvedValue(['test-model']),
-      } as unknown as ModelsService,
-    })
+  it('does not show a second ambiguous Reset action in the Model section', () => {
     seedModel('llamacpp')
     render(<RunSettingsPanel onClose={onClose} />)
-    expect(screen.getByText('8.0K')).toBeInTheDocument()
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'chat:runSettings.resetModel' })
-    )
-
-    // The context readout the user sees moves with it.
     expect(
-      screen.getByText(formatContextSize(DEFAULT_CTX_LEN))
-    ).toBeInTheDocument()
-    const [model] = useModelProvider.getState().providers[0].models
-    expect(model.settings?.ctx_len.controller_props.value).toBe(DEFAULT_CTX_LEN)
-    expect(model.settings?.ngl.controller_props.value).toBe(100)
-    // Sampling belongs to the other section's reset.
-    expect(useAssistant.getState().assistants[0].parameters).toEqual({
-      temperature: 0.3,
-    })
-
-    // Context size and GPU layers only apply on load.
-    await waitFor(() => expect(startModel).toHaveBeenCalled())
-    expect(stopModel).toHaveBeenCalledWith('test-model', 'llamacpp')
+      screen.queryByRole('button', { name: 'chat:runSettings.resetModel' })
+    ).toBeNull()
     expect(
-      screen.getByRole('button', { name: 'chat:runSettings.resetModel' })
-    ).toBeDisabled()
-  })
-
-  it('keeps both resets in place but disabled while everything is on its default', () => {
-    useAssistant.setState({
-      assistants: [
-        {
-          id: 'writer',
-          name: 'Writer',
-          avatar: '✍️',
-          instructions: '',
-          parameters: { ...defaultAssistant.parameters },
-        } as unknown as Assistant,
-      ],
-    })
-    seedModel('llamacpp')
-    const [model] = useModelProvider.getState().providers[0].models
-    useModelProvider.getState().updateProvider('llamacpp', {
-      models: [
-        {
-          ...model,
-          settings: {
-            ...model.settings,
-            ctx_len: {
-              ...model.settings!.ctx_len,
-              controller_props: {
-                ...model.settings!.ctx_len.controller_props,
-                value: DEFAULT_CTX_LEN,
-              },
-            },
-            ngl: {
-              ...model.settings!.ngl,
-              controller_props: { type: 'number', value: 100 },
-            },
-          },
-        } as Model,
-      ],
-    })
-    render(<RunSettingsPanel onClose={onClose} />)
-
-    for (const name of [
-      'chat:runSettings.resetModel',
-      'chat:runSettings.resetSampling',
-    ]) {
-      expect(screen.getByRole('button', { name })).toBeDisabled()
-    }
+      screen.getByRole('button', { name: 'chat:runSettings.resetSampling' })
+    ).toBeEnabled()
   })
 })

@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest --run",
-    "test:coverage": "vitest --coverage --run"
+    "test:coverage": "vitest --coverage --run",
+    "test:layout": "vitest --run --config vitest.layout.config.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.0",
@@ -133,6 +134,7 @@
     "@types/react-dom": "19.1.2",
     "@types/unist": "^3.0.3",
     "@vitejs/plugin-react": "4.4.1",
+    "@vitest/browser": "3.2.4",
     "@vitest/coverage-v8": "3.2.4",
     "clsx": "2.1.1",
     "eslint": "9.25.1",
@@ -144,6 +146,7 @@
     "istanbul-lib-report": "2.0.8",
     "istanbul-reports": "3.1.7",
     "jsdom": "26.1.0",
+    "playwright": "^1.63.0",
     "serve": "14.2.5",
     "tailwind-merge": "3.3.1",
     "typescript": "5.9.2",

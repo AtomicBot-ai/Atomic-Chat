@@ -125,23 +125,21 @@ export default function ConnectorToolsDialog({
 
   // A portal still bubbles React events up the tree that rendered it. In the
   // composer that tree is the plugins button and its tooltip, which would
-  // open on the dialog's own focus and on the pointer crossing its overlay.
-  // The wrapper takes no layout of its own and swallows them.
+  // open on the dialog's own focus. Stop events on the panel itself, not on a
+  // wrapper around the portal: swallowing overlay pointer events prevents
+  // Radix from dismissing the dialog when the user clicks outside it.
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
 
   return (
-    <div
-      className="contents"
-      onFocus={stop}
-      onPointerMove={stop}
-      onPointerDown={stop}
-      onClick={stop}
-    >
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
-          data-testid="connector-tools-dialog"
-        >
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
+        data-testid="connector-tools-dialog"
+        onFocus={stop}
+        onPointerMove={stop}
+        onPointerDown={stop}
+        onClick={stop}
+      >
           <DialogHeader>
             <div className="flex items-center gap-3">
               <ServerIcon connector={connector} name={name} />
@@ -272,8 +270,7 @@ export default function ConnectorToolsDialog({
               )
             })}
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

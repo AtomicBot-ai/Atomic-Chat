@@ -58,6 +58,10 @@ describe('Chat and Agent workspace controls', () => {
         skipSelectedLabel="Skip All"
         skipLabel="Skip all approvals"
         skipDescription="Never pause."
+        skipConfirmTitle="Enable Full access?"
+        skipConfirmBody="Tool calls will run without approval prompts."
+        skipConfirmCancel="Cancel"
+        skipConfirmAccept="I understand"
       />
     )
 
@@ -66,6 +70,10 @@ describe('Chat and Agent workspace controls', () => {
       screen.getByText('How should tool calls be approved?')
     ).toBeInTheDocument()
     await user.click(screen.getByText('Skip all approvals'))
+
+    // Full access asks first; the mode changes only from the dialog.
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'I understand' }))
 
     expect(onChange).toHaveBeenCalledWith('skip')
   })
@@ -87,6 +95,10 @@ describe('Chat and Agent workspace controls', () => {
         skipSelectedLabel="Skip All"
         skipLabel="Skip all approvals"
         skipDescription="Never pause."
+        skipConfirmTitle="Enable Full access?"
+        skipConfirmBody="Tool calls will run without approval prompts."
+        skipConfirmCancel="Cancel"
+        skipConfirmAccept="I understand"
       />
     )
 

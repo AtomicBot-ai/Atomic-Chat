@@ -5,23 +5,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import {
-  isCloudProvider,
   isLocalEngineProvider,
   isProviderConnected,
 } from '@/lib/cloud-providers'
-import { highlightFzfMatch } from '@/utils/highlight'
-import {
-  ModelSourceBadge,
-  MissingModelBadge,
-} from '@/components/ModelSourceBadge'
+import { ModelSourceBadge } from '@/components/ModelSourceBadge'
 import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
-  IconDownload,
+  IconLoader2,
   IconSettings,
   IconX,
 } from '@tabler/icons-react'
@@ -32,48 +28,94 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ActiveModelIndicator } from '@/containers/ActiveModelIndicator'
-import { InferenceServerStatusLine } from '@/containers/InferenceServerStatus'
+import { useAppState } from '@/hooks/useAppState'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
-import { isKnownProvider } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { VOICE_MODEL_ID } from '@/constants/voice'
 import { DEFAULT_CTX_LEN } from '@/lib/context-size'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
+import {
+  compactModelDisplayName,
+  qualifiedModelDisplayName,
+} from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { formatDownloadReadout } from '@/lib/downloadFormat'
+import { cancelDownload } from '@/lib/downloadCancellation'
+import { downloadKind } from '@/lib/telemetry'
+import { isAnswerableModel } from '@/lib/answerable-model'
+import {
+  HuggingFaceAction,
+  ModelPickerEmptyState,
+} from '@/containers/ModelPickerDownloads'
 
-/**
- * Which providers may list models in the picker.
- *
- * Local engines may — they are the app's own runtimes. A cloud provider only
- * once it is actually connected: the registry ships every catalogue entry
- * `active: true`, so without this the picker is a wall of providers the user
- * never set up (the ChatGPT subscription among them) burying the ones they did.
- *
- * Custom providers are judged on their models, as they are everywhere else:
- * they may legitimately need no key.
- *
- * Eligible is not enough for a section: one is rendered only when it has a
- * model to pick (see `groupedItems`).
- */
+/** Active local engines and connected remote providers can answer from here. */
 const isPickerSection = (provider: ModelProvider): boolean =>
-  isLocalEngineProvider(provider) ||
-  isProviderConnected(provider) ||
-  (!isKnownProvider(provider.provider) && provider.models.length > 0)
+  provider.active &&
+  !/(?:diffusion|image|video)/i.test(provider.provider) &&
+  (isLocalEngineProvider(provider) || isProviderConnected(provider))
+
+const NON_CHAT_CAPABILITIES = new Set([
+  'diffusion',
+  'embedding',
+  'embeddings',
+  'image',
+  'image-generation',
+  'rerank',
+  'reranking',
+  'speech-to-text',
+  'text-embedding',
+  'text-to-image',
+  'text-to-speech',
+  'text-to-video',
+  'transcription',
+  'video',
+  'video-generation',
+  'voice',
+])
+
+const hasArtifactToken = (id: string): boolean =>
+  /(?:^|[/:._-])(?:backend|diffusion|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
+    id
+  )
+
+/** Models used for media, embeddings, transcription, or support cannot chat. */
+const isPickerModel = (model: Model): boolean => {
+  const capabilities = new Set(
+    (model.capabilities ?? []).map((capability) => capability.toLowerCase())
+  )
+  return (
+    isAnswerableModel(model) &&
+    model.id !== VOICE_MODEL_ID &&
+    !model.embedding &&
+    !hasArtifactToken(model.id) &&
+    ![...capabilities].some((capability) =>
+      NON_CHAT_CAPABILITIES.has(capability)
+    )
+  )
+}
+
+/** The global download panel also carries engines, diffusion, and sidecars. */
+const isChatModelDownload = (id: string): boolean => {
+  if (id === EMBEDDING_MODEL_ID || id === VOICE_MODEL_ID) return false
+  if (hasArtifactToken(id)) return false
+  return downloadKind(id) === 'model'
+}
 
 interface SearchableModel {
   provider: ModelProvider
   model: Model
   searchStr: string
   value: string
-  highlightedId?: string
 }
 
 // Helper functions for localStorage
@@ -96,6 +138,7 @@ const visionProbeCache = new Map<string, boolean>()
 
 type DropdownModelProviderProps = {
   className?: string
+  compact?: boolean
 }
 
 /**
@@ -107,6 +150,7 @@ type PickerView = 'main' | 'models'
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
   className,
+  compact: compactOverride,
 }: DropdownModelProviderProps) {
   const providers = useModelProvider((state) => state.providers)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
@@ -121,6 +165,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
+  const downloads = useDownloadStore((state) => state.downloads)
+  const localDownloadingModels = useDownloadStore(
+    (state) => state.localDownloadingModels
+  )
+  const pausedDownloads = useDownloadStore((state) => state.pausedDownloads)
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -146,7 +195,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // down to, so "Select a model" stays.
   const leftBarOpen = useLeftPanel((state) => state.open)
   const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
-  const compact = leftBarOpen && rightBarOpen && !!selectedModel?.id
+  const compact =
+    (compactOverride ?? (leftBarOpen && rightBarOpen)) && !!selectedModel?.id
 
   // Helper function to check if a model exists in providers
   // The persisted cloud selection is usable when its provider is on, still
@@ -257,6 +307,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         return
       }
 
+      // Skip is an explicit choice to enter with no model this session. An
+      // explicit selection above still wins; startup defaults must not undo Skip.
+      if (useModelLoad.getState().modelSelectionDeferred) return
+
+      // A deliberate unload leaves the composer empty, including on remount
+      // or provider refresh. Last-used/preload must not undo that user choice.
+      if (useAppState.getState().userStoppedModels.length > 0) return
+
       const { preloadModelOnStartup } = useGeneralSetting.getState()
       if (!preloadModelOnStartup) {
         // Preload is disabled: don't pre-select the last used model or
@@ -335,7 +393,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // Update display model when selection changes
   useEffect(() => {
     if (selectedProvider && selectedModel) {
-      setDisplayModel(getModelDisplayName(selectedModel))
+      setDisplayModel(compactModelDisplayName(selectedModel))
     } else {
       setDisplayModel(t('common:selectAModel'))
     }
@@ -393,7 +451,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     (open: boolean) => {
       setOpen(open)
       if (!open) {
-        requestAnimationFrame(() => setSearchValue(''))
+        requestAnimationFrame(() => {
+          setSearchValue('')
+        })
       } else {
         // Every opening starts from the model row; the list is a step in.
         setView(selectedModel?.id ? 'main' : 'models')
@@ -418,33 +478,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     searchInputRef.current?.focus()
   }, [])
 
-  // Jump to the Hub to download a local model. Carry over whatever the user
-  // already typed so the Hub search is prefilled instead of starting blank.
-  const onDownloadModel = useCallback(() => {
-    setOpen(false)
-    navigate({
-      to: route.hub.index,
-      search: searchValue.trim() ? { q: searchValue.trim() } : {},
-    })
-  }, [navigate, searchValue])
-
   // Create searchable items from all models
   const searchableItems = useMemo(() => {
     const items: SearchableModel[] = []
 
     providers.forEach((provider) => {
-      if (!provider.active) return
+      if (!isPickerSection(provider)) return
 
       provider.models.forEach((modelItem) => {
-        // Skip embedding models - they can't be used for chat
-        if (modelItem.embedding || modelItem.id === EMBEDDING_MODEL_ID) return
-
-        // Skip catalogue entries for providers the user has not set up.
-        // `isProviderConnected` is the check, not a bare `api_key` test: a
-        // subscription carries its token in the backend and a loopback server
-        // (Ollama, LM Studio) needs none, so keying off `api_key` alone hid
-        // their models even while they were signed in and serving.
-        if (!isPickerSection(provider)) return
+        if (!isPickerModel(modelItem)) return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
@@ -452,7 +494,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
         // Create search string with model id, provider, and capabilities
         const searchStr =
-          `${modelItem.id} ${providerTitle} ${provider.provider} ${capabilitiesString}`.toLowerCase()
+          `${compactModelDisplayName(modelItem)} ${modelItem.id} ${providerTitle} ${provider.provider} ${capabilitiesString}`.toLowerCase()
 
         items.push({
           provider,
@@ -466,11 +508,55 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     return items
   }, [providers])
 
+  // Nothing installed to pick. Downloads remain visible above this state.
+  const pickerEmpty = searchableItems.length === 0
+
+  const activeDownloads = useMemo(() => {
+    const rows = new Map<
+      string,
+      {
+        id: string
+        progress: number
+        current: number
+        total: number
+        bytesPerSecond: number
+        stage?: { kind: string; attempt: number; maxAttempts: number }
+        paused: boolean
+      }
+    >()
+    for (const [downloadKey, download] of Object.entries(downloads)) {
+      const id = download.id || download.name || downloadKey
+      rows.set(id, {
+        id,
+        progress: download.progress ?? 0,
+        current: download.current ?? 0,
+        total: download.total ?? 0,
+        bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
+        stage: download.stage,
+        paused: pausedDownloads.has(id),
+      })
+    }
+    for (const id of localDownloadingModels) {
+      if (!rows.has(id)) {
+        rows.set(id, {
+          id,
+          progress: 0,
+          current: 0,
+          total: 0,
+          bytesPerSecond: 0,
+          paused: false,
+        })
+      }
+    }
+    return [...rows.values()].filter((download) =>
+      isChatModelDownload(download.id)
+    )
+  }, [downloads, localDownloadingModels, pausedDownloads])
+
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) =>
-        `${getModelDisplayName(item.model)} ${item.model.id}`.toLowerCase(),
+      selector: (item) => item.searchStr,
     })
   }, [searchableItems])
 
@@ -502,20 +588,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const filteredItems = useMemo(() => {
     if (!searchValue) return searchableItems
 
-    return fzfInstance.find(searchValue.toLowerCase()).map((result) => {
-      const item = result.item
-      const positions = Array.from(result.positions) || []
-      const highlightedId = highlightFzfMatch(
-        item.model.id,
-        positions,
-        'text-accent'
-      )
-
-      return {
-        ...item,
-        highlightedId,
-      }
-    })
+    return fzfInstance
+      .find(searchValue.toLowerCase())
+      .map((result) => result.item)
   }, [searchableItems, searchValue, fzfInstance])
 
   // Group filtered items by provider, excluding favorites when not searching
@@ -523,31 +598,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     const groups: Record<string, SearchableModel[]> = {}
 
     if (!searchValue) {
-      const activeProviders = providers
-        .filter((p) => p.active && isPickerSection(p))
-        .sort((a, b) => {
-          // Local providers first. Empty sections are dropped below, so this
-          // only ever orders engines that have something to pick.
-          const aIsLocal = isLocalEngineProvider(a)
-          const bIsLocal = isLocalEngineProvider(b)
-          if (aIsLocal !== bIsLocal) return aIsLocal ? -1 : 1
-
-          // Custom providers without API key but with models should be treated like "have API key"
-          const aIsPredefined = isKnownProvider(a.provider)
-          const bIsPredefined = isKnownProvider(b.provider)
-          const aHasApiKeyOrCustomModel =
-            (a.api_key?.length ?? 0) > 0 ||
-            (!aIsPredefined && a.models.length > 0)
-          const bHasApiKeyOrCustomModel =
-            (b.api_key?.length ?? 0) > 0 ||
-            (!bIsPredefined && b.models.length > 0)
-          // Providers with API keys or custom with models filled second
-          if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1
-          if (!aHasApiKeyOrCustomModel && bHasApiKeyOrCustomModel) return 1
-
-          // Sort remaining by provider name
-          return a.provider.localeCompare(b.provider)
-        })
+      const activeProviders = providers.filter(isPickerSection).sort((a, b) => {
+        return a.provider.localeCompare(b.provider)
+      })
 
       activeProviders.forEach((provider) => {
         groups[provider.provider] = []
@@ -591,7 +644,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
       // Immediately update display to prevent double-click issues
-      setDisplayModel(getModelDisplayName(searchableModel.model))
+      setDisplayModel(compactModelDisplayName(searchableModel.model))
       setSearchValue('')
       setOpen(false)
 
@@ -653,82 +706,112 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     ]
   )
 
-  if (!providers.length) return null
+  // A provider is presentation metadata for a concrete model selection. The
+  // store clears both atomically, but this guard also covers hydration and the
+  // intentional provider-only local startup state before initialization.
+  const provider = selectedModel
+    ? getProviderByName(selectedProvider)
+    : undefined
+  const detailDisplayModel = selectedModel
+    ? qualifiedModelDisplayName(selectedModel)
+    : displayModel
 
-  const provider = getProviderByName(selectedProvider)
+  if (!providers.length) return null
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       {/* The composer pill: the model, with the reasoning level as its
-          subtitle. Its width follows the label, and the panel anchors to its
+          subtitle. Its selected width is fixed and the panel anchors to its
           right edge so the mic and Send beside it hold still. The status dot
           (ATO-530) sits in the pill but outside the trigger — it is a button
           of its own, and a button cannot live inside another. */}
       <div
+        data-testid="model-picker-pill-shell"
         className={cn(
-          'inline-flex h-7 max-w-64 shrink items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70',
+          'inline-flex h-7 shrink-0 overflow-hidden rounded-full',
+          compact && selectedModel?.id
+            ? 'w-20'
+            : selectedModel?.id
+              ? 'w-[10.5rem]'
+              : 'w-32',
           className
         )}
       >
-        <ActiveModelIndicator className="ml-1.5" />
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title={selectedModel?.id ?? displayModel}
-          aria-label={compact ? displayModel : undefined}
-          data-test-id="model-picker-trigger"
-          className="inline-flex h-full min-w-0 shrink items-center gap-1.5 rounded-full pr-2 pl-1.5"
-        >
-          {provider && (
-            <div className="shrink-0">
-              <ProvidersAvatar provider={provider} className="size-4" />
-            </div>
-          )}
-          {!compact && (
-            <span
+        <div className="inline-flex h-7 w-full min-w-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70">
+          <ActiveModelIndicator className="ml-1.5" />
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              title={selectedModel?.id ?? displayModel}
+              aria-label={compact ? displayModel : undefined}
+              data-test-id="model-picker-trigger"
               className={cn(
-                'truncate font-medium',
-                !selectedModel?.id && 'text-muted-foreground'
+                'inline-flex h-full min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-1.5'
               )}
             >
-              {displayModel}
-            </span>
-          )}
-          {settledEffortLabel && (
-            <span className="text-muted-foreground shrink-0">
-              {settledEffortLabel}
-            </span>
-          )}
-          <IconChevronDown
-            size={14}
-            className={cn(
-              'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
-              open && 'rotate-180'
-            )}
-          />
-        </button>
-      </PopoverTrigger>
+              {provider && (
+                <div className="shrink-0">
+                  <ProvidersAvatar provider={provider} className="size-4" />
+                </div>
+              )}
+              {(!compact || !selectedModel?.id) && (
+                <span
+                  key={displayModel}
+                  className={cn(
+                    'truncate font-medium animate-in fade-in-0 duration-150',
+                    !selectedModel?.id && 'text-muted-foreground'
+                  )}
+                >
+                  {displayModel}
+                </span>
+              )}
+              {settledEffortLabel && (
+                <span className="text-muted-foreground shrink-0">
+                  {settledEffortLabel}
+                </span>
+              )}
+              <IconChevronDown
+                size={14}
+                className={cn(
+                  'text-muted-foreground shrink-0 transition-transform duration-200 ease-out',
+                  open && 'rotate-180'
+                )}
+              />
+            </button>
+          </PopoverTrigger>
+        </div>
       </div>
 
       <PopoverContent
         className={cn(
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
-          view === 'models' && searchValue.length === 0 && 'h-80'
+          view === 'main' &&
+            'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
+          view === 'models' &&
+            cn(
+              'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-hidden',
+              pickerEmpty &&
+                !searchValue.trim() &&
+                activeDownloads.length === 0
+                ? 'max-h-[min(22rem,var(--radix-popover-content-available-height))]'
+                : 'h-[min(22rem,var(--radix-popover-content-available-height))]'
+            )
         )}
         align="end"
-        side="top"
+        side="bottom"
         sideOffset={8}
-        avoidCollisions={view === 'main' || searchValue.length === 0}
+        avoidCollisions
+        collisionPadding={16}
       >
         {view === 'main' ? (
-          <div className="flex flex-col p-1.5">
+          <div className="flex min-w-0 flex-col p-3">
             {/* The model row: what is selected, and the way into the list. */}
             <button
               type="button"
               aria-label={t('common:changeModel')}
               data-test-id="model-picker-change"
               onClick={() => setView('models')}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors duration-200 hover:bg-secondary/40"
+              className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm py-1.5 text-left text-sm transition-colors duration-200 hover:bg-secondary/40"
             >
               {provider && (
                 <div className="shrink-0">
@@ -736,12 +819,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 </div>
               )}
               <span
+                title={detailDisplayModel}
                 className={cn(
-                  'truncate font-medium',
+                  'min-w-0 flex-1 truncate font-medium',
                   !selectedModel?.id && 'text-muted-foreground'
                 )}
               >
-                {displayModel}
+                {detailDisplayModel}
               </span>
               {/* No level here: the effort heading right below says it. */}
               <ModelSupportStatus
@@ -755,16 +839,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 className="text-muted-foreground ml-auto shrink-0"
               />
             </button>
-            {/* ATO-535: what the engine is doing, spelled out. The dot above
-                carries the same state as colour; this is the reading of it. */}
-            <InferenceServerStatusLine className="px-2 pb-1" />
             {/* Mounted with the panel, so a fresh open always starts settled. */}
-            <ReasoningEffortPanel className="mt-1 border-t px-2 pt-2 pb-1" />
+            <ReasoningEffortPanel className="mt-2 min-w-0 border-t pt-3" />
           </div>
         ) : (
-          <div className="flex flex-col size-full">
+          <div
+            className={cn(
+              'flex min-h-0 flex-col',
+              pickerEmpty && !searchValue.trim()
+                ? 'w-full'
+                : 'size-full'
+            )}
+          >
             {/* Search input, with the way back to the model row. */}
-            <div className="relative flex items-center gap-1 p-1.5 border-b">
+            <div className="relative flex shrink-0 items-center gap-1 p-1.5 border-b">
               <Button
                 type="button"
                 variant="ghost"
@@ -779,7 +867,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
                 placeholder={t('common:searchModels')}
-                className="min-w-0 flex-1 text-sm font-normal outline-0"
+                className="min-w-0 flex-1 pr-6 text-sm font-normal outline-0"
               />
               {searchValue.length > 0 && (
                 <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
@@ -792,76 +880,131 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               )}
             </div>
 
-            {/* Model list */}
-            <div className="max-h-80 overflow-y-auto">
-              {Object.keys(groupedItems).length === 0 && searchValue ? (
-                <div className="py-3 px-4 text-sm ">
-                  {t('common:noModelsFoundFor', { searchValue })}
-                </div>
-              ) : (
-                <div className="py-1">
-                  {/* Favorites section - only show when not searching */}
-                  {!searchValue && favoriteItems.length > 0 && (
-                    <div className="bg-secondary/30 rounded-sm m-2 py-1">
-                      {/* Favorites header */}
-                      <div className="flex items-center gap-1.5 px-2 py-1">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          {t('common:favorites')}
-                        </span>
-                      </div>
-
-                      {/* Favorite models */}
-                      {favoriteItems.map((searchableModel) => {
-                        const isSelected =
-                          selectedModel?.id === searchableModel.model.id &&
-                          selectedProvider === searchableModel.provider.provider
-
-                        return (
-                          <div
-                            key={`fav-${searchableModel.value}`}
-                            title={searchableModel.model.id}
-                            onClick={() => handleSelect(searchableModel)}
-                            className={cn(
-                              'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                              'hover:bg-secondary/40',
-                              isSelected && 'bg-secondary/50'
-                            )}
-                          >
-                            <div className="flex items-center gap-1 flex-1 min-w-0">
-                              <div className="shrink-0 -ml-1">
-                                <ProvidersAvatar
-                                  provider={searchableModel.provider}
-                                />
-                              </div>
-                              <span className="text-sm truncate">
-                                {getModelDisplayName(searchableModel.model)}
-                              </span>
-                              {searchableModel.model.source && (
-                                <ModelSourceBadge
-                                  source={searchableModel.model.source}
-                                  className="shrink-0"
-                                />
-                              )}
-                              {searchableModel.model.missing && (
-                                <MissingModelBadge
-                                  source={searchableModel.model.source}
-                                  className="shrink-0"
-                                />
-                              )}
+            {/* Model list. With nothing to pick it fills the panel's fixed
+                height and scrolls inside it. */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className={cn(!pickerEmpty && 'py-1')}>
+                {activeDownloads.length > 0 && (
+                  <div
+                    className="m-1.5 rounded-sm bg-secondary/30 py-1"
+                    data-testid="model-picker-downloading"
+                  >
+                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                      {t('common:downloading')}
+                    </div>
+                    {activeDownloads.map((download) => {
+                      return (
+                        <div
+                          key={download.id}
+                          className="mx-1 flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5"
+                        >
+                          <IconLoader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className="truncate text-sm"
+                              title={download.id}
+                            >
+                              {qualifiedModelDisplayName({
+                                id: download.id,
+                              } as Model)}
+                            </div>
+                            <div
+                              className="truncate text-xs text-muted-foreground"
+                              title={formatDownloadReadout(t, download)}
+                            >
+                              {formatDownloadReadout(t, download)}
                             </div>
                           </div>
-                        )
-                      })}
+                          <button
+                            type="button"
+                            className="h-auto shrink-0 cursor-pointer px-1 text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-4"
+                            onClick={() =>
+                              cancelDownload(
+                                { id: download.id, name: download.id },
+                                serviceHub
+                              )
+                            }
+                          >
+                            {t('common:cancel')}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {/* Favorites section - only show when browsing installed models. */}
+                {!searchValue && favoriteItems.length > 0 && (
+                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                    {/* Favorites header */}
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        {t('common:favorites')}
+                      </span>
                     </div>
-                  )}
 
-                  {/* Divider between favorites and regular providers */}
-                  {favoriteItems.length > 0 && (
-                    <div className="border-b mx-2"></div>
-                  )}
+                    {/* Favorite models */}
+                    {favoriteItems.map((searchableModel) => {
+                      const isSelected =
+                        selectedModel?.id === searchableModel.model.id &&
+                        selectedProvider === searchableModel.provider.provider
 
-                  {/* Regular provider sections */}
-                  {Object.entries(groupedItems).map(([providerKey, models]) => {
+                      return (
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          key={`fav-${searchableModel.value}`}
+                          title={searchableModel.model.id}
+                          onClick={() => handleSelect(searchableModel)}
+                          className={cn(
+                            'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
+                            'hover:bg-secondary/40',
+                            isSelected && 'bg-secondary/50'
+                          )}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
+                              isSelected
+                                ? 'border-blue-500'
+                                : 'border-muted-foreground/40'
+                            )}
+                            data-testid={`model-selection-${searchableModel.value}`}
+                          >
+                            {isSelected && (
+                              <span className="size-2 rounded-full bg-blue-500" />
+                            )}
+                          </span>
+                          <div className="flex min-w-0 flex-1 items-center gap-1">
+                            <div className="shrink-0">
+                              <ProvidersAvatar
+                                provider={searchableModel.provider}
+                              />
+                            </div>
+                            <span className="text-sm truncate">
+                              {qualifiedModelDisplayName(searchableModel.model)}
+                            </span>
+                            {searchableModel.model.source && (
+                              <ModelSourceBadge
+                                source={searchableModel.model.source}
+                                className="shrink-0"
+                              />
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Divider between favorites and regular providers */}
+                {favoriteItems.length > 0 && (
+                  <div className="border-b mx-2"></div>
+                )}
+
+                {/* Regular provider sections */}
+                {Object.entries(groupedItems).map(([providerKey, models]) => {
                     const providerInfo = providers.find(
                       (p) => p.provider === providerKey
                     )
@@ -874,10 +1017,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                         className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
                       >
                         {/* Provider header */}
-                        <div className="flex items-center justify-between px-2 py-1">
-                          <div className="flex items-center gap-1.5">
-                            <ProvidersAvatar provider={providerInfo} />
-                            <span className="text-sm font-medium text-muted-foreground">
+                        <div className="flex items-center justify-between gap-3 px-2 py-1">
+                          {/* `min-w-0` lets long engine titles ellipsise instead
+                              of wrapping and pushing the status or gear away. */}
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <ProvidersAvatar
+                              provider={providerInfo}
+                              className="size-4.5 shrink-0"
+                            />
+                            <span
+                              className="text-sm font-medium text-muted-foreground min-w-0 truncate"
+                              title={getProviderTitle(providerInfo.provider)}
+                            >
                               {getProviderTitle(providerInfo.provider)}
                             </span>
                             {providerInfo.provider === selectedProvider && (
@@ -885,25 +1036,25 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                             )}
                           </div>
 
-                          <div
-                            className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                          <button
+                            type="button"
+                            aria-label={t(
+                              'common:modelPicker.providerSettings',
+                              {
+                                provider: getProviderTitle(
+                                  providerInfo.provider
+                                ),
+                              }
+                            )}
+                            className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-transparent transition-colors duration-200 ease-in-out hover:bg-secondary-foreground/8 focus-visible:bg-secondary-foreground/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={(e) => {
                               e.stopPropagation()
-                              // Cloud providers are set up on `/cloud`; local
-                              // engines keep their Settings detail page.
-                              if (isCloudProvider(providerInfo)) {
-                                navigate({
-                                  to: route.cloud.index,
-                                  search: { provider: providerInfo.provider },
-                                })
-                              } else {
-                                navigate({
-                                  to: route.settings.providers,
-                                  params: {
-                                    providerName: providerInfo.provider,
-                                  },
-                                })
-                              }
+                              navigate({
+                                to: route.settings.providers,
+                                params: {
+                                  providerName: providerInfo.provider,
+                                },
+                              })
                               setOpen(false)
                             }}
                           >
@@ -911,7 +1062,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               size={16}
                               className="text-muted-foreground"
                             />
-                          </div>
+                          </button>
                         </div>
 
                         {/* Models for this provider */}
@@ -922,23 +1073,42 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               searchableModel.provider.provider
 
                           return (
-                            <div
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
                               key={searchableModel.value}
                               title={searchableModel.model.id}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
-                                'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+                                'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
                                 'hover:bg-secondary/40',
                                 isSelected &&
                                   'bg-secondary/60 hover:bg-secondary/60'
                               )}
                             >
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <span
+                                aria-hidden="true"
+                                className={cn(
+                                  'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
+                                  isSelected
+                                    ? 'border-blue-500'
+                                    : 'border-muted-foreground/40'
+                                )}
+                                data-testid={`model-selection-${searchableModel.value}`}
+                              >
+                                {isSelected && (
+                                  <span className="size-2 rounded-full bg-blue-500" />
+                                )}
+                              </span>
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
                                 <span
                                   className="text-sm truncate"
                                   title={searchableModel.model.id}
                                 >
-                                  {getModelDisplayName(searchableModel.model)}
+                                  {qualifiedModelDisplayName(
+                                    searchableModel.model
+                                  )}
                                 </span>
                                 {searchableModel.model.source && (
                                   <ModelSourceBadge
@@ -946,35 +1116,25 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                     className="shrink-0"
                                   />
                                 )}
-                                {searchableModel.model.missing && (
-                                  <MissingModelBadge
-                                    source={searchableModel.model.source}
-                                    className="shrink-0"
-                                  />
-                                )}
                               </div>
-                            </div>
+                            </button>
                           )
                         })}
                       </div>
                     )
-                  })}
-                </div>
-              )}
-            </div>
+                })}
 
-            {/* Download CTA — shortcut into the Hub so users can grab a local
-              model without leaving the selector first. */}
-            <div className="border-t p-1.5 mt-auto">
-              <button
-                type="button"
-                onClick={onDownloadModel}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm cursor-pointer text-sm text-muted-foreground transition-colors duration-200 hover:bg-secondary/40 hover:text-foreground"
-              >
-                <IconDownload size={16} className="shrink-0" />
-                <span>{t('common:downloadModel')}</span>
-              </button>
+                {pickerEmpty || Object.keys(groupedItems).length === 0 ? (
+                  <ModelPickerEmptyState query={searchValue} />
+                ) : null}
+              </div>
             </div>
+            <HuggingFaceAction
+              onClick={() => {
+                setOpen(false)
+                void navigate({ to: route.hub.index })
+              }}
+            />
           </div>
         )}
       </PopoverContent>

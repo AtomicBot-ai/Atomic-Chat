@@ -179,6 +179,8 @@ pub struct ModelFiles {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llm: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_vision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qwen2vl: Option<String>,
 }
 
@@ -191,6 +193,7 @@ impl ModelFiles {
             ("clipL", &self.clip_l),
             ("t5xxl", &self.t5xxl),
             ("llm", &self.llm),
+            ("llmVision", &self.llm_vision),
             ("qwen2vl", &self.qwen2vl),
         ] {
             if let Some(value) = value {

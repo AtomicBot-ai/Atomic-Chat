@@ -12,6 +12,21 @@
 
 ## Как запускать стабильно
 
+### Изолированный QA/dev-профиль
+
+Для проверки first-run flow без чтения или изменения обычного профиля запустите
+GUI или CLI с абсолютным каталогом в `ATOMIC_CHAT_PROFILE_DIR`. Настройки будут
+находиться в `<profile>/settings.json`, а данные — в `<profile>/data`; legacy-
+каталоги Atomic Chat/Jan в этом режиме не используются.
+
+```bash
+ATOMIC_CHAT_PROFILE_DIR=/tmp/atomic-chat-clean-flow yarn dev
+ATOMIC_CHAT_PROFILE_DIR=/tmp/atomic-chat-clean-flow cargo run --manifest-path src-tauri/Cargo.toml --features cli --bin jan-cli -- --help
+```
+
+Переменная предназначена только для QA и разработки. Пустое, относительное или
+содержащее `..` значение игнорируется, и приложение использует обычный профиль.
+
 ### Один терминал, один процесс
 
 ```bash

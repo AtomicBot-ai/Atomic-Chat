@@ -1,6 +1,6 @@
-import { fireEvent, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../reasoning'
 
@@ -18,7 +18,86 @@ vi.mock('streamdown', async (importOriginal) => {
   return { ...actual, Streamdown }
 })
 
+afterEach(() => vi.useRealTimers())
+
 describe('ReasoningContent', () => {
+  it('uses the shared action-icon scale and a vertically centred trigger', () => {
+    const { container, getByRole } = render(
+      <Reasoning isStreaming defaultOpen>
+        <ReasoningTrigger />
+        <ReasoningContent isStreaming>Reasoning</ReasoningContent>
+      </Reasoning>
+    )
+
+    const trigger = getByRole('button')
+    const chevron = container.querySelector('.lucide-chevron-down')!
+    expect(trigger).toHaveClass('min-h-6', 'items-center')
+    expect(container.querySelector('.tabler-icon-bulb')).toHaveClass(
+      'size-[18px]',
+      'shrink-0'
+    )
+    expect(trigger.querySelector('.text-transparent')).toBeNull()
+    expect(trigger).toHaveTextContent('Thinking for 1s…')
+    expect(chevron.parentElement).toHaveClass(
+      'inline-flex',
+      'min-w-0',
+      'items-center'
+    )
+    expect(chevron.previousElementSibling).toHaveClass('truncate')
+    expect(chevron.previousElementSibling).not.toHaveClass('flex-1')
+  })
+
+  it('keeps one monotonic timer until the enclosing turn becomes terminal', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+
+    const { rerender, getByRole, queryByText } = render(
+      <Reasoning isStreaming defaultOpen={false}>
+        <ReasoningTrigger />
+      </Reasoning>
+    )
+
+    expect(getByRole('button')).toHaveTextContent('Thinking for 1s…')
+    act(() => vi.advanceTimersByTime(2_000))
+    expect(getByRole('button')).toHaveTextContent('Thinking for 2s…')
+
+    rerender(
+      <Reasoning isStreaming defaultOpen={false}>
+        <ReasoningTrigger />
+      </Reasoning>
+    )
+    expect(getByRole('button')).toHaveTextContent('Thinking for 2s…')
+
+    rerender(
+      <Reasoning defaultOpen={false}>
+        <ReasoningTrigger />
+      </Reasoning>
+    )
+    expect(getByRole('button')).toHaveTextContent('Thought for 2s')
+    expect(queryByText(/Thinking for/)).not.toBeInTheDocument()
+    expect(queryByText('Thought for 2s')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(10_000))
+    expect(getByRole('button')).toHaveTextContent('Thought for 2s')
+  })
+
+  it('continues elapsed time when the wall clock moves backwards or forwards', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const { getByRole } = render(
+      <Reasoning isStreaming defaultOpen={false}>
+        <ReasoningTrigger />
+      </Reasoning>
+    )
+    act(() => vi.advanceTimersByTime(3_000))
+    expect(getByRole('button')).toHaveTextContent('Thinking for 3s')
+    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'))
+    act(() => vi.advanceTimersByTime(2_000))
+    expect(getByRole('button')).toHaveTextContent('Thinking for 5s')
+    vi.setSystemTime(new Date('2027-01-01T00:00:00Z'))
+    act(() => vi.advanceTimersByTime(2_000))
+    expect(getByRole('button')).toHaveTextContent('Thinking for 7s')
+  })
+
   it('renders streaming reasoning as plain text, then Markdown once complete', async () => {
     const reasoning = '**Material finding**\n\n- first\n- second'
     const { container, rerender } = render(
@@ -29,7 +108,10 @@ describe('ReasoningContent', () => {
 
     expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
     expect(container.querySelector('[data-streamdown="strong"]')).toBeNull()
-    expect(container.textContent).toContain('**Material finding**')
+    expect(container.querySelector('strong')).toHaveTextContent(
+      'Material finding'
+    )
+    expect(container.textContent).not.toContain('**')
 
     rerender(
       <Reasoning defaultOpen>
@@ -45,7 +127,7 @@ describe('ReasoningContent', () => {
     expect(container.querySelector('[data-streaming-reasoning]')).toBeNull()
   })
 
-  it('keeps a long streaming trace out of the Markdown renderer', () => {
+  it('keeps the full long trace visible without invoking Markdown', () => {
     const longReasoning = '**token** '.repeat(12_000) + 'visible tail'
     const { container } = render(
       <Reasoning defaultOpen>
@@ -55,16 +137,14 @@ describe('ReasoningContent', () => {
 
     expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
     expect(container.querySelector('[data-streamdown]')).toBeNull()
-    expect(container.textContent).toContain(
+    expect(container.textContent).not.toContain(
       'earlier reasoning will appear when generation completes'
     )
-    // The window, plus the truncation notice — not the 120k-character trace.
-    expect(container.textContent?.length).toBeGreaterThan(4_000)
-    expect(container.textContent?.length).toBeLessThan(4_200)
+    expect(container.textContent?.length).toBeGreaterThan(100_000)
     expect(container.textContent).toMatch(/visible tail$/)
   })
 
-  it('does not parse the trace when a finished panel auto-closes', () => {
+  it('keeps a just-finished live trace open and lightweight', () => {
     const reasoning = '**Material finding**\n\n- first\n- second'
     const { container, rerender } = render(
       <Reasoning isStreaming defaultOpen>
@@ -84,19 +164,16 @@ describe('ReasoningContent', () => {
     )
 
     expect(markdownRenders).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-streaming-reasoning]')).not.toBeNull()
+    expect(getComputedStyle(container.firstElementChild!).display).not.toBe(
+      'none'
+    )
   })
 
-  it('parses the trace when the reader opens a finished panel', async () => {
+  it('parses a stored trace when the reader opens its finished panel', async () => {
     const reasoning = '**Material finding**\n\n- first\n- second'
-    const { container, getByRole, rerender } = render(
-      <Reasoning isStreaming defaultOpen>
-        <ReasoningTrigger />
-        <ReasoningContent isStreaming>{reasoning}</ReasoningContent>
-      </Reasoning>
-    )
-
-    rerender(
-      <Reasoning defaultOpen>
+    const { container, getByRole } = render(
+      <Reasoning defaultOpen={false}>
         <ReasoningTrigger />
         <ReasoningContent>{reasoning}</ReasoningContent>
       </Reasoning>

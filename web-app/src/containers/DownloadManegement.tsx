@@ -1,10 +1,12 @@
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { IconCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -12,8 +14,9 @@ import { DownloadPanel } from '@/containers/downloads/DownloadPanel'
 import type { DownloadRowProps } from '@/containers/downloads/DownloadProgressRow'
 import { advanceSpeedSample, newSpeedSample } from '@/lib/downloadFormat'
 import {
+  cancelDownload,
   clearDownloadCancellationRequested,
-  markDownloadCancellationRequested,
+  isDownloadCancellationError,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import {
@@ -30,12 +33,20 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
+import {
+  downloadArtifact,
+  isDiffusionModelDownloadTaskId,
+  resolveDiffusionDownloadTaskId,
+} from '@/lib/diffusion/models'
+import { cancelTransfer } from '@/services/diffusion/transfer'
+import { useImageGenerationStore } from '@/stores/image-generation-store'
 
-function isCancellationLikeError(error?: string): boolean {
-  if (!error) return false
-  return /abort|aborted|cancel|cancelled|canceled|stop|stopped|interrupt/i.test(
-    error
-  )
+type DiffusionDownloadKind = 'model' | 'engine'
+
+function diffusionDownloadKind(id: string): DiffusionDownloadKind | null {
+  if (id.startsWith('diffusion-model-')) return 'model'
+  if (id.startsWith('diffusion-backend-')) return 'engine'
+  return null
 }
 
 /**
@@ -91,6 +102,8 @@ export function DownloadManagement() {
     peakDownloads: 0,
   })
   const serviceHub = useServiceHub()
+  const imageCatalog = useImageGenerationStore((state) => state.catalog)
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const {
     downloads,
     updateProgress,
@@ -184,19 +197,30 @@ export function DownloadManagement() {
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
-    const downloadsWithProgress = Object.values(downloads).map((download) => ({
-      id: download.name,
-      name: download.name,
-      progress: download.progress,
-      current: download.current,
-      total: download.total,
-      bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
-      stage: download.stage,
-    }))
+    const downloadsWithProgress = Object.entries(downloads).map(
+      ([downloadKey, download]) => {
+        // Early progress events can arrive before the backend fills `name` or
+        // even the mirrored `id`. The store key is still the requested model,
+        // so use it rather than rendering a nameless percentage-only row.
+        const modelId = download.id || download.name || downloadKey
+        return {
+          id: modelId,
+          name: modelId,
+          progress: download.progress,
+          current: download.current,
+          total: download.total,
+          bytesPerSecond: download.speed?.bytesPerSecond ?? 0,
+          stage: download.stage,
+        }
+      }
+    )
+    const progressIds = new Set(
+      downloadsWithProgress.map((download) => download.id)
+    )
 
     // Add local downloading models that don't have progress data yet
     const localDownloadsWithoutProgress = Array.from(localDownloadingModels)
-      .filter((modelId) => !downloads[modelId]) // Only include models not in downloads
+      .filter((modelId) => !progressIds.has(modelId))
       .map((modelId) => ({
         id: modelId,
         name: modelId,
@@ -216,9 +240,9 @@ export function DownloadManagement() {
     return total
   }, [downloadProcesses, appUpdateState.isDownloading])
 
-  // ATO-462: the panel no longer opens itself and no longer hides itself. What
-  // is measured instead is how much of a download run the user actually kept it
-  // expanded, which is the number this redesign is meant to move.
+  // ATO-462: each download run starts expanded and stays present while active;
+  // a deliberate collapse lasts for that run. Measure how much of the run the
+  // user actually kept expanded, which is the number this redesign should move.
   const settlePanelTiming = useCallback(() => {
     const timing = panelTiming.current
     if (!timing.since) return
@@ -290,11 +314,6 @@ export function DownloadManagement() {
   const onFileDownloadError = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
-      clearPausedDownload(state.modelId)
-      clearResumeParams(state.modelId)
-      removeDownload(state.modelId)
-      removeLocalDownloadingModel(state.modelId)
-      clearDownloadOrigin(state.modelId)
 
       const anyState = state as unknown as {
         error?: string
@@ -302,9 +321,26 @@ export function DownloadManagement() {
       }
       const err = anyState?.error || ''
 
+      // Stopping a diffusion transfer for Pause rejects its in-flight
+      // download promise. Keep the row and its last progress intact; a real
+      // network/disk failure while paused still follows the normal path.
+      if (
+        useDownloadStore.getState().pausedDownloads.has(state.modelId) &&
+        isDownloadCancellationError(err)
+      ) {
+        markResumableDownload(state.modelId)
+        return
+      }
+
+      clearPausedDownload(state.modelId)
+      clearResumeParams(state.modelId)
+      removeDownload(state.modelId)
+      removeLocalDownloadingModel(state.modelId)
+      clearDownloadOrigin(state.modelId)
+
       const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
-        isCancellationLikeError(err)
+        isDownloadCancellationError(err)
       captureDownloadTerminal(
         cancelled ? 'cancelled' : 'failed',
         state.modelId,
@@ -410,9 +446,12 @@ export function DownloadManagement() {
         if (viaProxy) {
           toast.error(t('common:toast.downloadProxyUnreachable.title'), {
             id: 'download-failed',
-            description: t('common:toast.downloadProxyUnreachable.description', {
-              proxyUrl: useProxyConfig.getState().proxyUrl,
-            }),
+            description: t(
+              'common:toast.downloadProxyUnreachable.description',
+              {
+                proxyUrl: useProxyConfig.getState().proxyUrl,
+              }
+            ),
             duration: 30000,
             action: {
               label: t('common:toast.downloadProxyUnreachable.action'),
@@ -422,7 +461,9 @@ export function DownloadManagement() {
         } else {
           toast.error(t('common:toast.downloadNetworkUnreachable.title'), {
             id: 'download-failed',
-            description: t('common:toast.downloadNetworkUnreachable.description'),
+            description: t(
+              'common:toast.downloadNetworkUnreachable.description'
+            ),
             duration: 30000,
           })
         }
@@ -453,6 +494,36 @@ export function DownloadManagement() {
   const onModelValidationStarted = useCallback(
     (event: { modelId: string; downloadType: string }) => {
       console.debug('onModelValidationStarted', event)
+
+      const diffusionKind = diffusionDownloadKind(event.modelId)
+      if (diffusionKind) {
+        const description =
+          diffusionKind === 'model' ? (
+            <span className="block">
+              <span className="block">
+                {t('images:download.checkingFiles')}
+              </span>
+              <span className="block whitespace-nowrap">
+                {t('images:download.readyAfterCheck')}
+              </span>
+            </span>
+          ) : (
+            t('images:download.checkingFiles')
+          )
+        toast.loading(
+          t(
+            diffusionKind === 'model'
+              ? 'images:download.finishingModel'
+              : 'images:download.finishingEngine'
+          ),
+          {
+            id: `model-validation-started-${event.modelId}`,
+            description,
+            duration: Infinity,
+          }
+        )
+        return
+      }
 
       // Show validation in progress toast
       toast.info(t('common:toast.modelValidationStarted.title'), {
@@ -577,12 +648,24 @@ export function DownloadManagement() {
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
-      toast.success(t('common:toast.downloadComplete.title'), {
+      const diffusionKind = diffusionDownloadKind(state.modelId)
+      toast.success(
+        diffusionKind
+          ? t(
+              diffusionKind === 'model'
+                ? 'images:download.modelReady'
+                : 'images:download.engineReady'
+            )
+          : t('common:toast.downloadComplete.title'),
+        {
         id: 'download-complete',
-        description: t('common:toast.downloadComplete.description', {
-          item: state.modelId,
-        }),
-      })
+          description: diffusionKind
+            ? undefined
+            : t('common:toast.downloadComplete.description', {
+                item: state.modelId,
+              }),
+        }
+      )
     },
     [
       removeDownload,
@@ -615,15 +698,27 @@ export function DownloadManagement() {
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
       clearDownloadOrigin(state.modelId)
-      toast.success(t('common:toast.downloadAndVerificationComplete.title'), {
+      const diffusionKind = diffusionDownloadKind(state.modelId)
+      toast.success(
+        diffusionKind
+          ? t(
+              diffusionKind === 'model'
+                ? 'images:download.modelReady'
+                : 'images:download.engineReady'
+            )
+          : t('common:toast.downloadAndVerificationComplete.title'),
+        {
         id: 'download-complete',
-        description: t(
-          'common:toast.downloadAndVerificationComplete.description',
-          {
-            item: state.modelId,
-          }
-        ),
-      })
+          description: diffusionKind
+            ? undefined
+            : t(
+                'common:toast.downloadAndVerificationComplete.description',
+                {
+                  item: state.modelId,
+                }
+              ),
+        }
+      )
     },
     [
       removeDownload,
@@ -705,13 +800,46 @@ export function DownloadManagement() {
         markPausedDownload(download.name)
         markResumableDownload(download.name)
       }
-      void serviceHub.models().abortDownload(download.name)
+      if (isDiffusionModelDownloadTaskId(download.id)) {
+        void cancelTransfer(download.id)
+      } else {
+        void serviceHub.models().abortDownload(download.name)
+      }
     },
     [markPausedDownload, markResumableDownload, serviceHub]
   )
 
   const handleResumeDownload = useCallback(
     (download: { id: string; name: string }) => {
+      const diffusionTarget = imageCatalog
+        ? resolveDiffusionDownloadTaskId(imageCatalog, download.id)
+        : null
+      if (diffusionTarget) {
+        clearPausedDownload(download.id)
+        if (download.id !== download.name) clearPausedDownload(download.name)
+        markResumableDownload(download.id)
+        toast.success(t('common:toast.downloadResumed.title'), {
+          icon: (
+            <IconCheck
+              size={16}
+              className="text-blue-500 dark:text-blue-400"
+              aria-hidden
+            />
+          ),
+          duration: 2500,
+        })
+        void downloadArtifact(
+          diffusionTarget.family,
+          diffusionTarget.quant.id,
+          { resume: true, hfToken: huggingfaceToken }
+        ).catch((error) => {
+          // downloadArtifact emits the ordinary transfer-error event first;
+          // that listener owns the existing user-facing failure path.
+          console.error('[DownloadManagement] diffusion resume failed:', error)
+        })
+        return
+      }
+
       const params = resumeParams[download.id] ?? resumeParams[download.name]
       if (!params) {
         // No stored params (e.g. resumed after an app restart). Fall back to
@@ -741,31 +869,23 @@ export function DownloadManagement() {
           console.error('[DownloadManagement] resume failed:', error)
         })
     },
-    [resumeParams, clearPausedDownload, markResumableDownload, serviceHub, t]
+    [
+      imageCatalog,
+      huggingfaceToken,
+      resumeParams,
+      clearPausedDownload,
+      markResumableDownload,
+      serviceHub,
+      t,
+    ]
   )
 
+  // Shared with the composer's reply widget, which offers the same Cancel on
+  // the download it lists.
   const handleCancelDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      markDownloadCancellationRequested(download.name)
-      markResumableDownload(download.name)
-      clearPausedDownload(download.name)
-      clearResumeParams(download.name)
-      if (download.id !== download.name) {
-        markDownloadCancellationRequested(download.id)
-        markResumableDownload(download.id)
-        clearPausedDownload(download.id)
-        clearResumeParams(download.id)
-      }
-      if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
-        const downloadManager = window.core.extensionManager.getByName(
-          '@janhq/download-extension'
-        )
-        downloadManager.cancelDownload(download.id)
-      } else {
-        serviceHub.models().abortDownload(download.name)
-      }
-    },
-    [markResumableDownload, clearPausedDownload, clearResumeParams, serviceHub]
+    (download: { id: string; name: string }) =>
+      cancelDownload(download, serviceHub),
+    [serviceHub]
   )
 
   const panelItems = useMemo<DownloadRowProps[]>(() => {

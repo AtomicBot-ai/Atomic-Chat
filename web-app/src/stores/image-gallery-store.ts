@@ -18,11 +18,14 @@ type ImageGalleryState = {
   selectedId: string | null
   /** Multi-selection for delete; always contains `selectedId` when non-empty. */
   selectedIds: string[]
+  /** Live follows the running job/latest output; gallery is a deliberate selection. */
+  viewerMode: 'live' | 'gallery'
+  selectLive: () => void
 
   /** Load the first page, replacing whatever is shown. */
   loadInitial: () => Promise<void>
   loadMore: () => Promise<void>
-  /** Put freshly generated images at the top and select the first one. */
+  /** Prepend outputs, selecting the first only when following live generation. */
   prepend: (items: GalleryImageItem[]) => void
   /** Drop items from the list (after a delete) and move the selection off them. */
   remove: (ids: string[]) => void
@@ -45,6 +48,7 @@ const initial = {
   initialized: false,
   selectedId: null as string | null,
   selectedIds: [] as string[],
+  viewerMode: 'live' as const,
 }
 
 export const useImageGalleryStore = create<ImageGalleryState>()((set, get) => ({
@@ -100,12 +104,15 @@ export const useImageGalleryStore = create<ImageGalleryState>()((set, get) => ({
     set((state) => {
       const incoming = new Set(fresh.map((item) => item.id))
       const rest = state.items.filter((item) => !incoming.has(item.id))
+      const preserveSelection =
+        state.viewerMode === 'gallery' &&
+        state.items.some((item) => item.id === state.selectedId)
       return {
         items: [...fresh, ...rest],
         total: state.total + fresh.length - (state.items.length - rest.length),
         initialized: true,
-        selectedId: fresh[0].id,
-        selectedIds: [fresh[0].id],
+        selectedId: preserveSelection ? state.selectedId : fresh[0].id,
+        selectedIds: preserveSelection ? state.selectedIds : [fresh[0].id],
       }
     })
   },
@@ -131,7 +138,14 @@ export const useImageGalleryStore = create<ImageGalleryState>()((set, get) => ({
     })
   },
 
-  select: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
+  selectLive: () => set({ viewerMode: 'live', selectedIds: [] }),
+
+  select: (id) =>
+    set({
+      viewerMode: 'gallery',
+      selectedId: id,
+      selectedIds: id ? [id] : [],
+    }),
 
   toggleSelect: (id, { shift, meta }) => {
     const { items, selectedId, selectedIds } = get()
@@ -141,7 +155,10 @@ export const useImageGalleryStore = create<ImageGalleryState>()((set, get) => ({
       if (from >= 0 && to >= 0) {
         const [lo, hi] = from < to ? [from, to] : [to, from]
         const range = items.slice(lo, hi + 1).map((item) => item.id)
-        set({ selectedIds: [...new Set([...selectedIds, ...range])] })
+        set({
+          viewerMode: 'gallery',
+          selectedIds: [...new Set([...selectedIds, ...range])],
+        })
         return
       }
     }
@@ -150,12 +167,13 @@ export const useImageGalleryStore = create<ImageGalleryState>()((set, get) => ({
         ? selectedIds.filter((entry) => entry !== id)
         : [...selectedIds, id]
       set({
+        viewerMode: 'gallery',
         selectedIds: next,
         selectedId: next.includes(selectedId ?? '') ? selectedId : (next[0] ?? null),
       })
       return
     }
-    set({ selectedId: id, selectedIds: [id] })
+    set({ viewerMode: 'gallery', selectedId: id, selectedIds: [id] })
   },
 
   step: (delta) => {
@@ -167,7 +185,7 @@ export const useImageGalleryStore = create<ImageGalleryState>()((set, get) => ({
       items.length - 1
     )
     const id = items[next].id
-    set({ selectedId: id, selectedIds: [id] })
+    set({ viewerMode: 'gallery', selectedId: id, selectedIds: [id] })
   },
 
   reset: () => set({ ...initial }),

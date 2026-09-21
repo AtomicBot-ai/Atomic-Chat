@@ -34,14 +34,25 @@ export type DiffusionFamilyId =
   | 'z-image'
   | 'flux.2-klein'
   | 'flux.1'
+  | 'flux.1-uncensored'
+  | 'flux.1-abliterated'
+  | 'flux.1-nsfw-realism'
+  | 'flux.1-krea'
+  | 'krea-2-turbo'
   | 'qwen-image'
+  | 'qwen-image-2.1'
   | 'wan2.2-ti2v-5b'
   | 'ltx-2'
 
 export type DiffusionModality = 'image' | 'video'
 
 /** Text-encoder slot, i.e. the sd-cli flag the file is passed under. */
-export type DiffusionTextEncoderField = 'llm' | 'qwen2vl' | 'clip_l' | 't5xxl'
+export type DiffusionTextEncoderField =
+  | 'llm'
+  | 'llm_vision'
+  | 'qwen2vl'
+  | 'clip_l'
+  | 't5xxl'
 
 /**
  * Resolved on-disk files for one checkpoint, handed to `load_diffusion_model`.
@@ -55,6 +66,8 @@ export type DiffusionModelFiles = {
   clipL?: string
   t5xxl?: string
   llm?: string
+  /** Qwen/other VLM vision projector, passed to sd.cpp as `--llm_vision`. */
+  llmVision?: string
   qwen2vl?: string
 }
 
@@ -114,7 +127,12 @@ export type DiffusionEngineInstall =
       dir: string
     }
 
-export type DiffusionModelState = 'unloaded' | 'loading' | 'loaded' | 'unloading' | 'failed'
+export type DiffusionModelState =
+  | 'unloaded'
+  | 'loading'
+  | 'loaded'
+  | 'unloading'
+  | 'failed'
 
 export type LoadedDiffusionModel = {
   modelId: string
@@ -134,6 +152,7 @@ export type LoadedDiffusionModel = {
 /** Native error codes, SCREAMING_SNAKE from the plugin. */
 export type NativeDiffusionErrorCode =
   | 'ENGINE_MISSING'
+  | 'ENGINE_UPDATE_REQUIRED'
   | 'ENGINE_INSTALL_FAILED'
   | 'ENGINE_CRASHED'
   | 'MODEL_MISSING'
@@ -146,6 +165,7 @@ export type NativeDiffusionErrorCode =
   | 'UNSUPPORTED_WORKFLOW'
   | 'INVALID_DIMENSIONS'
   | 'INVALID_REQUEST'
+  | 'INVALID_OUTPUT'
   | 'JOB_BUSY'
   | 'JOB_NOT_FOUND'
   | 'QUEUE_FULL'
@@ -243,9 +263,20 @@ export type ImageGenerateRequest = {
   strength?: number
 }
 
-export type ImageJobState = 'queued' | 'generating' | 'completed' | 'failed' | 'cancelled'
+export type ImageJobState =
+  | 'queued'
+  | 'generating'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
 
-export type ImageJobPhase = 'queued' | 'encoding' | 'sampling' | 'decoding' | 'saving'
+export type ImageJobPhase =
+  | 'queued'
+  | 'encoding'
+  | 'sampling'
+  | 'decoding'
+  | 'postprocessing'
+  | 'saving'
 
 export type ImageJobProgress = {
   phase: ImageJobPhase
@@ -442,7 +473,9 @@ export interface DiffusionService {
    * without `cancelGenerating` is stopped by killing the server after a short
    * grace period; the next `generate` respawns it transparently.
    */
-  cancelJob(jobId: string): Promise<{ cancelled: boolean; serverStopped: boolean }>
+  cancelJob(
+    jobId: string
+  ): Promise<{ cancelled: boolean; serverStopped: boolean }>
 
   // --- gallery -------------------------------------------------------------
   listGallery(options: GalleryListOptions): Promise<GalleryPage>

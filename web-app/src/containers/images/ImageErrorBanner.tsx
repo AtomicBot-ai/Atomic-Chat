@@ -24,8 +24,8 @@ type ImageErrorBannerProps = {
  * Routes through `describeDiffusionError`, so every code gets a title, a
  * body and the action that actually fixes it — OOM offers a smaller size and
  * a smaller quant, a missing engine offers Install — instead of a toast with
- * the raw message. The message is still shown underneath for the cases the
- * copy cannot anticipate.
+ * the raw message. Technical details stay in logs; the main surface only
+ * explains the recovery.
  */
 export const ImageErrorBanner = memo(function ImageErrorBanner({
   error,
@@ -49,20 +49,6 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm font-medium">{t(described.titleKey)}</p>
         <p className="text-xs text-muted-foreground">{t(described.bodyKey)}</p>
-        {(error.message || error.details) && (
-          // Capped: a server reply can run to many lines, and the banner
-          // takes its height from the canvas below it. The details are what
-          // the engine printed — often the only place the real reason is.
-          <div
-            className="max-h-24 space-y-1 overflow-y-auto font-mono text-[11px] text-muted-foreground/80"
-            data-testid="image-error-text"
-          >
-            {error.message && <p className="break-words">{error.message}</p>}
-            {error.details && (
-              <p className="whitespace-pre-wrap break-words">{error.details}</p>
-            )}
-          </div>
-        )}
         {(described.action || described.secondaryAction) && (
           <div className="flex flex-wrap gap-2 pt-1">
             {described.action && (

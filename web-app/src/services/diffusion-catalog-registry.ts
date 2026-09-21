@@ -46,6 +46,15 @@ const CACHE_TS_KEY = 'atomic_diffusion_catalog_cache_ts_v1'
 
 const FETCH_TIMEOUT_MS = 5000
 
+/**
+ * Qwen Image 2.1 can render at 2048, but using that as its load-time default
+ * makes a model switch silently replace the form's 1024px draft with a
+ * four-times-larger request. Keep 2048 available in the range, while making
+ * the default safe for interactive generation. Normalize remote/cache data
+ * too so clients are not dependent on the catalog refresh cadence.
+ */
+const QWEN_IMAGE_2_1_DEFAULT_DIM = 1024
+
 /** Catalog engine ids (manifest vocabulary; `sdcpp` maps to the `sd-cpp` engine). */
 export type DiffusionCatalogEngine = 'sdcpp' | 'diffusers'
 
@@ -126,7 +135,13 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'z-image',
   'flux.2-klein',
   'flux.1',
+  'flux.1-uncensored',
+  'flux.1-abliterated',
+  'flux.1-nsfw-realism',
+  'flux.1-krea',
+  'krea-2-turbo',
   'qwen-image',
+  'qwen-image-2.1',
   'wan2.2-ti2v-5b',
   'ltx-2',
 ] as const
@@ -135,6 +150,7 @@ const MODALITIES: readonly DiffusionModality[] = ['image', 'video']
 const ENGINES: readonly DiffusionCatalogEngine[] = ['sdcpp', 'diffusers']
 const TEXT_ENCODER_FIELDS: readonly DiffusionTextEncoderField[] = [
   'llm',
+  'llm_vision',
   'qwen2vl',
   'clip_l',
   't5xxl',
@@ -144,8 +160,8 @@ const WORKFLOWS: readonly ImageWorkflowId[] = IMAGE_WORKFLOW_IDS
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const QUANT_ID_RE = /^[a-z0-9_]+$/
 const QUANT_LABEL_RE = /^[A-Z0-9_]+$/
-/** A transformer is one flat GGUF: no directories, no other extension. */
-export const QUANT_FILENAME_RE = /^[A-Za-z0-9._-]+\.gguf$/
+/** Transformer paths may include safe repository folders, but must end in GGUF. */
+export const QUANT_FILENAME_RE = /^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.gguf$/
 /** Side files may live in a repo subfolder, but never climb out of it. */
 export const SIDE_FILENAME_RE = /^[A-Za-z0-9._/-]+\.(gguf|safetensors)$/
 const SHA256_RE = /^[0-9a-f]{64}$/
@@ -178,12 +194,20 @@ export const isSafeSideFilename = (value: string): boolean =>
   SIDE_FILENAME_RE.test(value) &&
   value.split('/').every((segment) => segment.length > 0 && segment !== '..')
 
+export const isSafeQuantFilename = (value: string): boolean =>
+  QUANT_FILENAME_RE.test(value) &&
+  value
+    .split('/')
+    .every(
+      (segment) => segment.length > 0 && segment !== '.' && segment !== '..'
+    )
+
 const sanitizeQuant = (raw: unknown): DiffusionCatalogQuant | null => {
   if (!isRecord(raw)) return null
   if (typeof raw.id !== 'string' || !QUANT_ID_RE.test(raw.id)) return null
   if (typeof raw.label !== 'string' || !QUANT_LABEL_RE.test(raw.label))
     return null
-  if (typeof raw.filename !== 'string' || !QUANT_FILENAME_RE.test(raw.filename))
+  if (typeof raw.filename !== 'string' || !isSafeQuantFilename(raw.filename))
     return null
   if (!isPositiveInt(raw.bytes)) return null
   const sha256 = optionalSha256(raw.sha256)
@@ -332,6 +356,15 @@ export const sanitizeDiffusionFamily = (
   const capabilities = sanitizeCapabilities(raw.capabilities)
   if (!defaults || !ranges || !capabilities) return null
 
+  const normalizedDefaults =
+    raw.id === 'qwen-image-2.1'
+      ? {
+          ...defaults,
+          width: QWEN_IMAGE_2_1_DEFAULT_DIM,
+          height: QWEN_IMAGE_2_1_DEFAULT_DIM,
+        }
+      : defaults
+
   const developer = optionalString(raw.developer)
   const description = optionalString(raw.description)
   const license = optionalString(raw.license)
@@ -349,7 +382,7 @@ export const sanitizeDiffusionFamily = (
     ...(vae ? { vae } : {}),
     ...(raw.vae_format === 'flux2' ? { vae_format: 'flux2' as const } : {}),
     text_encoders: textEncoders,
-    defaults,
+    defaults: normalizedDefaults,
     ranges,
     capabilities,
   }
@@ -357,7 +390,11 @@ export const sanitizeDiffusionFamily = (
 
 const isCatalogShape = (
   value: unknown
-): value is { schema_version: number; updated_at: string; families: unknown[] } =>
+): value is {
+  schema_version: number
+  updated_at: string
+  families: unknown[]
+} =>
   isRecord(value) &&
   typeof value.schema_version === 'number' &&
   typeof value.updated_at === 'string' &&
@@ -506,7 +543,10 @@ const fetchCatalog = async (
  * Hard timeout wrapper. Tauri's HTTP plugin does not always honour
  * `AbortSignal`, so we race against a timer to guarantee resolution.
  */
-const withHardTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+const withHardTimeout = <T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () =>
@@ -540,6 +580,24 @@ export const getBaselineDiffusionCatalog = (): DiffusionCatalog =>
   parseDiffusionCatalog(BASELINE_DIFFUSION_CATALOG)
 
 /**
+ * A release may teach the client a new family before the remote manifest PR is
+ * published. Keep the remote definition for every id it knows, then append
+ * only bundled ids it does not know yet. Applied solely to the production URL
+ * so tests, previews and explicit catalog overrides remain exact.
+ */
+export const mergeBundledDiffusionFamilies = (
+  catalog: DiffusionCatalog
+): DiffusionCatalog => {
+  const known = new Set(catalog.families.map((family) => family.id))
+  const bundled = getBaselineDiffusionCatalog().families.filter(
+    (family) => !known.has(family.id)
+  )
+  return bundled.length === 0
+    ? catalog
+    : { ...catalog, families: [...catalog.families, ...bundled] }
+}
+
+/**
  * Resolve the catalog using the priority chain:
  *
  *   1. Fresh cache (when not forcing).
@@ -560,7 +618,11 @@ export const fetchDiffusionCatalog = async (
 
   const cached = getCachedDiffusionCatalog()
   if (!force && isDiffusionCatalogCacheFresh(cached) && cached) {
-    return { catalog: cached.catalog, source: 'cache', fetchedAt: cached.fetchedAt }
+    return {
+      catalog: cached.catalog,
+      source: 'cache',
+      fetchedAt: cached.fetchedAt,
+    }
   }
 
   const controller = new AbortController()
@@ -571,10 +633,14 @@ export const fetchDiffusionCatalog = async (
     console.info(
       `[diffusion-catalog-registry] Fetching ${fetchUrl} (timeout ${timeoutMs}ms)`
     )
-    const catalog = await withHardTimeout(
+    const fetchedCatalog = await withHardTimeout(
       fetchCatalog(fetchUrl, controller.signal),
       timeoutMs
     )
+    const catalog =
+      url === DIFFUSION_CATALOG_URL
+        ? mergeBundledDiffusionFamilies(fetchedCatalog)
+        : fetchedCatalog
     const fetchedAt = Date.now()
     writeCache(catalog, fetchedAt)
     console.info(

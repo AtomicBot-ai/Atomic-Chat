@@ -1,19 +1,24 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Toaster } from 'sonner'
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 
 import { useAppState } from '@/hooks/useAppState'
+import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import i18n from '@/i18n/setup'
+import { modelLoadStageKey } from '@/lib/inference-status'
+import { ToasterProvider } from '@/providers/ToasterProvider'
+import { modelLoadStages } from '@/test/model-load-stages'
 import { cancelModelLoad } from '@/utils/switchModel'
 import { LOADED_SNACKBAR_MS, ModelLoadSnackbar } from '../ModelLoadSnackbar'
-
-vi.mock('@/i18n/setup', () => ({
-  default: {
-    t: (key: string, options?: Record<string, string>) =>
-      options?.model ? `${key}:${options.model}` : key,
-  },
-}))
 
 vi.mock('@/utils/switchModel', () => ({
   cancelModelLoad: vi.fn(),
@@ -38,10 +43,8 @@ const seed = (
   })
 }
 
-const startLoad = (kind: 'start' | 'restart' = 'start') =>
-  act(() =>
-    useAppState.getState().updateLoadingModel(true, { modelId: MODEL, kind })
-  )
+const startLoad = (kind: 'start' | 'restart' = 'start', modelId = MODEL) =>
+  act(() => useAppState.getState().updateLoadingModel(true, { modelId, kind }))
 
 const finishLoad = () =>
   act(() => {
@@ -49,12 +52,12 @@ const finishLoad = () =>
     useAppState.getState().updateLoadingModel(false)
   })
 
-const snackbar = () => screen.queryByTestId('model-load-snackbar')
+const snackbar = () => document.querySelector('.model-load-snackbar')
 
 const renderSnackbar = () =>
   render(
     <>
-      <Toaster />
+      <ToasterProvider />
       <ModelLoadSnackbar />
     </>
   )
@@ -62,6 +65,10 @@ const renderSnackbar = () =>
 describe('ModelLoadSnackbar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    i18n.changeLanguage('en')
+    vi.mocked(cancelModelLoad).mockImplementation(async () => {
+      useAppState.getState().setLoadingModelCancelling(true)
+    })
     act(() => {
       useModelLoad.setState({
         modelLoadError: undefined,
@@ -78,48 +85,82 @@ describe('ModelLoadSnackbar', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    document.documentElement.style.removeProperty('--font-size-base')
   })
 
-  it('names the model, the step it is on, and offers a Cancel', async () => {
-    renderSnackbar()
-    startLoad()
-    act(() =>
-      useAppState
-        .getState()
-        .setLoadingModelProgress({ kind: 'loadingWeights', cachedFraction: 1 })
-    )
-
-    await waitFor(() =>
-      expect(snackbar()).toHaveAttribute('data-face', 'loading')
-    )
-    expect(
-      screen.getByText('common:inferenceStatus.starting:Qwen3 8B')
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('common:modelLoad.stage.loadingCachedWeights')
-    ).toBeInTheDocument()
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'common:modelLoad.cancel' })
-    )
-    expect(cancelModelLoad).toHaveBeenCalled()
-  })
-
-  it('tells a cold read off the disk apart from a load from cache', async () => {
-    renderSnackbar()
-    startLoad()
-    act(() =>
-      useAppState
-        .getState()
-        .setLoadingModelProgress({
+  it.each([
+    ['start', '18px'],
+    ['start', '20px'],
+    ['restart', '18px'],
+    ['restart', '20px'],
+  ] as const)(
+    'shows concise cached %s copy at font size %s',
+    async (kind, fontSize) => {
+      document.documentElement.style.setProperty('--font-size-base', fontSize)
+      renderSnackbar()
+      startLoad(kind, 'org/' + 'VeryLongModelName'.repeat(20) + '-Q4_K_M.gguf')
+      act(() =>
+        useAppState.getState().setLoadingModelProgress({
           kind: 'loadingWeights',
-          cachedFraction: 0.1,
+          cachedFraction: 1,
         })
-    )
+      )
 
-    expect(
-      await screen.findByText('common:modelLoad.stage.readingWeightsFromDisk')
-    ).toBeInTheDocument()
+      await waitFor(() =>
+        expect(snackbar()).toHaveAttribute('data-type', 'loading')
+      )
+      expect(
+        screen.getByText('Starting Model', { exact: true })
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Loading into memory', { exact: true })
+      ).toBeInTheDocument()
+
+      expect(snackbar()).toHaveTextContent(
+        /^Starting ModelLoading into memoryCancel$/
+      )
+      expect(snackbar()?.querySelectorAll('.sonner-spinner')).toHaveLength(1)
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Cancel', exact: true })
+      )
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: 'Cancel' })
+        ).not.toBeInTheDocument()
+      )
+    }
+  )
+
+  describe.each(['start', 'restart'] as const)('%s stages', (kind) => {
+    it.each(modelLoadStages)(
+      'keeps stable visible copy and real diagnostic progress for $stage',
+      async ({ stage, progress }) => {
+        renderSnackbar()
+        const { result } = renderHook(() => useInferenceStatus())
+        startLoad(kind)
+        act(() => useAppState.getState().setLoadingModelProgress(progress))
+
+        await waitFor(() =>
+          expect(snackbar()).toHaveAttribute('data-type', 'loading')
+        )
+        expect(
+          screen.getByText('Starting Model', { exact: true })
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText('Loading into memory', { exact: true })
+        ).toBeInTheDocument()
+        expect(snackbar()).toHaveTextContent(
+          /^Starting ModelLoading into memoryCancel$/
+        )
+        expect(useAppState.getState().loadingModelProgress).toEqual(progress)
+        expect(result.current).toMatchObject({
+          phase: kind === 'start' ? 'starting' : 'restarting',
+          progress,
+        })
+        expect(modelLoadStageKey(result.current.progress!)).toBe(stage)
+      }
+    )
   })
 
   it('stops offering Cancel twice once a cancel is under way', async () => {
@@ -127,9 +168,11 @@ describe('ModelLoadSnackbar', () => {
     startLoad()
     act(() => useAppState.getState().setLoadingModelCancelling(true))
 
-    expect(
-      await screen.findByRole('button', { name: 'common:modelLoad.cancelling' })
-    ).toBeDisabled()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Cancel' })
+      ).not.toBeInTheDocument()
+    )
   })
 
   it('turns into "loaded" when the model is up, then clears itself', async () => {
@@ -141,14 +184,40 @@ describe('ModelLoadSnackbar', () => {
     finishLoad()
 
     await waitFor(() =>
-      expect(snackbar()).toHaveAttribute('data-face', 'loaded')
+      expect(snackbar()).toHaveAttribute('data-type', 'success')
     )
+    expect(screen.getByText('Model ready', { exact: true })).toBeInTheDocument()
     expect(
-      screen.getByText('common:inferenceStatus.ready:Qwen3 8B')
+      screen.getByText('Loaded into memory', { exact: true })
     ).toBeInTheDocument()
+    expect(snackbar()).not.toHaveTextContent(MODEL)
+    expect(
+      screen.queryByRole('button', { name: 'Cancel' })
+    ).not.toBeInTheDocument()
+    expect(snackbar()?.querySelector('.sonner-spinner')).toBeNull()
 
-    act(() => vi.advanceTimersByTime(LOADED_SNACKBAR_MS + 1000))
+    act(() => vi.advanceTimersByTime(LOADED_SNACKBAR_MS - 100))
+    expect(snackbar()).toBeInTheDocument()
+
+    // Cross the deadline and allow Sonner's exit animation to finish.
+    act(() => vi.advanceTimersByTime(1100))
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
+  })
+
+  it('dismisses the ready state and permits the next load', async () => {
+    renderSnackbar()
+    startLoad()
+    await waitFor(() => expect(snackbar()).toBeInTheDocument())
+    finishLoad()
+    await screen.findByText('Model ready')
+
+    act(() => toast.dismiss())
+    await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
+    startLoad('restart')
+    await waitFor(() =>
+      expect(snackbar()).toHaveAttribute('data-type', 'loading')
+    )
+    expect(screen.getByText('Starting Model')).toBeInTheDocument()
   })
 
   it('stays closed for the rest of a load the user dismissed', async () => {
@@ -156,9 +225,7 @@ describe('ModelLoadSnackbar', () => {
     startLoad()
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'common:modelLoad.dismiss' })
-    )
+    act(() => toast.dismiss())
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
 
     act(() =>
@@ -177,7 +244,7 @@ describe('ModelLoadSnackbar', () => {
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
 
     // A failure (or a cancel) leaves nothing in memory; the failure has its
-    // own toast and the strip above the composer.
+    // own standard toast.
     act(() => {
       useModelLoad.setState({
         modelLoadError: { message: 'boom' } as never,
@@ -193,18 +260,14 @@ describe('ModelLoadSnackbar', () => {
     renderSnackbar()
     startLoad()
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
-    fireEvent.click(
-      screen.getByRole('button', { name: 'common:modelLoad.dismiss' })
-    )
+    act(() => toast.dismiss())
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
     act(() => useAppState.getState().updateLoadingModel(false))
 
     startLoad('restart')
 
     await waitFor(() => expect(snackbar()).toBeInTheDocument())
-    expect(
-      screen.getByText('common:inferenceStatus.restarting:Qwen3 8B')
-    ).toBeInTheDocument()
+    expect(screen.getByText('Starting Model')).toBeInTheDocument()
   })
 
   it('says nothing about a remote provider', async () => {

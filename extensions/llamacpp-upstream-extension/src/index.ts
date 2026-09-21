@@ -520,6 +520,13 @@ export type OptimalBackendCacheRecord =
  */
 export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 
+/// How long a model load waits for a backend configuration pass that is
+/// still running before going ahead with what is on disk. The pass's local
+/// phase (bundled build, disk recovery) finishes in moments; everything after
+/// it is catalog work routed through the Tauri HTTP layer, where a stalled
+/// connection can leave the promise pending forever (see `withTimeout`).
+export const BACKEND_CONFIG_LOAD_WAIT_MS = 20_000
+
 /// Smallest GPU worth moving a host off the CPU build for. Below this the
 /// KV cache of even the lightest recommended model does not fit beside the
 /// weights, and the GPU backend would spill straight back to RAM.
@@ -4699,28 +4706,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
         logger.info(
           `Waiting for backend configuration to complete before loading model "${modelId}"...`
         )
-        await this.configureBackendsPromise
+        await this.waitForBackendConfiguration(modelId)
       } else {
-        // ATO-233: also wait when the backend string is concrete but the exe
-        // is NOT locally installed yet. configureBackends may swap version_backend
-        // to an already-installed build (e.g. a bundled CPU backend after an
-        // app update that changed the bundled tag, or after a local compatible
-        // backend was found during startup). Without this check the load
-        // races ahead with a stale tag that is guaranteed to 404, causing the
-        // spinner to hang until resolveBackendFallback finishes.
-        const [vbVer, vbBack] = vb.split('/')
-        const vbIsInstalled =
-          !!vbVer?.trim() &&
-          !!vbBack?.trim() &&
-          (await isBackendInstalled(vbBack.trim(), vbVer.trim()))
+        // Reconcile a stale persisted tag from disk before depending on the
+        // catalog pass. A usable same-variant build needs no network wait.
+        const vbIsInstalled = await this.reconcileInstalledBackendForLoad()
         if (!vbIsInstalled) {
           logger.info(
             `Backend ${vb} not installed locally; waiting for configureBackends before loading model "${modelId}"`
           )
-          await this.configureBackendsPromise
+          const configured = await this.waitForBackendConfiguration(modelId)
+          if (!configured && !(await this.reconcileInstalledBackendForLoad())) {
+            this.throwIfLoadCancelled(modelId)
+            throw new Error(
+              `Backend configuration timed out after ${BACKEND_CONFIG_LOAD_WAIT_MS / 1000}s: ` +
+                `${this.config.version_backend || vb} is not installed and no compatible local backend is available. ` +
+                'Open Settings → Llama.cpp — Version & Backend to install or select a backend, then retry loading the model.'
+            )
+          }
         } else {
           logger.info(
-            `Backend already configured (${vb}), loading model "${modelId}" without waiting for full backend list`
+            `Backend already configured (${this.config.version_backend}), loading model "${modelId}" without waiting for full backend list`
           )
         }
       }
@@ -4765,6 +4771,53 @@ export default class llamacpp_upstream_extension extends AIEngine {
     } finally {
       this.loadingModels.delete(modelId)
     }
+  }
+
+  /** Resolve only missing selections, keeping the provider/platform/GPU variant. */
+  private async reconcileInstalledBackendForLoad(): Promise<boolean> {
+    const selected = stripBom(this.config.version_backend || '')
+    if (!isConcreteVersionBackend(selected)) return false
+    const [version, backend] = selected.split('/')
+    if (await isBackendInstalled(backend, version)) return true
+
+    const installed = await findCompatibleInstalledBackend(backend)
+    if (
+      !installed ||
+      !(await isBackendInstalled(installed.backend, installed.version))
+    ) {
+      return false
+    }
+    // Configuration or a user selection may have changed while disk was read.
+    if (stripBom(this.config.version_backend || '') !== selected) return false
+
+    const recovered = `${installed.version}/${installed.backend}`
+    logger.info(
+      `Recovering missing backend ${selected} from installed ${recovered} before loading`
+    )
+    await this.persistVersionBackend(recovered)
+    return true
+  }
+
+  /**
+   * Bound a load's dependency on the background catalog/configuration pass.
+   * On timeout, concrete selections must be recovered from disk or fail;
+   * starting another network download here could leave the load pending again.
+   * Unresolved sentinels retain the resolution path in `performLoad`.
+   */
+  private async waitForBackendConfiguration(modelId: string): Promise<boolean> {
+    const pending = this.configureBackendsPromise
+    if (!pending) return true
+    const outcome = await this.withTimeout(
+      pending.then(() => 'configured' as const),
+      BACKEND_CONFIG_LOAD_WAIT_MS,
+      'timed-out' as const
+    )
+    if (outcome === 'timed-out') {
+      logger.warn(
+        `Backend configuration has not finished after ${BACKEND_CONFIG_LOAD_WAIT_MS}ms; checking the backend on disk for model "${modelId}" (${this.config.version_backend || 'none'})`
+      )
+    }
+    return outcome === 'configured'
   }
 
   /// Backend the last successful load actually launched, as

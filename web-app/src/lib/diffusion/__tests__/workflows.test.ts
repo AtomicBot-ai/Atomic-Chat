@@ -59,7 +59,7 @@ describe('image workflows', () => {
 describe('workflowsForFamily', () => {
   // Must match `session::workflows_for_family` in the diffusion plugin: the
   // plugin is what accepts or rejects the job.
-  it('gives every image family the img2img workflows and only Klein the reference ones', async () => {
+  it('matches the workflows supported by each image architecture', async () => {
     const { familySupportsWorkflow, workflowsForFamily } = await import('../workflows')
     for (const family of ['z-image', 'flux.1', 'qwen-image']) {
       expect(workflowsForFamily(family)).toEqual([
@@ -72,6 +72,15 @@ describe('workflowsForFamily', () => {
     }
     expect(workflowsForFamily('flux.2-klein')).toHaveLength(7)
     expect(familySupportsWorkflow('flux.2-klein', 'edit')).toBe(true)
+    expect(workflowsForFamily('qwen-image-2.1')).toEqual([
+      'create',
+      'reference',
+      'edit',
+    ])
+    expect(familySupportsWorkflow('qwen-image-2.1', 'edit')).toBe(true)
+    expect(familySupportsWorkflow('qwen-image-2.1', 'transform')).toBe(false)
+    expect(workflowsForFamily('krea-2-turbo')).toEqual(['create'])
+    expect(familySupportsWorkflow('krea-2-turbo', 'transform')).toBe(false)
     expect(familySupportsWorkflow('z-image', 'edit')).toBe(false)
     expect(workflowsForFamily('wan2.2-ti2v-5b')).toEqual(['create'])
   })

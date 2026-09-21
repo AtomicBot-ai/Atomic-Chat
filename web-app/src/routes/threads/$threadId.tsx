@@ -6,7 +6,10 @@ import {
   agentProviderBlockReason,
   isAgentLocalProvider,
 } from '@/lib/agent-provider'
-import { buildAgentReasoningRequest } from '@/lib/reasoning-effort'
+import {
+  buildAgentReasoningRequest,
+  canDisableReasoning,
+} from '@/lib/reasoning-effort'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -99,11 +102,14 @@ import {
   OUT_OF_CONTEXT_SIZE,
   MODEL_ACCESS_DENIED_TITLE,
   MODEL_ACCESS_DENIED_MESSAGE,
+  AUTHENTICATION_FAILED_TITLE,
+  AUTHENTICATION_FAILED_MESSAGE,
   CONTEXT_OVERFLOW_TITLE,
   CONTEXT_OVERFLOW_MESSAGE,
   OUT_OF_MEMORY_TITLE,
   OUT_OF_MEMORY_MESSAGE,
   isModelAccessError,
+  isAuthenticationError,
   isContextLimitError,
   isOutOfMemoryError,
 } from '@/utils/error'
@@ -143,7 +149,7 @@ import {
 import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { useMCPServers } from '@/hooks/useMCPServers'
-import { findWebSearchServer } from '@/lib/web-search'
+import { findWebSearchServer, isWebSearchEnabled } from '@/lib/web-search'
 import type {
   AgentAttachment as AgentIpcAttachment,
   AgentEvent,
@@ -1122,7 +1128,9 @@ function ThreadDetail() {
       const reasoning = buildAgentReasoningRequest(
         reasoningBudget,
         disableReasoning,
-        selectedModel.reasoning
+        selectedModel.reasoning,
+        canDisableReasoning(selectedProvider, selectedModel.reasoning),
+        selectedProvider
       )
 
       // Assistant sampling, exactly as the chat transport resolves it; the
@@ -1130,7 +1138,8 @@ function ThreadDetail() {
       const sampling = getSamplingParamsForThread(threadId)
       // The composer's globe drives the same web-search state for both
       // engines: MCP server activation for the chat transport, this per-turn
-      // flag for the agent's built-in web tools. No configured server means
+      // flag for the agent's built-in web tools. Require discovered search
+      // tools so a failed startup cannot promise web access. No server means
       // no globe to turn it off with, so web access stays off — an existing
       // chat setup without a search server never made web requests.
       const webSearchServer = findWebSearchServer(
@@ -1159,7 +1168,12 @@ function ThreadDetail() {
             assistant_instructions: systemMessage,
             sampling: sampling.params,
             sampling_overridden: sampling.overridden,
-            web_search: Boolean(webSearchServer?.config.active),
+            web_search: isWebSearchEnabled(
+              webSearchServer,
+              useAppState.getState().tools,
+              useToolAvailable.getState().getDisabledToolsForThread(threadId),
+              useToolAvailable.getState().getMutedServersForThread(threadId)
+            ),
             mcp_enabled: true,
             auto_approve_mcp: resolveMcpAutoApprove(threadId),
             disabled_mcp_tools: useToolAvailable
@@ -2049,12 +2063,17 @@ function ThreadDetail() {
                       const isContextError = isContextLimitError(activeError)
                       const isAccessError =
                         !isContextError && isModelAccessError(activeError)
+                      const isAuthError =
+                        !isContextError &&
+                        !isAccessError &&
+                        isAuthenticationError(activeError)
                       // ATO-197: a fatal Metal/compute failure (GPU OOM) surfaces
                       // as the opaque "Compute error" / the proxy's
                       // `insufficient_memory` envelope — show clear OOM guidance.
                       const isOomError =
                         !isContextError &&
                         !isAccessError &&
+                        !isAuthError &&
                         isOutOfMemoryError(activeError)
                       // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
                       // "... but MAX_KV_SIZE is N") with a clear, actionable message
@@ -2063,16 +2082,20 @@ function ThreadDetail() {
                         ? CONTEXT_OVERFLOW_TITLE
                         : isAccessError
                           ? MODEL_ACCESS_DENIED_TITLE
-                          : isOomError
-                            ? OUT_OF_MEMORY_TITLE
-                            : 'Error generating response'
+                          : isAuthError
+                            ? AUTHENTICATION_FAILED_TITLE
+                            : isOomError
+                              ? OUT_OF_MEMORY_TITLE
+                              : 'Error generating response'
                       const body = isContextError
                         ? CONTEXT_OVERFLOW_MESSAGE
                         : isAccessError
                           ? MODEL_ACCESS_DENIED_MESSAGE
-                          : isOomError
-                            ? OUT_OF_MEMORY_MESSAGE
-                            : rawMessage
+                          : isAuthError
+                            ? AUTHENTICATION_FAILED_MESSAGE
+                            : isOomError
+                              ? OUT_OF_MEMORY_MESSAGE
+                              : rawMessage
                       return (
                         <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                           <div className="flex items-start gap-3">

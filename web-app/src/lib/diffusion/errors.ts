@@ -13,6 +13,7 @@ import type { NativeDiffusionErrorCode } from '@/services/diffusion/types'
 export type DiffusionErrorAction =
   /** Open the setup dialog on the engine step. */
   | 'install'
+  | 'updateEngine'
   /** Open the setup dialog on the model step. */
   | 'download'
   /** Go to Settings → Media. */
@@ -40,8 +41,9 @@ const ROUTES: Record<
   [DiffusionErrorAction | null, DiffusionErrorAction | null]
 > = {
   ENGINE_MISSING: ['install', null],
+  ENGINE_UPDATE_REQUIRED: ['updateEngine', null],
   ENGINE_INSTALL_FAILED: ['install', null],
-  ENGINE_CRASHED: ['retry', 'openSettings'],
+  ENGINE_CRASHED: ['reduceSize', 'retry'],
   MODEL_MISSING: ['download', null],
   SIDE_FILE_MISSING: ['download', null],
   MODEL_LOAD_FAILED: ['retry', 'openSettings'],
@@ -52,6 +54,7 @@ const ROUTES: Record<
   UNSUPPORTED_WORKFLOW: [null, null],
   INVALID_DIMENSIONS: ['reduceSize', null],
   INVALID_REQUEST: [null, null],
+  INVALID_OUTPUT: ['retry', 'pickSmallerQuant'],
   JOB_BUSY: ['retry', null],
   JOB_NOT_FOUND: [null, null],
   QUEUE_FULL: ['retry', null],
@@ -94,15 +97,15 @@ export function toDiffusionError(error: unknown): {
   details?: string
 } {
   if (error && typeof error === 'object' && 'code' in error) {
-    const candidate = error as { code?: unknown; message?: unknown; details?: unknown }
-    if (
-      typeof candidate.code === 'string' &&
-      candidate.code in ROUTES
-    ) {
+    const candidate = error as {
+      code?: unknown
+      message?: unknown
+      details?: unknown
+    }
+    if (typeof candidate.code === 'string' && candidate.code in ROUTES) {
       return {
         code: candidate.code as NativeDiffusionErrorCode,
-        message:
-          typeof candidate.message === 'string' ? candidate.message : '',
+        message: typeof candidate.message === 'string' ? candidate.message : '',
         details:
           typeof candidate.details === 'string' ? candidate.details : undefined,
       }

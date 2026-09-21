@@ -17,6 +17,7 @@ type ImageFieldProps = {
   /** Something on the far right of the label row, e.g. the size readout. */
   trailing?: ReactNode
   className?: string
+  labelClassName?: string
   children: ReactNode
 }
 
@@ -31,6 +32,7 @@ export const ImageField = memo(function ImageField({
   hint,
   trailing,
   className,
+  labelClassName,
   children,
 }: ImageFieldProps) {
   return (
@@ -38,7 +40,10 @@ export const ImageField = memo(function ImageField({
       <div className="flex items-center gap-1">
         <label
           htmlFor={htmlFor}
-          className="text-xs font-medium text-muted-foreground"
+          className={cn(
+            'text-xs font-medium text-muted-foreground',
+            labelClassName
+          )}
         >
           {label}
         </label>

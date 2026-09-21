@@ -1,6 +1,5 @@
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
-import { InferenceServerStatusStrip } from '@/containers/InferenceServerStatus'
 import {
   cn,
   formatBytes,
@@ -62,9 +61,10 @@ import {
 } from '@/containers/ReplyModelGate'
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
+import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
-import type { ChatStatus } from 'ai'
+import { generateId, type ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
@@ -132,7 +132,7 @@ import {
 } from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
-import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { VisionModelDialog } from '@/containers/dialogs/VisionModelDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -152,10 +152,12 @@ import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
 import {
   filterAgentSkills,
+  containsAgentSkillInvocation,
   findAvailableAgentSkill,
   findAgentSkillSlashQuery,
   moveAgentSkillActiveIndex,
-  removeAgentSkillSlashQuery,
+  prependAgentSkillInvocation,
+  replaceAgentSkillSlashQuery,
   type AgentSkillSlashQuery,
 } from '@/containers/agentSkillSlash'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
@@ -167,6 +169,8 @@ import type { AgentSkill } from '@/services/agent/skills'
 
 type ChatInputProps = {
   className?: string
+  containerClassName?: string
+  minRows?: number
   showSpeedToken?: boolean
   model?: ThreadModel
   initialMessage?: boolean
@@ -183,6 +187,8 @@ type ChatInputProps = {
 
 const ChatInput = memo(function ChatInput({
   className,
+  containerClassName,
+  minRows = 2,
   initialMessage,
   preselectedAgentSkillName,
   projectId,
@@ -191,8 +197,9 @@ const ChatInput = memo(function ChatInput({
   chatStatus,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const agentSkillTokenRef = useRef<HTMLSpanElement>(null)
-  const [agentSkillTokenWidth, setAgentSkillTokenWidth] = useState(0)
+  const pendingAgentSkillCaretRef = useRef<number | null>(null)
+  const composerAnchorRef = useRef<HTMLDivElement>(null)
+  const [compactComposer, setCompactComposer] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
@@ -223,12 +230,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
-  // The connectors button can be unpinned from the toolbar for a quieter
-  // composer; the "+" menu keeps the switch and pins it back.
-  const connectorsPinned = useGeneralSetting((state) => state.connectorsPinned)
-  const setConnectorsPinned = useGeneralSetting(
-    (state) => state.setConnectorsPinned
-  )
   const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
@@ -242,6 +243,17 @@ const ChatInput = memo(function ChatInput({
   )
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  // Import completion refreshes the provider library without selecting or
+  // starting the new model. A compact primitive revision lets the queued-send
+  // effect below notice that its download has become an installed model.
+  const modelLibraryRevision = useModelProvider((state) =>
+    state.providers
+      .map(
+        (provider) =>
+          `${provider.provider}:${provider.models.map((model) => model.id).join(',')}`
+      )
+      .join('|')
+  )
 
   // Keys per-composer state (voice, workspace, approval mode). Composers use
   // a placeholder key until the real thread exists — the project composer its
@@ -306,8 +318,25 @@ const ChatInput = memo(function ChatInput({
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
 
   useLayoutEffect(() => {
-    setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
-  }, [selectedAgentSkill])
+    const caret = pendingAgentSkillCaretRef.current
+    if (caret === null) return
+    pendingAgentSkillCaretRef.current = null
+    textareaRef.current?.focus()
+    textareaRef.current?.setSelectionRange(caret, caret)
+  }, [prompt])
+
+  useLayoutEffect(() => {
+    const element = composerAnchorRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const update = (width: number) => setCompactComposer(width < 620)
+    update(element.getBoundingClientRect().width)
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (typeof width === 'number') update(width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!preselectedAgentSkillName) {
@@ -325,8 +354,18 @@ const ChatInput = memo(function ChatInput({
       preselectedAgentSkillName
     )
     preselectedAgentSkillAppliedRef.current = preselectedAgentSkillName
-    if (skill) setSelectedAgentSkill(skill)
-  }, [agentSkills, agentSkillsLoading, preselectedAgentSkillName])
+    if (!skill) return
+
+    setSelectedAgentSkill(skill)
+    const currentPrompt = usePrompt.getState().prompt
+    const next = prependAgentSkillInvocation(currentPrompt, skill.name)
+    if (next.value !== currentPrompt) setPrompt(next.value)
+  }, [
+    agentSkills,
+    agentSkillsLoading,
+    preselectedAgentSkillName,
+    setPrompt,
+  ])
 
   useEffect(() => {
     setAgentSkillActiveIndex(0)
@@ -638,12 +677,14 @@ const ChatInput = memo(function ChatInput({
   const transferAttachments = useChatAttachments(
     (state) => state.transferAttachments
   )
-  const { downloads, localDownloadingModels } = useDownloadStore(
+  const { downloads, localDownloadingModels, resumableDownloads } =
+    useDownloadStore(
     useShallow((state) => ({
       downloads: state.downloads,
       localDownloadingModels: state.localDownloadingModels,
+      resumableDownloads: state.resumableDownloads,
     }))
-  )
+    )
 
   useEffect(() => {
     attachmentsKeyRef.current = attachmentsKey
@@ -776,15 +817,16 @@ const ChatInput = memo(function ChatInput({
 
   const handleAgentSkillSelect = (skill: AgentSkill) => {
     if (!agentSkillSlashQuery) return
-    const next = removeAgentSkillSlashQuery(prompt, agentSkillSlashQuery)
+    const next = replaceAgentSkillSlashQuery(
+      prompt,
+      agentSkillSlashQuery,
+      skill.name
+    )
+    pendingAgentSkillCaretRef.current = next.cursor
     setPrompt(next.value)
     setSelectedAgentSkill(skill)
     setAgentSkillSlashQuery(null)
     setAgentSkillMenuOpen(false)
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus()
-      textareaRef.current?.setSelectionRange(next.cursor, next.cursor)
-    })
   }
 
   // Read the caret at the moment the microphone is pressed; dictated text is
@@ -1153,7 +1195,9 @@ const ChatInput = memo(function ChatInput({
           )
         }
 
-        useAgentMode.getState().transferThreadState(composerThreadKey, newThread.id)
+        useAgentMode
+          .getState()
+          .transferThreadState(composerThreadKey, newThread.id)
 
         useInitialMessage.getState().set(newThread.id, messagePayload)
 
@@ -1191,18 +1235,85 @@ const ChatInput = memo(function ChatInput({
   const sendMessageRef = useRef(handleSendMessage)
   sendMessageRef.current = handleSendMessage
 
-
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
+      const canRunFromRoot =
+        Boolean(initialMessage) &&
+        !projectId &&
+        !onSubmit &&
+        attachments.length === 0 &&
+        (resolution.outcome === 'download' ||
+          resolution.outcome === 'download_in_flight') &&
+        (resolution.downloadModelIds?.length ?? 0) > 0
+
+      if (canRunFromRoot) {
+        useDeferredFirstSend.getState().enqueue({
+          id: generateId(),
+          prompt: usePrompt.getState().prompt,
+          downloadModelIds: resolution.downloadModelIds!,
+          createdAt: Date.now(),
+        })
+        // Keep the fast path local while New Chat is still mounted. The root
+        // queue is its navigation-safe backup and takes over only if the user
+        // leaves this route before the download finishes.
+        setQueuedSend(resolution)
+        return
+      }
+      // Choosing a cloud key/subscription or importing a folder supersedes a
+      // previously armed first-download queue.
+      useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    []
+    [attachments.length, initialMessage, onSubmit, projectId]
   )
 
   const handleReplyGateDismissed = useCallback(() => {
+    useDeferredFirstSend.getState().clear()
     setQueuedSend(null)
     setReplyGateOpen(false)
+    useDeferredFirstSend.getState().clear()
   }, [])
+
+  // A download deliberately lands in the library without auto-starting: an
+  // import must not interrupt an unrelated active chat. A queued Send is the
+  // exception because it is explicit intent to use that exact first model.
+  // Once the imported id appears in the refreshed provider list, select and
+  // start it; the existing readiness effect below sends the preserved draft.
+  useEffect(() => {
+    const ids = queuedSend?.downloadModelIds ?? []
+    if (ids.length === 0 || selectedModel) return
+
+    const providers = useModelProvider.getState().providers
+    const imported = ids.some((id) =>
+      providers.some((provider) =>
+        provider.models.some(
+          (model) => model.id === id || model.id === id.replace(/\//g, '\\')
+        )
+      )
+    )
+    if (!imported) return
+
+    const resumed = tryAutoStart()
+    if (!resumed) return
+    setQueuedSend((current) =>
+      current
+        ? {
+            ...current,
+            resolution: resumed.resolution,
+            modelLabel: resumed.modelLabel,
+          }
+        : current
+    )
+  }, [modelLibraryRevision, queuedSend, selectedModel, tryAutoStart])
+
+  // Cancelling from the global download panel must disarm the queued Send as
+  // well. The draft itself remains untouched in the composer.
+  useEffect(() => {
+    const ids = queuedSend?.downloadModelIds ?? []
+    if (ids.some((id) => resumableDownloads.has(id))) {
+      setQueuedSend(null)
+    }
+  }, [queuedSend, resumableDownloads])
 
   useEffect(() => {
     if (!queuedSend) return
@@ -2686,31 +2797,29 @@ const ChatInput = memo(function ChatInput({
     // the send button. Writing to a model that is still downloading is the
     // whole point of ATO-460, so the composer has to stay reachable.
     <div
+      ref={composerAnchorRef}
       data-composer-anchor
-      className="relative mx-auto w-full max-w-3xl"
+      className={cn('relative mx-auto w-full max-w-3xl', containerClassName)}
     >
-      {/* Pending approvals dock above the composer. Outside the streaming-
-          disabled toolbar cluster: a run awaiting approval reports
-          `submitted`, and an unclickable Approve button would deadlock it. */}
-      {!initialMessage && <AgentApprovalInline threadId={composerThreadKey} />}
-      {/* ATO-535: why the chat is not answering — a model still loading, an
-          engine being swapped, or a load that failed (including an auto-start
-          one, which raises no toast). Renders nothing in a steady state. */}
-      <InferenceServerStatusStrip />
       <div className="relative">
         <div
           className={cn(
             'relative p-0.5 rounded-3xl',
             // Always visible: the skills slash menu pops above the composer
             // in both modes and would be clipped by overflow-hidden.
-            'overflow-visible',
-            isStreaming && 'opacity-70'
+            'overflow-visible'
           )}
         >
-          <div className="relative z-20">
+          <div className="group/approval relative z-20">
+            {/* Share the input's inset width, outside its streaming opacity
+                and disabled toolbar. Absolute docking preserves scroll position. */}
+            {!initialMessage && (
+              <AgentApprovalInline threadId={composerThreadKey} />
+            )}
             <div
               className={cn(
-                'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+                'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30 group-has-[[data-slot=composer-approval]]/approval:rounded-t-none',
+                isStreaming && 'opacity-70',
                 isFocused && 'ring-1 ring-ring/50',
                 isDragOver && 'ring-2 ring-ring/50 border-primary'
               )}
@@ -2754,7 +2863,7 @@ const ChatInput = memo(function ChatInput({
                         return (
                           <div
                             key={`${att.type}-${idx}-${att.name}`}
-                            className="relative"
+                            className="group/attachment relative"
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -2816,12 +2925,14 @@ const ChatInput = memo(function ChatInput({
                             </Tooltip>
 
                             {!showAttachmentLoader && (
-                              <div
-                                className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                              <button
+                                type="button"
+                                aria-label={`Remove ${att.name}`}
+                                className="absolute -right-1.5 -top-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full bg-foreground text-background opacity-0 shadow-sm transition-opacity group-hover/attachment:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 onClick={() => handleRemoveAttachment(idx)}
                               >
-                                <IconX className="text-neutral-200" size={14} />
-                              </div>
+                                <IconX size={13} />
+                              </button>
                             )}
                           </div>
                         )
@@ -2853,64 +2964,56 @@ const ChatInput = memo(function ChatInput({
                 onActiveIndexChange={setAgentSkillActiveIndex}
               />
               <div className="relative min-w-0 w-full px-4 pt-3">
-                {selectedAgentSkill && (
-                  <span
-                    ref={agentSkillTokenRef}
-                    className="pointer-events-none absolute left-4 top-3 whitespace-nowrap text-sm font-medium leading-6 text-blue-600 dark:text-blue-400"
-                    data-testid="agent-skill-inline-token"
-                  >
-                    /{selectedAgentSkill.name}
-                  </span>
-                )}
                 <TextareaAutosize
                   dir="auto"
                   ref={textareaRef}
-                  minRows={2}
+                  minRows={minRows}
                   rows={1}
                   maxRows={10}
                   value={prompt}
                   data-testid={'chat-input'}
                   onChange={(e) => {
-                    setPrompt(e.target.value)
+                    const nextValue = e.target.value
+                    setPrompt(nextValue)
+                    if (
+                      selectedAgentSkill &&
+                      !containsAgentSkillInvocation(
+                        nextValue,
+                        selectedAgentSkill.name
+                      )
+                    ) {
+                      setSelectedAgentSkill(null)
+                    }
                     // The user typed while dictating. Re-baseline so the next
                     // phrase lands after their edit instead of overwriting it,
                     // and give up the ability to cleanly undo the session.
                     if (
                       isVoiceActive &&
-                      e.target.value !== lastDictatedValueRef.current
+                      nextValue !== lastDictatedValueRef.current
                     ) {
-                      lastDictatedValueRef.current = e.target.value
+                      lastDictatedValueRef.current = nextValue
                       useVoiceInput
                         .getState()
                         .rebase(
                           captureDictationAnchor(
-                            e.target.value,
+                            nextValue,
                             e.target.selectionStart
                           )
                         )
                     }
                     updateAgentSkillSlashQuery(
-                      e.target.value,
+                      nextValue,
                       e.target.selectionStart
                     )
                     // Count the number of newlines to estimate rows
                     const newRows =
-                      (e.target.value.match(/\n/g) || []).length + 1
+                      (nextValue.match(/\n/g) || []).length + 1
                     setRows(Math.min(newRows, maxRows))
                   }}
                   onKeyDown={(e) => {
                     // e.keyCode 229 is for IME input with Safari
                     const isComposing =
                       e.nativeEvent.isComposing || e.keyCode === 229
-                    if (
-                      e.key === 'Backspace' &&
-                      selectedAgentSkill &&
-                      prompt.length === 0
-                    ) {
-                      e.preventDefault()
-                      setSelectedAgentSkill(null)
-                      return
-                    }
                     if (
                       agentSkillMenuOpen &&
                       eligibleAgentSkills.length > 0 &&
@@ -2974,20 +3077,13 @@ const ChatInput = memo(function ChatInput({
                   placeholder={
                     isVoiceActive && !prompt
                       ? t('common:voiceInput.placeholder')
-                      : selectedAgentSkill
-                        ? ''
-                        : t('common:placeholder.chatInput')
+                      : t('common:placeholder.chatInput')
                   }
                   autoFocus
                   spellCheck={spellCheckChatInput}
                   data-gramm={spellCheckChatInput}
                   data-gramm_editor={spellCheckChatInput}
                   data-gramm_grammarly={spellCheckChatInput}
-                  style={{
-                    textIndent: selectedAgentSkill
-                      ? `${agentSkillTokenWidth + 8}px`
-                      : undefined,
-                  }}
                   className={cn(
                     'block min-w-0 w-full resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0 break-words',
                     // Sideways is never a scroll axis here: text wraps, and
@@ -3010,7 +3106,12 @@ const ChatInput = memo(function ChatInput({
               placed at the static position overhangs the right edge by that
               much — enough for the page's scroll container to let the whole
               composer be dragged sideways. */}
-          <div className="absolute z-20 bg-transparent bottom-0 inset-x-0.5 p-2">
+          <div
+            className={cn(
+              'absolute z-20 bg-transparent bottom-0 inset-x-0.5 p-2',
+              isStreaming && 'opacity-70'
+            )}
+          >
             <div className="flex justify-between items-center w-full">
               <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
                 <div
@@ -3089,12 +3190,15 @@ const ChatInput = memo(function ChatInput({
                             : 'Add documents or files'}
                         </span>
                       </DropdownMenuItem>
-                      {/* Global Agent mode toggle. Like the connectors pin it
-                          lives here and surfaces as a toolbar chip; routing
-                          guards at send time, so it stays togglable even when
-                          the current provider can't serve the agent loop —
-                          the chip's tooltip carries that explanation, so this
-                          row stays a single line like its neighbours. */}
+                      {/* Global Agent mode toggle. It lives here and surfaces
+                          as a toolbar chip; routing guards at send time, so
+                          it stays togglable even when the current provider
+                          can't serve the agent loop — the chip's tooltip
+                          carries that explanation, so this row stays a single
+                          line like its neighbours. (Plugins is not in this
+                          menu: its button is a toolbar fixture like the
+                          web-search globe, with each connector's on/off
+                          switch inside its dropdown.) */}
                       <DropdownMenuItem
                         onClick={() => setAgentModeEnabled(!agentModeEnabled)}
                       >
@@ -3110,26 +3214,6 @@ const ChatInput = memo(function ChatInput({
                           />
                         )}
                       </DropdownMenuItem>
-                      {/* Pin/unpin the plugins button. Unpinning only hides
-                          it: whatever is connected keeps running, and this
-                          stays the way back to the button. */}
-                      {(supportsTools || agentRouteActive) && (
-                        <DropdownMenuItem
-                          onClick={() => setConnectorsPinned(!connectorsPinned)}
-                        >
-                          <PuzzleIcon
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          <span>{t('plugins')}</span>
-                          {connectorsPinned && (
-                            <IconCheck
-                              size={16}
-                              className="ml-auto text-primary"
-                            />
-                          )}
-                        </DropdownMenuItem>
-                      )}
                       {/* Workspace folders ride in the same attach menu: for
                           the agent they are just another kind of context. The
                           project composer hides it — that page has no files
@@ -3157,10 +3241,13 @@ const ChatInput = memo(function ChatInput({
                       gates the agent's dangerous tools AND the MCP/RAG calls
                       of the chat pipeline (see lib/mcp-approval.ts). */}
                   <AgentApprovalModeSelect
+                    compact={compactComposer}
                     mode={approvalMode}
                     onChange={handleApprovalModeChange}
                     menuTitle={t('chat:agentApprovals.menuTitle')}
-                    manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
+                    manualSelectedLabel={t(
+                      'chat:agentApprovals.manualSelected'
+                    )}
                     manualLabel={t('chat:agentApprovals.manual')}
                     manualDescription={t(
                       'chat:agentApprovals.manualDescription'
@@ -3168,6 +3255,14 @@ const ChatInput = memo(function ChatInput({
                     skipSelectedLabel={t('chat:agentApprovals.skipSelected')}
                     skipLabel={t('chat:agentApprovals.skip')}
                     skipDescription={t('chat:agentApprovals.skipDescription')}
+                    skipConfirmTitle={t('chat:agentApprovals.skipConfirmTitle')}
+                    skipConfirmBody={t('chat:agentApprovals.skipConfirmBody')}
+                    skipConfirmCancel={t(
+                      'chat:agentApprovals.skipConfirmCancel'
+                    )}
+                    skipConfirmAccept={t(
+                      'chat:agentApprovals.skipConfirmAccept'
+                    )}
                   />
                   {/* //! Кнопка Browse (Chrome) — временно скрыта
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
@@ -3214,29 +3309,29 @@ const ChatInput = memo(function ChatInput({
                 */}
 
                   {selectedModel?.capabilities?.includes('embeddings') && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon-xs">
-                            <IconCodeCircle2
-                              size={18}
-                              className="text-muted-foreground"
-                            />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{t('embeddings')}</p>
-                        </TooltipContent>
-                      </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-xs">
+                          <IconCodeCircle2
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('embeddings')}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   )}
 
                   {/* Servers and their tools live behind this one menu, which
-                      is also where a server gets (dis)connected. It stays put
-                      even with every MCP server switched off — the dropdown
-                      says so itself, and an icon that vanishes when web search
-                      goes off reads as a bug. Only unpinning from the "+" menu
-                      takes it out of the toolbar. */}
+                      is also where a server gets (dis)connected. Like the
+                      web-search globe beside it, the button is a fixture of
+                      the toolbar: no setting hides it, and it stays put even
+                      with every MCP server switched off — the dropdown says
+                      so itself, and an icon that vanishes when web search
+                      goes off reads as a bug. */}
                   {(supportsTools || agentRouteActive) &&
-                    connectorsPinned &&
                     (MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
@@ -3259,6 +3354,7 @@ const ChatInput = memo(function ChatInput({
                           <Button
                             variant="ghost"
                             size="icon-xs"
+                            aria-label={t('plugins')}
                             onClick={(e) => {
                               setDropdownToolsAvailable(false)
                               e.stopPropagation()
@@ -3319,7 +3415,7 @@ const ChatInput = memo(function ChatInput({
                     <WebSearchToggle initialMessage={initialMessage} />
                   )}
                   {/* Agent mode chip — the toolbar face of the global toggle,
-                      like the pinned connectors button. Last in the cluster on
+                      beside the connectors button. Last in the cluster on
                       purpose: turning the mode on then appends the chip instead
                       of shifting every control the user was aiming at. The X
                       (or unchecking in the "+" menu) turns it off everywhere.
@@ -3328,30 +3424,43 @@ const ChatInput = memo(function ChatInput({
                   {agentModeEnabled && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div
-                          className={cn(
-                            'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
-                            agentBlockReason && 'opacity-60'
-                          )}
-                          data-testid="agent-mode-chip"
-                        >
-                          <RobotHeadIcon
-                            size={16}
-                            className="text-secondary-foreground"
-                          />
-                          <span className="text-xs text-secondary-foreground">
-                            {t('chat:agentMode.agent')}
-                          </span>
+                        {compactComposer ? (
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             size="icon-xs"
-                            className="rounded-full size-5"
+                            className="mb-1 rounded-full"
                             aria-label={t('chat:agentMode.turnOff')}
                             onClick={() => setAgentModeEnabled(false)}
+                            data-testid="agent-mode-chip"
                           >
-                            <IconX size={12} />
+                            <RobotHeadIcon size={16} />
                           </Button>
-                        </div>
+                        ) : (
+                          <div
+                            className={cn(
+                              'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
+                              agentBlockReason && 'opacity-60'
+                            )}
+                            data-testid="agent-mode-chip"
+                          >
+                            <RobotHeadIcon
+                              size={16}
+                              className="text-secondary-foreground"
+                            />
+                            <span className="text-xs text-secondary-foreground">
+                              {t('chat:agentMode.agent')}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              className="rounded-full size-5"
+                              aria-label={t('chat:agentMode.turnOff')}
+                              onClick={() => setAgentModeEnabled(false)}
+                            >
+                              <IconX size={12} />
+                            </Button>
+                          </div>
+                        )}
                       </TooltipTrigger>
                       {agentBlockReason && (
                         <TooltipContent>
@@ -3374,7 +3483,10 @@ const ChatInput = memo(function ChatInput({
                     on, how hard it thinks — its panel holds the effort slider,
                     whose first stop switches thinking off, and leads into the
                     model list. */}
-                <DropdownModelProvider className="mb-1" />
+                <DropdownModelProvider
+                  className="mb-1"
+                  compact={compactComposer}
+                />
 
                 {/* Beside Send, which is where users expect a microphone.
                     Note this cluster has no streaming guard of its own (the
@@ -3464,24 +3576,6 @@ const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      {/* The promise the widget made, kept visible after it closes: the message
-          in the field is not lost, and nobody has to sit and watch a modal.
-          Out of the flow on purpose: the composer is pinned to the bottom of
-          the page, so a line added under it would lift the whole input. It
-          names no model either — the pill already does. */}
-      {queuedSend && (
-        <div
-          className="pointer-events-none absolute inset-x-0 top-full flex items-center gap-1.5 px-5 pt-0.5 text-[11px] leading-3.5 text-muted-foreground"
-          data-testid="reply-gate-queued-notice"
-          aria-live="polite"
-        >
-          <IconLoader2 className="size-3 shrink-0 animate-spin" />
-          {queuedSend.modelLabel
-            ? t('chat:replyGate.startingNotice')
-            : t('chat:replyGate.queuedNotice')}
-        </div>
-      )}
-
       <ReplyModelGate
         open={replyGateOpen}
         onOpenChange={setReplyGateOpen}
@@ -3517,11 +3611,12 @@ const ChatInput = memo(function ChatInput({
         onCancel={handleExtensionDialogCancel}
       />
 
-      {/* Vision Model Download Prompt */}
-      <PromptVisionModel
+      {/* "This model can't see images": the vision models that run here. */}
+      <VisionModelDialog
         open={showVisionModelPrompt}
-        onClose={() => setShowVisionModelPrompt(false)}
-        onDownloadComplete={handleVisionModelDownloadComplete}
+        onOpenChange={setShowVisionModelPrompt}
+        modelName={selectedModel ? getModelDisplayName(selectedModel) : ''}
+        onModelReady={handleVisionModelDownloadComplete}
       />
     </div>
   )

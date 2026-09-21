@@ -2,7 +2,11 @@
  * Default Models Service - Web implementation
  */
 
-import { sanitizeModelId, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import {
+  sanitizeModelId,
+  LOCAL_LLAMACPP_PROVIDER,
+  formatBytes,
+} from '@/lib/utils'
 import {
   ggufShardGroupKey,
   groupGgufShards,
@@ -23,12 +27,18 @@ import {
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type {
+  DownloadRefusal,
   ModelsService,
   ModelCatalog,
   HuggingFaceRepo,
+  HuggingFaceFeedPage,
+  HuggingFaceFeedParams,
+  HuggingFaceFeedSort,
+  HuggingFaceFeedFormat,
   CatalogModel,
   ModelValidationResult,
 } from './types'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import {
@@ -40,6 +50,9 @@ import {
   urlHost,
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
+import { toast } from 'sonner'
+import i18n from '@/i18n/setup'
+import { preflightDownloadDiskSpace } from './downloadPreflight'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -49,8 +62,56 @@ import { queuedCapture } from '@/lib/telemetry-queue'
 // silently no-op because the EngineManager has no 'llamacpp' entry.
 const defaultProvider = LOCAL_LLAMACPP_PROVIDER
 const HUGGING_FACE_SEARCH_LIMIT = 10
+const HUGGING_FACE_FEED_LIMIT = 50
+
+/** `sort=` values Hugging Face's `/api/models` understands. */
+const HUGGING_FACE_FEED_SORT: Record<HuggingFaceFeedSort, string> = {
+  trending: 'trendingScore',
+  downloads: 'downloads',
+  likes: 'likes',
+  lastModified: 'lastModified',
+}
+
+/**
+ * The `cursor` of the `rel="next"` link, or `null` when the listing ends.
+ * Hugging Face paginates `/api/models` with a `Link` header only.
+ */
+export function parseHuggingFaceNextCursor(
+  linkHeader: string | null | undefined
+): string | null {
+  if (!linkHeader) return null
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="?next"?/)
+    if (!match) continue
+    try {
+      return new URL(match[1]).searchParams.get('cursor')
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+const isTauriRuntime = (): boolean => {
+  try {
+    return typeof IS_TAURI !== 'undefined' && Boolean(IS_TAURI)
+  } catch {
+    return false
+  }
+}
 const localProviders = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 type LocalProviderName = (typeof localProviders)[number]
+
+type HuggingFaceFeedEntry = Pick<
+  HuggingFaceRepo,
+  'downloads' | 'likes' | 'tags'
+> & {
+  id?: string
+  modelId?: string
+  createdAt?: string
+  lastModified?: string
+  trendingScore?: number
+}
 
 type HuggingFaceRepoSearchResult = Pick<
   HuggingFaceRepo,
@@ -233,21 +294,34 @@ export class DefaultModelsService implements ModelsService {
   async searchHuggingFaceCandidates(
     query: string,
     hfToken?: string,
-    limit = HUGGING_FACE_SEARCH_LIMIT
+    limit = HUGGING_FACE_SEARCH_LIMIT,
+    format: HuggingFaceFeedFormat = 'gguf'
   ): Promise<CatalogModel[]> {
     const trimmed = query.trim()
     if (trimmed.length < 3) return []
     try {
-      const ggufQuery = /\bgguf\b/i.test(trimmed) ? trimmed : `${trimmed} GGUF`
+      const params = new URLSearchParams({
+        search: trimmed,
+        filter: format,
+        limit: String(limit),
+      })
       const response = await fetch(
-        `https://huggingface.co/api/models?search=${encodeURIComponent(ggufQuery)}&limit=${limit}`,
+        `https://huggingface.co/api/models?${params.toString()}`,
         { headers: this.getHuggingFaceHeaders(hfToken) }
       )
-      if (!response.ok) return []
+      if (!response.ok) {
+        throw new Error(
+          `Failed to search Hugging Face: ${response.status} ${response.statusText}`
+        )
+      }
       const raw = (await response.json()) as HuggingFaceRepoSearchResult[]
       const ranked = raw
         .filter((repo) => getHuggingFaceRepoId(repo))
-        .filter(isLikelyGgufRepo)
+        .filter((repo) =>
+          format === 'gguf'
+            ? isLikelyGgufRepo(repo)
+            : repo.tags?.some((tag) => tag.toLowerCase() === 'mlx')
+        )
         .sort(
           (a, b) =>
             scoreHuggingFaceRepoMatch(trimmed, b) -
@@ -271,13 +345,89 @@ export class DefaultModelsService implements ModelsService {
           mmproj_models: [],
           num_safetensors: 0,
           safetensors_files: [],
-          is_mlx: (repo.tags ?? []).some((t) => t.toLowerCase() === 'mlx'),
+          is_mlx: format === 'mlx',
           readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
         } satisfies CatalogModel
       })
     } catch (error) {
+      // Rethrown, not swallowed: a caller that shows "nothing found" for a
+      // request that never reached Hugging Face is lying to the user. The Hub
+      // catches and shows its curated results alone; the composer's model
+      // list says the search could not be made.
       console.warn('searchHuggingFaceCandidates failed:', error)
-      return []
+      throw error
+    }
+  }
+
+  async listHuggingFaceFeed({
+    format,
+    sort,
+    search,
+    cursor,
+    limit = HUGGING_FACE_FEED_LIMIT,
+    hfToken,
+  }: HuggingFaceFeedParams): Promise<HuggingFaceFeedPage> {
+    const params = new URLSearchParams({
+      filter: format,
+      sort: HUGGING_FACE_FEED_SORT[sort],
+      direction: '-1',
+      limit: String(limit),
+    })
+    if (search?.trim()) params.set('search', search.trim())
+    if (cursor) params.set('cursor', cursor)
+    const url = `https://huggingface.co/api/models?${params.toString()}`
+    // The next page lives in the `Link` header. Hugging Face exposes it to
+    // cross-origin fetches; the Tauri HTTP plugin is the fallback for a
+    // webview whose plain fetch fails, as the registries do.
+    let response: Response
+    try {
+      response = await fetch(url, {
+        headers: this.getHuggingFaceHeaders(hfToken),
+      })
+    } catch (primaryError) {
+      if (!isTauriRuntime()) throw primaryError
+      response = await (fetchTauri as typeof fetch)(url, {
+        headers: this.getHuggingFaceHeaders(hfToken),
+      })
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to list Hugging Face models: ${response.status} ${response.statusText}`
+      )
+    }
+    const raw = (await response.json()) as HuggingFaceFeedEntry[]
+    const models = raw
+      .filter((repo) => getHuggingFaceRepoId(repo))
+      .map((repo) => {
+        const repoId = getHuggingFaceRepoId(repo)
+        const developer = repoId.includes('/')
+          ? repoId.split('/', 1)[0]
+          : undefined
+        const tags = repo.tags ?? []
+        return {
+          model_name: repoId,
+          developer,
+          downloads: repo.downloads ?? 0,
+          likes: repo.likes ?? 0,
+          description: `**Tags**: ${tags.join(', ')}`,
+          // No quants / mmproj here — the list endpoint carries no file sizes;
+          // the row's detail fetch fills them in once it is on screen.
+          num_quants: 0,
+          quants: [],
+          num_mmproj: 0,
+          mmproj_models: [],
+          num_safetensors: 0,
+          safetensors_files: [],
+          is_mlx:
+            format === 'mlx' || tags.some((t) => t.toLowerCase() === 'mlx'),
+          created_at: repo.createdAt,
+          last_modified: repo.lastModified,
+          readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
+        } satisfies CatalogModel
+      })
+    return {
+      models,
+      nextCursor: parseHuggingFaceNextCursor(response.headers.get('link')),
     }
   }
 
@@ -443,7 +593,7 @@ export class DefaultModelsService implements ModelsService {
     hfToken?: string,
     skipVerification: boolean = true,
     resume: boolean = false
-  ): Promise<void> {
+  ): Promise<DownloadRefusal | undefined> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
     let mmprojSha256: string | undefined
@@ -498,6 +648,37 @@ export class DefaultModelsService implements ModelsService {
       }
     }
 
+    // Will it fit? Asked here, before anything is recorded or started, so a
+    // model that cannot fit is declined with the list still on screen instead
+    // of surfacing as a failed download a moment after the row said
+    // "Downloading". Every entry point sets `localDownloadingModels` (and the
+    // Hub its origin) before calling; on a refusal that is undone here, since
+    // most of them do not await the pull. A resume is left to the Rust check,
+    // which knows how much of the partial already counts.
+    if (!resume) {
+      const refusal = await preflightDownloadDiskSpace({
+        modelPath,
+        mmprojPath,
+        modelSize,
+        mmprojSize,
+      })
+      if (refusal) {
+        const store = useDownloadStore.getState()
+        store.removeLocalDownloadingModel(id)
+        store.clearDownloadOrigin(id)
+        toast.error(i18n.t('common:toast.downloadWontFit.title'), {
+          id: 'download-wont-fit',
+          description: i18n.t('common:toast.downloadWontFit.description', {
+            model: id,
+            needed: formatBytes(refusal.needed),
+            available: formatBytes(refusal.available) || '0 B',
+          }),
+          duration: 15000,
+        })
+        return refusal
+      }
+    }
+
     // ATO-154: record resume parameters at the single GGUF download-start
     // choke point so the global Download popover can resume a paused download
     // (it only knows the model id, not these HF paths/token). MLX downloads go
@@ -536,7 +717,7 @@ export class DefaultModelsService implements ModelsService {
 
     // Call the original pullModel with the fetched metadata
     try {
-      return await this.pullModel(
+      await this.pullModel(
         id,
         modelPath,
         modelSha256,
@@ -546,6 +727,7 @@ export class DefaultModelsService implements ModelsService {
         mmprojSize,
         resume
       )
+      return undefined
     } catch (error) {
       // ATO-154: a paused download stops the underlying transfer (which rejects
       // this promise with a cancellation error). Swallow it so the initiator's

@@ -667,6 +667,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn openapi_publishes_the_image_generation_contract() {
+        let spec: Value = serde_json::from_str(include_str!("../../../static/openapi.json"))
+            .expect("OpenAPI document must be valid JSON");
+        let operation = &spec["paths"]["/images/generations"]["post"];
+        assert_eq!(operation["operationId"], "createImageGeneration");
+        assert_eq!(operation["tags"][0], "Images");
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/CreateImageGenerationDto"
+        );
+        assert_eq!(
+            spec["components"]["schemas"]["CreateImageGenerationDto"]["required"][0],
+            "prompt"
+        );
+        assert_eq!(
+            spec["components"]["schemas"]["CreateImageGenerationDto"]["properties"]
+                ["response_format"]["enum"][0],
+            "b64_json"
+        );
+        assert_eq!(
+            spec["components"]["schemas"]["ImageGenerationResponseDto"]["properties"]["data"]
+                ["items"]["$ref"],
+            "#/components/schemas/ImageGenerationDataDto"
+        );
+        assert!(operation["responses"]["503"].is_object());
+        assert!(operation["responses"]["504"].is_object());
+    }
+
     #[tokio::test]
     async fn without_the_plugin_or_a_model_the_route_answers_503() {
         let app = tauri::test::mock_app();

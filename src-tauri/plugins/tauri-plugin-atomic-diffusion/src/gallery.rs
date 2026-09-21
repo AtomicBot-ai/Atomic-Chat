@@ -325,6 +325,48 @@ pub fn write_thumbnail(png: &[u8], path: &Path) -> Result<(), String> {
     write_atomic(path, buf.get_ref()).map_err(|e| e.message)
 }
 
+/// `stable-diffusion.cpp` can finish successfully after a numerical overflow
+/// and return a frame whose every pixel is pure white or pure black. Such a
+/// PNG is not a generated image: reject it before it can become a gallery
+/// item. Deliberately flat coloured artwork is preserved; only near-uniform
+/// frames at the two invalid extremes match.
+pub fn is_blank_output(png: &[u8]) -> DiffusionResult<bool> {
+    let image = image::load_from_memory(png).map_err(|err| {
+        DiffusionError::with_details(
+            DiffusionErrorCode::InvalidOutput,
+            "The image engine returned an unreadable image.",
+            err.to_string(),
+        )
+    })?;
+    let rgb = image.to_rgb8();
+    let mut min = u8::MAX;
+    let mut max = u8::MIN;
+    for channel in rgb.pixels().flat_map(|pixel| pixel.0) {
+        min = min.min(channel);
+        max = max.max(channel);
+        if max.saturating_sub(min) > 2 {
+            return Ok(false);
+        }
+    }
+    Ok(max <= 2 || min >= 253)
+}
+
+fn path_is_blank_output(path: &Path) -> bool {
+    // Real generated images are normally much larger. This gate keeps gallery
+    // scans cheap while still catching the tiny all-white/all-black PNGs that
+    // affected older builds. Fresh outputs are always validated before save.
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if meta.len() > 128 * 1024 {
+        return false;
+    }
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| is_blank_output(&bytes).ok())
+        .unwrap_or(false)
+}
+
 /// Splice the recipe, write `<id>.png` atomically, write the thumbnail, and
 /// return the item plus the final PNG bytes (for the OpenAI facade).
 pub fn save(
@@ -371,10 +413,15 @@ pub fn save(
 }
 
 fn item_from_path(dir: &Path, id: &str, path: &Path, flags: &FlagMap) -> Option<GalleryImageItem> {
+    let thumb = thumb_path(dir, id);
+    let diagnostic_path = if thumb.is_file() { &thumb } else { path };
+    if path_is_blank_output(diagnostic_path) {
+        log::warn!("[atomic-diffusion] hiding blank gallery output {id}");
+        return None;
+    }
     let header = read_png_header(path)?;
     let recipe = header.recipe?;
     let meta = std::fs::metadata(path).ok()?;
-    let thumb = thumb_path(dir, id);
     let flag = flags.get(id).copied().unwrap_or_default();
     Some(GalleryImageItem {
         id: id.to_string(),
@@ -541,6 +588,23 @@ mod tests {
             .write_to(&mut buf, image::ImageFormat::Png)
             .unwrap();
         buf.into_inner()
+    }
+
+    fn flat_png(value: u8) -> Vec<u8> {
+        let img = image::RgbaImage::from_pixel(16, 16, image::Rgba([value, value, value, 255]));
+        let mut buf = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        buf.into_inner()
+    }
+
+    #[test]
+    fn detects_only_uniform_black_or_white_failure_frames() {
+        assert!(is_blank_output(&flat_png(255)).unwrap());
+        assert!(is_blank_output(&flat_png(0)).unwrap());
+        assert!(!is_blank_output(&flat_png(128)).unwrap());
+        assert!(!is_blank_output(&png_bytes(16, 16)).unwrap());
     }
 
     fn job_id(n: u8) -> String {

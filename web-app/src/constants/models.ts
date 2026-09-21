@@ -54,6 +54,22 @@ const QWEN_3_6_35B_A3B: LadderEntry = {
   descriptionKey: 'hub:recMathReasoning',
 }
 
+const GPT_OSS_120B: LadderEntry = {
+  repo: 'unsloth/gpt-oss-120b-GGUF',
+  title: 'GPT-OSS 120B',
+  quant: 'Q8_0',
+  sizeGb: 58.4,
+  descriptionKey: 'hub:recMathReasoning',
+}
+
+const NEMOTRON_3_SUPER_120B: LadderEntry = {
+  repo: 'unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF',
+  title: 'Nemotron 3 Super 120B A12B',
+  quant: 'Q4_K_M',
+  sizeGb: 60.1,
+  descriptionKey: 'hub:recMathReasoning',
+}
+
 /**
  * What we recommend, per hardware tier (ATO-463).
  *
@@ -148,6 +164,8 @@ export const RECOMMENDATION_LADDER: Readonly<
   vram_48: QWEN_3_6_35B_A3B,
   vram_64: QWEN_3_6_35B_A3B,
   vram_64_plus: QWEN_3_6_35B_A3B,
+  vram_128: GPT_OSS_120B,
+  vram_128_plus: NEMOTRON_3_SUPER_120B,
   // Below 16 GiB a Mac gets a rung lighter than a PC with the same number on
   // it: the Metal ceiling is hard, and unified memory is shared with
   // everything else the machine is doing, whereas VRAM on a card is the
@@ -165,6 +183,8 @@ export const RECOMMENDATION_LADDER: Readonly<
   unified_48: QWEN_3_6_35B_A3B,
   unified_64: QWEN_3_6_35B_A3B,
   unified_64_plus: QWEN_3_6_35B_A3B,
+  unified_128: GPT_OSS_120B,
+  unified_128_plus: NEMOTRON_3_SUPER_120B,
 }
 
 /**
@@ -214,9 +234,11 @@ export type OnboardingReminderModel = {
 }
 
 /**
- * The reminder and the composer's "what do I reply with?" widget must offer the
- * same model the first screen did — a second opinion that drifts from it is
- * worse than no second surface. Both read this, and it is the ladder.
+ * Every rung's offer, so the reminder can tell that "the recommended model" is
+ * already on disk whatever tier the machine reads as today. The offer itself —
+ * on the reminder card and in the composer's "what do I reply with?" widget —
+ * comes from the manifest through `useRecommendedDownloads`, whose bundled
+ * fallback is this same ladder, so the two cannot drift apart.
  */
 export const ONBOARDING_REMINDER_MODELS: Record<
   HardwareTier,
@@ -667,9 +689,6 @@ export const BASELINE_MODEL_CATALOG: ReadonlyArray<CatalogModel> = [
       'https://huggingface.co/mlx-community/gemma-4-e4b-it-4bit/resolve/main/README.md',
   },
 ]
-
-export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
-export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']
 
 /**
  * Provider model capabilities - copied from token.js package

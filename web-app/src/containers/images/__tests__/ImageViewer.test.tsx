@@ -119,6 +119,41 @@ describe('ImageViewer', () => {
     expect(img).toHaveAttribute('alt', 'a red door')
   })
 
+  it('keeps one rounded clipping frame before load, after load, and while switching images', () => {
+    const view = render(
+      <ImageViewer item={first} selectedIds={[]} onOfferLoad={vi.fn()} />
+    )
+    const frame = screen.getByTestId('image-viewer-frame')
+    const firstImage = screen.getByAltText('a red door')
+
+    expect(frame).toHaveClass('overflow-hidden', 'rounded-lg')
+    expect(frame).not.toHaveClass('animate-in', 'zoom-in-95')
+    expect(screen.getByTestId('image-viewer-transition')).toHaveClass(
+      'animate-in',
+      'fade-in-0'
+    )
+    expect(screen.getByTestId('image-viewer-transition')).not.toHaveClass(
+      'zoom-in-95'
+    )
+    expect(firstImage).not.toHaveClass('rounded-lg', 'overflow-hidden')
+
+    fireEvent.load(firstImage)
+    expect(screen.getByTestId('image-viewer-frame')).toBe(frame)
+
+    view.rerender(
+      <ImageViewer item={second} selectedIds={[]} onOfferLoad={vi.fn()} />
+    )
+    const secondImage = screen.getByAltText('a blue window')
+    expect(screen.getByTestId('image-viewer-frame')).toBe(frame)
+    expect(frame).toHaveClass('overflow-hidden', 'rounded-lg')
+    expect(screen.getByTestId('image-viewer-transition')).not.toHaveClass(
+      'zoom-in-95'
+    )
+
+    fireEvent.load(secondImage)
+    expect(screen.getByTestId('image-viewer-frame')).toBe(frame)
+  })
+
   it('restores the recipe into the form, batch seed included', async () => {
     render(<Gallery />)
     await screen.findByTestId('image-viewer')

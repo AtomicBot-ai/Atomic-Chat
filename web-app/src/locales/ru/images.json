@@ -39,8 +39,11 @@
       "title": "Edit",
       "hint": "Change an image with an instruction"
     },
-    "unavailable": "The loaded model cannot do this",
-    "unavailableSelected": "The selected model cannot do this"
+    "unavailable": "Запущенная модель не поддерживает этот режим",
+    "unavailableSelected": "Выбранная модель не поддерживает этот режим",
+    "compatibleModelTitle": "Для режима «{{workflow}}» нужна совместимая модель",
+    "compatibleModelDescription": "Выберите ниже подходящую модель, затем скачайте или запустите её.",
+    "chooseCompatibleModel": "Выбрать модель"
   },
   "setup": {
     "step": "Step {{current}} of {{total}}",
@@ -49,18 +52,21 @@
     "done": "Done",
     "doneBlocked": "Install the engine and at least one model first.",
     "intro": {
-      "title": "Make images on this computer",
-      "description": "Type a prompt, pick a size, and the image is rendered locally.",
-      "bulletLocal": "Runs on this computer — prompts never leave it.",
-      "bulletRecipes": "Every image keeps its settings, so you can redo or tweak it.",
-      "bulletApi": "Also available to other apps at localhost:1337/v1/images."
+      "title": "Создавайте изображения локально",
+      "description": "Превращайте идеи в изображения, не отправляя промпты наружу.",
+      "bulletLocal": "Опишите своими словами, что хотите увидеть.",
+      "bulletRecipes": "Выберите размер, а затем доработайте или повторите результат.",
+      "bulletApi": "Промпты и созданные изображения остаются на этом компьютере."
     },
     "engine": {
-      "title": "Install the image engine",
-      "description": "A small renderer (stable-diffusion.cpp) built for this computer.",
+      "title": "Установите движок изображений",
+      "description": "Установите stable-diffusion.cpp для локальной генерации.",
       "rowTitle": "stable-diffusion.cpp",
-      "rowDescription": "Build for {{backend}} · downloaded once, updated with the app.",
-      "install": "Install",
+      "rowDescription": "Локальный движок изображений для этого компьютера.",
+      "installingDescription": "Устанавливаем stable-diffusion.cpp…",
+      "readyDescription": "Готов к локальной генерации изображений.",
+      "install": "Установить",
+      "checking": "Проверяем…",
       "installed": "Installed",
       "unsupported": "There is no image engine build for this computer yet.",
       "unsupportedShort": "Not available",
@@ -70,8 +76,8 @@
       "note": "About 100 MB. Installed under the app data folder."
     },
     "model": {
-      "title": "Get an image model",
-      "description": "Pick a model and size that fits your memory. Bigger is slower.",
+      "title": "Выберите модель изображений",
+      "description": "Мы подобрали лучшую версию каждой модели для этого компьютера.",
       "diskNote": "Models are 4–12 GB. Shared files are downloaded once."
     },
     "ready": {
@@ -80,11 +86,14 @@
       "descriptionRunning": "The model is running. Press Done and write your first prompt."
     },
     "card": {
-      "title": "Set up image generation",
-      "description": "Two things are needed before the first image: the engine and a model.",
-      "engine": "Install the image engine",
-      "model": "Download an image model",
-      "button": "Set up"
+      "title": "Создайте первое изображение",
+      "description": "Приватная студия изображений прямо на компьютере. Нужны всего две быстрые загрузки.",
+      "engine": "Установите движок",
+      "engineDescription": "Небольшой рендерер для локального создания изображений.",
+      "model": "Выберите модель",
+      "modelDescription": "Выберите стиль и качество будущих изображений.",
+      "button": "Начать настройку",
+      "downloadModel": "Скачать модель"
     }
   },
   "model": {
@@ -99,9 +108,16 @@
     "pick": "Select {{name}} {{quant}}",
     "sizeGb": "{{size}} GB",
     "recommended": "Recommended",
+    "downloaded": "Загружено",
     "incomplete": "Incomplete",
     "load": "Run",
     "loading": "Starting…",
+    "startingToast": "Запускаем модель изображений…",
+    "startedToast": "{{name}} готова",
+    "startFailed": "Не удалось запустить {{name}}",
+    "stoppingToast": "Останавливаем модель изображений…",
+    "stoppedToast": "{{name}} остановлена",
+    "stopFailed": "Не удалось остановить {{name}}",
     "unload": "Stop",
     "loaded": "Running",
     "readyToLoad": "Starts on first Generate",
@@ -132,6 +148,14 @@
     "gatedLink": "General settings.",
     "download": "Download"
   },
+  "download": {
+    "finishingModel": "Проверяем модель изображений",
+    "finishingEngine": "Завершаем установку движка",
+    "checkingFiles": "Проверяем загруженные файлы…",
+    "readyAfterCheck": "Готово к работе после проверки.",
+    "modelReady": "Модель изображений готова",
+    "engineReady": "Движок изображений готов"
+  },
   "form": {
     "prompt": "Prompt",
     "promptPlaceholder": "Describe the image…",
@@ -139,7 +163,7 @@
     "shortcutMac": "⌘ Enter to generate",
     "negativePrompt": "Negative prompt",
     "negativePlaceholder": "What to avoid…",
-    "advanced": "Advanced",
+    "advanced": "Расширенные настройки",
     "reset": "Reset",
     "steps": "Steps",
     "cfgScale": "CFG scale",
@@ -174,7 +198,7 @@
     "runsHint": "Repeat the generation, one run after another. Each run takes the next seed.",
     "seedHint": "Leave empty for a fresh random seed each run.",
     "advancedHint": "Load-time options. They apply the next time the model is loaded.",
-    "mediaSettings": "More in Media settings",
+    "mediaSettings": "Открыть настройки медиа",
     "resetHint": "Put the settings back to the model defaults. The prompt stays.",
     "memory": "Memory",
     "memoryHint": "Where the weights sit while generating. Auto picks from the model size and this computer; offloading frees GPU memory at the cost of speed.",
@@ -183,7 +207,7 @@
     "memoryGroup": "Offload weights",
     "memoryModel": "Offload everything",
     "engineHint": "Which renderer serves generation.",
-    "evictChat": "Free chat model",
+    "evictChat": "Освобождать память чата",
     "sourceImage": "Source image",
     "referenceImage": "Reference image",
     "dropzone": "Click or drop an image",
@@ -247,6 +271,7 @@
     "flip": "Flip width and height",
     "toPortrait": "Switch to portrait",
     "toLandscape": "Switch to landscape",
+    "squareNoFlip": "У квадратного изображения одинаковая ширина и высота.",
     "presets": "{{label}} presets"
   },
   "progress": {
@@ -254,14 +279,18 @@
     "stopping": "Stopping the renderer…",
     "step": "Step {{step}}/{{total}}",
     "eta": "~{{seconds}} s",
+    "generatingImage": "Создаём изображение",
+    "elapsed": "{{seconds}} с",
+    "finalizingImage": "Finalizing image…",
     "image": "image {{index}} of {{total}}",
     "run": "run {{run}} of {{total}}",
     "phase": {
       "queued": "Queued",
       "encoding": "Encoding the prompt…",
       "sampling": "Sampling…",
-      "decoding": "Decoding…",
-      "saving": "Saving…",
+      "decoding": "Decoding image…",
+      "postprocessing": "Preparing final image…",
+      "saving": "Saving to gallery…",
       "generating": "Starting…",
       "completed": "Done",
       "failed": "Failed",
@@ -341,8 +370,8 @@
       "body": "The download or unpacking failed. Check your connection and disk space, then try again."
     },
     "ENGINE_CRASHED": {
-      "title": "The renderer stopped unexpectedly",
-      "body": "sd-server exited during the job. Generating again restarts it; if it keeps happening, try a smaller model."
+      "title": "GPU остановил рендер",
+      "body": "Движок изображений уже сброшен. Выберите меньшее разрешение и попробуйте снова."
     },
     "MODEL_MISSING": {
       "title": "The model file is missing",
@@ -383,6 +412,10 @@
     "INVALID_REQUEST": {
       "title": "The request was rejected",
       "body": "One of the settings is outside what the model accepts."
+    },
+    "INVALID_OUTPUT": {
+      "title": "Движок создал пустое изображение",
+      "body": "Генерация завершилась, но в результате не оказалось пригодных пикселей. Atomic Chat отбросил белый кадр и не добавил его в галерею. Попробуйте ещё раз или выберите другую модель."
     },
     "JOB_BUSY": {
       "title": "The renderer is busy",

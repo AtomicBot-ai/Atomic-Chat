@@ -204,6 +204,16 @@ export function presentGenericTool(args: {
     args.state === 'output-error' || args.state === 'output-denied'
   const action = ACTION_LABELS[args.toolName]
   const fallbackName = humanizeToolName(args.toolName)
+  const output =
+    args.output && typeof args.output === 'object'
+      ? (args.output as Record<string, unknown>)
+      : undefined
+  const details =
+    output?.details && typeof output.details === 'object'
+      ? (output.details as Record<string, unknown>)
+      : undefined
+  const deniedReason =
+    typeof details?.deniedReason === 'string' ? details.deniedReason : undefined
 
   return {
     kind: 'generic',
@@ -222,5 +232,6 @@ export function presentGenericTool(args: {
     input: args.input,
     output: args.output,
     errorText: args.errorText,
+    deniedReason,
   }
 }

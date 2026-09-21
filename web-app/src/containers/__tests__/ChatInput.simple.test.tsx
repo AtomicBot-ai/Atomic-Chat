@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from '../ChatInput'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
@@ -7,14 +14,20 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useAgentRun } from '@/hooks/useAgentRun'
+import { useThreads } from '@/hooks/useThreads'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
+import type { AgentSkill } from '@/services/agent/skills'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   downscaleImageDataUrl: vi.fn(),
   switchToModel: vi.fn(),
   chatBusy: false,
+  agentSkills: [] as AgentSkill[],
   replyGateProps: null as {
     onResolved: (resolution: unknown) => void
     onDismissed: (resolution: unknown) => void
@@ -52,9 +65,8 @@ vi.mock('react-textarea-autosize', async () => {
   return {
     default: React.forwardRef<HTMLTextAreaElement, AutosizeProps>(
       ({ minRows, maxRows, ...props }, ref) => {
-        void minRows
         void maxRows
-        return <textarea {...props} ref={ref} />
+        return <textarea {...props} data-min-rows={minRows} ref={ref} />
       }
     ),
   }
@@ -65,7 +77,11 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/hooks/useAgentSkills', () => ({
-  useAgentSkills: () => ({ skills: [], loading: false, setEnabled: vi.fn() }),
+  useAgentSkills: () => ({
+    skills: mocks.agentSkills,
+    loading: false,
+    setEnabled: vi.fn(),
+  }),
 }))
 
 vi.mock('@/hooks/useAgentMode', () => {
@@ -146,8 +162,8 @@ vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
   default: () => null,
 }))
 
-vi.mock('@/containers/PromptVisionModel', () => ({
-  PromptVisionModel: () => null,
+vi.mock('@/containers/dialogs/VisionModelDialog', () => ({
+  VisionModelDialog: () => null,
 }))
 
 // Stubbed to a marker that also hands the composer's callbacks back to the
@@ -180,10 +196,19 @@ vi.mock('@/components/TokenCounter', () => ({
 describe('ChatInput', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.agentSkills = []
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({ connectorsPinned: true, agentModeEnabled: false })
+    useGeneralSetting.setState({ agentModeEnabled: false })
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+      pausedDownloads: new Set(),
+      resumeParams: {},
+    })
+    useDeferredFirstSend.setState({ queued: null })
 
     const model = {
       id: 'test-model',
@@ -201,6 +226,35 @@ describe('ChatInput', () => {
       selectedProvider: 'openai',
       selectedModel: model,
     })
+  })
+
+  it('docks pending folder access to the same surface as the composer', () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    useThreads.setState({ currentThreadId: 'approval-layout' })
+    useAgentRun.getState().startRun('approval-layout', 'run-1')
+    useAgentRun.getState().applyEvent('approval-layout', {
+      type: 'folder_access_requested',
+      run_id: 'run-1',
+      access_id: 'access-1',
+      tool: 'os.fs.read',
+      path: '/Users/me/project',
+      display_name: 'project',
+      root_id: 'root-1',
+      reason: 'outside the workspace',
+    })
+    const { unmount } = render(<ChatInput chatStatus="submitted" />)
+    const card = screen.getByTestId('agent-approval-inline')
+    const composer = screen.getByTestId('chat-input').closest('.border-input')!
+    expect(card.parentElement).toBe(composer.parentElement)
+    expect(card).toHaveClass('bg-muted', 'absolute', 'bottom-full')
+    expect(screen.getByText('/Users/me/project')).toBeVisible()
+    expect(screen.getByText('agentFolderAccess.canEditNotice')).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'agentFolderAccess.allow' })
+    ).toBeEnabled()
+    unmount()
+    useAgentRun.getState().clearAll()
+    useThreads.setState({ currentThreadId: previousThreadId })
   })
 
   it('renders the production input with its translated placeholder', () => {
@@ -267,6 +321,48 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('keeps a slash-selected skill inline at the caret and sends that text with metadata', async () => {
+    mocks.agentSkills = [
+      {
+        name: 'pdf',
+        description: 'Create PDF documents',
+        version: '1.0.0',
+        requiresTools: [],
+        requiresScripts: [],
+        dangerous: false,
+        platforms: null,
+        enabled: true,
+        compatible: true,
+        reserved: true,
+        unavailableReasons: [],
+        error: null,
+      },
+    ]
+    const onSubmit = vi.fn()
+    render(<ChatInput onSubmit={onSubmit} />)
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+
+    fireEvent.change(input, {
+      target: { value: 'prefix /pd suffix', selectionStart: 10 },
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'pdf' }))
+
+    expect(input).toHaveValue('prefix /pdf suffix')
+    expect(input.selectionStart).toBe(11)
+    expect(screen.queryByTestId('agent-skill-inline-token')).toBeNull()
+
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      'prefix /pdf suffix',
+      undefined,
+      'pdf'
+    )
+    await waitFor(() => expect(input).toHaveValue(''))
+  })
+
   it('opens the reply-model widget instead of sending when none is selected', async () => {
     // With model preloading off by default, this is the state of every cold
     // launch until the user picks a model in the selector.
@@ -309,14 +405,18 @@ describe('ChatInput', () => {
       })
     })
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(screen.getByTestId('reply-gate-queued-notice')).toBeVisible()
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
 
     // …and now it is. The message goes out unchanged, with nobody pressing
     // anything, and the widget gets out of the way.
     act(() => {
       useModelProvider.setState({
         selectedProvider: 'openai',
-        selectedModel: { id: 'test-model', capabilities: [], settings: {} } as Model,
+        selectedModel: {
+          id: 'test-model',
+          capabilities: [],
+          settings: {},
+        } as Model,
       })
     })
 
@@ -328,6 +428,117 @@ describe('ChatInput', () => {
       )
     )
     expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    unmount()
+  })
+
+  it('starts the downloaded first model and sends the preserved prompt when import completes', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    useAppState.setState({ activeModels: [], loadingModel: false })
+    useDownloadStore.getState().addLocalDownloadingModel(modelId)
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Send this after the download' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 4,
+        openedAtMs: Date.now() - 4,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    // DataProvider refreshes the library after import but intentionally does
+    // not auto-start arbitrary downloads. This queued Send supplies the intent.
+    act(() => {
+      useDownloadStore.getState().removeLocalDownloadingModel(modelId)
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'llamacpp-upstream',
+            active: true,
+            models: [{ id: modelId, capabilities: [], settings: {} } as Model],
+            settings: [],
+          } as ModelProvider,
+        ],
+      })
+    })
+
+    await waitFor(() =>
+      expect(mocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerName: 'llamacpp-upstream',
+          modelId,
+        })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    act(() => useAppState.setState({ activeModels: [modelId] }))
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Send this after the download',
+        undefined,
+        undefined
+      )
+    )
+    unmount()
+  })
+
+  it('hands a home-screen first download to the root queue', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Keep working even if I leave this screen' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 1,
+        openedAtMs: Date.now() - 1,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      prompt: 'Keep working even if I leave this screen',
+      downloadModelIds: [modelId],
+    })
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Keep working even if I leave this screen'
+    )
     unmount()
   })
 
@@ -355,7 +566,11 @@ describe('ChatInput', () => {
     act(() => {
       useModelProvider.setState({
         selectedProvider: 'openai',
-        selectedModel: { id: 'test-model', capabilities: [], settings: {} } as Model,
+        selectedModel: {
+          id: 'test-model',
+          capabilities: [],
+          settings: {},
+        } as Model,
       })
     })
 
@@ -422,7 +637,11 @@ describe('ChatInput', () => {
   })
 
   it('starts the only local model on send and holds the message until it is up', async () => {
-    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
     useModelProvider.setState({
       providers: [
         {
@@ -447,11 +666,10 @@ describe('ChatInput', () => {
       document.querySelector('[data-test-id="send-message-button"]')!
     )
 
-    // No modal: the status lives in the composer, and says which model.
+    // No modal and no extra line under the composer: the queued send remains
+    // internal until the selected model is ready.
     expect(screen.queryByTestId('reply-model-gate')).toBeNull()
-    expect(screen.getByTestId('reply-gate-queued-notice')).toHaveTextContent(
-      'chat:replyGate.startingNotice'
-    )
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
     expect(onSubmit).not.toHaveBeenCalled()
     expect(useModelProvider.getState().selectedModel?.id).toBe(model.id)
 
@@ -470,7 +688,11 @@ describe('ChatInput', () => {
   })
 
   it('brings a model the user stopped back up on send, instead of blocking Send', async () => {
-    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
     useModelProvider.setState({
       providers: [
         {
@@ -511,9 +733,7 @@ describe('ChatInput', () => {
     )
     // An explicit start, like a pick in the dropdown — not a silent auto-start.
     expect(mocks.switchToModel.mock.calls[0][0].isAutoStart).toBeUndefined()
-    expect(screen.getByTestId('reply-gate-queued-notice')).toHaveTextContent(
-      'chat:replyGate.startingNotice'
-    )
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
     expect(onSubmit).not.toHaveBeenCalled()
 
     act(() => {
@@ -532,7 +752,11 @@ describe('ChatInput', () => {
   // ATO-530: a Cancel on the load a send is waiting for holds the model down,
   // so the send would wait forever. The text stays in the field.
   it('drops a waiting send when the user cancels the load it waits for', async () => {
-    const model = { id: 'Qwen3.5-4B-Q4_K_M', capabilities: [], settings: {} } as Model
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
     const stopKey = modelStopKey('llamacpp-upstream', model.id)
     useModelProvider.setState({
       providers: [
@@ -557,20 +781,28 @@ describe('ChatInput', () => {
     fireEvent.change(screen.getByTestId('chat-input'), {
       target: { value: 'Invoke the machine spirit' },
     })
-    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
-    await waitFor(() =>
-      expect(screen.getByTestId('reply-gate-queued-notice')).toBeInTheDocument()
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
     )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+    expect(screen.queryByTestId('reply-gate-queued-notice')).toBeNull()
 
     // The real switch lifts the stop as the load starts; the Cancel sets it
     // again once the load is gone.
-    act(() => useAppState.setState({ userStoppedModels: [], loadingModel: true }))
     act(() =>
-      useAppState.setState({ userStoppedModels: [stopKey], loadingModel: false })
+      useAppState.setState({ userStoppedModels: [], loadingModel: true })
+    )
+    act(() =>
+      useAppState.setState({
+        userStoppedModels: [stopKey],
+        loadingModel: false,
+      })
     )
 
     await waitFor(() =>
-      expect(screen.queryByTestId('reply-gate-queued-notice')).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('reply-gate-queued-notice')
+      ).not.toBeInTheDocument()
     )
     expect(onSubmit).not.toHaveBeenCalled()
     unmount()
@@ -630,6 +862,26 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('lets the project composer fill its card column and start taller', () => {
+    const { unmount } = render(
+      <ChatInput
+        initialMessage
+        projectId="project-1"
+        containerClassName="max-w-none"
+        minRows={4}
+      />
+    )
+
+    expect(document.querySelector('[data-composer-anchor]')).toHaveClass(
+      'max-w-none'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute(
+      'data-min-rows',
+      '4'
+    )
+    unmount()
+  })
+
   it('offers Add folder in the attach menu of a plain composer', () => {
     selectLocalProvider()
     const { unmount } = render(<ChatInput initialMessage />)
@@ -685,49 +937,51 @@ describe('ChatInput', () => {
     })
   }
 
-  it('drops the connectors button from the toolbar once it is unpinned', () => {
-    // Unpinning is a UI choice, not a kill switch: it only takes the button
-    // out of the toolbar, and the "+" menu is the way back to it.
+  it('keeps the Plugins button in the toolbar next to web search, with no setting behind it', () => {
+    // Same standing as the globe: always on the toolbar, and each
+    // connector's on/off switch lives inside its dropdown. No store flag is
+    // left that could hide it.
     useMCPServers.setState({
       mcpServers: {
         exa: { command: '', args: [], env: {}, active: true },
       },
     })
-    useGeneralSetting.setState({ connectorsPinned: false })
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
 
+    const plugins = screen.getByRole('button', { name: 'plugins' })
     expect(
-      document.querySelector('[data-test-id="connectors-dropdown"]')
-    ).not.toBeInTheDocument()
-    // The server it would have listed is still connected, and web search —
-    // which runs on one of those servers — is still on the toolbar.
-    expect(useMCPServers.getState().mcpServers.exa.active).toBe(true)
-    expect(
-      screen.getByLabelText('common:webSearchToggleEnabled')
+      plugins.querySelector('[data-test-id="connectors-dropdown"]')
     ).toBeInTheDocument()
+    const globe = screen.getByLabelText(
+      /common:webSearchToggle(?:Enabled|Unavailable)/
+    )
+    expect(plugins.parentElement).toBe(globe.parentElement)
+    expect(
+      plugins.compareDocumentPosition(globe) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect('connectorsPinned' in useGeneralSetting.getState()).toBe(false)
 
     useMCPServers.setState({ mcpServers: {} })
     unmount()
   })
 
-  it('pins and unpins the plugins button from the attach menu', () => {
+  it('offers no Plugins item in the attach menu', () => {
+    // With the button a toolbar fixture there is nothing to pin or unpin:
+    // the "+" menu is back to attachments and Agent mode.
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
 
-    fireEvent.click(screen.getByText('plugins'))
-    expect(useGeneralSetting.getState().connectorsPinned).toBe(false)
-    expect(
-      document.querySelector('[data-test-id="connectors-dropdown"]')
-    ).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('plugins'))
-    expect(useGeneralSetting.getState().connectorsPinned).toBe(true)
-    expect(
-      document.querySelector('[data-test-id="connectors-dropdown"]')
-    ).toBeInTheDocument()
+    const addImages = screen.getByText('Add Images').closest('button')!
+    const items = within(addImages.parentElement!).getAllByRole('button')
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Add Images',
+      'Add documents or files',
+      'chat:agentMode.menuItem',
+    ])
+    expect(screen.queryByText('plugins')).not.toBeInTheDocument()
 
     unmount()
   })
@@ -824,6 +1078,38 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('reveals an image remove button only on hover or keyboard focus', () => {
+    useThreads.setState({ currentThreadId: undefined })
+    useChatAttachments.setState({
+      attachmentsByThread: {
+        '__new-thread__': [
+          {
+            type: 'image',
+            name: 'reference.png',
+            mimeType: 'image/png',
+            dataUrl: 'data:image/png;base64,dGVzdA==',
+            base64: 'dGVzdA==',
+            size: 4,
+          },
+        ],
+      },
+    })
+
+    render(<ChatInput />)
+
+    const remove = screen.getByRole('button', {
+      name: 'Remove reference.png',
+    })
+    expect(remove).toHaveClass(
+      'bg-foreground',
+      'text-background',
+      'opacity-0',
+      'group-hover/attachment:opacity-100',
+      'focus-visible:opacity-100'
+    )
+    expect(remove).not.toHaveClass('bg-destructive')
+  })
+
   it('downscales an image before applying the byte limit', async () => {
     const model = {
       id: 'vision-model',
@@ -912,7 +1198,7 @@ describe('ChatInput local model auto-start', () => {
     mocks.switchToModel.mockResolvedValue(undefined)
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({ connectorsPinned: true, agentModeEnabled: false })
+    useGeneralSetting.setState({ agentModeEnabled: false })
     useModelProvider.setState({
       providers: [upstream],
       selectedProvider: 'llamacpp-upstream',
@@ -920,10 +1206,43 @@ describe('ChatInput local model auto-start', () => {
     })
   })
 
+  it.each([false, true])(
+    'does not load or start after Skip clears selection (installed model: %s)',
+    async (installed) => {
+      const startModel = vi.fn()
+      seedServiceHub({
+        models: {
+          getActiveModels: vi.fn().mockResolvedValue([]),
+          startModel,
+        } as unknown as ReturnType<ServiceHub['models']>,
+      })
+      useModelProvider.setState({
+        providers: installed ? [upstream] : [],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      useAppState.setState({
+        activeModels: [],
+        loadingModel: false,
+        serverStatus: 'stopped',
+      })
+      const { unmount } = render(<ChatInput />)
+      await act(async () => {})
+
+      expect(screen.getByTestId('chat-input')).toBeVisible()
+      expect(useModelProvider.getState().selectedModel).toBeNull()
+      expect(useAppState.getState().activeModels).toEqual([])
+      expect(useAppState.getState().serverStatus).toBe('stopped')
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      expect(startModel).not.toHaveBeenCalled()
+      unmount()
+    }
+  )
+
   it('drops a stray copy in another engine instead of switching', async () => {
     const { stopAllModelsExcept } = seedModels({
       'llamacpp-upstream': ['shared-model'],
-      llamacpp: ['shared-model'],
+      'llamacpp': ['shared-model'],
     })
     const { unmount } = render(<ChatInput />)
 
@@ -956,7 +1275,7 @@ describe('ChatInput local model auto-start', () => {
   it('never touches the engines while this thread is streaming', async () => {
     const { getActiveModels, stopAllModelsExcept } = seedModels({
       'llamacpp-upstream': ['shared-model'],
-      llamacpp: ['shared-model'],
+      'llamacpp': ['shared-model'],
     })
     const { unmount } = render(<ChatInput chatStatus="streaming" />)
 

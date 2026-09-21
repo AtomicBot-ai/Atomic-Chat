@@ -15,17 +15,17 @@ import {
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ToolPresentation } from '@/lib/tools/types'
+import { toolActivityLabel } from '@/lib/tools/activity-label'
 import { cn } from '@/lib/utils'
 import { Tool, ToolContent } from './tool'
 import { WebSearchToolRenderer } from './renderers/web-search-tool-renderer'
 import { WebFetchToolRenderer } from './renderers/web-fetch-tool-renderer'
 import { GenericToolRenderer } from './renderers/generic-tool-renderer'
-import { WebsiteIcon } from './renderers/website-icon'
 
-/** How many result favicons the row shows before the count takes over. */
-const FAVICON_LIMIT = 3
-
-function toolIcon(toolName: string, kind: ToolPresentation['kind']): LucideIcon {
+export function toolIcon(
+  toolName: string,
+  kind: ToolPresentation['kind']
+): LucideIcon {
   if (kind !== 'generic') return Globe
   if (/^os\.(web|http)\./.test(toolName)) return Globe
   if (/^os\.(shell|proc)\./.test(toolName)) return SquareTerminal
@@ -37,106 +37,59 @@ function toolIcon(toolName: string, kind: ToolPresentation['kind']): LucideIcon 
   return Wrench
 }
 
-function hostname(url: string): string {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return url
-  }
-}
-
-/** The call's main argument — the query, path or command it ran with. */
-function callSummary(presentation: ToolPresentation): string | undefined {
-  switch (presentation.kind) {
-    case 'web_search_exa':
-      return presentation.query
-    case 'web_fetch_exa':
-      return presentation.urls?.map(hostname).join(', ') || undefined
-    default:
-      return presentation.subtitle
-  }
-}
-
-/**
- * One tool call as one line: the tool that actually ran, what it ran with,
- * and how it ended. Parameters and raw output sit behind a click on the line —
- * the line alone has to say what happened.
- */
+/** One readable action; raw parameters and errors remain in the disclosure. */
 export function ToolRenderer({
   toolName,
   presentation,
   state,
+  onRetry,
 }: {
   toolName: string
   presentation: ToolPresentation
   state: ToolUIPart['state']
+  onRetry?: () => void
 }) {
   const { t } = useTranslation('chat')
   const running = state === 'input-streaming' || state === 'input-available'
   const denied = (state as string) === 'output-denied'
-  const failed = state === 'output-error' || denied
+  const loopSkipped =
+    denied &&
+    presentation.kind === 'generic' &&
+    presentation.deniedReason === 'tool-loop'
+  const failed = state === 'output-error' || (denied && !loopSkipped)
   const Icon = running ? Loader2 : toolIcon(toolName, presentation.kind)
-  const summary = callSummary(presentation)
-  const errorLine = presentation.errorText?.split('\n')[0]
-  const results =
-    presentation.kind === 'web_search_exa' && !running && !failed
-      ? presentation.results
-      : []
+  const label = toolActivityLabel(toolName, presentation, state, t)
 
   return (
     <Tool state={state} className="group/tool">
       <CollapsibleTrigger
-        title={presentation.title}
-        className="flex w-full min-w-0 items-center gap-2 rounded-sm py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+        title={label}
+        aria-label={label}
+        className="flex min-h-6 w-full min-w-0 items-center gap-2 rounded-sm py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <Icon
+          aria-hidden="true"
           className={cn(
-            'size-3.5 shrink-0',
+            'size-[18px] shrink-0',
             running && 'animate-spin',
             failed && 'text-destructive'
           )}
         />
-        <span className="shrink-0 font-mono text-[13px] text-foreground/80">
-          {toolName}
-        </span>
-        {summary && <span className="min-w-0 truncate">{summary}</span>}
-        <span className="ml-auto flex min-w-0 shrink-0 items-center gap-2 pl-2 text-xs">
-          {/* An open line shows the whole error right below it. */}
-          {failed && (
-            <span
-              className="max-w-64 truncate text-destructive group-data-[state=open]/tool:hidden"
-              title={presentation.errorText}
-            >
-              {denied ? t('toolCall.denied') : errorLine}
-            </span>
-          )}
-          {results.length > 0 && (
-            <>
-              <span className="flex items-center">
-                {results.slice(0, FAVICON_LIMIT).map((result, index) => (
-                  <WebsiteIcon
-                    key={`${result.url ?? result.title}-${index}`}
-                    url={result.url}
-                    size={14}
-                    className="-ml-1 rounded-full bg-background ring-2 ring-background first:ml-0"
-                  />
-                ))}
-              </span>
-              <span>
-                {t(
-                  results.length === 1 ? 'toolCall.result' : 'toolCall.results',
-                  { count: results.length }
-                )}
-              </span>
-            </>
-          )}
-          <ChevronRight className="size-3.5 shrink-0 opacity-0 transition group-hover/tool:opacity-100 group-data-[state=open]/tool:rotate-90 group-data-[state=open]/tool:opacity-100" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="ml-auto flex shrink-0 items-center pl-2">
+          <ChevronRight
+            aria-hidden="true"
+            className="size-3.5 shrink-0 opacity-0 transition group-hover/tool:opacity-100 group-data-[state=open]/tool:rotate-90 group-data-[state=open]/tool:opacity-100"
+          />
         </span>
       </CollapsibleTrigger>
 
       <ToolContent>
         {presentation.kind === 'web_search_exa' && (
-          <WebSearchToolRenderer presentation={presentation} />
+          <WebSearchToolRenderer
+            presentation={presentation}
+            onRetry={onRetry}
+          />
         )}
 
         {presentation.kind === 'web_fetch_exa' && (

@@ -6,7 +6,6 @@ import {
   IconChevronRight,
   IconDeviceFloppy,
   IconFolderOpen,
-  IconMaximize,
   IconPhoto,
   IconPhotoUp,
   IconTrash,
@@ -71,7 +70,9 @@ export const ImageViewer = memo(function ImageViewer({
   const runs = useImageForm((state) => state.runs)
   const setSourceImage = useImageForm((state) => state.setSourceImage)
   const workflow = useImageForm((state) => state.workflow)
-  const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
+  const selectedArtifactId = useImageSetting(
+    (state) => state.selectedArtifactId
+  )
   const setSelectedArtifactId = useImageSetting(
     (state) => state.setSelectedArtifactId
   )
@@ -172,29 +173,57 @@ export const ImageViewer = memo(function ImageViewer({
 
   return (
     <div
-      className="group/viewer @container grid h-full grid-rows-[minmax(0,1fr)_auto] gap-2 px-6 pt-4 pb-2"
+      className="group/viewer @container grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden px-6 pt-4 pb-2"
       data-testid="image-viewer"
     >
-      {/* The grid row gives the image a definite box, so `max-h-full` holds
-          and a tall image can never slide under the toolbar. */}
-      <div className="relative flex min-h-0 min-w-0 items-center justify-center">
-        {/* Spans the box for keyboard focus; only the picture takes the pointer. */}
+      {/* Keep the control itself definite-sized. If it shrink-wraps the
+          intrinsic bitmap, percentage max sizes become circular and can be
+          recomputed differently after a workflow route change. */}
+      <div
+        className="relative flex min-h-0 min-w-0 items-start justify-center overflow-hidden [container-type:size]"
+        data-testid="image-viewer-region"
+      >
         <button
           type="button"
-          className="pointer-events-none flex size-full items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/image relative flex size-full min-h-0 min-w-0 items-start justify-center overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t('images:viewer.fullscreen')}
           onClick={() => {
             setFullscreen(true)
             captureImageGalleryAction('open')
           }}
         >
-          <img
-            src={src}
-            alt={item.recipe.prompt}
-            decoding="async"
-            draggable={false}
-            className="pointer-events-auto max-h-full max-w-full cursor-zoom-in rounded-lg object-contain shadow-md"
-          />
+          <span
+            className="relative block shrink-0 overflow-hidden rounded-lg shadow-md"
+            data-testid="image-viewer-frame"
+            style={{
+              width: `min(100cqw, ${100 * item.width / item.height}cqh)`,
+              height: `min(100cqh, ${100 * item.height / item.width}cqw)`,
+            }}
+          >
+            {/* The frame owns geometry and clipping from the first paint. Only
+                this inner layer is animated, and only its opacity changes, so
+                a decoded (including cached) bitmap can never render outside
+                the final rounded shape while WebKit promotes the transition. */}
+            <span
+              key={item.id}
+              className="absolute inset-0 animate-in fade-in-0 duration-300 motion-reduce:animate-none"
+              data-testid="image-viewer-transition"
+            >
+              <img
+                src={src}
+                alt={item.recipe.prompt}
+                decoding="async"
+                draggable={false}
+                className="block size-full min-h-0 min-w-0 cursor-zoom-in object-contain object-top"
+              />
+              <span
+                className="pointer-events-none absolute top-2 right-2 rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100"
+                data-testid="image-dimension-badge"
+              >
+                {item.width}×{item.height}
+              </span>
+            </span>
+          </span>
         </button>
 
         {/* Stepping arrows, shown when the pointer is over the canvas. */}
@@ -273,17 +302,6 @@ export const ImageViewer = memo(function ImageViewer({
               ? t('images:viewer.deleteCount', { count: selectedIds.length })
               : t('images:viewer.delete')}
           </span>
-        </Button>
-        <span className="hidden px-2 font-mono text-xs tabular-nums text-muted-foreground @[40rem]:inline">
-          {item.width}×{item.height}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('images:viewer.fullscreen')}
-          onClick={() => setFullscreen(true)}
-        >
-          <IconMaximize size={16} />
         </Button>
       </div>
 

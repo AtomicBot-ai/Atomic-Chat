@@ -158,7 +158,7 @@ describe('DropdownModelProvider - provider ordering', () => {
     cleanup()
   })
 
-  it('renders turboquant last, below the remote providers', () => {
+  it('includes connected cloud providers and keeps turboquant last', () => {
     renderPicker()
 
     expect(providerHeaderOrder()).toEqual([
@@ -202,12 +202,44 @@ describe('DropdownModelProvider - provider ordering', () => {
     ])
   })
 
-  it('keeps upstream and turboquant apart', () => {
+  it('omits inactive and empty providers without disturbing stable order', () => {
+    const providers = [
+      ...mockProviders,
+      {
+        provider: 'anthropic',
+        active: false,
+        api_key: 'sk-inactive',
+        models: [{ id: 'claude-opus', capabilities: ['completion'] }],
+        settings: [],
+      },
+      {
+        provider: 'mlx',
+        active: true,
+        api_key: '',
+        models: [],
+        settings: [],
+      },
+    ]
+    mockModelProvider({
+      providers,
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: mockProviders[1].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        providers.find((p) => p.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+
     renderPicker()
 
-    const order = providerHeaderOrder()
-    expect(
-      Math.abs(order.indexOf('llamacpp') - order.indexOf('llamacpp-upstream'))
-    ).toBeGreaterThan(1)
+    expect(providerHeaderOrder()).toEqual([
+      'llamacpp-upstream',
+      'openai',
+      'llamacpp',
+    ])
+    expect(providerHeaderOrder()).not.toContain('anthropic')
+    expect(providerHeaderOrder()).not.toContain('mlx')
   })
 })

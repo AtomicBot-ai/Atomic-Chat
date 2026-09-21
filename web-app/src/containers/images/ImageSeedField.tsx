@@ -40,6 +40,7 @@ export const ImageSeedField = memo(function ImageSeedField({
       htmlFor="image-seed"
       label={t('images:form.seed')}
       hint={t('images:form.seedHint')}
+      labelClassName="text-foreground"
     >
       <div className="flex items-center gap-1.5">
         <Input

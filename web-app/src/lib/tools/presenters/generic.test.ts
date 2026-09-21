@@ -46,4 +46,17 @@ describe('presentGenericTool', () => {
       }).title
     ).toBe('Called Search Documents')
   })
+
+  it('preserves the reason for an automatic tool veto', () => {
+    expect(
+      presentGenericTool({
+        toolName: 'os.fs.mkdir',
+        state: 'output-denied',
+        output: {
+          status: 'denied',
+          details: { deniedReason: 'tool-loop' },
+        },
+      }).deniedReason
+    ).toBe('tool-loop')
+  })
 })

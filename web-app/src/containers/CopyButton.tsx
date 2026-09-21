@@ -7,12 +7,16 @@ export const CopyButton = ({
   text,
   ariaLabel,
   onCopied,
+  label,
+  className,
 }: {
   text: string
   /** Names the button when several sit next to each other. */
   ariaLabel?: string
   /** Runs only after the text actually reached the clipboard. */
   onCopied?: () => void
+  label?: string
+  className?: string
 }) => {
   const [copied, setCopied] = useState(false)
 
@@ -27,8 +31,9 @@ export const CopyButton = ({
 
   return (
     <Button
-      variant="ghost"
-      size="icon-xs"
+      variant={label ? 'outline' : 'ghost'}
+      size={label ? 'sm' : 'icon-xs'}
+      className={className}
       onClick={handleCopy}
       aria-label={ariaLabel}
     >
@@ -39,6 +44,7 @@ export const CopyButton = ({
       ) : (
         <IconCopy size={16} />
       )}
+      {label && <span className="min-w-0 truncate">{label}</span>}
     </Button>
   )
 }

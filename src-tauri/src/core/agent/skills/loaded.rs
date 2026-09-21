@@ -3,7 +3,7 @@ use std::{collections::VecDeque, time::SystemTime};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use super::registry::SkillRegistry;
+use super::registry::{SkillRecord, SkillRegistry};
 use crate::core::agent::types::ToolOutcome;
 
 pub const LOADED_SKILLS_CAP: usize = 6;
@@ -24,17 +24,25 @@ pub struct LoadedSkills {
 }
 
 impl LoadedSkills {
+    /// Rebuild the loaded set for a new turn from the session's persisted
+    /// entries. The persisted body is only a record of what was loaded: the
+    /// body the model sees is read from the registry again, so an edit to
+    /// `SKILL.md` between turns reaches the model on the next message whether
+    /// or not `version` was bumped. A skill that is gone, disabled, or no
+    /// longer compatible drops out of the set.
     pub fn restore(entries: &[LoadedSkillState], registry: &SkillRegistry) -> Self {
         let entries = entries
             .iter()
-            .filter(|entry| {
-                registry.get_enabled(&entry.name).is_some_and(|record| {
-                    record.manifest.version == entry.version
-                        && entry.body.chars().count() <= LOADED_SKILL_BODY_MAX_CHARS
+            .filter_map(|entry| {
+                let record = registry.get_enabled(&entry.name)?;
+                Some(LoadedSkillState {
+                    name: record.manifest.name.clone(),
+                    version: record.manifest.version.clone(),
+                    body: loaded_body(record),
+                    loaded_at: entry.loaded_at,
                 })
             })
             .take(LOADED_SKILLS_CAP)
-            .cloned()
             .collect();
         Self {
             entries: Mutex::new(entries),
@@ -47,25 +55,7 @@ impl LoadedSkills {
                 "Skill `{name}` is missing, disabled, incompatible, or unavailable"
             ));
         };
-        let execution_contract = if record.manifest.requires_scripts.is_empty() {
-            "## Runtime execution contract\n\
-             This skill declares no bundled scripts. Never call `skill.run_script` for it. \
-             Use its declared tools directly; external CLI commands use `os.shell.run` with \
-             the executable in `cmd` and command-line tokens in the separate `args` array."
-                .to_string()
-        } else {
-            format!(
-                "## Runtime execution contract\n\
-                 `skill.run_script.script` must be exactly one of these bundled filenames: {}. \
-                 Put command-line arguments in the separate `args` array; never put a command \
-                 line in `script`.",
-                record.manifest.requires_scripts.join(", ")
-            )
-        };
-        let body = truncate_chars(
-            &format!("{execution_contract}\n\n{}", record.body),
-            LOADED_SKILL_BODY_MAX_CHARS,
-        );
+        let body = loaded_body(record);
         let entry = LoadedSkillState {
             name: record.manifest.name.clone(),
             version: record.manifest.version.clone(),
@@ -99,6 +89,30 @@ impl LoadedSkills {
     pub async fn snapshot(&self) -> Vec<LoadedSkillState> {
         self.entries.lock().await.iter().cloned().collect()
     }
+}
+
+/// The text a loaded skill contributes to the prompt: the runtime execution
+/// contract derived from its manifest, then the `SKILL.md` body, bounded.
+fn loaded_body(record: &SkillRecord) -> String {
+    let execution_contract = if record.manifest.requires_scripts.is_empty() {
+        "## Runtime execution contract\n\
+         This skill declares no bundled scripts. Never call `skill.run_script` for it. \
+         Use its declared tools directly; external CLI commands use `os.shell.run` with \
+         the executable in `cmd` and command-line tokens in the separate `args` array."
+            .to_string()
+    } else {
+        format!(
+            "## Runtime execution contract\n\
+             `skill.run_script.script` must be exactly one of these bundled filenames: {}. \
+             Put command-line arguments in the separate `args` array; never put a command \
+             line in `script`.",
+            record.manifest.requires_scripts.join(", ")
+        )
+    };
+    truncate_chars(
+        &format!("{execution_contract}\n\n{}", record.body),
+        LOADED_SKILL_BODY_MAX_CHARS,
+    )
 }
 
 pub fn render_loaded_skills(entries: &[LoadedSkillState]) -> Option<String> {
@@ -154,6 +168,75 @@ mod tests {
         let rendered = render_loaded_skills(&entries).unwrap();
         assert!(rendered.chars().count() <= LOADED_SKILLS_PROMPT_MAX_CHARS);
         assert!(rendered.ends_with("[truncated]"));
+    }
+
+    fn write_skill(root: &std::path::Path, name: &str, version: &str, body: &str) {
+        let skill_root = root.join(name);
+        fs::create_dir_all(&skill_root).unwrap();
+        fs::write(
+            skill_root.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Test\nversion: {version}\n---\n{body}"),
+        )
+        .unwrap();
+    }
+
+    fn load_registry(root: &std::path::Path) -> SkillRegistry {
+        SkillRegistry::load(root.to_path_buf(), &BTreeSet::new(), &BTreeSet::new()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_restored_skill_follows_the_body_on_disk_not_the_persisted_copy() {
+        let temp = TempDir::new().unwrap();
+        let skills = temp.path().join("skills");
+        write_skill(&skills, "notes", "1.0.0", "Old instructions.");
+        let loaded = LoadedSkills::default();
+        loaded.view("notes", &load_registry(&skills)).await;
+        let persisted = loaded.snapshot().await;
+        assert!(persisted[0].body.contains("Old instructions."));
+
+        // The user edits SKILL.md without touching `version` (the documented
+        // "edits take effect on your next message" path), then sends again.
+        write_skill(&skills, "notes", "1.0.0", "New instructions.");
+        let restored = LoadedSkills::restore(&persisted, &load_registry(&skills));
+
+        let rendered = render_loaded_skills(&restored.snapshot().await).unwrap();
+        assert!(rendered.contains("New instructions."), "{rendered}");
+        assert!(!rendered.contains("Old instructions."), "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn a_version_bump_refreshes_a_loaded_skill_instead_of_evicting_it() {
+        let temp = TempDir::new().unwrap();
+        let skills = temp.path().join("skills");
+        write_skill(&skills, "notes", "1.0.0", "First edition.");
+        let loaded = LoadedSkills::default();
+        loaded.view("notes", &load_registry(&skills)).await;
+        let persisted = loaded.snapshot().await;
+
+        write_skill(&skills, "notes", "2.0.0", "Second edition.");
+        let restored = LoadedSkills::restore(&persisted, &load_registry(&skills));
+
+        let entries = restored.snapshot().await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].loaded_at, persisted[0].loaded_at);
+        let rendered = render_loaded_skills(&entries).unwrap();
+        assert!(rendered.contains("# skill: notes (v2.0.0)"), "{rendered}");
+        assert!(rendered.contains("Second edition."), "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn a_restored_skill_is_dropped_when_it_left_the_registry() {
+        let temp = TempDir::new().unwrap();
+        let skills = temp.path().join("skills");
+        write_skill(&skills, "notes", "1.0.0", "Instructions.");
+        let loaded = LoadedSkills::default();
+        loaded.view("notes", &load_registry(&skills)).await;
+        let persisted = loaded.snapshot().await;
+
+        fs::remove_dir_all(skills.join("notes")).unwrap();
+        let restored = LoadedSkills::restore(&persisted, &load_registry(&skills));
+
+        assert!(restored.snapshot().await.is_empty());
     }
 
     #[tokio::test]

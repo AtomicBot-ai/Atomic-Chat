@@ -20,7 +20,9 @@ use crate::error::{DiffusionError, DiffusionErrorCode, DiffusionResult};
 use crate::progress::{
     classify_exit, diagnostic_tail_deque, split_records, strip_ansi, Utf8Accumulator,
 };
-use crate::state::{new_tail, push_tail, ServerCapabilities, ServerSpec, SharedTail, StepListener};
+use crate::state::{
+    new_tail, push_tail, DiffusionBackend, ServerCapabilities, ServerSpec, SharedTail, StepListener,
+};
 use jan_utils::{
     add_cuda_paths, binary_requires_cuda, generate_random_port, setup_library_path,
     setup_windows_process_flags,
@@ -45,6 +47,34 @@ pub const CLI_BINARY: &str = if cfg!(windows) {
     "sd-cli"
 };
 
+fn is_m5_brand(brand: &str) -> bool {
+    brand.split_whitespace().any(|part| part.starts_with("M5"))
+}
+
+#[cfg(target_os = "macos")]
+fn disable_metal_tensor_api_for_host(command: &mut Command, backend: DiffusionBackend) {
+    if backend != DiffusionBackend::Metal {
+        return;
+    }
+    let brand = std::process::Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default();
+    if is_m5_brand(&brand) {
+        // ggml's Metal Tensor API is unstable on some M5/macOS combinations:
+        // it can fail command buffers or return NaN latents as white images.
+        // This keeps Metal enabled and only uses the mature SIMD-group path.
+        command.env("GGML_METAL_TENSOR_DISABLE", "1");
+        log::info!("[atomic-diffusion] disabled Metal Tensor API on {brand}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn disable_metal_tensor_api_for_host(_command: &mut Command, _backend: DiffusionBackend) {}
+
 pub fn server_binary_path(dir: &Path) -> PathBuf {
     dir.join(SERVER_BINARY)
 }
@@ -63,6 +93,7 @@ pub struct SpawnedServer {
 /// Spawn `sd-server` for `spec`, wait until it serves the model, and probe its
 /// capabilities. On any failure the child is dead when this returns.
 pub async fn spawn_server(spec: &ServerSpec, scratch_dir: &Path) -> DiffusionResult<SpawnedServer> {
+    crate::session::check_engine_compatibility(&spec.family, &spec.tag)?;
     let bin_path = server_binary_path(&spec.binary_dir);
     if !bin_path.is_file() {
         return Err(DiffusionError::with_details(
@@ -87,8 +118,16 @@ pub async fn spawn_server(spec: &ServerSpec, scratch_dir: &Path) -> DiffusionRes
         command_summary_for_log(&args)
     );
 
+    log::debug!(
+        "[atomic-diffusion] launch tag={} backend={} binary={} argv={:?}",
+        spec.tag,
+        spec.backend_id,
+        bin_path.display(),
+        args
+    );
     let mut command = Command::new(&bin_path);
     command.args(&args);
+    disable_metal_tensor_api_for_host(&mut command, spec.backend);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     // If this future is dropped before the child is handed to the session,
@@ -569,4 +608,11 @@ mod tests {
             .unwrap();
         assert_eq!(err.code, DiffusionErrorCode::EngineMissing);
     }
+}
+#[test]
+fn recognizes_only_apple_m5_cpu_brands() {
+    assert!(is_m5_brand("Apple M5"));
+    assert!(is_m5_brand("Apple M5 Max"));
+    assert!(!is_m5_brand("Apple M4 Max"));
+    assert!(!is_m5_brand("Intel(R) Core(TM) i9"));
 }

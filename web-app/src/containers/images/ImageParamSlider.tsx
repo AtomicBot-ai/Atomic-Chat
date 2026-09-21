@@ -61,7 +61,10 @@ export const ImageParamSlider = memo(function ImageParamSlider({
   return (
     <div className="flex items-center gap-3">
       <div className="flex w-32 shrink-0 items-center gap-1">
-        <label htmlFor={id} className="truncate text-xs font-medium">
+        <label
+          htmlFor={id}
+          className="truncate text-xs font-medium text-foreground"
+        >
           {label}
         </label>
         {description && <ImageFieldHint>{description}</ImageFieldHint>}

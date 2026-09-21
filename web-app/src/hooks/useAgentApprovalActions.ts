@@ -12,6 +12,11 @@ import {
 } from '@/services/agent/tauri'
 import type { AgentApprovalResolution } from '@/types/agent'
 
+export type AgentFolderAccessResolution =
+  | 'allow_once'
+  | 'always_allow'
+  | 'deny'
+
 /**
  * Thread-scoped resolve actions for pending agent approvals and folder-access
  * requests. Shared by the inline composer block and the global fallback
@@ -59,7 +64,9 @@ export function useAgentApprovalActions(threadId: string | undefined) {
     }
   }
 
-  const resolveFolderAccess = async (allow: boolean) => {
+  const resolveFolderAccess = async (
+    decision: AgentFolderAccessResolution
+  ) => {
     if (!threadId || !run || !folderAccess) return
     if (
       run.folderAccessResolving ||
@@ -70,7 +77,11 @@ export function useAgentApprovalActions(threadId: string | undefined) {
     resolvingFolderIdRef.current = folderAccess.access_id
     useAgentRun.getState().setFolderAccessResolving(threadId, true)
     try {
-      if (allow) {
+      const allow = decision !== 'deny'
+      // The backend adds an allowed path to the editable roots of the current
+      // run. Persist it in the thread workspace only for the explicit
+      // "Always Allow" decision, so plain Allow remains temporary.
+      if (decision === 'always_allow') {
         const root = await resolveAgentWorkspaceRoot(folderAccess.path)
         useAgentMode.getState().addExternalRoot(threadId, {
           ...root,

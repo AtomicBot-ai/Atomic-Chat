@@ -85,8 +85,9 @@ describe('modelFamilyLogoSrc', () => {
       '/images/model-provider/nvidia.svg'
     )
     expect(modelFamilyLogoSrc('unsloth/gpt-oss-20b-GGUF')).toBe(
-      '/images/model-provider/openai.svg'
+      '/svg/openai-mark.svg'
     )
+    expect(isMonochromeFamilyLogo('/svg/openai-mark.svg')).toBe(true)
     expect(modelFamilyLogoSrc('ibm-granite/granite-4.0-h-tiny-GGUF')).toBe(
       '/svg/ibm.svg'
     )
@@ -140,7 +141,7 @@ describe('image and video families', () => {
       '/svg/bfl.svg'
     )
     expect(modelFamilyLogoSrc('city96/flux1-dev-gguf')).toBe('/svg/bfl.svg')
-    expect(modelFamilyLogoSrc('Z-Image Turbo')).toBe('/svg/qwen-color.svg')
+    expect(modelFamilyLogoSrc('Z-Image Turbo')).toBe('/svg/z-image.svg')
     expect(modelFamilyLogoSrc('Qwen-Image')).toBe('/svg/qwen-color.svg')
     expect(modelFamilyLogoSrc('Wan-AI/Wan2.2-TI2V-5B')).toBe(
       '/svg/qwen-color.svg'

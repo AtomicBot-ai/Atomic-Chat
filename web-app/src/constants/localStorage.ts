@@ -92,9 +92,9 @@ export const localStorageKey = {
   // checkpoint, engine override and the unload policies. Same shape of bag as
   // `settingVoice`, for the same reason.
   settingImages: 'setting-images',
-  // The Images page draft: prompt, size, steps, seed and the batch/run counts.
-  // Persisted so a restart mid-session does not lose a prompt that took a
-  // while to write. The seed is kept as text so an empty field stays empty.
+  // Durable Images form choices: workflow, size, steps, seed and batch/run
+  // counts. Unsent positive/negative prompt text is deliberately excluded.
+  // The seed is kept as text so an empty field stays empty.
   imageForm: 'image-form',
 }
 

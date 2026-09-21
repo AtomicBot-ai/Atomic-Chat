@@ -117,7 +117,13 @@ pub async fn finalize_backend_install<R: Runtime>(
 ) -> DiffusionResult<BackendInstallRecord> {
     let state = state.inner().clone();
     let root = state.backends_root()?;
+    let _load = state.load_lock.lock().await;
     let record = install::finalize_backend_install(&root, args).await?;
+    let emitter = emitter_for(&app);
+    if let Some(active) = state.active_job_id() {
+        let _ = jobs::cancel_job(&state, emitter.as_ref(), &active).await;
+    }
+    session::activate_install(&state, emitter.as_ref(), &record).await;
     session::emit_state(&state, emitter_for(&app).as_ref(), "install").await;
     Ok(record)
 }
@@ -245,17 +251,14 @@ pub async fn load_model<R: Runtime>(
         ));
     }
     let installed = install::list_installed_backends(&root);
-    let record = installed
-        .iter()
-        .find(|r| r.engine == engine)
-        .cloned()
-        .ok_or_else(|| {
-            DiffusionError::new(
-                DiffusionErrorCode::EngineMissing,
-                "Install the image engine first.",
-            )
-        })?;
-
+    let record = match session::select_model_install(&installed, engine, &request.family) {
+        Ok(record) => record,
+        Err(err) => {
+            state.set_model_state(ModelState::Failed, Some(err.clone()));
+            session::emit_state(&state, emitter.as_ref(), "load-blocked").await;
+            return Err(err);
+        }
+    };
     let spec = ServerSpec {
         binary_dir: PathBuf::from(&record.dir),
         engine,
@@ -271,6 +274,9 @@ pub async fn load_model<R: Runtime>(
         ranges: request.ranges,
         offload: request.offload,
         threads: request.threads,
+        // Keep argv limited to options exposed by the bundled sd-server.
+        // M5 numerical stability is handled by GGML_METAL_TENSOR_DISABLE in
+        // process.rs; older d04e895 builds reject newer scaling flags.
         extra_args: Vec::new(),
         startup_timeout: Duration::from_secs(
             request

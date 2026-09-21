@@ -1,4 +1,17 @@
 {
+  "agentError": {
+    "budgetTitle": "The response ran too long",
+    "budgetBody": "The model used its output budget before completing the action. Try a lower reasoning level or ask for a smaller step.",
+    "authTitle": "Authentication failed",
+    "authBody": "Check this provider's API key, then try again.",
+    "timeoutTitle": "The model took too long",
+    "timeoutBody": "The request timed out before the action completed. Try again or use a smaller step.",
+    "loopTitle": "The agent stopped a repeated action",
+    "loopBody": "The same action was no longer making progress, so Atomic Chat stopped it instead of letting it loop. Try again or describe a different approach.",
+    "genericTitle": "The action could not be completed",
+    "genericBody": "The model stopped before it finished. Try again; if it repeats, switch models or make the request smaller.",
+    "retry": "Try again"
+  },
   "welcome": "Hi, how are you?",
   "description": "How can I help you today?",
   "temporaryChat": "Temporary Chat",
@@ -11,33 +24,132 @@
     "sendHint": "Choose what to reply with",
     "startingTitle": "Starting {{name}}…",
     "startingDescription": "Your message will be sent as soon as it's ready.",
-    "emptyTitle": "Nothing to reply with yet",
-    "emptyDescription": "Download a model for this device, or connect one in the cloud. Your message is kept either way.",
-    "recommendedForDevice": "Recommended for your device",
+    "emptyTitle": "Pick a model to start chatting",
+    "emptyDescription": "Your message is saved. Pick a model and it will be sent.",
+    "downloadingTitle": "Your model is downloading",
+    "downloadingDescription": "Your message is saved and will be sent automatically as soon as the model finishes downloading and starts.",
+    "downloadingSection": "Downloading model",
+    "otherOptions": "Other ways to start chatting",
+    "gotIt": "Got it",
+    "backgroundStarted": "Model ready. Your chat started in the background.",
+    "backgroundFailed": "The queued message could not be sent. Open the chat and try again.",
+    "recommendedForDevice": "Best fit for your device",
     "download": "Download",
-    "downloading": "Downloading…",
-    "downloadingPercent": "Downloading… {{percent}}%",
-    "connectCloud": "Connect cloud provider",
-    "connectSubscription": "Connect ChatGPT subscription",
+    "downloadSize": "Download {{size}}",
+    "downloadLabel": "Download {{name}}",
+    "findingRecommendation": "Finding the best fit for your device…",
     "queuedNotice": "Your message will be sent once the model is ready.",
     "startingNotice": "Starting",
     "addFolder": "Add a folder with models",
-    "folderScanning": "Looking for models…",
+    "folderTitle": "Models on this computer",
+    "folderHint": "Pick a folder and they're added",
+    "folderScanning": "Looking…",
     "folderEmpty": "No compatible models found in that folder."
+  },
+  "visionGate": {
+    "title": "{{model}} can't see images",
+    "titleNoModel": "This model can't see images",
+    "description": "The model you're chatting with is text-only, so images can't be attached. Download a model with vision and the app will switch to it.",
+    "sectionLabel": "Vision models for your device",
+    "visionCapable": "Vision",
+    "rowHint": "{{size}} · {{reason}}",
+    "installedHint": "Already on this device",
+    "download": "Download",
+    "downloadLabel": "Download {{name}}",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "use": "Use",
+    "useLabel": "Use {{name}}",
+    "finding": "Finding vision models for your device…",
+    "empty": "None of the vision models we know fit this device. Browse Hugging Face for a smaller one.",
+    "huggingFaceTitle": "Any vision model from Hugging Face",
+    "huggingFaceHint": "Browse GGUF builds in Models",
+    "huggingFaceLabel": "Browse vision models on Hugging Face",
+    "browse": "Browse"
   },
   "newConversation": "New Conversation",
   "clearHistory": "Clear History",
   "activity": {
     "working": "Working...",
+    "completedActions": "Completed {{count}} actions",
     "reading": "Reading: {{count}}%",
     "reasoned": "Reasoned",
     "thinking": "Thinking...",
+    "thinkingFor": "Thinking for {{count}}s…",
     "thoughtFor": "Thought for {{count}}s"
   },
   "toolCall": {
     "result": "{{count}} result",
     "results": "{{count}} results",
-    "denied": "Denied"
+    "file": "file",
+    "action": "Action",
+    "locations": {
+      "home": "Home",
+      "desktop": "Desktop",
+      "documents": "Documents",
+      "downloads": "Downloads"
+    },
+    "onDesktop": "{{name}} on {{folder}}",
+    "inFolder": "{{name}} in {{folder}}",
+    "withContext": "{{label}}: {{context}}",
+    "fallback": {
+      "running": "{{title}} — working…",
+      "success": "{{title}} — completed",
+      "error": "{{title}} — failed",
+      "denied": "{{title}} — denied",
+      "skipped": "{{title}} — skipped repeated action"
+    },
+    "actions": {
+      "write": {
+        "running": "Creating {{target}}…",
+        "success": "Created {{target}}",
+        "error": "Could not create {{target}}",
+        "denied": "Creating {{target}} was denied",
+        "skipped": "Skipped repeating the same file change"
+      },
+      "read": {
+        "running": "Reading {{target}}…",
+        "success": "Read {{target}}",
+        "error": "Could not read {{target}}",
+        "denied": "Reading {{target}} was denied",
+        "skipped": "Skipped repeating the same file read"
+      },
+      "list": {
+        "running": "Looking through files…",
+        "success": "Looked through files",
+        "error": "Could not look through files",
+        "denied": "Looking through files was denied",
+        "skipped": "Skipped repeating the same file lookup"
+      },
+      "mkdir": {
+        "running": "Creating folder…",
+        "success": "Created folder",
+        "error": "Could not create folder",
+        "denied": "Creating folder was denied",
+        "skipped": "Skipped repeated folder creation"
+      },
+      "shell": {
+        "running": "Running a command…",
+        "success": "Ran a command",
+        "error": "Command failed",
+        "denied": "Command was denied",
+        "skipped": "Skipped repeating the same command"
+      },
+      "search": {
+        "running": "Searching the web…",
+        "success": "Searched the web",
+        "error": "Web search failed",
+        "denied": "Web search was denied",
+        "skipped": "Skipped repeating the same web search"
+      },
+      "fetch": {
+        "running": "Reading web page…",
+        "success": "Read web page",
+        "error": "Could not read web page",
+        "denied": "Reading web page was denied",
+        "skipped": "Skipped repeatedly reading the same page"
+      }
+    }
   },
   "workspacePreview": {
     "generating": "Preview will be available after generation finishes."
@@ -52,15 +164,20 @@
   "agentApprovals": {
     "manualSelected": "Ask for approval",
     "manual": "Ask for approval",
-    "manualDescription": "Always ask to edit external files and use the internet",
+    "manualDescription": "Always ask before tool calls edit files or use the internet",
     "skipSelected": "Full access",
     "skip": "Full access",
-    "skipDescription": "No approval prompts: tool calls can use the internet and any file on your computer",
-    "menuTitle": "How should tool calls be approved?"
+    "skipDescription": "Runs every tool call without asking, including access to files and the internet.",
+    "menuTitle": "How should tool calls be approved?",
+    "skipConfirmTitle": "Enable Full access?",
+    "skipConfirmBody": "No approval prompts: tool calls can modify or delete files, run commands, and use the internet. Enable it only for a task you trust.",
+    "skipConfirmCancel": "Cancel",
+    "skipConfirmAccept": "I understand"
   },
   "agentApproval": {
     "title": "Agent approval required",
     "description": "{{tool}} is waiting for your decision.",
+    "tool": "Tool",
     "reason": "Reason",
     "preview": "Action preview",
     "resources": "Affected resources",
@@ -70,14 +187,25 @@
     "approveOnce": "Approve once",
     "resolveFailed": "Failed to send the approval decision.",
     "showDetails": "Show details",
-    "hideDetails": "Hide details"
+    "hideDetails": "Hide details",
+    "summary": {
+      "command": "This command may change files, network connections, processes, or system settings.",
+      "script": "This script may make changes on your computer.",
+      "deleteFiles": "This action may remove files or folders.",
+      "changeFiles": "This action may create or change files.",
+      "internet": "This action will access the internet.",
+      "repository": "This action may change the repository.",
+      "connectedTool": "A connected tool wants to perform an external action.",
+      "generic": "This action may change data or system state."
+    }
   },
   "agentFolderAccess": {
     "title": "Allow folder access",
     "description": "{{tool}} needs access to this folder.",
-    "canEditNotice": "Allowing adds this folder to External with CAN EDIT access for this Agent thread.",
+    "canEditNotice": "Allow grants access for this run. Always Allow adds the folder to External with CAN EDIT access for this Agent thread.",
     "deny": "Deny",
-    "allow": "Allow folder",
+    "allow": "Allow",
+    "alwaysAllow": "Always Allow",
     "resolveFailed": "Failed to send the folder access decision."
   },
   "agentWorkspace": {
@@ -103,7 +231,9 @@
     "advancedSettings": "Advanced settings",
     "advancedSettingsHint": "Load-time options. Changing them restarts a running model.",
     "reset": "Reset",
-    "resetSampling": "Reset sampling",
+    "resetSampling": "Reset to defaults",
+    "resetSuccess": "Model settings reset",
+    "resetSuccessDescription": "Sampling settings were restored to their defaults.",
     "resetModel": "Reset model settings to defaults"
   },
   "agentErrors": {

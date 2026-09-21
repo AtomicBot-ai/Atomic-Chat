@@ -19,6 +19,11 @@ import {
   publisherKey,
   sizeStringToGb,
 } from '@/containers/SetupScreen'
+import {
+  fitLevel,
+  orderRowsByFit,
+  type FitLevel,
+} from '@/containers/SetupScreenHelpers'
 import type { HardwareProfile } from '@/lib/hardware-tier'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import type { LocalModelCandidate } from '@/services/models/localScan'
@@ -313,5 +318,82 @@ describe('interleaveByPublisher', () => {
       'a3',
     ])
     expect(interleaveByPublisher([], key)).toEqual([])
+  })
+})
+
+describe('fitLevel', () => {
+  it('maps the four verdicts onto three colours and leaves "unknown" blank', () => {
+    // Two verdicts share the yellow: `tight` and `spills` both mean "it will
+    // run, expect less of it". `null` stays `null` — "we don't know" must not
+    // be painted as a warning.
+    expect(fitLevel('comfortable')).toBe('ok')
+    expect(fitLevel('tight')).toBe('warn')
+    expect(fitLevel('spills')).toBe('warn')
+    expect(fitLevel('wont_load')).toBe('no')
+    expect(fitLevel(null)).toBeNull()
+    expect(fitLevel(undefined)).toBeNull()
+  })
+})
+
+describe('orderRowsByFit', () => {
+  type Row = { name: string; level: FitLevel | null }
+  const row = (name: string, level: FitLevel | null): Row => ({ name, level })
+  // Publisher is the first letter of the name: `q1`, `q2` are Qwen; `g1` Gemma.
+  const keyOf = (r: Row) => r.name[0]
+  const order = (rows: Row[], previous?: string) =>
+    orderRowsByFit(rows, {
+      levelOf: (r) => r.level,
+      keyOf,
+      interleave: interleaveByPublisher,
+      previous,
+    }).map((r) => r.name)
+
+  it('lists what fits first, then what is tight, then what will not load, then the unknown', () => {
+    expect(
+      order([
+        row('a1', null),
+        row('b1', 'no'),
+        row('c1', 'warn'),
+        row('d1', 'ok'),
+        row('e1', 'warn'),
+        row('f1', 'ok'),
+      ])
+    ).toEqual(['d1', 'f1', 'c1', 'e1', 'b1', 'a1'])
+  })
+
+  it('still parts two neighbours from one publisher inside a colour group', () => {
+    // Two Qwen and one Gemma that all fit: Qwen, Gemma, Qwen — not the
+    // manifest's Qwen, Qwen, Gemma.
+    expect(order([row('q1', 'ok'), row('q2', 'ok'), row('g1', 'ok')])).toEqual([
+      'q1',
+      'g1',
+      'q2',
+    ])
+  })
+
+  it('does not let the colour groups undo the interleave at their seam', () => {
+    // The last green row is Qwen, so the first yellow row may not be.
+    expect(
+      order([row('q1', 'ok'), row('q2', 'warn'), row('g1', 'warn')])
+    ).toEqual(['q1', 'g1', 'q2'])
+  })
+
+  it('starts away from the row above the list — the offer stays first and is not seated next to its twin', () => {
+    // The offer is rendered above the picks, never dealt with them; its
+    // publisher is passed as `previous` so the first green pick differs.
+    expect(
+      order([row('q1', 'ok'), row('g1', 'ok'), row('q2', 'warn')], 'q')
+    ).toEqual(['g1', 'q1', 'q2'])
+  })
+
+  it('never reorders across groups to improve the interleave', () => {
+    // Two Qwen that fit and one Gemma that will not: the Gemma stays last,
+    // even though moving it up would part the two Qwen rows.
+    expect(order([row('q1', 'ok'), row('q2', 'ok'), row('g1', 'no')])).toEqual([
+      'q1',
+      'q2',
+      'g1',
+    ])
+    expect(order([])).toEqual([])
   })
 })

@@ -11,6 +11,7 @@ import { ThemeProvider } from '@/providers/ThemeProvider'
 import { InterfaceProvider } from '@/providers/InterfaceProvider'
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
+import { DeferredFirstSendProvider } from '@/providers/DeferredFirstSendProvider'
 import { route } from '@/constants/routes'
 import { ExtensionProvider } from '@/providers/ExtensionProvider'
 import { ToasterProvider } from '@/providers/ToasterProvider'
@@ -179,6 +180,7 @@ function RootLayout() {
         <TranslationProvider>
           <ExtensionProvider>
             <DataProvider />
+            <DeferredFirstSendProvider />
             <GlobalEventHandler />
             <StartupBackendCoordinator />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
