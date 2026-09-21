@@ -493,7 +493,7 @@ pub fn describe_core_command(resource_dir: &Path, data_folder: &Path) -> Result<
         resource_dir,
         std::env::var(launch::CORE_COMMAND_ENV).ok().as_deref(),
     )?;
-    Ok(command.display(data_folder))
+    Ok(command.display(data_folder, crate::core::telemetry::consent_enabled()))
 }
 
 #[cfg(test)]

@@ -761,3 +761,45 @@ async fn a_core_that_cannot_serve_reports_the_refusal_and_stays_stopped() {
     assert_eq!(core.running_port().await, Ok(None), "nothing is left serving");
     live.supervisor().detach().await;
 }
+
+#[tokio::test]
+async fn the_core_reports_errors_only_under_the_consent_the_app_gives_it() {
+    // Core ADR 2026-09-21-report-core-errors-to-its-own-sentry-project: the launch flag carries the
+    // consent the Rust gate holds, and `PUT /telemetry` carries every later change, the anonymous
+    // user and the hardware tags. The core keeps only allow-listed tags and never shows its DSN.
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let live = LiveCore::new(&binary);
+    let supervisor = live.supervisor();
+    crate::core::telemetry::set_consent(false);
+    let attached = supervisor.ensure_attached(true).await;
+    crate::core::telemetry::set_consent(true);
+    attached.expect("attach");
+
+    let launched = supervisor
+        .call("GET", super::telemetry::PATH, None, false)
+        .await
+        .expect("telemetry state");
+    assert_eq!(super::telemetry::consent_of(&launched), Some(false));
+
+    let state = crate::core::telemetry::core_state::CoreTelemetry {
+        user_id: Some("device-live".into()),
+        tags: std::collections::HashMap::from([
+            ("gpu_model".to_string(), "Apple M3".to_string()),
+            ("hostname".to_string(), "never-sent".to_string()),
+        ]),
+    };
+    let body = crate::core::telemetry::core_state::body(true, &state);
+    let answer = supervisor
+        .call("PUT", super::telemetry::PATH, Some(body), false)
+        .await
+        .expect("telemetry update");
+    assert_eq!(super::telemetry::consent_of(&answer), Some(true));
+    assert_eq!(answer["has_user"], true);
+    assert_eq!(answer["tags"], json!({ "gpu_model": "Apple M3" }));
+    assert!(answer.get("dsn").is_none());
+
+    supervisor.detach().await;
+}

@@ -49,8 +49,9 @@ pub struct CoreCommand {
 impl CoreCommand {
     /// The full argv for `daemon`, which is the only way the app starts a core:
     /// `--control-port 0` lets the OS pick, and the port is read back from the
-    /// lock rather than guessed.
-    pub fn daemon_args(&self, data_folder: &Path) -> Vec<String> {
+    /// lock rather than guessed. `telemetry` is the `productAnalytic` consent the
+    /// core reports its own errors under until `PUT /telemetry` says otherwise.
+    pub fn daemon_args(&self, data_folder: &Path, telemetry: bool) -> Vec<String> {
         let mut args = self.prefix.clone();
         args.push("daemon".into());
         args.push("--data-folder".into());
@@ -65,14 +66,16 @@ impl CoreCommand {
             args.push("--cloudflared-bin".into());
             args.push(cloudflared.clone());
         }
+        args.push("--telemetry".into());
+        args.push(if telemetry { "on" } else { "off" }.into());
         args
     }
 
-    pub fn display(&self, data_folder: &Path) -> String {
+    pub fn display(&self, data_folder: &Path, telemetry: bool) -> String {
         format!(
             "{} {}",
             self.program,
-            self.daemon_args(data_folder).join(" ")
+            self.daemon_args(data_folder, telemetry).join(" ")
         )
     }
 }
@@ -231,8 +234,14 @@ pub async fn launch_and_wait(
     if reaped > 0 {
         log::info!("[atomic-core] released {reaped} exited core process(es)");
     }
-    log::info!("[atomic-core] starting: {}", command.display(data_folder));
-    let mut child = spawn_detached(command, data_folder)?;
+    // The Rust gate as it stands: on until the webview reconciles the persisted
+    // `productAnalytic`, like the app's own panic reports.
+    let telemetry = crate::core::telemetry::consent_enabled();
+    log::info!(
+        "[atomic-core] starting: {}",
+        command.display(data_folder, telemetry)
+    );
+    let mut child = spawn_detached(command, data_folder, telemetry)?;
 
     let deadline = Instant::now() + timeout;
     loop {
@@ -336,13 +345,14 @@ async fn wait_for_ready_owner(data_folder: &Path, deadline: Instant) -> Option<L
 fn spawn_detached(
     command: &CoreCommand,
     data_folder: &Path,
+    telemetry: bool,
 ) -> Result<std::process::Child, CoreError> {
     // The environment is inherited as-is: `process_env`'s AppImage stripping is
     // for host executables like `curl` or a terminal, and the core is the
     // opposite of that — it loads the llama.cpp libraries the AppImage brings,
     // so removing `LD_LIBRARY_PATH` would break every backend it starts.
     let mut cmd = Command::new(&command.program);
-    cmd.args(command.daemon_args(data_folder))
+    cmd.args(command.daemon_args(data_folder, telemetry))
         .stdin(Stdio::null())
         // Readiness is read from the lock, so stdout is not needed — and a pipe
         // we stopped reading would eventually block the core on a full buffer.
@@ -456,8 +466,18 @@ mod tests {
         };
 
         assert_eq!(
-            command.daemon_args(Path::new("/data")),
-            vec!["daemon", "--data-folder", "/data", "--control-port", "0", "--resources-dir", "/app/resources/bin"]
+            command.daemon_args(Path::new("/data"), true),
+            vec![
+                "daemon",
+                "--data-folder",
+                "/data",
+                "--control-port",
+                "0",
+                "--resources-dir",
+                "/app/resources/bin",
+                "--telemetry",
+                "on"
+            ]
         );
         assert_eq!(
             sidecar_resources_dir(Path::new("/app")),
@@ -483,7 +503,7 @@ mod tests {
             cloudflared_bin: Some(sidecar.to_string_lossy().to_string()),
         };
         assert_eq!(
-            command.daemon_args(Path::new("/data")),
+            command.daemon_args(Path::new("/data"), false),
             vec![
                 "daemon".to_string(),
                 "--data-folder".into(),
@@ -491,7 +511,9 @@ mod tests {
                 "--control-port".into(),
                 "0".into(),
                 "--cloudflared-bin".into(),
-                sidecar.to_string_lossy().to_string()
+                sidecar.to_string_lossy().to_string(),
+                "--telemetry".into(),
+                "off".into()
             ]
         );
     }
@@ -506,14 +528,16 @@ mod tests {
         };
 
         assert_eq!(
-            command.daemon_args(Path::new("/data")),
+            command.daemon_args(Path::new("/data"), false),
             vec![
                 "run",
                 "daemon",
                 "--data-folder",
                 "/data",
                 "--control-port",
-                "0"
+                "0",
+                "--telemetry",
+                "off"
             ]
         );
     }

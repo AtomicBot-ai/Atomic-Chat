@@ -18,6 +18,7 @@ const COMPARATORS = new Set([
   'state-file-schema',
   'agent-config-files',
   'http-exchange',
+  'telemetry-wire',
 ])
 
 function* walk(dir) {

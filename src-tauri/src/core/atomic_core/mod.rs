@@ -30,5 +30,6 @@ mod live_tests;
 pub mod lock;
 pub mod relay;
 pub mod supervisor;
+pub mod telemetry;
 #[cfg(test)]
 pub(crate) mod test_support;

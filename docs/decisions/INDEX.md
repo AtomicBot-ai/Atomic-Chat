@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-345 records, 2026-05-19 → 2026-09-21.
+346 records, 2026-05-19 → 2026-09-21.
 
 ---
 
@@ -246,8 +246,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (8)
+## Telemetry, crash reporting & error handling (9)
 
+- **2026-09-21** — [Tell the core the error-reporting consent, and leave local engine errors to it](2026-09-21-tell-the-core-the-error-reporting-consent-and-leave-local-engine-errors-to-it.md)
 - **2026-09-14** — [Register the shared HTTP commands on mobile, and make a refused connection say so](2026-09-14-register-shared-http-commands-on-mobile-and-surface-network-failures.md)
 - **2026-08-17** — [Rename the string `status` property that PostHog had globally typed numeric, which silently hid ~63k events](2026-08-17-rename-the-string-status-property-that-posthog-had-typed-numeric.md)
 - **2026-08-17** — [Track LLM response outcomes (`chat_response_received`) and close the onboarding funnel's blind spots](2026-08-17-track-llm-response-outcomes-and-close-onboarding-funnel-gaps.md)

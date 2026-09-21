@@ -1033,12 +1033,17 @@ async function doSwitchToModel(params: {
     // Recoverable user/config conditions (missing file, unsupported projector) are
     // NOT crashes and are skipped, and repeats are throttled (model+code, 5-min
     // window) so a load crashloop cannot flood the crash channel.
+    // A local engine's failure is reported by the core, to its own project and
+    // with the engine's context, whoever asked for the load (core ADR
+    // 2026-09-21-report-core-errors-to-its-own-sentry-project); reporting it here
+    // too would count every such failure twice. Only cloud providers remain.
     {
       const err = toErrorObject(error)
       const haystack = err.details ?? err.message
       const settings = modelConfig?.settings
       const errorCode = err.code ?? null
       if (
+        !isLocal &&
         !isRecoverableModelLoadCode(errorCode) &&
         shouldCaptureModelLoadSentry(modelId, errorCode)
       ) {

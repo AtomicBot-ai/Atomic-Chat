@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 import type { ServiceHub } from '@/services'
+import { captureHandledError } from '@/lib/sentry'
+import {
+  isRecoverableModelLoadCode,
+  shouldCaptureModelLoadSentry,
+} from '@/lib/telemetry'
+import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import {
   cancelModelLoad,
   describeModelLoadFailure,
@@ -233,6 +239,57 @@ describe('switchToModel', () => {
       'model-errors:modelLoadFailedTitle',
       expect.any(Object)
     )
+  })
+
+  it('leaves a local engine failure to the core and reports a cloud one', async () => {
+    vi.mocked(isRecoverableModelLoadCode).mockReturnValue(false)
+    vi.mocked(shouldCaptureModelLoadSentry).mockReturnValue(true)
+    const failingHub = () =>
+      ({
+        app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+        models: () => ({
+          getActiveModels: vi.fn().mockResolvedValue([]),
+          stopAllModels: vi.fn().mockResolvedValue(undefined),
+          stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+          startModel: vi.fn().mockRejectedValue(new Error('engine crashed')),
+        }),
+      }) as unknown as ServiceHub
+
+    await expect(
+      switchToModel({
+        modelId: 'local-model',
+        providerName: 'mlx',
+        serviceHub: failingHub(),
+      })
+    ).rejects.toThrow('engine crashed')
+    expect(captureHandledError).not.toHaveBeenCalled()
+
+    modelProviderState.providers.push({
+      provider: 'openai',
+      api_key: 'sk-test',
+      models: [{ id: 'cloud-model' }],
+    })
+    vi.mocked(registerRemoteProvider).mockRejectedValueOnce(
+      new Error('provider refused')
+    )
+    try {
+      await expect(
+        switchToModel({
+          modelId: 'cloud-model',
+          providerName: 'openai',
+          serviceHub: failingHub(),
+        })
+      ).rejects.toThrow('provider refused')
+    } finally {
+      modelProviderState.providers.pop()
+    }
+    expect(captureHandledError).toHaveBeenCalledOnce()
+    expect(vi.mocked(captureHandledError).mock.calls[0]?.[2]).toMatchObject({
+      feature: 'model_load',
+      backend: 'openai',
+    })
+    vi.mocked(isRecoverableModelLoadCode).mockReturnValue(true)
+    vi.mocked(shouldCaptureModelLoadSentry).mockReturnValue(false)
   })
 
   it('keeps the target engine running and only unloads copies in other providers', async () => {

@@ -1,0 +1,17 @@
+{
+  "cases": [
+    "launch_consent_on",
+    "launch_consent_off",
+    "update_consent_user_and_tags",
+    "update_before_the_webview_reports",
+    "update_consent_withdrawn"
+  ],
+  "comparator": "telemetry-wire",
+  "comparator_notes": {
+    "telemetry-wire": "op=launch: expected.argv_tail is the last two arguments of `daemon`; the core must accept them and take the consent from the second (on/off). op=update: expected.body is exactly what the app PUTs to /atomic/v1/telemetry (enabled, user_id or null, every tag the webview sent); the core must accept it and answer enabled = body.enabled, has_user = user_id is not null, and the tags restricted to its allow-list."
+  },
+  "source": {
+    "commit": "254c29a6a4b8acb511196c26462f457951026d9f",
+    "file": "src-tauri/src/core/atomic_core/{launch,telemetry}.rs"
+  }
+}

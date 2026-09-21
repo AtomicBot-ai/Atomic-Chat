@@ -8,6 +8,7 @@
 //! `set_telemetry_consent` command.
 
 pub mod commands;
+pub mod core_state;
 pub mod scrub;
 
 use std::collections::HashMap;
