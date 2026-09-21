@@ -124,6 +124,42 @@ async fn wait_for_retry(delay: Duration, cancel_token: &CancellationToken) -> Re
     }
 }
 
+/// One writer per save path, process-wide.
+///
+/// Cancelling a task only asks its files to stop; the command returns, and a
+/// resume can start, before they have. A field log shows the result: a pause
+/// and resume in the same second, the old VAE stream still alive eight seconds
+/// later, its late `File::create` truncating the partial the new task was
+/// already writing — a file of the right size whose hash then failed after a
+/// two-hour download. The same overlap happens between two task ids that share
+/// a file (diffusion side files). Task ids cannot see either case; paths can.
+static PATH_WRITERS: std::sync::OnceLock<
+    std::sync::Mutex<HashMap<PathBuf, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::OnceLock::new();
+
+/// Wait until nothing else is writing `save_path` (or its sidecars), then hold
+/// it until the guard drops. Gives up when the task is cancelled meanwhile.
+async fn lock_path_for_writing(
+    save_path: &Path,
+    cancel_token: &CancellationToken,
+) -> Result<tokio::sync::OwnedMutexGuard<()>, String> {
+    let lock = {
+        let mut writers = PATH_WRITERS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // Entries nobody holds or waits on; the map would otherwise keep one
+        // per file ever downloaded.
+        writers.retain(|_, lock| std::sync::Arc::strong_count(lock) > 1);
+        writers.entry(save_path.to_path_buf()).or_default().clone()
+    };
+    tokio::select! {
+        biased;
+        guard = lock.lock_owned() => Ok(guard),
+        _ = cancel_token.cancelled() => Err("Download cancelled".to_string()),
+    }
+}
+
 fn expected_download_size(item: &DownloadItem, response_size: u64) -> u64 {
     item.size.filter(|size| *size > 0).unwrap_or(response_size)
 }
@@ -794,6 +830,9 @@ async fn download_single_file(
         progress_tracker,
     } = ctx;
     let keep_partial_on_cancel = true;
+    // Before anything reads the partial's state: a predecessor that is still
+    // winding down would change it under us.
+    let _writer_guard = lock_path_for_writing(save_path, &cancel_token).await?;
     // Create parent directories if they don't exist
     if let Some(parent) = save_path.parent() {
         if !parent.exists() {
@@ -934,6 +973,13 @@ async fn download_single_file(
 
     let mut stream = resp.bytes_stream();
 
+    // The response can take long enough to arrive that the task was cancelled
+    // meanwhile; creating the file now would truncate a partial worth keeping.
+    if cancel_token.is_cancelled() {
+        log::info!("Download cancelled: {}", item.url);
+        return Err("Download cancelled".to_string());
+    }
+
     let file = if should_resume {
         // resume download, append to existing file
         tokio::fs::OpenOptions::new()
@@ -955,7 +1001,20 @@ async fn download_single_file(
 
     // write chunk to file
     loop {
-        let stream_error = match stream.next().await {
+        // Raced with the token: on a slow link the next chunk is seconds away,
+        // and until it arrived a cancelled download kept the file open.
+        let next = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                // Lands the buffered tail and any write still in flight, so the
+                // partial's length is final before the path lock is released.
+                let _ = writer.flush().await;
+                log::info!("Download cancelled: {}", item.url);
+                return Err("Download cancelled".to_string());
+            }
+            next = stream.next() => next,
+        };
+        let stream_error = match next {
             None if expected_size > 0 && total_transferred < expected_size => Some(format!(
                 "stream ended after {total_transferred} of {expected_size} bytes"
             )),
@@ -1162,13 +1221,33 @@ pub(super) async fn download_single_file_for_test(
     save_path: &Path,
     expected_size: u64,
 ) -> Result<std::path::PathBuf, String> {
+    download_single_file_with_token_for_test(
+        app,
+        item,
+        save_path,
+        expected_size,
+        false,
+        CancellationToken::new(),
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn download_single_file_with_token_for_test(
+    app: tauri::AppHandle<tauri::test::MockRuntime>,
+    item: &DownloadItem,
+    save_path: &Path,
+    expected_size: u64,
+    resume: bool,
+    cancel_token: CancellationToken,
+) -> Result<std::path::PathBuf, String> {
     let file_id = "test-download".to_string();
     let mut sizes = HashMap::new();
     sizes.insert(file_id.clone(), expected_size);
     let ctx = DownloadCtx {
         header_map: HeaderMap::new(),
-        resume: false,
-        cancel_token: CancellationToken::new(),
+        resume,
+        cancel_token,
         evt_name: "test-download-progress".to_string(),
         progress_tracker: ProgressTracker::new(std::slice::from_ref(item), sizes),
     };
@@ -1272,7 +1351,14 @@ async fn request_download_response_with_retry(
 ) -> Result<reqwest::Response, DownloadRequestError> {
     let mut retry_count = 0;
     loop {
-        match request_download_response(client, url, start_bytes, expected_size).await {
+        let response = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Err(DownloadRequestError::Fatal("Download cancelled".to_string()));
+            }
+            response = request_download_response(client, url, start_bytes, expected_size) => response,
+        };
+        match response {
             Ok(response) => return Ok(response),
             Err(DownloadRequestError::Retryable(error)) if retry_count < MAX_STREAM_RETRIES => {
                 if cancel_token.is_cancelled() {

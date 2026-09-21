@@ -33,6 +33,8 @@ import {
   emitTransferError,
   emitTransferProgress,
   emitTransferSuccess,
+  emitTransferValidationFailed,
+  isTransferValidationError,
   sanitizeTaskId,
   transferFiles,
   type TransferItem,
@@ -473,9 +475,27 @@ export type DownloadArtifactOptions = {
 }
 
 /**
+ * Save paths an artifact download is fetching right now, with the transfer
+ * that owns each. Side files are shared between artifacts on purpose (one
+ * T5-XXL serves every FLUX.1 family), so a second download started while the
+ * first is still running plans the very same save path — and the Rust
+ * downloader, which keys its bookkeeping on the task id, would happily run two
+ * writers into one `.tmp`. The file then fails its size/sha256 check and is
+ * deleted, for both artifacts.
+ */
+const inFlightFiles = new Map<string, Promise<void>>()
+
+/** Own transfer, then at most two retries for files another download dropped. */
+const MAX_DOWNLOAD_PASSES = 3
+
+/**
  * Download whatever an artifact is still missing. The download panel shows
  * the transfer under `diffusionDownloadTaskId(artifactId)`. Resolves to the
  * plan that was executed (every entry present when it returns).
+ *
+ * A file another artifact is already fetching is left to that transfer and
+ * waited for; if that transfer fails or is cancelled, the next pass fetches
+ * the file here (resuming the other one's partial).
  */
 export async function downloadArtifact(
   family: DiffusionCatalogFamily,
@@ -484,49 +504,94 @@ export async function downloadArtifact(
 ): Promise<DiffusionArtifactPlan> {
   const diffusion = getServiceHub().diffusion()
   const { modelsRoot } = await getDiffusionPaths()
-  const files = await diffusion.listModelFiles()
-  const plan = planArtifactDownload(family, quantId, files, modelsRoot, {
-    workflow: opts.workflow,
-  })
-  const missing = plan.entries.filter(
-    (entry) => entry.required && !entry.present
-  )
-  if (missing.length === 0) return plan
-
-  const taskId = diffusionDownloadTaskId(plan.artifactId)
+  const taskId = diffusionDownloadTaskId(artifactId(family.id, quantId))
   const proxy = downloadProxyConfig()
-  const items: TransferItem[] = missing.map((entry) => ({
-    url: entry.url,
-    save_path: entry.savePath,
-    ...(proxy ? { proxy } : {}),
-    ...(entry.sha256 ? { sha256: entry.sha256 } : {}),
-    size: entry.bytes,
-    model_id: taskId,
-  }))
+  let started = false
+  let fetchedBytes = 0
 
   try {
-    emitTransferProgress(taskId, 'Model', 0, plan.missingBytes)
-    await transferFiles(items, taskId, {
-      resume: opts.resume ?? false,
-      ...(opts.hfToken ? { hfToken: opts.hfToken } : {}),
-      onProgress: (transferred, total) => {
-        opts.onProgress?.({ transferred, total })
-        emitTransferProgress(taskId, 'Model', transferred, total)
-      },
-    })
-    emitTransferSuccess(taskId, 'Model', plan.missingBytes)
-  } catch (error) {
-    emitTransferError(taskId, 'Model', error)
-    throw error
-  }
+    for (let pass = 0; ; pass += 1) {
+      const files = await diffusion.listModelFiles()
+      const plan = planArtifactDownload(family, quantId, files, modelsRoot, {
+        workflow: opts.workflow,
+      })
+      const missing = plan.entries.filter(
+        (entry) => entry.required && !entry.present
+      )
+      if (missing.length === 0) {
+        if (started) emitTransferSuccess(taskId, 'Model', fetchedBytes)
+        return plan
+      }
+      if (pass >= MAX_DOWNLOAD_PASSES) {
+        throw new Error(
+          `Files still missing after download: ${missing
+            .map((entry) => entry.relativePath)
+            .join(', ')}`
+        )
+      }
+      started = true
 
-  return {
-    ...plan,
-    entries: plan.entries.map((entry) => ({
-      ...entry,
-      present: entry.present || entry.required,
-    })),
-    missingBytes: 0,
+      const own = missing.filter((entry) => !inFlightFiles.has(entry.savePath))
+      const foreign = new Set(
+        missing.flatMap((entry) => inFlightFiles.get(entry.savePath) ?? [])
+      )
+
+      if (own.length > 0) {
+        const ownBytes = own.reduce((sum, entry) => sum + entry.bytes, 0)
+        const items: TransferItem[] = own.map((entry) => ({
+          url: entry.url,
+          save_path: entry.savePath,
+          ...(proxy ? { proxy } : {}),
+          ...(entry.sha256 ? { sha256: entry.sha256 } : {}),
+          size: entry.bytes,
+          model_id: taskId,
+        }))
+        emitTransferProgress(taskId, 'Model', 0, ownBytes)
+        const transfer = transferFiles(items, taskId, {
+          resume: opts.resume ?? false,
+          ...(opts.hfToken ? { hfToken: opts.hfToken } : {}),
+          onProgress: (transferred, total) => {
+            opts.onProgress?.({ transferred, total })
+            emitTransferProgress(taskId, 'Model', transferred, total)
+          },
+        })
+        for (const entry of own) inFlightFiles.set(entry.savePath, transfer)
+        try {
+          await transfer
+        } finally {
+          for (const entry of own) {
+            if (inFlightFiles.get(entry.savePath) === transfer) {
+              inFlightFiles.delete(entry.savePath)
+            }
+          }
+        }
+        fetchedBytes += ownBytes
+      }
+
+      if (foreign.size === 0) {
+        emitTransferSuccess(taskId, 'Model', fetchedBytes)
+        return {
+          ...plan,
+          entries: plan.entries.map((entry) => ({
+            ...entry,
+            present: entry.present || entry.required,
+          })),
+          missingBytes: 0,
+        }
+      }
+      // Whether the other download made it is read off the disk by the next
+      // pass, not off its promise: a paused or failed one leaves the file to us.
+      await Promise.allSettled(foreign)
+    }
+  } catch (error) {
+    if (started) {
+      if (isTransferValidationError(error)) {
+        emitTransferValidationFailed(taskId, error)
+      } else {
+        emitTransferError(taskId, 'Model', error)
+      }
+    }
+    throw error
   }
 }
 

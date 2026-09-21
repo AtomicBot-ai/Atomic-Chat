@@ -40,6 +40,7 @@ import {
 } from '@/lib/diffusion/models'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { useImageForm } from '@/hooks/useImageForm'
 
 type DiffusionDownloadKind = 'model' | 'engine'
 
@@ -321,6 +322,12 @@ export function DownloadManagement() {
       }
       const err = anyState?.error || ''
 
+      // The Rust downloader opens the "verifying…" toast itself and never
+      // closes it. A failure that lands after it (disk error while hashing, a
+      // cancelled check) used to leave that toast spinning forever next to a
+      // download that had already ended.
+      toast.dismiss(`model-validation-started-${state.modelId}`)
+
       // Stopping a diffusion transfer for Pause rejects its in-flight
       // download promise. Keep the row and its last progress intact; a real
       // network/disk failure while paused still follows the normal path.
@@ -584,6 +591,8 @@ export function DownloadManagement() {
     (state: DownloadState) => {
       console.debug('onFileDownloadStopped', state)
 
+      toast.dismiss(`model-validation-started-${state.modelId}`)
+
       // ATO-154: a paused download stops the transfer but is not a terminal
       // event. Keep the `downloads[modelId]` entry (so the popover row survives
       // with its last progress + a Resume button) and skip the cancelled
@@ -831,12 +840,23 @@ export function DownloadManagement() {
         void downloadArtifact(
           diffusionTarget.family,
           diffusionTarget.quant.id,
-          { resume: true, hfToken: huggingfaceToken }
-        ).catch((error) => {
-          // downloadArtifact emits the ordinary transfer-error event first;
-          // that listener owns the existing user-facing failure path.
-          console.error('[DownloadManagement] diffusion resume failed:', error)
-        })
+          {
+            resume: true,
+            hfToken: huggingfaceToken,
+            workflow: useImageForm.getState().workflow,
+          }
+        )
+          // Nothing else re-lists the models folder for a resume started
+          // here, so the finished model kept reading as "not downloaded".
+          .then(() => useImageGenerationStore.getState().refreshModelFiles())
+          .catch((error) => {
+            // downloadArtifact emits the ordinary transfer-error event first;
+            // that listener owns the existing user-facing failure path.
+            console.error(
+              '[DownloadManagement] diffusion resume failed:',
+              error
+            )
+          })
         return
       }
 

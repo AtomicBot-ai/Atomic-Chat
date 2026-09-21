@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { DownloadEvent } from '@janhq/core'
+
 import { seedServiceHub } from '@/test/service-hub'
 import {
   findFamily,
@@ -611,10 +613,14 @@ describe('downloadArtifact', () => {
   }> = []
   const cancelled: string[] = []
   let onDiskNow: DiffusionModelFile[]
+  let onTransfer:
+    | ((items: Array<{ save_path: string }>, taskId: string) => Promise<void>)
+    | undefined
 
   beforeEach(() => {
     transfers.length = 0
     cancelled.length = 0
+    onTransfer = undefined
     onDiskNow = [onDisk(SHARED_TE, QWEN3.bytes)]
     const core = (globalThis as unknown as { core: Record<string, unknown> }).core
     core.extensionManager = {
@@ -629,6 +635,7 @@ describe('downloadArtifact', () => {
               ) => {
                 transfers.push({ items, taskId, resume })
                 onProgress?.(1, 2)
+                await onTransfer?.(items as Array<{ save_path: string }>, taskId)
               },
               cancelDownload: async (taskId: string) => {
                 cancelled.push(taskId)
@@ -693,6 +700,115 @@ describe('downloadArtifact', () => {
     const plan = await downloadArtifact(zImage, 'q4_k_m')
     expect(transfers).toEqual([])
     expect(plan.missingBytes).toBe(0)
+  })
+
+  it('leaves a shared file to the download already fetching it', async () => {
+    onDiskNow = []
+    let releaseFirst!: () => void
+    onTransfer = async (items, taskId) => {
+      if (taskId !== 'diffusion-model-z-image_q4_k_m') return
+      await new Promise<void>((resolve) => (releaseFirst = resolve))
+      onDiskNow = [
+        ...onDiskNow,
+        onDisk('z-image/z-image-turbo-Q4_K_M.gguf', 5_017_613_376),
+        onDisk(SHARED_AE, AE.bytes),
+        onDisk(SHARED_TE, QWEN3.bytes),
+      ]
+      expect(items).toHaveLength(3)
+    }
+
+    const first = downloadArtifact(zImage, 'q4_k_m')
+    await vi.waitFor(() => expect(transfers).toHaveLength(1))
+    const second = downloadArtifact(klein, 'q4_k_m')
+    await vi.waitFor(() => expect(transfers).toHaveLength(2))
+
+    // Two writers into one `.tmp` corrupt it; Klein must not list the encoder.
+    expect(
+      (transfers[1].items as Array<{ save_path: string }>).map(
+        (item) => item.save_path
+      )
+    ).toEqual([
+      `${ROOT}/flux.2-klein/flux-2-klein-4b-Q4_K_M.gguf`,
+      `${ROOT}/${SHARED_FLUX2_VAE}`,
+    ])
+
+    onDiskNow = [
+      onDisk('flux.2-klein/flux-2-klein-4b-Q4_K_M.gguf', 2_604_311_104),
+      onDisk(SHARED_FLUX2_VAE, 336_213_556),
+    ]
+    releaseFirst()
+    await first
+    const plan = await second
+    expect(transfers).toHaveLength(2)
+    expect(plan.missingBytes).toBe(0)
+  })
+
+  it('fetches a shared file itself when the download that had it fails', async () => {
+    onDiskNow = []
+    let failFirst!: (error: Error) => void
+    onTransfer = async (items, taskId) => {
+      if (taskId === 'diffusion-model-z-image_q4_k_m') {
+        await new Promise<void>((_, reject) => (failFirst = reject))
+        return
+      }
+      onDiskNow = [
+        ...onDiskNow,
+        ...items.map((item) =>
+          onDisk(
+            item.save_path.slice(ROOT.length + 1),
+            item.save_path.endsWith('qwen_3_4b.safetensors')
+              ? QWEN3.bytes
+              : item.save_path.endsWith('flux2-vae.safetensors')
+                ? 336_213_556
+                : 2_604_311_104
+          )
+        ),
+      ]
+    }
+
+    const first = downloadArtifact(zImage, 'q4_k_m')
+    await vi.waitFor(() => expect(transfers).toHaveLength(1))
+    const second = downloadArtifact(klein, 'q4_k_m')
+    await vi.waitFor(() => expect(transfers).toHaveLength(2))
+
+    failFirst(new Error('Download cancelled'))
+    await expect(first).rejects.toThrow('Download cancelled')
+    const plan = await second
+
+    expect(transfers).toHaveLength(3)
+    expect(transfers[2].taskId).toBe('diffusion-model-flux_2-klein_q4_k_m')
+    expect(
+      (transfers[2].items as Array<{ save_path: string }>).map(
+        (item) => item.save_path
+      )
+    ).toEqual([`${ROOT}/${SHARED_TE}`])
+    expect(plan.missingBytes).toBe(0)
+  })
+
+  it('reports a failed integrity check as a validation failure, not a transfer error', async () => {
+    const emitted: string[] = []
+    const core = (globalThis as unknown as { core: Record<string, unknown> }).core
+    core.events = {
+      on: () => {},
+      off: () => {},
+      emit: (name: string) => emitted.push(name),
+    }
+    onTransfer = async () => {
+      throw new Error(
+        'Size verification failed. Expected 10 bytes but got 4 bytes.'
+      )
+    }
+
+    try {
+      await expect(downloadArtifact(zImage, 'q4_k_m')).rejects.toThrow(
+        'Size verification failed'
+      )
+      // The panel closes the "verifying…" toast only on this event.
+      expect(emitted).toContain(DownloadEvent.onModelValidationFailed)
+      expect(emitted).not.toContain(DownloadEvent.onFileDownloadError)
+    } finally {
+      delete core.events
+    }
   })
 
   it('cancels under the same task id the panel shows', async () => {
