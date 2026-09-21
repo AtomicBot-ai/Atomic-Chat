@@ -122,7 +122,7 @@ class AtlasGenerationTests(unittest.TestCase):
 
     def test_media_url_rejects_private_addresses(self):
         with self.assertRaisesRegex(ValueError, "non-public address"):
-            logo_generate._validate_public_https_url("https://127.0.0.1/logo.png")
+            logo_generate._validate_public_https_url("https://127.0.0.1/logo.png")  # DevSkim: ignore DS162092 - asserts the loopback address is rejected
 
         with self.assertRaisesRegex(ValueError, "local hostname"):
             logo_generate._validate_public_https_url("https://assets.local/logo.png")
@@ -273,7 +273,7 @@ class MuapiGenerationTests(unittest.TestCase):
         json_request.return_value = {
             "request_id": "req-123",
             "status": "created",
-            "output": {"urls": {"get": "http://api.muapi.ai/results/req-123"}},
+            "output": {"urls": {"get": "http://api.muapi.ai/results/req-123"}},  # DevSkim: ignore DS137138 - asserts a non-HTTPS result URL is rejected
         }
 
         with self.assertRaisesRegex(RuntimeError, "valid HTTPS result URL"):
