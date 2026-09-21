@@ -170,8 +170,8 @@ def _validate_public_https_url(url):
         raise ValueError("Provider returned an invalid media URL")
 
     hostname = parsed.hostname.lower().rstrip(".")
-    if hostname == "localhost" or hostname.endswith(
-        (".localhost", ".local", ".internal")
+    if hostname == "localhost" or hostname.endswith(  # DevSkim: ignore DS162092 - rejecting local hostnames is the SSRF guard, not debug code
+        (".localhost", ".local", ".internal")  # DevSkim: ignore DS162092
     ):
         raise ValueError("Provider media URL used a local hostname")
 
