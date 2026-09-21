@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { IconDownload, IconX } from '@tabler/icons-react'
@@ -89,7 +89,7 @@ export function UpdateBanner({
   testId,
   className,
 }: UpdateBannerProps) {
-  const bannerRef = useRef<HTMLDivElement>(null)
+  const [bannerElement, setBannerElement] = useState<HTMLDivElement | null>(null)
   const avoidanceOwner = useId()
   const showExpanded = expanded && expandedContent != null
   const hasHighlights = !showExpanded && !!highlights && highlights.length > 0
@@ -99,12 +99,11 @@ export function UpdateBanner({
   // normal chat pages remain untouched. Bounds include the fixed bottom/right
   // offsets and follow wrapping, font-scale changes and expanded notes.
   useLayoutEffect(() => {
-    const element = bannerRef.current
-    if (!element) return
+    if (!bannerElement) return
 
     const root = document.documentElement
     const updateInsets = () => {
-      const bounds = element.getBoundingClientRect()
+      const bounds = bannerElement.getBoundingClientRect()
       root.dataset.updateBannerAvoidanceOwner = avoidanceOwner
       root.style.setProperty(
         '--update-banner-avoid-right',
@@ -121,7 +120,7 @@ export function UpdateBanner({
       typeof ResizeObserver === 'undefined'
         ? null
         : new ResizeObserver(updateInsets)
-    observer?.observe(element)
+    observer?.observe(bannerElement)
     window.addEventListener('resize', updateInsets)
 
     return () => {
@@ -133,11 +132,11 @@ export function UpdateBanner({
         root.style.removeProperty('--update-banner-avoid-bottom')
       }
     }
-  }, [avoidanceOwner])
+  }, [avoidanceOwner, bannerElement])
 
   const banner = (
     <div
-      ref={bannerRef}
+      ref={setBannerElement}
       role="status"
       aria-live="polite"
       data-testid={testId}

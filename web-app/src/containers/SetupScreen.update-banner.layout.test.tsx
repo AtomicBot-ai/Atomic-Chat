@@ -62,6 +62,20 @@ const mocks = vi.hoisted(() => {
   }
 })
 
+const portal = vi.hoisted(() => ({ attached: true, calls: 0 }))
+
+vi.mock('react-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-dom')>()
+
+  return {
+    ...actual,
+    createPortal: (...args: Parameters<typeof actual.createPortal>) => {
+      portal.calls += 1
+      return portal.attached ? actual.createPortal(...args) : null
+    },
+  }
+})
+
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
 }))
@@ -223,6 +237,8 @@ const boxesOverlap = (a: DOMRect, b: DOMRect): boolean =>
 
 describe('SetupScreen with the app update preview', () => {
   beforeEach(() => {
+    portal.attached = true
+    portal.calls = 0
     localStorage.clear()
     useUpdateBannerSlots.setState({
       claimed: { download: false, app: false, engine: false },
@@ -283,4 +299,76 @@ describe('SetupScreen with the app update preview', () => {
       expectNoHorizontalOverflow(document.body)
     }
   )
+
+  it('starts avoidance after a late portal attachment and cleans it up', async () => {
+    await page.viewport(1280, 800)
+    setFontSize('16px')
+    setTheme('light')
+    portal.attached = false
+
+    const app = (
+      <div className="flex h-screen w-screen overflow-hidden">
+        <aside className="w-60 shrink-0" aria-label="Sidebar" />
+        <main className="min-w-0 flex-1" data-testid="setup-host">
+          <SetupScreen />
+        </main>
+        <DialogAppUpdater />
+      </div>
+    )
+    const { rerender, unmount } = render(withTranslations(app))
+
+    await waitFor(() => expect(portal.calls).toBeGreaterThan(0))
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--update-banner-avoid-right'
+      )
+    ).toBe('')
+
+    portal.attached = true
+    rerender(withTranslations(app))
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Welcome to Atomic Chat!',
+    })
+    const banner = await screen.findByTestId('app-update-banner')
+    const panel = heading.parentElement?.parentElement as HTMLElement
+    await waitFor(() => {
+      expect(
+        parseFloat(
+          document.documentElement.style.getPropertyValue(
+            '--update-banner-avoid-right'
+          )
+        )
+      ).toBeGreaterThan(0)
+      expect(
+        parseFloat(
+          document.documentElement.style.getPropertyValue(
+            '--update-banner-avoid-bottom'
+          )
+        )
+      ).toBeGreaterThan(0)
+    })
+    await settle(document.body)
+    expect(
+      boxesOverlap(
+        panel.getBoundingClientRect(),
+        banner.getBoundingClientRect()
+      )
+    ).toBe(false)
+
+    unmount()
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--update-banner-avoid-right'
+      )
+    ).toBe('')
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--update-banner-avoid-bottom'
+      )
+    ).toBe('')
+    expect(document.documentElement.dataset.updateBannerAvoidanceOwner).toBe(
+      undefined
+    )
+  })
 })
