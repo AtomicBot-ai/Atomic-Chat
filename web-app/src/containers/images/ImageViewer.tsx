@@ -193,24 +193,35 @@ export const ImageViewer = memo(function ImageViewer({
           }}
         >
           <span
-            className="relative block shrink-0 overflow-hidden rounded-lg shadow-md animate-in fade-in-0 zoom-in-95 duration-500"
+            className="relative block shrink-0 overflow-hidden rounded-lg shadow-md"
+            data-testid="image-viewer-frame"
             style={{
               width: `min(100cqw, ${100 * item.width / item.height}cqh)`,
               height: `min(100cqh, ${100 * item.height / item.width}cqw)`,
             }}
           >
-            <img
-              src={src}
-              alt={item.recipe.prompt}
-              decoding="async"
-              draggable={false}
-              className="block size-full min-h-0 min-w-0 cursor-zoom-in overflow-hidden rounded-lg object-contain object-top"
-            />
+            {/* The frame owns geometry and clipping from the first paint. Only
+                this inner layer is animated, and only its opacity changes, so
+                a decoded (including cached) bitmap can never render outside
+                the final rounded shape while WebKit promotes the transition. */}
             <span
-              className="pointer-events-none absolute top-2 right-2 rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100"
-              data-testid="image-dimension-badge"
+              key={item.id}
+              className="absolute inset-0 animate-in fade-in-0 duration-300 motion-reduce:animate-none"
+              data-testid="image-viewer-transition"
             >
-              {item.width}×{item.height}
+              <img
+                src={src}
+                alt={item.recipe.prompt}
+                decoding="async"
+                draggable={false}
+                className="block size-full min-h-0 min-w-0 cursor-zoom-in object-contain object-top"
+              />
+              <span
+                className="pointer-events-none absolute top-2 right-2 rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100"
+                data-testid="image-dimension-badge"
+              >
+                {item.width}×{item.height}
+              </span>
             </span>
           </span>
         </button>

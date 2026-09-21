@@ -17,15 +17,80 @@ use crate::state::{
 /// driver reports the VRAM as free; spawning immediately fails to allocate.
 const GPU_SETTLE: Duration = Duration::from_millis(500);
 
+/// Qwen 2.1's architecture first ships in the pinned 883 engine. Unknown
+/// tags fail closed; legacy families keep their existing engine policy.
+pub fn check_engine_compatibility(family: &str, tag: &str) -> DiffusionResult<()> {
+    let build = tag
+        .strip_prefix("master-")
+        .and_then(|rest| rest.split_once('-'))
+        .filter(|(_, hash)| !hash.is_empty())
+        .and_then(|(build, _)| build.parse::<u32>().ok());
+    if family == "qwen-image-2.1" && !build.is_some_and(|build| build >= 883) {
+        return Err(DiffusionError::with_details(
+            DiffusionErrorCode::EngineUpdateRequired,
+            "Qwen-Image-2.1 requires an image engine update. Update the engine, then retry loading the model.",
+            format!("installed={tag}; required=master-883-137f740 or newer"),
+        ));
+    }
+    Ok(())
+}
+
+/// Preserve the existing engine/backend selection, then find a compatible
+/// release in that backend's installed trees (which are ordered by install time).
+pub fn select_model_install<'a>(
+    installed: &'a [crate::state::BackendInstallRecord],
+    engine: crate::state::EngineKind,
+    family: &str,
+) -> DiffusionResult<&'a crate::state::BackendInstallRecord> {
+    let selected = installed
+        .iter()
+        .find(|r| r.engine == engine)
+        .ok_or_else(|| {
+            DiffusionError::new(
+                DiffusionErrorCode::EngineMissing,
+                "Install the image engine first.",
+            )
+        })?;
+    let record = installed
+        .iter()
+        .find(|candidate| {
+            candidate.engine == engine
+                && candidate.backend_id == selected.backend_id
+                && check_engine_compatibility(family, &candidate.tag).is_ok()
+        })
+        .unwrap_or(selected);
+    check_engine_compatibility(family, &record.tag)?;
+    Ok(record)
+}
+
+/// Finalizing a different engine invalidates both a resident process and a
+/// retained idle/crash spec, so generation cannot respawn the old binary.
+/// Caller holds load_lock and has cancelled any active job.
+pub async fn activate_install(
+    state: &DiffusionState,
+    emitter: &dyn DiffusionEmitter,
+    record: &crate::state::BackendInstallRecord,
+) {
+    if state.spec().is_some_and(|spec| {
+        spec.engine == record.engine
+            && (spec.tag != record.tag
+                || !install::same_dir(&spec.binary_dir, std::path::Path::new(&record.dir)))
+    }) {
+        unload(state, emitter, "engine-updated").await;
+    }
+}
+
 /// Which workflows a family can run on sd.cpp. img2img and masking are
 /// generic in sd.cpp (the init image is VAE-encoded and noised to
 /// `strength`; a mask blends latents), so every image family gets them.
 /// Reference-guided generation and instruction edits need a model trained
-/// on reference images: of the catalog families only FLUX.2 Klein is.
+/// on reference images. Qwen Image 2.1 also needs a separately loaded VLM
+/// projector; [`workflows_for_spec`] removes those capabilities when absent.
 pub fn workflows_for_family(family: &str) -> Vec<ImageWorkflow> {
     use ImageWorkflow::*;
     match family {
         "flux.2-klein" => vec![Create, Transform, Inpaint, Extend, Upscale, Reference, Edit],
+        "qwen-image-2.1" => vec![Create, Reference, Edit],
         "z-image" | "qwen-image" => {
             vec![Create, Transform, Inpaint, Extend, Upscale]
         }
@@ -34,6 +99,15 @@ pub fn workflows_for_family(family: &str) -> Vec<ImageWorkflow> {
         }
         _ => vec![Create],
     }
+}
+
+/// Workflows the currently loaded server can actually execute.
+pub fn workflows_for_spec(spec: &ServerSpec) -> Vec<ImageWorkflow> {
+    let mut workflows = workflows_for_family(&spec.family);
+    if spec.family == "qwen-image-2.1" && spec.files.llm_vision.is_none() {
+        workflows.retain(|workflow| !workflow.uses_references());
+    }
+    workflows
 }
 
 /// The install the status reports: the resident session's tree when there
@@ -130,7 +204,7 @@ pub async fn capabilities(state: &DiffusionState) -> DiffusionResult<ImageCapabi
         .map(|s| s.capabilities.cancel_generating)
         .unwrap_or(false);
     Ok(ImageCapabilities {
-        workflows: workflows_for_family(&spec.family),
+        workflows: workflows_for_spec(&spec),
         min_dim: spec.ranges.dims.0,
         max_dim: spec.ranges.dims.1,
         dim_multiple: spec.ranges.dim_multiple,
@@ -263,8 +337,183 @@ pub fn shutdown_blocking(state: &DiffusionState) {
 mod tests {
     use super::*;
 
+    fn test_spec() -> ServerSpec {
+        ServerSpec {
+            binary_dir: std::path::PathBuf::from("/opt/sd"),
+            engine: crate::state::EngineKind::SdCpp,
+            backend: DiffusionBackend::Metal,
+            backend_id: "macos-arm64".into(),
+            tag: "master-883-137f740".into(),
+            model_id: "qwen-image-2.1:q4_k".into(),
+            family: "qwen-image-2.1".into(),
+            modality: crate::state::Modality::Image,
+            display_name: "Qwen Image 2.1 Q4_K".into(),
+            files: crate::state::ModelFiles {
+                diffusion_model: "/models/qwen-image-2.1.gguf".into(),
+                vae: Some("/models/qwen-image-2.1-vae.safetensors".into()),
+                llm: Some("/models/qwen3-vl-8b.gguf".into()),
+                ..Default::default()
+            },
+            defaults: crate::state::FamilyDefaults {
+                steps: 40,
+                cfg_scale: 6.0,
+                guidance: None,
+                sampling_method: Some("euler".into()),
+                flow_shift: None,
+                width: 2048,
+                height: 2048,
+            },
+            ranges: crate::state::FamilyRanges {
+                steps: (1, 100),
+                dims: (256, 4096),
+                dim_multiple: 32,
+            },
+            offload: crate::state::OffloadPolicy::Group,
+            threads: None,
+            extra_args: Vec::new(),
+            startup_timeout: Duration::from_secs(600),
+            cpu_fallback: false,
+        }
+    }
+
+    fn record(tag: &str, backend_id: &str) -> crate::state::BackendInstallRecord {
+        crate::state::BackendInstallRecord {
+            tag: tag.into(),
+            backend_id: backend_id.into(),
+            backend: DiffusionBackend::Metal,
+            engine: crate::state::EngineKind::SdCpp,
+            dir: format!("/engines/{tag}/{backend_id}"),
+            sha256: None,
+            installed_at_ms: 1,
+        }
+    }
+
     #[test]
-    fn every_image_family_gets_the_img2img_workflows_and_klein_gets_references() {
+    fn existing_profiles_require_a_compatible_engine_without_switching_backends() {
+        let old = record("master-849-d04e895", "macos-arm64");
+        let new = record("master-883-137f740", "macos-arm64");
+        let other = record("master-883-137f740", "win-cpu-x64");
+        let engine = crate::state::EngineKind::SdCpp;
+        assert_eq!(
+            select_model_install(std::slice::from_ref(&old), engine, "qwen-image-2.1")
+                .unwrap_err()
+                .code,
+            DiffusionErrorCode::EngineUpdateRequired
+        );
+        assert_eq!(
+            select_model_install(&[old.clone(), other], engine, "qwen-image-2.1")
+                .unwrap_err()
+                .code,
+            DiffusionErrorCode::EngineUpdateRequired
+        );
+        let records = [old, new];
+        assert_eq!(
+            select_model_install(&records, engine, "qwen-image-2.1")
+                .unwrap()
+                .tag,
+            "master-883-137f740"
+        );
+        for family in ["qwen-image", "z-image", "flux.1", "flux.2-klein"] {
+            assert_eq!(
+                select_model_install(&records, engine, family).unwrap().tag,
+                "master-849-d04e895"
+            );
+        }
+        for tag in ["unknown", "master-882-abcdef0", "master-883", "master-883-"] {
+            assert!(check_engine_compatibility("qwen-image-2.1", tag).is_err());
+        }
+        for tag in [
+            "master-883-137f740",
+            "master-883-137f740-a1234567",
+            "master-1000-abcdef0",
+        ] {
+            assert!(check_engine_compatibility("qwen-image-2.1", tag).is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn incompatible_retained_spec_is_rejected_before_any_spawn_or_file_access() {
+        let mut spec = test_spec();
+        spec.tag = "master-849-d04e895".into();
+        let dir = tempfile::tempdir().unwrap();
+        let error = process::spawn_server(&spec, dir.path())
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error.code, DiffusionErrorCode::EngineUpdateRequired);
+    }
+
+    #[tokio::test]
+    async fn activating_an_update_forgets_idle_or_failed_specs() {
+        for model_state in [ModelState::Unloaded, ModelState::Failed] {
+            let state = DiffusionState::new();
+            let mut spec = test_spec();
+            spec.tag = "master-849-d04e895".into();
+            state.set_spec(Some(spec));
+            state.set_model_state(model_state, None);
+            activate_install(
+                &state,
+                &crate::events::RecordingEmitter::default(),
+                &record("master-883-137f740", "macos-arm64"),
+            )
+            .await;
+            assert!(state.spec().is_none());
+            assert_eq!(state.model_state().0, ModelState::Unloaded);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn activating_an_update_terminates_the_resident_old_server() {
+        use std::sync::{Arc, Mutex};
+        let state = DiffusionState::new();
+        let mut spec = test_spec();
+        spec.tag = "master-849-d04e895".into();
+        let child = tokio::process::Command::new("sleep")
+            .arg("60")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let info = LoadedModel {
+            model_id: spec.model_id.clone(),
+            family: spec.family.clone(),
+            modality: spec.modality,
+            display_name: spec.display_name.clone(),
+            engine: spec.engine,
+            backend: spec.backend,
+            offload: spec.offload,
+            cpu_fallback: false,
+            port: 1234,
+            pid,
+            loaded_at_ms: 1,
+        };
+        *state.session.lock().await = Some(DiffusionSession::new(
+            child,
+            info,
+            spec.clone(),
+            crate::state::new_tail(),
+            Arc::new(Mutex::new(None)),
+            crate::state::ServerCapabilities::default(),
+            Vec::new(),
+            reqwest::Client::new(),
+        ));
+        state.set_spec(Some(spec));
+        state.set_model_state(ModelState::Loaded, None);
+        activate_install(
+            &state,
+            &crate::events::RecordingEmitter::default(),
+            &record("master-883-137f740", "macos-arm64"),
+        )
+        .await;
+        assert!(state.session.lock().await.is_none());
+        assert!(state.spec().is_none());
+        assert_eq!(state.model_state().0, ModelState::Unloaded);
+        assert!(nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_err());
+    }
+
+    #[test]
+    fn families_expose_only_the_workflows_their_architecture_supports() {
         use ImageWorkflow::*;
         for family in ["z-image", "flux.1", "qwen-image"] {
             let ws = workflows_for_family(family);
@@ -277,7 +526,28 @@ mod tests {
         let klein = workflows_for_family("flux.2-klein");
         assert!(klein.contains(&Reference) && klein.contains(&Edit));
         assert_eq!(klein.len(), 7);
+        assert_eq!(
+            workflows_for_family("qwen-image-2.1"),
+            vec![Create, Reference, Edit]
+        );
         assert_eq!(workflows_for_family("wan2.2-ti2v-5b"), vec![Create]);
         assert_eq!(workflows_for_family("unknown"), vec![Create]);
+    }
+
+    #[test]
+    fn qwen_image_2_1_reference_workflows_require_the_vision_projector() {
+        let mut spec = test_spec();
+        spec.files.llm_vision = None;
+        assert_eq!(workflows_for_spec(&spec), vec![ImageWorkflow::Create]);
+
+        spec.files.llm_vision = Some("/models/mmproj.gguf".into());
+        assert_eq!(
+            workflows_for_spec(&spec),
+            vec![
+                ImageWorkflow::Create,
+                ImageWorkflow::Reference,
+                ImageWorkflow::Edit
+            ]
+        );
     }
 }

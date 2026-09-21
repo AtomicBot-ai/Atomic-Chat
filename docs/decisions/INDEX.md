@@ -34,8 +34,10 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (7)
+## Local image & video generation (8)
 
+- **2026-09-21** — [Gate Qwen-Image-2.1 on the installed engine](2026-09-21-gate-qwen-image-2-1-on-installed-engine.md)
+- **2026-09-21** — [Catalog Qwen-Image-2.1 for non-commercial use](2026-09-21-catalog-qwen-image-2-1-for-non-commercial-use.md)
 - **2026-09-10** — [Generate images locally with stable-diffusion.cpp in its own Tauri plugin](2026-09-10-generate-images-locally-with-stable-diffusion-cpp-in-its-own-plugin.md)
 - **2026-09-10** — [Mirror, pin and verify stable-diffusion.cpp prebuilts in atomic-chat-conf](2026-09-10-mirror-pin-and-verify-stable-diffusion-cpp-prebuilts-in-atomic-chat-conf.md)
 - **2026-09-10** — [Arbitrate the GPU between chat and diffusion in the web app](2026-09-10-arbitrate-the-gpu-between-chat-and-diffusion-in-the-web-app.md)

@@ -43,6 +43,7 @@ import type {
   DiffusionModelFile,
   DiffusionModelFiles,
   DiffusionOffloadPolicy,
+  ImageWorkflowId,
   LoadDiffusionModelRequest,
 } from '@/services/diffusion/types'
 
@@ -62,6 +63,8 @@ export type DiffusionArtifactEntry = {
   relativePath: string
   /** Absolute save path below `modelsRoot`. */
   savePath: string
+  /** Whether this file is needed for the workflow this plan was built for. */
+  required: boolean
   /** A listed file with the same relative path and the same byte count. */
   present: boolean
 }
@@ -160,6 +163,10 @@ const basenameOf = (filename: string): string =>
 const normalizeRelative = (path: string): string =>
   path.replace(/\\/g, '/').replace(/^\/+/, '')
 
+/** Qwen-Image-2.1 only needs its VLM projector for reference-conditioned work. */
+export const workflowNeedsLlmVision = (workflow: ImageWorkflowId): boolean =>
+  workflow === 'reference' || workflow === 'edit'
+
 const isPresent = (
   files: DiffusionModelFile[],
   relativePath: string,
@@ -181,7 +188,8 @@ export function planArtifactDownload(
   family: DiffusionCatalogFamily,
   quantId: string,
   files: DiffusionModelFile[],
-  modelsRoot: string
+  modelsRoot: string,
+  opts: { workflow?: ImageWorkflowId } = {}
 ): DiffusionArtifactPlan {
   const quant = findQuant(family, quantId)
   if (!quant) {
@@ -190,6 +198,7 @@ export function planArtifactDownload(
 
   const entries: DiffusionArtifactEntry[] = []
   const seen = new Set<string>()
+  const workflow = opts.workflow ?? 'create'
   const push = (
     kind: DiffusionArtifactEntryKind,
     file: DiffusionCatalogFile,
@@ -209,6 +218,8 @@ export function planArtifactDownload(
       ...(file.field ? { field: file.field } : {}),
       relativePath,
       savePath,
+      required:
+        file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow),
       present: isPresent(files, relativePath, savePath, file.bytes),
     })
   }
@@ -238,8 +249,9 @@ export function planArtifactDownload(
     )
   }
 
-  const totalBytes = entries.reduce((sum, e) => sum + e.bytes, 0)
-  const missingBytes = entries
+  const required = entries.filter((entry) => entry.required)
+  const totalBytes = required.reduce((sum, e) => sum + e.bytes, 0)
+  const missingBytes = required
     .filter((e) => !e.present)
     .reduce((sum, e) => sum + e.bytes, 0)
   return {
@@ -371,15 +383,18 @@ export function buildLoadRequest(
     engine?: DiffusionEngineId
     threads?: number
     startupTimeoutSecs?: number
+    workflow?: ImageWorkflowId
   }
 ): LoadDiffusionModelRequest {
   const quant = findQuant(family, quantId) as DiffusionCatalogQuant
-  const plan = planArtifactDownload(family, quantId, files, modelsRoot)
+  const workflow = opts.workflow ?? 'create'
+  const plan = planArtifactDownload(family, quantId, files, modelsRoot, {
+    workflow,
+  })
   const transformer = plan.entries.find((e) => e.kind === 'transformer')
   if (!transformer) {
     throw new Error(`Family ${family.id} has no quant "${quantId}"`)
   }
-
   const modelFiles: DiffusionModelFiles = {
     diffusionModel: absolutePathOf(transformer, files),
   }
@@ -388,10 +403,14 @@ export function buildLoadRequest(
       modelFiles.vae = absolutePathOf(entry, files)
       if (family.vae_format) modelFiles.vaeFormat = family.vae_format
     } else if (entry.kind === 'text_encoder') {
+      if (!entry.required) continue
       const path = absolutePathOf(entry, files)
       switch (entry.field) {
         case 'llm':
           modelFiles.llm = path
+          break
+        case 'llm_vision':
+          modelFiles.llmVision = path
           break
         case 'qwen2vl':
           modelFiles.qwen2vl = path
@@ -443,6 +462,7 @@ export function buildLoadRequest(
 export type DownloadArtifactOptions = {
   hfToken?: string
   resume?: boolean
+  workflow?: ImageWorkflowId
   onProgress?: (progress: { transferred: number; total: number }) => void
 }
 
@@ -459,8 +479,12 @@ export async function downloadArtifact(
   const diffusion = getServiceHub().diffusion()
   const { modelsRoot } = await getDiffusionPaths()
   const files = await diffusion.listModelFiles()
-  const plan = planArtifactDownload(family, quantId, files, modelsRoot)
-  const missing = plan.entries.filter((entry) => !entry.present)
+  const plan = planArtifactDownload(family, quantId, files, modelsRoot, {
+    workflow: opts.workflow,
+  })
+  const missing = plan.entries.filter(
+    (entry) => entry.required && !entry.present
+  )
   if (missing.length === 0) return plan
 
   const taskId = diffusionDownloadTaskId(plan.artifactId)
@@ -492,7 +516,10 @@ export async function downloadArtifact(
 
   return {
     ...plan,
-    entries: plan.entries.map((entry) => ({ ...entry, present: true })),
+    entries: plan.entries.map((entry) => ({
+      ...entry,
+      present: entry.present || entry.required,
+    })),
     missingBytes: 0,
   }
 }

@@ -158,6 +158,14 @@ describe('Media settings', () => {
 
     render(<Component />)
 
+    expect(screen.getByTestId('image-api-settings-card')).toHaveAttribute(
+      'data-variant',
+      'default'
+    )
+    expect(
+      screen.queryByRole('link', { name: 'settings:media.apiMore' })
+    ).not.toBeInTheDocument()
+
     expect(
       screen.getByText('settings:media.apiServerRunning')
     ).toBeInTheDocument()

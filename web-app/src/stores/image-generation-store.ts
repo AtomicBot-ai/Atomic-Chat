@@ -18,6 +18,7 @@ import {
   deleteArtifact as deleteArtifactFiles,
   listInstalledArtifacts,
   parseArtifactId,
+  workflowNeedsLlmVision,
   type InstalledArtifact,
 } from '@/lib/diffusion/models'
 import {
@@ -27,6 +28,10 @@ import {
 import { validateImageRequest } from '@/lib/diffusion/validate'
 import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
 import { notifyThreadCompleted } from '@/lib/notifications'
+import {
+  supportsDiffusionFamily,
+  QWEN_IMAGE_2_1_ENGINE_TAG,
+} from '@/services/diffusion/compatibility'
 import {
   ensureDiffusionBackend,
   resolveSdcppManifest,
@@ -111,8 +116,11 @@ type ImageGenerationState = {
 
   /** A `loadModel` is in flight for this artifact id. */
   loadingArtifactId: string | null
+  /** An `unloadModel` is in flight for this resident artifact id. */
+  unloadingArtifactId: string | null
   engineInstall: EngineInstallProgress
   engineUpdate: EngineUpdateState
+  pendingEngineArtifactId: string | null
 
   setupOpen: boolean
   setupStep: ImageSetupStep
@@ -125,7 +133,7 @@ type ImageGenerationState = {
   refreshModelFiles: () => Promise<void>
   applyIdleSettings: () => Promise<void>
 
-  installEngine: (opts?: { force?: boolean }) => Promise<void>
+  installEngine: (opts?: { force?: boolean; family?: string }) => Promise<void>
   /**
    * Compare the installed engine with the manifest's tag for this host.
    * `force` bypasses the hour-long manifest cache (the user pressed the button).
@@ -210,8 +218,10 @@ const initial = {
   generationStartedAtMs: null as number | null,
   lastError: null as DiffusionError | null,
   loadingArtifactId: null as string | null,
+  unloadingArtifactId: null as string | null,
   engineInstall: emptyInstall,
   engineUpdate: noUpdate,
+  pendingEngineArtifactId: null,
   setupOpen: false,
   setupStep: 0 as ImageSetupStep,
 }
@@ -221,6 +231,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
   get
 ) => {
   const diffusion = () => getServiceHub().diffusion()
+  let updatingEngine = false
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<ImageJob> =>
@@ -531,7 +542,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       }
     },
 
-    installEngine: async ({ force } = {}) => {
+    installEngine: async ({ force, family } = {}) => {
       if (get().engineInstall.inFlight) return
       const startedAt = Date.now()
       set({ engineInstall: { ...emptyInstall, inFlight: true } })
@@ -544,6 +555,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       try {
         const record = await ensureDiffusionBackend({
           force,
+          ...(family ? { family } : {}),
           onProgress: ({ transferred, total }) =>
             set((state) => ({
               engineInstall: { ...state.engineInstall, transferred, total },
@@ -578,7 +590,12 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       }
       set({ engineUpdate: { ...engineUpdate, checking: true, error: null } })
       try {
-        const { manifest, error } = await resolveSdcppManifest({ force })
+        const pending = get().pendingEngineArtifactId
+        const family = pending ? parseArtifactId(pending)?.family : undefined
+        const { manifest, error } = await resolveSdcppManifest({
+          force,
+          ...(family ? { family } : {}),
+        })
         const published = manifest.assets.some(
           (asset) => asset.backend === hostBackendId
         )
@@ -608,15 +625,41 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     },
 
     updateEngine: async () => {
-      if (!get().engineUpdate.availableTag) return
-      // The new build goes in beside the old one and the old one is then
-      // removed, which the plugin refuses while its server is running.
-      if (get().status?.model.state === 'loaded') {
-        await get().unloadModel()
-      }
-      await get().installEngine()
-      if (get().engineInstall.error === null) {
-        set({ engineUpdate: { ...noUpdate, checkedAt: Date.now() } })
+      if (
+        updatingEngine ||
+        !get().engineUpdate.availableTag ||
+        get().engineInstall.inFlight
+      )
+        return
+      updatingEngine = true
+      const pending = get().pendingEngineArtifactId
+      const family = pending ? parseArtifactId(pending)?.family : undefined
+      try {
+        // Forget retained idle/failed specs as well as resident servers.
+        // The native finalizer also invalidates old sessions under load_lock.
+        await diffusion().unloadModel()
+        set({ capabilities: null })
+        await get().installEngine({ ...(family ? { family } : {}) })
+        if (get().engineInstall.error === null) {
+          set({ engineUpdate: { ...noUpdate, checkedAt: Date.now() } })
+          if (pending && get().pendingEngineArtifactId === pending)
+            await get().loadModel(pending)
+        } else {
+          set({
+            lastError: pending
+              ? {
+                  code: 'ENGINE_UPDATE_REQUIRED',
+                  message:
+                    get().engineInstall.error?.message ??
+                    'Update the image engine and retry.',
+                }
+              : get().engineInstall.error,
+          })
+        }
+      } catch (error) {
+        set({ lastError: toDiffusionError(error) })
+      } finally {
+        updatingEngine = false
       }
     },
 
@@ -636,19 +679,53 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         })
         return
       }
+      set({ pendingEngineArtifactId: null })
       const quantId = parsed.quantId
       const previousModelId = get().status?.model.loaded?.modelId ?? null
       const settings = useImageSetting.getState()
+      const workflow = useImageForm.getState().workflow
       const teOnCpu = IS_MACOS
       const fit = fitForQuant(family, quant, hardwareProfile(), { teOnCpu })
+      const requiredTextEncoders = family.text_encoders.filter(
+        (file) =>
+          file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow)
+      )
       const sideBytes =
         (family.vae?.bytes ?? 0) +
         (teOnCpu
           ? 0
-          : family.text_encoders.reduce((sum, file) => sum + file.bytes, 0))
+          : requiredTextEncoders.reduce((sum, file) => sum + file.bytes, 0))
 
       set({ loadingArtifactId: artifactId, lastError: null })
       try {
+        // Check live native status before evicting a chat model or launching.
+        // Bundling a newer manifest does not upgrade existing profile binaries.
+        const status = await diffusion().getStatus()
+        set({ status })
+        if (
+          status.install.state === 'installed' &&
+          !supportsDiffusionFamily(family.id, status.install.tag) &&
+          !(await diffusion().listInstalledBackends()).some(
+            (record) =>
+              record.engine === 'sd-cpp' &&
+              status.install.state === 'installed' &&
+              record.backendId === status.install.backendId &&
+              supportsDiffusionFamily(family.id, record.tag)
+          )
+        ) {
+          set({
+            pendingEngineArtifactId: artifactId,
+            engineUpdate: {
+              ...noUpdate,
+              availableTag: QWEN_IMAGE_2_1_ENGINE_TAG,
+              checkedAt: Date.now(),
+            },
+          })
+          throw {
+            code: 'ENGINE_UPDATE_REQUIRED',
+            message: `${family.name} requires ${QWEN_IMAGE_2_1_ENGINE_TAG} or newer. Update the image engine and retry.`,
+          }
+        }
         await acquireGpuForDiffusion({
           requiredBytes: quant.bytes + sideBytes,
           policy: settings.evictChatModel,
@@ -675,6 +752,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
               settings.engineOverride === 'auto'
                 ? undefined
                 : settings.engineOverride,
+            workflow,
           }
         )
         await diffusion().loadModel(request)
@@ -689,19 +767,34 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         }
         await get().refreshStatus()
       } catch (error) {
-        set({ lastError: toDiffusionError(error) })
+        const described = toDiffusionError(error)
+        set({ lastError: described })
+        if (described.code === 'ENGINE_UPDATE_REQUIRED') {
+          set({
+            pendingEngineArtifactId: artifactId,
+            engineUpdate: {
+              ...noUpdate,
+              availableTag: QWEN_IMAGE_2_1_ENGINE_TAG,
+              checkedAt: Date.now(),
+            },
+          })
+        }
       } finally {
         set({ loadingArtifactId: null })
       }
     },
 
     unloadModel: async () => {
+      const artifactId = get().status?.model.loaded?.modelId ?? null
+      set({ unloadingArtifactId: artifactId, lastError: null })
       try {
         await diffusion().unloadModel()
         set({ capabilities: null })
         await get().refreshStatus()
       } catch (error) {
         set({ lastError: toDiffusionError(error) })
+      } finally {
+        set({ unloadingArtifactId: null })
       }
     },
 

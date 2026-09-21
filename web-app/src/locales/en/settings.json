@@ -542,6 +542,7 @@
     "apiTitle": "Image generation API",
     "apiEndpoint": "OpenAI-compatible endpoint",
     "apiCopyEndpoint": "Copy image API endpoint",
+    "apiMore": "More",
     "apiRequirements": "Requirements",
     "apiServerRunning": "Local API Server is running",
     "apiServerStopped": "Local API Server must be started",

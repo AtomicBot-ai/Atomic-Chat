@@ -100,7 +100,7 @@ export const ImageEngineBlock = memo(function ImageEngineBlock() {
 
   const action = engine.installing ? (
     <div
-      className="relative flex h-8 w-28 items-center justify-center overflow-hidden rounded-md border bg-background text-xs font-semibold tabular-nums"
+      className="relative flex h-8 w-28 items-center justify-center overflow-hidden rounded-full border bg-background text-xs font-semibold tabular-nums"
       aria-live="polite"
       data-testid="image-engine-progress"
     >
@@ -292,7 +292,10 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
             <ImageEngineBlock />
           )}
           {step === 2 && (
-            <ImageModelSelector variant="dialog" />
+            <ImageModelSelector
+              variant="dialog"
+              onDownloadStarted={closeSetup}
+            />
           )}
         </div>
 

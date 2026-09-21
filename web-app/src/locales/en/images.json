@@ -348,12 +348,17 @@
   "errors": {
     "actions": {
       "install": "Install the engine",
+      "updateEngine": "Update engine and retry",
       "download": "Download the model",
       "openSettings": "Open Media settings",
       "openOutputFolder": "Open the output folder",
       "reduceSize": "Try 768×768",
       "pickSmallerQuant": "Pick a smaller quant",
       "retry": "Try again"
+    },
+    "ENGINE_UPDATE_REQUIRED": {
+      "title": "Image engine update required",
+      "body": "Qwen-Image-2.1 needs a newer image engine. Update the engine to load this model; your downloaded model files will be reused."
     },
     "ENGINE_MISSING": {
       "title": "The image engine is not installed",

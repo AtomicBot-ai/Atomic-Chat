@@ -16,12 +16,21 @@ import { seedServiceHub } from '@/test/service-hub'
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
+    <a href={to}>{children}</a>
+  ),
+}))
 vi.mock('@/lib/notifications', () => ({ notifyThreadCompleted: vi.fn() }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
+vi.mock('@/lib/clipboard', () => ({
+  copyToClipboard: vi.fn(async () => true),
+}))
 
 import { DEFAULT_IMAGE_FORM, useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { copyToClipboard } from '@/lib/clipboard'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImagePromptForm } from '../ImagePromptForm'
 
@@ -40,6 +49,7 @@ describe('ImagePromptForm', () => {
   })
 
   beforeEach(async () => {
+    vi.clearAllMocks()
     localStorage.clear()
     await useImageForm.persist.rehydrate()
     await useImageSetting.persist.rehydrate()
@@ -136,6 +146,49 @@ describe('ImagePromptForm', () => {
     expect(screen.queryByText('images:form.guidance')).not.toBeInTheDocument()
   })
 
+  it('keeps the embedded Image Generation API compact and actionable', async () => {
+    render(<ImagePromptForm />)
+
+    expect(screen.queryByTestId('image-api-settings-card')).toBeNull()
+    await userEvent.click(screen.getByTestId('image-advanced-toggle'))
+
+    const card = screen.getByTestId('image-api-settings-card')
+    expect(card).toHaveAttribute('data-variant', 'embedded')
+    expect(screen.getByTestId('image-api-endpoint')).toHaveTextContent(
+      '/v1/images/generations'
+    )
+    expect(screen.queryByTestId('image-api-curl')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('settings:media.apiRequirements')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('settings:media.apiAuthentication')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('settings:media.apiContract')
+    ).not.toBeInTheDocument()
+
+    const copy = screen.getByRole('button', {
+      name: 'settings:media.apiCopyEndpoint',
+    })
+    expect(copy).toHaveTextContent('common:copy')
+    expect(copy).toHaveClass('rounded-full')
+    await userEvent.click(copy)
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/images/generations')
+    )
+
+    const more = screen.getByRole('link', {
+      name: 'settings:media.apiMore',
+    })
+    expect(more).toHaveAttribute('href', '/settings/media')
+
+    const mediaSettings = screen.getByRole('button', {
+      name: 'images:form.mediaSettings',
+    })
+    expect(mediaSettings).toHaveClass('rounded-full')
+  })
+
   it('shows the negative prompt, CFG and guidance when the model supports them', async () => {
     useImageGenerationStore.setState({
       capabilities: makeCapabilities({
@@ -197,7 +250,10 @@ describe('ImagePromptForm', () => {
   })
 
   it('keeps Batch size editable before a model is loaded', async () => {
-    useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      capabilities: null,
+    })
     render(<ImagePromptForm />)
 
     const batch = screen.getByRole('spinbutton', {
@@ -211,7 +267,10 @@ describe('ImagePromptForm', () => {
   })
 
   it('clamps an offline Batch size when a restrictive model loads', async () => {
-    useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      capabilities: null,
+    })
     useImageForm.setState({ batchSize: 3 })
     render(<ImagePromptForm />)
 
@@ -232,7 +291,10 @@ describe('ImagePromptForm', () => {
   })
 
   it('retains an offline Batch size supported by the loaded model', async () => {
-    useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      capabilities: null,
+    })
     useImageForm.setState({ batchSize: 3 })
     render(<ImagePromptForm />)
 

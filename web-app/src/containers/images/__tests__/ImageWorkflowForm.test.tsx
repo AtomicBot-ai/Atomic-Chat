@@ -14,10 +14,17 @@ import { seedServiceHub } from '@/test/service-hub'
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
-      params && 'width' in params ? `${key}:${params.width}x${params.height}` : key,
+      params && 'width' in params
+        ? `${key}:${params.width}x${params.height}`
+        : key,
   }),
 }))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
+    <a href={to}>{children}</a>
+  ),
+}))
 vi.mock('@/lib/notifications', () => ({ notifyThreadCompleted: vi.fn() }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 vi.mock('@/containers/chatInput/useTauriDragDrop', () => ({
@@ -47,10 +54,15 @@ vi.mock('../canvas', () => ({
 // The jsdom bridge stub has no asset protocol; this is what the WebView does.
 vi.mock('@tauri-apps/api/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tauri-apps/api/core')>()),
-  convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
+  convertFileSrc: (path: string) =>
+    `asset://localhost/${encodeURIComponent(path)}`,
 }))
 
-import { DEFAULT_IMAGE_FORM, DEFAULT_WORKFLOW_KNOBS, useImageForm } from '@/hooks/useImageForm'
+import {
+  DEFAULT_IMAGE_FORM,
+  DEFAULT_WORKFLOW_KNOBS,
+  useImageForm,
+} from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { makeItem } from '@/lib/diffusion/__tests__/image-fixtures'
 import type { ImageWorkflowId } from '@/services/diffusion/types'
@@ -79,7 +91,8 @@ describe('ImagePromptForm per workflow', () => {
   let fake: FakeDiffusion
 
   beforeAll(() => {
-    global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+    global.ResizeObserver =
+      MockResizeObserver as unknown as typeof ResizeObserver
     URL.createObjectURL = vi.fn(() => 'blob:source')
     URL.revokeObjectURL = vi.fn()
   })
@@ -123,13 +136,37 @@ describe('ImagePromptForm per workflow', () => {
     expect(screen.getByTestId('image-workflow-title')).toHaveTextContent(
       'images:workflow.transform.title'
     )
-    expect(screen.getByText('images:workflow.transform.hint')).toBeInTheDocument()
+    expect(
+      screen.getByText('images:workflow.transform.hint')
+    ).toBeInTheDocument()
     expect(screen.getByTestId('image-source-dropzone')).toBeInTheDocument()
     expect(screen.getByTestId('image-generate')).toBeDisabled()
   })
 
+  it('keeps the embedded Image Generation API available for a source workflow', async () => {
+    useImageForm.setState({ workflow: 'transform' })
+    render(<ImagePromptForm />)
+
+    await userEvent.click(screen.getByTestId('image-advanced-toggle'))
+
+    expect(screen.getByTestId('image-source-dropzone')).toBeInTheDocument()
+    expect(screen.getByTestId('image-api-settings-card')).toHaveAttribute(
+      'data-variant',
+      'embedded'
+    )
+    expect(screen.getByTestId('image-api-endpoint')).toHaveTextContent(
+      '/v1/images/generations'
+    )
+  })
+
   it('transforms the source fitted into the form resolution at the chosen strength', async () => {
-    useImageForm.setState({ workflow: 'transform', sourceImage: SOURCE, strength: 0.45, width: 1024, height: 1024 })
+    useImageForm.setState({
+      workflow: 'transform',
+      sourceImage: SOURCE,
+      strength: 0.45,
+      width: 1024,
+      height: 1024,
+    })
     render(<ImagePromptForm />)
     expect(screen.getByText('images:form.strength')).toBeInTheDocument()
 
@@ -147,13 +184,17 @@ describe('ImagePromptForm per workflow', () => {
   it('inpaints only once a mask is painted, and sends it inline', async () => {
     useImageForm.setState({ workflow: 'inpaint', sourceImage: SOURCE })
     render(<ImagePromptForm />)
-    expect(screen.queryByTestId('image-source-dropzone')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('image-source-dropzone')
+    ).not.toBeInTheDocument()
     expect(screen.getByText('images:form.brushSize')).toBeInTheDocument()
     expect(screen.getByText('images:form.clearMask')).toBeInTheDocument()
     expect(screen.queryByText('images:size.title')).not.toBeInTheDocument()
     expect(screen.getByTestId('image-generate')).toBeDisabled()
 
-    act(() => useImageForm.setState({ maskBase64: 'data:image/png;base64,TUFTSw==' }))
+    act(() =>
+      useImageForm.setState({ maskBase64: 'data:image/png;base64,TUFTSw==' })
+    )
     const request = await generate()
     expect(request).toMatchObject({
       workflow: 'inpaint',
@@ -166,11 +207,19 @@ describe('ImagePromptForm per workflow', () => {
   })
 
   it('extends by building the grown canvas and its mask at generate time', async () => {
-    useImageForm.setState({ workflow: 'extend', sourceImage: SOURCE, expandPercent: 25 })
+    useImageForm.setState({
+      workflow: 'extend',
+      sourceImage: SOURCE,
+      expandPercent: 25,
+    })
     render(<ImagePromptForm />)
     expect(screen.getByText('images:form.expandBy')).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'images:form.sides' })).toBeInTheDocument()
-    expect(screen.getByText('images:form.outputSize:1536x1152')).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: 'images:form.sides' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('images:form.outputSize:1536x1152')
+    ).toBeInTheDocument()
 
     const request = await generate()
     expect(request).toMatchObject({
@@ -194,12 +243,19 @@ describe('ImagePromptForm per workflow', () => {
   })
 
   it('upscales by asking for the source times the factor, capped by the model', async () => {
-    useImageForm.setState({ workflow: 'upscale', sourceImage: SOURCE, upscaleFactor: 4, upscaleStrength: 0.3 })
+    useImageForm.setState({
+      workflow: 'upscale',
+      sourceImage: SOURCE,
+      upscaleFactor: 4,
+      upscaleStrength: 0.3,
+    })
     render(<ImagePromptForm />)
     expect(screen.getByText('images:form.scale')).toBeInTheDocument()
     expect(screen.getByText('images:form.detailStrength')).toBeInTheDocument()
     // 1024×4 is over the 2048 ceiling: the factor is capped at 2.
-    expect(screen.getByTestId('image-upscale-output')).toHaveTextContent('2048x1536')
+    expect(screen.getByTestId('image-upscale-output')).toHaveTextContent(
+      '2048x1536'
+    )
 
     const request = await generate()
     expect(request).toMatchObject({
@@ -252,7 +308,11 @@ describe('ImagePromptForm per workflow', () => {
 
   it('takes the source image from the gallery', async () => {
     const generated = makeItem({ id: 'job-9-00', width: 768, height: 1024 })
-    useImageGalleryStore.setState({ items: [generated], initialized: true, total: 1 })
+    useImageGalleryStore.setState({
+      items: [generated],
+      initialized: true,
+      total: 1,
+    })
     useImageForm.setState({ workflow: 'transform' })
     render(<ImagePromptForm />)
 
@@ -270,13 +330,19 @@ describe('ImagePromptForm per workflow', () => {
       height: 1024,
     })
     await waitFor(() =>
-      expect(screen.queryByTestId('image-gallery-picker')).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('image-gallery-picker')
+      ).not.toBeInTheDocument()
     )
   })
 
   it('adds an extra reference from the gallery', async () => {
     const generated = makeItem({ id: 'job-9-00' })
-    useImageGalleryStore.setState({ items: [generated], initialized: true, total: 1 })
+    useImageGalleryStore.setState({
+      items: [generated],
+      initialized: true,
+      total: 1,
+    })
     useImageForm.setState({ workflow: 'reference', sourceImage: SOURCE })
     render(<ImagePromptForm />)
 

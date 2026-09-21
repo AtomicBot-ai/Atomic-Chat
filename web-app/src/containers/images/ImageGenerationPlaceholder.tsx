@@ -69,43 +69,46 @@ const DOT_GRID_SIZE = 19
 const DOT_FIELD_RADIUS = 46
 const DOT_WAVE_SECONDS = 2.8
 
-const DOTS = Array.from({ length: DOT_GRID_SIZE * DOT_GRID_SIZE }, (_, index) => {
-  const column = index % DOT_GRID_SIZE
-  const row = Math.floor(index / DOT_GRID_SIZE)
-  const spacing = (DOT_FIELD_RADIUS * 2) / (DOT_GRID_SIZE - 1)
-  const x = 50 - DOT_FIELD_RADIUS + column * spacing
-  const y = 50 - DOT_FIELD_RADIUS + row * spacing
-  const dx = x - 50
-  const dy = y - 50
-  const distance = Math.hypot(dx, dy)
+const DOTS = Array.from(
+  { length: DOT_GRID_SIZE * DOT_GRID_SIZE },
+  (_, index) => {
+    const column = index % DOT_GRID_SIZE
+    const row = Math.floor(index / DOT_GRID_SIZE)
+    const spacing = (DOT_FIELD_RADIUS * 2) / (DOT_GRID_SIZE - 1)
+    const x = 50 - DOT_FIELD_RADIUS + column * spacing
+    const y = 50 - DOT_FIELD_RADIUS + row * spacing
+    const dx = x - 50
+    const dy = y - 50
+    const distance = Math.hypot(dx, dy)
 
-  if (distance > DOT_FIELD_RADIUS) return null
+    if (distance > DOT_FIELD_RADIUS) return null
 
-  const radius = distance / DOT_FIELD_RADIUS
-  const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2)
-  const angleTurn = angle / (Math.PI * 2)
-  const phase = (radius * 1.35 + angleTurn * 0.26) % 1
-  // A broad falloff fades the perimeter even at the crest of the wave,
-  // avoiding a bright, sharply cut circular edge as the field rotates.
-  const falloff = Math.exp(-Math.pow(radius / 0.72, 4))
-  const restOpacity = (0.24 + (1 - radius) * 0.12) * falloff
-  const ringStrength = Math.exp(-Math.pow((radius - 0.48) / 0.4, 2))
-  const staticOpacity = (0.28 + ringStrength * 0.3) * falloff
+    const radius = distance / DOT_FIELD_RADIUS
+    const angle = (Math.atan2(dy, dx) + Math.PI * 2) % (Math.PI * 2)
+    const angleTurn = angle / (Math.PI * 2)
+    const phase = (radius * 1.35 + angleTurn * 0.26) % 1
+    // A broad falloff fades the perimeter even at the crest of the wave,
+    // avoiding a bright, sharply cut circular edge as the field rotates.
+    const falloff = Math.exp(-Math.pow(radius / 0.72, 4))
+    const restOpacity = (0.24 + (1 - radius) * 0.12) * falloff
+    const ringStrength = Math.exp(-Math.pow((radius - 0.48) / 0.4, 2))
+    const staticOpacity = (0.28 + ringStrength * 0.3) * falloff
 
-  return {
-    x,
-    y,
-    style: {
-      '--dot-delay': `${-(phase * DOT_WAVE_SECONDS).toFixed(3)}s`,
-      '--dot-rest-opacity': restOpacity.toFixed(3),
-      '--dot-peak-opacity': (0.82 * falloff).toFixed(3),
-      '--dot-blur': `${(radius * radius * 0.45).toFixed(3)}px`,
-      '--dot-low-opacity': (restOpacity * 0.42).toFixed(3),
-      '--dot-fall-opacity': (restOpacity * 0.78).toFixed(3),
-      '--dot-static-opacity': staticOpacity.toFixed(3),
-    } as CSSProperties,
+    return {
+      x,
+      y,
+      style: {
+        '--dot-delay': `${-(phase * DOT_WAVE_SECONDS).toFixed(3)}s`,
+        '--dot-rest-opacity': restOpacity.toFixed(3),
+        '--dot-peak-opacity': (0.82 * falloff).toFixed(3),
+        '--dot-blur': `${(radius * radius * 0.45).toFixed(3)}px`,
+        '--dot-low-opacity': (restOpacity * 0.42).toFixed(3),
+        '--dot-fall-opacity': (restOpacity * 0.78).toFixed(3),
+        '--dot-static-opacity': staticOpacity.toFixed(3),
+      } as CSSProperties,
+    }
   }
-}).filter((dot): dot is NonNullable<typeof dot> => dot !== null)
+).filter((dot): dot is NonNullable<typeof dot> => dot !== null)
 
 function DottedGenerationField({ compact = false }: { compact?: boolean }) {
   return (
@@ -113,7 +116,9 @@ function DottedGenerationField({ compact = false }: { compact?: boolean }) {
       viewBox="0 0 100 100"
       className={cn(
         'generation-dotted-field shrink-0 text-foreground/70',
-        compact ? 'generation-dotted-field--tile' : 'generation-dotted-field--viewer'
+        compact
+          ? 'generation-dotted-field--tile'
+          : 'generation-dotted-field--viewer'
       )}
       data-testid="generation-dotted-field"
       data-reduced-motion-fallback="static"
@@ -158,9 +163,15 @@ export const ImageGenerationPlaceholder = memo(
       return () => window.clearInterval(timer)
     }, [variant])
 
+    // sd.cpp owns `progress.elapsedMs`, but that clock does not advance until
+    // the renderer starts emitting progress. Keep one UI clock anchored at
+    // submission so model preparation / prompt encoding cannot sit at 0 s.
+    // Once backend progress arrives, take the furthest clock rather than
+    // swapping sources: phase changes must never reset elapsed time.
+    const wallElapsedMs = startedAtMs > 0 ? Math.max(0, now - startedAtMs) : 0
     const elapsedSeconds = Math.max(
       0,
-      Math.round((progress?.elapsedMs ?? Math.max(0, now - startedAtMs)) / 1000)
+      Math.floor(Math.max(progress?.elapsedMs ?? 0, wallElapsedMs) / 1000)
     )
     const copy = progressCopy(progress, t)
     const elapsed = t('images:progress.elapsed', { seconds: elapsedSeconds })

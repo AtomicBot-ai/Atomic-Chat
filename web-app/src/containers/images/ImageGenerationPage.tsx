@@ -124,6 +124,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     (action: DiffusionErrorAction) => {
       clearError()
       switch (action) {
+        case 'updateEngine':
+          void useImageGenerationStore.getState().updateEngine()
+          return
         case 'install':
           openSetup(1)
           return

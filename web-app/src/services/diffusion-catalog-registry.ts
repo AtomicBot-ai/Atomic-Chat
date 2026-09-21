@@ -131,6 +131,7 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'flux.1-nsfw-realism',
   'flux.1-krea',
   'qwen-image',
+  'qwen-image-2.1',
   'wan2.2-ti2v-5b',
   'ltx-2',
 ] as const
@@ -139,6 +140,7 @@ const MODALITIES: readonly DiffusionModality[] = ['image', 'video']
 const ENGINES: readonly DiffusionCatalogEngine[] = ['sdcpp', 'diffusers']
 const TEXT_ENCODER_FIELDS: readonly DiffusionTextEncoderField[] = [
   'llm',
+  'llm_vision',
   'qwen2vl',
   'clip_l',
   't5xxl',

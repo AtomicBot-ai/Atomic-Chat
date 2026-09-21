@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageJobProgress } from '@/services/diffusion/types'
 
@@ -14,7 +14,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
       if (key === 'images:progress.phase.queued') return 'Queued'
       if (key === 'images:progress.finalizingImage') return 'Finalizing image…'
       if (key === 'images:progress.phase.decoding') return 'Decoding image…'
-      if (key === 'images:progress.phase.postprocessing') return 'Preparing final image…'
+      if (key === 'images:progress.phase.postprocessing')
+        return 'Preparing final image…'
       if (key === 'images:progress.phase.saving') return 'Saving to gallery…'
       return key
     },
@@ -35,6 +36,105 @@ const progress: ImageJobProgress = {
 }
 
 describe('ImageGenerationPlaceholder', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('ticks from submission before the renderer emits its first progress event', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(100_000)
+    render(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        width={1024}
+        height={1024}
+        progress={null}
+        startedAtMs={100_000}
+      />
+    )
+
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      '0 s'
+    )
+    act(() => vi.advanceTimersByTime(6_100))
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      '6 s'
+    )
+  })
+
+  it('keeps one monotonic clock through encoding, sampling and finalization', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(200_000)
+    const { rerender } = render(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        width={1024}
+        height={1024}
+        progress={{
+          ...progress,
+          phase: 'encoding',
+          step: 0,
+          totalSteps: 0,
+          elapsedMs: 0,
+        }}
+        startedAtMs={200_000}
+      />
+    )
+
+    act(() => vi.advanceTimersByTime(6_100))
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      '6 s'
+    )
+
+    rerender(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        width={1024}
+        height={1024}
+        progress={{ ...progress, elapsedMs: 2_000 }}
+        startedAtMs={200_000}
+      />
+    )
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      'Step 7/20 · 6 s'
+    )
+
+    act(() => vi.advanceTimersByTime(2_000))
+    rerender(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        width={1024}
+        height={1024}
+        progress={{ ...progress, phase: 'saving', elapsedMs: 7_000 }}
+        startedAtMs={200_000}
+      />
+    )
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      'Saving to gallery…'
+    )
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      '8 s'
+    )
+  })
+
+  it('cleans up the viewer clock on unmount', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(300_000)
+    const { unmount } = render(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        width={1024}
+        height={1024}
+        progress={null}
+        startedAtMs={300_000}
+      />
+    )
+
+    expect(vi.getTimerCount()).toBe(1)
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('exposes viewer progress as a polite accessible status', () => {
     render(
       <ImageGenerationPlaceholder
@@ -99,22 +199,25 @@ describe('ImageGenerationPlaceholder', () => {
     ['decoding', 'Decoding image…'],
     ['postprocessing', 'Preparing final image…'],
     ['saving', 'Saving to gallery…'],
-  ] as const)('maps the %s phase to a human finalization state', (phase, label) => {
-    render(
-      <ImageGenerationPlaceholder
-        variant="viewer"
-        width={1024}
-        height={1024}
-        progress={{ ...progress, phase, step: 20, totalSteps: 20 }}
-        startedAtMs={0}
-      />
-    )
+  ] as const)(
+    'maps the %s phase to a human finalization state',
+    (phase, label) => {
+      render(
+        <ImageGenerationPlaceholder
+          variant="viewer"
+          width={1024}
+          height={1024}
+          progress={{ ...progress, phase, step: 20, totalSteps: 20 }}
+          startedAtMs={0}
+        />
+      )
 
-    const preview = screen.getByTestId('image-generation-preview')
-    expect(preview).toHaveTextContent(label)
-    expect(preview).not.toHaveTextContent('Step 20/20')
-    expect(preview).not.toHaveTextContent('~18 s')
-  })
+      const preview = screen.getByTestId('image-generation-preview')
+      expect(preview).toHaveTextContent(label)
+      expect(preview).not.toHaveTextContent('Step 20/20')
+      expect(preview).not.toHaveTextContent('~18 s')
+    }
+  )
 
   it('keeps a finalizing gallery tile visually text-free', () => {
     render(
@@ -170,13 +273,21 @@ describe('ImageGenerationPlaceholder', () => {
     const dots = Array.from(
       screen.getByTestId('generation-dotted-field').querySelectorAll('circle')
     )
-    const peakAt = (min: number, max: number) => dots.filter((dot) => {
-      const distance = Math.hypot(Number(dot.getAttribute('cx')) - 50, Number(dot.getAttribute('cy')) - 50)
-      return distance >= min && distance <= max
-    }).map((dot) => Number(dot.style.getPropertyValue('--dot-peak-opacity')))
+    const peakAt = (min: number, max: number) =>
+      dots
+        .filter((dot) => {
+          const distance = Math.hypot(
+            Number(dot.getAttribute('cx')) - 50,
+            Number(dot.getAttribute('cy')) - 50
+          )
+          return distance >= min && distance <= max
+        })
+        .map((dot) => Number(dot.style.getPropertyValue('--dot-peak-opacity')))
 
     expect(Math.min(...peakAt(0, 15))).toBeGreaterThan(0.7)
     expect(Math.max(...peakAt(40, 46))).toBeLessThan(0.12)
-    expect(dots.every((dot) => dot.style.getPropertyValue('--dot-blur'))).toBe(true)
+    expect(dots.every((dot) => dot.style.getPropertyValue('--dot-blur'))).toBe(
+      true
+    )
   })
 })

@@ -312,6 +312,43 @@ describe('strict parsing', () => {
     expect(isSafeSideFilename('a//b.gguf')).toBe(false)
     expect(isSafeSideFilename('a b.gguf')).toBe(false)
   })
+
+  it('accepts the Qwen 2.1 vision companion and editing workflows', () => {
+    const parsed = sanitizeDiffusionFamily(
+      family({
+        id: 'qwen-image-2.1',
+        text_encoders: [
+          {
+            repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF',
+            filename: 'Qwen3VL-8B-Instruct-Q4_K_M.gguf',
+            bytes: 5_027_784_800,
+            field: 'llm',
+          },
+          {
+            repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF',
+            filename: 'mmproj-Qwen3VL-8B-Instruct-F16.gguf',
+            bytes: 1_159_029_824,
+            field: 'llm_vision',
+          },
+        ],
+        capabilities: {
+          negative_prompt: false,
+          guidance: false,
+          workflows: ['create', 'reference', 'edit'],
+        },
+      })
+    )
+
+    expect(parsed?.text_encoders.map((entry) => entry.field)).toEqual([
+      'llm',
+      'llm_vision',
+    ])
+    expect(parsed?.capabilities.workflows).toEqual([
+      'create',
+      'reference',
+      'edit',
+    ])
+  })
 })
 
 describe('baseline and lookups', () => {
@@ -336,6 +373,7 @@ describe('baseline and lookups', () => {
       'flux.1-nsfw-realism',
       'flux.1-krea',
       'qwen-image',
+      'qwen-image-2.1',
     ])
   })
 
@@ -369,5 +407,46 @@ describe('baseline and lookups', () => {
       negative_prompt: true,
       guidance: false,
     })
+  })
+
+  it('bundles the verified non-commercial Qwen-Image-2.1 definition', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'qwen-image-2.1'
+    )
+
+    expect(family).toMatchObject({
+      name: 'Qwen-Image-2.1',
+      license: 'qwen-research-non-commercial',
+      description: expect.stringContaining('NON-COMMERCIAL ONLY'),
+      defaults: {
+        steps: 40,
+        cfg_scale: 6,
+        sampling_method: 'euler',
+        width: 2048,
+        height: 2048,
+      },
+      ranges: {
+        steps: [1, 50],
+        dims: [256, 2048],
+        dim_multiple: 32,
+      },
+      capabilities: {
+        negative_prompt: false,
+        guidance: false,
+        workflows: ['create', 'reference', 'edit'],
+      },
+    })
+    expect(family?.transformer.quants).toEqual([
+      {
+        id: 'q4_k',
+        label: 'Q4_K',
+        filename: 'qwen_image_2.1-Q4_K.gguf',
+        bytes: 4_197_494_816,
+        sha256:
+          '29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2',
+        recommended: true,
+      },
+    ])
   })
 })

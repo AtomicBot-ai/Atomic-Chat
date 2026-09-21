@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { seedServiceHub } from '@/test/service-hub'
-import type {
-  DiffusionCatalog,
-  DiffusionCatalogFamily,
+import {
+  findFamily,
+  getBaselineDiffusionCatalog,
+  type DiffusionCatalog,
+  type DiffusionCatalogFamily,
 } from '@/services/diffusion-catalog-registry'
 import type {
   DiffusionModelFile,
@@ -199,6 +201,75 @@ describe('artifact ids', () => {
 })
 
 describe('planArtifactDownload', () => {
+  it('plans the exact verified Qwen-Image-2.1 artifact matrix', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'qwen-image-2.1'
+    )!
+    const plan = planArtifactDownload(family, 'q4_k', [], ROOT)
+
+    expect(
+      plan.entries.map(({ kind, repo, filename, bytes, sha256, field }) => ({
+        kind,
+        repo,
+        filename,
+        bytes,
+        sha256,
+        field,
+      }))
+    ).toEqual([
+      {
+        kind: 'transformer',
+        repo: 'leejet/Qwen-Image-2.1-GGUF',
+        filename: 'qwen_image_2.1-Q4_K.gguf',
+        bytes: 4_197_494_816,
+        sha256:
+          '29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2',
+        field: undefined,
+      },
+      {
+        kind: 'vae',
+        repo: 'Comfy-Org/Qwen-Image-2.1',
+        filename: 'vae/qwen_image_2.1_vae_bf16.safetensors',
+        bytes: 675_509_688,
+        sha256:
+          'bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9',
+        field: undefined,
+      },
+      {
+        kind: 'text_encoder',
+        repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF',
+        filename: 'Qwen3VL-8B-Instruct-Q4_K_M.gguf',
+        bytes: 5_027_784_800,
+        sha256:
+          '67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2',
+        field: 'llm',
+      },
+      {
+        kind: 'text_encoder',
+        repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF',
+        filename: 'mmproj-Qwen3VL-8B-Instruct-F16.gguf',
+        bytes: 1_159_029_824,
+        sha256:
+          'ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38',
+        field: 'llm_vision',
+      },
+    ])
+    expect(plan.entries.map((entry) => entry.required)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ])
+    expect(plan.totalBytes).toBe(9_900_789_304)
+
+    const editPlan = planArtifactDownload(family, 'q4_k', [], ROOT, {
+      workflow: 'edit',
+    })
+    expect(editPlan.entries.every((entry) => entry.required)).toBe(true)
+    expect(editPlan.totalBytes).toBe(11_059_819_128)
+  })
+
   it('puts the transformer under the family and side files under shared/', () => {
     const plan = planArtifactDownload(zImage, 'q4_k_m', [], ROOT)
     expect(plan.artifactId).toBe('z-image:q4_k_m')
@@ -439,6 +510,27 @@ describe('buildLoadRequest', () => {
     })
     expect(request.files.vaeFormat).toBeUndefined()
     expect(request.defaults).toEqual({ steps: 8, cfgScale: 1, width: 1024, height: 1024 })
+  })
+
+  it('loads the Qwen Image 2.1 vision projector only for reference workflows', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'qwen-image-2.1'
+    )!
+    const create = buildLoadRequest(family, 'q4_k', [], ROOT, {
+      offload: 'group',
+      workflow: 'create',
+    })
+    expect(create.files.llm).toContain('Qwen3VL-8B-Instruct-Q4_K_M.gguf')
+    expect(create.files.llmVision).toBeUndefined()
+
+    const edit = buildLoadRequest(family, 'q4_k', [], ROOT, {
+      offload: 'group',
+      workflow: 'edit',
+    })
+    expect(edit.files.llmVision).toContain(
+      'mmproj-Qwen3VL-8B-Instruct-F16.gguf'
+    )
   })
 
   it('prefers the absolute path the plugin reported over the computed one', () => {

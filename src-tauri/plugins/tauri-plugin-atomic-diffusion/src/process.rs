@@ -93,6 +93,7 @@ pub struct SpawnedServer {
 /// Spawn `sd-server` for `spec`, wait until it serves the model, and probe its
 /// capabilities. On any failure the child is dead when this returns.
 pub async fn spawn_server(spec: &ServerSpec, scratch_dir: &Path) -> DiffusionResult<SpawnedServer> {
+    crate::session::check_engine_compatibility(&spec.family, &spec.tag)?;
     let bin_path = server_binary_path(&spec.binary_dir);
     if !bin_path.is_file() {
         return Err(DiffusionError::with_details(
@@ -117,6 +118,13 @@ pub async fn spawn_server(spec: &ServerSpec, scratch_dir: &Path) -> DiffusionRes
         command_summary_for_log(&args)
     );
 
+    log::debug!(
+        "[atomic-diffusion] launch tag={} backend={} binary={} argv={:?}",
+        spec.tag,
+        spec.backend_id,
+        bin_path.display(),
+        args
+    );
     let mut command = Command::new(&bin_path);
     command.args(&args);
     disable_metal_tensor_api_for_host(&mut command, spec.backend);

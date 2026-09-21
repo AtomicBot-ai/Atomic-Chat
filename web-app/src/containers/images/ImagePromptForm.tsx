@@ -57,6 +57,7 @@ import { workflowSpec } from '@/lib/diffusion/workflows'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageField, ImageFieldHint } from './ImageField'
+import { ImageApiSettingsCard } from './ImageApiSettingsCard'
 import { ImageWorkflowInputs } from './ImageWorkflowInputs'
 import { WORKFLOW_ICONS } from './workflowIcons'
 import { ImageGenerateButton } from './ImageGenerateButton'
@@ -169,10 +170,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       }
     : FALLBACK_CONSTRAINTS
   const [minSteps, maxSteps] = capabilities?.ranges.steps ?? FALLBACK_STEPS
-  const maxBatch = Math.max(
-    1,
-    capabilities?.maxBatch ?? MAX_IMAGE_BATCH
-  )
+  const maxBatch = Math.max(1, capabilities?.maxBatch ?? MAX_IMAGE_BATCH)
   const showNegative = capabilities?.supportsNegativePrompt ?? false
   // Families distilled to run at cfg 1 have no classifier-free guidance to
   // tune; the slider would be a knob that does nothing.
@@ -528,11 +526,12 @@ export const ImagePromptForm = memo(function ImagePromptForm({
                   aria-label={t('settings:media.keepLoaded')}
                 />
               </div>
+              <ImageApiSettingsCard variant="embedded" />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="w-full justify-between rounded-lg"
+                className="w-full justify-between rounded-full"
                 onClick={() => void navigate({ to: route.settings.media })}
               >
                 <span className="flex items-center gap-2">

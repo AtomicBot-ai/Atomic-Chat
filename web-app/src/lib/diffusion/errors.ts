@@ -13,6 +13,7 @@ import type { NativeDiffusionErrorCode } from '@/services/diffusion/types'
 export type DiffusionErrorAction =
   /** Open the setup dialog on the engine step. */
   | 'install'
+  | 'updateEngine'
   /** Open the setup dialog on the model step. */
   | 'download'
   /** Go to Settings → Media. */
@@ -40,6 +41,7 @@ const ROUTES: Record<
   [DiffusionErrorAction | null, DiffusionErrorAction | null]
 > = {
   ENGINE_MISSING: ['install', null],
+  ENGINE_UPDATE_REQUIRED: ['updateEngine', null],
   ENGINE_INSTALL_FAILED: ['install', null],
   ENGINE_CRASHED: ['reduceSize', 'retry'],
   MODEL_MISSING: ['download', null],

@@ -1,9 +1,5 @@
 import { memo } from 'react'
-import {
-  IconChevronDown,
-  IconLoader2,
-  IconPhoto,
-} from '@tabler/icons-react'
+import { IconChevronDown, IconPhoto } from '@tabler/icons-react'
 
 import {
   Popover,
@@ -13,12 +9,14 @@ import {
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
 import { useImageForm } from '@/hooks/useImageForm'
+import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { parseArtifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
 import { ImageModelSelector } from './ImageModelSelector'
 
 type ImageModelPickerProps = {
@@ -40,41 +38,60 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const loadingArtifactId = useImageGenerationStore(
     (state) => state.loadingArtifactId
   )
+  const unloadingArtifactId = useImageGenerationStore(
+    (state) => state.unloadingArtifactId
+  )
+  const selectedArtifactId = useImageSetting(
+    (state) => state.selectedArtifactId
+  )
   const loadedArtifactId = status?.model.loaded?.modelId ?? null
-  const runtimeArtifactId = loadedArtifactId ?? loadingArtifactId
+  const runtimeArtifactId =
+    loadedArtifactId ?? loadingArtifactId ?? unloadingArtifactId
   const runtime = useImageArtifact(runtimeArtifactId ?? '')
+  const selected = useImageArtifact(selectedArtifactId ?? '')
   const workflow = useImageForm((state) => state.workflow)
-  const runtimeLoading =
-    Boolean(runtimeArtifactId) &&
-    (status?.model.state === 'loading' || runtime.loading)
-  const runtimeLoaded =
-    Boolean(loadedArtifactId) && status?.model.state === 'loaded'
   const runtimeFamilyId =
     runtime.family?.id ?? parseArtifactId(runtimeArtifactId ?? '')?.family ?? null
-  const showRuntime =
-    (runtimeLoading || runtimeLoaded) &&
-    (runtimeFamilyId === null ||
-      familySupportsWorkflow(runtimeFamilyId, workflow))
+  const runtimeCompatible =
+    Boolean(runtimeArtifactId) &&
+    (runtimeFamilyId === null || familySupportsWorkflow(runtimeFamilyId, workflow))
+  const selectedFamilyId =
+    selected.family?.id ??
+    parseArtifactId(selectedArtifactId ?? '')?.family ??
+    null
+  const selectedCompatible =
+    Boolean(selectedArtifactId && selected.complete) &&
+    (selectedFamilyId === null ||
+      familySupportsWorkflow(selectedFamilyId, workflow))
+  const displayArtifactId = runtimeCompatible
+    ? runtimeArtifactId
+    : selectedCompatible
+      ? selectedArtifactId
+      : null
+  const displayArtifact = useImageArtifact(displayArtifactId ?? '')
+  const showArtifact = Boolean(displayArtifactId && displayArtifact.complete)
 
-  // The header is runtime status, not remembered selection. An incompatible
-  // resident model is not a valid choice for this workflow, so ask for one.
+  // Prefer the resident/in-flight artifact, then the user's compatible
+  // installed selection. This keeps an intentionally stopped model visible so
+  // its adjacent status control can start it again without reopening the list.
 
   const loadedName = status?.model.loaded?.displayName ?? null
-  const name = showRuntime
-    ? (runtime.family?.name ?? loadedName ?? t('images:model.select'))
+  const name = showArtifact
+    ? (displayArtifact.family?.name ?? loadedName ?? t('images:model.select'))
     : t('images:model.select')
-  const detail = showRuntime
-    ? runtimeLoading
-      ? t('images:model.loading')
-      : runtimeLoaded && runtime.quant
-        ? runtime.quant.label
-        : null
-    : null
-  const stateLabel =
-    showRuntime && runtimeLoaded ? t('images:model.loaded') : null
+  const detail = showArtifact ? displayArtifact.quant?.label : null
+  const stateLabel = displayArtifact.loaded
+    ? t('images:model.loaded')
+    : displayArtifact.loading
+      ? t('images:model.startingToast')
+      : displayArtifact.unloading
+        ? t('images:model.stoppingToast')
+        : showArtifact
+          ? t('images:model.readyToLoad')
+          : null
 
   return (
-    <div className="flex w-full min-w-0 items-center">
+    <div className="flex w-full min-w-0 items-center gap-1.5">
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
           <button
@@ -85,11 +102,11 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             data-testid="image-models-toggle"
             className="inline-flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
           >
-            {showRuntime && runtime.family ? (
+            {showArtifact && displayArtifact.family ? (
               <ModelLogo
-                icon={DIFFUSION_FAMILY_ICON_KEYS[runtime.family.id]}
-                name={runtime.family.name}
-                author={runtime.family.developer}
+                icon={DIFFUSION_FAMILY_ICON_KEYS[displayArtifact.family.id]}
+                name={displayArtifact.family.name}
+                author={displayArtifact.family.developer}
                 className="size-5 rounded-md"
               />
             ) : (
@@ -98,7 +115,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             <span
               className={cn(
                 'truncate font-medium',
-                !showRuntime && 'text-muted-foreground'
+                !showArtifact && 'text-muted-foreground'
               )}
             >
               {name}
@@ -106,20 +123,13 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             {detail && (
               <span className="shrink-0 text-muted-foreground">{detail}</span>
             )}
-            {showRuntime && runtimeLoading ? (
-              <IconLoader2
-                size={14}
-                className="shrink-0 animate-spin text-muted-foreground"
-              />
-            ) : (
-              <IconChevronDown
-                size={14}
-                className={cn(
-                  'shrink-0 text-muted-foreground transition-transform duration-200 ease-out',
-                  open && 'rotate-180'
-                )}
-              />
-            )}
+            <IconChevronDown
+              size={14}
+              className={cn(
+                'shrink-0 text-muted-foreground transition-transform duration-200 ease-out',
+                open && 'rotate-180'
+              )}
+            />
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -132,6 +142,13 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           <ImageModelSelector variant="page" workflow={workflow} />
         </PopoverContent>
       </Popover>
+      {showArtifact && displayArtifactId && (
+        <ImageModelRuntimeAction
+          artifactId={displayArtifactId}
+          modelName={name}
+          appearance="indicator"
+        />
+      )}
     </div>
   )
 })

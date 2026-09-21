@@ -189,6 +189,7 @@ describe('image viewer page geometry', () => {
       </div>
     ))
     const image = screen.getByAltText<HTMLImageElement>('square regression image')
+    const frame = screen.getByTestId('image-viewer-frame')
     await image.decode()
     await settle(view.container)
     const region = screen.getByTestId('image-viewer-region').getBoundingClientRect()
@@ -201,8 +202,8 @@ describe('image viewer page geometry', () => {
     expect(box.left + box.width / 2).toBeCloseTo(region.left + region.width / 2, 1)
     expect(badge.top).toBeCloseTo(box.top + 8, 1)
     expect(badge.right).toBeCloseTo(box.right - 8, 1)
-    expect(parseFloat(getComputedStyle(image).borderRadius)).toBeGreaterThan(0)
-    expect(getComputedStyle(image).overflow).toBe('hidden')
+    expect(parseFloat(getComputedStyle(frame).borderRadius)).toBeGreaterThan(0)
+    expect(getComputedStyle(frame).overflow).toBe('hidden')
     expectNoHorizontalOverflow(view.container)
     fireEvent.click(image)
     const fullscreen = screen.getByTestId('image-fullscreen').querySelector('img')!
@@ -221,6 +222,7 @@ describe('image viewer page geometry', () => {
     const section = screen.getByTestId('image-viewer-section')
     const region = screen.getByTestId('image-viewer-region')
     const image = screen.getByAltText('square regression image')
+    const frame = screen.getByTestId('image-viewer-frame')
     await image.decode()
     await settle(root)
 
@@ -238,8 +240,8 @@ describe('image viewer page geometry', () => {
     // edges; rounding the full viewer region leaves the bitmap square.
     expect(initialImage.width).toBeCloseTo(containedSquareSize, 1)
     expect(initialImage.height).toBeCloseTo(containedSquareSize, 1)
-    expect(parseFloat(getComputedStyle(image).borderTopLeftRadius)).toBeGreaterThan(0)
-    expect(getComputedStyle(image).overflow).toBe('hidden')
+    expect(parseFloat(getComputedStyle(frame).borderTopLeftRadius)).toBeGreaterThan(0)
+    expect(getComputedStyle(frame).overflow).toBe('hidden')
     expect(section.scrollHeight).toBeLessThanOrEqual(section.clientHeight + 1)
     expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight + 1)
 
@@ -271,5 +273,89 @@ describe('image viewer page geometry', () => {
     expect(section.scrollHeight).toBeLessThanOrEqual(section.clientHeight + 1)
     expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight + 1)
     expect(document.documentElement.scrollHeight).toBeLessThanOrEqual(800)
+  })
+
+  it('clips the first frame and a cached image switch with a stable rounded wrapper', async () => {
+    const secondPath =
+      'data:image/svg+xml,' +
+      encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#9f8067"/></svg>'
+      )
+    const cached = new Image()
+    cached.src = secondPath
+    await cached.decode()
+
+    const view = render(
+      withTranslations(
+        <div style={{ width: 900, height: 600 }}>
+          <ImageViewer
+            item={squareItem}
+            selectedIds={[]}
+            onOfferLoad={vi.fn()}
+          />
+        </div>
+      )
+    )
+
+    const frame = screen.getByTestId('image-viewer-frame')
+    const initialImage = screen.getByAltText<HTMLImageElement>(
+      'square regression image'
+    )
+    const beforeDecode = getComputedStyle(frame)
+    expect(parseFloat(beforeDecode.borderTopLeftRadius)).toBeGreaterThan(0)
+    expect(beforeDecode.overflow).toBe('hidden')
+    expect(beforeDecode.animationName).toBe('none')
+    expect(beforeDecode.transform).toBe('none')
+
+    await initialImage.decode()
+    await settle(view.container)
+    const loadedBox = frame.getBoundingClientRect()
+    expect(screen.getByTestId('image-viewer-frame')).toBe(frame)
+    expect(getComputedStyle(frame).overflow).toBe('hidden')
+
+    view.rerender(
+      withTranslations(
+        <div style={{ width: 900, height: 600 }}>
+          <ImageViewer
+            item={{
+              ...squareItem,
+              id: 'cached-square-00',
+              path: secondPath,
+              thumbnailPath: secondPath,
+              recipe: {
+                ...squareItem.recipe,
+                jobId: 'cached-square',
+                prompt: 'cached square regression image',
+              },
+            }}
+            selectedIds={[]}
+            onOfferLoad={vi.fn()}
+          />
+        </div>
+      )
+    )
+
+    const switchedFrame = screen.getByTestId('image-viewer-frame')
+    const switchedImage = screen.getByAltText<HTMLImageElement>(
+      'cached square regression image'
+    )
+    expect(switchedFrame).toBe(frame)
+    expect(switchedImage.complete).toBe(true)
+    expect(parseFloat(getComputedStyle(switchedFrame).borderTopLeftRadius)).toBeGreaterThan(0)
+    expect(getComputedStyle(switchedFrame).overflow).toBe('hidden')
+    expect(getComputedStyle(switchedFrame).animationName).toBe('none')
+    expect(getComputedStyle(switchedFrame).transform).toBe('none')
+    expect(switchedFrame.getBoundingClientRect().width).toBeCloseTo(
+      loadedBox.width,
+      1
+    )
+    expect(switchedFrame.getBoundingClientRect().height).toBeCloseTo(
+      loadedBox.height,
+      1
+    )
+
+    const transition = screen.getByTestId('image-viewer-transition')
+    expect(transition).not.toHaveClass('zoom-in-95')
+    expect(getComputedStyle(transition).borderTopLeftRadius).toBe('0px')
   })
 })

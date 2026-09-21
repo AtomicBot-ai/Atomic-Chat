@@ -132,8 +132,9 @@ export function isSourceImagePath(path: string): boolean {
  * `session::workflows_for_family`, which is what actually accepts or rejects
  * a job — the two lists must stay identical. img2img and masks are generic
  * in sd.cpp, so every image family gets them; reference-guided generation
- * and instruction edits need a model trained on reference images, and only
- * FLUX.2 Klein is.
+ * and instruction edits need a model trained on reference images. Qwen Image
+ * 2.1 additionally needs its `--llm_vision` projector at runtime; the plugin
+ * removes those workflows from loaded capabilities when it is absent.
  */
 export function workflowsForFamily(family: string): ImageWorkflowId[] {
   switch (family) {
@@ -147,6 +148,8 @@ export function workflowsForFamily(family: string): ImageWorkflowId[] {
         'reference',
         'edit',
       ]
+    case 'qwen-image-2.1':
+      return ['create', 'reference', 'edit']
     case 'z-image':
     case 'qwen-image':
       return ['create', 'transform', 'inpaint', 'extend', 'upscale']

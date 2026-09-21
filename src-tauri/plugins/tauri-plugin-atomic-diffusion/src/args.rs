@@ -141,6 +141,7 @@ pub fn build_server_args(spec: &ServerSpec, port: u16, scratch_dir: &Path) -> Ve
         ("--clip_l", &files.clip_l),
         ("--t5xxl", &files.t5xxl),
         ("--llm", &files.llm),
+        ("--llm_vision", &files.llm_vision),
         ("--qwen2vl", &files.qwen2vl),
     ] {
         if let Some(value) = value {
@@ -387,6 +388,7 @@ mod tests {
             clip_l: Some("/m/clip_l.safetensors".into()),
             t5xxl: Some("/m/t5xxl.gguf".into()),
             llm: Some("/m/qwen3.gguf".into()),
+            llm_vision: Some("/m/qwen3-mmproj.gguf".into()),
             qwen2vl: Some("/m/qwen2vl.gguf".into()),
         };
         let args = build_server_args(&spec(files, OffloadPolicy::None), 4242, Path::new("/s"));
@@ -397,7 +399,12 @@ mod tests {
         assert!(idx("--vae") < idx("--clip_l"));
         assert!(idx("--clip_l") < idx("--t5xxl"));
         assert!(idx("--t5xxl") < idx("--llm"));
-        assert!(idx("--llm") < idx("--qwen2vl"));
+        assert!(idx("--llm") < idx("--llm_vision"));
+        assert!(idx("--llm_vision") < idx("--qwen2vl"));
+        assert_eq!(
+            value_after(&args, "--llm_vision"),
+            Some("/m/qwen3-mmproj.gguf")
+        );
         assert_eq!(value_after(&args, "--vae-format"), Some("flux2"));
         assert!(idx("--vae-format") < idx("--listen-ip"));
         assert_eq!(value_after(&args, "--listen-ip"), Some("127.0.0.1"));
@@ -418,6 +425,7 @@ mod tests {
         for flag in [
             "--clip_l",
             "--t5xxl",
+            "--llm_vision",
             "--qwen2vl",
             "--vae-format",
             "--threads",

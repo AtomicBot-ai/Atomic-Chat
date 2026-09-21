@@ -126,7 +126,17 @@ pub fn validate_request(request: &ImageGenerateRequest, spec: &ServerSpec) -> Di
     if workflow == ImageWorkflow::Create {
         return Ok(());
     }
-    if !session::workflows_for_family(&spec.family).contains(&workflow) {
+    if spec.family == "qwen-image-2.1"
+        && workflow.uses_references()
+        && spec.files.llm_vision.is_none()
+    {
+        return Err(DiffusionError::with_details(
+            DiffusionErrorCode::SideFileMissing,
+            "Qwen Image 2.1 editing needs its Qwen3-VL vision projector.",
+            "Load the model with llmVision so sd.cpp receives --llm_vision.",
+        ));
+    }
+    if !session::workflows_for_spec(spec).contains(&workflow) {
         return Err(DiffusionError::with_details(
             DiffusionErrorCode::UnsupportedWorkflow,
             format!(
@@ -600,13 +610,18 @@ async fn ensure_session(
     if cancel.load(Ordering::SeqCst) {
         return Err(cancelled());
     }
+    let _load = state.load_lock.lock().await;
+    // An engine update may have invalidated the spec while this job waited.
+    // Resolve only after acquiring the same lock used by install/load/unload.
+    if cancel.load(Ordering::SeqCst) {
+        return Err(cancelled());
+    }
     let spec = state.spec().ok_or_else(|| {
         DiffusionError::new(
             DiffusionErrorCode::ModelNotLoaded,
             "Load an image model first.",
         )
     })?;
-    let _load = state.load_lock.lock().await;
     session::take_down_session(state).await;
     session::load_from_spec(state, emitter, spec, "respawn").await?;
     let guard = state.session.lock().await;
@@ -1271,6 +1286,31 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    #[tokio::test]
+    async fn an_update_invalidating_a_spec_prevents_a_waiting_job_from_respawning_it() {
+        let state = DiffusionState::new();
+        state.set_spec(Some(spec()));
+        let guard = state.load_lock.lock().await;
+        let waiting_state = state.clone();
+        let waiting = tokio::spawn(async move {
+            ensure_session(
+                &waiting_state,
+                &RecordingEmitter::default(),
+                &AtomicBool::new(false),
+            )
+            .await
+            .err()
+            .unwrap()
+        });
+        tokio::task::yield_now().await;
+        state.set_spec(None);
+        drop(guard);
+        assert_eq!(
+            waiting.await.unwrap().code,
+            DiffusionErrorCode::ModelNotLoaded
+        );
+    }
+
     // -- a minimal HTTP/1.1 stub speaking /sdcpp/v1/* ------------------------
 
     type Handler = Arc<dyn Fn(&str, &str, &[u8]) -> (u16, String) + Send + Sync>;
@@ -1599,6 +1639,18 @@ mod tests {
             assert!(
                 validate_request(&r, &klein).is_ok(),
                 "{workflow:?} on klein"
+            );
+            let mut qwen21 = s.clone();
+            qwen21.family = "qwen-image-2.1".into();
+            assert_eq!(
+                validate_request(&r, &qwen21).unwrap_err().code,
+                DiffusionErrorCode::SideFileMissing,
+                "{workflow:?} on Qwen Image 2.1 without --llm_vision"
+            );
+            qwen21.files.llm_vision = Some("/models/mmproj.gguf".into());
+            assert!(
+                validate_request(&r, &qwen21).is_ok(),
+                "{workflow:?} on Qwen Image 2.1 with --llm_vision"
             );
             r.reference_images = Some(vec![ImageSource::Path {
                 path: "/nonexistent/ref.png".into(),
