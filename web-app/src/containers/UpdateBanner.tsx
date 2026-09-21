@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { IconDownload, IconX } from '@tabler/icons-react'
@@ -89,11 +89,55 @@ export function UpdateBanner({
   testId,
   className,
 }: UpdateBannerProps) {
+  const bannerRef = useRef<HTMLDivElement>(null)
+  const avoidanceOwner = useId()
   const showExpanded = expanded && expandedContent != null
   const hasHighlights = !showExpanded && !!highlights && highlights.length > 0
 
+  // Publish the corner actually occupied by this rendered banner. Routes that
+  // need collision-free first-run controls can reserve that live geometry;
+  // normal chat pages remain untouched. Bounds include the fixed bottom/right
+  // offsets and follow wrapping, font-scale changes and expanded notes.
+  useLayoutEffect(() => {
+    const element = bannerRef.current
+    if (!element) return
+
+    const root = document.documentElement
+    const updateInsets = () => {
+      const bounds = element.getBoundingClientRect()
+      root.dataset.updateBannerAvoidanceOwner = avoidanceOwner
+      root.style.setProperty(
+        '--update-banner-avoid-right',
+        `${Math.max(0, Math.ceil(window.innerWidth - bounds.left + 8))}px`
+      )
+      root.style.setProperty(
+        '--update-banner-avoid-bottom',
+        `${Math.max(0, Math.ceil(window.innerHeight - bounds.top + 8))}px`
+      )
+    }
+
+    updateInsets()
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(updateInsets)
+    observer?.observe(element)
+    window.addEventListener('resize', updateInsets)
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', updateInsets)
+      if (root.dataset.updateBannerAvoidanceOwner === avoidanceOwner) {
+        delete root.dataset.updateBannerAvoidanceOwner
+        root.style.removeProperty('--update-banner-avoid-right')
+        root.style.removeProperty('--update-banner-avoid-bottom')
+      }
+    }
+  }, [avoidanceOwner])
+
   const banner = (
     <div
+      ref={bannerRef}
       role="status"
       aria-live="polite"
       data-testid={testId}

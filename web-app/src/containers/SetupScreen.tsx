@@ -1553,7 +1553,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   )
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden">
+    <div
+      className={cn(
+        'relative flex h-full w-full flex-col overflow-hidden',
+        'pb-[var(--update-banner-avoid-bottom,0px)]',
+        'min-[1280px]:pb-0 min-[1280px]:pr-[var(--update-banner-avoid-right,0px)]'
+      )}
+    >
       <div className="flex h-full min-h-0 w-full flex-col">
         <HeaderPage />
 
