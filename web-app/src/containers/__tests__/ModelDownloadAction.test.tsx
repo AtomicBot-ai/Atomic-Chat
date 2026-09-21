@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The real download store, not a stub: the row's downloading and resumable
+// state is what the cancel test reads back.
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { seedServiceHub } from '@/test/service-hub'
 import type { CatalogModel } from '@/services/models/types'
@@ -35,25 +38,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   ) => selector({ huggingfaceToken: '' }),
 }))
 
-vi.mock('@/hooks/useDownloadStore', () => {
-  const state = {
-    downloads: {},
-    localDownloadingModels: new Set<string>(),
-    resumableDownloads: new Set<string>(),
-    downloadOriginByModelId: {},
-    addLocalDownloadingModel: vi.fn(),
-    removeLocalDownloadingModel: vi.fn(),
-    markResumableDownload: vi.fn(),
-    clearResumableDownload: vi.fn(),
-    setDownloadOrigin: vi.fn(),
-    clearDownloadOrigin: vi.fn(),
-  }
-  const useDownloadStore = (selector?: (value: typeof state) => unknown) =>
-    selector ? selector(state) : state
-  useDownloadStore.getState = () => state
-  return { useDownloadStore }
-})
-
 import { ModelDownloadAction } from '../ModelDownloadAction'
 
 const variant = {
@@ -74,6 +58,12 @@ describe('ModelDownloadAction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+      downloadOriginByModelId: {},
+    })
     useModelProvider.setState({
       providers: [],
       selectedProvider: '',
@@ -171,5 +161,15 @@ describe('ModelDownloadAction', () => {
     await waitFor(() => expect(mocks.pullModelWithMetadata).toHaveBeenCalled())
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(mocks.toastError).not.toHaveBeenCalled()
+    // Silent, but not stuck: the row is back on "Download" rather than a
+    // dead progress button, and the partial file is kept for a resume.
+    await waitFor(() => expect(downloadButton()).toBeEnabled())
+    expect(
+      screen.queryByRole('button', { name: 'common:cancelDownload' })
+    ).toBeNull()
+    const downloads = useDownloadStore.getState()
+    expect(downloads.localDownloadingModels.has(variant.model_id)).toBe(false)
+    expect(downloads.downloadOriginByModelId[variant.model_id]).toBeUndefined()
+    expect(downloads.resumableDownloads.has(variant.model_id)).toBe(true)
   })
 })

@@ -493,6 +493,15 @@ describe('ChatInput', () => {
       )
     )
     expect(onSubmit).not.toHaveBeenCalled()
+    // The imported model is now the composer's selection, and the draft waits
+    // in the field while it loads instead of going out to nothing.
+    expect(useModelProvider.getState().selectedProvider).toBe(
+      'llamacpp-upstream'
+    )
+    expect(useModelProvider.getState().selectedModel?.id).toBe(modelId)
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Send this after the download'
+    )
 
     act(() => useAppState.setState({ activeModels: [modelId] }))
     await waitFor(() =>
@@ -502,6 +511,9 @@ describe('ChatInput', () => {
         undefined
       )
     )
+    // The queued send is spent: the widget is gone and the field is clear.
+    expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    expect(screen.getByTestId('chat-input')).toHaveValue('')
     unmount()
   })
 

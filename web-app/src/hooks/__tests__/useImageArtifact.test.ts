@@ -143,6 +143,16 @@ describe('useImageArtifact', () => {
     })
 
     expect(toast.error).not.toHaveBeenCalled()
+
+    // A real failure on the same path is reported, named for the error, so
+    // the silence above is the cancel's and not a swallowed error.
+    transfer.download.mockRejectedValueOnce(new Error('disk full'))
+    await act(async () => {
+      await result.current.download()
+    })
+    expect(vi.mocked(toast.error).mock.calls).toEqual([
+      ['images:model.downloadFailed', { description: 'disk full' }],
+    ])
   })
 
   it('loads through the store and reports as loaded afterwards', async () => {

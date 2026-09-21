@@ -607,6 +607,19 @@ describe('image-generation-store', () => {
         .loadModel('qwen-image-2.1:q4_k_m')
       expect(fake.loadModel).toHaveBeenCalledTimes(1)
       expect(install.ensure).not.toHaveBeenCalled()
+      // Qwen is the resident model, and nothing is left waiting on an engine
+      // update: no error, no parked artifact, no update on offer.
+      expect(fake.loadModel.mock.calls[0][0].modelId).toBe(
+        'qwen-image-2.1:q4_k_m'
+      )
+      const state = useImageGenerationStore.getState()
+      expect(state.status?.model.loaded?.modelId).toBe('qwen-image-2.1:q4_k_m')
+      expect(state.lastError).toBeNull()
+      expect(state.pendingEngineArtifactId).toBeNull()
+      expect(state.engineUpdate.availableTag).toBeNull()
+      expect(useImageSetting.getState().selectedArtifactId).toBe(
+        'qwen-image-2.1:q4_k_m'
+      )
     })
 
     it('hands the plugin the resolved files and reads the capabilities back', async () => {
