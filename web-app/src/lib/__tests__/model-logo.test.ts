@@ -124,14 +124,14 @@ describe('modelFamilyLogoSrc', () => {
 describe('image and video families', () => {
   it('gives every family in the offline catalog a bundled mark, by id and by name', () => {
     for (const family of BASELINE_DIFFUSION_CATALOG.families) {
-      expect(
-        iconKeyLogoSrc(DIFFUSION_FAMILY_ICON_KEYS[family.id]),
-        `no icon key for "${family.id}"`
-      ).toBeTruthy()
+      const byId = iconKeyLogoSrc(DIFFUSION_FAMILY_ICON_KEYS[family.id])
+      expect(byId, `no icon key for "${family.id}"`).toBeTruthy()
+      // A card drawn from the family name must not show another mark than one
+      // drawn from its id.
       expect(
         modelFamilyLogoSrc(family.name),
-        `no name rule for "${family.name}"`
-      ).toBeTruthy()
+        `name rule for "${family.name}"`
+      ).toBe(byId)
     }
   })
 
