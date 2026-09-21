@@ -1,46 +1,168 @@
 name: CI Failure AI Fixer
 
+# On CI failure: Jules attempts a fix and opens a PR for review. If the Jules
+# step itself errors (bad key, timeout, action failure), Gemini falls back and
+# posts a proposed diff as a PR comment. Neither pushes to the failing branch;
+# neither auto-merges. A human reviews and merges. "Green" stays meaningful.
+
 on:
   workflow_run:
-    # This tells the AI to watch your specific workflows
     workflows: ["Radium CI", "Windows Test Build", "Lint Code Base", "rust-clippy analyze"]
     types: [completed]
 
+# One fixer run per head branch; cancel stale ones. Prevents churn.
+concurrency:
+  group: ai-fixer-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write         # Jules opens a fix branch/PR. (Not a push to the failing branch.)
+  pull-requests: write    # open Jules's PR / post Gemini's comment.
+  actions: read           # download the failed run's logs.
+
 jobs:
-  escalate:
-    if: github.event.workflow_run.conclusion == 'failure'
+  fix:
+    # Genuine failure, on a PR, from this repo (not a fork).
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-
     steps:
-      - name: Checkout Code
+      - name: Checkout at the failed head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
 
-      - name: Attempt Fix with Jules
-        id: jules-attempt
-        uses: google-labs-code/jules-invoke@v1
+      # --- Loop guard: don't re-fix a commit that was itself an AI fix ---
+      - name: Skip if head commit is an AI fix
+        id: guard
+        run: |
+          MSG="$(git log -1 --pretty=%B)"
+          if echo "$MSG" | grep -qi '\[ai-fix\]'; then
+            echo "Head commit is already an AI fix. Stopping to avoid a loop."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- Resolve the PR this failed run belongs to ---
+      - name: Resolve PR number
+        if: steps.guard.outputs.skip == 'false'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh pr list \
+                --repo "${{ github.repository }}" \
+                --head "${{ github.event.workflow_run.head_branch }}" \
+                --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true"  >> "$GITHUB_OUTPUT"
+            echo "number=$PR"  >> "$GITHUB_OUTPUT"
+          fi
+
+      # ============================================================
+      # ATTEMPT 1 — Jules. Opens a PR for review. continue-on-error
+      # so a Jules *step failure* can hand off to Gemini.
+      # ============================================================
+      - name: Attempt fix with Jules
+        id: jules
+        if: steps.guard.outputs.skip == 'false' && steps.pr.outputs.found == 'true'
         continue-on-error: true
+        uses: google-labs-code/jules-invoke@v1
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
+          starting_branch: ${{ github.event.workflow_run.head_branch }}
           prompt: |
-            The CI pipeline failed. Analyze the failing test logs and repository code.
-            Diagnose the issue, apply a fix, and update the branch.
+            CI failed on this branch. Diagnose the root cause from the failing
+            test logs and repository code, then open a pull request with a fix.
 
-      - name: Fallback to Gemini Pro AI Fixer
-        if: steps.jules-attempt.outcome == 'failure'
+            Hard rules — follow exactly:
+            - Fix the underlying cause. Do NOT delete, skip, disable, or weaken
+              any test or assertion to force a green run.
+            - If the correct fix genuinely is a test change, make it, but explain
+              in the PR description why the test was wrong.
+            - If you cannot determine a safe fix, open no PR and say so — do not guess.
+            - Prefix your commit message with [ai-fix] so the pipeline does not
+              re-trigger on your own commit.
+
+      # --- Note Jules outcome on the PR (whether it opened a PR or declined) ---
+      - name: Comment Jules result
+        if: steps.guard.outputs.skip == 'false' && steps.pr.outputs.found == 'true' && steps.jules.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" --body \
+          "🤖 **Jules** ran against the CI failure. If it found a safe fix, it opened a separate PR for your review — check your open PRs. Nothing was merged automatically."
+
+      # ============================================================
+      # FALLBACK — only if the Jules STEP errored (not if Jules ran
+      # and declined). Gemini posts a proposed diff as a comment.
+      # ============================================================
+      - name: Download failed logs
+        id: logs
+        if: steps.guard.outputs.skip == 'false' && steps.pr.outputs.found == 'true' && steps.jules.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run view "${{ github.event.workflow_run.id }}" \
+            --repo "${{ github.repository }}" --log-failed > failed_logs.txt 2>/dev/null || true
+          head -c 60000 failed_logs.txt > logs_trimmed.txt || true
+          echo "Collected $(wc -c < logs_trimmed.txt) bytes of failure logs."
+
+      - name: Gemini fallback — propose a diff
+        id: gemini
+        if: steps.guard.outputs.skip == 'false' && steps.pr.outputs.found == 'true' && steps.jules.outcome == 'failure'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          echo "Jules failed to resolve the CI issue. Invoking Gemini Pro fallback..."
-          python -m pip install --upgrade pip google-genai
-          
-          python -c "
-          import os
+          python -m pip install --quiet --upgrade google-genai
+          python - <<'PY'
+          import os, pathlib
           from google import genai
-          
-          client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
-          print('Gemini client initialized successfully.')
-          print('Model Selected: gemini-1.5-pro')
-          "
+
+          p = pathlib.Path("logs_trimmed.txt")
+          logs = p.read_text(errors="ignore") if p.exists() else ""
+          if not logs.strip():
+              pathlib.Path("proposal.md").write_text("_Jules could not run and no failure logs were retrievable, so no fix was proposed._")
+              raise SystemExit(0)
+
+          client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+          prompt = f"""You are reviewing a failed CI run. Below are the failing logs.
+
+          Diagnose the root cause and propose a MINIMAL fix as a unified diff (```diff block).
+
+          Hard rules:
+          - Fix the underlying cause. Do NOT delete, skip, or weaken tests or assertions to force a pass.
+          - If the correct fix is to change a test, say so explicitly and justify why the test was wrong.
+          - If you cannot determine a safe fix from the logs alone, say that instead of guessing.
+          - Output: a short diagnosis, then the diff. Nothing else.
+
+          FAILING LOGS:
+          {logs}
+          """
+          resp = client.models.generate_content(model="gemini-2.5-pro", contents=prompt)
+          pathlib.Path("proposal.md").write_text(resp.text or "_Model returned no content._")
+          print("Proposal written.")
+          PY
+
+      - name: Comment Gemini proposal
+        if: steps.guard.outputs.skip == 'false' && steps.pr.outputs.found == 'true' && steps.jules.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "## 🤖 Gemini fallback — proposed fix (not applied)"
+            echo ""
+            echo "The Jules step did not run to completion, so Gemini diagnosed the \`${{ github.event.workflow_run.name }}\` failure. **Nothing has been pushed or merged** — apply it manually if correct."
+            echo ""
+            cat proposal.md
+            echo ""
+            echo "---"
+            echo "_Commit any fix with \`[ai-fix]\` in the message to prevent re-triggering._"
+          } > comment.md
+          gh pr comment "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" --body-file comment.md
