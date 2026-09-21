@@ -35,7 +35,8 @@ stdio server with and without the user's approval, and an agent journey runs the
 Rust loop on a local model through a read, a write and a folder-access question.
 The Local API is checked across a core crash, the app across its own restart, and
 MLX and the on-device Foundation Models provider through scripted servers in
-the bundled binaries' place. Polled expectations default to fifteen seconds
+the bundled binaries' place. Scenario files run side by side, four at a time unless `E2E_WORKERS` says
+otherwise (`E2E_WORKERS=1` for one at a time) — 277 s sequentially, 76 s on four workers, 56 s on six. Polled expectations default to fifteen seconds
 (`tests/e2e/vitest.config.ts`): the library's one second is not a promise a real
 window on a busy machine keeps. It narrows the driver choice below — the embedded WebDriver
 plugin with the plain `webdriverio` client, without the Tauri service — and

@@ -15,7 +15,7 @@ import {
 } from './fixtures.js'
 import { CAN_RUN_FAKE_BACKEND, listProcesses } from './platform.js'
 import { operatorStateChanges, snapshotOperatorState, type OperatorSnapshot } from './invariants.js'
-import { createProfile, sweepStaleProfiles, type Profile } from './profile.js'
+import { createProfile, type Profile } from './profile.js'
 
 export interface Session {
   name: string
@@ -43,7 +43,6 @@ export async function startSession(
     alsoAllowedBackends?: string[]
   } = {}
 ): Promise<Session> {
-  await sweepStaleProfiles()
   const operatorBefore = await snapshotOperatorState()
   const apiPort = await freePort()
   const profile = await createProfile({

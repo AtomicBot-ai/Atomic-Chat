@@ -160,7 +160,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
       await download.click()
       await pageShows(session, 'Download Complete', 120_000)
       expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
-      expect(await readFile(join(modelDir, 'model.yml'), 'utf8')).toContain(`size_bytes: ${hub.modelBytes}`)
+      // The model's description is written a moment after the toast.
+      await expect
+        .poll(() => readFile(join(modelDir, 'model.yml'), 'utf8').catch(() => ''))
+        .toContain(`size_bytes: ${hub.modelBytes}`)
     })
   })
 })

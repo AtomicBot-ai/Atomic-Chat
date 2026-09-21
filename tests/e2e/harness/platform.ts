@@ -112,6 +112,32 @@ export function listProcesses(): ProcessEntry[] {
 }
 
 /**
+ * The socket the single-instance plugin leaves behind when its app is killed,
+ * which is the only way a test can end one. Named after the run's identifier
+ * (`run_identifier` in src-tauri/src/core/e2e.rs). Unix only: on Windows the
+ * plugin holds a mutex, which goes with the process.
+ */
+export function singleInstanceSocket(identifier: string): string | null {
+  if (PLATFORM === 'win32') return null
+  return `/tmp/${identifier.replace(/[.-]/g, '_')}_si.sock`
+}
+
+/** The processes listening on a loopback TCP port. */
+export function listenersOn(port: number): number[] {
+  if (PLATFORM === 'win32') {
+    return notPorted('find the process listening on a port (e.g. through Get-NetTCPConnection)')
+  }
+  try {
+    return execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' })
+      .split('\n')
+      .map((line) => Number.parseInt(line.trim(), 10))
+      .filter((pid) => Number.isInteger(pid))
+  } catch {
+    return [] // lsof exits 1 when nothing listens there
+  }
+}
+
+/**
  * The core's scripted fake llama-server is installed as a `#!/bin/sh` launcher,
  * which Windows cannot execute as `llama-server.exe`. Scenarios that need it are
  * skipped there; the real-backend scenario is the portable one.

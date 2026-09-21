@@ -423,6 +423,7 @@ pub fn run() {
     let context = {
         let mut context = tauri::generate_context!();
         core::e2e::take_over_windows(&mut context);
+        core::e2e::namespace_identifier(&mut context);
         context
     };
 

@@ -15,18 +15,19 @@ const REPLY = 'ATOMIC-E2E-ON-DEVICE 9a44'
 
 describe.skipIf(process.platform !== 'darwin')('the on-device Foundation Models provider', () => {
   let session: Session
-  let restore: (() => Promise<void>) | undefined
 
   beforeAll(async () => {
-    restore = await installFakeSidecar('fm', { reply: REPLY })
-    // A llama.cpp model beside it, so the app opens on the chat and the picker has a second group.
-    session = await startSession('foundation-models', { prepare: async (profile) => writeFakeModel(profile, 'e2e/fake-model') })
+    session = await startSession('foundation-models', {
+      prepare: async (profile) => {
+        await installFakeSidecar(profile, 'fm', { reply: REPLY })
+        // A llama.cpp model beside it, so the app opens on the chat and the picker has a second group.
+        await writeFakeModel(profile, 'e2e/fake-model')
+      },
+    })
   })
 
   afterAll(async () => {
-    const left = session ? await endSession(session) : []
-    await restore?.()
-    expect(left).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('is offered when the server says it is available, and the core runs it for a chat', async () => {
@@ -46,17 +47,19 @@ describe.skipIf(process.platform !== 'darwin')('the on-device Foundation Models 
 
 describe.skipIf(process.platform !== 'darwin')('the on-device provider on a Mac that cannot run it', () => {
   let session: Session
-  let restore: (() => Promise<void>) | undefined
 
   beforeAll(async () => {
-    restore = await installFakeSidecar('fm', { reply: REPLY, check: 'notEligible' })
-    session = await startSession('foundation-models-absent', { prepare: async (profile) => writeFakeModel(profile, 'e2e/fake-model') })
+    session = await startSession('foundation-models-absent', {
+      prepare: async (profile) => {
+        await installFakeSidecar(profile, 'fm', { reply: REPLY, check: 'notEligible' })
+        // A llama.cpp model beside it, so the app opens on the chat and the picker has a second group.
+        await writeFakeModel(profile, 'e2e/fake-model')
+      },
+    })
   })
 
   afterAll(async () => {
-    const left = session ? await endSession(session) : []
-    await restore?.()
-    expect(left).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('is not offered in the model picker', async () => {

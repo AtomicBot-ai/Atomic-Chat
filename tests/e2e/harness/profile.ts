@@ -4,10 +4,11 @@
  * macOS cannot live under it — the run's WebKit data store (see platform.ts).
  */
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { homeRedirect, listProcesses, webviewStoreDir } from './platform.js'
+import { homeRedirect, listProcesses, singleInstanceSocket, webviewStoreDir } from './platform.js'
 
 export interface Profile {
   root: string
@@ -31,6 +32,16 @@ export function webviewStoreUuid(root: string): string {
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20, 32)].join('-')
 }
 
+/** Mirrors `run_identifier` in src-tauri/src/core/e2e.rs: the e2e build's identifier plus a tag of the root. */
+export function runIdentifier(root: string): string {
+  const base = (
+    JSON.parse(readFileSync(new URL('../../../src-tauri/tauri.e2e.conf.json', import.meta.url), 'utf8')) as {
+      identifier: string
+    }
+  ).identifier
+  return `${base}.r${createHash('sha256').update(root).digest('hex').slice(0, 8)}`
+}
+
 const ROOT_PREFIX = 'atomic-e2e-'
 
 /**
@@ -50,6 +61,8 @@ export async function sweepStaleProfiles(): Promise<string[]> {
     if (commands.some((command) => command.includes(root))) continue
     await rm(root, { recursive: true, force: true })
     await rm(webviewStoreDir(root, webviewStoreUuid(root)), { recursive: true, force: true })
+    const socket = singleInstanceSocket(runIdentifier(root))
+    if (socket) await rm(socket, { force: true })
     removed.push(root)
   }
   return removed
@@ -115,6 +128,8 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
     destroy: async () => {
       await rm(root, { recursive: true, force: true })
       await rm(webviewStore, { recursive: true, force: true })
+      const socket = singleInstanceSocket(runIdentifier(root))
+      if (socket) await rm(socket, { force: true })
     },
   }
 }

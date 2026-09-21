@@ -14,7 +14,7 @@ import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { remote, type Browser } from 'webdriverio'
-import { APP_BINARY_NAME, inheritedEnvKeys, listProcesses } from './platform.js'
+import { APP_BINARY_NAME, inheritedEnvKeys, listenersOn } from './platform.js'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -29,6 +29,14 @@ export const APP_BINARY = resolve(
 )
 
 const DRIVER_READY_TIMEOUT_MS = 60_000
+/**
+ * How long a WebDriver command may go unanswered. The client's defaults — two
+ * minutes, three times — outlast every test's own limit, so a command the app
+ * accepted and never answered ended as a bare "test timed out" with no artifacts
+ * and no hint of which command it was. Nothing the embedded driver does takes
+ * half a minute; past that the command fails, by name.
+ */
+const DRIVER_PATIENCE = { connectionRetryTimeout: 30_000, connectionRetryCount: 1 }
 const STOP_GRACE_MS = 5_000
 
 export interface RunningApp {
@@ -130,13 +138,6 @@ export async function stopProcess(child: ChildProcess): Promise<void> {
   clearTimeout(timer)
 }
 
-/** App processes started from this build's binary, by their own argv. */
-function appPids(): number[] {
-  return listProcesses()
-    .filter((p) => p.command === APP_BINARY || p.command.startsWith(`${APP_BINARY} `))
-    .map((p) => p.pid)
-}
-
 /**
  * Follows the app through a restart it performs itself (after relocating its
  * data folder, say). The new process is the old one's child, not the harness's,
@@ -163,6 +164,7 @@ export async function followRelaunch(app: RunningApp): Promise<void> {
     port: app.driverPort,
     path: '/',
     logLevel: 'warn',
+    ...DRIVER_PATIENCE,
     waitforTimeout: 15_000,
     capabilities: {},
   })
@@ -172,7 +174,13 @@ export async function followRelaunch(app: RunningApp): Promise<void> {
 export async function launchApp(extraEnv: Record<string, string>): Promise<RunningApp> {
   const driverPort = await freePort()
   const { child, output } = spawnApp(
-    appEnv({ ...extraEnv, TAURI_WEBDRIVER_PORT: String(driverPort) })
+    appEnv({
+      ...extraEnv,
+      TAURI_WEBDRIVER_PORT: String(driverPort),
+      // Workers run side by side, each with its window kept on top; the build
+      // cascades them by this number so that none is covered completely.
+      ATOMIC_E2E_WINDOW_SLOT: process.env.VITEST_POOL_ID ?? '1',
+    })
   )
   try {
     await waitForDriver(driverPort, child, output)
@@ -181,6 +189,7 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
       port: driverPort,
       path: '/',
       logLevel: 'warn',
+      ...DRIVER_PATIENCE,
       // Element commands wait for their element instead of failing on the first
       // look: lists load after the shell renders, and popovers animate in.
       waitforTimeout: 15_000,
@@ -195,19 +204,21 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
       stop: async () => {
         await app.browser.deleteSession().catch(() => undefined)
         await stopProcess(child)
-        // An app that restarted itself is no longer this process's child. One
-        // suite runs one app at a time, so every process of this binary is it.
-        for (const pid of appPids()) {
+        // An app that restarted itself is no longer this process's child, but it
+        // is still this session's: the restart inherits the environment, so it
+        // serves WebDriver on the same port. Found by that port — not by the
+        // binary — so that other sessions' apps, running beside it, are left alone.
+        const mine = () => listenersOn(driverPort)
+        for (const pid of mine()) {
           try {
             process.kill(pid, 'SIGKILL')
           } catch {
             // exited meanwhile
           }
         }
-        // A kill is a request. While the process is still going down it holds the
-        // single-instance socket, and the next launch hands itself over to it and
-        // exits with code 0 before its WebDriver server exists.
-        for (let waited = 0; appPids().length > 0 && waited < 10_000; waited += 100) {
+        // A kill is a request; the next launch on this root must not meet a
+        // process that is still going down.
+        for (let waited = 0; mine().length > 0 && waited < 10_000; waited += 100) {
           await new Promise((r) => setTimeout(r, 100))
         }
       },

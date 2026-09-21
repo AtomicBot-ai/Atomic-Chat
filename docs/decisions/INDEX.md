@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-292 records, 2026-05-19 → 2026-09-19.
+294 records, 2026-05-19 → 2026-09-21.
 
 ---
 
@@ -307,8 +307,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (22)
+## Inference core extraction — atomic-chat-core (23)
 
+- **2026-09-21** — [A factory reset removes the core's folder and keeps every provider's backends](2026-09-21-a-factory-reset-removes-the-cores-folder-and-keeps-every-providers-backends.md)
 - **2026-09-19** — [Ask the core before concluding a session does not exist](2026-09-19-ask-the-core-before-concluding-a-session-does-not-exist.md)
 - **2026-09-19** — [End a local stream on the channel, not on the command's return](2026-09-19-end-a-local-stream-on-the-channel-not-on-the-commands-return.md)
 - **2026-09-19** — [Restart through the exit handler](2026-09-19-restart-through-the-exit-handler.md)
@@ -332,8 +333,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Other (13)
+## Other (14)
 
+- **2026-09-21** — [Run desktop e2e scenarios side by side](2026-09-21-run-desktop-e2e-scenarios-side-by-side.md)
 - **2026-09-18** — [Drive the desktop UI through an embedded WebDriver on an isolated profile](2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md)
 - **2026-09-16** — [Automate acceptance with layered Tauri evidence](2026-09-16-automate-acceptance-with-layered-tauri-evidence.md)
 - **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
