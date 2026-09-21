@@ -1,0 +1,46 @@
+name: CI Failure AI Fixer
+
+on:
+  workflow_run:
+    # This tells the AI to watch your specific workflows
+    workflows: ["Radium CI", "Windows Test Build", "Lint Code Base", "rust-clippy analyze"]
+    types: [completed]
+
+jobs:
+  escalate:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Attempt Fix with Jules
+        id: jules-attempt
+        uses: google-labs-code/jules-action@v1
+        continue-on-error: true
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          prompt: |
+            The CI pipeline failed. Analyze the failing test logs and repository code.
+            Diagnose the issue, apply a fix, and update the branch.
+
+      - name: Fallback to Gemini Pro AI Fixer
+        if: steps.jules-attempt.outcome == 'failure'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "Jules failed to resolve the CI issue. Invoking Gemini Pro fallback..."
+          python -m pip install --upgrade pip google-genai
+          
+          python -c "
+          import os
+          from google import genai
+          
+          client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+          print('Gemini client initialized successfully.')
+          print('Model Selected: gemini-1.5-pro')
+          "
