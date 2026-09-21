@@ -1553,13 +1553,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   )
 
   return (
-    <div
-      className={cn(
-        'relative flex h-full w-full flex-col overflow-hidden',
-        'pb-[var(--update-banner-avoid-bottom,0px)]',
-        'min-[1280px]:pb-0 min-[1280px]:pr-[var(--update-banner-avoid-right,0px)]'
-      )}
-    >
+    <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div className="flex h-full min-h-0 w-full flex-col">
         <HeaderPage />
 
@@ -1576,7 +1570,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
               </h1>
             </div>
 
-            <div className="relative z-50 flex flex-col gap-4">
+            <div className="relative z-10 flex flex-col gap-4">
               {(detectedRunnable.length > 0 ||
                 installedRecommended.length > 0) && (
                 <div className="flex flex-col gap-2">

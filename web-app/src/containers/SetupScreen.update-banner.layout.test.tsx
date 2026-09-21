@@ -1,18 +1,16 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
-import SetupScreen from '@/containers/SetupScreen'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useUpdateBannerSlots } from '@/stores/update-banner-store'
 import {
-  expectNoHorizontalOverflow,
-  setFontSize,
-  setTheme,
-  settle,
-  withTranslations,
-} from '@/test/layout'
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import SetupScreen from '@/containers/SetupScreen'
+import { UpdateBanner } from '@/containers/UpdateBanner'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { settle, withTranslations } from '@/test/layout'
 
 const mocks = vi.hoisted(() => {
   const providers = [
@@ -40,52 +38,11 @@ const mocks = vi.hoisted(() => {
     fetchSources: vi.fn(),
     refresh: vi.fn(() => Promise.resolve()),
     setLeftPanel: vi.fn(),
-    updateState: {
-      isUpdateAvailable: true,
-      updateInfo: {
-        version: '2.0.41-preview',
-        body: [
-          '- Rebuilt local image generation setup and model picker',
-          '- Automatic recovery from GPU failures',
-          '- Smoother reasoning, tool activity and sidebar resizing',
-          '- Clearer app updates and project feedback',
-          '- One more improvement',
-        ].join('\n'),
-      },
-      isDownloading: false,
-      downloadProgress: 0,
-      downloadedBytes: 0,
-      totalBytes: 0,
-      remindMeLater: false,
-      currentVersion: '2.0.40',
-    },
-  }
-})
-
-const portal = vi.hoisted(() => ({ attached: true, calls: 0 }))
-
-vi.mock('react-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-dom')>()
-
-  return {
-    ...actual,
-    createPortal: (...args: Parameters<typeof actual.createPortal>) => {
-      portal.calls += 1
-      return portal.attached ? actual.createPortal(...args) : null
-    },
   }
 })
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
-}))
-
-vi.mock('@/hooks/useAppUpdater', () => ({
-  useAppUpdater: () => ({
-    updateState: mocks.updateState,
-    downloadAndInstallUpdate: vi.fn(),
-    setRemindMeLater: vi.fn(),
-  }),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -232,17 +189,9 @@ vi.mock('@janhq/core', () => ({
   joinPath: vi.fn(),
 }))
 
-const boxesOverlap = (a: DOMRect, b: DOMRect): boolean =>
-  a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-
-describe('SetupScreen with the app update preview', () => {
+describe('onboarding notification stacking', () => {
   beforeEach(() => {
-    portal.attached = true
-    portal.calls = 0
     localStorage.clear()
-    useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
-    })
     useDownloadStore.setState({
       downloads: {},
       localDownloadingModels: new Set(),
@@ -252,123 +201,72 @@ describe('SetupScreen with the app update preview', () => {
     })
   })
 
-  it.each(
-    [1024, 1280].flatMap((width) =>
-      ['16px', '20px'].flatMap((fontSize) =>
-        (['light', 'dark'] as const).map((theme) => ({
-          width,
-          fontSize,
-          theme,
-        }))
-      )
-    )
-  )(
-    'keeps setup actions clear at $width px / $fontSize / $theme',
-    async ({ width, fontSize, theme }) => {
-      await page.viewport(width, 800)
-      setFontSize(fontSize)
-      setTheme(theme)
-
-      render(
-        withTranslations(
-          <div className="flex h-screen w-screen overflow-hidden">
-            <aside className="w-60 shrink-0" aria-label="Sidebar" />
-            <main className="min-w-0 flex-1" data-testid="setup-host">
-              <SetupScreen />
-            </main>
-            <DialogAppUpdater />
-          </div>
-        )
-      )
-
-      const heading = await screen.findByRole('heading', {
-        name: 'Welcome to Atomic Chat!',
-      })
-      const banner = await screen.findByTestId('app-update-banner')
-      const panel = heading.parentElement?.parentElement as HTMLElement
-      await settle(document.body)
-      await waitFor(() =>
-        expect(boxesOverlap(panel.getBoundingClientRect(), banner.getBoundingClientRect())).toBe(
-          false
-        )
-      )
-
-      expect(screen.getByRole('button', { name: 'Browse Hugging Face models' })).toBeVisible()
-      expect(screen.getByRole('button', { name: 'Connect ChatGPT subscription' })).toBeVisible()
-      expect(screen.getByRole('button', { name: 'Add a cloud provider' })).toBeVisible()
-      expectNoHorizontalOverflow(document.body)
-    }
-  )
-
-  it('starts avoidance after a late portal attachment and cleans it up', async () => {
+  it('paints the update banner above setup actions and below dialogs', async () => {
     await page.viewport(1280, 800)
-    setFontSize('16px')
-    setTheme('light')
-    portal.attached = false
 
-    const app = (
+    const app = (dialogOpen: boolean) =>
+      withTranslations(
       <div className="flex h-screen w-screen overflow-hidden">
         <aside className="w-60 shrink-0" aria-label="Sidebar" />
-        <main className="min-w-0 flex-1" data-testid="setup-host">
+        <main className="min-w-0 flex-1">
           <SetupScreen />
         </main>
-        <DialogAppUpdater />
+        <UpdateBanner
+          title="New Atomic Chat version"
+          fromVersion="2.0.40"
+          toVersion="2.0.41"
+          remindLaterLabel="Remind me later"
+          onRemindLater={vi.fn()}
+          updateLabel="Update"
+          onUpdate={vi.fn()}
+          dismissLabel="Dismiss"
+          onDismiss={vi.fn()}
+          testId="app-update-banner"
+        />
+        <Dialog open={dialogOpen}>
+          <DialogContent>
+            <DialogTitle>Confirmation</DialogTitle>
+          </DialogContent>
+        </Dialog>
       </div>
-    )
-    const { rerender, unmount } = render(withTranslations(app))
-
-    await waitFor(() => expect(portal.calls).toBeGreaterThan(0))
-    expect(
-      document.documentElement.style.getPropertyValue(
-        '--update-banner-avoid-right'
       )
-    ).toBe('')
 
-    portal.attached = true
-    rerender(withTranslations(app))
-
-    const heading = await screen.findByRole('heading', {
-      name: 'Welcome to Atomic Chat!',
-    })
+    const { rerender } = render(app(false))
+    const route = await screen.findByTestId('setup-browse-hub')
     const banner = await screen.findByTestId('app-update-banner')
-    const panel = heading.parentElement?.parentElement as HTMLElement
-    await waitFor(() => {
-      expect(
-        parseFloat(
-          document.documentElement.style.getPropertyValue(
-            '--update-banner-avoid-right'
-          )
-        )
-      ).toBeGreaterThan(0)
-      expect(
-        parseFloat(
-          document.documentElement.style.getPropertyValue(
-            '--update-banner-avoid-bottom'
-          )
-        )
-      ).toBeGreaterThan(0)
-    })
     await settle(document.body)
-    expect(
-      boxesOverlap(
-        panel.getBoundingClientRect(),
-        banner.getBoundingClientRect()
-      )
-    ).toBe(false)
 
-    unmount()
+    const bannerBounds = banner.getBoundingClientRect()
+    Object.assign(route.style, {
+      position: 'fixed',
+      left: `${bannerBounds.left}px`,
+      top: `${bannerBounds.top}px`,
+      width: `${bannerBounds.width}px`,
+      height: `${bannerBounds.height}px`,
+    })
+
+    const routeLayer = route.closest('.z-10') as HTMLElement | null
+    expect(routeLayer).not.toBeNull()
+    expect(getComputedStyle(routeLayer!).zIndex).toBe('10')
+    expect(getComputedStyle(banner).zIndex).toBe('40')
+
+    const x = bannerBounds.left + bannerBounds.width / 2
+    const y = bannerBounds.top + bannerBounds.height / 2
+    const elementsAtOverlap = document.elementsFromPoint(x, y)
     expect(
-      document.documentElement.style.getPropertyValue(
-        '--update-banner-avoid-right'
+      elementsAtOverlap.some(
+        (element) => element === route || route.contains(element)
       )
-    ).toBe('')
-    expect(
-      document.documentElement.style.getPropertyValue(
-        '--update-banner-avoid-bottom'
-      )
-    ).toBe('')
-    expect(document.documentElement.dataset.updateBannerAvoidanceOwner).toBe(
-      undefined
+    ).toBe(true)
+    expect(banner.contains(document.elementFromPoint(x, y))).toBe(true)
+
+    rerender(app(true))
+    await screen.findByRole('dialog', { name: 'Confirmation' })
+    const overlay = document.querySelector<HTMLElement>(
+      '[data-slot="dialog-overlay"]'
     )
+    expect(overlay).not.toBeNull()
+    expect(getComputedStyle(overlay!).zIndex).toBe('50')
+    expect(document.elementFromPoint(x, y)).toBe(overlay)
   })
 })
