@@ -359,6 +359,8 @@ const SidebarTrigger = React.forwardRef<
 })
 SidebarTrigger.displayName = 'SidebarTrigger'
 
+const noopToggle = () => {}
+
 const SidebarRail = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'> & {
@@ -366,14 +368,15 @@ const SidebarRail = React.forwardRef<
     enableDrag?: boolean
   }
 >(({ className, enableDrag = true, ...props }, ref) => {
-  const { setWidth, state, width, setIsDraggingRail, toggleSidebar } =
-    useSidebar()
+  const { setWidth, state, width, setIsDraggingRail } = useSidebar()
 
-  const { dragRef, handleClick, handleMouseDown } = useSidebarResize({
+  const { dragRef, handleMouseDown } = useSidebarResize({
     direction: 'right',
     enableDrag,
     onResize: setWidth,
-    onToggle: toggleSidebar,
+    // Drag only. A click here used to hide the sidebar too, which the user
+    // hit by accident (2026-09-15); the sidebar button does that.
+    onToggle: noopToggle,
     currentWidth: width,
     isCollapsed: state === 'collapsed',
     minResizeWidth: MIN_SIDEBAR_WIDTH,
@@ -394,10 +397,11 @@ const SidebarRail = React.forwardRef<
       type="button"
       ref={combinedRef}
       data-sidebar="rail"
-      aria-label="Toggle or resize sidebar"
+      data-no-hover-glow
+      aria-label="Resize sidebar"
+      tabIndex={-1}
       onMouseDown={handleMouseDown}
-      onClick={handleClick}
-      title="Click to toggle, drag to resize"
+      title="Drag to resize"
       className={cn(
         //* Без видимой линии (::after), только ресайз и курсор
         'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 border-0 bg-transparent p-0 transition-all ease-linear sm:flex',

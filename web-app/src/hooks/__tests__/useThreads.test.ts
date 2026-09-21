@@ -18,6 +18,12 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
+vi.mock('@janhq/core', () => ({
+  ExtensionTypeEnum: {
+    VectorDB: 'VectorDB',
+  },
+}))
+
 // Mock ulid
 vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'test-ulid-123'),

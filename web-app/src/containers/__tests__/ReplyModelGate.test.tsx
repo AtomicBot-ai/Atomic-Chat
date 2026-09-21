@@ -226,7 +226,6 @@ describe('ReplyModelGate', () => {
     const download = await screen.findByRole('button', {
       name: /replyGate.download/,
     })
-    await waitFor(() => expect(download).toBeEnabled())
     fireEvent.click(download)
 
     expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(

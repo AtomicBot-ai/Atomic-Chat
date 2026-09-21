@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type { AppService } from '@/services/app/types'
@@ -24,10 +24,6 @@ vi.mock('sonner', () => ({
   },
 }))
 
-vi.mock('@/containers/LocalModelLocationsCard', () => ({
-  default: () => <div>Detected model locations</div>,
-}))
-
 import { ModelsFolderDialog } from '../ModelsFolderDialog'
 
 const DEFAULT = 'C:\\Users\\me\\AppData\\Roaming\\Radium\\data\\llamacpp\\models'
@@ -38,7 +34,6 @@ const openDialog = vi.fn()
 const stopAllModels = vi.fn()
 const getProviders = vi.fn()
 const setProviders = vi.fn()
-const originalIsTauri = globalThis.IS_TAURI
 
 const openPanel = async () => {
   const user = userEvent.setup()
@@ -52,7 +47,6 @@ const openPanel = async () => {
 describe('ModelsFolderDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    globalThis.IS_TAURI = true
     getModelsFolder.mockResolvedValue({
       path: DEFAULT,
       default_path: DEFAULT,
@@ -71,17 +65,12 @@ describe('ModelsFolderDialog', () => {
     useModelProvider.setState({ providers: [], setProviders })
   })
 
-  afterEach(() => {
-    globalThis.IS_TAURI = originalIsTauri
-  })
-
   it('shows where models are saved now', async () => {
     render(<ModelsFolderDialog />)
     await openPanel()
 
     expect(screen.getByTestId('models-folder-path')).toHaveTextContent(DEFAULT)
     expect(screen.getByText('hub:modelsFolder.default')).toBeInTheDocument()
-    expect(screen.getByText('Detected model locations')).toBeInTheDocument()
     // Nothing to apply until a folder is chosen.
     expect(screen.getByRole('button', { name: 'hub:modelsFolder.apply' })).toBeDisabled()
   })

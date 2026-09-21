@@ -63,7 +63,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { ExtensionTypeEnum, type VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
 import {
   growModelContext,

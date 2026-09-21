@@ -4,7 +4,7 @@ import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
 import { useToolAvailable } from './useToolAvailable'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
+import { ExtensionTypeEnum, type MCPExtension } from '@janhq/core'
 
 type ToolSnapshot = Awaited<ReturnType<typeof fetchToolSnapshot>>
 
