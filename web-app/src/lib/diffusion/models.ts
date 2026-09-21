@@ -267,6 +267,12 @@ export function planArtifactDownload(
 /**
  * Every artifact whose transformer is on disk, complete or not. Pure: matched
  * on relative paths, so no models root is needed.
+ *
+ * "Complete" means everything a download fetches is there, i.e. the required
+ * entries of the default (create) plan. An optional file — Qwen-Image-2.1's
+ * vision projector — is never downloaded with the model, so counting it as
+ * missing left a freshly downloaded model permanently incomplete. Workflows
+ * that do need it check their own plan (`useImageArtifact`).
  */
 export function listInstalledArtifacts(
   catalog: DiffusionCatalog,
@@ -279,7 +285,7 @@ export function listInstalledArtifacts(
       const transformer = plan.entries.find((e) => e.kind === 'transformer')
       if (!transformer?.present) continue
       const missing = plan.entries
-        .filter((e) => !e.present)
+        .filter((e) => e.required && !e.present)
         .map((e) => e.relativePath)
       installed.push({
         id: plan.artifactId,

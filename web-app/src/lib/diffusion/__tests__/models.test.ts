@@ -364,6 +364,22 @@ describe('listInstalledArtifacts', () => {
     ])
   })
 
+  it('calls a model complete without the optional vision projector a download never fetches', () => {
+    const baseline = getBaselineDiffusionCatalog()
+    const family = findFamily(baseline, 'qwen-image-2.1')!
+    const plan = planArtifactDownload(family, 'q4_k', [], ROOT)
+    // Exactly what `downloadArtifact` puts on disk for Create.
+    const files = plan.entries
+      .filter((entry) => entry.required)
+      .map((entry) => onDisk(entry.relativePath, entry.bytes))
+    expect(files).toHaveLength(plan.entries.length - 1)
+
+    const installed = listInstalledArtifacts(baseline, files).find(
+      (artifact) => artifact.id === 'qwen-image-2.1:q4_k'
+    )
+    expect(installed).toMatchObject({ complete: true, missing: [] })
+  })
+
   it('does not count a stray side file as an installed artifact', () => {
     expect(listInstalledArtifacts(catalog, [onDisk(SHARED_TE, QWEN3.bytes)])).toEqual([])
   })
