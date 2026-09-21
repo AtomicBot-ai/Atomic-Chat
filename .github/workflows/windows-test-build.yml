@@ -2,6 +2,16 @@ name: Windows Test Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-test-build.yml'
+      - 'src-tauri/**'
+      - 'web-app/**'
+      - 'core/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'yarn.lock'
   push:
     branches:
       - main
@@ -223,7 +233,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Only real (push) builds record and push the version tag. On a PR this
+      # would burn a version number and, via the "refuse to reuse a version"
+      # rule (D34), could make a later main build fail — so guard it to push.
       - name: Record the version this commit was built as
+        if: github.event_name == 'push'
         shell: bash
         run: |
           tag="test-build/v${{ steps.version.outputs.version }}"
