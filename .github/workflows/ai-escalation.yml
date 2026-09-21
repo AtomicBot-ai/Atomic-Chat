@@ -20,7 +20,7 @@ jobs:
 
       - name: Attempt Fix with Jules
         id: jules-attempt
-        uses: google-labs-code/jules-action@v1
+        uses: google-labs-code/jules-invoke@v1
         continue-on-error: true
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
