@@ -49,6 +49,7 @@
   },
   "agentApprovals": {
     "manualSelected": "Ask for approval",
+    "mcpAutoApproved": "MCP tools auto-approved",
     "manual": "Ask for approval",
     "manualDescription": "Always ask to edit external files and use the internet",
     "skipSelected": "Full access",

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-290 records, 2026-05-19 → 2026-09-19.
+292 records, 2026-05-19 → 2026-09-19.
 
 ---
 
@@ -261,8 +261,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (38)
+## UI / UX (39)
 
+- **2026-09-19** — [Say when MCP tools are auto-approved](2026-09-19-say-when-mcp-tools-are-auto-approved.md)
 - **2026-09-18** — [Keep a reply the user stopped](2026-09-18-keep-a-reply-the-user-stopped.md)
 - **2026-09-18** — [Release chat after context growth stops](2026-09-18-release-chat-after-context-growth-stops.md)
 
@@ -306,8 +307,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (21)
+## Inference core extraction — atomic-chat-core (22)
 
+- **2026-09-19** — [Ask the core before concluding a session does not exist](2026-09-19-ask-the-core-before-concluding-a-session-does-not-exist.md)
 - **2026-09-19** — [End a local stream on the channel, not on the command's return](2026-09-19-end-a-local-stream-on-the-channel-not-on-the-commands-return.md)
 - **2026-09-19** — [Restart through the exit handler](2026-09-19-restart-through-the-exit-handler.md)
 - **2026-09-18** — [Stop the core before moving the data folder](2026-09-18-stop-the-core-before-moving-the-data-folder.md)

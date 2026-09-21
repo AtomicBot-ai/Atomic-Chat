@@ -43,7 +43,19 @@ pub async fn resolve_local_session<R: Runtime>(
     model_id: String,
 ) -> Result<Option<resolver::ResolvedSession>, String> {
     let resolver = resolver_for(&app, &state);
-    Ok(resolver.find_in(&provider, &model_id).await)
+    if let Some(session) = resolver.find_in(&provider, &model_id).await {
+        return Ok(Some(session));
+    }
+    // Not in the mirror is not yet "not loaded": see `refresh_sessions`. Without this, a message
+    // sent just after the core was replaced loaded the model and then failed with "No running
+    // session found", because the session's `started` event had gone by unheard.
+    #[cfg(desktop)]
+    {
+        crate::core::atomic_core::commands::refresh_sessions(&app).await;
+        return Ok(resolver.find_in(&provider, &model_id).await);
+    }
+    #[cfg(not(desktop))]
+    Ok(None)
 }
 
 /// Every model loaded right now, across every provider — Foundation Models included, which the

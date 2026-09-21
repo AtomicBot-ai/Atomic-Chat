@@ -35,7 +35,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
     if (session) expect(await endSession(session)).toEqual([])
   })
 
-  const APPROVAL_SELECT = 'button[aria-label="Ask for approval"]'
+  // The select's trigger, whatever its label currently adds.
+  const APPROVAL_SELECT = 'button[aria-label^="Ask for approval"]'
   const newChat = async () => {
     await session.app.browser.$('//*[normalize-space(text())="New Chat"]').click()
     await waitForChat(session)
@@ -55,14 +56,12 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
       expect(calls).toHaveLength(1)
       expect(calls[0]).toMatchObject({ name: MCP_TOOL, arguments: { code: CODE } })
 
-      // It ran without a question. On a thread whose approval mode the user has
-      // not touched, MCP tools follow the global "Allow all MCP permissions"
-      // switch, which is on by default — while the composer's select for that
-      // same thread reads "Ask for approval". Both halves are pinned here: the
-      // label and the behaviour disagree, and whichever is changed to agree with
-      // the other, this is where it shows.
+      // It ran without a question, and the composer says so. On a thread whose
+      // approval mode the user has not touched, MCP tools follow the global
+      // "Allow All MCP Tool Permissions" switch, which the app turns on for
+      // everyone; the select used to read plain "Ask for approval" there.
       expect(await pageShows(session, 'Tool Approval Required', 1_000).then(() => true, () => false)).toBe(false)
-      expect(await browser.$(APPROVAL_SELECT).isDisplayed()).toBe(true)
+      await pageShows(session, 'MCP tools auto-approved', 10_000)
     })
   }, 300_000)
 
@@ -73,6 +72,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
 
       await newChat()
       await chooseFromMenu(session, APPROVAL_SELECT, 'Ask for approval')
+      // Chosen, it means what it says, and no longer adds the caveat.
+      await browser.$('button[aria-label="Ask for approval"]').waitForDisplayed({ timeout: 10_000 })
       await send(session, `look up record ${CODE} again`)
       await pageShows(session, 'Tool Approval Required', 60_000)
       expect((await browser.$('body').getText())).toContain(MCP_TOOL)
