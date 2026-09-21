@@ -11,7 +11,7 @@
       "prompt_cache_key": "session-fixture",
       "reasoning": {
         "effort": "high",
-        "summary": "auto"
+        "summary": "detailed"
       },
       "store": false,
       "stream": true,
@@ -32,7 +32,7 @@
   "name": "request_reasoning_effort_forwarded_with_summary",
   "placeholders": [],
   "source": {
-    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "commit": "5e7ae739c37be537dd831ecefe7992521624543b",
     "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
   }
 }
