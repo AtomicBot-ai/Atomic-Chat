@@ -26,10 +26,11 @@ describe('restoreServerModelAfterRecovery', () => {
 
     await restoreServerModelAfterRecovery(modelsService)
 
-    expect(mocks.ensureModelForServer).toHaveBeenCalledWith({
-      modelsService,
-      modelOverride: { model: 'served', provider: 'llamacpp-upstream' },
-    })
+    // The served model wins over the default, and it is loaded through the app's own models service.
+    expect(mocks.ensureModelForServer).toHaveBeenCalledTimes(1)
+    const [request] = mocks.ensureModelForServer.mock.calls[0] ?? []
+    expect(request.modelOverride).toEqual({ model: 'served', provider: 'llamacpp-upstream' })
+    expect(request.modelsService).toBe(modelsService)
   })
 
   it("falls back to the user's default server model, then to whatever Start server would pick", async () => {
