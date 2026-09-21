@@ -1,0 +1,12 @@
+---
+date: 2026-09-19
+title: "End a local stream on the channel, not on the command's return"
+---
+
+# 2026-09-19 — End a local stream on the channel, not on the command's return
+
+- **Context:** Replies from local models do not go through `tauri-plugin-http`: `stream_local_http` posts the request in Rust and relays the response over a Tauri IPC `Channel`, and four readers — the web app's `createLocalStreamingFetch` and the llama.cpp, TurboQuant and MLX extensions — turn the chunks back into a stream. All four took the command's return for the end of the stream. The return and the channel's messages reach the webview by different routes, and the return can arrive first; a reader that closed on it lost whatever was still on its way. For a long reply that is at most a missing tail; for a reply of two chunks — a tool call — it is the whole reply, and the turn ended empty: no tool block, no approval, no follow-up request. Seen in the desktop e2e suite about once in a dozen long runs, in the MCP and document scenarios alike, after ruling out coalesced SSE events and CPU load. The same command decoded each network chunk on its own with `from_utf8_lossy`, turning any character cut by a chunk boundary — Cyrillic, CJK, emoji — into replacement characters.
+- **Decision:** The end of the stream travels on the channel: after the last chunk the command sends one message with `done: true`, and the readers close on that. The command's return only starts a two-second grace period, for a stream whose `done` never comes. Bytes are decoded through a carry buffer (`take_complete_utf8`) that holds an unfinished character until the rest of it arrives.
+- **Consequences:** A short reply can no longer be closed before it arrives, and a reply's last tokens cannot be cut off by the same race. Non-ASCII text survives chunk boundaries. Readers and command ship together in one app, so there is no version skew to handle; an old reader would see one extra empty chunk and ignore it. A stream that ends in an error still closes at once, as before. The extension tarballs had to be rebuilt.
+- **Owner:** team
+- **Links:** `src-tauri/src/core/http.rs`, `web-app/src/lib/model-factory.ts`, `extensions/llamacpp-upstream-extension/src/index.ts`, `extensions/llamacpp-extension/src/index.ts`, `extensions/mlx-extension/src/index.ts`, `tests/e2e/desktop/mcp-tool.spec.ts`, `tests/e2e/desktop/document-attachment.spec.ts`

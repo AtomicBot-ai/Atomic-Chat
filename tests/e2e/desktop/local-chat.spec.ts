@@ -48,7 +48,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a chat with a local model', () => {
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('loads the model through the core, streams the reply and keeps the thread across a restart', async () => {
@@ -95,6 +95,18 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a chat with a local model', () => {
       expect(stored).toContain(PROMPT)
       expect(stored).toContain(REPLY)
 
+      // The harness can only kill the app, and a kill does not wait for a write in
+      // progress. What is being tested is a restart after the reply, not a crash in
+      // the middle of saving it, so the thread's own record has to be whole first.
+      await expect
+        .poll(
+          async () =>
+            JSON.parse(await readFile(join(dataFolder, 'threads', threads[0]!, 'thread.json'), 'utf8').catch(() => '{}'))
+              .id,
+          { timeout: 15_000 }
+        )
+        .toBe(threads[0])
+
       await restartApp(session)
       browser = session.app.browser
 
@@ -123,7 +135,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a local model whose backend dies while l
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('tells the user why, offers a retry, and leaves no session or process behind', async () => {

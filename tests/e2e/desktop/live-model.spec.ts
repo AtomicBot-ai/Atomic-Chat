@@ -49,7 +49,7 @@ describe.skipIf(!REAL_BACKEND_DIR || !REAL_MODEL_GGUF)('a chat with a real local
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('loads it with the argv the core builds and gets an answer', { timeout: 360_000 }, async () => {

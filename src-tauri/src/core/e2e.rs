@@ -122,6 +122,25 @@ pub fn take_over_windows<R: tauri::Runtime>(context: &mut tauri::Context<R>) {
     }
 }
 
+/// The app identifier of one run: the build's, plus a tag derived from the run's root.
+///
+/// Whatever is named after the identifier alone is shared by every e2e app on the machine. The
+/// one that matters is the single-instance socket (`/tmp/<identifier>_si.sock`): a second app
+/// finds it, hands over to the first and exits with code 0, so two runs could never be up
+/// together. With the root in the identifier each run is an installation of its own, and the
+/// single-instance behaviour stays in the build under test — two apps on the *same* root still
+/// meet.
+pub fn run_identifier(base: &str, root: &Path) -> String {
+    let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
+    let tag: String = digest[..4].iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("{base}.r{tag}")
+}
+
+pub fn namespace_identifier<R: tauri::Runtime>(context: &mut tauri::Context<R>) {
+    let identifier = run_identifier(&context.config().identifier, &data_root());
+    context.config_mut().identifier = identifier;
+}
+
 /// Both ways of giving a webview its own storage are set, with no platform
 /// branch: WKWebView takes the data store identifier and has no data directory,
 /// while WebView2 and WebKitGTK take the data directory and ignore the
@@ -130,8 +149,10 @@ pub fn take_over_windows<R: tauri::Runtime>(context: &mut tauri::Context<R>) {
 pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
     let root = data_root();
     let store = webview_data_store(&root);
+    let (x, y) = window_position(std::env::var(WINDOW_SLOT_ENV).ok().as_deref());
     for window in app.config().app.windows.clone() {
         tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+            .position(x, y)
             .data_store_identifier(store)
             .data_directory(root.join(WEBVIEW_DATA_DIR))
             // A window fully covered by others gets no animation frames from
@@ -142,6 +163,67 @@ pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<(
             .build()?;
     }
     Ok(())
+}
+
+/// Which of several apps running side by side this one is, counted from 1.
+pub const WINDOW_SLOT_ENV: &str = "ATOMIC_E2E_WINDOW_SLOT";
+
+/// Where a run's window goes. Runs in parallel each keep their window on top, and windows that
+/// open in the same place cover each other completely — which is exactly what keeping them on top
+/// was for. A cascade leaves a strip of every window uncovered, and a window that is partly
+/// visible keeps getting its animation frames.
+pub fn window_position(slot: Option<&str>) -> (f64, f64) {
+    let slot = slot.and_then(|value| value.parse::<u32>().ok()).unwrap_or(1).clamp(1, 16);
+    let step = f64::from(slot - 1) * 48.0;
+    (40.0 + step, 40.0 + step)
+}
+
+/// Servers the core starts from the app's bundled binaries folder — `mlx-server`,
+/// `foundation-models-server` — taken from the run's own root instead, when it has the folder. A
+/// scenario that stands a scripted server in for one of them then changes nothing outside its
+/// profile, and runs beside scenarios that must not see it.
+pub const SIDECAR_DIR: &str = "sidecars";
+
+pub fn sidecar_dir(root: &Path) -> Option<PathBuf> {
+    let dir = root.join(SIDECAR_DIR);
+    dir.is_dir().then_some(dir)
+}
+
+/// Where the commands of terminals that were not opened are written, one JSON
+/// string per line.
+pub const OPENED_TERMINALS_FILE: &str = "opened-terminals.jsonl";
+
+/// Stands in for opening a terminal with an agent in it. The Launch page still
+/// goes through the real command; the desktop of whoever runs the tests is left
+/// alone, and a test can read exactly what would have been run.
+pub fn record_terminal(root: &Path, command: &str) -> Result<(), String> {
+    use std::io::Write;
+    let line = serde_json::to_string(command).map_err(|error| error.to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(root.join(OPENED_TERMINALS_FILE))
+        .map_err(|error| error.to_string())?;
+    writeln!(file, "{line}").map_err(|error| error.to_string())
+}
+
+/// Answers the runner queued for the file dialogs the app is about to open,
+/// one JSON value per line: a path, an array of paths, or `null` for "cancelled".
+pub const DIALOG_ANSWERS_FILE: &str = "dialog-answers.jsonl";
+
+/// Takes the next queued answer; `None` — what a cancelled dialog returns —
+/// when nothing is queued, so an unexpected dialog never blocks a run.
+pub fn take_dialog_answer(root: &Path) -> Option<serde_json::Value> {
+    let file = root.join(DIALOG_ANSWERS_FILE);
+    let queued = std::fs::read_to_string(&file).ok()?;
+    let mut lines = queued.lines().filter(|line| !line.trim().is_empty());
+    let next = lines.next()?.to_string();
+    let rest: Vec<&str> = lines.collect();
+    let _ = std::fs::write(&file, rest.join("\n"));
+    match serde_json::from_str::<serde_json::Value>(&next).ok()? {
+        serde_json::Value::Null => None,
+        answer => Some(answer),
+    }
 }
 
 /// The file a runner may put in the root to start the webview with chosen
@@ -194,6 +276,22 @@ const ERROR_COLLECTOR_SCRIPT: &str = "(function () {
     var reason = event.reason;
     errors.push('unhandled rejection: ' + (reason && reason.stack ? reason.stack : String(reason)));
   });
+  // The page's own console, newest last, bounded. The app does not forward it
+  // to its log, and it is where the frontend explains what it just did.
+  var lines = (window.__atomic_e2e_console = []);
+  ['info', 'warn', 'error'].forEach(function (level) {
+    var original = console[level];
+    console[level] = function () {
+      try {
+        var text = Array.prototype.map.call(arguments, function (a) {
+          return a instanceof Error ? a.stack || a.message : typeof a === 'string' ? a : JSON.stringify(a);
+        }).join(' ');
+        lines.push(level + ': ' + text.slice(0, 600));
+        if (lines.length > 400) lines.shift();
+      } catch (e) {}
+      return original.apply(console, arguments);
+    };
+  });
 })();";
 
 /// Prepares every webview of the run: always the error collector, and the
@@ -217,6 +315,34 @@ pub fn seed_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn each_root_is_an_installation_of_its_own_and_the_same_root_is_the_same_one() {
+        let a = super::run_identifier("chat.atomic.app.e2e", std::path::Path::new("/tmp/atomic-e2e-a"));
+        let b = super::run_identifier("chat.atomic.app.e2e", std::path::Path::new("/tmp/atomic-e2e-b"));
+        assert_ne!(a, b);
+        assert!(a.starts_with("chat.atomic.app.e2e.r"));
+        assert_eq!(a, super::run_identifier("chat.atomic.app.e2e", std::path::Path::new("/tmp/atomic-e2e-a")));
+        // What the single-instance plugin turns into a socket name stays a plain word.
+        assert!(a.chars().all(|c| c.is_ascii_alphanumeric() || c == '.'));
+    }
+
+    #[test]
+    fn windows_of_parallel_runs_do_not_open_in_one_place() {
+        assert_eq!(super::window_position(None), (40.0, 40.0));
+        assert_eq!(super::window_position(Some("1")), (40.0, 40.0));
+        assert_eq!(super::window_position(Some("3")), (136.0, 136.0));
+        assert_eq!(super::window_position(Some("not a number")), (40.0, 40.0));
+        assert_eq!(super::window_position(Some("400")), super::window_position(Some("16")));
+    }
+
+    #[test]
+    fn a_run_brings_its_own_sidecars_only_when_it_has_the_folder() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(super::sidecar_dir(root.path()), None);
+        std::fs::create_dir(root.path().join(super::SIDECAR_DIR)).unwrap();
+        assert_eq!(super::sidecar_dir(root.path()), Some(root.path().join(super::SIDECAR_DIR)));
+    }
+
     use super::*;
     use tauri::utils::config::WindowConfig;
 
@@ -275,6 +401,37 @@ mod tests {
         assert_eq!(seed_script("{}").unwrap(), None);
         assert!(seed_script(r#"{"key": 1}"#).unwrap_err().contains("must map keys to strings"));
         assert!(seed_script("not json").unwrap_err().contains("webview-seed.json"));
+    }
+
+    #[test]
+    fn a_terminal_that_is_not_opened_is_written_down_verbatim() {
+        let root = tempfile::tempdir().unwrap();
+
+        record_terminal(root.path(), "codex").unwrap();
+        record_terminal(root.path(), "KEY='a \"b\"' agent --flag").unwrap();
+
+        let written = std::fs::read_to_string(root.path().join(OPENED_TERMINALS_FILE)).unwrap();
+        let commands: Vec<String> = written
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(commands, vec!["codex", "KEY='a \"b\"' agent --flag"]);
+    }
+
+    #[test]
+    fn dialog_answers_are_taken_in_order_and_run_out_as_cancelled() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join(DIALOG_ANSWERS_FILE),
+            "\"/picked/folder\"\nnull\n[\"/a\",\"/b\"]\n",
+        )
+        .unwrap();
+
+        assert_eq!(take_dialog_answer(root.path()), Some(serde_json::json!("/picked/folder")));
+        assert_eq!(take_dialog_answer(root.path()), None);
+        assert_eq!(take_dialog_answer(root.path()), Some(serde_json::json!(["/a", "/b"])));
+        assert_eq!(take_dialog_answer(root.path()), None);
+        assert_eq!(take_dialog_answer(tempfile::tempdir().unwrap().path()), None);
     }
 
     #[test]

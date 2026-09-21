@@ -51,7 +51,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a request that overflows the context win
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('grows the context, reloads the model and answers without being asked', async () => {
@@ -71,8 +71,23 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a request that overflows the context win
       await expect.poll(async () => (await coreSessions(dataFolder)).length, { timeout: 30_000 }).toBe(1)
       const smallBackend = (await coreSessions(dataFolder))[0]!.pid
 
+      // A recoverable overflow briefly has an error status. Watch mutations
+      // so even a one-frame error card is caught while context growth runs.
+      await session.app.browser.execute(() => {
+        const observer = new MutationObserver(() => {
+          if (
+            [...document.querySelectorAll('p.text-destructive')].some(
+              (node) => node.textContent === 'Context window full'
+            )
+          ) {
+            document.body.dataset.e2eContextErrorSeen = 'true'
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+      })
       await send(session, 'a prompt the small window rejects')
       await pageShows(session, REPLY, 120_000)
+      expect(await session.app.browser.execute(() => document.body.dataset.e2eContextErrorSeen)).not.toBe('true')
 
       // The window grew past what the backend asked for, and the bigger
       // process replaced the small one rather than joining it.
@@ -107,7 +122,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an overflow the app cannot grow out of',
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('explains that the context is fitted to the device', async () => {
@@ -115,19 +130,12 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an overflow the app cannot grow out of',
       await waitForChat(session)
       await pickModel(session, MODEL_ID)
       await send(session, 'a prompt no window here will take')
+      await pageShows(session, 'Context window full', 60_000)
       await pageShows(session, "The context is fitted to this device's memory", 60_000)
     })
   })
 
-  // KNOWN DEFECT (2026-09-18): after that explanation the thread is a dead end.
-  // "Growing the Mind..." never goes away, no error or Retry appears and the
-  // send button stays disabled. In routes/threads/$threadId.tsx the overflow
-  // effect raises `isAutoIncreasingContext` and calls `handleContextSizeIncrease`,
-  // which returns on `fit` / `at_max` without lowering it or clearing the active
-  // request; both are only lowered on a chat status change, and the status is
-  // already `error`. `it.fails` keeps the suite green while the defect stands
-  // and turns red once it is fixed — remove the marker then.
-  it.fails('gives the conversation back to the user afterwards', async () => {
+  it('gives the conversation back to the user afterwards', async () => {
     const browser = session.app.browser
     await browser.waitUntil(async () => !(await pageText(session)).includes('Growing the Mind'), {
       timeout: 20_000,

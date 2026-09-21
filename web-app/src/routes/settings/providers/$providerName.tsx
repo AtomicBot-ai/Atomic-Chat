@@ -710,21 +710,25 @@ function ProviderDetail() {
             .fetchModelsFromProvider(prov)
           if (cancelled) return
 
-          const existing = new Set(prov.models.map((m) => m.id))
+          // The provider as it is now, not as it was before the request: the
+          // key or a setting may have been edited while it ran, and writing the
+          // earlier snapshot back would undo that. Only `models` is written.
+          const current =
+            useModelProvider.getState().getProviderByName(providerName) ?? prov
+          const existing = new Set(current.models.map((m) => m.id))
           const newModels = liveIds
             .filter((id) => !existing.has(id))
             .map((id) => ({
               id,
               model: id,
               name: id,
-              capabilities: getModelCapabilities(prov.provider, id),
+              capabilities: getModelCapabilities(current.provider, id),
               version: '1.0',
             }))
 
           if (newModels.length > 0) {
-            updateProvider(prov.provider, {
-              ...prov,
-              models: [...prov.models, ...newModels],
+            updateProvider(current.provider, {
+              models: [...current.models, ...newModels],
             })
           }
         } catch (err) {
@@ -2212,6 +2216,7 @@ function ProviderDetail() {
                             }
                             if (provider) {
                               const newSettings = [...provider.settings]
+                              const changedSettingKeys = new Set([setting.key])
                               // Handle different value types by forcing the type
                               // Use type assertion to bypass type checking
 
@@ -2240,6 +2245,7 @@ function ProviderDetail() {
                                       value: boolean
                                     }
                                   ).value = true
+                                  changedSettingKeys.add('expose_metrics')
                                 }
                               }
 
@@ -2326,6 +2332,13 @@ function ProviderDetail() {
                                 (providerName === 'llamacpp' ||
                                   providerName === 'llamacpp-upstream')
                               ) {
+                                // Backend discovery can update version_backend while this
+                                // page still holds an older provider snapshot. Persist only
+                                // the controls this action changed, so toggling e.g. fit
+                                // cannot overwrite the selected backend and start a download.
+                                const changedSettings = newSettings.filter((item) =>
+                                  changedSettingKeys.has(item.key)
+                                )
                                 providerSettingsWriteRef.current =
                                   providerSettingsWriteRef.current
                                     .catch((error) => {
@@ -2339,7 +2352,7 @@ function ProviderDetail() {
                                         .providers()
                                         .updateSettings(
                                           providerName,
-                                          updateObj.settings ?? []
+                                          changedSettings
                                         )
                                     )
                                 debouncedRestartLlamacppModel(providerName)

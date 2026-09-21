@@ -4,15 +4,18 @@
  * macOS cannot live under it — the run's WebKit data store (see platform.ts).
  */
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { homeRedirect, listProcesses, webviewStoreDir } from './platform.js'
+import { delimiter, join } from 'node:path'
+import { homeRedirect, listProcesses, singleInstanceSocket, webviewStoreDir } from './platform.js'
 
 export interface Profile {
   root: string
   home: string
   dataFolder: string
+  /** First on the app's PATH: where a scenario puts stand-ins for tools the app looks for. */
+  binDir: string
   /** Where the webview keeps this run's localStorage and IndexedDB. */
   webviewStore: string
   /** What the app needs in its environment to live inside this profile. */
@@ -27,6 +30,16 @@ export interface Profile {
 export function webviewStoreUuid(root: string): string {
   const hex = createHash('sha256').update(root).digest('hex').slice(0, 32)
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20, 32)].join('-')
+}
+
+/** Mirrors `run_identifier` in src-tauri/src/core/e2e.rs: the e2e build's identifier plus a tag of the root. */
+export function runIdentifier(root: string): string {
+  const base = (
+    JSON.parse(readFileSync(new URL('../../../src-tauri/tauri.e2e.conf.json', import.meta.url), 'utf8')) as {
+      identifier: string
+    }
+  ).identifier
+  return `${base}.r${createHash('sha256').update(root).digest('hex').slice(0, 8)}`
 }
 
 const ROOT_PREFIX = 'atomic-e2e-'
@@ -48,6 +61,8 @@ export async function sweepStaleProfiles(): Promise<string[]> {
     if (commands.some((command) => command.includes(root))) continue
     await rm(root, { recursive: true, force: true })
     await rm(webviewStoreDir(root, webviewStoreUuid(root)), { recursive: true, force: true })
+    const socket = singleInstanceSocket(runIdentifier(root))
+    if (socket) await rm(socket, { force: true })
     removed.push(root)
   }
   return removed
@@ -67,8 +82,10 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   const root = await realpath(await mkdtemp(join(tmpdir(), ROOT_PREFIX)))
   const home = join(root, 'home')
   const dataFolder = join(root, 'data')
+  const binDir = join(root, 'bin')
   await mkdir(home, { recursive: true })
   await mkdir(dataFolder, { recursive: true })
+  await mkdir(binDir, { recursive: true })
 
   // A first launch otherwise connects to a hosted MCP server (one default
   // server ships enabled) and creates ~/Documents/Atomic_chat. An existing
@@ -91,7 +108,11 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   await writeFile(join(root, 'webview-seed.json'), JSON.stringify(seed))
 
   const webviewStore = webviewStoreDir(root, webviewStoreUuid(root))
-  const env: Record<string, string> = { ...homeRedirect(home), ATOMIC_E2E_DATA_ROOT: root }
+  const env: Record<string, string> = {
+    ...homeRedirect(home),
+    ATOMIC_E2E_DATA_ROOT: root,
+    PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
+  }
   // Which core the app starts: `make test-app-e2e` names one, otherwise the app
   // falls back to the one bundled with the build. Quoted because the app splits
   // the override like a command line and the path may contain spaces.
@@ -101,11 +122,14 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
     root,
     home,
     dataFolder,
+    binDir,
     webviewStore,
     env,
     destroy: async () => {
       await rm(root, { recursive: true, force: true })
       await rm(webviewStore, { recursive: true, force: true })
+      const socket = singleInstanceSocket(runIdentifier(root))
+      if (socket) await rm(socket, { force: true })
     },
   }
 }

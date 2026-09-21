@@ -120,13 +120,27 @@ export function CloudPage() {
         toast.error(t('common:providerAlreadyExists', { name }))
         return
       }
+      // The form is OpenAI's, the address is not: a provider the user has only
+      // named so far has no endpoint, and seeding OpenAI's made the app ask
+      // api.openai.com for models the moment the provider appeared — a third
+      // party nobody chose. The address stays on as the field's placeholder.
+      const settings = (
+        cloneDeep(openAIProviderSettings) as ProviderSetting[]
+      ).map((setting) =>
+        setting.key === 'base-url'
+          ? {
+              ...setting,
+              controller_props: { ...setting.controller_props, value: '' },
+            }
+          : setting
+      )
       addProvider({
         provider: name,
         active: true,
         models: [],
-        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
+        settings,
         api_key: '',
-        base_url: 'https://api.openai.com/v1',
+        base_url: '',
       })
       // Let the store commit before the route reads it back.
       setTimeout(() => selectProvider(name), 0)

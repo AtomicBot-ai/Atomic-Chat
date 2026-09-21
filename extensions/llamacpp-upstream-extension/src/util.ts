@@ -211,6 +211,26 @@ function matchGgufShard(
 }
 
 /** Shard position of `path`, or `null` when it is a standalone model. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+/**
+ * Whether a model path is something to download rather than a file on disk.
+ * `https://` always. Plain `http://` only from a loopback host — a mirror on
+ * this machine, or a test fixture — where there is no network between the two
+ * ends for anyone to stand in. Any other `http://` address stays what it was
+ * before: not a URL this extension fetches, so it is looked up as a local path
+ * and refused as a missing file.
+ */
+export function isDownloadableUrl(path: string): boolean {
+  if (path.startsWith('https://')) return true
+  if (!path.startsWith('http://')) return false
+  try {
+    return LOOPBACK_HOSTS.has(new URL(path).hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
 export function parseGgufShard(path: string): GgufShardRef | null {
   const match = matchGgufShard(path)
   return match ? { index: match.index, total: match.total } : null

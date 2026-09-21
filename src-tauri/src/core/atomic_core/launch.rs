@@ -173,6 +173,11 @@ fn bundled_cloudflared_next_to(executable: &Path) -> Option<PathBuf> {
 /// Passed even when those binaries are absent (Windows, Linux, a dev build without them): the core
 /// then reports `BINARY_NOT_FOUND` for that provider, as the plugins did.
 pub fn sidecar_resources_dir(resource_dir: &Path) -> String {
+    // An e2e run may bring its own servers: see `core::e2e::sidecar_dir`.
+    #[cfg(feature = "e2e")]
+    if let Some(dir) = crate::core::e2e::sidecar_dir(&crate::core::e2e::data_root()) {
+        return dir.to_string_lossy().to_string();
+    }
     resource_dir.join("resources").join("bin").to_string_lossy().to_string()
 }
 

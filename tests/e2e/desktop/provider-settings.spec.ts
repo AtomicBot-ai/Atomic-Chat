@@ -60,7 +60,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a provider setting changed in the UI', (
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('reaches the core and the next backend, survives a restart, and can be turned back', async () => {
@@ -74,7 +74,23 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a provider setting changed in the UI', (
       expect(await browser.$(FIT_SWITCH).getAttribute('aria-checked')).toBe('true')
 
       await browser.$(FIT_SWITCH).click()
-      await expect.poll(() => browser.$(FIT_SWITCH).getAttribute('aria-checked')).toBe('false')
+      // Seen once under parallel load: the switch stayed on. The click is left
+      // as early and as plain as a user's — waiting for the page to settle would
+      // hide a race in the app's first seconds rather than find it. What is stored
+      // tells the two explanations apart: `true` means the click never reached the switch, `false`
+      // means the page shows something other than what it saved.
+      try {
+        await expect.poll(() => browser.$(FIT_SWITCH).getAttribute('aria-checked')).toBe('false')
+      } catch (error) {
+        const stored = await browser.execute(() => {
+          const raw = localStorage.getItem('@janhq/llamacpp-upstream-extension')
+          const fit = (JSON.parse(raw ?? '[]') as { key: string; controllerProps: { value: unknown } }[]).find(
+            (x) => x.key === 'fit'
+          )
+          return fit ? fit.controllerProps.value : 'absent'
+        })
+        throw new Error(`the Fit switch stayed on; the extension has stored fit=${String(stored)}`, { cause: error })
+      }
 
       // The next load carries it: the core was told, and told the backend.
       await browser.$('//*[normalize-space(text())="New Chat"]').click()

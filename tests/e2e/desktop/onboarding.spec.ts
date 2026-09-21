@@ -25,7 +25,7 @@ describe('first launch on a clean profile', () => {
   afterAll(async () => {
     // If the operator's own Atomic Chat ran during the test, its writes show
     // up here too; the message names the path to check.
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('offers onboarding, lets the user skip it, and stays skipped after a restart', async () => {

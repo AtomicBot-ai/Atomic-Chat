@@ -8,10 +8,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   CRASH_TOAST,
+  IDLE_CRASH_TITLE,
   coreSessions,
   isAlive,
   liveFakeBackends,
   pageShows,
+  pageText,
   pickModel,
   send,
   waitForChat,
@@ -52,7 +54,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the backend process dies under a loaded 
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('tells the user, forgets the dead session, and answers the next message from a new backend', async () => {
@@ -68,7 +70,13 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the backend process dies under a loaded 
       await expect
         .poll(async () => (await coreSessions(dataFolder)).map((s) => s.pid), { timeout: 30_000 })
         .not.toContain(firstBackend)
-      await pageShows(session, CRASH_TOAST, 30_000)
+      // Nothing was being generated when it died, and this is macOS: the report
+      // says neither "during generation" nor anything about Vulkan.
+      await pageShows(session, IDLE_CRASH_TITLE, 30_000)
+      const report = await pageText(session)
+      expect(report).toContain(CRASH_TOAST)
+      expect(report).not.toContain('during generation')
+      if (process.platform === 'darwin') expect(report).not.toContain('Vulkan')
 
       await send(session, 'second message')
       await pageShows(session, REPLY, 90_000, 2)
@@ -89,7 +97,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the core daemon dies under a running app
   })
 
   afterAll(async () => {
-    expect(await endSession(session)).toEqual([])
+    if (session) expect(await endSession(session)).toEqual([])
   })
 
   it('gets a new core from the supervisor, leaves no orphaned backend, and answers the next message', async () => {

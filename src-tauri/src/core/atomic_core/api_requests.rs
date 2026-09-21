@@ -68,6 +68,11 @@ pub fn ingest<R: Runtime>(app: &AppHandle<R>, name: &str, payload: &Value) -> bo
         }
     }
     if let Some(state) = app.try_state::<AppState>() {
+        // The inspector delivers to the webview through an emitter that was only ever bound when
+        // the app's own proxy started. With the core serving the Local API that start never
+        // happens, and every live event was counted as dropped: the API screen showed a request
+        // only after it was reopened. Bind it here, on the path that needs it. Idempotent.
+        state.api_request_inspector.attach(app.clone());
         state.api_request_inspector.ingest_core_event(payload);
     }
     true

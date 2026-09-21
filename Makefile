@@ -422,6 +422,7 @@ test-rust: stub-resources
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-vector-db/Cargo.toml
 ifeq ($(shell uname -s),Darwin)
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-mlx/Cargo.toml
 endif
@@ -537,6 +538,12 @@ test-core-live:
 E2E_TARGET_DIR := $(CURDIR)/src-tauri/target/e2e
 E2E_APP_BIN := $(E2E_TARGET_DIR)/debug/Atomic-Chat
 E2E_DEAD_URL := http://127.0.0.1:9
+# The Hub's catalog and landing picks are baked into the build as URLs, so a
+# scenario that wants to serve them has to know the port at build time. Nothing
+# listens there in the other scenarios, which then see the same fast refusal as
+# from the dead address and fall back to what is bundled.
+E2E_FIXTURE_PORT ?= 47391
+E2E_FIXTURE_URL := http://127.0.0.1:$(E2E_FIXTURE_PORT)
 build-app-e2e:
 	@test -z "$$(ls src-tauri/.env web-app/.env* 2>/dev/null)" || \
 		(echo "build-app-e2e: remove src-tauri/.env and web-app/.env* first; their keys would be baked into the test build" && exit 1)
@@ -561,16 +568,21 @@ build-app-e2e:
 	env -u CI CARGO_TARGET_DIR="$(E2E_TARGET_DIR)" \
 		POSTHOG_KEY= POSTHOG_HOST= GA_MEASUREMENT_ID= SENTRY_DSN= SENTRY_DSN_DESKTOP= \
 		SENTRY_AUTH_TOKEN= SENTRY_ORG= SENTRY_PROJECT_FRONTEND= AUTO_UPDATER_DISABLED=true \
-		VITE_MODEL_CATALOG_URL=$(E2E_DEAD_URL)/catalog.json \
+		VITE_MODEL_CATALOG_URL=$(E2E_FIXTURE_URL)/catalog.json \
 		VITE_MODEL_CATALOG_INDEX_URL=$(E2E_DEAD_URL)/index.json \
 		VITE_PROVIDER_REGISTRY_URL=$(E2E_DEAD_URL)/providers.json \
 		VITE_RECOMMENDED_MODELS_REGISTRY_URL=$(E2E_DEAD_URL)/recommended.json \
-		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_DEAD_URL)/staff-picks.json \
+		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_FIXTURE_URL)/staff-picks.json \
 		./node_modules/.bin/tauri build --debug --no-bundle --features e2e \
 		--config src-tauri/tauri.e2e.conf.json
 
 # Refuses a binary older than what it was built from: a stale one may predate an
 # isolation fix and write into the developer's own profile.
+# How many scenario files run side by side. Each one is a real app with a window,
+# a core and its backends, so this is bounded by the machine, not by the suite.
+# `E2E_WORKERS=1` is the old one-at-a-time run, for a small machine or for
+# telling a real failure from one that only load produces.
+E2E_WORKERS ?= 4
 test-app-e2e:
 	@test -x "$(E2E_APP_BIN)" || (echo "test-app-e2e: no e2e build; run \`make build-app-e2e\`" && exit 2)
 	@test -x "$(ATOMIC_CORE_BIN)" || (echo "test-app-e2e: no core at ATOMIC_CORE_BIN=$(ATOMIC_CORE_BIN)" && exit 2)
@@ -580,8 +592,8 @@ test-app-e2e:
 		echo "test-app-e2e: the e2e build is older than its sources; run \`make build-app-e2e\`:"; echo "$$stale"; exit 2; \
 	fi
 	@test -d tests/e2e/node_modules || (cd tests/e2e && npm install --no-audit --no-fund)
-	cd tests/e2e && ATOMIC_E2E_APP_BIN="$(E2E_APP_BIN)" ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" \
-		./node_modules/.bin/vitest run
+	cd tests/e2e && ATOMIC_E2E_APP_BIN="$(abspath $(E2E_APP_BIN))" ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" \
+		ATOMIC_E2E_FIXTURE_PORT="$(E2E_FIXTURE_PORT)" E2E_WORKERS="$(E2E_WORKERS)" ./node_modules/.bin/vitest run
 
 # The one scenario that uses a real llama-server and a real model instead of
 # the scripted backend. Opt-in: point the two variables at a backend directory

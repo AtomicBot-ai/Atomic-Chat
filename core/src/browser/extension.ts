@@ -126,6 +126,7 @@ export abstract class BaseExtension implements ExtensionType {
       if (oldSettingsJson) {
         const oldSettings = JSON.parse(oldSettingsJson)
         settings.forEach((setting) => {
+          const registeredValue = setting.controllerProps.value
           // Keep setting value
           if (setting.controllerProps && Array.isArray(oldSettings))
             setting.controllerProps.value =
@@ -136,7 +137,10 @@ export abstract class BaseExtension implements ExtensionType {
               ? setting.controllerProps.options
               : oldSettings.find((e: any) => e.key === setting.key)?.controllerProps?.options
             if(!setting.controllerProps.options?.some(e => e.value === setting.controllerProps.value)) {
-              setting.controllerProps.value = setting.controllerProps.options?.[0]?.value ?? setting.controllerProps.value
+              setting.controllerProps.value =
+                setting.controllerProps.options?.find(e => e.value === registeredValue)?.value ??
+                setting.controllerProps.options?.[0]?.value ??
+                setting.controllerProps.value
             }
           }
           if ('recommended' in setting.controllerProps) {
