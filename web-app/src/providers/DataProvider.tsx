@@ -8,7 +8,6 @@ import {
   BACKEND_PRESERVE_KEYS,
   localStorageKey,
 } from '@/constants/localStorage'
-import { EMBEDDING_MODEL_ID } from '@/constants/models'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect } from 'react'
@@ -21,14 +20,9 @@ import { ensureProjectsLoaded } from '@/hooks/useThreadManagement'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { shouldAttemptAutoStart, switchToModel } from '@/utils/switchModel'
-import { useModelLoad } from '@/hooks/useModelLoad'
 import { consumeSilentImport } from '@/utils/backgroundImports'
-import { resolveImportedModelProvider } from '@/utils/resolveImportedModelProvider'
-import { isAnyChatBusy } from '@/stores/chat-session-store'
 import {
   isDev,
-  LOCAL_LLAMACPP_PROVIDER,
   SERVER_START_WATCHDOG_MS,
   withTimeout,
 } from '@/lib/utils'
@@ -413,144 +407,20 @@ export function DataProvider() {
         return
       }
 
-      if (modelId === EMBEDDING_MODEL_ID) {
-        console.log(
-          '[LocalAPI] onModelImported: embedding model imported, skipping server switch'
-        )
-        return
-      }
-
-      // Background bulk-imports (onboarding adds every detected model to the
-      // library by design) emit `onModelImported` too. Auto-switching to them
-      // would hijack the model the user actually picked. This registry is
-      // independent of any screen lifecycle, so it also covers imports that
-      // settle AFTER the onboarding screen unmounts (when `onboardingActive` is
-      // already false again).
+      // Clear the background-import marker if this was one. Import completion
+      // is deliberately library-only for every source: downloading a model
+      // must never unload the model serving an active chat or Agent run.
       if (consumeSilentImport(modelId)) {
         console.log(
-          '[LocalAPI] onModelImported: silent (background) import, skipping auto-switch for',
+          '[LocalAPI] onModelImported: background import added to library:',
           modelId
         )
         return
       }
-
-      // While onboarding is on screen it launches the chosen model itself, so
-      // DataProvider stands down entirely to avoid double-launching it.
-      if (useModelLoad.getState().onboardingActive) {
-        console.log(
-          '[LocalAPI] onModelImported: onboarding active, skipping auto-switch for',
-          modelId
-        )
-        return
-      }
-
-      // Resolve against the post-merge store, not the raw extension payload.
-      // This keeps model/provider selection aligned with migrations and
-      // persisted deletions before `switchToModel` runs.
-      // Both llama.cpp providers list every GGUF from the shared models dir,
-      // so the lookup prefers the selected provider / the importing engine
-      // over array order — otherwise the auto-start can load the model in
-      // TurboQuant while the chat loads it in upstream (double load, and the
-      // later switch kills the engine that is streaming).
-      const { providers: storeProviders, selectedProvider } =
-        useModelProvider.getState()
-      const provider = resolveImportedModelProvider(modelId, storeProviders, {
-        selectedProvider,
-        eventProvider: eventData?.provider as string | undefined,
-      })
-      if (!provider) {
-        console.warn(
-          '[LocalAPI] Could not find provider for model',
-          modelId,
-          `— falling back to ${LOCAL_LLAMACPP_PROVIDER}`
-        )
-      }
-      const providerName = provider?.provider ?? LOCAL_LLAMACPP_PROVIDER
-      console.log('[LocalAPI] Provider for model:', providerName)
-
-      // A download that finishes mid-conversation must not hijack the
-      // engine that is answering: `switchToModel` unloads other engines and
-      // restarts the proxy. The explicit "Use" button remains available.
-      if (isAnyChatBusy()) {
-        console.log(
-          '[LocalAPI] onModelImported: a chat is streaming, skipping auto-switch for',
-          modelId
-        )
-        return
-      }
-
-      // Already served by the resolved engine (e.g. the chat send path loaded
-      // it first) — nothing to switch.
-      const alreadyActive = await serviceHub
-        .models()
-        .getActiveModels(providerName)
-        .catch(() => [] as string[])
-      if (alreadyActive.includes(modelId)) {
-        console.log(
-          '[LocalAPI] onModelImported: model already active in',
-          providerName,
-          '— skipping auto-switch'
-        )
-        return
-      }
-
       console.log(
-        '[LocalAPI] Current server status:',
-        useAppState.getState().serverStatus
+        '[LocalAPI] Model imported into the library; active model unchanged:',
+        modelId
       )
-
-      // A model switch / server start may already be in flight (e.g. the
-      // startup auto-start fired right as the download finished). Previously
-      // we bailed out on 'pending', which left the freshly downloaded model
-      // with nothing running and forced the user to start it manually from
-      // Settings after onboarding. Instead, wait for the in-flight operation
-      // to settle, then switch to the just-imported model so it auto-starts.
-      if (useAppState.getState().serverStatus === 'pending') {
-        console.log('[LocalAPI] Server pending — waiting before auto-start')
-        const settled = await new Promise<boolean>((resolve) => {
-          const startedAt = Date.now()
-          const poll = () => {
-            if (useAppState.getState().serverStatus !== 'pending') {
-              resolve(true)
-            } else if (Date.now() - startedAt > 20000) {
-              resolve(false)
-            } else {
-              setTimeout(poll, 500)
-            }
-          }
-          poll()
-        })
-        if (!settled) {
-          console.log(
-            '[LocalAPI] Server still pending after wait — skipping auto-start'
-          )
-          return
-        }
-      }
-
-      // WS2 backoff applies here too. This path calls `switchToModel` with
-      // `isAutoStart: true` but never consulted the gate, so a model that
-      // fails terminally could be retried from here on every import event —
-      // one of the ways a single device came to produce 62.9% of every
-      // `model_load` in the project.
-      if (!shouldAttemptAutoStart(providerName, modelId)) {
-        console.log('[LocalAPI] Auto-start suppressed after a prior failure')
-        return
-      }
-
-      // switchToModel handles stopAllModels, start the new model, start/restart
-      // the Local API Server, and syncs all global state.
-      try {
-        await switchToModel({
-          modelId,
-          providerName,
-          serviceHub,
-          isAutoStart: true,
-        })
-        console.log('[LocalAPI] Model imported and switched to:', modelId)
-      } catch (error) {
-        console.error('[LocalAPI] Failed to switch to imported model:', error)
-      }
     }
 
     events.on(AppEvent.onModelImported, handleModelImported)

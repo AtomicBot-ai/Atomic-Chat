@@ -9,7 +9,8 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
-import { isOnboardingPending } from '@/lib/onboarding'
+import { hasPriorAppUse, isOnboardingPending } from '@/lib/onboarding'
+import { localStorageKey } from '@/constants/localStorage'
 import { useCallback, useEffect, useState } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -48,7 +49,7 @@ function Index() {
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const agentSkill = search.agentSkill
-  const { setCurrentThreadId } = useThreads()
+  const { setCurrentThreadId, threads } = useThreads()
   const agentWorkspace = useAgentMode(
     (state) => state.workspaces[TEMPORARY_CHAT_ID]
   )
@@ -70,12 +71,36 @@ function Index() {
 
   //* After auto-logout without remounting the router — raise the flag, otherwise a re-render is not guaranteed
   const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false)
+  const forceOnboarding =
+    typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING
+  const hasPriorThread = Object.values(threads).some(
+    (thread) => thread.id !== TEMPORARY_CHAT_ID
+  )
+
+  // Older builds could skip Welcome because a model/provider already existed
+  // without persisting setup-completed. If that model or key was removed
+  // later, Welcome incorrectly returned. Any usable provider or durable chat
+  // is proof that first-run onboarding is over; migrate that proof once so
+  // deleting everything later still lands on the normal empty composer.
+  useEffect(() => {
+    if (
+      forceOnboarding ||
+      localStorage.getItem(localStorageKey.setupCompleted) === 'true' ||
+      !hasPriorAppUse(providers, hasPriorThread)
+    ) {
+      return
+    }
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    window.dispatchEvent(new Event('app:setup-completed'))
+  }, [forceOnboarding, hasPriorThread, providers])
 
   // Shared with the startup auto-start gate so the two can never disagree about
   // onboarding. Also covers the dev-only FORCE_ONBOARDING flag, which enters
   // onboarding despite installed models without blocking the way out.
   const onboardingPending =
-    !setupSkippedThisSession && isOnboardingPending(providers)
+    !setupSkippedThisSession &&
+    (forceOnboarding || !hasPriorThread) &&
+    isOnboardingPending(providers)
 
   useEffect(() => {
     setCurrentThreadId(undefined)

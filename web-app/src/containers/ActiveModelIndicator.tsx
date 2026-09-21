@@ -9,15 +9,11 @@
  * the loading snackbar never takes the Cancel away with it.
  *
  * An unload is recorded like a Stop, so the composer does not load the model
- * straight back; sending to it, or picking it again, does.
+ * straight back. Its selection is cleared; picking it again loads it.
  */
 import { useState, type ReactElement } from 'react'
 
-import {
-  IconCircleCheckFilled,
-  IconLoader2,
-  IconPower,
-} from '@tabler/icons-react'
+import { IconCircleCheck, IconCircleX, IconLoader2 } from '@tabler/icons-react'
 
 import {
   Tooltip,
@@ -61,14 +57,15 @@ export function ActiveModelIndicator({ className }: { className?: string }) {
             className
           )}
         >
-          <span
-            className={cn(
-              'size-2 rounded-full',
-              status.phase === 'failed'
-                ? 'bg-destructive'
-                : 'border border-muted-foreground'
-            )}
-          />
+          {status.phase === 'failed' ? (
+            <IconCircleX
+              size={14}
+              stroke={1.75}
+              className="text-destructive"
+            />
+          ) : (
+            <span className="size-2 rounded-full border border-muted-foreground" />
+          )}
         </span>
       </Hint>
     )
@@ -107,10 +104,10 @@ export function ActiveModelIndicator({ className }: { className?: string }) {
   }
 
   return (
-    <Hint label={busy ? summary : `${summary} · ${action}`}>
+    <Hint label={busy ? summary : action}>
       <button
         type="button"
-        aria-label={busy ? summary : `${summary}. ${action}`}
+        aria-label={busy ? summary : action}
         data-testid="active-model-indicator"
         data-status={state}
         disabled={busy}
@@ -129,14 +126,16 @@ export function ActiveModelIndicator({ className }: { className?: string }) {
             )}
           />
         ) : (
-          <IconCircleCheckFilled
+          <IconCircleCheck
             size={14}
-            className="text-green-600 group-hover/dot:hidden group-focus-visible/dot:hidden"
+            stroke={1.75}
+            className="text-emerald-600 group-hover/dot:hidden group-focus-visible/dot:hidden dark:text-emerald-400"
           />
         )}
         {!busy && (
-          <IconPower
+          <IconCircleX
             size={14}
+            stroke={1.75}
             aria-hidden="true"
             className="hidden text-destructive group-hover/dot:block group-focus-visible/dot:block"
           />
@@ -151,7 +150,7 @@ function Hint({ label, children }: { label: string; children: ReactElement }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>{children}</TooltipTrigger>
-        <TooltipContent>
+        <TooltipContent className="max-w-44 px-2.5 text-left text-pretty">
           <p>{label}</p>
         </TooltipContent>
       </Tooltip>

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import { IconDownload, IconX } from '@tabler/icons-react'
 
@@ -32,6 +33,14 @@ export interface UpdateBannerProps {
   /// Label + handler for the left-hand link ("Show what's new" / "Show
   /// release notes"). Omitted renders no link.
   secondaryAction?: { label: string; onClick: () => void }
+  /// When `true`, the highlights inset gives way to `expandedContent` in a
+  /// scroll box of fixed height. The container owns the flag and flips the
+  /// `secondaryAction` label to match; the banner only draws what it is told.
+  expanded?: boolean
+  /// Already-rendered full changelog for the expanded state.
+  expandedContent?: ReactNode
+  /// Small right-aligned link under the expanded box ("Open release").
+  expandedAction?: { label: string; onClick: () => void }
   remindLaterLabel: string
   onRemindLater: () => void
   updateLabel: string
@@ -66,6 +75,9 @@ export function UpdateBanner({
   highlights,
   remainingLabel,
   secondaryAction,
+  expanded = false,
+  expandedContent,
+  expandedAction,
   remindLaterLabel,
   onRemindLater,
   updateLabel,
@@ -77,15 +89,17 @@ export function UpdateBanner({
   testId,
   className,
 }: UpdateBannerProps) {
-  const hasHighlights = !!highlights && highlights.length > 0
+  const showExpanded = expanded && expandedContent != null
+  const hasHighlights = !showExpanded && !!highlights && highlights.length > 0
 
-  return (
+  const banner = (
     <div
       role="status"
       aria-live="polite"
       data-testid={testId}
       className={cn(
-        'fixed z-50 bottom-3 right-3 w-[min(24rem,calc(100vw-1.5rem))]',
+        'fixed z-40 bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
+        'transition-[bottom] duration-200',
         'rounded-xl border bg-background shadow-md',
         className
       )}
@@ -124,6 +138,29 @@ export function UpdateBanner({
         </div>
       </div>
 
+      {showExpanded && (
+        <div className="px-4 pt-3">
+          <div
+            data-testid={testId ? `${testId}-notes` : undefined}
+            className="max-h-40 overflow-y-auto rounded-lg bg-muted/60 px-3 py-2.5 text-[11px] leading-4 text-muted-foreground"
+          >
+            {expandedContent}
+          </div>
+          {expandedAction ? (
+            <div className="mt-1 flex justify-end">
+              <Button
+                variant="link"
+                size="xs"
+                onClick={expandedAction.onClick}
+                className="h-auto px-0 text-[11px] font-normal text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                {expandedAction.label}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {hasHighlights && (
         <div className="px-4 pt-3">
           <div className="rounded-lg bg-muted/60 px-3 py-2.5">
@@ -142,7 +179,10 @@ export function UpdateBanner({
                       {item.headline}
                     </span>
                     {item.detail ? (
-                      <span className="text-muted-foreground"> {item.detail}</span>
+                      <span className="text-muted-foreground">
+                        {' '}
+                        {item.detail}
+                      </span>
                     ) : null}
                   </span>
                 </li>
@@ -183,6 +223,14 @@ export function UpdateBanner({
       </div>
     </div>
   )
+
+  // The Welcome cards establish their own stacking contexts. Rendering the
+  // fixed banner beside them allowed a card border to paint over the banner.
+  // The body is the app-wide overlay layer and keeps this notification above
+  // route content regardless of which page is open.
+  return typeof document === 'undefined'
+    ? banner
+    : createPortal(banner, document.body)
 }
 
 export default UpdateBanner

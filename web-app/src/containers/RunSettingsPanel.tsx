@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, PanelRight } from 'lucide-react'
+import { ChevronDown, PanelRight, RotateCcw } from 'lucide-react'
 import { IconChevronDown, IconCirclePlus } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
@@ -28,21 +28,14 @@ import {
   formatContextSize,
   useModelContextLength,
 } from '@/hooks/useModelContextLength'
-import { useModelProvider } from '@/hooks/useModelProvider'
-import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
-  customModelSettingKeys,
-  RESTART_REQUIRED_SETTINGS,
-  withDefaultModelSettings,
-} from '@/lib/model-settings-defaults'
-import {
-  hasCustomSampling,
   RUN_SETTINGS_SAMPLING_KEYS,
   withDefaultSampling,
 } from '@/lib/sampling-defaults'
 import { cn } from '@/lib/utils'
-import { restartLocalModel } from '@/utils/restartLocalModel'
+import { isLocalEngineProvider } from '@/lib/cloud-providers'
+import { toast } from 'sonner'
 
 type RunSettingsPanelProps = {
   onClose: () => void
@@ -87,36 +80,6 @@ function Section({
 }
 
 /**
- * A section's "Reset", in words rather than a circular arrow, which read as
- * "refresh". `label` says what it resets, for screen readers and the tooltip.
- * Always shown, so it can be found before it is needed; disabled while the
- * section is already on its defaults.
- */
-function ResetButton({
-  label,
-  disabled,
-  onClick,
-}: {
-  label: string
-  disabled: boolean
-  onClick: () => void
-}) {
-  const { t } = useTranslation()
-  return (
-    <button
-      type="button"
-      className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-foreground/8 hover:text-foreground focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-40"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {t('chat:runSettings.reset')}
-    </button>
-  )
-}
-
-/**
  * The right-hand "Run settings" panel: which assistant answers, how much
  * context the local model loads with (plus its other load-time options), and
  * the assistant's sampling. Sampling and the assistant persist through the
@@ -134,11 +97,12 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   } = useEffectiveAssistant()
   const addAssistant = useAssistant((state) => state.addAssistant)
   const updateAssistant = useAssistant((state) => state.updateAssistant)
-  const updateProvider = useModelProvider((state) => state.updateProvider)
-  const serviceHub = useServiceHub()
   const context = useModelContextLength()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [createAssistantOpen, setCreateAssistantOpen] = useState(false)
+  const exposesLocalSampling = Boolean(
+    context.provider && isLocalEngineProvider(context.provider)
+  )
 
   // A new assistant made from here is meant for the chat at hand, so it
   // becomes the active one straight away instead of only landing in Settings.
@@ -151,9 +115,6 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   // Back to what a new assistant starts with, for when the sliders have been
   // dragged somewhere that no longer answers well. Sampling only: the
   // assistant, its prompt and the model's load options stay as they are.
-  const canResetSampling = activeAssistant
-    ? hasCustomSampling(activeAssistant)
-    : false
   const handleResetSampling = () => {
     if (!activeAssistant) return
     updateAssistant({
@@ -161,45 +122,9 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
       parameters: withDefaultSampling(activeAssistant.parameters),
       sampling_overridden: false,
     })
-  }
-
-  // Back to the load options a newly listed model starts with. Model only:
-  // sampling stays as it is. With `--fit` on the engine sizes the context
-  // itself, so that value is not the user's to reset.
-  const customModelKeys = customModelSettingKeys(
-    context.selectedModel?.settings
-  ).filter((key) => !(context.fitEnabled && key === 'ctx_len'))
-  const handleResetModel = () => {
-    const { provider, selectedModel } = context
-    if (!provider || !selectedModel || customModelKeys.length === 0) return
-    updateProvider(provider.provider, {
-      models: provider.models.map((model) =>
-        model.id === selectedModel.id
-          ? {
-              ...model,
-              settings: withDefaultModelSettings(
-                model.settings,
-                customModelKeys
-              ),
-            }
-          : model
-      ),
+    toast.success(t('chat:runSettings.resetSuccess'), {
+      description: t('chat:runSettings.resetSuccessDescription'),
     })
-
-    if (!customModelKeys.some((key) => RESTART_REQUIRED_SETTINGS.has(key))) {
-      return
-    }
-    serviceHub
-      .models()
-      .getActiveModels(provider.provider)
-      .then((activeModels) =>
-        activeModels.includes(selectedModel.id)
-          ? restartLocalModel(serviceHub, provider.provider, selectedModel.id)
-          : undefined
-      )
-      .catch((error) => {
-        console.error('Failed to restart model after settings reset:', error)
-      })
   }
 
   const closeLabel = t('chat:runSettings.close')
@@ -207,7 +132,7 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   return (
     <div className="h-full p-2 pl-0">
       <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-clip-padding bg-linear-to-b from-sidebar to-background text-sidebar-foreground shadow dark:from-sidebar/70">
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3 [scrollbar-gutter:stable]">
           <div className="space-y-2">
             <div className="flex h-8 items-center justify-between gap-2">
               <h2 className="min-w-0 truncate text-sm font-medium">
@@ -225,15 +150,18 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
             </div>
             {/* In words, and on its own row: a circular-arrow icon here read
                 as "refresh", and the label does not fit beside the title. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-full border-secondary bg-secondary/30 text-xs"
-              disabled={!canResetSampling}
-              onClick={handleResetSampling}
-            >
-              {t('chat:runSettings.resetSampling')}
-            </Button>
+            {exposesLocalSampling && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-full justify-center gap-1.5 text-xs"
+                disabled={!activeAssistant}
+                onClick={handleResetSampling}
+              >
+                <RotateCcw className="size-3.5" />
+                {t('chat:runSettings.resetSampling')}
+              </Button>
+            )}
           </div>
 
           {/* Assistant: whose persona and sampling this chat uses. */}
@@ -346,16 +274,7 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
             context.contextSetting &&
             context.provider &&
             context.selectedModel && (
-              <Section
-                title={t('chat:runSettings.model')}
-                action={
-                  <ResetButton
-                    label={t('chat:runSettings.resetModel')}
-                    disabled={customModelKeys.length === 0}
-                    onClick={handleResetModel}
-                  />
-                }
-              >
+              <Section title={t('chat:runSettings.model')}>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
@@ -427,18 +346,22 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
               </Section>
             )}
 
-          {/* Sampling of the active assistant. */}
-          <Section title={t('assistants:paramCategory.sampling')}>
-            <ParametersSection
-              parameters={activeAssistant?.parameters ?? {}}
-              onChange={updateParam}
-              paramKeys={RUN_SETTINGS_SAMPLING_KEYS}
-              className={cn(
-                '[&>div:first-child>div:first-child]:hidden',
-                !activeAssistant && 'pointer-events-none opacity-50'
-              )}
-            />
-          </Section>
+          {/* Sampling is a local-engine control. Cloud and subscription APIs
+              own or ignore these values, so showing sliders there promised a
+              request contract the provider never received. */}
+          {exposesLocalSampling && (
+            <Section title={t('assistants:paramCategory.sampling')}>
+              <ParametersSection
+                parameters={activeAssistant?.parameters ?? {}}
+                onChange={updateParam}
+                paramKeys={RUN_SETTINGS_SAMPLING_KEYS}
+                className={cn(
+                  '[&>div:first-child>div:first-child]:hidden',
+                  !activeAssistant && 'pointer-events-none opacity-50'
+                )}
+              />
+            </Section>
+          )}
         </div>
       </aside>
     </div>

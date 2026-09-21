@@ -156,6 +156,32 @@ describe('resolveSdcppManifest', () => {
     expect(second.manifest.assets).toHaveLength(4)
   })
 
+  it('migrates stale remote and cached manifests only for families requiring a newer engine', async () => {
+    fetchOk(manifest)
+    const options = { url: URL_, family: 'qwen-image-2.1' }
+    expect((await resolveSdcppManifest(options)).manifest.tag_name).toBe(
+      'master-883-137f740'
+    )
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('offline')
+    }) as unknown as typeof fetch
+    expect((await resolveSdcppManifest(options)).manifest.tag_name).toBe(
+      'master-883-137f740'
+    )
+    expect(
+      (await resolveSdcppManifest({ ...options, force: true })).manifest
+        .tag_name
+    ).toBe('master-883-137f740')
+    expect(
+      (await resolveSdcppManifest({ url: URL_, family: 'qwen-image' })).manifest
+        .tag_name
+    ).toBe('master-849-d04e895')
+    expect(
+      (await resolveSdcppManifest({ url: URL_, family: 'krea-2-turbo' }))
+        .manifest.tag_name
+    ).toBe('master-883-137f740')
+  })
+
   it('falls back to the bundled baseline with the error attached', async () => {
     globalThis.fetch = vi.fn(async () => {
       throw new Error('offline')
@@ -267,6 +293,30 @@ describe('ensureDiffusionBackend', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('installs 883 for Qwen from a stale profile manifest while preserving host backend selection', async () => {
+    installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
+    const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
+    expect(result.tag).toBe('master-883-137f740')
+    expect(result.backendId).toBe('win-cuda12-x64')
+    expect(transfers).toHaveLength(1)
+    expect(finalized).toMatchObject({ tag: 'master-883-137f740', backendId: 'win-cuda12-x64' })
+  })
+
+  it('reuses an already installed compatible Qwen engine without downloading', async () => {
+    installedRecords = [record('master-883-137f740', 'win-cuda12-x64')]
+    const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
+    expect(result.tag).toBe('master-883-137f740')
+    expect(transfers).toHaveLength(0)
+  })
+
+  it('installs 883 for Krea 2 Turbo from a stale profile manifest', async () => {
+    installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
+    const result = await ensureDiffusionBackend({ family: 'krea-2-turbo' })
+    expect(result.tag).toBe('master-883-137f740')
+    expect(result.backendId).toBe('win-cuda12-x64')
+    expect(transfers).toHaveLength(1)
   })
 
   it('downloads, unpacks and finalizes the backend the host qualifies for', async () => {

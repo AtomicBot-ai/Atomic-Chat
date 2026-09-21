@@ -6,11 +6,14 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fitForQuant } from '@/lib/diffusion/fit'
+import { isDownloadCancellationError } from '@/lib/downloadCancellation'
 import {
   cancelArtifactDownload,
   diffusionDownloadTaskId,
   downloadArtifact,
   parseArtifactId,
+  planArtifactDownload,
+  workflowNeedsLlmVision,
   type InstalledArtifact,
 } from '@/lib/diffusion/models'
 import type { HardwareFit } from '@/lib/model-card'
@@ -22,6 +25,7 @@ import {
   type DiffusionCatalogQuant,
 } from '@/services/diffusion-catalog-registry'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { useImageForm } from './useImageForm'
 
 export type ImageArtifactState = {
   id: string
@@ -45,6 +49,8 @@ export type ImageArtifactState = {
   loaded: boolean
   /** A load is in flight for this artifact. */
   loading: boolean
+  /** An unload is in flight for this artifact. */
+  unloading: boolean
   download: () => Promise<void>
   cancelDownload: () => Promise<void>
   remove: () => Promise<void>
@@ -65,8 +71,14 @@ export function useImageArtifact(id: string): ImageArtifactState {
     (state) => state.installedArtifacts
   )
   const status = useImageGenerationStore((state) => state.status)
+  const capabilities = useImageGenerationStore((state) => state.capabilities)
+  const modelFiles = useImageGenerationStore((state) => state.modelFiles)
+  const paths = useImageGenerationStore((state) => state.paths)
   const loadingArtifactId = useImageGenerationStore(
     (state) => state.loadingArtifactId
+  )
+  const unloadingArtifactId = useImageGenerationStore(
+    (state) => state.unloadingArtifactId
   )
   const loadModel = useImageGenerationStore((state) => state.loadModel)
   const removeArtifact = useImageGenerationStore(
@@ -78,6 +90,7 @@ export function useImageArtifact(id: string): ImageArtifactState {
   const downloads = useDownloadStore((state) => state.downloads)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const { profile } = useHardwareTier()
+  const workflow = useImageForm((state) => state.workflow)
 
   const { family, quant } = useMemo(() => {
     const parsed = catalog ? parseArtifactId(id) : null
@@ -99,14 +112,18 @@ export function useImageArtifact(id: string): ImageArtifactState {
     return fitForQuant(family, quant, profile, { teOnCpu: IS_MACOS })
   }, [family, quant, profile])
 
-  const totalBytes = useMemo(() => {
-    if (!family || !quant) return 0
-    return (
-      quant.bytes +
-      (family.vae?.bytes ?? 0) +
-      family.text_encoders.reduce((sum, file) => sum + file.bytes, 0)
+  const workflowPlan = useMemo(() => {
+    if (!family || !quant) return null
+    return planArtifactDownload(
+      family,
+      quant.id,
+      modelFiles,
+      paths?.modelsRoot ?? '',
+      { workflow }
     )
-  }, [family, quant])
+  }, [family, modelFiles, paths, quant, workflow])
+
+  const totalBytes = workflowPlan?.totalBytes ?? 0
 
   const progressEntry = downloads[diffusionDownloadTaskId(id)]
   const downloading = Boolean(progressEntry)
@@ -117,15 +134,19 @@ export function useImageArtifact(id: string): ImageArtifactState {
       await downloadArtifact(family, quant.id, {
         hfToken: huggingfaceToken,
         resume: true,
+        workflow,
       })
       await refreshModelFiles()
     } catch (error) {
+      // Pause and Cancel stop the same underlying transfer. Their global
+      // panel feedback owns those states; neither is a failed model download.
+      if (isDownloadCancellationError(error)) return
       console.error('[images] artifact download failed:', error)
       toast.error(t('images:model.downloadFailed', { name: family.name }), {
         description: error instanceof Error ? error.message : String(error),
       })
     }
-  }, [family, quant, huggingfaceToken, refreshModelFiles, t])
+  }, [family, quant, huggingfaceToken, refreshModelFiles, t, workflow])
 
   const cancelDownload = useCallback(async () => {
     try {
@@ -144,7 +165,9 @@ export function useImageArtifact(id: string): ImageArtifactState {
     quant,
     totalBytes,
     installed,
-    complete: installed?.complete ?? false,
+    complete: workflowPlan
+      ? workflowPlan.missingBytes === 0
+      : (installed?.complete ?? false),
     downloading,
     progress: progressEntry?.progress ?? 0,
     currentBytes: progressEntry?.current ?? 0,
@@ -152,8 +175,12 @@ export function useImageArtifact(id: string): ImageArtifactState {
     fit: fit.fit,
     fitReason: fit.reason,
     offloadPolicy: fit.policy,
-    loaded: status?.model.loaded?.modelId === id,
+    loaded:
+      status?.model.loaded?.modelId === id &&
+      (!workflowNeedsLlmVision(workflow) ||
+        Boolean(capabilities?.workflows.includes(workflow))),
     loading: loadingArtifactId === id,
+    unloading: unloadingArtifactId === id,
     download,
     cancelDownload,
     remove,

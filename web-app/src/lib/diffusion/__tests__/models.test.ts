@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { seedServiceHub } from '@/test/service-hub'
-import type {
-  DiffusionCatalog,
-  DiffusionCatalogFamily,
+import {
+  findFamily,
+  getBaselineDiffusionCatalog,
+  type DiffusionCatalog,
+  type DiffusionCatalogFamily,
 } from '@/services/diffusion-catalog-registry'
 import type {
   DiffusionModelFile,
@@ -19,6 +21,7 @@ import {
   deleteArtifact,
   diffusionDownloadTaskId,
   downloadArtifact,
+  resolveDiffusionDownloadTaskId,
   listInstalledArtifacts,
   parseArtifactId,
   planArtifactDeletion,
@@ -137,12 +140,136 @@ describe('artifact ids', () => {
     expect(taskId).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 
+  it('resolves a sanitized task id through the catalog without splitting it', () => {
+    const realism: DiffusionCatalogFamily = {
+      ...zImage,
+      id: 'flux.1-nsfw-realism',
+      transformer: {
+        ...zImage.transformer,
+        quants: [
+          {
+            id: 'q8_0',
+            label: 'Q8_0',
+            filename: 'realism-Q8_0.gguf',
+            bytes: 1,
+          },
+        ],
+      },
+    }
+    const taskId = 'diffusion-model-flux_1-nsfw-realism_q8_0'
+
+    expect(
+      resolveDiffusionDownloadTaskId(
+        { ...catalog, families: [...catalog.families, realism] },
+        taskId
+      )
+    ).toMatchObject({
+      artifactId: 'flux.1-nsfw-realism:q8_0',
+      family: { id: 'flux.1-nsfw-realism' },
+      quant: { id: 'q8_0' },
+    })
+  })
+
+  it('refuses an unknown or ambiguous sanitized task id', () => {
+    const ambiguous: DiffusionCatalogFamily = {
+      ...zImage,
+      transformer: {
+        ...zImage.transformer,
+        quants: [
+          zImage.transformer.quants[0],
+          {
+            ...zImage.transformer.quants[0],
+            id: 'q4.k.m',
+          },
+        ],
+      },
+    }
+    expect(
+      resolveDiffusionDownloadTaskId(catalog, 'diffusion-model-missing_q4')
+    ).toBeNull()
+    expect(
+      resolveDiffusionDownloadTaskId(
+        { ...catalog, families: [ambiguous] },
+        'diffusion-model-z-image_q4_k_m'
+      )
+    ).toBeNull()
+  })
+
   it('flattens a repo id into one shared folder name', () => {
     expect(sharedRepoDir('unsloth/FLUX.2-VAE')).toBe('unsloth--FLUX.2-VAE')
   })
 })
 
 describe('planArtifactDownload', () => {
+  it('plans the exact verified Qwen-Image-2.1 artifact matrix', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'qwen-image-2.1'
+    )!
+    const plan = planArtifactDownload(family, 'q4_k', [], ROOT)
+
+    expect(
+      plan.entries.map(({ kind, repo, filename, bytes, sha256, field }) => ({
+        kind,
+        repo,
+        filename,
+        bytes,
+        sha256,
+        field,
+      }))
+    ).toEqual([
+      {
+        kind: 'transformer',
+        repo: 'leejet/Qwen-Image-2.1-GGUF',
+        filename: 'qwen_image_2.1-Q4_K.gguf',
+        bytes: 4_197_494_816,
+        sha256:
+          '29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2',
+        field: undefined,
+      },
+      {
+        kind: 'vae',
+        repo: 'Comfy-Org/Qwen-Image-2.1',
+        filename: 'vae/qwen_image_2.1_vae_bf16.safetensors',
+        bytes: 675_509_688,
+        sha256:
+          'bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9',
+        field: undefined,
+      },
+      {
+        kind: 'text_encoder',
+        repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF',
+        filename: 'Qwen3VL-8B-Instruct-Q4_K_M.gguf',
+        bytes: 5_027_784_800,
+        sha256:
+          '67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2',
+        field: 'llm',
+      },
+      {
+        kind: 'text_encoder',
+        repo: 'Qwen/Qwen3-VL-8B-Instruct-GGUF',
+        filename: 'mmproj-Qwen3VL-8B-Instruct-F16.gguf',
+        bytes: 1_159_029_824,
+        sha256:
+          'ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38',
+        field: 'llm_vision',
+      },
+    ])
+    expect(plan.entries.map((entry) => entry.required)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ])
+    expect(plan.totalBytes).toBe(9_900_789_304)
+
+    const editPlan = planArtifactDownload(family, 'q4_k', [], ROOT, {
+      workflow: 'edit',
+    })
+    expect(editPlan.entries.every((entry) => entry.required)).toBe(true)
+    expect(editPlan.totalBytes).toBe(11_059_819_128)
+  })
+
   it('puts the transformer under the family and side files under shared/', () => {
     const plan = planArtifactDownload(zImage, 'q4_k_m', [], ROOT)
     expect(plan.artifactId).toBe('z-image:q4_k_m')
@@ -385,6 +512,66 @@ describe('buildLoadRequest', () => {
     expect(request.defaults).toEqual({ steps: 8, cfgScale: 1, width: 1024, height: 1024 })
   })
 
+  it('loads the Qwen Image 2.1 vision projector only for reference workflows', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'qwen-image-2.1'
+    )!
+    const create = buildLoadRequest(family, 'q4_k', [], ROOT, {
+      offload: 'group',
+      workflow: 'create',
+    })
+    expect(create.files.llm).toContain('Qwen3VL-8B-Instruct-Q4_K_M.gguf')
+    expect(create.files.llmVision).toBeUndefined()
+
+    const edit = buildLoadRequest(family, 'q4_k', [], ROOT, {
+      offload: 'group',
+      workflow: 'edit',
+    })
+    expect(edit.files.llmVision).toContain(
+      'mmproj-Qwen3VL-8B-Instruct-F16.gguf'
+    )
+  })
+
+  it('builds a Create-only Krea 2 Turbo load with transformer, Qwen3-VL and Wan VAE', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'krea-2-turbo'
+    )!
+    const request = buildLoadRequest(family, 'q4_k_m', [], ROOT, {
+      offload: 'group',
+      workflow: 'create',
+    })
+
+    expect(request).toMatchObject({
+      modelId: 'krea-2-turbo:q4_k_m',
+      family: 'krea-2-turbo',
+      modality: 'image',
+      displayName: 'Krea 2 Turbo Q4_K_M',
+      files: {
+        diffusionModel: `${ROOT}/krea-2-turbo/Krea-2-Turbo-Q4_K_M.gguf`,
+        llm: `${ROOT}/shared/Qwen--Qwen3-VL-4B-Instruct-GGUF/Qwen3VL-4B-Instruct-Q4_K_M.gguf`,
+        vae: `${ROOT}/shared/Comfy-Org--Wan_2.1_ComfyUI_repackaged/wan_2.1_vae.safetensors`,
+      },
+      defaults: {
+        steps: 8,
+        cfgScale: 1,
+        samplingMethod: 'euler',
+        width: 1024,
+        height: 1024,
+      },
+      ranges: {
+        steps: [1, 20],
+        dims: [512, 2048],
+        dimMultiple: 16,
+      },
+      offload: 'group',
+    })
+    expect(request.defaults.guidance).toBeUndefined()
+    expect(request.files.llmVision).toBeUndefined()
+    expect(request.files.qwen2vl).toBeUndefined()
+  })
+
   it('prefers the absolute path the plugin reported over the computed one', () => {
     const reported = [
       {
@@ -401,7 +588,11 @@ describe('buildLoadRequest', () => {
 })
 
 describe('downloadArtifact', () => {
-  const transfers: Array<{ items: unknown[]; taskId: string }> = []
+  const transfers: Array<{
+    items: unknown[]
+    taskId: string
+    resume: boolean
+  }> = []
   const cancelled: string[] = []
   let onDiskNow: DiffusionModelFile[]
 
@@ -417,9 +608,10 @@ describe('downloadArtifact', () => {
               downloadFiles: async (
                 items: unknown[],
                 taskId: string,
-                onProgress?: (t: number, total: number) => void
+                onProgress?: (t: number, total: number) => void,
+                resume = false
               ) => {
-                transfers.push({ items, taskId })
+                transfers.push({ items, taskId, resume })
                 onProgress?.(1, 2)
               },
               cancelDownload: async (taskId: string) => {
@@ -445,6 +637,7 @@ describe('downloadArtifact', () => {
 
     expect(transfers).toHaveLength(1)
     expect(transfers[0].taskId).toBe('diffusion-model-z-image_q4_k_m')
+    expect(transfers[0].resume).toBe(false)
     expect(transfers[0].items).toEqual([
       {
         url: 'https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/main/z-image-turbo-Q4_K_M.gguf',
@@ -463,6 +656,16 @@ describe('downloadArtifact', () => {
     expect(progress).toEqual([1])
     expect(plan.entries.every((e) => e.present)).toBe(true)
     expect(plan.missingBytes).toBe(0)
+  })
+
+  it('passes resume through to the diffusion transfer', async () => {
+    await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+
+    expect(transfers).toHaveLength(1)
+    expect(transfers[0]).toMatchObject({
+      taskId: 'diffusion-model-z-image_q4_k_m',
+      resume: true,
+    })
   })
 
   it('does not transfer anything when the artifact is complete', async () => {

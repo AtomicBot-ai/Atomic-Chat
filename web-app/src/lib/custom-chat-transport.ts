@@ -1,3 +1,5 @@
+import { useMCPServers } from '@/hooks/useMCPServers'
+import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
@@ -59,6 +61,10 @@ import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
 import {
   buildReasoningRequestFields,
+  canDisableReasoning,
+  buildCloudReasoningRequestFields,
+  isCloudReasoningProvider,
+  reasoningLevelsForModel,
   buildRemoteReasoningRequestFields,
   usesTemplateReasoningKwargs,
 } from '@/lib/reasoning-effort'
@@ -508,6 +514,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       modelSupportsTools,
       disabledToolKeys.join(','),
       muted,
+      Object.entries(useMCPServers.getState().mcpServers)
+        .filter(([key, config]) => isWebSearchServer(key, config))
+        .map(([key, config]) => `${key}:${Boolean(config.active)}`)
+        .sort()
+        .join(','),
       ctxLen ?? '',
       mcp,
       rag,
@@ -624,7 +635,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ...this.mutedServersForThread(),
       ...SYSTEM_SERVER_KEYS,
     ])
-    const audibleMcpTools = mcpTools.filter((tool) => !muted.has(tool.server))
+    const searchConfigs = useMCPServers.getState().mcpServers
+    const audibleMcpTools = mcpTools.filter((tool) => {
+      if (muted.has(tool.server)) return false
+      const config = searchConfigs[tool.server]
+      // Turning the globe off takes effect before asynchronous discovery catches up.
+      return (
+        !config ||
+        !isWebSearchServer(tool.server, config) ||
+        Boolean(config.active)
+      )
+    })
 
     this.tools = buildToolsRecord(ragTools, audibleMcpTools, disabledToolKeys)
     this.toolsCacheKey = cacheKey
@@ -830,7 +851,26 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const reasoningOverride: Record<string, unknown> = {}
         const reasoningControls =
           useModelProvider.getState().selectedModel?.reasoning
-        if (disableReasoning || reasoningBudget === 'off') {
+        const allowReasoningDisable = canDisableReasoning(
+          effectiveProviderName,
+          reasoningControls
+        )
+        const resolvedReasoningLevels = reasoningLevelsForModel(
+          effectiveProviderName,
+          reasoningControls
+        )
+        const firstReasoningLevel = resolvedReasoningLevels[0] ?? 'low'
+        const activeReasoningBudget =
+          !allowReasoningDisable &&
+          (disableReasoning || reasoningBudget === 'off')
+            ? firstReasoningLevel
+            : reasoningBudget === 'off'
+              ? 'low'
+              : reasoningBudget
+        if (
+          allowReasoningDisable &&
+          (disableReasoning || reasoningBudget === 'off')
+        ) {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'llamacpp-upstream':
@@ -855,15 +895,25 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             case 'openai':
               reasoningOverride.reasoning_effort = 'minimal'
               break
+            case 'chatgpt': {
+              const offValue = reasoningControls?.offValue
+              if (offValue) reasoningOverride.reasoning_effort = offValue
+              break
+            }
             case 'xai':
               reasoningOverride.reasoning_effort = 'low'
               break
             case 'google':
             case 'gemini':
-              reasoningOverride.reasoning_effort = 'minimal'
-              reasoningOverride.extra_body = {
-                google: { thinking_config: { thinking_budget: 0 } },
-              }
+              // One field only: Gemini 400s on `reasoning_effort` plus a
+              // `thinking_config`. `none` is accepted by 2.5 Flash / Flash-Lite
+              // alone; 2.5 Pro and Gemini 3 cannot stop thinking, and
+              // `minimal` is their lowest level.
+              reasoningOverride.reasoning_effort = /^gemini-2\.5-flash/.test(
+                modelId
+              )
+                ? 'none'
+                : 'minimal'
               break
             case 'moonshot':
               // Moonshot (Kimi) accepts only high|low|medium|max|xhigh; rejects
@@ -883,14 +933,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } else if (
           effectiveProviderName === 'llamacpp' ||
           effectiveProviderName === 'llamacpp-upstream' ||
-          effectiveProviderName === 'mlx'
+          effectiveProviderName === 'mlx' ||
+          (effectiveProviderName === 'chatgpt' &&
+            reasoningControls?.supportsThinking)
         ) {
           Object.assign(
             reasoningOverride,
             buildReasoningRequestFields(
-              reasoningBudget,
+              activeReasoningBudget,
               effectiveProviderName,
               reasoningControls
+            )
+          )
+        } else if (
+          isCloudReasoningProvider(effectiveProviderName) &&
+          resolvedReasoningLevels.length > 0
+        ) {
+          Object.assign(
+            reasoningOverride,
+            buildCloudReasoningRequestFields(
+              activeReasoningBudget,
+              effectiveProviderName
             )
           )
         } else if (usesTemplateReasoningKwargs(effectiveProviderName)) {
@@ -902,7 +965,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           // that branch's missing other half.
           Object.assign(
             reasoningOverride,
-            buildRemoteReasoningRequestFields(reasoningBudget)
+            buildRemoteReasoningRequestFields(activeReasoningBudget)
           )
         }
         const effectiveReasoningOverride = withUpstreamDflashReasoningOverride(

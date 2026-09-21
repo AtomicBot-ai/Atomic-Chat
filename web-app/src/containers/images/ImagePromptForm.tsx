@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useState,
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
@@ -35,7 +36,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { route } from '@/constants/routes'
-import { MAX_IMAGE_RUNS, useImageForm } from '@/hooks/useImageForm'
+import {
+  MAX_IMAGE_BATCH,
+  MAX_IMAGE_RUNS,
+  useImageForm,
+} from '@/hooks/useImageForm'
 import { useImageGeneration } from '@/hooks/useImageGeneration'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import {
@@ -52,10 +57,11 @@ import { workflowSpec } from '@/lib/diffusion/workflows'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageField, ImageFieldHint } from './ImageField'
+import { ImageApiSettingsCard } from './ImageApiSettingsCard'
 import { ImageWorkflowInputs } from './ImageWorkflowInputs'
 import { WORKFLOW_ICONS } from './workflowIcons'
 import { ImageGenerateButton } from './ImageGenerateButton'
-import { ImageJobProgress } from './ImageJobProgress'
+import { ImageModelPicker } from './ImageModelPicker'
 import { ImageParamSlider } from './ImageParamSlider'
 import { ImageSeedField } from './ImageSeedField'
 import { ImageSizeControl } from './ImageSizeControl'
@@ -70,6 +76,8 @@ const FALLBACK_STEPS: [number, number] = [1, 50]
 
 type ImagePromptFormProps = {
   className?: string
+  modelsOpen?: boolean
+  onModelsOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -83,6 +91,8 @@ type ImagePromptFormProps = {
  */
 export const ImagePromptForm = memo(function ImagePromptForm({
   className,
+  modelsOpen: controlledModelsOpen,
+  onModelsOpenChange,
 }: ImagePromptFormProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -142,6 +152,9 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     (state) => state.applyIdleSettings
   )
   const generation = useImageGeneration()
+  const [internalModelsOpen, setInternalModelsOpen] = useState(false)
+  const modelsOpen = controlledModelsOpen ?? internalModelsOpen
+  const setModelsOpen = onModelsOpenChange ?? setInternalModelsOpen
 
   // A model just loaded: fold the draft into what it accepts.
   useEffect(() => {
@@ -157,7 +170,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       }
     : FALLBACK_CONSTRAINTS
   const [minSteps, maxSteps] = capabilities?.ranges.steps ?? FALLBACK_STEPS
-  const maxBatch = Math.max(1, capabilities?.maxBatch ?? 1)
+  const maxBatch = Math.max(1, capabilities?.maxBatch ?? MAX_IMAGE_BATCH)
   const showNegative = capabilities?.supportsNegativePrompt ?? false
   // Families distilled to run at cfg 1 have no classifier-free guidance to
   // tune; the slider would be a knob that does nothing.
@@ -170,7 +183,6 @@ export const ImagePromptForm = memo(function ImagePromptForm({
   const spec = workflowSpec(form.workflow)
   const WorkflowIcon = WORKFLOW_ICONS[form.workflow]
   const isEdit = form.workflow === 'edit'
-
   const idleLabel = (minutes: number) =>
     minutes === 0
       ? t('settings:media.idleNever')
@@ -225,7 +237,10 @@ export const ImagePromptForm = memo(function ImagePromptForm({
       }}
       data-testid="image-prompt-form"
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-4 pb-4">
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto px-6 pt-4 pb-4 [scrollbar-gutter:stable]"
+        data-testid="image-form-scroller"
+      >
         {/* The sidebar names the section; this names what the column does. */}
         <div className="mb-1 flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -267,29 +282,38 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           disabled={busy}
         />
 
-        <ImageField
-          htmlFor="image-prompt"
-          label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}
+        <div
+          className="space-y-2.5 rounded-2xl border bg-secondary/20 p-2.5"
+          data-testid="image-prompt-card"
         >
-          <Textarea
-            id="image-prompt"
-            value={form.prompt}
-            placeholder={t(
-              isEdit
-                ? 'images:form.instructionPlaceholder'
-                : 'images:form.promptPlaceholder'
-            )}
-            onChange={(event) => form.patch({ prompt: event.target.value })}
-            onKeyDown={onPromptKeyDown}
-            rows={4}
-            className="min-h-24 resize-none rounded-2xl px-4 py-3"
+          <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
+          <ImageField
+            htmlFor="image-prompt"
+            label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}
+          >
+            <Textarea
+              id="image-prompt"
+              value={form.prompt}
+              placeholder={t(
+                isEdit
+                  ? 'images:form.instructionPlaceholder'
+                  : 'images:form.promptPlaceholder'
+              )}
+              onChange={(event) => form.patch({ prompt: event.target.value })}
+              onKeyDown={onPromptKeyDown}
+              rows={3}
+              className="min-h-20 resize-none rounded-xl bg-background px-3.5 py-2.5"
+            />
+          </ImageField>
+          <ImageGenerateButton
+            generating={generation.generating}
+            stopRequested={generation.stopRequested}
+            disabledReason={generation.disabledReason}
+            imageCount={form.batchSize * form.runs}
+            onGenerate={() => void generation.generate()}
+            onStop={() => void generation.stop()}
           />
-          <p className="text-[11px] text-muted-foreground/80">
-            {IS_MACOS
-              ? t('images:form.shortcutMac')
-              : t('images:form.shortcut')}
-          </p>
-        </ImageField>
+        </div>
 
         {showNegative && (
           <Collapsible
@@ -395,7 +419,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
             min={1}
             max={maxBatch}
             step={1}
-            disabled={busy || maxBatch === 1}
+            disabled={busy || (capabilities !== null && maxBatch === 1)}
             onChange={(batchSize) => form.patch({ batchSize })}
           />
           <ImageParamSlider
@@ -425,13 +449,9 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           <CollapsibleTrigger asChild>
             <button
               type="button"
-              className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
               data-testid="image-advanced-toggle"
             >
-              <IconSettings
-                size={14}
-                className="shrink-0 text-muted-foreground"
-              />
               <span className="min-w-0 flex-1 text-xs font-medium">
                 {t('images:form.advanced')}
               </span>
@@ -444,11 +464,14 @@ export const ImagePromptForm = memo(function ImagePromptForm({
               />
             </button>
           </CollapsibleTrigger>
-          <CollapsibleContent className={collapsiblePanelAnimation}>
+          <CollapsibleContent
+            className={cn(
+              collapsiblePanelAnimation,
+              'duration-250 ease-out will-change-[height] motion-reduce:animate-none motion-reduce:duration-0'
+            )}
+            data-testid="image-advanced-panel"
+          >
             <div className="flex flex-col gap-3 pt-3">
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                {t('images:form.advancedHint')}
-              </p>
               <AdvancedSelect
                 label={t('images:form.memory')}
                 hint={t('images:form.memoryHint')}
@@ -503,38 +526,23 @@ export const ImagePromptForm = memo(function ImagePromptForm({
                   aria-label={t('settings:media.keepLoaded')}
                 />
               </div>
-              <button
+              <ImageApiSettingsCard variant="embedded" />
+              <Button
                 type="button"
-                className="flex items-center gap-1 self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+                variant="outline"
+                size="sm"
+                className="w-full justify-between rounded-full"
                 onClick={() => void navigate({ to: route.settings.media })}
               >
-                {t('images:form.mediaSettings')}
+                <span className="flex items-center gap-2">
+                  <IconSettings size={14} className="text-muted-foreground" />
+                  {t('images:form.mediaSettings')}
+                </span>
                 <IconChevronRight size={14} />
-              </button>
+              </Button>
             </div>
           </CollapsibleContent>
         </Collapsible>
-      </div>
-
-      {/* Pinned under the scroll, so Generate is always in reach. */}
-      <div className="relative flex shrink-0 flex-col items-center gap-2 px-6 pt-2 pb-4">
-        <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-t from-background to-transparent" />
-        <ImageGenerateButton
-          generating={generation.generating}
-          stopRequested={generation.stopRequested}
-          disabledReason={generation.disabledReason}
-          imageCount={form.batchSize * form.runs}
-          onGenerate={() => void generation.generate()}
-          onStop={() => void generation.stop()}
-        />
-        {generation.generating && (
-          <ImageJobProgress
-            job={generation.job}
-            runsTotal={generation.runsTotal}
-            runsDone={generation.runsDone}
-            stopping={generation.stopRequested}
-          />
-        )}
       </div>
     </form>
   )

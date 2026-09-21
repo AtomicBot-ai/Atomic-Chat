@@ -13,9 +13,9 @@ use tokio_util::sync::CancellationToken;
 use super::batch_executor::{execute_batch, PlannedCall};
 use super::grammar::{tool_call_grammar_dynamic, GENERIC_THINK_CLOSE, GENERIC_THINK_OPEN};
 use super::llm_client::{
-    parse_tool_calls_for_profile, AgentLlmClient, AgentPrompt, CompletionReasoning,
-    CompletionRequest, CompletionResult, LlmClientError, ParsedToolCalls, ReasoningTags,
-    SamplingOverrides, StreamChunk,
+    parse_tool_calls_for_profile, split_reasoning_for_profile, AgentLlmClient, AgentPrompt,
+    CompletionReasoning, CompletionRequest, CompletionResult, LlmClientError, ParsedToolCalls,
+    ReasoningTags, SamplingOverrides, StopReason, StreamChunk,
 };
 use super::loop_guard::{
     format_forced_loop_reply, format_repeat_notice, format_veto_instruction,
@@ -32,8 +32,8 @@ use super::resource_class::{is_batchable, resource_class_for_call, ResourceClass
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::token_budget::{
-    compute_effective_conversation_cap, estimate_tokens, COMPLETION_MAX_TOKENS,
-    CONFIGURED_CONVERSATION_CAP,
+    compute_effective_conversation_cap, estimate_tokens, thinking_reserve_tokens,
+    COMPLETION_MAX_TOKENS, CONFIGURED_CONVERSATION_CAP,
 };
 use super::tool_schema::tool_call_response_format_dynamic;
 use super::tools::{self, ApprovalHook, DesktopServices, FolderAccessHook, ToolContext};
@@ -152,8 +152,8 @@ pub async fn run_turn(
             input.disabled_tools,
         )
     });
-    // The repair completion asks for corrected JSON only, and its budget is a
-    // tenth of a normal step's — a mandatory think block could swallow it whole.
+    // The repair completion asks for corrected JSON only: a mandatory think
+    // block would spend the retry on thinking the step already did.
     // Gemma keeps its prelude: there it is native turn framing, not an effort
     // choice, and the framing must survive the retry.
     let repair_grammar = match (&tool_grammar, input.model_profile.reasoning_open_tag()) {
@@ -169,6 +169,7 @@ pub async fn run_turn(
         }),
     };
     let completion_reasoning = completion_reasoning(&input.reasoning, input.model_profile);
+    let step_max_tokens = step_max_tokens(&completion_reasoning);
     let response_schema = capabilities.json_schema.then(|| {
         Arc::new(tool_call_response_format_dynamic(
             input.skill_registry,
@@ -221,7 +222,7 @@ pub async fn run_turn(
             CONFIGURED_CONVERSATION_CAP,
             context_window,
             estimate_tokens(&fixed_prompt),
-            COMPLETION_MAX_TOKENS,
+            step_max_tokens,
         );
         let conversation = input.session.render_conversation(conversation_cap);
         let prompt = build_prompt_parts_dynamic(
@@ -238,6 +239,7 @@ pub async fn run_turn(
         notice = None;
         let mut request = CompletionRequest {
             reasoning: completion_reasoning.clone(),
+            max_tokens: step_max_tokens,
             ..CompletionRequest::tool_call_parts(
                 AgentPrompt::parts(prompt.system, prompt.tail),
                 tool_grammar.clone(),
@@ -309,6 +311,50 @@ pub async fn run_turn(
                 match parse_tool_calls_for_profile(&completion.content, input.model_profile) {
                     Ok(parsed) => parsed,
                     Err(error) => {
+                        // A generation that already exhausted its output cap
+                        // cannot be repaired by asking the same model to emit
+                        // the same call again with nearly the same cap. That
+                        // doubled the wait (16,384 + 15,188 tokens in the
+                        // reported run) and ended in the same failure. Preserve
+                        // any reasoning the live scanner missed, then fail once
+                        // with the actionable budget category.
+                        if completion.stop_reason == StopReason::Limit {
+                            if !prelude_reasoning_streamed {
+                                let (reasoning, _) = split_reasoning_for_profile(
+                                    &completion.content,
+                                    input.model_profile,
+                                );
+                                if !reasoning.is_empty() {
+                                    emit(AgentEvent::ReasoningDelta {
+                                        step_index,
+                                        text: reasoning,
+                                    })?;
+                                }
+                            }
+                            let terminal_error = if completion.prompt_truncated {
+                                LlmClientError::ContextOverflow(
+                                    "the context window filled up before the tool call finished"
+                                        .into(),
+                                )
+                            } else {
+                                LlmClientError::OutputTruncated {
+                                    max_tokens: request.max_tokens,
+                                }
+                            };
+                            let message = terminal_error.to_string();
+                            emit(AgentEvent::StepError {
+                                message: message.clone(),
+                                category: repair_error_category(&terminal_error).into(),
+                            })?;
+                            emit(AgentEvent::TurnFinished {
+                                reason: "failed".into(),
+                                step_count: step_index + 1,
+                                usage: usage.finish(),
+                            })?;
+                            finish_session(input.session, &loaded_tools, &loaded_skills, None)
+                                .await;
+                            return Err(message);
+                        }
                         emit(AgentEvent::ParseRetry {
                             step_index,
                             reason: error.to_string(),
@@ -325,7 +371,11 @@ pub async fn run_turn(
                         )
                         .await
                         {
-                            Ok(parsed) => parsed,
+                            Ok((parsed, repaired)) => {
+                                usage.observe(&repaired);
+                                previous_output.clone_from(&repaired.content);
+                                parsed
+                            }
                             Err(LlmClientError::Cancelled) => {
                                 finish_session(input.session, &loaded_tools, &loaded_skills, None)
                                     .await;
@@ -367,7 +417,11 @@ pub async fn run_turn(
                 )
                 .await
                 {
-                    Ok(parsed) => parsed,
+                    Ok((parsed, repaired)) => {
+                        usage.observe(&repaired);
+                        previous_output.clone_from(&repaired.content);
+                        parsed
+                    }
                     Err(LlmClientError::Cancelled) => {
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return finish_cancelled(step_index, usage.finish(), &mut emit);
@@ -393,8 +447,9 @@ pub async fn run_turn(
                 return finish_cancelled(step_index, usage.finish(), &mut emit);
             }
             Err(error) => {
+                let message = completion_error_message(&error);
                 emit(AgentEvent::StepError {
-                    message: error.to_string(),
+                    message: message.clone(),
                     category: completion_error_category(&error).into(),
                 })?;
                 emit(AgentEvent::TurnFinished {
@@ -403,7 +458,7 @@ pub async fn run_turn(
                     usage: usage.finish(),
                 })?;
                 finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
-                return Err(error.to_string());
+                return Err(message);
             }
         };
         if let Some(reasoning) = parsed.reasoning.filter(|value| !value.is_empty()) {
@@ -465,7 +520,11 @@ pub async fn run_turn(
                 )
                 .await
                 {
-                    Ok(repaired) => parsed = repaired,
+                    Ok((repaired, completion)) => {
+                        usage.observe(&completion);
+                        previous_output.clone_from(&completion.content);
+                        parsed = repaired;
+                    }
                     Err(LlmClientError::Cancelled) => {
                         finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
                         return finish_cancelled(step_index, usage.finish(), &mut emit);
@@ -546,21 +605,26 @@ pub async fn run_turn(
             }
         }
         if let Some((tool, count, detector)) = breaker {
-            let reply = format_forced_loop_reply(&tool, count);
+            let diagnostic = format_forced_loop_reply(&tool, count);
+            log::warn!("Agent loop guard stopped the turn: {diagnostic}");
+            let message =
+                "The agent stopped after repeating the same action without making progress."
+                    .to_string();
             emit(AgentEvent::LoopDetected {
                 level: LoopLevel::Breaker,
                 detector,
-                message: reply.clone(),
+                message: message.clone(),
             })?;
-            emit(AgentEvent::AssistantReply {
-                text: reply.clone(),
+            emit(AgentEvent::StepError {
+                message,
+                category: "loop".into(),
             })?;
             emit(AgentEvent::TurnFinished {
-                reason: "reply".into(),
+                reason: "failed".into(),
                 step_count: step_index + 1,
                 usage: usage.finish(),
             })?;
-            finish_session(input.session, &loaded_tools, &loaded_skills, Some(&reply)).await;
+            finish_session(input.session, &loaded_tools, &loaded_skills, None).await;
             return Ok(());
         }
 
@@ -903,6 +967,20 @@ fn completion_reasoning(
     }
 }
 
+/// The step's completion budget: the tool-call budget, plus the thinking
+/// budget when the turn thinks. Both draw from the same `n_predict` /
+/// `max_tokens`, so the reserve is what keeps a full thinking block from
+/// cutting the array off, and the conversation cap subtracts the same total
+/// so prompt and completion still fit the context together.
+fn step_max_tokens(reasoning: &CompletionReasoning) -> u32 {
+    match reasoning {
+        CompletionReasoning::On { budget_tokens, .. } => {
+            COMPLETION_MAX_TOKENS.saturating_add(thinking_reserve_tokens(*budget_tokens))
+        }
+        CompletionReasoning::Unset | CompletionReasoning::Off => COMPLETION_MAX_TOKENS,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn repair_tool_calls(
     client: &dyn AgentLlmClient,
@@ -913,13 +991,17 @@ async fn repair_tool_calls(
     cancellation: &CancellationToken,
     profile: AgentModelProfile,
     mcp: Option<&dyn McpBridge>,
-) -> Result<ParsedToolCalls, LlmClientError> {
-    let invalid_output = invalid_output.chars().take(4_000).collect::<String>();
+) -> Result<(ParsedToolCalls, CompletionResult), LlmClientError> {
+    // Echo the batch the model has to fix, not the thinking that preceded it:
+    // the repair grammar re-emits JSON only (Gemma keeps its native channel,
+    // and that framing is carried by the prompt, not by the echo).
+    let (_, invalid_body) = split_reasoning_for_profile(invalid_output, profile);
+    let echoed_output = invalid_body.chars().take(4_000).collect::<String>();
     let repair_instruction = format!(
         "### tool-call-repair\nThe previous tool-call output was invalid: {reason}\n\
          Emit one corrected JSON array only. Approval-gated or dependent calls must be emitted \
          as a length-1 array. A terminal call may appear only once and only last.\n\
-         Previous output:\n{invalid_output}"
+         Previous output:\n{echoed_output}"
     );
     // The repair block belongs to the variable tail: the stable prefix must
     // stay byte-identical so the prompt cache (llama.cpp slots, provider-side
@@ -945,15 +1027,57 @@ async fn repair_tool_calls(
     };
     let mut request = original_request.clone();
     request.prompt.body = repair_body;
-    request.max_tokens = REPAIR_MAX_TOKENS;
+    request.max_tokens = repair_max_tokens(
+        invalid_output.is_empty(),
+        original_request.max_tokens,
+        &repair_instruction,
+    );
     request.grammar = repair_grammar.map(str::to_owned);
     // No prelude on this grammar means no thinking block to budget.
     if request.grammar.as_deref() != original_request.grammar.as_deref() {
         request.reasoning = CompletionReasoning::Unset;
     }
     let completion = complete_with_deadline(client, &request, cancellation).await?;
-    parse_and_validate(&completion.content, profile, mcp)
-        .map_err(|error| LlmClientError::InvalidResponse(format!("Repair failed: {error}")))
+    match parse_and_validate(&completion.content, profile, mcp) {
+        Ok(parsed) => Ok((parsed, completion)),
+        // An array that never closed because generation was stopped is a
+        // budget problem, not a shape problem; say which budget.
+        Err(_) if completion.stop_reason == StopReason::Limit && completion.prompt_truncated => {
+            Err(LlmClientError::ContextOverflow(
+                "the context window filled up before the corrected tool call finished".into(),
+            ))
+        }
+        Err(_) if completion.stop_reason == StopReason::Limit => {
+            Err(LlmClientError::OutputTruncated {
+                max_tokens: request.max_tokens,
+            })
+        }
+        Err(error) => Err(LlmClientError::InvalidResponse(format!(
+            "Repair failed: {error}"
+        ))),
+    }
+}
+
+/// Budget for the repair completion.
+///
+/// `n_predict` is a cap, not a spend: a short repair stops at EOS whatever
+/// the cap says, so the repair inherits the step's budget, less the repair
+/// block appended to the prompt, and the pair still fits the context the
+/// step reserved. With nothing to re-emit (a timed-out step, an empty
+/// completion) the old 1,024-token cap stays: there the point is to bound a
+/// generation that already stalled once.
+fn repair_max_tokens(
+    nothing_to_reemit: bool,
+    step_max_tokens: u32,
+    repair_instruction: &str,
+) -> u32 {
+    if nothing_to_reemit {
+        return REPAIR_MAX_TOKENS;
+    }
+    let repair_block = u32::try_from(estimate_tokens(repair_instruction)).unwrap_or(u32::MAX);
+    step_max_tokens
+        .saturating_sub(repair_block)
+        .max(REPAIR_MAX_TOKENS)
 }
 
 async fn complete_with_deadline(
@@ -1082,13 +1206,49 @@ fn completion_error_category(error: &LlmClientError) -> &'static str {
         LlmClientError::ContextOverflow(_) => "context",
         LlmClientError::LocalServerUnavailable => "server",
         LlmClientError::SessionNotFound(_) => "session",
+        LlmClientError::Transport(detail) if is_interrupted_stream(detail) => "server",
         _ => "llm",
+    }
+}
+
+fn is_interrupted_stream(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    detail.contains("unexpected eof")
+        || detail.contains("error reading a body")
+        || detail.contains("connection reset")
+        || detail.contains("connection closed")
+}
+
+fn completion_error_message(error: &LlmClientError) -> String {
+    match error {
+        LlmClientError::Transport(detail) if is_interrupted_stream(detail) => {
+            "The active model stopped while generating. Retry the request.".into()
+        }
+        _ => error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod completion_error_message_tests {
+    use super::*;
+
+    #[test]
+    fn interrupted_stream_is_explained_without_transport_internals() {
+        let error = LlmClientError::Transport(
+            "request or response body error: error reading a body from connection: unexpected EOF during chunk size line".into(),
+        );
+        assert_eq!(completion_error_category(&error), "server");
+        assert_eq!(
+            completion_error_message(&error),
+            "The active model stopped while generating. Retry the request."
+        );
     }
 }
 
 fn repair_error_category(error: &LlmClientError) -> &'static str {
     match error {
         LlmClientError::InvalidResponse(_) => "grammar",
+        LlmClientError::OutputTruncated { .. } => "budget",
         LlmClientError::Cancelled => "cancelled",
         LlmClientError::TimedOut => "timeout",
         LlmClientError::Unauthorized { .. } | LlmClientError::RateLimited { .. } => "auth",

@@ -1,18 +1,12 @@
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import {
-  formatEta,
-  formatProgressPair,
-  formatSpeed,
-  shortModelName,
-} from '@/lib/downloadFormat'
+import { formatDownloadReadout, shortModelName } from '@/lib/downloadFormat'
 import { quantFromModelId } from '@/lib/telemetry'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 
-//* Semi-transparent green: the % and GB text stays readable in both light and dark themes
-export const DOWNLOAD_PROGRESS_INDICATOR =
-  'bg-emerald-400/50 dark:bg-emerald-400/45'
+//* Product blue: downloading is activity, not the green "ready" state.
+export const DOWNLOAD_PROGRESS_INDICATOR = 'bg-blue-500/60 dark:bg-blue-400/55'
 
 /** Status while a transfer has no bytes to report — see `useDownloadStore`. */
 export type DownloadRowStage = {
@@ -72,27 +66,14 @@ export function DownloadProgressRow({
 
   const label = name || id
   const quant = quantFromModelId(id)
-  const known = total > 0
-  const speed = paused ? null : formatSpeed(bytesPerSecond)
-  const eta = paused ? null : formatEta(total - current, bytesPerSecond)
-
-  // Before the first byte the transfer has no meaningful numbers at all; saying
-  // "0%" there reads as a stalled download rather than a starting one.
-  const preparingStatus =
-    stage?.kind === 'retrying'
-      ? t('common:downloadPanel.retrying', {
-          attempt: stage.attempt,
-          maxAttempts: stage.maxAttempts,
-        })
-      : stage?.kind === 'connecting'
-        ? t('common:downloadPanel.connecting')
-        : t('common:downloadPanel.preparing')
-
-  const status = paused
-    ? t('common:downloadPanel.paused')
-    : known
-      ? `${Math.round(progress * 100)}%`
-      : preparingStatus
+  const readout = formatDownloadReadout(t, {
+    progress,
+    current,
+    total,
+    bytesPerSecond,
+    stage,
+    paused,
+  })
 
   return (
     <li className="rounded-lg bg-secondary p-2">
@@ -149,19 +130,15 @@ export function DownloadProgressRow({
         className="my-2 h-1.5 rounded-full bg-muted-foreground/15 dark:bg-muted-foreground/20"
       />
 
-      <div className="flex items-center justify-between gap-2 text-xs tabular-nums text-muted-foreground">
-        <span>
-          {status}
-          {known && ` · ${formatProgressPair(current, total)}`}
-        </span>
-        {/* `aria-live` is deliberately absent: this text changes every few
-            seconds and would otherwise talk over everything else. */}
-        <span className="truncate">
-          {[speed, eta && t('common:downloadPanel.left', { eta })]
-            .filter(Boolean)
-            .join(' · ')}
-        </span>
-      </div>
+      {/* One line that never wraps: it used to be two flex spans, and past the
+          row's width the first one broke at its spaces, so the size pair
+          dropped to a second line and the bottom-anchored card grew upwards.
+          `truncate` cuts an overlong line at its end — the estimate, the part
+          that matters least — instead. `aria-live` is deliberately absent: this
+          text changes every few seconds and would talk over everything else. */}
+      <p className="truncate text-xs tabular-nums text-muted-foreground">
+        {readout}
+      </p>
     </li>
   )
 }

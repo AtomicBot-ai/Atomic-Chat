@@ -49,6 +49,14 @@ describe('AgentApprovalDialog', () => {
     expect(
       screen.getByRole('button', { name: /alwaysAllow/i })
     ).toBeInTheDocument()
+    expect(
+      screen.getByText('chat:agentApproval.summary.changeFiles')
+    ).toBeVisible()
+    expect(screen.queryByText('os.fs.write')).toBeNull()
+
+    fireEvent.click(screen.getByText(/agentApproval\.showDetails/))
+    expect(screen.getByText('os.fs.write')).toBeVisible()
+    expect(screen.getByText('Write a file')).toBeVisible()
   })
 
   it('approves once and guards against a double click', async () => {

@@ -10,34 +10,21 @@ import {
 } from './DownloadProgressRow'
 import { EDGE, GAP, panelLayout, type PanelLayout } from './panelLayout'
 
-const COLLAPSED_STORAGE_KEY = 'download-panel-collapsed'
-
 /**
  * Height the panel currently occupies in the bottom-right corner, published as
  * a CSS variable on `<html>`.
  *
- * `PromptOnboardingModel` and `PromptVisionModel` are pinned to the same
- * corner. Rather than have each of them know the panel exists, they offset
- * themselves by this variable, which is 0 whenever the panel is not showing.
+ * `PromptOnboardingModel` is pinned to the same corner. Rather than have it
+ * know the panel exists, it offsets itself by this variable, which is 0
+ * whenever the panel is not showing.
  */
 const OFFSET_VAR = '--download-panel-offset'
-
-function readCollapsedPreference(): boolean {
-  try {
-    return localStorage.getItem(COLLAPSED_STORAGE_KEY) === 'true'
-  } catch {
-    // Private mode / disabled storage: default to expanded, which is the
-    // state the whole redesign exists to make the default.
-    return false
-  }
-}
 
 export type DownloadPanelProps = {
   items: DownloadRowProps[]
   /**
-   * Reports the collapsed state, including the initial one restored from
-   * storage, so the owner can measure how long the panel stayed expanded
-   * without also owning the flag.
+   * Reports the collapsed state so the owner can measure how long the panel
+   * stayed expanded without also owning the flag.
    */
   onCollapsedChange?: (collapsed: boolean) => void
 }
@@ -51,15 +38,16 @@ export type DownloadPanelProps = {
  * remembering the icon was there.
  *
  * Here the expanded panel is the default and it stays put; collapsing is a
- * deliberate click, remembered across screens and restarts. Collapsed, it is
- * still a live badge with the number of active downloads rather than nothing.
+ * deliberate click for the current download run. Collapsed, it is still a
+ * live badge with the number of active downloads rather than nothing. Once
+ * the queue becomes idle, the next run starts expanded again.
  */
 export function DownloadPanel({
   items,
   onCollapsedChange,
 }: DownloadPanelProps) {
   const { t } = useTranslation()
-  const [collapsed, setCollapsed] = useState(readCollapsedPreference)
+  const [collapsed, setCollapsed] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [layout, setLayout] = useState<PanelLayout>({
     bottom: EDGE,
@@ -68,6 +56,17 @@ export function DownloadPanel({
 
   const count = items.length
   const visible = count > 0
+  const wasVisibleRef = useRef(visible)
+
+  // A collapse is intentional only for the current run. Reset at the next
+  // idle-to-active transition so the first text or image download is visible
+  // immediately, while another item joining the active queue stays collapsed.
+  // A layout effect prevents the old badge state from reaching the screen.
+  useLayoutEffect(() => {
+    const startsNewRun = visible && !wasVisibleRef.current
+    wasVisibleRef.current = visible
+    if (startsNewRun && collapsed) setCollapsed(false)
+  }, [visible, collapsed])
 
   // Keep clear of the composer, and follow it as it grows with typed text or
   // moves between the centred empty state and the bottom of a thread.
@@ -107,11 +106,6 @@ export function DownloadPanel({
   }, [visible, collapsed])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(COLLAPSED_STORAGE_KEY, String(collapsed))
-    } catch {
-      // Preference is a convenience; losing it must not break the panel.
-    }
     onCollapsedChange?.(collapsed)
   }, [collapsed, onCollapsedChange])
 
@@ -168,7 +162,7 @@ export function DownloadPanel({
           aria-expanded={false}
         >
           <DownloadIcon className="size-4 text-muted-foreground" />
-          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-semibold tabular-nums text-white">
+          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-semibold tabular-nums text-white">
             {count}
           </span>
         </Button>

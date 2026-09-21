@@ -12,6 +12,25 @@
 
 ## How to run reliably
 
+### Isolated QA/dev profile
+
+To check the first-run flow without reading or changing your usual profile,
+start the app with an absolute directory in `ATOMIC_CHAT_PROFILE_DIR`. Settings
+then live in `<profile>/settings.json` and data in `<profile>/data`; the legacy
+Atomic Chat/Jan directories are not used in this mode. The app hands
+`<profile>/data` to the core it starts (`--data-folder`).
+
+```bash
+ATOMIC_CHAT_PROFILE_DIR=/tmp/atomic-chat-clean-flow yarn dev
+```
+
+The CLI is the core's and does not read the variable: give it a folder of its
+own (it refuses the app's data folder), for example
+`bun run ../atomic-chat-core/src/cli/bin.ts --data-folder /tmp/atomic-chat-clean-cli --help`.
+
+The variable is meant for QA and development only. An empty or relative value,
+or one containing `..`, is ignored and the app uses the usual profile.
+
 ### One terminal, one process
 
 ```bash

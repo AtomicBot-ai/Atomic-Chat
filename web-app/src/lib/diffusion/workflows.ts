@@ -89,9 +89,8 @@ export const IMAGE_WORKFLOWS: readonly ImageWorkflowSpec[] = [
   },
 ] as const
 
-export const IMAGE_WORKFLOW_IDS: readonly ImageWorkflowId[] = IMAGE_WORKFLOWS.map(
-  (workflow) => workflow.id
-)
+export const IMAGE_WORKFLOW_IDS: readonly ImageWorkflowId[] =
+  IMAGE_WORKFLOWS.map((workflow) => workflow.id)
 
 /** Extra references a `reference` job may carry after the source. */
 export const MAX_EXTRA_REFERENCES = 3
@@ -113,7 +112,9 @@ export function isImageWorkflowId(value: unknown): value is ImageWorkflowId {
 }
 
 export function workflowSpec(id: ImageWorkflowId): ImageWorkflowSpec {
-  return IMAGE_WORKFLOWS.find((workflow) => workflow.id === id) ?? IMAGE_WORKFLOWS[0]
+  return (
+    IMAGE_WORKFLOWS.find((workflow) => workflow.id === id) ?? IMAGE_WORKFLOWS[0]
+  )
 }
 
 export function workflowPath(id: ImageWorkflowId): string {
@@ -129,20 +130,36 @@ export function isSourceImagePath(path: string): boolean {
 /**
  * Which workflows a catalog family can run on sd.cpp. Mirrors the plugin's
  * `session::workflows_for_family`, which is what actually accepts or rejects
- * a job — the two lists must stay identical. img2img and masks are generic
- * in sd.cpp, so every image family gets them; reference-guided generation
- * and instruction edits need a model trained on reference images, and only
- * FLUX.2 Klein is.
+ * a job — the two lists must stay identical. img2img and masks are generic in
+ * sd.cpp for the established base families; distilled Create-only models such
+ * as Krea 2 Turbo remain restricted to their verified workflow. Reference and
+ * instruction edits need a model trained on reference images. Qwen Image 2.1
+ * additionally needs its `--llm_vision` projector at runtime; the plugin
+ * removes those workflows from loaded capabilities when it is absent.
  */
 export function workflowsForFamily(family: string): ImageWorkflowId[] {
   switch (family) {
     case 'flux.2-klein':
-      return ['create', 'transform', 'inpaint', 'extend', 'upscale', 'reference', 'edit']
+      return [
+        'create',
+        'transform',
+        'inpaint',
+        'extend',
+        'upscale',
+        'reference',
+        'edit',
+      ]
+    case 'qwen-image-2.1':
+      return ['create', 'reference', 'edit']
+    case 'krea-2-turbo':
+      return ['create']
     case 'z-image':
-    case 'flux.1':
     case 'qwen-image':
       return ['create', 'transform', 'inpaint', 'extend', 'upscale']
     default:
+      if (family.startsWith('flux.1')) {
+        return ['create', 'transform', 'inpaint', 'extend', 'upscale']
+      }
       return ['create']
   }
 }

@@ -53,6 +53,45 @@ export interface CatalogModel {
 
 export type ModelCatalog = CatalogModel[]
 
+/**
+ * Why `pullModelWithMetadata` did not start a download. Returned, not thrown:
+ * most callers fire-and-forget the pull, and a refusal is not a failure to
+ * report — the choke point has already told the user and cleared the
+ * pre-download state it set.
+ */
+export interface DownloadRefusal {
+  kind: 'disk_full'
+  /** Bytes the drive would need free: the files plus the downloader's headroom. */
+  needed: number
+  /** Bytes the drive has free. */
+  available: number
+}
+
+/** Hugging Face's own orders for a listing (`sort=` on `/api/models`). */
+export type HuggingFaceFeedSort =
+  | 'trending'
+  | 'downloads'
+  | 'likes'
+  | 'lastModified'
+
+export type HuggingFaceFeedFormat = 'gguf' | 'mlx'
+
+export type HuggingFaceFeedParams = {
+  format: HuggingFaceFeedFormat
+  sort: HuggingFaceFeedSort
+  /** Optional Hugging Face full-text search, paginated with the same cursor. */
+  search?: string
+  /** Opaque cursor from the previous page's `nextCursor`. */
+  cursor?: string | null
+  limit?: number
+  hfToken?: string
+}
+
+export type HuggingFaceFeedPage = {
+  models: CatalogModel[]
+  nextCursor: string | null
+}
+
 // HuggingFace repository information
 export interface HuggingFaceRepo {
   id: string
@@ -127,8 +166,18 @@ export interface ModelsService {
   searchHuggingFaceCandidates(
     query: string,
     hfToken?: string,
-    limit?: number
+    limit?: number,
+    format?: HuggingFaceFeedFormat
   ): Promise<CatalogModel[]>
+  /**
+   * One page of Hugging Face's own listing of a format, in one of its sort
+   * orders — the Hub's long tail under the curated picks. Entries are
+   * lightweight (no quants: the list endpoint carries no file sizes); the
+   * page's `nextCursor` feeds the next call, `null` when the listing ends.
+   */
+  listHuggingFaceFeed(
+    params: HuggingFaceFeedParams
+  ): Promise<HuggingFaceFeedPage>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(
@@ -148,7 +197,7 @@ export interface ModelsService {
     hfToken?: string,
     skipVerification?: boolean,
     resume?: boolean
-  ): Promise<void>
+  ): Promise<DownloadRefusal | undefined>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string, provider?: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>

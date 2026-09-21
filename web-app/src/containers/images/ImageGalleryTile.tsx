@@ -57,7 +57,7 @@ export const ImageGalleryTile = memo(function ImageGalleryTile({
       // The open image is the one large above, so its tile carries no frame;
       // only a multi-selection is marked.
       className={cn(
-        'group relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-secondary outline-none transition-[box-shadow] hover:ring-2 hover:ring-border focus-visible:ring-2 focus-visible:ring-ring',
+        'group relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-secondary outline-none transition-[box-shadow] animate-in fade-in-0 zoom-in-95 duration-500 hover:ring-2 hover:ring-border focus-visible:ring-2 focus-visible:ring-ring',
         selected && 'ring-2 ring-primary/50'
       )}
     >

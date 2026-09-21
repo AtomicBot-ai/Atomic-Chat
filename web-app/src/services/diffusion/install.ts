@@ -27,6 +27,8 @@ import {
 } from '@/lib/diffusion/config'
 import { isArmArch } from '@/lib/hardware-tier'
 
+import { supportsDiffusionFamily } from './compatibility'
+
 import { BASELINE_SDCPP_MANIFEST } from '../sdcpp-manifest-baseline'
 import {
   backendKindOf,
@@ -269,6 +271,7 @@ const withHardTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> 
   })
 
 export type SdcppManifestFetchOptions = {
+  family?: string
   force?: boolean
   url?: string
   timeoutMs?: number
@@ -278,7 +281,7 @@ export const getBaselineSdcppManifest = (): SdcppManifest =>
   parseSdcppManifest(BASELINE_SDCPP_MANIFEST)
 
 /** Remote → cache → baseline; never throws. */
-export const resolveSdcppManifest = async (
+const resolveManifest = async (
   options: SdcppManifestFetchOptions = {}
 ): Promise<SdcppManifestResult> => {
   const {
@@ -325,6 +328,25 @@ export const resolveSdcppManifest = async (
       fetchedAt: null,
       error: message,
     }
+  }
+}
+
+/** A stale profile cache or remote manifest must not downgrade model support. */
+export const resolveSdcppManifest = async (
+  options: SdcppManifestFetchOptions = {}
+): Promise<SdcppManifestResult> => {
+  const result = await resolveManifest(options)
+  if (
+    !options.family ||
+    supportsDiffusionFamily(options.family, result.manifest.tag_name)
+  ) {
+    return result
+  }
+  return {
+    manifest: getBaselineSdcppManifest(),
+    source: 'baseline',
+    fetchedAt: null,
+    error: result.error,
   }
 }
 
@@ -554,6 +576,7 @@ async function retireOtherBackends(
 }
 
 export type EnsureDiffusionBackendOptions = {
+  family?: string
   onProgress?: (progress: { transferred: number; total: number }) => void
   /** Reinstall even when the selected backend is already on disk. */
   force?: boolean
@@ -568,7 +591,7 @@ export async function ensureDiffusionBackend(
 ): Promise<DiffusionBackendInstallRecord> {
   const hub = getServiceHub()
   const diffusion = hub.diffusion()
-  const { manifest } = await resolveSdcppManifest()
+  const { manifest } = await resolveSdcppManifest({ family: options.family })
   const host = await describeDiffusionHost()
   const backendId = selectBackendForHost(host, manifest)
   if (!backendId) {

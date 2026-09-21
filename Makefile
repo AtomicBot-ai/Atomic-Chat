@@ -337,7 +337,7 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-.PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
+.PHONY: test test-all test-local test-web test-layout test-extensions test-rust stub-resources \
 	typecheck verify-fast verify test-quality test-hardening-contracts \
 	test-telemetry-props test-coverage-critical capture-capabilities capture-hw-profile \
 	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
@@ -345,12 +345,20 @@ lint: install-and-build
 test-web:
 	yarn test
 
+# Real-browser layout gate: `*.layout.test.tsx` in headless Chromium with the
+# app's CSS and font, measuring rendered boxes (docs/ui-layout-rules.md).
+# Separate from test-web on purpose: jsdom has no layout engine.
+test-layout:
+	yarn workspace @janhq/web-app run test:layout
+
 test-extensions:
 	yarn --cwd extensions workspaces foreach -A \
+		--include '@janhq/assistant-extension' \
 		--include '@janhq/llamacpp-extension' \
 		--include '@janhq/llamacpp-upstream-extension' \
 		--include '@janhq/mlx-extension' \
 		--include '@janhq/download-extension' \
+		--include '@janhq/vector-db-extension' \
 		run test:run
 
 # Tauri validates bundle.resources and externalBin paths while compiling the

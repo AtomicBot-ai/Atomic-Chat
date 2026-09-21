@@ -6,7 +6,7 @@ use reqwest::Method;
 use serde_json::{json, Value};
 use url::Url;
 
-use super::http::request_guarded;
+use super::web::web_request;
 use super::web_search::WebSearchResult;
 
 const EXA_MCP_URL: &str = "https://mcp.exa.ai/mcp";
@@ -84,7 +84,10 @@ async fn call_tool(name: &str, arguments: Value) -> Result<String, ExaFailure> {
         ACCEPT,
         HeaderValue::from_static("application/json, text/event-stream"),
     );
-    let response = request_guarded(Method::POST, EXA_MCP_URL, headers, Some(body), EXA_TIMEOUT)
+    let url = EXA_MCP_URL.to_owned();
+    #[cfg(test)]
+    let url = super::web::exa_search_test_url().unwrap_or(url);
+    let response = web_request(Method::POST, &url, headers, Some(body), EXA_TIMEOUT)
         .await
         .map_err(|_| ExaFailure::new("transport_error"))?;
     if !response.status().is_success() {

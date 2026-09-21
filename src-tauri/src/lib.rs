@@ -150,6 +150,8 @@ pub fn run() {
         core::system::commands::configure_mimo,
         core::system::commands::configure_zed,
         core::system::commands::launch_zed,
+        core::system::commands::configure_zcode,
+        core::system::commands::launch_zcode,
         core::system::commands::configure_openclaw,
         core::system::commands::launch_openclaw_app,
         core::system::commands::configure_claude_code,
@@ -231,6 +233,7 @@ pub fn run() {
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
         core::downloads::commands::test_proxy_connection,
+        core::downloads::commands::get_download_free_space,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -322,6 +325,8 @@ pub fn run() {
         core::system::commands::configure_mimo,
         core::system::commands::configure_zed,
         core::system::commands::launch_zed,
+        core::system::commands::configure_zcode,
+        core::system::commands::launch_zcode,
         core::system::commands::configure_openclaw,
         core::system::commands::launch_openclaw_app,
         core::system::commands::configure_claude_code,
@@ -397,6 +402,7 @@ pub fn run() {
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
         core::downloads::commands::test_proxy_connection,
+        core::downloads::commands::get_download_free_space,
         // HTTP (bypasses tauri_plugin_http fetch interception).
         // Registered on mobile too: `providers/tauri.ts` routes EVERY provider's
         // model listing through `get_local_http`, with no platform branch, so

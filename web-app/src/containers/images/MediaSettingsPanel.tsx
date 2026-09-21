@@ -36,6 +36,7 @@ import { formatBytes } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
 import { findFamily, findQuant } from '@/services/diffusion-catalog-registry'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { ImageApiSettingsCard } from './ImageApiSettingsCard'
 
 const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
 
@@ -486,6 +487,8 @@ export function MediaSettingsPanel() {
           }
         />
       </Card>
+
+      <ImageApiSettingsCard />
     </div>
   )
 }

@@ -37,6 +37,7 @@
   "recents": "Recents",
   "hub": "Hub",
   "models": "Models",
+  "modelHub": "Model Hub",
   "images": "Images",
   "media": "Media",
   "launch": "Integrations",
@@ -167,13 +168,17 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "webSearchToggleTooltip": "Web search",
   "webSearchToggleEnabled": "Web search enabled",
   "webSearchToggleDisabled": "Web search disabled",
-  "webSearchToggleFailed": "Couldn't start web search ({{server}})",
+  "webSearchToggleConnecting": "Connecting web search…",
+  "webSearchToggleUnavailable": "Web search unavailable. Click to retry; if it still fails, check your search provider connection and MCP configuration.",
+  "webSearchTemporarilyUnavailable": "Web search is temporarily unavailable. Try again.",
   "reasoningToggleEnabled": "Reasoning enabled",
   "reasoningToggleDisabled": "Reasoning disabled",
   "reasoningEffort": {
     "title": "Effort",
+    "unavailable": "Unavailable for this model",
     "ariaLabel": "Thinking effort: {{level}}",
     "faster": "Faster",
     "smarter": "Smarter",
@@ -256,11 +261,17 @@
     }
   },
   "proactive": "Proactive",
-  "selectAModel": "Select a model",
+  "selectAModel": "Select Model",
   "changeModel": "Change model",
   "downloadModel": "Download a model",
   "noToolsAvailable": "No tools available",
   "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
+  "modelPicker": {
+    "downloadFromHuggingFace": "Download from Hugging Face",
+    "noRunnableModels": "No runnable models yet.",
+    "providerSettings": "Settings for {{provider}}",
+    "downloadSize": "Download {{size}}"
+  },
   "failedToLoadModels": "Failed to load models",
   "failedToLoadModelsTimeout": "Couldn't load models (timed out)",
   "retry": "Retry",
@@ -445,6 +456,8 @@
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
     "uploading": "Indexing…",
     "uploadingHint": "The first upload also downloads the embedding model. Progress is in the downloads panel.",
+    "preparingIndexModel": "Downloading the document index model",
+    "filesLoadFailed": "Couldn't load the project's files",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -543,6 +556,9 @@
       "title": "Download Cancelled",
       "description": "The download process was cancelled"
     },
+    "downloadResumed": {
+      "title": "Download resumed"
+    },
     "downloadFailed": {
       "title": "Download Failed",
       "description": "{{item}} download failed"
@@ -616,23 +632,27 @@
     },
     "downloadDiskFull": {
       "title": "Not enough disk space",
-      "description": "Free up space on the drive holding your Jan data folder, then start the download again."
+      "description": "Free up space on the drive holding your Atomic Chat data folder, then start the download again."
     },
     "downloadDiskPermission": {
       "title": "No permission to write the model",
-      "description": "The app cannot write to the Jan data folder. Check the folder permissions, or move the data folder somewhere writable."
+      "description": "The app cannot write to the Atomic Chat data folder. Check the folder permissions, or move the data folder somewhere writable."
     },
     "downloadDiskLocked": {
       "title": "The file is in use by another program",
-      "description": "Antivirus or backup software is holding the file while it is being written. Add the Jan data folder to its exclusions and retry."
+      "description": "Antivirus or backup software is holding the file while it is being written. Add the Atomic Chat data folder to its exclusions and retry."
     },
     "downloadDiskPathTooLong": {
       "title": "File path is too long",
-      "description": "Windows limits paths to 260 characters. Move the Jan data folder closer to the drive root and retry."
+      "description": "Windows limits paths to 260 characters. Move the Atomic Chat data folder closer to the drive root and retry."
     },
     "downloadDiskDeviceLost": {
       "title": "The drive is no longer available",
-      "description": "The external or network drive holding the Jan data folder disconnected. Reconnect it and resume the download."
+      "description": "The external or network drive holding the Atomic Chat data folder disconnected. Reconnect it and resume the download."
+    },
+    "downloadWontFit": {
+      "title": "This model won't fit on your disk",
+      "description": "{{model}} needs {{needed}} free and this drive has {{available}}. Pick a smaller model or free up space."
     },
     "downloadProxyUnreachable": {
       "title": "Could not reach the server through your proxy",
@@ -659,6 +679,12 @@
     "manage": "Manage connectors",
     "toolCount": "{{count}} tools",
     "toggleFailed": "Couldn't start {{server}}",
+    "starting": "Starting {{server}}",
+    "stopping": "Stopping {{server}}",
+    "connecting": "Connecting…",
+    "disconnecting": "Disconnecting…",
+    "ready": "{{server}} is ready",
+    "stopped": "{{server}} is off",
     "cost": "{{count}} tools · ≈{{tokens}} tokens",
     "costShare": "{{count}} tools · ≈{{tokens}} tokens ({{share}}% of context)",
     "heavy": "Heavy: these tool definitions alone take {{share}}% of the {{ctx}}-token context on every request.",
@@ -717,21 +743,13 @@
     "retry": "Try again"
   },
   "modelLoad": {
+    "starting": "Starting Model",
+    "ready": "Model ready",
+    "loadedIntoMemory": "Loaded into memory",
+    "loadingIntoMemory": "Loading into memory",
     "cancel": "Cancel",
     "cancelling": "Cancelling…",
     "dismiss": "Dismiss",
-    "stage": {
-      "preparing": "Getting the engine ready.",
-      "unloadingPrevious": "Unloading the previous model to free memory.",
-      "installingEngine": "Downloading the engine first. This happens once per engine version.",
-      "loadingWeights": "Loading the model into memory.",
-      "loadingCachedWeights": "Loading cached model into memory.",
-      "readingWeightsFromDisk": "Reading the model from disk. The first load after a restart takes longer.",
-      "startingServer": "Starting the local API server.",
-      "retry_ctx": "Not enough memory. Retrying with a smaller context.",
-      "retry_ngl": "Not enough GPU memory. Retrying on the CPU.",
-      "retry_fit_target": "Not enough memory. Retrying with more headroom."
-    },
     "indicator": {
       "loaded": "{{model}} is loaded",
       "unload": "Unload from memory",

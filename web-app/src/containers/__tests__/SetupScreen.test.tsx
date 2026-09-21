@@ -1,11 +1,30 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
+import { ONBOARDING_ROW_ACTION_CLASS } from '@/containers/RouteRow'
 import { localStorageKey } from '@/constants/localStorage'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
 import { toast } from 'sonner'
 import { events } from '@janhq/core'
+import { isOnboardingPending, resetForcedOnboardingRun } from '@/lib/onboarding'
 
 const mocks = vi.hoisted(() => {
   // Mirrors of the two persisted stores SetupScreen writes to, so tests can
@@ -22,6 +41,7 @@ const mocks = vi.hoisted(() => {
       leftPanel.open = value
     }),
     setOnboardingActive: vi.fn(),
+    deferModelSelection: vi.fn(),
     reminder,
     setReminderPending: vi.fn((value: boolean) => {
       reminder.pending = value
@@ -29,12 +49,20 @@ const mocks = vi.hoisted(() => {
     refreshRegistry: vi.fn(() => Promise.resolve()),
     refreshStaffPicks: vi.fn(() => Promise.resolve()),
     pullModelWithMetadata: vi.fn(() => Promise.resolve()),
+    // The real abort ends in `onFileDownloadStopped`, which the global
+    // download panel answers by dropping the id from the store. The panel is
+    // not rendered here, so the seed does that part itself.
+    abortDownload: vi.fn(async (id: string) => {
+      useDownloadStore.getState().removeLocalDownloadingModel(id)
+      useDownloadStore.getState().removeDownload(id)
+    }),
     // Recommendation list the picker renders; mutable so a test can offer a
     // downloadable model.
     recommended: [] as unknown[],
     // The Hub's curated picks, listed under the offer; mutable per test.
     staffPicks: [] as unknown[],
-    engine: { import: vi.fn() },
+    engine: { import: vi.fn(), load: vi.fn() },
+    startModel: vi.fn(),
     // Mutable so a test can move the machine to another rung of the ladder.
     // `profile` is what the "why this one" line reads its memory figure from.
     hardwareTier: {
@@ -53,6 +81,8 @@ const mocks = vi.hoisted(() => {
     // Live provider list, mutable so a test can seed cloud providers.
     modelProviderState: {
       providers: [] as ModelProvider[],
+      selectedProvider: '',
+      selectedModel: null as Model | null,
       getProviderByName: vi.fn(),
       selectModelProvider: vi.fn(),
       setProviders: vi.fn(),
@@ -71,9 +101,27 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
 }))
 
-vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
+// Keys render as keys, so the assertions below name what a row is rather
+// than how it is worded — except the copy tests, which flip `english` on and
+// read `setup:` keys back as the words the user sees.
+const locale = vi.hoisted(() => ({ english: false }))
+
+vi.mock('@/i18n/react-i18next-compat', async () => {
+  const en = (await import('@/locales/en/setup.json')).default
+  const t = (key: string) => {
+    if (!locale.english) return key
+    const [ns, path] = key.split(':')
+    if (ns !== 'setup' || !path) return key
+    const hit = path
+      .split('.')
+      .reduce<unknown>(
+        (node, part) => (node as Record<string, unknown> | undefined)?.[part],
+        en
+      )
+    return typeof hit === 'string' ? hit : key
+  }
+  return { useTranslation: () => ({ t }) }
+})
 
 vi.mock('@/hooks/useModelProvider', () => {
   const state = mocks.modelProviderState
@@ -103,18 +151,6 @@ vi.mock('@/hooks/useChatGptAuth', () => ({
     error: null,
     connect: vi.fn(),
     cancel: vi.fn(),
-  }),
-}))
-
-vi.mock('@/hooks/useDownloadStore', () => ({
-  useDownloadStore: () => ({
-    downloads: {},
-    localDownloadingModels: new Set(),
-    resumableDownloads: new Set(),
-    addLocalDownloadingModel: vi.fn(),
-    removeLocalDownloadingModel: vi.fn(),
-    markResumableDownload: vi.fn(),
-    clearResumableDownload: vi.fn(),
   }),
 }))
 
@@ -177,6 +213,7 @@ vi.mock('@/hooks/useModelLoad', () => {
   const useModelLoad = {
     getState: () => ({
       setOnboardingActive: mocks.setOnboardingActive,
+      deferModelSelection: mocks.deferModelSelection,
     }),
   }
   return { useModelLoad }
@@ -264,12 +301,23 @@ describe('SetupScreen', () => {
   }
 
   beforeEach(() => {
+    locale.english = false
     vi.clearAllMocks()
     localStorage.clear()
     seedServiceHub({
       models: {
         pullModelWithMetadata: mocks.pullModelWithMetadata,
+        abortDownload: mocks.abortDownload,
+        startModel: mocks.startModel,
       } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+    })
+    // The real store, reset: the rows read their Downloading state from it.
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+      downloadOriginByModelId: {},
+      downloadRequestOriginByModelId: {},
     })
     mocks.recommended = []
     mocks.staffPicks = []
@@ -286,6 +334,19 @@ describe('SetupScreen', () => {
     }
     mocks.hardwareTier.ready = true
     mocks.modelProviderState.providers = []
+    mocks.modelProviderState.selectedProvider = ''
+    mocks.modelProviderState.selectedModel = null
+    mocks.modelProviderState.selectModelProvider.mockImplementation(
+      (provider: string, id: string) => {
+        const state = mocks.modelProviderState
+        state.selectedProvider = provider
+        state.selectedModel =
+          state.providers
+            .find((p) => p.provider === provider)
+            ?.models.find((m) => m.id === id) ?? null
+        return state.selectedModel
+      }
+    )
     // Onboarding imports never settle by default, so a test can assert on the
     // in-flight state without racing the import event handler.
     mocks.engine.import.mockReturnValue(new Promise(() => {}))
@@ -395,9 +456,12 @@ describe('SetupScreen', () => {
       await finishLocalScan()
 
       expect(await screen.findByText('setup:welcomeTitle')).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: /setup:localStep\.run/ })
-      ).toBeInTheDocument()
+      const run = screen.getByRole('button', { name: /setup:localStep\.run/ })
+      expect(run).toBeInTheDocument()
+      // Its button stands in the same column as every Download and Browse
+      // under it, and carries no hidden width-reserving labels.
+      expect(run).toHaveClass(ONBOARDING_ROW_ACTION_CLASS)
+      expect(run).toHaveTextContent(/^setup:localStep\.run$/)
       unmount()
     })
   })
@@ -681,36 +745,74 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('holds the started download on screen for 3s before entering the chat', async () => {
+    const variantId = 'Qwen3.5-4B-Q4_K_M'
+
+    // What the library looks like once the download has landed: the local
+    // provider lists the model under the id the row tracks.
+    const installInLibrary = (id: string) => {
+      const provider = { provider: 'llamacpp-upstream', models: [{ id }] }
+      mocks.modelProviderState.providers = [provider as never]
+      mocks.modelProviderState.getProviderByName.mockImplementation(
+        (name: string) => (name === provider.provider ? provider : undefined)
+      )
+    }
+
+    afterEach(() => {
+      mocks.modelProviderState.getProviderByName.mockReset()
+    })
+
+    it('turns the button into a stable disabled Downloading… state', async () => {
       const { unmount } = await renderPicker()
+      const row = screen.getByTestId('setup-recommended-row')
+      expect(row.querySelector('p')).toBeEmptyDOMElement()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
 
       expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+      // The action slot shows status; cancellation stays in the download panel.
+      const downloading = screen.getByRole('button', {
+        name: 'setup:downloading',
+      })
+      expect(downloading).toHaveTextContent('setup:downloading')
+      expect(downloading).toBeDisabled()
+      expect(downloading.querySelector('svg')).toBeNull()
       expect(
-        screen.getByText('setup:downloadStartedOpening')
-      ).toBeInTheDocument()
+        screen.queryByRole('button', { name: /hub:download/ })
+      ).not.toBeInTheDocument()
+      // Nothing stacks under it and nothing sits beside it: no "starting"
+      // line, no handoff notice — the pill is the row's last child, alone in
+      // the button column, so the row is as tall and as wide as it was.
+      expect(
+        screen.queryByText('setup:downloadPreparing')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('setup:downloadStartedOpening')
+      ).not.toBeInTheDocument()
+      expect(row.children).toHaveLength(2)
+      expect(row.lastElementChild).toBe(downloading)
 
+      // Progress, once known, goes on the line under the name, so the
+      // button never moves.
       await act(async () => {
-        vi.advanceTimersByTime(2_999)
+        useDownloadStore
+          .getState()
+          .updateProgress(
+            variantId,
+            0.12,
+            variantId,
+            200 * 1024 ** 2,
+            1.6 * 1024 ** 3
+          )
       })
-      expect(mocks.navigate).not.toHaveBeenCalled()
-
-      await act(async () => {
-        vi.advanceTimersByTime(1)
-      })
-
-      expect(mocks.leftPanel.open).toBe(true)
-      expect(mocks.navigate.mock.calls).toHaveLength(1)
-      expect(mocks.navigate.mock.calls[0][0].search.threadModel.id).toBe(
-        'Qwen3.5-4B-Q4_K_M'
-      )
-      // A picked model is a finished setup — the reminder must stay disarmed.
-      expect(mocks.reminder.pending).toBe(false)
+      const progress = screen.getByText(/^12% · /)
+      expect(progress).toHaveAttribute('aria-live', 'polite')
+      expect(row.firstElementChild).toContainElement(progress)
+      expect(row.children).toHaveLength(2)
+      expect(row.lastElementChild).toBe(downloading)
       unmount()
     })
 
-    it('enters the chat exactly once, however long the download runs', async () => {
+    it('enters chat without selecting the model while the download continues globally', async () => {
       const { unmount } = await renderPicker()
 
       fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
@@ -718,12 +820,125 @@ describe('SetupScreen', () => {
         vi.advanceTimersByTime(30_000)
       })
 
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/',
+        replace: true,
+        search: {},
+      })
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(mocks.modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      expect(
+        useDownloadStore.getState().downloadRequestOriginByModelId[variantId]
+      ).toBe('standalone')
+      unmount()
+    })
+
+    it('does not reopen onboarding when the chat download is cancelled', async () => {
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      await act(async () => {
+        await mocks.abortDownload(variantId)
+      })
+
+      expect(mocks.abortDownload).toHaveBeenCalledWith(variantId)
+      expect(mocks.navigate).toHaveBeenCalledTimes(1)
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+      unmount()
+    })
+
+    it('does not navigate again when the model later lands in the library', async () => {
+      const { rerender, unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      await act(async () => {
+        vi.advanceTimersByTime(3_000)
+      })
+      expect(mocks.navigate).toHaveBeenCalledTimes(1)
+
+      // The bytes land: the panel drops the transfer, the provider lists it.
+      installInLibrary(variantId)
+      await act(async () => {
+        useDownloadStore.getState().removeLocalDownloadingModel(variantId)
+      })
+      rerender(<SetupScreen />)
+      await act(async () => {})
+
+      expect(mocks.leftPanel.open).toBe(true)
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toBeUndefined()
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(mocks.modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      // A picked model is a finished setup — the reminder must stay disarmed.
+      expect(mocks.reminder.pending).toBe(false)
+
+      // Once. Later renders with the model still in the library do nothing.
+      rerender(<SetupScreen />)
+      await act(async () => {})
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      unmount()
+    })
+
+    it('ignores the later import event after immediate download handoff', async () => {
+      seedServiceHub({
+        models: {
+          pullModelWithMetadata: mocks.pullModelWithMetadata,
+          abortDownload: mocks.abortDownload,
+        } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+        providers: {
+          getProviders: vi.fn().mockResolvedValue([]),
+        } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+      })
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      const onImported = vi
+        .mocked(events.on)
+        .mock.calls.find(([name]) => name === 'onModelImported')?.[1] as
+        | ((payload: { modelId: string }) => void)
+        | undefined
+      expect(onImported).toBeDefined()
+      await act(async () => {
+        onImported!({ modelId: variantId })
+      })
+
+      // Navigation happens on click; the later import only updates the library
+      // through the root DataProvider and must not create a second handoff.
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+      expect(mocks.navigate.mock.calls[0][0].search.threadModel).toBeUndefined()
+      expect(mocks.modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      // Reported as the download exit it is, not as an import of a model
+      // another app left on disk.
+      expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
+        'onboarding_completed',
+        expect.objectContaining({ exit_path: 'download_started' })
+      )
+      expect(toast.success).not.toHaveBeenCalledWith(
+        'common:toast.downloadAndVerificationComplete.title',
+        expect.anything()
+      )
+      unmount()
+    })
+
+    it('lets the download handoff win if Skip is clicked after it', async () => {
+      const { rerender, unmount } = await renderPicker()
+
+      fireEvent.click(screen.getByRole('button', { name: /hub:download/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'setup:skip' }))
+      expect(mocks.navigate.mock.calls).toHaveLength(1)
+
+      installInLibrary(variantId)
+      rerender(<SetupScreen />)
+      await act(async () => {})
+
       expect(mocks.navigate.mock.calls).toHaveLength(1)
       expect(
-        JSON.parse(localStorage.getItem(localStorageKey.lastUsedModel) ?? '{}')
-          .model
-      ).toBe('Qwen3.5-4B-Q4_K_M')
-      expect(mocks.reminder.pending).toBe(false)
+        mocks.navigate.mock.calls[0][0].search?.threadModel
+      ).toBeUndefined()
       unmount()
     })
   })
@@ -815,6 +1030,25 @@ describe('SetupScreen', () => {
         icon: 'nvidia',
       }
     )
+    // A pick whose catalog card has not resolved: no size, no fit, and a
+    // button that cannot start anything yet.
+    const unresolved = {
+      pick: {
+        model_name: 'unsloth/DeepSeek-V4-Flash-GGUF',
+        title: 'DeepSeek V4 Flash',
+        format: 'gguf',
+      },
+      model: null,
+    }
+    // The ChatGPT subscription, offered but not yet connected.
+    const subscriptionProvider = {
+      active: true,
+      provider: 'chatgpt',
+      api_key: '',
+      base_url: 'https://chatgpt.com/backend-api/codex',
+      settings: [],
+      models: [],
+    }
 
     const renderPicker = async () => {
       mocks.scanLocalModels.mockResolvedValue([])
@@ -831,6 +1065,66 @@ describe('SetupScreen', () => {
       mocks.staffPicks = [gemma, nemotron]
     })
 
+    it('uses the lead model staff-pick summary and keeps size outside the action', async () => {
+      locale.english = true
+      mocks.staffPicks = [
+        staffPick('AtomicChat/Qwen3.5-4B-GGUF', {
+          title: 'Qwen3.5 4B',
+          size: '2.52 GB',
+          summary: 'Compact Qwen for coding and everyday questions.',
+          icon: 'qwen',
+        }),
+      ]
+      const { unmount } = await renderPicker()
+      const row = screen.getAllByTestId('setup-recommended-row')[0]
+      expect(row).not.toHaveTextContent('Best fit for your device')
+      expect(row.querySelector('p')).toHaveTextContent(
+        'Compact Qwen for coding and everyday questions.'
+      )
+      expect(
+        within(row).getByRole('button', { name: /Good fit/ })
+      ).toHaveTextContent('Good fit')
+      expect(downloadButtons()[0]).toHaveTextContent(/^hub:download$/)
+      expect(row.querySelector('h2')?.parentElement).toHaveTextContent('2.5 GB')
+      unmount()
+    })
+
+    it('uses the catalog summary for the lead model when available', async () => {
+      mocks.recommended = [
+        {
+          ...ladderModel,
+          model: {
+            ...ladderModel.model,
+            description: 'A compact model for coding and everyday questions.',
+          },
+        },
+      ]
+      const { unmount } = await renderPicker()
+      expect(
+        screen.getAllByTestId('setup-recommended-row')[0].querySelector('p')
+      ).toHaveTextContent('A compact model for coding and everyday questions.')
+      unmount()
+    })
+
+    it('never exposes a generated Hugging Face tag dump as row copy', async () => {
+      locale.english = true
+      mocks.recommended = [
+        {
+          ...ladderModel,
+          model: {
+            ...ladderModel.model,
+            description:
+              '**Tags**: gguf, atomic-chat, qwen3.6, qwen, llama.cpp, quantized',
+          },
+        },
+      ]
+      const { unmount } = await renderPicker()
+      const row = screen.getAllByTestId('setup-recommended-row')[0]
+      expect(row).not.toHaveTextContent('**Tags**')
+      expect(row.querySelector('p')).toBeEmptyDOMElement()
+      unmount()
+    })
+
     it('leads with the offer and lists the Hub picks under it, plainly secondary', async () => {
       // The offer alone (d29b99b85) left a user who wanted anything else with
       // Skip and an empty chat. The Hub's picks come back under it — but as
@@ -838,11 +1132,13 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
-      // One heading over one list; one badge, on the offer; the offer's
+      // One heading over one list; the offer's
       // button is the only primary one, but no taller than the rest — a
       // bigger pill broke the column of buttons it sits in.
       expect(screen.getAllByText('setup:recommend.title')).toHaveLength(1)
-      expect(screen.getAllByText('setup:recommend.badge')).toHaveLength(1)
+      expect(
+        screen.queryByText('setup:recommend.badge')
+      ).not.toBeInTheDocument()
       const buttons = downloadButtons()
       expect(buttons).toHaveLength(3)
       expect(buttons[0]).toHaveAttribute('data-variant', 'default')
@@ -970,9 +1266,15 @@ describe('SetupScreen', () => {
         expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
           'gemma-4-12B-it-GGUF-Q4_K_M'
         )
+        // That row alone turns into the Downloading… pill; the offer's
+        // button stays, so the user can still change their mind.
         expect(
-          screen.getByText('setup:downloadStartedOpening')
-        ).toBeInTheDocument()
+          screen.getByRole('button', { name: 'setup:downloading' })
+        ).toHaveTextContent('setup:downloading')
+        expect(downloadButtons()).toHaveLength(2)
+        expect(
+          screen.queryByText('setup:downloadStartedOpening')
+        ).not.toBeInTheDocument()
         // Position 1: the row after the offer, the same index its impression
         // carried.
         expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
@@ -984,10 +1286,11 @@ describe('SetupScreen', () => {
           vi.advanceTimersByTime(3_000)
         })
 
-        expect(mocks.navigate.mock.calls).toHaveLength(1)
-        expect(mocks.navigate.mock.calls[0][0].search.threadModel.id).toBe(
-          'gemma-4-12B-it-GGUF-Q4_K_M'
-        )
+        expect(mocks.navigate).toHaveBeenCalledWith({
+          to: '/',
+          replace: true,
+          search: {},
+        })
         unmount()
       } finally {
         vi.useRealTimers()
@@ -1032,14 +1335,19 @@ describe('SetupScreen', () => {
       rerender(<SetupScreen />)
       await act(async () => {})
 
+      // A placeholder cannot be judged, so it waits at the bottom; 697 MB on
+      // an 8 GiB card fits, so the resolved card moves up above the two
+      // yellow rows — which are reported again at their new index.
       expect(shown().map((props) => [props.position, props.section])).toEqual([
+        [1, 'pending'],
+        [2, 'pending'],
         [3, 'pending'],
       ])
 
       // Painting the same list again is not a new impression.
       rerender(<SetupScreen />)
       await act(async () => {})
-      expect(shown()).toHaveLength(1)
+      expect(shown()).toHaveLength(3)
       unmount()
     })
 
@@ -1091,17 +1399,14 @@ describe('SetupScreen', () => {
       unmount()
     })
 
-    it('says why this model, in terms of the memory it will live in', async () => {
-      // "Recommended" on its own is not a reason. The badge's tooltip names
-      // the pool the weights go into, because 8 GB of VRAM and 8 GB of unified
-      // memory are not the same 8 GB. It is not a line under the name: the
-      // offer's row carries the badge there instead.
+    it('shows memory status without a second recommendation badge', async () => {
+      // The lead row has the same plain memory badge as the other rows.
       const { unmount } = await renderPicker()
 
       // 2.52 GB against an 8 GiB card is under half the budget.
       expect(
-        screen.getByTitle(/setup:recommend\.whyComfortable/)
-      ).toHaveTextContent('setup:recommend.badge')
+        screen.getAllByRole('button', { name: /setup:recommend\.fitTipOk/ })[0]
+      ).toHaveAttribute('data-fit', 'ok')
       expect(
         screen.queryByText(/setup:recommend\.whyComfortable/)
       ).not.toBeInTheDocument()
@@ -1123,16 +1428,16 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(
-        screen.getByTitle(/setup:recommend\.whySpills/)
+        screen.getAllByRole('button', {
+          name: /setup:recommend\.fitTipWarn/,
+        })[0]
       ).toBeInTheDocument()
       expect(downloadButtons()[0]).toBeEnabled()
       unmount()
     })
 
-    it('explains a CPU-only machine by its CPU, not by its RAM', async () => {
-      // The old rule read "x86 without a GPU → low spec" and picked by RAM,
-      // which is how a 128 GiB workstation got an 8 GiB laptop's advice. What
-      // binds here is throughput, and the line has to say so.
+    it('shows the memory badge on a CPU-only machine', async () => {
+      // Memory status remains meaningful even without a GPU.
       mocks.hardwareTier.tier = 'cpu_only'
       mocks.hardwareTier.profile = {
         tier: 'cpu_only',
@@ -1145,8 +1450,27 @@ describe('SetupScreen', () => {
       const { unmount } = await renderPicker()
 
       expect(
-        screen.getByTitle(/setup:recommend\.whyCpuOnly/)
+        screen.getAllByRole('button', { name: /setup:recommend\.fitTipOk/ })[0]
       ).toBeInTheDocument()
+      unmount()
+    })
+
+    it('offers the rest of Hugging Face as a row that leaves for the Hub', async () => {
+      const { unmount } = await renderPicker()
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: /setup:cloudStep\.huggingFaceTrigger/,
+        })
+      )
+
+      // Onboarding is done — the Hub takes over, and the composer's widget
+      // asks again if the user comes back empty-handed.
+      expect(localStorage.getItem('setup-completed')).toBe('true')
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: '/hub/',
+        replace: true,
+      })
       unmount()
     })
 
@@ -1185,6 +1509,604 @@ describe('SetupScreen', () => {
       ).toBeInTheDocument()
       unmount()
     })
+
+    describe('in the words the user reads', () => {
+      // A hint is one clamped line. Under the 520 px onboarding column the
+      // card leaves it about 260 px beside the mark, the gaps and the
+      // width-reserving button — some 40 characters of 12 px Inter. The old
+      // provider hint, 52 characters, ended in an ellipsis.
+      const HINT_BUDGET = 40
+
+      const renderRoutes = async () => {
+        mocks.modelProviderState.providers = [
+          {
+            active: true,
+            provider: 'chatgpt',
+            api_key: '',
+            base_url: 'https://chatgpt.com/backend-api/codex',
+            settings: [],
+            models: [],
+          },
+          {
+            active: true,
+            provider: 'openai',
+            api_key: '',
+            base_url: 'https://api.openai.com/v1',
+            settings: [
+              {
+                key: 'api-key',
+                title: 'API Key',
+                description: '',
+                controller_type: 'input',
+                controller_props: { value: '' },
+              },
+            ],
+            models: [{ id: 'gpt-5.5' }],
+          },
+        ] as unknown as ModelProvider[]
+        return renderPicker()
+      }
+
+      beforeEach(() => {
+        locale.english = true
+      })
+
+      afterEach(() => {
+        locale.english = false
+        ;(globalThis as Record<string, unknown>).IS_MACOS = false
+      })
+
+      it('leads the Hugging Face row with the name and keeps its line plain', async () => {
+        const { unmount } = await renderRoutes()
+        const row = screen.getByTestId('setup-browse-hub')
+
+        // "Hugging Face" is what the eye scans for, so the title opens with it.
+        expect(within(row).getByText(/^Hugging Face/)).toHaveTextContent(
+          'Hugging Face models'
+        )
+        // Plain words: no GGUF, no MLX, nothing to know before pressing Browse.
+        expect(within(row).getByText('Add any model')).toBeInTheDocument()
+        expect(row).not.toHaveTextContent(/GGUF|MLX/)
+        // The button shows the verb; assistive tech hears the whole action.
+        expect(
+          within(row).getByRole('button', {
+            name: 'Browse Hugging Face models',
+          })
+        ).toBeInTheDocument()
+        unmount()
+      })
+
+      it('keeps the Hugging Face line plain on macOS too, where MLX builds also run', async () => {
+        ;(globalThis as Record<string, unknown>).IS_MACOS = true
+        const { unmount } = await renderRoutes()
+        const row = screen.getByTestId('setup-browse-hub')
+
+        expect(within(row).getByText('Add any model')).toBeInTheDocument()
+        expect(row).not.toHaveTextContent(/GGUF|MLX/)
+        unmount()
+      })
+
+      it('names the cloud providers on one short line, like every hint in the list', async () => {
+        const { unmount } = await renderRoutes()
+
+        expect(screen.getByText('Cloud provider')).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: 'Add a cloud provider' })
+        ).toBeInTheDocument()
+        expect(screen.getByText('ChatGPT subscription')).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: 'Add a cloud provider' })
+        ).toHaveTextContent('Add API Key')
+        expect(
+          screen.getByRole('button', { name: 'Connect ChatGPT subscription' })
+        ).toBeInTheDocument()
+
+        for (const hint of [
+          'Add any model',
+          'Sign in, no API key needed',
+          'OpenRouter, Anthropic, OpenAI, and more',
+        ]) {
+          const line = screen.getByText(hint)
+          expect(line.textContent?.length).toBeLessThanOrEqual(HINT_BUDGET)
+        }
+        unmount()
+      })
+    })
+
+    describe('row layout', () => {
+      // What Danny saw on a 64 GB M5 Max: fit marks drifting out of line
+      // from row to row, a size hanging off the name, buttons padded to the
+      // width of "Downloading…", and a progress readout shoving the button
+      // aside. Every row is now mark · name + badge · one line · one button,
+      // and the buttons of every list on the screen stand in one column.
+      it('puts the size after the badge and keeps the action label Download', async () => {
+        mocks.staffPicks = [gemma, nemotron, unresolved]
+        const { unmount } = await renderPicker()
+
+        const headings = screen.getAllByRole('heading', { level: 2 })
+        expect(headings.map((heading) => heading.textContent)).toEqual([
+          'Qwen3.5 4B',
+          'Gemma 4 12B',
+          'Nemotron 3.5 Lightning',
+          'DeepSeek V4 Flash',
+        ])
+        // The verb and the size, nothing hidden for width; a row whose size
+        // is unknown says Download alone.
+        const buttons = downloadButtons()
+        expect(buttons.map((button) => button.textContent)).toEqual([
+          'hub:download',
+          'hub:download',
+          'hub:download',
+          'hub:download',
+        ])
+        expect(buttons[3]).toBeDisabled()
+        expect(
+          headings
+            .slice(0, 3)
+            .map(
+              (heading) => heading.parentElement?.lastElementChild?.textContent
+            )
+        ).toEqual(['2.5 GB', '7.3 GB', '19.7 GB'])
+        unmount()
+      })
+
+      it('holds one button per row while a pick downloads, with the readout on the summary line', async () => {
+        const { unmount } = await renderPicker()
+        const row = screen.getAllByTestId('setup-recommended-row')[1]
+        const summary = 'Mid-size Gemma 4 with vision and long-context support.'
+        expect(row).toHaveTextContent(summary)
+
+        fireEvent.click(
+          within(row).getByRole('button', { name: /hub:download/ })
+        )
+
+        const downloading = within(row).getByRole('button', {
+          name: 'setup:downloading',
+        })
+        expect(row.children).toHaveLength(2)
+        expect(row.lastElementChild).toBe(downloading)
+        await act(async () => {
+          useDownloadStore
+            .getState()
+            .updateProgress(
+              'gemma-4-12B-it-GGUF-Q4_K_M',
+              0.12,
+              'gemma-4-12B-it-GGUF-Q4_K_M',
+              200 * 1024 ** 2,
+              1.6 * 1024 ** 3
+            )
+        })
+        // The readout takes the summary's line rather than adding one or
+        // sitting beside the button.
+        const readout = within(row).getByText(/^12% · /)
+        expect(readout).toHaveAttribute('aria-live', 'polite')
+        expect(row.firstElementChild).toContainElement(readout)
+        expect(row).not.toHaveTextContent(summary)
+        expect(row.children).toHaveLength(2)
+        expect(row.lastElementChild).toBe(downloading)
+
+        // Cancelled: the summary is back under the name, the Download button
+        // back in its place.
+        await act(async () => {
+          await mocks.abortDownload('gemma-4-12B-it-GGUF-Q4_K_M')
+        })
+        expect(row).toHaveTextContent(summary)
+        expect(within(row).queryByText(/^12% · /)).not.toBeInTheDocument()
+        expect(row.lastElementChild).toBe(
+          within(row).getByRole('button', { name: /hub:download/ })
+        )
+        unmount()
+      })
+
+      it('draws every action button in one column, without ghost labels', async () => {
+        mocks.modelProviderState.providers = [
+          subscriptionProvider,
+        ] as unknown as ModelProvider[]
+        const { unmount } = await renderPicker()
+
+        const browse = screen.getByRole('button', {
+          name: /setup:cloudStep\.huggingFaceTrigger/,
+        })
+        const connect = screen.getByRole('button', {
+          name: /setup:cloudStep\.subscriptionTrigger/,
+        })
+        for (const button of [...downloadButtons(), browse, connect]) {
+          expect(button).toHaveClass(ONBOARDING_ROW_ACTION_CLASS)
+        }
+        // A route button shows its verb and nothing else: no invisible copy
+        // of every other label padding it out.
+        expect(browse).toHaveTextContent(/^setup:cloudStep\.browse$/)
+        expect(connect).toHaveTextContent(/^setup:cloudStep\.connect$/)
+        // And the lists have room for a name, badge and one compact action
+        // column; sizes belong beside the model, never inside the button.
+        expect(
+          document.querySelector('[class~="max-w-[640px]"]')
+        ).not.toBeNull()
+        unmount()
+      })
+
+      it('draws the route marks at the size of the model logos', async () => {
+        mocks.modelProviderState.providers = [
+          subscriptionProvider,
+        ] as unknown as ModelProvider[]
+        const { unmount } = await renderPicker()
+
+        // jsdom lays nothing out; the classes are what it can see of a size.
+        // A model row's mark is 32 px. A route row's circle is 32 px too,
+        // filled by both glyphs and images.
+        const hfMark = screen
+          .getByTestId('setup-browse-hub')
+          .querySelector('img')
+        expect(hfMark?.parentElement).toHaveClass('size-8 [&>img]:size-full')
+        const subscriptionRow = screen.getByRole('button', {
+          name: /setup:cloudStep\.subscriptionTrigger/,
+        }).parentElement
+        const chatGptMark = subscriptionRow?.querySelector('svg')
+        expect(chatGptMark?.parentElement).toHaveClass(
+          'size-8 [&>svg]:size-full'
+        )
+        unmount()
+      })
+    })
+
+    describe('fit indicator', () => {
+      // An 18 GiB Mac: Metal's 85 % ceiling is a hard one, so a model past it
+      // will not load at all, not merely run slowly.
+      const unifiedMac = {
+        tier: 'unified_16',
+        memoryKind: 'unified',
+        budgetMib: 18 * 1024,
+        systemRamMib: 18 * 1024,
+        vramMib: 18 * 1024,
+        hardCeiling: true,
+      }
+      const fitMarks = () =>
+        screen.queryAllByRole('button', { name: /setup:recommend\.fit/ })
+
+      // Radix positions an open tooltip with a ResizeObserver jsdom lacks.
+      beforeAll(() => {
+        vi.stubGlobal(
+          'ResizeObserver',
+          class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+          }
+        )
+      })
+      afterAll(() => {
+        vi.unstubAllGlobals()
+      })
+
+      it('marks each row with how it fits this machine, and says why on the mark', async () => {
+        // The one badge said why the offer fits; every other row left the
+        // user to work out from a size whether it would run. Now each row
+        // wears a mark whose name is the same sentence the badge carries —
+        // and a row whose size is unknown wears none: "we don't know" is
+        // not a warning.
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [gemma, nemotron, unresolved]
+        const { unmount } = await renderPicker()
+
+        const marks = fitMarks()
+        expect(marks).toHaveLength(3)
+        // 2.52 GB and 7.3 GB on 18 GiB: under half the pool.
+        expect(marks[0]).toHaveAttribute('data-fit', 'ok')
+        expect(marks[0]).toHaveAccessibleName(
+          /setup:recommend\.fitOk.*setup:recommend\.fitTipOk/
+        )
+        expect(marks[1]).toHaveAttribute('data-fit', 'ok')
+        // 19.7 GB will not load on an 18 GiB Mac.
+        expect(marks[2]).toHaveAttribute('data-fit', 'no')
+        expect(marks[2]).toHaveAccessibleName(
+          /setup:recommend\.fitNo.*setup:recommend\.fitTipNo/
+        )
+        // Every mark sits on the name side of its row, not in the button
+        // column, and the unresolved row has none.
+        const rows = screen.getAllByRole('heading', { level: 2 })
+        expect(rows).toHaveLength(4)
+        marks.forEach((mark, index) => {
+          expect(rows[index].parentElement).toContainElement(mark)
+        })
+        expect(rows[3].parentElement?.querySelector('[data-fit]')).toBeNull()
+        unmount()
+      })
+
+      it('paints a model that overshoots a card yellow, not red', async () => {
+        // On Windows/Linux llama.cpp spills into system RAM: slower, but it
+        // runs. Yellow for both "tight" and "spills" — one warning colour,
+        // with the sentence telling the two apart.
+        mocks.staffPicks = [gemma, nemotron]
+        const { unmount } = await renderPicker()
+
+        const marks = fitMarks()
+        // 7.3 GB on an 8 GiB card: fits, with little room.
+        expect(marks[1]).toHaveAttribute('data-fit', 'warn')
+        expect(marks[1]).toHaveTextContent('setup:recommend.fitBadgeWarn')
+        expect(marks[1]).toHaveAccessibleName(
+          /setup:recommend\.fitWarn.*setup:recommend\.fitTipWarn/
+        )
+        // 19.7 GB on an 8 GiB card: spills, still runs.
+        expect(marks[2]).toHaveAttribute('data-fit', 'warn')
+        expect(marks[2]).toHaveAccessibleName(
+          /setup:recommend\.fitWarn.*setup:recommend\.fitTipWarn/
+        )
+        unmount()
+      })
+
+      it('says the verdict in a word on the name line, never under it', async () => {
+        // The circled glyph drifted out of line from row to row and said
+        // nothing without a hover. A verdict does — Good fit, Might fit, Won't fit —
+        // beside the name on the name's own line, where the name truncates
+        // before the badge wraps.
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [gemma, nemotron]
+        const { unmount } = await renderPicker()
+
+        const marks = fitMarks()
+        expect(marks.map((mark) => mark.textContent)).toEqual([
+          'setup:recommend.fitBadgeOk',
+          'setup:recommend.fitBadgeOk',
+          'setup:recommend.fitBadgeNo',
+        ])
+        // The word is what the eye gets; assistive tech still gets the level
+        // and the reason, and the tooltip is unchanged.
+        expect(marks[2]).toHaveAccessibleName(
+          /setup:recommend\.fitNo.*setup:recommend\.fitTipNo/
+        )
+        const headings = screen.getAllByRole('heading', { level: 2 })
+        marks.forEach((mark, index) => {
+          const line = headings[index].parentElement as HTMLElement
+          expect(mark.parentElement).toBe(line)
+          expect(line).not.toHaveClass('flex-wrap')
+          expect(headings[index]).toHaveClass('truncate')
+        })
+        unmount()
+      })
+
+      it('shows no mark at all when the machine has not been measured', async () => {
+        mocks.hardwareTier.profile = null
+        mocks.staffPicks = [gemma, nemotron]
+        const { unmount } = await renderPicker()
+
+        expect(screen.getByText(/Qwen3\.5 4B/)).toBeInTheDocument()
+        expect(fitMarks()).toHaveLength(0)
+        unmount()
+      })
+
+      it('judges a CPU-only machine by its memory', async () => {
+        // The badge explains the offer by the constraint that binds — CPU
+        // throughput. The mark is a memory fit and says so in memory terms,
+        // because on this machine that is what it measured.
+        mocks.hardwareTier.tier = 'cpu_only'
+        mocks.hardwareTier.profile = {
+          tier: 'cpu_only',
+          memoryKind: 'system',
+          budgetMib: 128 * 1024,
+          systemRamMib: 128 * 1024,
+          vramMib: 0,
+          hardCeiling: false,
+        }
+        const { unmount } = await renderPicker()
+
+        expect(
+          screen.getAllByRole('button', {
+            name: /setup:recommend\.fitTipOk/,
+          })[0]
+        ).toBeInTheDocument()
+        expect(fitMarks()[0]).toHaveAccessibleName(/setup:recommend\.fitTipOk/)
+        unmount()
+      })
+
+      it('lists the picks by fit — green, yellow, red, unknown — with the offer still first', async () => {
+        // The Hub's order put a 20 GB model above a 7 GB one on a machine
+        // that can only run the second. Within a colour the publisher deal
+        // still applies; across colours it does not reorder.
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [
+          unresolved,
+          nemotron,
+          staffPick('AtomicChat/Qwen3.6-27B-GGUF', {
+            title: 'Qwen3.6 27B',
+            size: '14.0 GB',
+            icon: 'qwen',
+          }),
+          gemma,
+        ]
+        const { unmount } = await renderPicker()
+
+        const names = screen
+          .getAllByRole('heading', { level: 2 })
+          .map((heading) => heading.textContent?.replace(/ ·.*$/, '').trim())
+        expect(names).toEqual([
+          'Qwen3.5 4B',
+          'Gemma 4 12B',
+          'Qwen3.6 27B',
+          'Nemotron 3.5 Lightning',
+          'DeepSeek V4 Flash',
+        ])
+        expect(fitMarks().map((mark) => mark.getAttribute('data-fit'))).toEqual(
+          ['ok', 'ok', 'warn', 'no']
+        )
+        unmount()
+      })
+
+      it.each([
+        ['ok', 'Good fit', 'Full offload likely possible on your system.'],
+        [
+          'warn',
+          'Might fit',
+          'Within the last GB of VRAM headroom, so loading can fail if other apps are using GPU memory.',
+        ],
+        [
+          'no',
+          'Won’t fit',
+          'Exceeds combined VRAM and system RAM budget.',
+        ],
+      ])(
+        'exposes the %s memory sentence by keyboard',
+        async (level, label, tip) => {
+          locale.english = true
+          mocks.hardwareTier.profile = { ...unifiedMac, budgetMib: 10 * 1024 }
+          const { unmount } = await renderPicker()
+          const mark = screen.getByRole('button', { name: `${label}. ${tip}` })
+          expect(mark).toHaveAttribute('data-fit', level)
+          expect(mark).toHaveTextContent(label)
+          act(() => mark.focus())
+          expect(mark).toHaveFocus()
+          expect(await screen.findByRole('tooltip')).toHaveTextContent(tip)
+          unmount()
+        }
+      )
+
+      it('opens the reason on keyboard focus, not only under the pointer', async () => {
+        mocks.staffPicks = [gemma]
+        const { unmount } = await renderPicker()
+
+        const [mark] = fitMarks()
+        act(() => mark.focus())
+        expect(mark).toHaveFocus()
+        const tip = await screen.findByRole('tooltip')
+        expect(tip).toHaveTextContent('setup:recommend.fitTipOk')
+        unmount()
+      })
+    })
+
+    describe("a download that won't fit", () => {
+      // The 18 GiB Mac again: Nemotron at 19.7 GB is past Metal's ceiling
+      // and wears the red mark; Gemma at 7.3 GB fits.
+      const unifiedMac = {
+        tier: 'unified_16',
+        memoryKind: 'unified',
+        budgetMib: 18 * 1024,
+        systemRamMib: 18 * 1024,
+        vramMib: 18 * 1024,
+        hardCeiling: true,
+      }
+      const nemotronVariant =
+        'NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF-Q4_K_M'
+
+      beforeEach(() => {
+        mocks.hardwareTier.tier = 'unified_16'
+        mocks.hardwareTier.profile = unifiedMac
+        mocks.staffPicks = [gemma, nemotron]
+      })
+
+      const expectNothingStarted = () => {
+        expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+        expect(useDownloadStore.getState().localDownloadingModels.size).toBe(0)
+      }
+
+      it("asks before downloading a red row, and says why in the machine's own figures", async () => {
+        // Danny clicked Download on a red row of a 64 GB M5 Max and the
+        // transfer simply began: nothing said the file would never load.
+        const { unmount } = await renderPicker()
+        // Offer, Gemma, Nemotron — the red one is last.
+        fireEvent.click(downloadButtons()[2])
+
+        const dialog = screen.getByRole('dialog')
+        expect(dialog).toHaveTextContent('setup:wontFitDialog.title')
+        expect(dialog).toHaveTextContent('Nemotron 3.5 Lightning')
+        expect(dialog).toHaveTextContent('setup:recommend.whyWontLoad')
+        expect(dialog).toHaveTextContent('setup:wontFitDialog.body')
+        // Cancel is the default answer: Enter does the safe thing.
+        expect(
+          within(dialog).getByRole('button', { name: 'common:cancel' })
+        ).toHaveFocus()
+        expectNothingStarted()
+        unmount()
+      })
+
+      it('starts the download, as before, once the user says so anyway', async () => {
+        const { unmount } = await renderPicker()
+        fireEvent.click(downloadButtons()[2])
+
+        fireEvent.click(
+          screen.getByRole('button', { name: 'setup:wontFitDialog.confirm' })
+        )
+
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        )
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          nemotronVariant
+        )
+        // The row reads Downloading… as a green row's would; the other two
+        // still offer.
+        expect(
+          screen.getByRole('button', { name: 'setup:downloading' })
+        ).toHaveTextContent('setup:downloading')
+        expect(downloadButtons()).toHaveLength(2)
+        unmount()
+      })
+
+      it('leaves the row as it was when the user cancels', async () => {
+        const { unmount } = await renderPicker()
+        fireEvent.click(downloadButtons()[2])
+
+        fireEvent.click(screen.getByRole('button', { name: 'common:cancel' }))
+
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        )
+        expectNothingStarted()
+        expect(downloadButtons()).toHaveLength(3)
+        expect(
+          screen.queryByRole('button', { name: 'setup:downloading' })
+        ).not.toBeInTheDocument()
+        unmount()
+      })
+
+      it('starts a row that fits at once, with no question', async () => {
+        const { unmount } = await renderPicker()
+        // Gemma, 7.3 GB on 18 GiB: green.
+        fireEvent.click(downloadButtons()[1])
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          'gemma-4-12B-it-GGUF-Q4_K_M'
+        )
+        expect(
+          screen.getByRole('button', { name: 'setup:downloading' })
+        ).toBeInTheDocument()
+        unmount()
+      })
+
+      it('starts a yellow row at once too: it will run, and the mark already says how', async () => {
+        // On an 8 GiB card Nemotron spills into system RAM — slower, not
+        // refused — and a question there would cry wolf.
+        mocks.hardwareTier.tier = 'vram_8'
+        mocks.hardwareTier.profile = {
+          tier: 'vram_8',
+          memoryKind: 'vram',
+          budgetMib: 8 * 1024,
+          systemRamMib: 32 * 1024,
+          vramMib: 8 * 1024,
+          hardCeiling: false,
+        }
+        const { unmount } = await renderPicker()
+        expect(
+          screen.getAllByRole('button', { name: /setup:recommend\.fit/ })[2]
+        ).toHaveAttribute('data-fit', 'warn')
+
+        fireEvent.click(downloadButtons()[2])
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledOnce()
+        expect(mocks.pullModelWithMetadata.mock.calls[0][0]).toBe(
+          nemotronVariant
+        )
+        expect(
+          screen.getByRole('button', { name: 'setup:downloading' })
+        ).toBeInTheDocument()
+        unmount()
+      })
+    })
   })
 
   describe('leaving without a model', () => {
@@ -1194,6 +2116,7 @@ describe('SetupScreen', () => {
 
     afterEach(() => {
       vi.useRealTimers()
+      vi.unstubAllGlobals()
     })
 
     const renderPastLocalScan = async (found: unknown[] = []) => {
@@ -1236,6 +2159,66 @@ describe('SetupScreen', () => {
       ])
       unmount()
     })
+
+    it.each([false, true])(
+      'Skip clears selection without starting a model (returning user: %s)',
+      async (returning) => {
+        const model = {
+          id: 'installed.gguf',
+          settings: { ctx_len: { controller_props: { value: 4096 } } },
+        } as Model
+        const providers = returning
+          ? [
+              {
+                provider: 'llamacpp-upstream',
+                active: true,
+                models: [model],
+                settings: [],
+              } as ModelProvider,
+            ]
+          : []
+        mocks.modelProviderState.providers = providers
+        vi.stubGlobal('FORCE_ONBOARDING', returning)
+        if (returning)
+          localStorage.setItem(localStorageKey.setupCompleted, 'true')
+        resetForcedOnboardingRun()
+        expect(isOnboardingPending(providers)).toBe(true)
+        mocks.modelProviderState.selectedProvider = returning
+          ? 'llamacpp-upstream'
+          : ''
+        mocks.modelProviderState.selectedModel = returning ? model : null
+        if (returning)
+          localStorage.setItem(
+            localStorageKey.lastUsedModel,
+            JSON.stringify({ provider: 'llamacpp-upstream', model: model.id })
+          )
+        const { unmount } = await renderPastLocalScan()
+        expect(screen.getByRole('button', { name: 'setup:skip' })).toBeVisible()
+
+        fireEvent.click(screen.getByRole('button', { name: 'setup:skip' }))
+        await act(async () => {})
+
+        expect(mocks.modelProviderState.selectedModel).toBeNull()
+        expect(mocks.modelProviderState.selectedProvider).toBe('')
+        expect(mocks.modelProviderState.providers).toEqual(providers)
+        expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+        expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe(
+          'true'
+        )
+        expect(mocks.deferModelSelection).toHaveBeenCalled()
+        expect(mocks.switchToModel).not.toHaveBeenCalled()
+        expect(mocks.engine.import).not.toHaveBeenCalled()
+        expect(mocks.engine.load).not.toHaveBeenCalled()
+        expect(mocks.startModel).not.toHaveBeenCalled()
+        expect(isOnboardingPending(providers)).toBe(false)
+        expect(mocks.navigate).toHaveBeenCalledWith({
+          to: '/',
+          replace: true,
+          search: {},
+        })
+        unmount()
+      }
+    )
 
     it('exits only once when the user connects a provider first', async () => {
       mocks.modelProviderState.providers = [

@@ -50,6 +50,8 @@ export type OnboardingExitPath =
    * "what do I reply with?" widget picks it up from there (ATO-453).
    */
   | 'dismissed'
+  /** Left for the Hub to pick any model from Hugging Face, still empty-handed. */
+  | 'hub'
   /**
    * Legacy: the 15s auto-exit fired with the picker untouched. No longer
    * emitted — the timeout was removed in ATO-454 after it turned out to be 60 %
@@ -239,7 +241,7 @@ export function reportAbandonedOnboarding(): void {
  *  changes meaning is worse than one that visibly splits. */
 export function captureSetupSkipped(params: {
   hadAnyModel: boolean
-  reason: 'dismissed'
+  reason: 'dismissed' | 'hub'
 }): void {
   capture('setup_skipped', {
     had_any_model: params.hadAnyModel,

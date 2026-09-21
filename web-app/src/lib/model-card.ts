@@ -20,15 +20,15 @@ export const HARDWARE_FIT: Record<
 > = {
   ok: {
     label: 'Good fit',
-    tip: 'This model is likely to run on your hardware',
+    tip: 'Full offload likely possible on your system.',
   },
   maybe: {
-    label: 'Should run',
-    tip: 'This model can probably run on your hardware',
+    label: 'Might fit',
+    tip: 'Within the last GB of VRAM headroom, so loading can fail if other apps are using GPU memory.',
   },
   no: {
-    label: 'Too large',
-    tip: 'This model is probably too large for your hardware',
+    label: 'Won’t fit',
+    tip: 'Exceeds combined VRAM and system RAM budget.',
   },
 }
 

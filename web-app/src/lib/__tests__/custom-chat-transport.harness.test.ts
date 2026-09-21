@@ -2,6 +2,8 @@ import type { UIMessage } from '@ai-sdk/react'
 import type { LanguageModel } from 'ai'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { localStorageKey } from '@/constants/localStorage'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -95,6 +97,7 @@ async function readChunks(
 // Shared by every describe below: a seeded service hub plus a default MLX
 // provider/model, so each test only has to state what it changes.
 beforeEach(() => {
+  useMCPServers.setState({ mcpServers: {} })
   seedServiceHub({
     rag: { getTools: vi.fn().mockResolvedValue([]) } as never,
   })
@@ -375,8 +378,10 @@ describe('CustomChatTransport skill injection', () => {
 
     await send()
     // Stand in for the real loader having memoized a body.
-    const firstCache = vi.mocked(loadChatSkillDetails).mock
-      .calls[0][1] as Map<string, unknown>
+    const firstCache = vi.mocked(loadChatSkillDetails).mock.calls[0][1] as Map<
+      string,
+      unknown
+    >
     firstCache.set('style-guide', { name: 'style-guide', body: 'stale' })
 
     await send()
@@ -415,6 +420,7 @@ describe('CustomChatTransport reasoning override', () => {
 
   async function captureReasoningOverride(options: {
     provider: string
+    modelId?: string
     reasoning?: Record<string, unknown>
     disableReasoning: boolean
     reasoningBudget: string
@@ -426,7 +432,7 @@ describe('CustomChatTransport reasoning override', () => {
     useModelProvider.setState({
       selectedProvider: options.provider,
       selectedModel: {
-        id: 'fixture-model',
+        id: options.modelId ?? 'fixture-model',
         capabilities: [],
         settings: {},
         reasoning: options.reasoning,
@@ -530,6 +536,33 @@ describe('CustomChatTransport reasoning override', () => {
     expect(override?.reasoning_effort).toBe('high')
   })
 
+  it('sends a declared Codex subscription effort even when global reasoning was off', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'chatgpt',
+      reasoning: {
+        supportsThinking: true,
+        effortKwarg: 'reasoning_effort',
+        effortValues: ['low', 'medium', 'high', 'xhigh'],
+      },
+      disableReasoning: true,
+      reasoningBudget: 'high',
+    })
+
+    expect(override).toEqual({ reasoning_effort: 'low' })
+  })
+
+  it('caps an always-thinking local model at Low when global reasoning is off', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'llamacpp',
+      reasoning: { supportsThinking: true, canDisable: false },
+      disableReasoning: true,
+      reasoningBudget: 'high',
+    })
+
+    expect(override?.reasoning_budget_tokens).toBe(256)
+    expect(override?.chat_template_kwargs).toBeUndefined()
+  })
+
   it('passes no override at all when the model has no thinking phase', async () => {
     const override = await captureReasoningOverride({
       provider: 'llamacpp',
@@ -583,7 +616,29 @@ describe('CustomChatTransport reasoning override', () => {
     expect(override?.chat_template_kwargs).toEqual({ enable_thinking: false })
   })
 
-  it('leaves a provider with its own reasoning API alone', async () => {
+  it('sends the selected effort to a cloud provider without model metadata', async () => {
+    const openai = await captureReasoningOverride({
+      provider: 'openai',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'high',
+    })
+
+    expect(openai).toEqual({ reasoning_effort: 'high' })
+  })
+
+  it('sends no effort for an explicitly unsupported subscription model', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'chatgpt',
+      reasoning: { supportsThinking: false },
+      disableReasoning: true,
+      reasoningBudget: 'medium',
+    })
+
+    expect(override).toBeUndefined()
+  })
+
+  it('uses the Anthropic thinking budget for cloud effort', async () => {
     const override = await captureReasoningOverride({
       provider: 'anthropic',
       reasoning: undefined,
@@ -591,7 +646,49 @@ describe('CustomChatTransport reasoning override', () => {
       reasoningBudget: 'high',
     })
 
-    expect(override).toBeUndefined()
+    expect(override).toEqual({
+      thinking: { type: 'enabled', budget_tokens: 8192 },
+    })
+  })
+
+  it('uses the OpenRouter reasoning envelope', async () => {
+    const override = await captureReasoningOverride({
+      provider: 'openrouter',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'max',
+    })
+
+    expect(override).toEqual({ reasoning: { effort: 'xhigh' } })
+  })
+
+  // Gemini 400s on `reasoning_effort` sent with a `thinking_config`, and on
+  // any effort above `high`.
+  it('sends Gemini a single reasoning_effort it accepts', async () => {
+    const on = await captureReasoningOverride({
+      provider: 'gemini',
+      modelId: 'gemini-3.1-pro-preview',
+      reasoning: undefined,
+      disableReasoning: false,
+      reasoningBudget: 'max',
+    })
+    expect(on).toEqual({ reasoning_effort: 'high' })
+  })
+
+  it.each([
+    ['gemini-2.5-flash', 'none'],
+    ['gemini-2.5-flash-lite', 'none'],
+    ['gemini-2.5-pro', 'minimal'],
+    ['gemini-3-flash-preview', 'minimal'],
+  ])('switches %s down to %s when reasoning is off', async (modelId, effort) => {
+    const off = await captureReasoningOverride({
+      provider: 'gemini',
+      modelId,
+      reasoning: undefined,
+      disableReasoning: true,
+      reasoningBudget: 'medium',
+    })
+    expect(off).toEqual({ reasoning_effort: effort })
   })
 })
 
@@ -853,6 +950,9 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
   }
 
   beforeEach(() => {
+    useMCPServers.setState({
+      mcpServers: { exa: { command: '', args: [], env: {}, active: true } },
+    })
     useAppState.setState({
       tools: [...linearTools, exaTool],
       mcpToolNames: new Set([...linearTools.map((t) => t.name), exaTool.name]),
@@ -868,7 +968,7 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     }))
   })
 
-  const sendAndCaptureTools = async () => {
+  const sendAndCaptureTools = async (transport = new CustomChatTransport()) => {
     const doStream = vi.fn(async () => ({
       stream: new ReadableStream({
         start(controller) {
@@ -890,7 +990,6 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
       doGenerate: vi.fn(),
       doStream,
     } as unknown as LanguageModel)
-    const transport = new CustomChatTransport()
     await readChunks(
       (await transport.sendMessages({
         chatId: 'chat-1',
@@ -921,6 +1020,31 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     expect(report.tooHeavy).toBe(true)
   })
 
+  it('sends no search tool after startup failed despite an active config', async () => {
+    useAppState.setState({ tools: [], mcpToolNames: new Set() })
+    expect(await sendAndCaptureTools()).toEqual([])
+  })
+
+  it('excludes a disabled search backend even before the tool snapshot refreshes', async () => {
+    useMCPServers
+      .getState()
+      .editServer('exa', { command: '', args: [], env: {}, active: false })
+    expect(await sendAndCaptureTools()).toEqual(
+      linearTools.map((t) => t.name).sort()
+    )
+  })
+
+  it('removes search on the next turn of an already cached transport', async () => {
+    const transport = new CustomChatTransport()
+    expect(await sendAndCaptureTools(transport)).toContain(exaTool.name)
+    useMCPServers
+      .getState()
+      .editServer('exa', { command: '', args: [], env: {}, active: false })
+    expect(await sendAndCaptureTools(transport)).toEqual(
+      linearTools.map((t) => t.name).sort()
+    )
+  })
+
   it('drops a muted connector from the request but keeps the others', async () => {
     useToolAvailable.setState({ defaultMutedServers: ['linear'] })
 
@@ -930,6 +1054,27 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     const report = useAppState.getState().toolCostReports['']
     expect(report.perServer.map((s) => s.server)).toEqual(['exa'])
     expect(report.tooHeavy).toBe(false)
+  })
+
+  it('sends every connector for an install that had the Plugins button unpinned', async () => {
+    // Hiding the composer's Plugins button never muted anything, and the
+    // pin is gone (v4 of the general settings): a stale persisted value
+    // must not start to. Only the switches inside the dropdown decide.
+    localStorage.setItem(
+      localStorageKey.settingGeneral,
+      JSON.stringify({ state: { connectorsPinned: false }, version: 3 })
+    )
+    try {
+      await useGeneralSetting.persist.rehydrate()
+
+      const sent = await sendAndCaptureTools()
+
+      expect(sent).toEqual(
+        [...linearTools.map((t) => t.name), exaTool.name].sort()
+      )
+    } finally {
+      localStorage.removeItem(localStorageKey.settingGeneral)
+    }
   })
 
   it('never sends a system server (filesystem, fetch) — that is agent-mode tooling', async () => {

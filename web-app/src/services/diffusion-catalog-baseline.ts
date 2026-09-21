@@ -8,7 +8,7 @@ import type { DiffusionCatalog } from './diffusion-catalog-registry'
 
 export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
   "schema_version": 1,
-  "updated_at": "2026-09-10T20:00:00Z",
+  "updated_at": "2026-09-20T23:02:27Z",
   "families": [
     {
       "id": "z-image",
@@ -297,6 +297,414 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       }
     },
     {
+      "id": "flux.1-uncensored",
+      "name": "FLUX.1 Anime Uncensored",
+      "developer": "Zuntan",
+      "modality": "image",
+      "description": "Uncensored anime-focused FLUX.1 variant. May generate adult content; use responsibly and legally.",
+      "license": "flux-1-dev-non-commercial-license",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "Zuntan/FluxDev8AnimeNsfw",
+        "quants": [
+          {
+            "id": "q4_k_s",
+            "label": "Q4_K_S",
+            "filename": "FluxDev8AnimeNsfw-Q4_K_S.gguf",
+            "bytes": 6805988640,
+            "sha256": "17f36122c695419e5a25773fa73c38b9d316366854a307705a38df6b82511714",
+            "recommended": true
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/Z-Image-Turbo-ComfyUI",
+        "filename": "split_files/vae/ae.safetensors",
+        "bytes": 335304388,
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+      },
+      "text_encoders": [
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "clip_l.safetensors",
+          "bytes": 246144152,
+          "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+          "field": "clip_l"
+        },
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "t5xxl_fp16.safetensors",
+          "bytes": 9787841024,
+          "sha256": "6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635",
+          "field": "t5xxl"
+        }
+      ],
+      "defaults": {
+        "steps": 8,
+        "cfg_scale": 1,
+        "guidance": 3.5,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          4,
+          50
+        ],
+        "dims": [
+          256,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": true,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
+      "id": "flux.1-abliterated",
+      "name": "FLUX.1 Dev Abliterated",
+      "developer": "t8star",
+      "modality": "image",
+      "description": "Abliterated FLUX.1 Dev variant with fewer prompt restrictions and general-purpose rendering.",
+      "license": "flux-1-dev-non-commercial-license",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "t8star/flux.1-dev-abliterated-V2-GGUF",
+        "quants": [
+          {
+            "id": "q4_k_m",
+            "label": "Q4_K_M",
+            "filename": "T8-flux.1-dev-abliterated-V2-GGUF-Q4_K_M.gguf",
+            "bytes": 6940468512,
+            "sha256": "f68579dfc3a5715f9618a3547f17708e952d2d3cd36703e40f2de7935e785168",
+            "recommended": true
+          },
+          {
+            "id": "q6_k",
+            "label": "Q6_K",
+            "filename": "T8-flux.1-dev-abliterated-V2-GGUF-Q6_K.gguf",
+            "bytes": 9857000736,
+            "sha256": "9a7ef0087e932ccff807b73b19b85aef75c0449883d01aa06c0ada4f1911608b"
+          },
+          {
+            "id": "q8_0",
+            "label": "Q8_0",
+            "filename": "T8-flux.1-dev-abliterated-V2-GGUF-Q8_0.gguf",
+            "bytes": 12723103008,
+            "sha256": "aba8163ff644018da195212a1c33aeddbf802a0c2bba96abc584a2d0b6b42272"
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/Z-Image-Turbo-ComfyUI",
+        "filename": "split_files/vae/ae.safetensors",
+        "bytes": 335304388,
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+      },
+      "text_encoders": [
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "clip_l.safetensors",
+          "bytes": 246144152,
+          "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+          "field": "clip_l"
+        },
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "t5xxl_fp16.safetensors",
+          "bytes": 9787841024,
+          "sha256": "6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635",
+          "field": "t5xxl"
+        }
+      ],
+      "defaults": {
+        "steps": 20,
+        "cfg_scale": 1,
+        "guidance": 3.5,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          4,
+          50
+        ],
+        "dims": [
+          256,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": true,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
+      "id": "flux.1-nsfw-realism",
+      "name": "FLUX.1 NSFW Realism",
+      "developer": "ND911",
+      "modality": "image",
+      "description": "High-detail realistic adult FLUX.1 checkpoint for large-memory systems.",
+      "license": "apache-2.0",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "ND911/Test_Frankenstein",
+        "quants": [
+          {
+            "id": "q8_0",
+            "label": "Q8_0",
+            "filename": "test_nsfw_2-Q8_0.gguf",
+            "bytes": 12701062144,
+            "sha256": "0604d5a078b87ea767f9f5d3da8747b2a23802e039beba4bfbdd5b76f502160b",
+            "recommended": true
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/Z-Image-Turbo-ComfyUI",
+        "filename": "split_files/vae/ae.safetensors",
+        "bytes": 335304388,
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+      },
+      "text_encoders": [
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "clip_l.safetensors",
+          "bytes": 246144152,
+          "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+          "field": "clip_l"
+        },
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "t5xxl_fp16.safetensors",
+          "bytes": 9787841024,
+          "sha256": "6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635",
+          "field": "t5xxl"
+        }
+      ],
+      "defaults": {
+        "steps": 12,
+        "cfg_scale": 3.5,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          4,
+          50
+        ],
+        "dims": [
+          256,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": true,
+        "guidance": false,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
+      "id": "flux.1-krea",
+      "name": "FLUX.1 Krea Dev",
+      "developer": "Black Forest Labs × Krea",
+      "modality": "image",
+      "description": "Krea's opinionated FLUX.1 Dev fine-tune for natural detail and less synthetic-looking images.",
+      "license": "flux-1-dev-non-commercial-license",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "QuantStack/FLUX.1-Krea-dev-GGUF",
+        "quants": [
+          {
+            "id": "q3_k_m",
+            "label": "Q3_K_M",
+            "filename": "flux1-krea-dev-Q3_K_M.gguf",
+            "bytes": 5368489248,
+            "sha256": "f206de1dbd783b8775541fdc3031f156550932afe942fa3169035e99ccc5e45e"
+          },
+          {
+            "id": "q4_k_m",
+            "label": "Q4_K_M",
+            "filename": "flux1-krea-dev-Q4_K_M.gguf",
+            "bytes": 6931817760,
+            "sha256": "cf199b88509be2b3476a3372ff03eaaa662cb2b5d3710abf939ebb4838dbdcaf",
+            "recommended": true
+          },
+          {
+            "id": "q5_k_m",
+            "label": "Q5_K_M",
+            "filename": "flux1-krea-dev-Q5_K_M.gguf",
+            "bytes": 8419501344,
+            "sha256": "e2cc8bf21c21c8159fa5f2a72d650185f188f21692989810e3417172ff89723f"
+          },
+          {
+            "id": "q6_k",
+            "label": "Q6_K",
+            "filename": "flux1-krea-dev-Q6_K.gguf",
+            "bytes": 9848349984,
+            "sha256": "c50c13ebe1207b2c87b251ccf3a55b9eb54c84f73cee62503d17acd8a460953e"
+          },
+          {
+            "id": "q8_0",
+            "label": "Q8_0",
+            "filename": "flux1-krea-dev-Q8_0.gguf",
+            "bytes": 12714452256,
+            "sha256": "0d085b1e3ae0b90e5dbf74da049a80a565617de622a147d28ee37a07761fbd90"
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/Z-Image-Turbo-ComfyUI",
+        "filename": "split_files/vae/ae.safetensors",
+        "bytes": 335304388,
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+      },
+      "text_encoders": [
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "clip_l.safetensors",
+          "bytes": 246144152,
+          "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+          "field": "clip_l"
+        },
+        {
+          "repo": "unsloth/flux-text-encoders",
+          "filename": "t5xxl_fp16.safetensors",
+          "bytes": 9787841024,
+          "sha256": "6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635",
+          "field": "t5xxl"
+        }
+      ],
+      "defaults": {
+        "steps": 20,
+        "cfg_scale": 1,
+        "guidance": 3.5,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          4,
+          50
+        ],
+        "dims": [
+          256,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": true,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
+      "id": "krea-2-turbo",
+      "name": "Krea 2 Turbo",
+      "developer": "Krea",
+      "modality": "image",
+      "description": "Distilled 12B text-to-image model tuned for high-quality generation in 8 steps. KREA 2 COMMUNITY LICENSE: commercial use is limited to organizations under USD $1M annual revenue; larger organizations require an Enterprise License. Use is subject to Krea's Acceptable Use Policy.",
+      "license": "krea-2-community-license",
+      "gated": true,
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "realrebelai/KREA-2_GGUFs",
+        "quants": [
+          {
+            "id": "q3_k_m",
+            "label": "Q3_K_M",
+            "filename": "TURBO/Krea-2-Turbo-Q3_K_M.gguf",
+            "bytes": 5514578016,
+            "sha256": "9a8917ac175e0287d86f43da7d520ee0efe4a24f5250d9cd7ae0b0abf4ef5f62"
+          },
+          {
+            "id": "q4_k_m",
+            "label": "Q4_K_M",
+            "filename": "TURBO/Krea-2-Turbo-Q4_K_M.gguf",
+            "bytes": 7216993376,
+            "sha256": "273a98be1afe317bc7228403b6434647eaf866cebe6aff1980c401b950473807",
+            "recommended": true
+          },
+          {
+            "id": "q5_k_s",
+            "label": "Q5_K_S",
+            "filename": "TURBO/Krea-2-Turbo-Q5_K_S.gguf",
+            "bytes": 8819266656,
+            "sha256": "2d9a6bfb1b9ef512b040af72b59ce8c4a564f834a083747f3a6e7d3781e8b6dd"
+          }
+        ]
+      },
+      "vae": {
+        "repo": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+        "filename": "split_files/vae/wan_2.1_vae.safetensors",
+        "bytes": 253815318,
+        "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b"
+      },
+      "text_encoders": [
+        {
+          "repo": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+          "filename": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+          "bytes": 2497281664,
+          "sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a",
+          "field": "llm"
+        }
+      ],
+      "defaults": {
+        "steps": 8,
+        "cfg_scale": 1,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          1,
+          20
+        ],
+        "dims": [
+          512,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": false,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
       "id": "qwen-image",
       "name": "Qwen-Image",
       "developer": "Qwen",
@@ -378,7 +786,7 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
         ],
         "dims": [
           256,
-          2048
+          1024
         ],
         "dim_multiple": 16
       },
@@ -387,6 +795,79 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
         "guidance": false,
         "workflows": [
           "create"
+        ]
+      }
+    },
+    {
+      "id": "qwen-image-2.1",
+      "name": "Qwen-Image-2.1",
+      "developer": "Qwen",
+      "modality": "image",
+      "description": "Unified 7B text-to-image and image-editing model with native RGBA output and support for up to 10 reference images. NON-COMMERCIAL ONLY: licensed for research and evaluation under the Qwen Research License; commercial use requires a separate license. Qwen is Copyright (c) 2026 Hangzhou Tongyi Laboratory Technology Co., Ltd. GGUF packaging is provided by stable-diffusion.cpp author leejet.",
+      "license": "qwen-research-non-commercial",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "leejet/Qwen-Image-2.1-GGUF",
+        "quants": [
+          {
+            "id": "q4_k",
+            "label": "Q4_K",
+            "filename": "qwen_image_2.1-Q4_K.gguf",
+            "bytes": 4197494816,
+            "sha256": "29f9c83c249ff0292fb2943fceddfa2319b446601866c82a4f8be062abea72c2",
+            "recommended": true
+          }
+        ]
+      },
+      "vae": {
+        "repo": "Comfy-Org/Qwen-Image-2.1",
+        "filename": "vae/qwen_image_2.1_vae_bf16.safetensors",
+        "bytes": 675509688,
+        "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9"
+      },
+      "text_encoders": [
+        {
+          "repo": "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+          "filename": "Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+          "bytes": 5027784800,
+          "sha256": "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
+          "field": "llm"
+        },
+        {
+          "repo": "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+          "filename": "mmproj-Qwen3VL-8B-Instruct-F16.gguf",
+          "bytes": 1159029824,
+          "sha256": "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
+          "field": "llm_vision"
+        }
+      ],
+      "defaults": {
+        "steps": 40,
+        "cfg_scale": 6,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          1,
+          50
+        ],
+        "dims": [
+          256,
+          2048
+        ],
+        "dim_multiple": 32
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": false,
+        "workflows": [
+          "create",
+          "reference",
+          "edit"
         ]
       }
     }

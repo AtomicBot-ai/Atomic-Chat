@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { IconChevronDown, IconLoader2, IconPhoto } from '@tabler/icons-react'
+import { IconChevronDown, IconPhoto } from '@tabler/icons-react'
 
 import {
   Popover,
@@ -11,10 +11,12 @@ import { useImageArtifact } from '@/hooks/useImageArtifact'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { parseArtifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
 import { ImageModelSelector } from './ImageModelSelector'
 
 type ImageModelPickerProps = {
@@ -33,83 +35,94 @@ export const ImageModelPicker = memo(function ImageModelPicker({
 }: ImageModelPickerProps) {
   const { t } = useTranslation()
   const status = useImageGenerationStore((state) => state.status)
-  const selectedArtifactId = useImageSetting((state) => state.selectedArtifactId)
+  const loadingArtifactId = useImageGenerationStore(
+    (state) => state.loadingArtifactId
+  )
+  const unloadingArtifactId = useImageGenerationStore(
+    (state) => state.unloadingArtifactId
+  )
+  const selectedArtifactId = useImageSetting(
+    (state) => state.selectedArtifactId
+  )
+  const loadedArtifactId = status?.model.loaded?.modelId ?? null
+  const runtimeArtifactId =
+    loadedArtifactId ?? loadingArtifactId ?? unloadingArtifactId
+  const runtime = useImageArtifact(runtimeArtifactId ?? '')
   const selected = useImageArtifact(selectedArtifactId ?? '')
   const workflow = useImageForm((state) => state.workflow)
-  // The picked checkpoint cannot run this tab's workflow: say so where the
-  // model is named, so the disabled Generate is not a mystery.
-  const unsupported =
-    selected.family !== null &&
-    !familySupportsWorkflow(selected.family.id, workflow)
+  const runtimeFamilyId =
+    runtime.family?.id ?? parseArtifactId(runtimeArtifactId ?? '')?.family ?? null
+  const runtimeCompatible =
+    Boolean(runtimeArtifactId) &&
+    (runtimeFamilyId === null || familySupportsWorkflow(runtimeFamilyId, workflow))
+  const selectedFamilyId =
+    selected.family?.id ??
+    parseArtifactId(selectedArtifactId ?? '')?.family ??
+    null
+  const selectedCompatible =
+    Boolean(selectedArtifactId && selected.complete) &&
+    (selectedFamilyId === null ||
+      familySupportsWorkflow(selectedFamilyId, workflow))
+  const displayArtifactId = runtimeCompatible
+    ? runtimeArtifactId
+    : selectedCompatible
+      ? selectedArtifactId
+      : null
+  const displayArtifact = useImageArtifact(displayArtifactId ?? '')
+  const showArtifact = Boolean(displayArtifactId && displayArtifact.complete)
+
+  // Prefer the resident/in-flight artifact, then the user's compatible
+  // installed selection. This keeps an intentionally stopped model visible so
+  // its adjacent status control can start it again without reopening the list.
 
   const loadedName = status?.model.loaded?.displayName ?? null
-  const name = selected.family
-    ? selected.family.name
-    : loadedName ?? t('images:model.select')
-  const loading = status?.model.state === 'loading' || selected.loading
-  const detail = loading
-    ? t('images:model.loading')
-    : selected.family && selected.quant
-      ? selected.quant.label
-      : null
-  const stateLabel = loading
-    ? null
-    : selected.loaded
-      ? t('images:model.loaded')
-      : selected.complete
-        ? t('images:model.readyToLoad')
-        : selected.family
-          ? t('images:model.notInstalled')
+  const name = showArtifact
+    ? (displayArtifact.family?.name ?? loadedName ?? t('images:model.select'))
+    : t('images:model.select')
+  const detail = showArtifact ? displayArtifact.quant?.label : null
+  const stateLabel = displayArtifact.loaded
+    ? t('images:model.loaded')
+    : displayArtifact.loading
+      ? t('images:model.startingToast')
+      : displayArtifact.unloading
+        ? t('images:model.stoppingToast')
+        : showArtifact
+          ? t('images:model.readyToLoad')
           : null
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title={stateLabel ?? undefined}
-          aria-label={t('images:model.select')}
-          aria-expanded={open}
-          data-testid="image-models-toggle"
-          className="inline-flex h-8 min-w-0 max-w-full shrink items-center gap-1.5 rounded-full pr-2 pl-1.5 text-sm transition-colors hover:bg-secondary/60"
-        >
-          {selected.family ? (
-            <ModelLogo
-              icon={DIFFUSION_FAMILY_ICON_KEYS[selected.family.id]}
-              name={selected.family.name}
-              author={selected.family.developer}
-              className="size-5 rounded-md"
-            />
-          ) : (
-            <IconPhoto size={16} className="shrink-0 text-muted-foreground" />
-          )}
-          <span
-            className={cn(
-              'truncate font-medium',
-              !selected.family && !loadedName && 'text-muted-foreground'
-            )}
+    <div className="flex w-full min-w-0 items-center gap-1.5">
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title={stateLabel ?? undefined}
+            aria-label={t('images:model.select')}
+            aria-expanded={open}
+            data-testid="image-models-toggle"
+            className="inline-flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
           >
-            {name}
-          </span>
-          {detail && (
-            <span className="shrink-0 text-muted-foreground">{detail}</span>
-          )}
-          {unsupported && (
+            {showArtifact && displayArtifact.family ? (
+              <ModelLogo
+                icon={DIFFUSION_FAMILY_ICON_KEYS[displayArtifact.family.id]}
+                name={displayArtifact.family.name}
+                author={displayArtifact.family.developer}
+                className="size-5 rounded-md"
+              />
+            ) : (
+              <IconPhoto size={16} className="shrink-0 text-muted-foreground" />
+            )}
             <span
-              className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
-              data-testid="image-model-unsupported"
+              className={cn(
+                'truncate font-medium',
+                !showArtifact && 'text-muted-foreground'
+              )}
             >
-              {t('images:model.notForWorkflow', {
-                workflow: t(`images:workflow.${workflow}.label`),
-              })}
+              {name}
             </span>
-          )}
-          {loading ? (
-            <IconLoader2
-              size={14}
-              className="shrink-0 animate-spin text-muted-foreground"
-            />
-          ) : (
+            {detail && (
+              <span className="shrink-0 text-muted-foreground">{detail}</span>
+            )}
             <IconChevronDown
               size={14}
               className={cn(
@@ -117,19 +130,26 @@ export const ImageModelPicker = memo(function ImageModelPicker({
                 open && 'rotate-180'
               )}
             />
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        // A heavier shadow than the default: the panel opens over the form,
-        // which is the same white, and must read as lifted off it.
-        className="max-h-[min(60vh,480px)] w-[400px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
-      >
-        <ImageModelSelector variant="page" workflow={workflow} />
-      </PopoverContent>
-    </Popover>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          sideOffset={6}
+          // A heavier shadow than the default: the panel opens over the form,
+          // which is the same white, and must read as lifted off it.
+          className="max-h-[min(60vh,480px)] w-[380px] max-w-[calc(100vw-2rem)] origin-[var(--radix-popover-content-transform-origin)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
+        >
+          <ImageModelSelector variant="page" workflow={workflow} />
+        </PopoverContent>
+      </Popover>
+      {showArtifact && displayArtifactId && (
+        <ImageModelRuntimeAction
+          artifactId={displayArtifactId}
+          modelName={name}
+          appearance="indicator"
+        />
+      )}
+    </div>
   )
 })
 

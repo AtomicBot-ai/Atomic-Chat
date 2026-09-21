@@ -13,6 +13,8 @@ export type ImageEngineState = {
   /** Null when this host has no supported build (Intel Mac, unsupported Linux). */
   hostBackendId: string | null
   hostBackendReason: string | null
+  /** Compatibility is still being detected. */
+  resolvingHostBackend: boolean
   /** More than one engine can serve this host, so the override dropdown is worth showing. */
   engineChoices: Array<'sd-cpp' | 'diffusers'>
   progress: EngineInstallProgress
@@ -36,6 +38,9 @@ export function useImageEngine(): ImageEngineState {
   const hostBackendId = useImageGenerationStore((state) => state.hostBackendId)
   const hostBackendReason = useImageGenerationStore(
     (state) => state.hostBackendReason
+  )
+  const hostBackendResolved = useImageGenerationStore(
+    (state) => state.hostBackendResolved
   )
   const progress = useImageGenerationStore((state) => state.engineInstall)
   const installEngine = useImageGenerationStore((state) => state.installEngine)
@@ -67,6 +72,7 @@ export function useImageEngine(): ImageEngineState {
     installed: install.state === 'installed',
     hostBackendId,
     hostBackendReason,
+    resolvingHostBackend: !hostBackendResolved && hostBackendId === null,
     engineChoices,
     progress,
     installing: progress.inFlight,

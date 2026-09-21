@@ -7,56 +7,56 @@
 import type { SdcppManifest } from './diffusion/install'
 
 export const BASELINE_SDCPP_MANIFEST: SdcppManifest = {
-  "tag_name": "master-849-d04e895",
+  "tag_name": "master-883-137f740",
   "upstream_repo": "leejet/stable-diffusion.cpp",
   "assets": [
     {
       "backend": "macos-arm64",
-      "name": "sd-master-d04e895-bin-Darwin-macOS-26.6.2-arm64.zip",
-      "sha256": "7dc34b46ea5299d248ca67ab6d3538575a9638fd2a24e013c6dc979cce9ca1d4",
-      "size": 50032742
+      "name": "sd-master-137f740-bin-Darwin-macOS-26.6.2-arm64.zip",
+      "sha256": "d850bc4eaa0a2254f0a44b10e1ce1ebf6b7dd866c3ea48a3a73246d49173212f",
+      "size": 34194785
     },
     {
       "backend": "win-cuda12-x64",
-      "name": "sd-master-d04e895-bin-win-cuda12-x64.zip",
-      "sha256": "78a805478aeb2c09d4dabec6a34ddba1ce322912c30f0d173a79674836bd3b0a",
-      "size": 336414089
+      "name": "sd-master-137f740-bin-win-cuda12-x64.zip",
+      "sha256": "d181b8a7be452dc74f2163893ec17edd960005c9f790382aef939e7bf93ab07f",
+      "size": 330849525
     },
     {
       "backend": "win-rocm-7.14-x64",
-      "name": "sd-master-d04e895-bin-win-rocm-7.14.0-x64.zip",
-      "sha256": "375da5bad52e0bfe29110bcd7fa670a9af5bbbc2a9bbefdd9991f15fc7237aa2",
-      "size": 197957146
+      "name": "sd-master-137f740-bin-win-rocm-7.14.0-x64.zip",
+      "sha256": "d541f7aa0d0046843dc35fecd79dbf808cf5af8bd6ab5c0d048dad9e9342c59d",
+      "size": 192039488
     },
     {
       "backend": "win-vulkan-x64",
-      "name": "sd-master-d04e895-bin-win-vulkan-x64.zip",
-      "sha256": "5a75237c5c6a7253b1079b03f6ec0fe1358393bf879f486887863ac31dea978e",
-      "size": 38862152
+      "name": "sd-master-137f740-bin-win-vulkan-x64.zip",
+      "sha256": "c76b8427d4dd4946f1f2e088512835550f7c6a17565cf2064ca7b656a6d7f7a6",
+      "size": 31890985
     },
     {
       "backend": "win-cpu-x64",
-      "name": "sd-master-d04e895-bin-win-cpu-x64.zip",
-      "sha256": "731208e2cde69fcf2e69e6968d30a570d47f2629d5682f51b699b60f47019abf",
-      "size": 24112084
+      "name": "sd-master-137f740-bin-win-cpu-x64.zip",
+      "sha256": "085713ca0e7da18ede7ebab63c2e2f0c6db8ca7417698a1eec2b099e8280b7b6",
+      "size": 17140909
     },
     {
       "backend": "linux-vulkan-x64",
-      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
-      "sha256": "972a45d783e2c6ffda543d0e7862f00829a0f7dbd9145cf3077828f9c74f2780",
-      "size": 46155251
+      "name": "sd-master-137f740-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+      "sha256": "4b65cfa5e7d4ced8fe43185b314bcba994413655e6273c78aeaaaaeab2ecec0f",
+      "size": 38475898
     },
     {
       "backend": "linux-rocm-7.14-x64",
-      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64-rocm-7.14.0.zip",
-      "sha256": "a270f8a1b8fbd53487cb03a7188936cfa69cb6edeba0d9122cd2388923b580c6",
-      "size": 264332750
+      "name": "sd-master-137f740-bin-Linux-Ubuntu-24.04-x86_64-rocm-7.14.0.zip",
+      "sha256": "c3ed9cc94bbbc808a02c01cd3e07f60f84055e91b7f57e8aed528b7b06339645",
+      "size": 258024162
     },
     {
       "backend": "linux-cpu-x64",
-      "name": "sd-master-d04e895-bin-Linux-Ubuntu-24.04-x86_64.zip",
-      "sha256": "cde88608e4cfe077be9b761abebae6be65d145befa750fbd5ad2e9521d5c5c89",
-      "size": 33031959
+      "name": "sd-master-137f740-bin-Linux-Ubuntu-24.04-x86_64.zip",
+      "sha256": "a09fde8b640c4f209f29e0db5f9cfcadc7f249bc9d57ace34d2d93cf2fbc465b",
+      "size": 25352606
     },
     {
       "backend": "win-cudart-cu12",

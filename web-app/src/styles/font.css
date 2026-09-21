@@ -1,9 +1,21 @@
+/* Every Inter and StudioFeixenSans face declares the same `unicode-range`: the
+ * exact complement of the `AtomicEmoji` range at the bottom of this file. The
+ * text font can then lead the stack (WebKit takes line metrics from the first
+ * family's face, see `--font-sans` in index.css) while the emoji code points
+ * still fall through to the emoji face. The two lists are held together by
+ * styles/__tests__/font-stack.test.ts: change one, change the other. */
+
 /* Inter */
 @font-face {
   font-family: 'Inter';
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-Thin.ttf') format('truetype');
   font-weight: 100;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -11,6 +23,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-ExtraLight.ttf') format('truetype');
   font-weight: 200;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -18,6 +35,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-Light.ttf') format('truetype');
   font-weight: 300;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -25,6 +47,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-Regular.ttf') format('truetype');
   font-weight: 400;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -32,6 +59,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-Medium.ttf') format('truetype');
   font-weight: 500;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -39,6 +71,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-SemiBold.ttf') format('truetype');
   font-weight: 600;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -46,6 +83,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-Bold.ttf') format('truetype');
   font-weight: 700;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -53,6 +95,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-ExtraBold.ttf') format('truetype');
   font-weight: 800;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -60,6 +107,11 @@
   font-display: swap;
   src: url('/fonts/inter/Inter_18pt-Black.ttf') format('truetype');
   font-weight: 900;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 /* Inter Italic */
@@ -69,6 +121,11 @@
   src: url('/fonts/inter/Inter_18pt-ThinItalic.ttf') format('truetype');
   font-weight: 100;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -77,6 +134,11 @@
   src: url('/fonts/inter/Inter_18pt-ExtraLightItalic.ttf') format('truetype');
   font-weight: 200;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -85,6 +147,11 @@
   src: url('/fonts/inter/Inter_18pt-LightItalic.ttf') format('truetype');
   font-weight: 300;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -93,6 +160,11 @@
   src: url('/fonts/inter/Inter_18pt-Italic.ttf') format('truetype');
   font-weight: 400;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -101,6 +173,11 @@
   src: url('/fonts/inter/Inter_18pt-MediumItalic.ttf') format('truetype');
   font-weight: 500;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -109,6 +186,11 @@
   src: url('/fonts/inter/Inter_18pt-SemiBoldItalic.ttf') format('truetype');
   font-weight: 600;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -117,6 +199,11 @@
   src: url('/fonts/inter/Inter_18pt-BoldItalic.ttf') format('truetype');
   font-weight: 700;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -125,6 +212,11 @@
   src: url('/fonts/inter/Inter_18pt-ExtraBoldItalic.ttf') format('truetype');
   font-weight: 800;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -133,6 +225,11 @@
   src: url('/fonts/inter/Inter_18pt-BlackItalic.ttf') format('truetype');
   font-weight: 900;
   font-style: italic;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 /* Studio Feixen Sans */
@@ -141,6 +238,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Ultralight.otf') format('opentype');
   font-weight: 200;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -148,6 +250,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Light.otf') format('opentype');
   font-weight: 300;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -155,6 +262,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Book.otf') format('opentype');
   font-weight: 350;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -162,6 +274,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Regular.otf') format('opentype');
   font-weight: 400;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -169,6 +286,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Medium.otf') format('opentype');
   font-weight: 500;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -176,6 +298,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Semibold.otf') format('opentype');
   font-weight: 600;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 @font-face {
@@ -183,6 +310,11 @@
   font-display: swap;
   src: url('/fonts/StudioFeixenSans-Bold.otf') format('opentype');
   font-weight: 700;
+  unicode-range:
+    U+0-200C, U+200E-20E2, U+20E4-261C, U+261E-261F, U+2621-2639, U+263B-263F,
+    U+2641, U+2643-2693, U+2698-26A6, U+26A8-26D2, U+26D4-2707, U+2709-2743,
+    U+2745-2763, U+2765-27A0, U+27A2-FE0E, U+FE10-1EFFF, U+1FB00-E001F,
+    U+E0080-10FFFF;
 }
 
 /* Emoji
@@ -196,10 +328,13 @@
  * renders as a flag next to a skull. Single-codepoint emoji are resolved one
  * at a time, so those look fine — exactly the shape of ATO-526.
  *
- * Binding the emoji code points to one colour-emoji family, ahead of every
- * text font, keeps each cluster in a single font so the ligature can apply.
- * `local()` only: whichever emoji font the platform ships. If none matches,
- * the face fails to load and fallback continues exactly as it does today.
+ * Binding the emoji code points to one colour-emoji family keeps each cluster
+ * in a single font so the ligature can apply. The family sits *behind* the
+ * text fonts in the stack (index.css) — WebKit would otherwise use its metrics
+ * for every line box — and reaches these code points because every text face
+ * above excludes exactly this range. `local()` only: whichever emoji font the
+ * platform ships. If none matches, the face fails to load and fallback
+ * continues exactly as it does today.
  *
  * The range is deliberately tight: the emoji planes (U+1F000-1FAFF), the
  * joiner / variation selector / subdivision tags, and only those BMP symbols
@@ -207,7 +342,8 @@
  * U+2640 and U+2642 gender signs, U+2694-2697 swords through medical symbol,
  * U+26A7 transgender symbol, U+26D3 chains, U+2708 aeroplane, U+2744
  * snowflake, U+2764 heart, U+27A1 rightwards arrow. Everything else Inter
- * renders today keeps rendering through Inter.
+ * renders today keeps rendering through Inter. Widen it here and in the text
+ * faces' `unicode-range` together; the font-stack test fails otherwise.
  */
 @font-face {
   font-family: 'AtomicEmoji';
@@ -217,7 +353,6 @@
     local('Noto Color Emoji'), local('Twemoji Mozilla'),
     local('EmojiOne Color'), local('JoyPixels');
   unicode-range:
-    U+200D, U+20E3, U+FE0F, U+261D, U+263A, U+2620, U+2640, U+2642,
-    U+2694-2697, U+26A7, U+26D3, U+2708, U+2744, U+2764, U+27A1,
-    U+1F000-1FAFF, U+E0020-E007F;
+    U+200D, U+20E3, U+FE0F, U+261D, U+263A, U+2620, U+2640, U+2642, U+2694-2697,
+    U+26A7, U+26D3, U+2708, U+2744, U+2764, U+27A1, U+1F000-1FAFF, U+E0020-E007F;
 }

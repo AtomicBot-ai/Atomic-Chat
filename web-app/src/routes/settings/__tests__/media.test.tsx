@@ -6,6 +6,7 @@ import {
   makeCatalog,
   makeFakeDiffusion,
   makeFilesFor,
+  makeLoadedStatus,
   makeStatus,
   Z_IMAGE,
   type FakeDiffusion,
@@ -26,8 +27,18 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: unknown) => config,
+  Link: ({
+    to,
+    children,
+  }: {
+    to: string
+    children: React.ReactNode
+  }) => <a href={to}>{children}</a>,
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@/lib/clipboard', () => ({
+  copyToClipboard: vi.fn(async () => true),
+}))
 vi.mock('@/lib/diffusion/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/diffusion/config')>()),
   configureDiffusion: vi.fn(async () => makeStatus({ idleUnloadSecs: 0 })),
@@ -48,6 +59,9 @@ vi.mock('@/services/diffusion/install', () => ({
 }))
 
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { useAppState } from '@/hooks/useAppState'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { copyToClipboard } from '@/lib/clipboard'
 import { listInstalledArtifacts } from '@/lib/diffusion/models'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { Route } from '../media'
@@ -74,6 +88,13 @@ describe('Media settings', () => {
     localStorage.clear()
     await useImageSetting.persist.rehydrate()
     useImageSetting.setState({ outputDir: null })
+    useAppState.setState({ serverStatus: 'stopped' })
+    useLocalApiServer.setState({
+      serverHost: '127.0.0.1',
+      serverPort: 1337,
+      apiPrefix: '/v1',
+      apiKey: '',
+    })
     fake = makeFakeDiffusion()
     seedServiceHub({
       diffusion: fake,
@@ -96,13 +117,80 @@ describe('Media settings', () => {
     })
   })
 
-  it('renders the page chrome with the three cards', () => {
+  it('renders the page chrome with the media and image API cards', () => {
     render(<Component />)
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
     expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('settings:media.engineTitle')).toBeInTheDocument()
     expect(screen.getByText('settings:media.modelsTitle')).toBeInTheDocument()
     expect(screen.getByText('settings:media.outputTitle')).toBeInTheDocument()
+    expect(screen.getByText('settings:media.apiTitle')).toBeInTheDocument()
+  })
+
+  it('shows and copies the stable image endpoint without exposing the internal engine port', async () => {
+    useLocalApiServer.setState({
+      serverHost: '0.0.0.0',
+      serverPort: 2444,
+      apiPrefix: '/api/',
+    })
+    render(<Component />)
+
+    const endpoint = 'http://127.0.0.1:2444/api/images/generations'
+    expect(screen.getByTestId('image-api-endpoint')).toHaveTextContent(endpoint)
+    expect(screen.getByTestId('image-api-endpoint')).not.toHaveTextContent(
+      '43111'
+    )
+    expect(
+      screen.getByRole('link', { name: /settings:media.apiOpenSettings/ })
+    ).toHaveAttribute('href', '/api/')
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'settings:media.apiCopyEndpoint',
+      })
+    )
+    expect(copyToClipboard).toHaveBeenCalledWith(endpoint)
+  })
+
+  it('documents readiness, authentication, curl, and the response contract', () => {
+    useAppState.setState({ serverStatus: 'running' })
+    useLocalApiServer.setState({ apiKey: 'do-not-render-this-secret' })
+    useImageGenerationStore.setState({ status: makeLoadedStatus() })
+
+    render(<Component />)
+
+    expect(screen.getByTestId('image-api-settings-card')).toHaveAttribute(
+      'data-variant',
+      'default'
+    )
+    expect(
+      screen.queryByRole('link', { name: 'settings:media.apiMore' })
+    ).not.toBeInTheDocument()
+
+    expect(
+      screen.getByText('settings:media.apiServerRunning')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('settings:media.apiModelLoaded')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('settings:media.apiAuthRequired')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('settings:media.apiRequestContract')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('settings:media.apiResponseContract')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('settings:media.apiErrorContract')
+    ).toBeInTheDocument()
+
+    const curl = screen.getByTestId('image-api-curl')
+    expect(curl).toHaveTextContent('/v1/images/generations')
+    expect(curl).toHaveTextContent('Authorization: Bearer YOUR_API_KEY')
+    expect(curl).toHaveTextContent('response_format')
+    expect(curl).not.toHaveTextContent('do-not-render-this-secret')
   })
 
   it('shows the installed engine and offers Reinstall, or Install when missing', () => {

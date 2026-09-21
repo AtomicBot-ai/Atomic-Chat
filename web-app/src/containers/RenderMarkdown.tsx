@@ -148,6 +148,75 @@ const UnmemoizedCodePre: Components['pre'] = ({ children }) => {
 // Cache for normalized LaTeX content
 const latexCache = new Map<string, string>()
 
+const repairStrongMarkers = (text: string): string =>
+  text.replace(
+    /\*\*([ \t]*)([^*\r\n]*?[^\s*])([ \t]*)\*\*/g,
+    (match, leading: string, value: string, trailing: string) =>
+      leading || trailing ? `**${value}**` : match
+  )
+
+/** Repair whitespace inside strong markers while leaving Markdown code intact. */
+const normalizeMalformedStrong = (input: string): string => {
+  let fence: { marker: string; length: number } | null = null
+  const chunks = input.split(/(\n)/)
+
+  return chunks
+    .map((line, index) => {
+      if (index % 2 === 1) return line
+
+      const fenceRun = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1]
+      if (fence) {
+        const closingRun = line.match(
+          /^ {0,3}(`+|~+)[ \t]*\r?$/
+        )?.[1]
+        if (
+          closingRun?.[0] === fence.marker &&
+          closingRun.length >= fence.length
+        ) {
+          fence = null
+        }
+        return line
+      }
+      if (fenceRun) {
+        fence = { marker: fenceRun[0], length: fenceRun.length }
+        return line
+      }
+
+      let result = ''
+      let cursor = 0
+      while (cursor < line.length) {
+        const codeStart = line.indexOf('`', cursor)
+        if (codeStart < 0) {
+          result += repairStrongMarkers(line.slice(cursor))
+          break
+        }
+
+        result += repairStrongMarkers(line.slice(cursor, codeStart))
+        let runEnd = codeStart + 1
+        while (line[runEnd] === '`') runEnd += 1
+        const delimiter = line.slice(codeStart, runEnd)
+        let codeEnd = line.indexOf(delimiter, runEnd)
+        while (
+          codeEnd >= 0 &&
+          (line[codeEnd - 1] === '`' ||
+            line[codeEnd + delimiter.length] === '`')
+        ) {
+          codeEnd = line.indexOf(delimiter, codeEnd + delimiter.length)
+        }
+        if (codeEnd < 0) {
+          result += line.slice(codeStart)
+          break
+        }
+
+        const afterCode = codeEnd + delimiter.length
+        result += line.slice(codeStart, afterCode)
+        cursor = afterCode
+      }
+      return result
+    })
+    .join('')
+}
+
 /**
  * Optimized preprocessor: normalize LaTeX fragments into $ / $$.
  * Uses caching to avoid reprocessing the same content.
@@ -222,9 +291,11 @@ function RenderMarkdownComponent({
 
   const normalizedContent = useMemo(() => {
     const prepared = enableHtmlPreview ? wrapBareHtmlDocument(content) : content
-    return normalizeLatex(prepared)
+    return normalizeLatex(normalizeMalformedStrong(prepared))
   }, [content, enableHtmlPreview])
   const thetaMarked = useRef(false)
+  const streamedThisMountRef = useRef(Boolean(isStreaming))
+  if (isStreaming) streamedThisMountRef.current = true
 
   useEffect(() => {
     thetaMarked.current = false
@@ -276,6 +347,21 @@ function RenderMarkdownComponent({
 
   const mergedComponents = useMemo<Components | undefined>(() => {
     if (!enableHtmlPreview) return components
+
+    const LinkRenderer: Components['a'] = ({
+      className: linkClassName,
+      ...props
+    }) => (
+      <a
+        {...props}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          'text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
+          linkClassName
+        )}
+      />
+    )
 
     const CodeRenderer: Components['code'] = ({
       node,
@@ -337,18 +423,22 @@ function RenderMarkdownComponent({
       )
     }
 
-    return { code: CodeRenderer, ...(components ?? {}) }
+    return { a: LinkRenderer, code: CodeRenderer, ...(components ?? {}) }
   }, [enableHtmlPreview, components, delegateProps])
 
   const containsMath =
     normalizedContent.includes('$$') ||
     /(^|[^\\])\$[^$\n]+\$/.test(normalizedContent)
+  const containsUrl = /(?:https?:\/\/|www\.)/i.test(normalizedContent)
+  const containsStrong = /\*\*(?=\S)[^\r\n]*?\S\*\*/.test(normalizedContent)
 
   if (
     content.length > 0 &&
     content.length < 32 &&
     !components &&
-    !containsMath
+    !containsMath &&
+    !containsUrl &&
+    !containsStrong
   ) {
     return (
       <div
@@ -376,8 +466,20 @@ function RenderMarkdownComponent({
     >
       <ArtifactStreamingProvider value={!!isStreaming}>
         <Streamdown
-          animate={isAnimating ?? true}
-          animationDuration={500}
+          // Streamdown's entrance animation restarts as fenced code blocks
+          // grow token-by-token. That repeatedly translates the whole block
+          // and fights the chat's stick-to-bottom scroll, producing a visible
+          // jump. The stream itself is already the motion cue; animate only a
+          // completed, static message.
+          // Never replay the entrance animation when a live response flips to
+          // ready. Re-animating the already painted tree fades the entire
+          // answer toward white for a frame and looks like a page reload.
+          animate={
+            !isStreaming &&
+            !streamedThisMountRef.current &&
+            (isAnimating ?? true)
+          }
+          animationDuration={180}
           linkSafety={{
             enabled: false,
           }}
@@ -405,6 +507,7 @@ export const RenderMarkdown = memo(
     prevProps.components === nextProps.components &&
     prevProps.enableHtmlPreview === nextProps.enableHtmlPreview &&
     prevProps.allowRawHtml === nextProps.allowRawHtml &&
+    prevProps.isAnimating === nextProps.isAnimating &&
     // With HTML preview on, re-render on streaming→done to drop the loader.
     (!nextProps.enableHtmlPreview ||
       prevProps.isStreaming === nextProps.isStreaming)

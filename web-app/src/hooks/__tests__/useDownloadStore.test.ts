@@ -8,6 +8,8 @@ describe('useDownloadStore', () => {
       downloads: {},
       localDownloadingModels: new Set(),
       resumableDownloads: new Set(),
+      downloadOriginByModelId: {},
+      downloadRequestOriginByModelId: {},
     })
   })
 
@@ -18,6 +20,48 @@ describe('useDownloadStore', () => {
       expect(result.current.downloads).toEqual({})
       expect(result.current.localDownloadingModels).toEqual(new Set())
       expect(result.current.resumableDownloads).toEqual(new Set())
+    })
+  })
+
+  describe('download request origins', () => {
+    it('marks ordinary download surfaces as standalone by default', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.setDownloadOrigin('model-1', 'owner/model')
+      })
+
+      expect(result.current.downloadOriginByModelId['model-1']).toBe(
+        'owner/model'
+      )
+      expect(result.current.downloadRequestOriginByModelId['model-1']).toBe(
+        'standalone'
+      )
+    })
+
+    it('records and clears reply-gate intent independently of repo identity', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.setDownloadOrigin(
+          'model-1',
+          'owner/model',
+          'reply-gate'
+        )
+      })
+
+      expect(result.current.downloadRequestOriginByModelId['model-1']).toBe(
+        'reply-gate'
+      )
+
+      act(() => {
+        result.current.clearDownloadOrigin('model-1')
+      })
+
+      expect(result.current.downloadOriginByModelId['model-1']).toBeUndefined()
+      expect(
+        result.current.downloadRequestOriginByModelId['model-1']
+      ).toBeUndefined()
     })
   })
 
