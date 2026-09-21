@@ -130,10 +130,11 @@ export function isSourceImagePath(path: string): boolean {
 /**
  * Which workflows a catalog family can run on sd.cpp. Mirrors the plugin's
  * `session::workflows_for_family`, which is what actually accepts or rejects
- * a job — the two lists must stay identical. img2img and masks are generic
- * in sd.cpp, so every image family gets them; reference-guided generation
- * and instruction edits need a model trained on reference images. Qwen Image
- * 2.1 additionally needs its `--llm_vision` projector at runtime; the plugin
+ * a job — the two lists must stay identical. img2img and masks are generic in
+ * sd.cpp for the established base families; distilled Create-only models such
+ * as Krea 2 Turbo remain restricted to their verified workflow. Reference and
+ * instruction edits need a model trained on reference images. Qwen Image 2.1
+ * additionally needs its `--llm_vision` projector at runtime; the plugin
  * removes those workflows from loaded capabilities when it is absent.
  */
 export function workflowsForFamily(family: string): ImageWorkflowId[] {
@@ -150,6 +151,8 @@ export function workflowsForFamily(family: string): ImageWorkflowId[] {
       ]
     case 'qwen-image-2.1':
       return ['create', 'reference', 'edit']
+    case 'krea-2-turbo':
+      return ['create']
     case 'z-image':
     case 'qwen-image':
       return ['create', 'transform', 'inpaint', 'extend', 'upscale']

@@ -30,7 +30,7 @@ import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
 import { notifyThreadCompleted } from '@/lib/notifications'
 import {
   supportsDiffusionFamily,
-  QWEN_IMAGE_2_1_ENGINE_TAG,
+  MODERN_IMAGE_ENGINE_TAG,
 } from '@/services/diffusion/compatibility'
 import {
   ensureDiffusionBackend,
@@ -717,13 +717,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             pendingEngineArtifactId: artifactId,
             engineUpdate: {
               ...noUpdate,
-              availableTag: QWEN_IMAGE_2_1_ENGINE_TAG,
+              availableTag: MODERN_IMAGE_ENGINE_TAG,
               checkedAt: Date.now(),
             },
           })
           throw {
             code: 'ENGINE_UPDATE_REQUIRED',
-            message: `${family.name} requires ${QWEN_IMAGE_2_1_ENGINE_TAG} or newer. Update the image engine and retry.`,
+            message: `${family.name} requires ${MODERN_IMAGE_ENGINE_TAG} or newer. Update the image engine and retry.`,
           }
         }
         await acquireGpuForDiffusion({
@@ -774,7 +774,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             pendingEngineArtifactId: artifactId,
             engineUpdate: {
               ...noUpdate,
-              availableTag: QWEN_IMAGE_2_1_ENGINE_TAG,
+              availableTag: MODERN_IMAGE_ENGINE_TAG,
               checkedAt: Date.now(),
             },
           })

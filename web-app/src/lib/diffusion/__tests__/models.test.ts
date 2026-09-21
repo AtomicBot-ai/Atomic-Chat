@@ -533,6 +533,45 @@ describe('buildLoadRequest', () => {
     )
   })
 
+  it('builds a Create-only Krea 2 Turbo load with transformer, Qwen3-VL and Wan VAE', () => {
+    const family = findFamily(
+      getBaselineDiffusionCatalog(),
+      'krea-2-turbo'
+    )!
+    const request = buildLoadRequest(family, 'q4_k_m', [], ROOT, {
+      offload: 'group',
+      workflow: 'create',
+    })
+
+    expect(request).toMatchObject({
+      modelId: 'krea-2-turbo:q4_k_m',
+      family: 'krea-2-turbo',
+      modality: 'image',
+      displayName: 'Krea 2 Turbo Q4_K_M',
+      files: {
+        diffusionModel: `${ROOT}/krea-2-turbo/Krea-2-Turbo-Q4_K_M.gguf`,
+        llm: `${ROOT}/shared/Qwen--Qwen3-VL-4B-Instruct-GGUF/Qwen3VL-4B-Instruct-Q4_K_M.gguf`,
+        vae: `${ROOT}/shared/Comfy-Org--Wan_2.1_ComfyUI_repackaged/wan_2.1_vae.safetensors`,
+      },
+      defaults: {
+        steps: 8,
+        cfgScale: 1,
+        samplingMethod: 'euler',
+        width: 1024,
+        height: 1024,
+      },
+      ranges: {
+        steps: [1, 20],
+        dims: [512, 2048],
+        dimMultiple: 16,
+      },
+      offload: 'group',
+    })
+    expect(request.defaults.guidance).toBeUndefined()
+    expect(request.files.llmVision).toBeUndefined()
+    expect(request.files.qwen2vl).toBeUndefined()
+  })
+
   it('prefers the absolute path the plugin reported over the computed one', () => {
     const reported = [
       {

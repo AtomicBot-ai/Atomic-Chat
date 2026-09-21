@@ -38,6 +38,7 @@ export type DiffusionFamilyId =
   | 'flux.1-abliterated'
   | 'flux.1-nsfw-realism'
   | 'flux.1-krea'
+  | 'krea-2-turbo'
   | 'qwen-image'
   | 'qwen-image-2.1'
   | 'wan2.2-ti2v-5b'

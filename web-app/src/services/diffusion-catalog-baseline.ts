@@ -626,6 +626,85 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       }
     },
     {
+      "id": "krea-2-turbo",
+      "name": "Krea 2 Turbo",
+      "developer": "Krea",
+      "modality": "image",
+      "description": "Distilled 12B text-to-image model tuned for high-quality generation in 8 steps. KREA 2 COMMUNITY LICENSE: commercial use is limited to organizations under USD $1M annual revenue; larger organizations require an Enterprise License. Use is subject to Krea's Acceptable Use Policy.",
+      "license": "krea-2-community-license",
+      "gated": true,
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "realrebelai/KREA-2_GGUFs",
+        "quants": [
+          {
+            "id": "q3_k_m",
+            "label": "Q3_K_M",
+            "filename": "TURBO/Krea-2-Turbo-Q3_K_M.gguf",
+            "bytes": 5514578016,
+            "sha256": "9a8917ac175e0287d86f43da7d520ee0efe4a24f5250d9cd7ae0b0abf4ef5f62"
+          },
+          {
+            "id": "q4_k_m",
+            "label": "Q4_K_M",
+            "filename": "TURBO/Krea-2-Turbo-Q4_K_M.gguf",
+            "bytes": 7216993376,
+            "sha256": "273a98be1afe317bc7228403b6434647eaf866cebe6aff1980c401b950473807",
+            "recommended": true
+          },
+          {
+            "id": "q5_k_s",
+            "label": "Q5_K_S",
+            "filename": "TURBO/Krea-2-Turbo-Q5_K_S.gguf",
+            "bytes": 8819266656,
+            "sha256": "2d9a6bfb1b9ef512b040af72b59ce8c4a564f834a083747f3a6e7d3781e8b6dd"
+          }
+        ]
+      },
+      "vae": {
+        "repo": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+        "filename": "split_files/vae/wan_2.1_vae.safetensors",
+        "bytes": 253815318,
+        "sha256": "2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b"
+      },
+      "text_encoders": [
+        {
+          "repo": "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+          "filename": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+          "bytes": 2497281664,
+          "sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a",
+          "field": "llm"
+        }
+      ],
+      "defaults": {
+        "steps": 8,
+        "cfg_scale": 1,
+        "sampling_method": "euler",
+        "width": 1024,
+        "height": 1024
+      },
+      "ranges": {
+        "steps": [
+          1,
+          20
+        ],
+        "dims": [
+          512,
+          2048
+        ],
+        "dim_multiple": 16
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": false,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
       "id": "qwen-image",
       "name": "Qwen-Image",
       "developer": "Qwen",

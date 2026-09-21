@@ -139,6 +139,7 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'flux.1-abliterated',
   'flux.1-nsfw-realism',
   'flux.1-krea',
+  'krea-2-turbo',
   'qwen-image',
   'qwen-image-2.1',
   'wan2.2-ti2v-5b',
@@ -159,8 +160,8 @@ const WORKFLOWS: readonly ImageWorkflowId[] = IMAGE_WORKFLOW_IDS
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const QUANT_ID_RE = /^[a-z0-9_]+$/
 const QUANT_LABEL_RE = /^[A-Z0-9_]+$/
-/** A transformer is one flat GGUF: no directories, no other extension. */
-export const QUANT_FILENAME_RE = /^[A-Za-z0-9._-]+\.gguf$/
+/** Transformer paths may include safe repository folders, but must end in GGUF. */
+export const QUANT_FILENAME_RE = /^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.gguf$/
 /** Side files may live in a repo subfolder, but never climb out of it. */
 export const SIDE_FILENAME_RE = /^[A-Za-z0-9._/-]+\.(gguf|safetensors)$/
 const SHA256_RE = /^[0-9a-f]{64}$/
@@ -193,12 +194,20 @@ export const isSafeSideFilename = (value: string): boolean =>
   SIDE_FILENAME_RE.test(value) &&
   value.split('/').every((segment) => segment.length > 0 && segment !== '..')
 
+export const isSafeQuantFilename = (value: string): boolean =>
+  QUANT_FILENAME_RE.test(value) &&
+  value
+    .split('/')
+    .every(
+      (segment) => segment.length > 0 && segment !== '.' && segment !== '..'
+    )
+
 const sanitizeQuant = (raw: unknown): DiffusionCatalogQuant | null => {
   if (!isRecord(raw)) return null
   if (typeof raw.id !== 'string' || !QUANT_ID_RE.test(raw.id)) return null
   if (typeof raw.label !== 'string' || !QUANT_LABEL_RE.test(raw.label))
     return null
-  if (typeof raw.filename !== 'string' || !QUANT_FILENAME_RE.test(raw.filename))
+  if (typeof raw.filename !== 'string' || !isSafeQuantFilename(raw.filename))
     return null
   if (!isPositiveInt(raw.bytes)) return null
   const sha256 = optionalSha256(raw.sha256)

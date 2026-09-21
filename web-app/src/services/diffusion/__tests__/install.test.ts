@@ -176,6 +176,10 @@ describe('resolveSdcppManifest', () => {
       (await resolveSdcppManifest({ url: URL_, family: 'qwen-image' })).manifest
         .tag_name
     ).toBe('master-849-d04e895')
+    expect(
+      (await resolveSdcppManifest({ url: URL_, family: 'krea-2-turbo' }))
+        .manifest.tag_name
+    ).toBe('master-883-137f740')
   })
 
   it('falls back to the bundled baseline with the error attached', async () => {
@@ -302,6 +306,14 @@ describe('ensureDiffusionBackend', () => {
     const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
     expect(result.tag).toBe('master-883-137f740')
     expect(transfers).toHaveLength(0)
+  })
+
+  it('installs 883 for Krea 2 Turbo from a stale profile manifest', async () => {
+    installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
+    const result = await ensureDiffusionBackend({ family: 'krea-2-turbo' })
+    expect(result.tag).toBe('master-883-137f740')
+    expect(result.backendId).toBe('win-cuda12-x64')
+    expect(transfers).toHaveLength(1)
   })
 
   it('downloads, unpacks and finalizes the backend the host qualifies for', async () => {

@@ -17,18 +17,20 @@ use crate::state::{
 /// driver reports the VRAM as free; spawning immediately fails to allocate.
 const GPU_SETTLE: Duration = Duration::from_millis(500);
 
-/// Qwen 2.1's architecture first ships in the pinned 883 engine. Unknown
-/// tags fail closed; legacy families keep their existing engine policy.
+/// Qwen 2.1 and Krea 2 are guarded by the pinned 883 compatibility baseline.
+/// Unknown tags fail closed; legacy families keep their existing engine policy.
 pub fn check_engine_compatibility(family: &str, tag: &str) -> DiffusionResult<()> {
     let build = tag
         .strip_prefix("master-")
         .and_then(|rest| rest.split_once('-'))
         .filter(|(_, hash)| !hash.is_empty())
         .and_then(|(build, _)| build.parse::<u32>().ok());
-    if family == "qwen-image-2.1" && !build.is_some_and(|build| build >= 883) {
+    if matches!(family, "qwen-image-2.1" | "krea-2-turbo")
+        && !build.is_some_and(|build| build >= 883)
+    {
         return Err(DiffusionError::with_details(
             DiffusionErrorCode::EngineUpdateRequired,
-            "Qwen-Image-2.1 requires an image engine update. Update the engine, then retry loading the model.",
+            format!("{family} requires an image engine update. Update the engine, then retry loading the model."),
             format!("installed={tag}; required=master-883-137f740 or newer"),
         ));
     }
@@ -80,17 +82,18 @@ pub async fn activate_install(
     }
 }
 
-/// Which workflows a family can run on sd.cpp. img2img and masking are
-/// generic in sd.cpp (the init image is VAE-encoded and noised to
-/// `strength`; a mask blends latents), so every image family gets them.
-/// Reference-guided generation and instruction edits need a model trained
-/// on reference images. Qwen Image 2.1 also needs a separately loaded VLM
-/// projector; [`workflows_for_spec`] removes those capabilities when absent.
+/// Which workflows a family can run on sd.cpp. img2img and masking are generic
+/// for the established base families, while distilled models such as Krea 2
+/// Turbo remain restricted to their verified Create workflow. Reference-guided
+/// generation and instruction edits need a model trained on reference images.
+/// Qwen Image 2.1 also needs a separately loaded VLM projector;
+/// [`workflows_for_spec`] removes those capabilities when absent.
 pub fn workflows_for_family(family: &str) -> Vec<ImageWorkflow> {
     use ImageWorkflow::*;
     match family {
         "flux.2-klein" => vec![Create, Transform, Inpaint, Extend, Upscale, Reference, Edit],
         "qwen-image-2.1" => vec![Create, Reference, Edit],
+        "krea-2-turbo" => vec![Create],
         "z-image" | "qwen-image" => {
             vec![Create, Transform, Inpaint, Extend, Upscale]
         }
@@ -389,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_profiles_require_a_compatible_engine_without_switching_backends() {
+    fn modern_families_require_a_compatible_engine_without_switching_backends() {
         let old = record("master-849-d04e895", "macos-arm64");
         let new = record("master-883-137f740", "macos-arm64");
         let other = record("master-883-137f740", "win-cpu-x64");
@@ -419,15 +422,21 @@ mod tests {
                 "master-849-d04e895"
             );
         }
-        for tag in ["unknown", "master-882-abcdef0", "master-883", "master-883-"] {
-            assert!(check_engine_compatibility("qwen-image-2.1", tag).is_err());
-        }
-        for tag in [
-            "master-883-137f740",
-            "master-883-137f740-a1234567",
-            "master-1000-abcdef0",
-        ] {
-            assert!(check_engine_compatibility("qwen-image-2.1", tag).is_ok());
+        for family in ["qwen-image-2.1", "krea-2-turbo"] {
+            assert_eq!(
+                select_model_install(&records, engine, family).unwrap().tag,
+                "master-883-137f740"
+            );
+            for tag in ["unknown", "master-882-abcdef0", "master-883", "master-883-"] {
+                assert!(check_engine_compatibility(family, tag).is_err());
+            }
+            for tag in [
+                "master-883-137f740",
+                "master-883-137f740-a1234567",
+                "master-1000-abcdef0",
+            ] {
+                assert!(check_engine_compatibility(family, tag).is_ok());
+            }
         }
     }
 
@@ -530,6 +539,7 @@ mod tests {
             workflows_for_family("qwen-image-2.1"),
             vec![Create, Reference, Edit]
         );
+        assert_eq!(workflows_for_family("krea-2-turbo"), vec![Create]);
         assert_eq!(workflows_for_family("wan2.2-ti2v-5b"), vec![Create]);
         assert_eq!(workflows_for_family("unknown"), vec![Create]);
     }

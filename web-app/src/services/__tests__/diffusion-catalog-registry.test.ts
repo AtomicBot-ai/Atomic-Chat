@@ -20,6 +20,7 @@ import {
   findQuant,
   getBaselineDiffusionCatalog,
   getCachedDiffusionCatalog,
+  isSafeQuantFilename,
   isSafeSideFilename,
   mergeBundledDiffusionFamilies,
   parseDiffusionCatalog,
@@ -203,7 +204,7 @@ describe('strict parsing', () => {
     })
   })
 
-  it('drops a quant whose file name is not a flat .gguf', () => {
+  it('accepts safe GGUF subfolders and drops unsafe transformer paths', () => {
     const parsed = sanitizeDiffusionFamily(
       family({
         transformer: {
@@ -233,7 +234,10 @@ describe('strict parsing', () => {
         },
       })
     )
-    expect(parsed?.transformer.quants.map((q) => q.id)).toEqual(['q4_k_m'])
+    expect(parsed?.transformer.quants.map((q) => q.id)).toEqual([
+      'q4_k_m',
+      'q6_k',
+    ])
   })
 
   it('rejects the whole family when a side file could escape the models root', () => {
@@ -311,6 +315,14 @@ describe('strict parsing', () => {
     expect(isSafeSideFilename('a/../b.gguf')).toBe(false)
     expect(isSafeSideFilename('a//b.gguf')).toBe(false)
     expect(isSafeSideFilename('a b.gguf')).toBe(false)
+  })
+
+  it('allows safe transformer subfolders without allowing traversal', () => {
+    expect(isSafeQuantFilename('TURBO/Krea-2-Turbo-Q4_K_M.gguf')).toBe(true)
+    expect(isSafeQuantFilename('../Krea-2-Turbo-Q4_K_M.gguf')).toBe(false)
+    expect(isSafeQuantFilename('TURBO/../weights.gguf')).toBe(false)
+    expect(isSafeQuantFilename('/TURBO/weights.gguf')).toBe(false)
+    expect(isSafeQuantFilename('TURBO/weights.safetensors')).toBe(false)
   })
 
   it('accepts the Qwen 2.1 vision companion and editing workflows', () => {
@@ -395,6 +407,7 @@ describe('baseline and lookups', () => {
       'flux.1-abliterated',
       'flux.1-nsfw-realism',
       'flux.1-krea',
+      'krea-2-turbo',
       'qwen-image',
       'qwen-image-2.1',
     ])
@@ -471,5 +484,80 @@ describe('baseline and lookups', () => {
         recommended: true,
       },
     ])
+  })
+
+  it('bundles the verified Krea 2 Turbo Community License definition', () => {
+    const family = findFamily(getBaselineDiffusionCatalog(), 'krea-2-turbo')
+
+    expect(family).toMatchObject({
+      name: 'Krea 2 Turbo',
+      license: 'krea-2-community-license',
+      gated: true,
+      description: expect.stringContaining('USD $1M annual revenue'),
+      defaults: {
+        steps: 8,
+        cfg_scale: 1,
+        sampling_method: 'euler',
+        width: 1024,
+        height: 1024,
+      },
+      ranges: {
+        steps: [1, 20],
+        dims: [512, 2048],
+        dim_multiple: 16,
+      },
+      capabilities: {
+        negative_prompt: false,
+        guidance: false,
+        workflows: ['create'],
+      },
+      vae: {
+        repo: 'Comfy-Org/Wan_2.1_ComfyUI_repackaged',
+        filename: 'split_files/vae/wan_2.1_vae.safetensors',
+        bytes: 253_815_318,
+        sha256:
+          '2fc39d31359a4b0a64f55876d8ff7fa8d780956ae2cb13463b0223e15148976b',
+      },
+      text_encoders: [
+        {
+          repo: 'Qwen/Qwen3-VL-4B-Instruct-GGUF',
+          filename: 'Qwen3VL-4B-Instruct-Q4_K_M.gguf',
+          bytes: 2_497_281_664,
+          sha256:
+            '66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a',
+          field: 'llm',
+        },
+      ],
+    })
+    expect(family?.transformer).toEqual({
+      repo: 'realrebelai/KREA-2_GGUFs',
+      quants: [
+        {
+          id: 'q3_k_m',
+          label: 'Q3_K_M',
+          filename: 'TURBO/Krea-2-Turbo-Q3_K_M.gguf',
+          bytes: 5_514_578_016,
+          sha256:
+            '9a8917ac175e0287d86f43da7d520ee0efe4a24f5250d9cd7ae0b0abf4ef5f62',
+        },
+        {
+          id: 'q4_k_m',
+          label: 'Q4_K_M',
+          filename: 'TURBO/Krea-2-Turbo-Q4_K_M.gguf',
+          bytes: 7_216_993_376,
+          sha256:
+            '273a98be1afe317bc7228403b6434647eaf866cebe6aff1980c401b950473807',
+          recommended: true,
+        },
+        {
+          id: 'q5_k_s',
+          label: 'Q5_K_S',
+          filename: 'TURBO/Krea-2-Turbo-Q5_K_S.gguf',
+          bytes: 8_819_266_656,
+          sha256:
+            '2d9a6bfb1b9ef512b040af72b59ce8c4a564f834a083747f3a6e7d3781e8b6dd',
+        },
+      ],
+    })
   })
 })

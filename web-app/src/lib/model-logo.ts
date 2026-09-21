@@ -108,6 +108,7 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
   'flux.1-abliterated': 'bfl',
   'flux.1-nsfw-realism': 'bfl',
   'flux.1-krea': 'bfl',
+  'krea-2-turbo': 'bfl',
   'qwen-image': 'qwen',
   'qwen-image-2.1': 'qwen',
   'wan2.2-ti2v-5b': 'wan',
