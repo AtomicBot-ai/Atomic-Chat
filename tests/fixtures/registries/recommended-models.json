@@ -1,7 +1,7 @@
 {
   "$schema": "./schema.json",
   "schema_version": 1,
-  "updated_at": "2026-09-11T00:00:00Z",
+  "updated_at": "2026-09-17T00:00:00Z",
   "recommendations": [
     {
       "model_name": "AtomicChat/Qwen3.5-4B-GGUF",
@@ -103,14 +103,36 @@
       {
         "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
         "description_key": "hub:recMathReasoning",
+        "quant": "Q6_K"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_M",
+        "mmproj_quant": "F16"
+      },
+      {
+        "model_name": "AtomicChat/Qwen3.6-27B-GGUF",
+        "description_key": "hub:recCoding",
         "quant": "Q4_K_M"
       }
     ],
     "vram_64_plus": [
       {
+        "model_name": "Qwen/Qwen3-Coder-Next-GGUF",
+        "description_key": "hub:recCoding",
+        "quant": "Q4_K_M"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q6_K",
+        "mmproj_quant": "F16"
+      },
+      {
         "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
         "description_key": "hub:recMathReasoning",
-        "quant": "Q4_K_M"
+        "quant": "Q6_K"
       }
     ],
     "unified_8": [
@@ -153,14 +175,108 @@
       {
         "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
         "description_key": "hub:recMathReasoning",
+        "quant": "Q6_K"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q4_K_M",
+        "mmproj_quant": "F16"
+      },
+      {
+        "model_name": "AtomicChat/Qwen3.6-27B-GGUF",
+        "description_key": "hub:recCoding",
         "quant": "Q4_K_M"
       }
     ],
     "unified_64_plus": [
       {
+        "model_name": "Qwen/Qwen3-Coder-Next-GGUF",
+        "description_key": "hub:recCoding",
+        "quant": "Q4_K_M"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q6_K",
+        "mmproj_quant": "F16"
+      },
+      {
         "model_name": "AtomicChat/Qwen3.6-35B-A3B-GGUF",
         "description_key": "hub:recMathReasoning",
+        "quant": "Q6_K"
+      }
+    ],
+    "vram_128": [
+      {
+        "model_name": "unsloth/gpt-oss-120b-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q8_0"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q8_0",
+        "mmproj_quant": "F16"
+      },
+      {
+        "model_name": "Qwen/Qwen3-Coder-Next-GGUF",
+        "description_key": "hub:recCoding",
+        "quant": "Q6_K"
+      }
+    ],
+    "vram_128_plus": [
+      {
+        "model_name": "unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF",
+        "description_key": "hub:recMathReasoning",
         "quant": "Q4_K_M"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q8_0",
+        "mmproj_quant": "F16"
+      },
+      {
+        "model_name": "unsloth/gpt-oss-120b-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q8_0"
+      }
+    ],
+    "unified_128": [
+      {
+        "model_name": "unsloth/gpt-oss-120b-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q8_0"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q8_0",
+        "mmproj_quant": "F16"
+      },
+      {
+        "model_name": "Qwen/Qwen3-Coder-Next-GGUF",
+        "description_key": "hub:recCoding",
+        "quant": "Q6_K"
+      }
+    ],
+    "unified_128_plus": [
+      {
+        "model_name": "unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q4_K_M"
+      },
+      {
+        "model_name": "AtomicChat/gemma-4-31B-it-GGUF",
+        "description_key": "hub:recVisionKnowledge",
+        "quant": "Q8_0",
+        "mmproj_quant": "F16"
+      },
+      {
+        "model_name": "unsloth/gpt-oss-120b-GGUF",
+        "description_key": "hub:recMathReasoning",
+        "quant": "Q8_0"
       }
     ]
   }

@@ -156,10 +156,10 @@ export const AttachmentChip = ({
                 e.stopPropagation()
                 onRemove?.()
               }}
-              className="absolute top-1 right-1 size-4 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer"
+              className="absolute top-1 right-1 flex size-5 cursor-pointer items-center justify-center rounded-full bg-foreground text-background opacity-0 shadow-sm transition-opacity group-hover/chip:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="Remove"
             >
-              <IconX size={12} />
+              <IconX size={13} />
             </button>
           )}
         </div>

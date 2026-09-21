@@ -151,6 +151,20 @@ pub const AGENTS: &[Agent] = &[
         run_mode: RunMode::Gui,
     },
     Agent {
+        id: "zcode",
+        name: "ZCode",
+        // The desktop app's executable: `/usr/bin/zcode` on Linux, found off
+        // PATH elsewhere (see `off_path_candidates`).
+        detect_bin: "zcode",
+        aliases: &[],
+        requires_model: true,
+        endpoint_with_prefix: true,
+        docs_url: "https://zcode.z.ai/en/docs/configuration",
+        run_args: &[],
+        // A desktop app that reads the provider file we write; it returns at once.
+        run_mode: RunMode::Gui,
+    },
+    Agent {
         id: "mimo",
         name: "MiMo Code",
         detect_bin: "mimo",
@@ -319,6 +333,7 @@ pub fn configure(agent: &Agent, api_url: &str, model: &str, api_key: &str) -> Re
         "cline" => agents::configure_cline(url, model_owned, key),
         "dsh" => agents::configure_dsh(url, model_owned, key),
         "zed" => agents::configure_zed(url, model_opt, key),
+        "zcode" => agents::configure_zcode(url, model_owned, key),
         "mimo" => agents::configure_mimo(url, model_owned, key),
         "droid" => agents::configure_droid(url, model_owned, key),
         "copilot" => agents::configure_copilot(url, model_owned, key),

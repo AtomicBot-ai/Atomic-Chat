@@ -32,6 +32,7 @@
     "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
+    "download:cloudflared": "node ./scripts/download-bin.mjs --only=cloudflared",
     "build:mlx-server": "make build-mlx-server",
     "build:foundation-models-server": "make build-foundation-models-server",
     "build:cli": "make build-cli",

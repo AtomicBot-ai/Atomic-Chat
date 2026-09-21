@@ -27,6 +27,7 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toast } from 'sonner'
 import { getProviderTitle, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
 /// Progress-only view onto the turboquant provider. The recommendation modal
 /// stays upstream-owned so two providers can never argue over the same dialog,
@@ -175,6 +176,14 @@ const BackendUpdater = () => {
 
   const backgroundBackendLabel = backendLabel(backgroundDownload?.backendName)
 
+  /// ATO-533: this renders in the same bottom-right corner as the app and
+  /// engine update banners. Live transfer progress outranks both offers —
+  /// it is over in minutes, while an offer stays up until it is acted on.
+  const mayRenderBackgroundDownload = useUpdateBannerSlot(
+    'download',
+    !!backgroundDownload
+  )
+
   return (
     <>
       {/* GPU backend recommendation dialog */}
@@ -298,7 +307,7 @@ const BackendUpdater = () => {
       </Dialog>
 
       {/* Unattended backend download — non-blocking progress */}
-      {backgroundDownload && (
+      {backgroundDownload && mayRenderBackgroundDownload && (
         <div className="fixed z-50 bottom-3 right-3 bg-background flex items-start gap-2 border rounded-lg shadow-md px-4 py-3 max-w-[22rem]">
           <IconLoader2
             size={18}

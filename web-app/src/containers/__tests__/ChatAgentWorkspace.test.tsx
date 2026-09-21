@@ -51,18 +51,78 @@ describe('Chat and Agent workspace controls', () => {
       <AgentApprovalModeSelect
         mode="manual"
         onChange={onChange}
+        menuTitle="How should tool calls be approved?"
         manualSelectedLabel="Manually"
         manualLabel="Manually approve"
         manualDescription="Pause for sensitive actions."
         skipSelectedLabel="Skip All"
         skipLabel="Skip all approvals"
         skipDescription="Never pause."
+        skipConfirmTitle="Enable Full access?"
+        skipConfirmBody="Tool calls will run without approval prompts."
+        skipConfirmCancel="Cancel"
+        skipConfirmAccept="I understand"
       />
     )
 
     await user.click(screen.getByRole('button', { name: 'Manually' }))
+    expect(
+      screen.getByText('How should tool calls be approved?')
+    ).toBeInTheDocument()
     await user.click(screen.getByText('Skip all approvals'))
 
+    // Full access asks first; the mode changes only from the dialog.
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'I understand' }))
+
     expect(onChange).toHaveBeenCalledWith('skip')
+  })
+
+  // Full access used to paint the trigger and its whole menu row red, which
+  // read as an error and scared people off a mode that is theirs to pick. It
+  // now looks like the other mode; its icon and words say what it does.
+  it('gives full access no colour of its own', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <AgentApprovalModeSelect
+        mode="skip"
+        onChange={vi.fn()}
+        menuTitle="How should tool calls be approved?"
+        manualSelectedLabel="Manually"
+        manualLabel="Manually approve"
+        manualDescription="Pause for sensitive actions."
+        skipSelectedLabel="Skip All"
+        skipLabel="Skip all approvals"
+        skipDescription="Never pause."
+        skipConfirmTitle="Enable Full access?"
+        skipConfirmBody="Tool calls will run without approval prompts."
+        skipConfirmCancel="Cancel"
+        skipConfirmAccept="I understand"
+      />
+    )
+
+    // Icon classes without the lucide name that tells the two icons apart.
+    const look = (icon: Element | null) =>
+      [...(icon?.classList ?? [])]
+        .filter((name) => !name.startsWith('lucide'))
+        .join(' ')
+
+    const trigger = screen.getByRole('button', { name: 'Skip All' })
+    expect(trigger.className).not.toMatch(/destructive|amber/)
+    expect(look(trigger.querySelector('svg'))).toBe('size-4')
+
+    await user.click(trigger)
+    const fullAccess = screen.getByRole('menuitem', {
+      name: /Skip all approvals/,
+    })
+    const manual = screen.getByRole('menuitem', { name: /Manually approve/ })
+    expect(fullAccess).toHaveAttribute('data-variant', 'default')
+    expect(look(fullAccess.querySelector('svg'))).toBe(
+      look(manual.querySelector('svg'))
+    )
+    expect(screen.getByText('Never pause.').className).toBe(
+      screen.getByText('Pause for sensitive actions.').className
+    )
   })
 })

@@ -2,7 +2,8 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
-  availableReasoningLevels,
+  canDisableReasoning,
+  reasoningLevelsForModel,
   resolveReasoningLevel,
   type ReasoningEffortLevel,
 } from '@/lib/reasoning-effort'
@@ -20,18 +21,33 @@ export const useReasoningEffort = () => {
   const disableReasoning = useGeneralSetting((state) => state.disableReasoning)
   const reasoningBudget = useGeneralSetting((state) => state.reasoningBudget)
   const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
 
-  const enabled = !disableReasoning
+  const canDisable = canDisableReasoning(
+    selectedProvider,
+    selectedModel?.reasoning
+  )
+  const enabled = !disableReasoning || !canDisable
 
-  // No model picked yet, or one without a thinking phase: no scale, so no
+  // No model picked yet, or one explicitly without a thinking phase: no
   // level on the pill. The stored preference is kept for the next pick.
+  //
+  // A model on a self-hosted or user-added OpenAI-compatible provider reaches
+  // us without `reasoning` — those controls are read off the chat template by
+  // the local backends, and there is no template to read here. Its thinking
+  // phase is still driven by chat-template kwargs, and reasoning ships off, so
+  // without a scale there is no way to switch it back on (ATO-527). Offer the
+  // full one only when no explicit model capability is available: an explicit
+  // `supportsThinking: false` always wins over provider inference.
   const levels: ReasoningEffortLevel[] = selectedModel
-    ? availableReasoningLevels(selectedModel.reasoning)
+    ? reasoningLevelsForModel(selectedProvider, selectedModel.reasoning)
     : []
+  const effectiveBudget =
+    !canDisable && disableReasoning ? levels[0] : reasoningBudget
   const level =
-    reasoningBudget === 'off'
+    effectiveBudget === 'off'
       ? undefined
-      : resolveReasoningLevel(reasoningBudget, levels)
+      : resolveReasoningLevel(effectiveBudget, levels)
 
   // The level is only worth showing while reasoning is on: off, the model
   // answers without a thinking phase whatever the slider says.
@@ -40,5 +56,14 @@ export const useReasoningEffort = () => {
     ? t(`common:reasoningEffort.${shownLevel}`)
     : undefined
 
-  return { enabled, levels, level, shownLevel, levelLabel }
+  return {
+    enabled,
+    canDisable,
+    preferenceDisabled: disableReasoning,
+    hasModel: Boolean(selectedModel),
+    levels,
+    level,
+    shownLevel,
+    levelLabel,
+  }
 }

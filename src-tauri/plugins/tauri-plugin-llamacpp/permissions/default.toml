@@ -6,6 +6,7 @@ permissions = [
 
     # LlamaCpp server commands
     "allow-load-llama-model",
+    "allow-cancel-llama-model-load",
     "allow-unload-llama-model",
     "allow-get-devices",
     "allow-get-runtime-device",

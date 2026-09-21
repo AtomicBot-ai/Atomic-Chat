@@ -1,6 +1,7 @@
 const COMMANDS: &[&str] = &[
     "cleanup_mlx_processes",
     "load_mlx_model",
+    "cancel_mlx_model_load",
     "unload_mlx_model",
     "is_mlx_process_running",
     "get_mlx_random_port",

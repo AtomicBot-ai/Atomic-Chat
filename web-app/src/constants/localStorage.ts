@@ -88,6 +88,14 @@ export const localStorageKey = {
   // flag, so the composer can read it reactively without the storage-event
   // dance `useSetupCompleted` needs for `setup-completed`.
   settingVoice: 'setting-voice',
+  // Local image generation preferences: setup completion, the selected
+  // checkpoint, engine override and the unload policies. Same shape of bag as
+  // `settingVoice`, for the same reason.
+  settingImages: 'setting-images',
+  // Durable Images form choices: workflow, size, steps, seed and batch/run
+  // counts. Unsent positive/negative prompt text is deliberately excluded.
+  // The seed is kept as text so an empty field stays empty.
+  imageForm: 'image-form',
 }
 
 /**

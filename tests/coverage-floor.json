@@ -58,5 +58,65 @@
     "branches": 100,
     "functions": 100,
     "lines": 100
+  },
+  "web-app/src/lib/diffusion/size.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/recipe.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/generation-stop.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/errors.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/telemetry.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/stores/image-generation-store.ts": {
+    "statements": 80,
+    "branches": 70,
+    "functions": 85,
+    "lines": 80
+  },
+  "web-app/src/services/diffusion/backendMatrix.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/fit.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/validate.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/diffusion/models.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
   }
 }

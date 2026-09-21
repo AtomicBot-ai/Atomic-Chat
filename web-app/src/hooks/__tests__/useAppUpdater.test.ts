@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { useAppUpdater } from '../useAppUpdater'
 import type { EventsService } from '@/services/events/types'
 import type { ModelsService } from '@/services/models/types'
@@ -96,7 +96,18 @@ describe('useAppUpdater', () => {
       downloadedBytes: 0,
       totalBytes: 0,
       remindMeLater: false,
+      // Resolved asynchronously from the Tauri app API, which is absent in
+      // this environment — the build-time `VERSION` define fills in.
+      currentVersion: '',
     })
+  })
+
+  it('reports the running app version once it resolves', async () => {
+    const { result } = renderHook(() => useAppUpdater())
+
+    await waitFor(() =>
+      expect(result.current.updateState.currentVersion).toBe('test')
+    )
   })
 
   it('should set up event listeners for update state sync', () => {

@@ -70,4 +70,8 @@ export enum PlatformFeature {
   // a fixed port for the OAuth callback and a place to keep a refresh token
   // out of browser storage, so desktop only.
   CHATGPT_SUBSCRIPTION = 'chatgptSubscription',
+
+  // Local image (and later video) generation. Needs the native diffusion
+  // plugin that supervises `sd-server`, so desktop only.
+  MEDIA_GENERATION = 'mediaGeneration',
 }

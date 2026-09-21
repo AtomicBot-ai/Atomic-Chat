@@ -7,6 +7,8 @@ pub enum ErrorCode {
     ModelFileNotFound,
     ModelLoadFailed,
     ModelLoadTimedOut,
+    /// The user stopped the load before the model was ready (ATO-530).
+    ModelLoadCancelled,
     OutOfMemory,
     ModelArchNotSupported,
     MlxProcessError,
@@ -30,6 +32,14 @@ impl MlxError {
             message,
             details,
         }
+    }
+
+    pub fn load_cancelled() -> Self {
+        Self::new(
+            ErrorCode::ModelLoadCancelled,
+            "The model load was cancelled.".into(),
+            None,
+        )
     }
 
     /// Parses stderr from the MLX server and creates a specific MlxError.

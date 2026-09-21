@@ -1,0 +1,24 @@
+[default]
+description = "Default permissions for the Atomic image generation plugin"
+permissions = [
+    "allow-configure",
+    "allow-get-status",
+    "allow-finalize-backend-install",
+    "allow-list-installed-backends",
+    "allow-remove-backend",
+    "allow-list-model-files",
+    "allow-delete-model-file",
+    "allow-load-model",
+    "allow-unload-model",
+    "allow-get-capabilities",
+    "allow-touch-idle",
+    "allow-generate",
+    "allow-get-job",
+    "allow-cancel-job",
+    "allow-list-gallery",
+    "allow-get-gallery-item",
+    "allow-delete-gallery-items",
+    "allow-set-gallery-flags",
+    "allow-export-gallery-item",
+    "allow-set-output-dir"
+]

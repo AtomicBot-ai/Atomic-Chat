@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-model-file"
+description = "Enables the delete_model_file command without any pre-configured scope."
+commands.allow = ["delete_model_file"]
+
+[[permission]]
+identifier = "deny-delete-model-file"
+description = "Denies the delete_model_file command without any pre-configured scope."
+commands.deny = ["delete_model_file"]

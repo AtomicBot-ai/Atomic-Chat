@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-generate"
+description = "Enables the generate command without any pre-configured scope."
+commands.allow = ["generate"]
+
+[[permission]]
+identifier = "deny-generate"
+description = "Denies the generate command without any pre-configured scope."
+commands.deny = ["generate"]

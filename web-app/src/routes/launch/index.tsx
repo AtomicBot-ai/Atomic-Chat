@@ -155,6 +155,18 @@ function AgentIcon({ agent }: { agent: IntegrationAgent }) {
           />
         </IconBox>
       )
+    case 'zcode':
+      // ZCode's app icon (packages/desktop/build/icons in zai-org/ZCode). Its
+      // squircle has transparent corners, filled with the icon's own black.
+      return (
+        <IconBox bg="#0b0c0c">
+          <img
+            src="/images/integrations/zcode.png"
+            alt={agent.name}
+            className="size-full object-contain"
+          />
+        </IconBox>
+      )
     case 'zed':
       // Official Zed brand mark (assets/images/zed_logo.svg from zed-industries/zed),
       // rendered light-on-dark to match Zed's app icon.
@@ -682,6 +694,9 @@ function LaunchPage() {
         case 'zed':
           await invoke('configure_zed', { apiUrl, model, apiKey: key })
           break
+        case 'zcode':
+          await invoke('configure_zcode', { apiUrl, model, apiKey: key })
+          break
         case 'copilot':
           await invoke('configure_copilot', { apiUrl, model, apiKey: key })
           break
@@ -737,7 +752,11 @@ function LaunchPage() {
               // there is nothing to restart — but a chat that was already pinned
               // to another model keeps it, and only `/model default` clears that.
               'launch:toast.configuredDescOpenclaw'
-            : 'launch:toast.configuredDesc'
+            : agent.id === 'zcode'
+              ? // ZCode polls its provider file, so a running app switches
+                // over without a restart.
+                'launch:toast.configuredDescZcode'
+              : 'launch:toast.configuredDesc'
       toast.success(t('launch:toast.configured', { name: agent.name }), {
         description: t(configuredDescKey, { name: agent.name }),
         duration: 8000,
@@ -797,6 +816,22 @@ function LaunchPage() {
           // local server, and the user drives the Agent Panel from there.
           if (agent.id === 'zed') {
             await invoke('launch_zed')
+            return
+          }
+          // ZCode is a desktop app too, and it is never installed from here:
+          // the provider file is written either way and read on its next start,
+          // so a missing app is a pointer to the download, not a failure.
+          if (agent.id === 'zcode') {
+            const app = await invoke<{ installed: boolean; launched: boolean }>(
+              'launch_zcode',
+              { path: useLaunchStore.getState().binPath[agent.id] ?? null }
+            )
+            if (!app.installed) {
+              toast.info(t('launch:toast.zcodeNotInstalled'), {
+                description: t('launch:toast.zcodeNotInstalledDesc'),
+                duration: 10000,
+              })
+            }
             return
           }
           // OpenClaw also ships a desktop app (macOS `OpenClaw.app`, Windows

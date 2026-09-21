@@ -1,5 +1,3 @@
-import { useRef } from 'react'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -9,77 +7,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useAgentMode } from '@/hooks/useAgentMode'
+import { useAgentApprovalActions } from '@/hooks/useAgentApprovalActions'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import {
-  isStaleAgentFolderAccessError,
-  resolveAgentFolderAccess,
-  resolveAgentWorkspaceRoot,
-} from '@/services/agent/tauri'
 
 export default function AgentFolderAccessDialog() {
   const { t } = useTranslation('chat')
-  const resolvingIdRef = useRef<string | undefined>(undefined)
   const threadId = useAgentRun((state) =>
     Object.keys(state.runs).find(
       (candidate) => state.runs[candidate].pendingFolderAccess !== undefined
     )
   )
-  const run = useAgentRun((state) =>
-    threadId ? state.runs[threadId] : undefined
-  )
-  const request = run?.pendingFolderAccess
+  const {
+    run,
+    folderAccess: request,
+    folderAccessResolving,
+    resolveFolderAccess,
+  } = useAgentApprovalActions(threadId)
   const currentThreadId = useThreads((state) => state.currentThreadId)
 
   if (!threadId || !run || !request) return null
   // The open thread renders folder-access requests inline in the composer.
   if (threadId === currentThreadId) return null
 
-  const resolve = async (allow: boolean) => {
-    if (
-      run.folderAccessResolving ||
-      resolvingIdRef.current === request.access_id
-    ) {
-      return
-    }
-    resolvingIdRef.current = request.access_id
-    useAgentRun.getState().setFolderAccessResolving(threadId, true)
-    try {
-      if (allow) {
-        const root = await resolveAgentWorkspaceRoot(request.path)
-        useAgentMode.getState().addExternalRoot(threadId, {
-          ...root,
-          canEdit: true,
-        })
-      }
-      await resolveAgentFolderAccess({
-        run_id: request.run_id,
-        access_id: request.access_id,
-        allow,
-      })
-      useAgentRun
-        .getState()
-        .clearPendingFolderAccess(threadId, request.access_id)
-    } catch (error) {
-      if (isStaleAgentFolderAccessError(error)) {
-        useAgentRun
-          .getState()
-          .clearPendingFolderAccess(threadId, request.access_id)
-        return
-      }
-      resolvingIdRef.current = undefined
-      useAgentRun.getState().setFolderAccessResolving(threadId, false)
-      toast.error(t('agentFolderAccess.resolveFailed'))
-    }
-  }
-
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) void resolve(false)
+        if (!open) void resolveFolderAccess('deny')
       }}
     >
       <DialogContent showCloseButton={false}>
@@ -97,20 +53,28 @@ export default function AgentFolderAccessDialog() {
         </p>
         <DialogFooter>
           <Button
-            variant="ghost"
             size="sm"
-            disabled={run.folderAccessResolving}
-            onClick={() => void resolve(false)}
-          >
-            {t('agentFolderAccess.deny')}
-          </Button>
-          <Button
-            size="sm"
-            disabled={run.folderAccessResolving}
-            onClick={() => void resolve(true)}
+            disabled={folderAccessResolving}
+            onClick={() => void resolveFolderAccess('allow_once')}
             autoFocus
           >
             {t('agentFolderAccess.allow')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={folderAccessResolving}
+            onClick={() => void resolveFolderAccess('always_allow')}
+          >
+            {t('agentFolderAccess.alwaysAllow')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={folderAccessResolving}
+            onClick={() => void resolveFolderAccess('deny')}
+          >
+            {t('agentFolderAccess.deny')}
           </Button>
         </DialogFooter>
       </DialogContent>

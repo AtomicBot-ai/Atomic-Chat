@@ -29,6 +29,20 @@ const LEGACY_LLAMACPP_PROVIDER = 'llamacpp'
 const aliasLocalLlamacppProvider = (providerName: string): string =>
   providerName
 
+/**
+ * Rebind an existing model selection to the provider's current model object.
+ * A cloud provider without credentials/catalogue is no longer selectable even
+ * if its last fetched models are still cached on the provider.
+ */
+const resolveSelectedModel = (
+  provider: ModelProvider | undefined,
+  selectedModel: Model
+): Model | null => {
+  if (!provider || provider.active === false) return null
+  if (isCloudProvider(provider) && !isProviderConnected(provider)) return null
+  return provider.models.find((model) => model.id === selectedModel.id) ?? null
+}
+
 type ModelProviderState = {
   providers: ModelProvider[]
   selectedProvider: string
@@ -193,18 +207,24 @@ export const useModelProvider = create<ModelProviderState>()(
             (provider) => provider.provider === state.selectedProvider
           )
           const nextSelectedModel = state.selectedModel?.id
-            ? (nextSelectedProvider?.models.find(
-                (model) => model.id === state.selectedModel?.id
-              ) ?? null)
+            ? resolveSelectedModel(nextSelectedProvider, state.selectedModel)
             : null
 
           return {
             providers: nextProviders,
+            // Keep the provider-only startup/migration state intact. Once a
+            // real selection existed, however, provider and model are one
+            // atomic selection and must be cleared together when invalidated.
+            selectedProvider:
+              state.selectedModel && !nextSelectedModel
+                ? ''
+                : state.selectedProvider,
             selectedModel: nextSelectedModel,
           }
         }),
       updateProvider: (providerName, data) => {
         set((state) => {
+          let nextSelectedProvider = state.selectedProvider
           let nextSelectedModel = state.selectedModel
 
           const nextProviders = state.providers.map((provider) => {
@@ -221,10 +241,11 @@ export const useModelProvider = create<ModelProviderState>()(
               state.selectedProvider === providerName &&
               state.selectedModel?.id
             ) {
-              nextSelectedModel =
-                updatedProvider.models.find(
-                  (model) => model.id === state.selectedModel?.id
-                ) ?? null
+              nextSelectedModel = resolveSelectedModel(
+                updatedProvider,
+                state.selectedModel
+              )
+              if (!nextSelectedModel) nextSelectedProvider = ''
             }
 
             return updatedProvider
@@ -232,6 +253,7 @@ export const useModelProvider = create<ModelProviderState>()(
 
           return {
             providers: nextProviders,
+            selectedProvider: nextSelectedProvider,
             selectedModel: nextSelectedModel,
           }
         })
@@ -265,7 +287,7 @@ export const useModelProvider = create<ModelProviderState>()(
         // `selectedProvider` rendering, model lookups) see the canonical
         // local llama.cpp provider for this OS, not the legacy alias.
         set({
-          selectedProvider: resolvedName,
+          selectedProvider: modelObject ? resolvedName : '',
           selectedModel: modelObject || null,
         })
 
@@ -289,6 +311,9 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             }),
             deletedModels: [...currentDeletedModels, modelId],
+            ...(state.selectedModel?.id === modelId
+              ? { selectedProvider: '', selectedModel: null }
+              : {}),
           }
         })
       },
@@ -309,11 +334,17 @@ export const useModelProvider = create<ModelProviderState>()(
         }))
       },
       deleteProvider: (providerName: string) => {
-        set((state) => ({
-          providers: state.providers.filter(
-            (provider) => provider.provider !== providerName
-          ),
-        }))
+        set((state) => {
+          const clearsSelection = state.selectedProvider === providerName
+          return {
+            providers: state.providers.filter(
+              (provider) => provider.provider !== providerName
+            ),
+            ...(clearsSelection
+              ? { selectedProvider: '', selectedModel: null }
+              : {}),
+          }
+        })
       },
     }),
     {

@@ -63,6 +63,41 @@ function isSearchResultCard(
   return Boolean(item)
 }
 
+function parseStructuredFallback(text: string): SearchResultCard[] {
+  try {
+    const parsed = JSON.parse(text) as {
+      details?: {
+        results?: Array<{ title?: unknown; url?: unknown; snippet?: unknown }>
+      }
+    }
+    const results = parsed.details?.results
+    if (!Array.isArray(results)) return []
+    return results
+      .map((result) => {
+        const title = typeof result.title === 'string' ? result.title.trim() : ''
+        const url = typeof result.url === 'string' ? result.url.trim() : ''
+        const snippet =
+          typeof result.snippet === 'string' ? result.snippet.trim() : ''
+        if (!title && !url) return undefined
+        let domain: string | undefined
+        try {
+          if (url) domain = new URL(url).hostname
+        } catch {
+          domain = undefined
+        }
+        return {
+          title: title || domain || 'Untitled result',
+          ...(url ? { url } : {}),
+          ...(domain ? { domain } : {}),
+          highlights: snippet ? [snippet] : [],
+        }
+      })
+      .filter(isSearchResultCard)
+  } catch {
+    return []
+  }
+}
+
 export function presentWebSearchExa(args: {
   input?: unknown
   output?: unknown
@@ -81,9 +116,14 @@ export function presentWebSearchExa(args: {
       (item): item is { text?: string } =>
         !!item && typeof item === 'object' && 'text' in item
     )
-    .flatMap((item) => splitExaResults(item.text ?? ''))
-    .map((entry) => parseExaTextEntry(entry))
-    .filter(isSearchResultCard)
+    .flatMap((item) => {
+      const text = item.text ?? ''
+      const structured = parseStructuredFallback(text)
+      if (structured.length) return structured
+      return splitExaResults(text)
+        .map((entry) => parseExaTextEntry(entry))
+        .filter(isSearchResultCard)
+    })
 
   return {
     kind: 'web_search_exa',

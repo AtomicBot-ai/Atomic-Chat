@@ -116,15 +116,17 @@
 
   /* Code */
   code {
-    font-family: monospace;
+    /* Emoji first: a monospace text font (DejaVu Sans Mono on Linux) carries
+       half the pieces of a ZWJ sequence and would split the cluster. */
+    font-family: 'AtomicEmoji', monospace;
     @apply bg-secondary text-foreground;
     padding: 0.2em 0.4em;
     border-radius: 3px;
   }
 
   pre {
-    font-family: monospace;
-    @apply bg-secondary text-foreground px-0!;
+    font-family: 'AtomicEmoji', monospace;
+    @apply bg-secondary text-foreground;
     overflow-x: auto;
     /* border-radius: 8px; */
     margin-bottom: 8px;
@@ -137,6 +139,27 @@
     display: inline-block;
   }
 
+  /* Chat fences keep their inset and wrap even a single unbroken token.
+     Constrain the code box too: an inline-block can retain its intrinsic
+     width, and hiding overflow alone would silently clip the source. */
+  [data-streamdown='code-block-body'] {
+    padding: 1rem;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  [data-streamdown='code-block-body'] code {
+    display: block;
+    padding: 0;
+  }
+
+  [data-streamdown='code-block-body'] code,
+  [data-streamdown='code-block-body'] span {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   /*
    * Streamdown highlights code with shiki dual themes: each token gets an
    * inline *light* color plus a `--shiki-dark` custom property, and relies on
@@ -146,23 +169,23 @@
    * unreadable (dark text on a dark block). Force the dark palette here, with
    * the theme foreground (white) as a fallback for tokens without the var.
    */
-  :where(.dark) & [data-streamdown="code-block-body"] {
+  :where(.dark) & [data-streamdown='code-block-body'] {
     background-color: var(--shiki-dark-bg, var(--secondary)) !important;
     color: var(--shiki-dark, var(--foreground)) !important;
   }
 
-  :where(.dark) & [data-streamdown="code-block-body"] span {
+  :where(.dark) & [data-streamdown='code-block-body'] span {
     color: var(--shiki-dark, var(--foreground)) !important;
   }
 
   /* Links */
   a {
-    color: var(--color-primary);
-    text-decoration: none;
+    @apply text-blue-600 underline decoration-blue-500/40 underline-offset-2 dark:text-blue-400;
   }
 
-  a:hover {
-    text-decoration: underline;
+  a:hover,
+  a:focus-visible {
+    @apply decoration-blue-600 dark:decoration-blue-400;
   }
 
   ul.contains-task-list {
@@ -199,7 +222,7 @@
     margin: 2em 0;
   }
 
-  [data-streamdown="mermaid-block"] {
+  [data-streamdown='mermaid-block'] {
     border-color: var(--border);
     margin-bottom: 1em;
   }
@@ -208,7 +231,6 @@
   & *:last-child::after {
     color: oklch(0.556 0 0) !important;
   }
-
 }
 [data-tool-call-block] + [data-tool-call-block] {
   margin-top: 16px;

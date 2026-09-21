@@ -12,6 +12,16 @@ import {
 import * as vecdb from '../../../src-tauri/plugins/tauri-plugin-vector-db/guest-js/index'
 import * as ragApi from '../../../src-tauri/plugins/tauri-plugin-rag/guest-js/index'
 
+function isMissingFilesTable(error: unknown): boolean {
+  let serialized: string
+  try {
+    serialized = JSON.stringify(error)
+  } catch {
+    serialized = String(error)
+  }
+  return /no such table:\s*files/i.test(serialized)
+}
+
 export default class VectorDBExt extends VectorDBExtension {
   async onLoad(): Promise<void> {
     // no-op
@@ -139,10 +149,12 @@ export default class VectorDBExt extends VectorDBExtension {
     )
     const chunks = await this.chunkText(text, opts.chunkSize, opts.chunkOverlap)
 
-    // Get embeddings to determine dimension - use a default if no chunks
+    // Get embeddings to determine dimension - use a default if no chunks.
+    // These embeddings are reused below; chunks are never embedded twice.
     let dimension = 0
+    let embeddings: number[][] = []
     if (chunks.length > 0) {
-      const embeddings = await this.embedTexts(chunks)
+      embeddings = await this.embedTexts(chunks)
       dimension = embeddings[0]?.length || 0
     }
 
@@ -171,8 +183,6 @@ export default class VectorDBExt extends VectorDBExtension {
       return fi
     }
 
-    // Re-embed if we got dimension from createCollection
-    const embeddings = await this.embedTexts(chunks)
     const finalDimension = embeddings[0]?.length || 0
     if (finalDimension <= 0)
       throw new Error('Embedding dimension not available')
@@ -203,10 +213,19 @@ export default class VectorDBExt extends VectorDBExtension {
     projectId: string,
     limit?: number
   ): Promise<AttachmentFileInfo[]> {
-    return (await vecdb.listAttachments(
-      this.collectionForProject(projectId),
-      limit
-    )) as AttachmentFileInfo[]
+    try {
+      return (await vecdb.listAttachments(
+        this.collectionForProject(projectId),
+        limit
+      )) as AttachmentFileInfo[]
+    } catch (error) {
+      // Opening a brand-new project creates its empty SQLite file before the
+      // first upload knows the embedding dimension and creates the schema.
+      // That is an empty collection, not a user-facing database failure. The
+      // first ingest calls createCollectionForProject and initializes it.
+      if (isMissingFilesTable(error)) return []
+      throw error
+    }
   }
 
   async getChunksForProject(

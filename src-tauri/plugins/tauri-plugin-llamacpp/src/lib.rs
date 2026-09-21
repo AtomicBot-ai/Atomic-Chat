@@ -28,6 +28,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             cleanup::cleanup_llama_processes,
             // LlamaCpp server commands
             commands::load_llama_model,
+            commands::cancel_llama_model_load,
             commands::unload_llama_model,
             commands::get_devices,
             commands::get_runtime_device,

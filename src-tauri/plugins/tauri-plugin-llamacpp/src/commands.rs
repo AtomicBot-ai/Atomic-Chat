@@ -21,6 +21,7 @@ use crate::process::{
 };
 use crate::runtime_device::{self, RuntimeDeviceInfo};
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
+use jan_utils::load_cancel::{is_load_cancelled, load_cancelled, CancellationToken};
 use jan_utils::{
     add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags,
 };
@@ -63,6 +64,9 @@ fn is_ready_log_line(line_lower: &str) -> bool {
 }
 
 /// Core model loading logic usable without an AppHandle (CLI / test support).
+///
+/// `cancel`, when tripped before the server reports ready, kills the child and
+/// returns `ModelLoadCancelled`. Callers with no way to cancel pass `None`.
 pub async fn load_llama_model_impl(
     process_map_arc: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     backend_path: &str,
@@ -74,6 +78,7 @@ pub async fn load_llama_model_impl(
     mmproj_path: Option<String>,
     is_embedding: bool,
     timeout: u64,
+    cancel: Option<CancellationToken>,
 ) -> ServerResult<SessionInfo> {
     log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using configuration: {:?}", config);
@@ -154,6 +159,14 @@ pub async fn load_llama_model_impl(
 
     // Add the binary's directory to library path
     setup_library_path(bin_path.parent(), &mut command);
+
+    if is_load_cancelled(&cancel) {
+        log::info!(
+            "Load of '{}' cancelled before the server was spawned",
+            model_id
+        );
+        return Err(LlamacppError::load_cancelled().into());
+    }
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;
@@ -309,6 +322,15 @@ pub async fn load_llama_model_impl(
                 health_task.abort();
                 break;
             }
+            // The user stopped the load. `kill_on_drop` would reap the child
+            // too, but only once this future is dropped; kill it now so the
+            // memory is back before the error reaches the UI.
+            _ = load_cancelled(&cancel) => {
+                log::info!("Load of '{}' cancelled while waiting for the server", model_id);
+                health_task.abort();
+                let _ = child.kill().await;
+                return Err(LlamacppError::load_cancelled().into());
+            }
             // Check for process exit more frequently
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 // Check if process exited
@@ -348,6 +370,17 @@ pub async fn load_llama_model_impl(
                 }
             }
         }
+    }
+
+    // A cancel that raced the ready signal still wins: the user asked for the
+    // model to be gone, and registering the session would hand it back.
+    if is_load_cancelled(&cancel) {
+        log::info!(
+            "Load of '{}' cancelled as the server became ready",
+            model_id
+        );
+        let _ = child.kill().await;
+        return Err(LlamacppError::load_cancelled().into());
     }
 
     // Get the PID to use as session ID
@@ -410,6 +443,7 @@ pub async fn load_llama_model<R: Runtime>(
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
+    let cancel_guard = state.load_cancels.register(&model_id);
     load_llama_model_impl(
         state.llama_server_process.clone(),
         backend_path,
@@ -421,8 +455,21 @@ pub async fn load_llama_model<R: Runtime>(
         mmproj_path,
         is_embedding,
         timeout,
+        Some(cancel_guard.token()),
     )
     .await
+}
+
+/// Stop a load of `model_id` that has not reached readiness. Returns whether a
+/// load was in flight; `false` means there is nothing to cancel here — the
+/// load has not reached the plugin yet, or has already finished.
+#[tauri::command]
+pub async fn cancel_llama_model_load<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: String,
+) -> bool {
+    let state: State<LlamacppState> = app_handle.state();
+    state.load_cancels.cancel(&model_id)
 }
 
 /// Unload a llama model by terminating its process

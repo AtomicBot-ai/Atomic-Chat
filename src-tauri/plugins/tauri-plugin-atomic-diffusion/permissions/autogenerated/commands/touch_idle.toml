@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-touch-idle"
+description = "Enables the touch_idle command without any pre-configured scope."
+commands.allow = ["touch_idle"]
+
+[[permission]]
+identifier = "deny-touch-idle"
+description = "Denies the touch_idle command without any pre-configured scope."
+commands.deny = ["touch_idle"]

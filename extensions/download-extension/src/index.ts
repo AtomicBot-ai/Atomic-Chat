@@ -15,9 +15,22 @@ interface DownloadItem {
   model_id?: string
 }
 
+/**
+ * What the Rust downloader is doing while it has no bytes to report. Emitted
+ * during the preflight/GET retry ladders, which used to run in silence — see
+ * `DownloadStage` in `src-tauri/src/core/downloads/models.rs`.
+ */
+export type DownloadStage = {
+  kind: 'connecting' | 'retrying'
+  attempt: number
+  maxAttempts: number
+}
+
 type DownloadEvent = {
   transferred: number
   total: number
+  /** Present only on stage updates, which carry no byte counts. */
+  stage?: DownloadStage
 }
 
 // Hosts that may receive the Hugging Face access token. Sending the HF token
@@ -92,16 +105,21 @@ export default class DownloadManager extends BaseExtension {
     items: DownloadItem[],
     taskId: string,
     onProgress?: (transferred: number, total: number) => void,
-    resume: boolean = false
+    resume: boolean = false,
+    onStage?: (stage: DownloadStage) => void
   ) {
     // relay tauri events to onProgress callback
     const unlisten = await listen<DownloadEvent>(
       `download-${taskId}`,
       (event) => {
-        if (onProgress) {
-          let payload = event.payload
-          onProgress(payload.transferred, payload.total)
+        const payload = event.payload
+        // A staged event reports status, not bytes: routing it through
+        // `onProgress` would publish transferred=0/total=0 and rewind the bar.
+        if (payload.stage) {
+          onStage?.(payload.stage)
+          return
         }
+        onProgress?.(payload.transferred, payload.total)
       }
     )
 

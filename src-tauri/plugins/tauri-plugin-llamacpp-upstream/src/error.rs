@@ -15,6 +15,8 @@ pub enum ErrorCode {
     MultimodalProjectorLoadFailed,
     ModelArchNotSupported,
     ModelLoadTimedOut,
+    /// The user stopped the load before the model was ready (ATO-530).
+    ModelLoadCancelled,
     LlamaCppProcessError,
 
     // --- System / Runtime Compatibility Errors ---
@@ -48,6 +50,14 @@ impl LlamacppError {
             message,
             details,
         }
+    }
+
+    pub fn load_cancelled() -> Self {
+        Self::new(
+            ErrorCode::ModelLoadCancelled,
+            "The model load was cancelled.".into(),
+            None,
+        )
     }
 
     /// Parses stderr from llama.cpp and creates a specific LlamacppError.
