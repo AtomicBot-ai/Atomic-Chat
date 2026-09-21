@@ -88,6 +88,132 @@ async fn spawn_interrupted_download_server(
     )
 }
 
+/// First request: three bytes, then a body that never ends — a stream with no
+/// next chunk to wake the downloader. Ranged requests get the rest.
+async fn spawn_stalling_download_server(
+) -> (String, tokio::task::JoinHandle<Result<(), hyper::Error>>) {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let make_service = make_service_fn(move |_| {
+        let request_count = request_count.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                let request_count = request_count.clone();
+                async move {
+                    let first = request_count.fetch_add(1, Ordering::SeqCst) == 0;
+                    let response = if first {
+                        let (mut sender, body) = Body::channel();
+                        tokio::spawn(async move {
+                            sender.send_data(Bytes::from_static(b"abc")).await.unwrap();
+                            std::future::pending::<()>().await;
+                            drop(sender);
+                        });
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_LENGTH, "6")
+                            .body(body)
+                            .unwrap()
+                    } else if request.headers().get(RANGE).is_some() {
+                        Response::builder()
+                            .status(StatusCode::PARTIAL_CONTENT)
+                            .header(CONTENT_RANGE, "bytes 3-5/6")
+                            .body(Body::from("def"))
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .body(Body::from("abcdef"))
+                            .unwrap()
+                    };
+                    Ok::<_, Infallible>(response)
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    (format!("http://{address}/model.gguf"), tokio::spawn(server))
+}
+
+/// Field log, 2026-09-21: pause and resume in the same second on a slow link.
+/// The paused stream only noticed its cancellation at the next chunk, eight
+/// seconds on, so two invocations had one `.tmp` open; the file ended up the
+/// right size with the wrong hash.
+#[tokio::test]
+async fn a_resume_waits_for_the_cancelled_writer_and_cancellation_does_not_wait_for_a_chunk() {
+    let (url, server) = spawn_stalling_download_server().await;
+    let save_path = test_download_path("model.gguf");
+    let tmp_path = sidecar_path(&save_path, "tmp");
+    let item = DownloadItem {
+        url,
+        save_path: save_path.to_string_lossy().into_owned(),
+        proxy: None,
+        sha256: None,
+        size: Some(6),
+        model_id: Some("test/model".to_string()),
+    };
+    let app = mock_app();
+
+    let paused_token = CancellationToken::new();
+    let paused = tokio::spawn({
+        let (app, item, save_path, token) = (
+            app.handle().clone(),
+            item.clone(),
+            save_path.clone(),
+            paused_token.clone(),
+        );
+        async move {
+            download_single_file_with_token_for_test(app, &item, &save_path, 6, true, token).await
+        }
+    });
+    // The stalled writer has its file open; nothing of "abc" is flushed yet.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !tmp_path.exists() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("first download never opened its partial");
+
+    let resumed = tokio::spawn({
+        let (app, item, save_path) = (app.handle().clone(), item.clone(), save_path.clone());
+        async move {
+            download_single_file_with_token_for_test(
+                app,
+                &item,
+                &save_path,
+                6,
+                true,
+                CancellationToken::new(),
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert!(
+        !resumed.is_finished() && !save_path.exists(),
+        "the resume wrote while the paused download still held the file"
+    );
+
+    paused_token.cancel();
+    let paused_result = tokio::time::timeout(std::time::Duration::from_secs(5), paused)
+        .await
+        .expect("cancellation waited for a chunk that never came")
+        .unwrap();
+    assert_eq!(paused_result.unwrap_err(), "Download cancelled");
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), resumed)
+        .await
+        .expect("the resume never got the file")
+        .unwrap()
+        .unwrap();
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+
+    server.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
 async fn spawn_preflight_head_server(
     failures_before_success: usize,
     fail_status: StatusCode,

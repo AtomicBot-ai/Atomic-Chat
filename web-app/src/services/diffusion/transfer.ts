@@ -138,6 +138,35 @@ export function emitTransferError(
   })
 }
 
+/**
+ * The Rust downloader's own wording for a file that arrived but failed its
+ * size/sha256 check (`validate_downloaded_file`). Same list the llama.cpp
+ * extensions match on.
+ */
+export function isTransferValidationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return (
+    message.includes('Hash verification failed') ||
+    message.includes('Size verification failed') ||
+    message.includes('Failed to verify file')
+  )
+}
+
+/**
+ * A validation failure is its own terminal event, not a transfer error: the
+ * panel's handler for it closes the "verifying…" toast the Rust side opened
+ * and tells the user the file was removed, which the generic error path does
+ * neither of.
+ */
+export function emitTransferValidationFailed(id: string, error: unknown): void {
+  events.emit(DownloadEvent.onModelValidationFailed, {
+    modelId: id,
+    downloadType: 'Model',
+    error: error instanceof Error ? error.message : String(error),
+    reason: 'validation_failed',
+  })
+}
+
 export type TransferOptions = {
   onProgress?: TransferProgress
   resume?: boolean
