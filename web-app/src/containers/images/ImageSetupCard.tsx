@@ -1,60 +1,48 @@
 import { memo } from 'react'
-import {
-  IconCircleCheckFilled,
-  IconDownload,
-  IconSparkles,
-} from '@tabler/icons-react'
+import { IconCircleCheckFilled, IconSparkles } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { ImageIcon } from '@/components/animated-icon/image'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
-import {
-  useImageGenerationStore,
-  type ImageSetupStep,
-} from '@/stores/image-generation-store'
+import { useImageGenerationStore } from '@/stores/image-generation-store'
 
 type ImageSetupCardProps = {
   className?: string
 }
 
 /**
- * What the page shows until both prerequisites — the engine binary and at
- * least one complete checkpoint — are in place. Each row opens the setup
- * wizard on its own step, so "install the engine" and "get a model" are one
- * click each rather than a tour.
+ * What the page shows until the engine binary is installed — the one thing
+ * the studio cannot open without. The rows are the road ahead: the engine row
+ * opens the wizard on its install step; the model row is only a preview,
+ * because models are fetched from the form's picker once the studio is open.
  */
 export const ImageSetupCard = memo(function ImageSetupCard({
   className,
 }: ImageSetupCardProps) {
   const { t } = useTranslation()
-  const { installed: engineInstalled, hostBackendId, hostBackendReason } =
-    useImageEngine()
+  const { hostBackendId, hostBackendReason } = useImageEngine()
   const hasModel = useImageGenerationStore((state) =>
     state.installedArtifacts.some((artifact) => artifact.complete)
   )
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const unsupported = hostBackendId === null && Boolean(hostBackendReason)
-  const primaryStep: ImageSetupStep = engineInstalled ? 2 : 0
-  const primaryLabel = engineInstalled
-    ? t('images:setup.card.downloadModel')
-    : t('images:setup.card.button')
 
   const rows: Array<{
-    step: ImageSetupStep
+    id: 'engine' | 'model'
     done: boolean
     label: string
     description: string
   }> = [
     {
-      step: 1,
-      done: engineInstalled,
+      id: 'engine',
+      done: false,
       label: t('images:setup.card.engine'),
       description: t('images:setup.card.engineDescription'),
     },
     {
-      step: 2,
+      id: 'model',
       done: hasModel,
       label: t('images:setup.card.model'),
       description: t('images:setup.card.modelDescription'),
@@ -80,15 +68,9 @@ export const ImageSetupCard = memo(function ImageSetupCard({
         </p>
       </div>
       <ol className="grid gap-3 sm:grid-cols-2">
-        {rows.map((row, index) => (
-          <li key={row.step}>
-            <button
-              type="button"
-              onClick={() => openSetup(row.step)}
-              className={cn(
-                'group flex h-full w-full items-start gap-3 rounded-xl border bg-background p-4 text-left transition-colors hover:border-foreground/20 hover:bg-secondary/40'
-              )}
-            >
+        {rows.map((row, index) => {
+          const content = (
+            <>
               <span
                 className={cn(
                   'grid size-8 shrink-0 place-items-center rounded-full border text-sm font-semibold',
@@ -105,18 +87,38 @@ export const ImageSetupCard = memo(function ImageSetupCard({
                   {row.description}
                 </span>
               </span>
-            </button>
-          </li>
-        ))}
+            </>
+          )
+          const frame =
+            'flex h-full w-full items-start gap-3 rounded-xl border bg-background p-4 text-left'
+          return (
+            <li key={row.id} data-testid={`image-setup-row-${row.id}`}>
+              {row.id === 'engine' ? (
+                <button
+                  type="button"
+                  onClick={() => openSetup(1)}
+                  className={cn(
+                    frame,
+                    'transition-colors hover:border-foreground/20 hover:bg-secondary/40'
+                  )}
+                >
+                  {content}
+                </button>
+              ) : (
+                <div className={frame}>{content}</div>
+              )}
+            </li>
+          )
+        })}
       </ol>
       <Button
         size="lg"
         className="mx-auto flex min-w-48"
-        onClick={() => openSetup(primaryStep)}
+        onClick={() => openSetup(0)}
         data-testid="image-setup-open"
       >
-        {engineInstalled ? <IconDownload size={17} /> : <IconSparkles size={17} />}
-        {primaryLabel}
+        <IconSparkles size={17} />
+        {t('images:setup.card.button')}
       </Button>
     </div>
   )

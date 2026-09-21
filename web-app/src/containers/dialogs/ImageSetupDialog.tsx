@@ -36,14 +36,15 @@ import {
   type ImageSetupStep,
 } from '@/stores/image-generation-store'
 
-const TOTAL_STEPS = 3
+/** The first-run tour: what it does, then the engine. Models are not part of it. */
+const TOUR_STEPS = 2
 
 function StepDots({ step }: { step: number }) {
   const { t } = useTranslation()
   return (
     <div className="flex items-center justify-center">
       <div className="flex items-center gap-2" aria-hidden>
-        {Array.from({ length: TOTAL_STEPS }).map((_, index) => (
+        {Array.from({ length: TOUR_STEPS }).map((_, index) => (
           <span
             key={index}
             className={cn(
@@ -54,7 +55,7 @@ function StepDots({ step }: { step: number }) {
         ))}
       </div>
       <span className="sr-only">
-        {t('images:setup.step', { current: step + 1, total: TOTAL_STEPS })}
+        {t('images:setup.step', { current: step + 1, total: TOUR_STEPS })}
       </span>
     </div>
   )
@@ -224,7 +225,10 @@ function SetupHeaderIcon({ step }: { step: ImageSetupStep }) {
 }
 
 /**
- * Three-step first-run flow: what it does, install the engine, get a model.
+ * The first-run tour is two steps — what it does, install the engine — and
+ * ends there: the studio opens behind it, and models are fetched from the
+ * form's picker. Step 2, the model list, is a standalone view for the places
+ * with no picker of their own (Media settings); the tour never leads to it.
  *
  * Mounted once at the root like `VoiceSetupDialog`, because the setup card,
  * the error banner and the Media settings page all reopen it on a given step.
@@ -326,13 +330,14 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
 
         <DialogFooter className="grid grid-cols-3 items-center sm:flex-row sm:justify-between">
           <div className="flex justify-start">
-            {step > 0 && (
+            {/* From the model list, Back only while the engine is still owed. */}
+            {(step === 1 || (step === 2 && !engineInstalled)) && (
               <Button variant="ghost" size="sm" onClick={() => go(step - 1)}>
                 {t('images:setup.back')}
               </Button>
             )}
           </div>
-          <StepDots step={step} />
+          {step < TOUR_STEPS ? <StepDots step={step} /> : <span />}
           <div className="flex justify-end">
             {step === 2 ? (
               <Tooltip>
@@ -354,12 +359,17 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
                   </TooltipContent>
                 )}
               </Tooltip>
-            ) : (
+            ) : step === 1 ? (
               <Button
                 size="sm"
-                disabled={step === 1 && !engineInstalled}
-                onClick={() => go(step + 1)}
+                disabled={!engineInstalled}
+                data-testid="image-setup-engine-done"
+                onClick={finish}
               >
+                {t('images:setup.done')}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => go(step + 1)}>
                 {t('images:setup.next')}
               </Button>
             )}
