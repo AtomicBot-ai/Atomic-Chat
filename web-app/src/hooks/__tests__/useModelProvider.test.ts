@@ -360,6 +360,76 @@ describe('useModelProvider - displayName functionality', () => {
       result.current.selectedModel?.settings?.ctx_len?.controller_props?.value
     ).toBe(32768)
   })
+
+  it.each([
+    {
+      name: 'subscription catalogue is removed',
+      provider: {
+        provider: 'chatgpt',
+        active: true,
+        api_key: '',
+        models: [{ id: 'gpt-5.1-codex', capabilities: ['completion'] }],
+        settings: [],
+      },
+      update: { models: [] },
+    },
+    {
+      name: 'cloud API key is removed',
+      provider: {
+        provider: 'openai',
+        active: true,
+        api_key: 'sk-test',
+        models: [{ id: 'gpt-5', capabilities: ['completion'] }],
+        settings: [{ key: 'api-key' }],
+      },
+      update: { api_key: '' },
+    },
+  ])(
+    'clears the provider and model together when $name',
+    ({ provider, update }) => {
+      const { result } = renderHook(() => useModelProvider())
+
+      act(() => {
+        useModelProvider.setState({
+          providers: [provider] as ModelProvider[],
+          selectedProvider: provider.provider,
+          selectedModel: provider.models[0] as Model,
+          deletedModels: [],
+        })
+        result.current.updateProvider(
+          provider.provider,
+          update as Partial<ModelProvider>
+        )
+      })
+
+      expect(result.current.selectedModel).toBeNull()
+      expect(result.current.selectedProvider).toBe('')
+    }
+  )
+
+  it('clears the provider when a refresh removes the selected model', () => {
+    const { result } = renderHook(() => useModelProvider())
+    const provider = {
+      provider: 'llamacpp-upstream',
+      active: true,
+      persist: true,
+      models: [{ id: 'removed.gguf', capabilities: ['completion'] }],
+      settings: [],
+    } as ModelProvider
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [provider],
+        selectedProvider: provider.provider,
+        selectedModel: provider.models[0],
+        deletedModels: [],
+      })
+      result.current.setProviders([{ ...provider, models: [] }])
+    })
+
+    expect(result.current.selectedModel).toBeNull()
+    expect(result.current.selectedProvider).toBe('')
+  })
 })
 
 describe('useModelProvider - turboquant first-registration default', () => {

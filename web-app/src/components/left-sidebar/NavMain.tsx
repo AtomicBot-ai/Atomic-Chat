@@ -311,20 +311,6 @@ export function NavMain() {
         <>
           <SidebarMenuItem>
             <SidebarMenuButton
-              onClick={() => setProjectDialogOpen(true)}
-              onMouseEnter={() => projectIconRef.current?.startAnimation()}
-              onMouseLeave={() => projectIconRef.current?.stopAnimation()}
-            >
-              <FolderPlusIcon
-                ref={projectIconRef}
-                className="text-foreground/70"
-                size={16}
-              />
-              <span>{t('common:projects.new')}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
               asChild
               isActive={pathname.startsWith('/launch')}
               className="data-[active=true]:bg-sidebar-foreground/15"
@@ -362,6 +348,20 @@ export function NavMain() {
                 />
                 <span>{t('common:api')}</span>
               </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => setProjectDialogOpen(true)}
+              onMouseEnter={() => projectIconRef.current?.startAnimation()}
+              onMouseLeave={() => projectIconRef.current?.stopAnimation()}
+            >
+              <FolderPlusIcon
+                ref={projectIconRef}
+                className="text-foreground/70"
+                size={16}
+              />
+              <span>{t('common:projects.new')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </>

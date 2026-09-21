@@ -70,12 +70,35 @@ export function findAgentSkillSlashQuery(
   }
 }
 
-export function removeAgentSkillSlashQuery(
+export function replaceAgentSkillSlashQuery(
   value: string,
-  query: AgentSkillSlashQuery
+  query: AgentSkillSlashQuery,
+  skillName: string
 ): { value: string; cursor: number } {
+  const invocation = `/${skillName}`
   return {
-    value: `${value.slice(0, query.start)}${value.slice(query.end)}`,
-    cursor: query.start,
+    value: `${value.slice(0, query.start)}${invocation}${value.slice(query.end)}`,
+    cursor: query.start + invocation.length,
   }
+}
+
+export function containsAgentSkillInvocation(
+  value: string,
+  skillName: string
+): boolean {
+  const escapedName = skillName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|\\s)/${escapedName}(?=[\\s,.;:!?]|$)`).test(value)
+}
+
+export function prependAgentSkillInvocation(
+  value: string,
+  skillName: string
+): { value: string; cursor: number } {
+  if (containsAgentSkillInvocation(value, skillName)) {
+    return { value, cursor: value.length }
+  }
+
+  const invocation = `/${skillName}`
+  const nextValue = value ? `${invocation} ${value}` : invocation
+  return { value: nextValue, cursor: invocation.length }
 }

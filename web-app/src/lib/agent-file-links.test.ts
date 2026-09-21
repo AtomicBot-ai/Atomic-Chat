@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   agentFilePathFromHref,
+  containsAgentFileLink,
   extractAgentAttachmentReferences,
   extractAgentToolPaths,
   linkAgentFileReferences,
+  normalizeAgentFileLinkLabels,
 } from './agent-file-links'
+
+const FILE_LINK_PREFIX_FOR_TESTS = 'https://atomic.local/open-file?path='
 
 describe('agent file links', () => {
   it('extracts absolute paths from agent tool inputs', () => {
@@ -165,5 +169,66 @@ describe('agent file links', () => {
 
     expect(agentFilePathFromHref(href)).toBe(path)
     expect(agentFilePathFromHref('https://example.com')).toBeNull()
+  })
+
+  it('decodes encoded Cyrillic folder and PDF paths', () => {
+    const folder = '/Users/atomic/Desktop/выборы 2026'
+    const pdf = `${folder}/Последние новости — 2026-09-21.pdf`
+
+    expect(
+      agentFilePathFromHref(
+        `${FILE_LINK_PREFIX_FOR_TESTS}${encodeURIComponent(folder)}`
+      )
+    ).toBe(folder)
+    expect(
+      agentFilePathFromHref(
+        `${FILE_LINK_PREFIX_FOR_TESTS}${encodeURIComponent(pdf)}`
+      )
+    ).toBe(pdf)
+  })
+
+  it('rejects malformed or unsafe Atomic Chat file hrefs', () => {
+    expect(
+      agentFilePathFromHref(
+        'https://atomic.local/open-file?path=%2FUsers%2Fatomic%2Fbad%E0%A4'
+      )
+    ).toBeNull()
+    expect(
+      agentFilePathFromHref(
+        'https://atomic.local/open-file?path=relative%2Freport.pdf'
+      )
+    ).toBeNull()
+    expect(
+      agentFilePathFromHref(
+        'https://atomic.local/open-file?path=%2Ftmp%2Freport.pdf&command=open'
+      )
+    ).toBeNull()
+    expect(
+      agentFilePathFromHref(
+        'https://atomic.local.evil/open-file?path=%2Ftmp%2Freport.pdf'
+      )
+    ).toBeNull()
+  })
+
+  it('hides a raw Atomic Chat pseudo URL behind a human path label', () => {
+    const path = '/Users/atomic/Desktop/выборы 2026'
+    const href = `${FILE_LINK_PREFIX_FOR_TESTS}${encodeURIComponent(path)}`
+
+    expect(normalizeAgentFileLinkLabels(`[${href}](${href})`)).toBe(
+      `[выборы 2026](${href})`
+    )
+  })
+
+  it('leaves normal https links and existing human labels unchanged', () => {
+    const path = '/Users/atomic/Desktop/report.pdf'
+    const href = `${FILE_LINK_PREFIX_FOR_TESTS}${encodeURIComponent(path)}`
+
+    expect(
+      normalizeAgentFileLinkLabels(
+        `[Open report](${href}) [OpenAI](https://openai.com)`
+      )
+    ).toBe(`[Open report](${href}) [OpenAI](https://openai.com)`)
+    expect(containsAgentFileLink(`[Open report](${href})`)).toBe(true)
+    expect(containsAgentFileLink('[OpenAI](https://openai.com)')).toBe(false)
   })
 })

@@ -12,7 +12,7 @@ export function HuggingFaceAction({ onClick }: { onClick: () => void }) {
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="flex h-11 w-full min-w-0 items-center justify-center gap-2.5 rounded-md border border-border/80 bg-secondary/70 px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="flex h-11 w-full min-w-0 items-center justify-center gap-2.5 rounded-full border border-border/80 bg-secondary/70 px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         data-testid="model-picker-hugging-face-action"
       >
         <ModelLogo

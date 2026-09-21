@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { NavMain } from '../NavMain'
+import { LeftSidebar } from '..'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -29,6 +30,20 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/components/ui/sidebar', async () => {
   const { forwardRef } = await import('react')
   return {
+    Sidebar: ({ children }: { children: React.ReactNode }) => (
+      <aside>{children}</aside>
+    ),
+    SidebarContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="sidebar-content">{children}</div>
+    ),
+    SidebarFooter: ({ children }: { children: React.ReactNode }) => (
+      <footer>{children}</footer>
+    ),
+    SidebarHeader: ({ children }: { children: React.ReactNode }) => (
+      <header>{children}</header>
+    ),
+    SidebarTrigger: () => <button type="button">Toggle sidebar</button>,
+    SidebarRail: () => null,
     SidebarMenu: ({ children }: { children: React.ReactNode }) => (
       <ul>{children}</ul>
     ),
@@ -72,6 +87,30 @@ vi.mock('@/components/animated-icon/plug', () => ({
 
 vi.mock('@/components/animated-icon/cloud', () => ({
   CloudIcon: () => null,
+}))
+
+vi.mock('@/components/animated-icon/settings', () => ({
+  SettingsIcon: () => null,
+}))
+
+vi.mock('@/components/AppLogo', () => ({
+  AppLogo: () => <div>Atomic Chat</div>,
+}))
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => children,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
+}))
+
+vi.mock('../NavProjects', () => ({
+  NavProjects: () => (
+    <section aria-label="common:projects.title">common:projects.title</section>
+  ),
+}))
+
+vi.mock('../NavChats', () => ({
+  NavChats: () => <section aria-label="common:chats">common:chats</section>,
 }))
 
 vi.mock('@/containers/dialogs/SearchDialog', () => ({
@@ -255,6 +294,34 @@ describe('NavMain', () => {
     expect(screen.getByText('common:launch')).toBeInTheDocument()
     expect(screen.getByText('common:api')).toBeInTheDocument()
     expect(screen.queryByText('common:newTask')).not.toBeInTheDocument()
+  })
+
+  it('renders the main navigation in order with New Project last before the separate Projects section', () => {
+    render(<LeftSidebar />)
+
+    const mainMenu = screen.getByText('common:newChat').closest('ul')
+    expect(mainMenu).not.toBeNull()
+    expect(
+      within(mainMenu!).getAllByRole('listitem').map((item) => item.textContent)
+    ).toEqual([
+      'common:newChat',
+      'common:modelHub',
+      'common:images',
+      'common:cloud',
+      'common:plugins',
+      'common:launch',
+      'common:api',
+      'common:projects.new',
+    ])
+
+    const projectsSection = screen.getByRole('region', {
+      name: 'common:projects.title',
+    })
+    expect(mainMenu).not.toContainElement(projectsSection)
+    expect(
+      mainMenu!.compareDocumentPosition(projectsSection) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
   })
 
   it('keeps Connectors and Skills tucked inside the collapsed Plugins group', () => {

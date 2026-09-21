@@ -20,12 +20,14 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
+import type { AgentSkill } from '@/services/agent/skills'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   downscaleImageDataUrl: vi.fn(),
   switchToModel: vi.fn(),
   chatBusy: false,
+  agentSkills: [] as AgentSkill[],
   replyGateProps: null as {
     onResolved: (resolution: unknown) => void
     onDismissed: (resolution: unknown) => void
@@ -75,7 +77,11 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/hooks/useAgentSkills', () => ({
-  useAgentSkills: () => ({ skills: [], loading: false, setEnabled: vi.fn() }),
+  useAgentSkills: () => ({
+    skills: mocks.agentSkills,
+    loading: false,
+    setEnabled: vi.fn(),
+  }),
 }))
 
 vi.mock('@/hooks/useAgentMode', () => {
@@ -190,6 +196,7 @@ vi.mock('@/components/TokenCounter', () => ({
 describe('ChatInput', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.agentSkills = []
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
@@ -312,6 +319,48 @@ describe('ChatInput', () => {
     )
     await waitFor(() => expect(input).toHaveValue(''))
     unmount()
+  })
+
+  it('keeps a slash-selected skill inline at the caret and sends that text with metadata', async () => {
+    mocks.agentSkills = [
+      {
+        name: 'pdf',
+        description: 'Create PDF documents',
+        version: '1.0.0',
+        requiresTools: [],
+        requiresScripts: [],
+        dangerous: false,
+        platforms: null,
+        enabled: true,
+        compatible: true,
+        reserved: true,
+        unavailableReasons: [],
+        error: null,
+      },
+    ]
+    const onSubmit = vi.fn()
+    render(<ChatInput onSubmit={onSubmit} />)
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+
+    fireEvent.change(input, {
+      target: { value: 'prefix /pd suffix', selectionStart: 10 },
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'pdf' }))
+
+    expect(input).toHaveValue('prefix /pdf suffix')
+    expect(input.selectionStart).toBe(11)
+    expect(screen.queryByTestId('agent-skill-inline-token')).toBeNull()
+
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      'prefix /pdf suffix',
+      undefined,
+      'pdf'
+    )
+    await waitFor(() => expect(input).toHaveValue(''))
   })
 
   it('opens the reply-model widget instead of sending when none is selected', async () => {

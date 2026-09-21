@@ -22,9 +22,8 @@ beforeAll(() => {
 })
 
 afterEach(() => {
-  // The collapsed state is remembered across mounts. Guarded: Node 26 leaves
-  // the bare `localStorage` global undefined without `--localstorage-file`,
-  // and a hook that throws here would skip the shared `cleanup`.
+  // A stale preference from older app versions must not affect later tests.
+  // Guarded: Node 26 can leave storage unavailable without a file argument.
   try {
     window.localStorage.removeItem('download-panel-collapsed')
   } catch {
@@ -70,6 +69,17 @@ const three = [
  * the only thing that ever changes on screen is the text itself.
  */
 describe('DownloadPanel width', () => {
+  it('opens the first download despite a stale collapsed preference', () => {
+    window.localStorage.setItem('download-panel-collapsed', 'true')
+
+    render(<DownloadPanel items={[row('text-model-q4_k_m')]} />)
+
+    expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
+    expect(
+      screen.queryByLabelText('common:downloadPanel.expand')
+    ).not.toBeInTheDocument()
+  })
+
   it('is one fixed width, whatever the rows say', () => {
     const { rerender } = render(<DownloadPanel items={[row('a/one')]} />)
     expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
@@ -105,5 +115,25 @@ describe('DownloadPanel width', () => {
 
     fireEvent.click(badge)
     expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
+  })
+
+  it('keeps an intentional collapse for the active run and expands the next run', () => {
+    const textDownload = row('text-model-q4_k_m')
+    const imageDownload = row('diffusion-model-flux:q4')
+    const { rerender } = render(<DownloadPanel items={[textDownload]} />)
+
+    fireEvent.click(screen.getByLabelText('common:downloadPanel.collapse'))
+    rerender(<DownloadPanel items={[textDownload, imageDownload]} />)
+
+    expect(
+      screen.getByLabelText('common:downloadPanel.expand')
+    ).toHaveTextContent('2')
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
+
+    rerender(<DownloadPanel items={[]} />)
+    rerender(<DownloadPanel items={[imageDownload]} />)
+
+    expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
+    expect(screen.getByTitle('diffusion-model-flux:q4')).toBeInTheDocument()
   })
 })

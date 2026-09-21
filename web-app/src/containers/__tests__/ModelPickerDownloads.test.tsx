@@ -40,11 +40,13 @@ describe('ModelPickerDownloads', () => {
     })
     expect(action).toHaveClass(
       'h-11',
+      'rounded-full',
       'border',
       'bg-secondary/70',
       'hover:bg-accent',
       'focus-visible:ring-2'
     )
+    expect(action).not.toHaveClass('rounded-md')
     expect(
       within(action).getByRole('img', { name: 'Hugging Face' }).parentElement
     ).toHaveClass('size-7')

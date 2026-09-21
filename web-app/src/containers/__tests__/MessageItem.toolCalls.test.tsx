@@ -105,6 +105,94 @@ describe('MessageItem tool calls', () => {
     expect(openPath).toHaveBeenCalledWith(path)
   })
 
+  it('intercepts a restored local folder link without Agent metadata', async () => {
+    const path = '/Users/atomic/Desktop/выборы 2026'
+    const href = `https://atomic.local/open-file?path=${encodeURIComponent(path)}`
+    const openPath = vi.fn().mockResolvedValue(undefined)
+    const open = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      opener: {
+        open,
+        openPath,
+        revealItemInDir: vi.fn().mockResolvedValue(undefined),
+      },
+    })
+
+    renderLast(
+      {
+        id: 'restored-local-folder-link',
+        role: 'assistant',
+        parts: [{ type: 'text', text: `[${href}](${href})` }],
+      },
+      'ready'
+    )
+
+    const link = screen.getByRole('link', { name: 'выборы 2026' })
+    expect(link).toHaveAttribute('href', href)
+    expect(link).not.toHaveAttribute('target')
+
+    await userEvent.click(link)
+    expect(openPath).toHaveBeenCalledWith(path)
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('keeps an ordinary https link external', () => {
+    renderLast(
+      {
+        id: 'ordinary-web-link',
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: '[OpenAI](https://www.openai.com/docs)' },
+        ],
+      },
+      'ready'
+    )
+
+    expect(screen.getByRole('link', { name: 'OpenAI' })).toHaveAttribute(
+      'href',
+      'https://www.openai.com/docs'
+    )
+    expect(screen.getByRole('link', { name: 'OpenAI' })).toHaveAttribute(
+      'target',
+      '_blank'
+    )
+  })
+
+  it('blocks the pseudo URL without invoking a native path opener on web', async () => {
+    const path = '/Users/atomic/Desktop/report.pdf'
+    const href = `https://atomic.local/open-file?path=${encodeURIComponent(path)}`
+    const openPath = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      opener: {
+        open: vi.fn().mockResolvedValue(undefined),
+        openPath,
+        revealItemInDir: vi.fn().mockResolvedValue(undefined),
+      },
+    })
+    const bridge = (
+      window as unknown as Record<string, unknown>
+    ).__TAURI_INTERNALS__
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
+
+    try {
+      renderLast(
+        {
+          id: 'web-local-file-link',
+          role: 'assistant',
+          parts: [{ type: 'text', text: `[report.pdf](${href})` }],
+        },
+        'ready'
+      )
+
+      await userEvent.click(screen.getByRole('link', { name: 'report.pdf' }))
+      expect(openPath).not.toHaveBeenCalled()
+    } finally {
+      ;(
+        window as unknown as Record<string, unknown>
+      ).__TAURI_INTERNALS__ = bridge
+    }
+  })
+
   it('groups a finished turn and reveals individually expandable calls', async () => {
     renderLast(
       {
@@ -281,15 +369,15 @@ describe('MessageItem tool calls', () => {
     expectLive('toolCall.withContext', 'globe')
     expect(screen.getByText(/activity\.thinkingFor/)).toBeInTheDocument()
 
-    const firstGap: UIMessage['parts'] = [
+    const firstResult: UIMessage['parts'] = [
       firstRunning[0],
       search('t1', 'output-available', 'first lookup'),
     ]
-    rerender(renderTurn(firstGap, true))
-    expectLive('activity.working')
+    rerender(renderTurn(firstResult, true))
+    expectLive('toolCall.withContext', 'globe')
 
     const reasoningGap: UIMessage['parts'] = [
-      ...firstGap,
+      ...firstResult,
       {
         type: 'reasoning',
         text: 'Interpret the first result.',
@@ -297,11 +385,11 @@ describe('MessageItem tool calls', () => {
       },
     ]
     rerender(renderTurn(reasoningGap, true))
-    expectLive('activity.working')
+    expectLive('toolCall.withContext', 'globe')
 
     const secondRunning: UIMessage['parts'] = [
-      firstGap[0],
-      firstGap[1],
+      firstResult[0],
+      firstResult[1],
       { ...reasoningGap[2], state: 'done' },
       {
         type: 'tool-os.fs.read',
@@ -341,7 +429,7 @@ describe('MessageItem tool calls', () => {
       { type: 'text', text: 'Final answer is streaming' },
     ]
     rerender(renderTurn(answerStreaming, true))
-    expectLive('activity.working')
+    expectLive('toolCall.actions.read.success', 'file-text')
 
     rerender(
       renderTurn(
@@ -363,14 +451,15 @@ describe('MessageItem tool calls', () => {
     expect(screen.getAllByText('activity.completedActions 2')).toHaveLength(1)
   })
 
-  it('keeps Working through answer streaming and completes with the turn', () => {
+  it('keeps the most recent concrete step through answer streaming and completes with the turn', () => {
     const between: UIMessage = {
       id: 'a3',
       role: 'assistant',
       parts: [search('t1', 'output-available', 'nemotron')],
     }
     const { rerender } = renderLast(between, 'streaming')
-    expect(screen.getByText('activity.working')).toBeInTheDocument()
+    expect(screen.getByText('toolCall.withContext')).toBeInTheDocument()
+    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
 
     rerender(
       <MessageItem
@@ -383,7 +472,8 @@ describe('MessageItem tool calls', () => {
         status="streaming"
       />
     )
-    expect(screen.getByText('activity.working')).toBeInTheDocument()
+    expect(screen.getByText('toolCall.withContext')).toBeInTheDocument()
+    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
     expect(
       screen.queryByText('activity.completedActions')
     ).not.toBeInTheDocument()
@@ -404,6 +494,60 @@ describe('MessageItem tool calls', () => {
       />
     )
     expect(screen.getByText(/activity\.completedActions/)).toBeInTheDocument()
+  })
+
+  it('updates the live headline across streamed results and errors instead of reverting to Working', () => {
+    const item = (parts: UIMessage['parts']) => (
+      <MessageItem
+        message={{ id: 'streamed-tools', role: 'assistant', parts }}
+        isFirstMessage={false}
+        isLastMessage
+        status="streaming"
+        requestActive
+      />
+    )
+    const searchRunning = search(
+      'search-1',
+      'input-available',
+      'latest news'
+    )
+    const searchResult = search('search-1', 'output-available', 'latest news')
+    const readRunning = {
+      type: 'tool-os.fs.read',
+      toolCallId: 'read-1',
+      state: 'input-available',
+      input: { path: 'notes.md' },
+    } as UIMessage['parts'][number]
+    const readError = {
+      ...readRunning,
+      state: 'output-error',
+      errorText: 'File disappeared',
+    } as UIMessage['parts'][number]
+    const activity = () =>
+      within(screen.getByTestId('tool-activity-group')).getByRole('button')
+
+    const { rerender } = render(item([]))
+    expect(activity()).toHaveTextContent('activity.working')
+
+    rerender(item([searchRunning]))
+    expect(activity()).toHaveTextContent('toolCall.withContext')
+    expect(activity().querySelector('.lucide-globe')).toBeInTheDocument()
+
+    rerender(item([searchResult]))
+    expect(activity()).toHaveTextContent('toolCall.withContext')
+    expect(activity().querySelector('.lucide-globe')).toBeInTheDocument()
+
+    // A stale input state from an older call must not win over the newer step.
+    rerender(item([searchRunning, readRunning]))
+    expect(activity()).toHaveTextContent('toolCall.actions.read.running')
+    expect(activity().querySelector('.lucide-file-text')).toBeInTheDocument()
+
+    rerender(item([searchRunning, readError]))
+    expect(activity()).toHaveTextContent('toolCall.actions.read.error')
+    expect(activity().querySelector('.lucide-file-text')).toHaveClass(
+      'text-destructive'
+    )
+    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
   })
 
   it.each(['awaiting_approval', 'awaiting_folder_access'])(

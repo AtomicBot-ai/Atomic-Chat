@@ -148,6 +148,87 @@ afterEach(() => {
 })
 
 describe('model selector geometry', () => {
+  for (const width of [1024, 1280]) {
+    for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
+      it(`${width}px, ${font}: opens below a project-like top composer at full picker height`, async () => {
+        await page.viewport(width, 800)
+        setFontSize(font)
+        setTheme('dark')
+        setProviders(pickerProviders, 'llamacpp-upstream', localModel)
+
+        render(
+          withTranslations(
+            <div
+              data-testid="project-composer"
+              className="fixed right-16 top-72"
+            >
+              <DropdownModelProvider />
+            </div>
+          )
+        )
+
+        const anchorBounds = trigger().getBoundingClientRect()
+        fireEvent.click(trigger())
+        const compactPanel = await screen.findByRole('dialog')
+        await settle(compactPanel)
+        fireEvent.click(
+          within(compactPanel).getByRole('button', { name: 'Change model' })
+        )
+        const search = await screen.findByPlaceholderText('Search models...')
+        const panel = search.closest(
+          '[data-slot="popover-content"]'
+        ) as HTMLElement
+        await settle(panel)
+        const panelBounds = panel.getBoundingClientRect()
+
+        expect(panel).toHaveAttribute('data-side', 'bottom')
+        expect(panelBounds.top).toBeGreaterThanOrEqual(anchorBounds.bottom + 7)
+        expect(panelBounds.height).toBeGreaterThanOrEqual(350)
+        expect(panelBounds.bottom).toBeLessThanOrEqual(800 - 16 + 1)
+        await waitFor(() => expect(search).toHaveFocus())
+        expectNoHorizontalOverflow(panel)
+        expect(
+          within(panel).getByRole('button', {
+            name: 'Download from Hugging Face',
+          })
+        ).toBeVisible()
+      })
+
+      it(`${width}px, ${font}: flips above an ordinary bottom composer only when needed`, async () => {
+        await page.viewport(width, 800)
+        setFontSize(font)
+        setTheme('dark')
+        setProviders(pickerProviders, 'llamacpp-upstream', localModel)
+
+        render(
+          withTranslations(
+            <div
+              data-testid="ordinary-composer"
+              className="fixed bottom-6 right-6"
+            >
+              <DropdownModelProvider />
+            </div>
+          )
+        )
+
+        const anchorBounds = trigger().getBoundingClientRect()
+        const search = await openModelList()
+        const panel = search.closest(
+          '[data-slot="popover-content"]'
+        ) as HTMLElement
+        await settle(panel)
+        const panelBounds = panel.getBoundingClientRect()
+
+        expect(panel).toHaveAttribute('data-side', 'top')
+        expect(panelBounds.bottom).toBeLessThanOrEqual(anchorBounds.top - 7)
+        expect(panelBounds.height).toBeGreaterThanOrEqual(350)
+        expect(panelBounds.top).toBeGreaterThanOrEqual(16 - 1)
+        await waitFor(() => expect(search).toHaveFocus())
+        expectNoHorizontalOverflow(panel)
+      })
+    }
+  }
+
   for (const width of [1024, 1280, 390]) {
     for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
       for (const theme of ['light', 'dark'] as const) {
@@ -231,11 +312,19 @@ describe('model selector geometry', () => {
           const footer = within(panel).getByRole('button', {
             name: 'Download from Hugging Face',
           })
+          expectNoHorizontalOverflow(footer)
           expectOneLine(
             within(footer).getByText('Download from Hugging Face')
           )
-          expect(footer.getBoundingClientRect().height).toBeCloseTo(44, 0)
+          const footerBounds = footer.getBoundingClientRect()
+          expect(footerBounds.height).toBeCloseTo(44, 0)
           const footerStyle = getComputedStyle(footer)
+          const renderedRadius = Math.min(
+            parseFloat(footerStyle.borderTopLeftRadius),
+            footerBounds.width / 2,
+            footerBounds.height / 2
+          )
+          expect(renderedRadius).toBeCloseTo(footerBounds.height / 2, 0)
           expect(footerStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
           expect(parseFloat(footerStyle.borderTopWidth)).toBeGreaterThan(0)
           const logo = within(footer).getByRole('img', {

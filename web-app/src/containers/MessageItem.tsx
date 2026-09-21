@@ -35,12 +35,14 @@ import { ToolActivityGroup } from '@/components/ai-elements/tools/activity-group
 import { TraceBlock } from '@/lib/tools/types'
 import {
   agentFilePathFromHref,
+  containsAgentFileLink,
   type AgentFileReference,
   extractAgentToolPaths,
   linkAgentFileReferences,
 } from '@/lib/agent-file-links'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { agentErrorCopy } from '@/lib/agent-error-copy'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -161,49 +163,54 @@ export const MessageItem = memo(
           : [],
       [agentAttachmentReferences, isAgentMessage, message.parts]
     )
-    const agentMarkdownComponents = useMemo(
-      () =>
-        isAgentMessage
-          ? {
-              a: ({
-                href,
-                children,
-                ...props
-              }: ComponentPropsWithoutRef<'a'>) => {
-                const filePath = href ? agentFilePathFromHref(href) : null
-                if (!filePath) {
-                  return (
-                    <a href={href} {...props}>
-                      {children}
-                    </a>
-                  )
-                }
+    const messageMarkdownComponents = useMemo(
+      () => ({
+        a: ({
+          href,
+          children,
+          target,
+          rel,
+          ...props
+        }: ComponentPropsWithoutRef<'a'>) => {
+          const filePath = href ? agentFilePathFromHref(href) : null
+          if (!filePath) {
+            return (
+              <a
+                href={href}
+                target={target ?? '_blank'}
+                rel={rel ?? 'noopener noreferrer'}
+                {...props}
+              >
+                {children}
+              </a>
+            )
+          }
 
-                return (
-                  <a
-                    href={href}
-                    {...props}
-                    className={cn(
-                      'font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
-                      props.className
-                    )}
-                    onClick={(event) => {
-                      event.preventDefault()
-                      void serviceHub
-                        .opener()
-                        .openPath(filePath)
-                        .catch((error) => {
-                          console.error('Failed to open Agent file:', error)
-                        })
-                    }}
-                  >
-                    {children}
-                  </a>
-                )
-              },
-            }
-          : undefined,
-      [isAgentMessage, serviceHub]
+          return (
+            <a
+              href={href}
+              {...props}
+              className={cn(
+                'font-medium text-blue-600 underline decoration-blue-500/40 underline-offset-2 hover:decoration-blue-600 focus-visible:decoration-blue-600 dark:text-blue-400 dark:hover:decoration-blue-400',
+                props.className
+              )}
+              onClick={(event) => {
+                event.preventDefault()
+                if (!isPlatformTauri()) return
+                void serviceHub
+                  .opener()
+                  .openPath(filePath)
+                  .catch((error) => {
+                    console.error('Failed to open Agent file:', error)
+                  })
+              }}
+            >
+              {children}
+            </a>
+          )
+        },
+      }),
+      [serviceHub]
     )
 
     // Extract file metadata from message text (for user messages with attachments)
@@ -297,6 +304,14 @@ export const MessageItem = memo(
         return renderEditor(block.key)
       }
 
+      const assistantText =
+        message.role === 'assistant'
+          ? linkAgentFileReferences(
+              block.text,
+              isAgentMessage ? agentFileReferences : []
+            )
+          : block.text
+
       return (
         <div key={block.key} className="w-full">
           {message.role === 'user' ? (
@@ -323,12 +338,12 @@ export const MessageItem = memo(
             </div>
           ) : (
             <RenderMarkdown
-              content={
-                isAgentMessage
-                  ? linkAgentFileReferences(block.text, agentFileReferences)
-                  : block.text
+              content={assistantText}
+              components={
+                isAgentMessage || containsAgentFileLink(assistantText)
+                  ? messageMarkdownComponents
+                  : undefined
               }
-              components={agentMarkdownComponents}
               // The thread page reports `submitted` for the whole request, so
               // `status === 'streaming'` alone would leave HTML artifacts
               // thinking they are complete and re-render the iframe per token.

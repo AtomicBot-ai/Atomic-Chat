@@ -152,10 +152,12 @@ import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
 import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
 import {
   filterAgentSkills,
+  containsAgentSkillInvocation,
   findAvailableAgentSkill,
   findAgentSkillSlashQuery,
   moveAgentSkillActiveIndex,
-  removeAgentSkillSlashQuery,
+  prependAgentSkillInvocation,
+  replaceAgentSkillSlashQuery,
   type AgentSkillSlashQuery,
 } from '@/containers/agentSkillSlash'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
@@ -195,10 +197,9 @@ const ChatInput = memo(function ChatInput({
   chatStatus,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const pendingAgentSkillCaretRef = useRef<number | null>(null)
   const composerAnchorRef = useRef<HTMLDivElement>(null)
   const [compactComposer, setCompactComposer] = useState(false)
-  const agentSkillTokenRef = useRef<HTMLSpanElement>(null)
-  const [agentSkillTokenWidth, setAgentSkillTokenWidth] = useState(0)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
@@ -317,8 +318,12 @@ const ChatInput = memo(function ChatInput({
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
 
   useLayoutEffect(() => {
-    setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
-  }, [selectedAgentSkill])
+    const caret = pendingAgentSkillCaretRef.current
+    if (caret === null) return
+    pendingAgentSkillCaretRef.current = null
+    textareaRef.current?.focus()
+    textareaRef.current?.setSelectionRange(caret, caret)
+  }, [prompt])
 
   useLayoutEffect(() => {
     const element = composerAnchorRef.current
@@ -349,8 +354,18 @@ const ChatInput = memo(function ChatInput({
       preselectedAgentSkillName
     )
     preselectedAgentSkillAppliedRef.current = preselectedAgentSkillName
-    if (skill) setSelectedAgentSkill(skill)
-  }, [agentSkills, agentSkillsLoading, preselectedAgentSkillName])
+    if (!skill) return
+
+    setSelectedAgentSkill(skill)
+    const currentPrompt = usePrompt.getState().prompt
+    const next = prependAgentSkillInvocation(currentPrompt, skill.name)
+    if (next.value !== currentPrompt) setPrompt(next.value)
+  }, [
+    agentSkills,
+    agentSkillsLoading,
+    preselectedAgentSkillName,
+    setPrompt,
+  ])
 
   useEffect(() => {
     setAgentSkillActiveIndex(0)
@@ -802,15 +817,16 @@ const ChatInput = memo(function ChatInput({
 
   const handleAgentSkillSelect = (skill: AgentSkill) => {
     if (!agentSkillSlashQuery) return
-    const next = removeAgentSkillSlashQuery(prompt, agentSkillSlashQuery)
+    const next = replaceAgentSkillSlashQuery(
+      prompt,
+      agentSkillSlashQuery,
+      skill.name
+    )
+    pendingAgentSkillCaretRef.current = next.cursor
     setPrompt(next.value)
     setSelectedAgentSkill(skill)
     setAgentSkillSlashQuery(null)
     setAgentSkillMenuOpen(false)
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus()
-      textareaRef.current?.setSelectionRange(next.cursor, next.cursor)
-    })
   }
 
   // Read the caret at the moment the microphone is pressed; dictated text is
@@ -2948,15 +2964,6 @@ const ChatInput = memo(function ChatInput({
                 onActiveIndexChange={setAgentSkillActiveIndex}
               />
               <div className="relative min-w-0 w-full px-4 pt-3">
-                {selectedAgentSkill && (
-                  <span
-                    ref={agentSkillTokenRef}
-                    className="pointer-events-none absolute left-4 top-3 whitespace-nowrap text-sm font-medium leading-6 text-blue-600 dark:text-blue-400"
-                    data-testid="agent-skill-inline-token"
-                  >
-                    /{selectedAgentSkill.name}
-                  </span>
-                )}
                 <TextareaAutosize
                   dir="auto"
                   ref={textareaRef}
@@ -2966,46 +2973,47 @@ const ChatInput = memo(function ChatInput({
                   value={prompt}
                   data-testid={'chat-input'}
                   onChange={(e) => {
-                    setPrompt(e.target.value)
+                    const nextValue = e.target.value
+                    setPrompt(nextValue)
+                    if (
+                      selectedAgentSkill &&
+                      !containsAgentSkillInvocation(
+                        nextValue,
+                        selectedAgentSkill.name
+                      )
+                    ) {
+                      setSelectedAgentSkill(null)
+                    }
                     // The user typed while dictating. Re-baseline so the next
                     // phrase lands after their edit instead of overwriting it,
                     // and give up the ability to cleanly undo the session.
                     if (
                       isVoiceActive &&
-                      e.target.value !== lastDictatedValueRef.current
+                      nextValue !== lastDictatedValueRef.current
                     ) {
-                      lastDictatedValueRef.current = e.target.value
+                      lastDictatedValueRef.current = nextValue
                       useVoiceInput
                         .getState()
                         .rebase(
                           captureDictationAnchor(
-                            e.target.value,
+                            nextValue,
                             e.target.selectionStart
                           )
                         )
                     }
                     updateAgentSkillSlashQuery(
-                      e.target.value,
+                      nextValue,
                       e.target.selectionStart
                     )
                     // Count the number of newlines to estimate rows
                     const newRows =
-                      (e.target.value.match(/\n/g) || []).length + 1
+                      (nextValue.match(/\n/g) || []).length + 1
                     setRows(Math.min(newRows, maxRows))
                   }}
                   onKeyDown={(e) => {
                     // e.keyCode 229 is for IME input with Safari
                     const isComposing =
                       e.nativeEvent.isComposing || e.keyCode === 229
-                    if (
-                      e.key === 'Backspace' &&
-                      selectedAgentSkill &&
-                      prompt.length === 0
-                    ) {
-                      e.preventDefault()
-                      setSelectedAgentSkill(null)
-                      return
-                    }
                     if (
                       agentSkillMenuOpen &&
                       eligibleAgentSkills.length > 0 &&
@@ -3069,20 +3077,13 @@ const ChatInput = memo(function ChatInput({
                   placeholder={
                     isVoiceActive && !prompt
                       ? t('common:voiceInput.placeholder')
-                      : selectedAgentSkill
-                        ? ''
-                        : t('common:placeholder.chatInput')
+                      : t('common:placeholder.chatInput')
                   }
                   autoFocus
                   spellCheck={spellCheckChatInput}
                   data-gramm={spellCheckChatInput}
                   data-gramm_editor={spellCheckChatInput}
                   data-gramm_grammarly={spellCheckChatInput}
-                  style={{
-                    textIndent: selectedAgentSkill
-                      ? `${agentSkillTokenWidth + 8}px`
-                      : undefined,
-                  }}
                   className={cn(
                     'block min-w-0 w-full resize-none border-none bg-transparent p-0 text-sm leading-6 outline-0 break-words',
                     // Sideways is never a scroll axis here: text wraps, and

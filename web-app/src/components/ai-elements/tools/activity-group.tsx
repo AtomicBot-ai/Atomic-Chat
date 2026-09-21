@@ -25,9 +25,6 @@ type ToolActivityGroupProps = {
   onRetry?: () => void
 }
 
-const isRunning = (tool: ActivityTool) =>
-  tool.state === 'input-streaming' || tool.state === 'input-available'
-
 /**
  * One turn-level activity disclosure containing individually inspectable tool
  * calls. The headline follows the live call, then settles into a compact list
@@ -42,24 +39,26 @@ export function ToolActivityGroup({
   onRetry,
 }: ToolActivityGroupProps) {
   const { t } = useTranslation('chat')
-  // The newest running call owns the headline. Older calls may remain in an
-  // input state when a loop guard ends the turn; `active` prevents that stale
-  // state from looking like work is still happening after the composer opens.
-  const runningTool =
-    active && !working ? [...tools].reverse().find(isRunning) : undefined
-  // Completion is a turn-level state, not a tool-level state. Between calls,
-  // during reasoning, while an answer streams, and while approval is pending,
-  // the turn is still live and must fall back to Working rather than Completed.
+  // The newest concrete step owns the live headline, including the interval
+  // after its result/error arrives and before the next call starts. Tool parts
+  // can advance to an output state while the enclosing turn is still active;
+  // falling back to Working at that point hides the step already visible in
+  // the timeline. Taking the newest part also avoids an older, stale input
+  // state winning over a later completed call during streamed updates.
+  const headlineTool = active && !working ? tools.at(-1) : undefined
+  // Completion is a turn-level state, not a tool-level state. While the turn
+  // is live, Working is reserved for the period before the first concrete
+  // call and explicit permission/folder-access waits.
   const live = active
   // A live turn stays one stable row. The user can opt into the detailed
   // timeline, but new tool calls never expand it and shove the answer around.
   const [open, setOpen] = useState(false)
 
-  const summary = runningTool
+  const summary = headlineTool
     ? toolActivityLabel(
-        runningTool.toolName,
-        runningTool.presentation,
-        runningTool.state,
+        headlineTool.toolName,
+        headlineTool.presentation,
+        headlineTool.state,
         t
       )
     : live
@@ -74,11 +73,20 @@ export function ToolActivityGroup({
   const StatusIcon =
     errorMessage && !live
       ? CircleAlert
-      : runningTool
-        ? toolIcon(runningTool.toolName, runningTool.presentation.kind)
+      : headlineTool
+        ? toolIcon(headlineTool.toolName, headlineTool.presentation.kind)
         : live
           ? Loader2
           : ListChecks
+  const headlineDenied =
+    (headlineTool?.state as string | undefined) === 'output-denied'
+  const headlineSkipped =
+    headlineDenied &&
+    headlineTool?.presentation.kind === 'generic' &&
+    headlineTool.presentation.deniedReason === 'tool-loop'
+  const headlineFailed =
+    headlineTool?.state === 'output-error' ||
+    (headlineDenied && !headlineSkipped)
 
   return (
     <Collapsible
@@ -95,8 +103,8 @@ export function ToolActivityGroup({
           aria-hidden="true"
           className={cn(
             'size-[18px] shrink-0',
-            live && !runningTool && 'animate-spin',
-            errorMessage && !live && 'text-destructive'
+            live && !headlineTool && 'animate-spin',
+            (headlineFailed || (errorMessage && !live)) && 'text-destructive'
           )}
         />
         <span className="inline-flex min-w-0 items-center gap-2">

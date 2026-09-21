@@ -706,7 +706,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     ]
   )
 
-  const provider = getProviderByName(selectedProvider)
+  // A provider is presentation metadata for a concrete model selection. The
+  // store clears both atomically, but this guard also covers hydration and the
+  // intentional provider-only local startup state before initialization.
+  const provider = selectedModel
+    ? getProviderByName(selectedProvider)
+    : undefined
   const detailDisplayModel = selectedModel
     ? qualifiedModelDisplayName(selectedModel)
     : displayModel
@@ -788,12 +793,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               pickerEmpty &&
                 !searchValue.trim() &&
                 activeDownloads.length === 0
-                ? 'max-h-[min(22rem,calc(100dvh-12rem))]'
-                : 'h-[min(22rem,calc(100dvh-12rem))]'
+                ? 'max-h-[min(22rem,var(--radix-popover-content-available-height))]'
+                : 'h-[min(22rem,var(--radix-popover-content-available-height))]'
             )
         )}
         align="end"
-        side="top"
+        side="bottom"
         sideOffset={8}
         avoidCollisions
         collisionPadding={16}

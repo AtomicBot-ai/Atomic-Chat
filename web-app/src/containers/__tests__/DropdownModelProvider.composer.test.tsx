@@ -245,6 +245,27 @@ describe('DropdownModelProvider - the composer pill', () => {
     )
   })
 
+  it('does not render a stale provider avatar without a selected model', () => {
+    mockModelProvider({
+      providers,
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: null,
+      getProviderByName: vi.fn((name: string) =>
+        providers.find((provider) => provider.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+
+    render(<DropdownModelProvider />)
+
+    expect(pill()).toHaveTextContent('common:selectAModel')
+    expect(
+      pill().querySelector('[data-testid="provider-avatar-llamacpp-upstream"]')
+    ).toBeNull()
+  })
+
   it('keeps the composer name compact and shows the author in both inner layers', () => {
     const namespacedModel = {
       id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',

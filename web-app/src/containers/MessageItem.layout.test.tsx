@@ -145,7 +145,17 @@ describe('Live reasoning geometry (Chromium)', () => {
           ...(state === 'output-available' ? { output: [] } : {}),
         }) as UIMessage['parts'][number]
       const first = tool('first', 'output-available', 'first query')
-      const second = tool('second', 'output-available', 'second query')
+      const read = (state: string) =>
+        ({
+          type: 'tool-os.fs.read',
+          toolCallId: 'second',
+          state,
+          input: { path: 'long-research-notes.md' },
+          ...(state === 'output-error'
+            ? { errorText: 'The file could not be read' }
+            : {}),
+        }) as UIMessage['parts'][number]
+      const second = read('output-error')
       const phases = [
         { parts: [thought], label: 'Working', active: true },
         {
@@ -153,21 +163,17 @@ describe('Live reasoning geometry (Chromium)', () => {
           label: 'Searching',
           active: true,
         },
-        { parts: [thought, first], label: 'Working', active: true },
+        { parts: [thought, first], label: 'Searched the web', active: true },
         {
-          parts: [
-            thought,
-            first,
-            tool(
-              'second',
-              'input-streaming',
-              'Ausführliche Untersuchung '.repeat(20)
-            ),
-          ],
-          label: 'Searching',
+          parts: [thought, first, read('input-streaming')],
+          label: 'Reading long-research-notes.md',
           active: true,
         },
-        { parts: [thought, first, second], label: 'Working', active: true },
+        {
+          parts: [thought, first, second],
+          label: 'Could not read long-research-notes.md',
+          active: true,
+        },
         {
           parts: [thought, first, second],
           label: 'Completed 2 actions',

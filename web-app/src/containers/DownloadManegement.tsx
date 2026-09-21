@@ -240,9 +240,9 @@ export function DownloadManagement() {
     return total
   }, [downloadProcesses, appUpdateState.isDownloading])
 
-  // ATO-462: the panel no longer opens itself and no longer hides itself. What
-  // is measured instead is how much of a download run the user actually kept it
-  // expanded, which is the number this redesign is meant to move.
+  // ATO-462: each download run starts expanded and stays present while active;
+  // a deliberate collapse lasts for that run. Measure how much of the run the
+  // user actually kept expanded, which is the number this redesign should move.
   const settlePanelTiming = useCallback(() => {
     const timing = panelTiming.current
     if (!timing.since) return
