@@ -21,6 +21,11 @@ use tokio::sync::Mutex;
     tauri::mobile_entry_point
 )]
 pub fn run() {
+    // Before anything resolves a path: an end-to-end build without a root of
+    // its own would land in the developer's real profile.
+    #[cfg(feature = "e2e")]
+    core::e2e::require_root();
+
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
@@ -84,6 +89,15 @@ pub fn run() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_atomic_audio::init());
+    }
+
+    // Desktop UI end-to-end builds only: a WebDriver server inside the app, on
+    // 127.0.0.1:$TAURI_WEBDRIVER_PORT. It can drive the whole UI, so it exists
+    // only behind the `e2e` feature, which no release build enables.
+    #[cfg(feature = "e2e")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_wdio_webdriver::init());
+        app_builder = app_builder.plugin(core::e2e::seed_plugin());
     }
 
     // Desktop: include updater commands
@@ -418,6 +432,15 @@ pub fn run() {
         core::tray_status::update_tray_status,
     ]);
 
+    #[cfg(not(feature = "e2e"))]
+    let context = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    let context = {
+        let mut context = tauri::generate_context!();
+        core::e2e::take_over_windows(&mut context);
+        context
+    };
+
     let app = app_builder
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -449,6 +472,14 @@ pub fn run() {
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(|app| {
+            // The same windows from the same config, built here so that each
+            // can be given this run's own WebKit data store.
+            #[cfg(feature = "e2e")]
+            {
+                core::e2e::require_inside_root(&get_jan_data_folder_path(app.handle().clone()));
+                core::e2e::create_windows(app)?;
+            }
+
             let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
             // The plugin's defaults are 40 KB per file with
             // `RotationStrategy::KeepOne`, and `KeepOne` does not archive
@@ -619,7 +650,10 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(desktop)]
+            // Not in an end-to-end build: a clean profile always counts as a
+            // version change, so every run would copy the CLI onto the
+            // operator's real PATH — outside the isolated test root.
+            #[cfg(all(desktop, not(feature = "e2e")))]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
 
@@ -638,7 +672,7 @@ pub fn run() {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {

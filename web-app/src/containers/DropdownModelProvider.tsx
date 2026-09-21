@@ -1038,6 +1038,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
                           <button
                             type="button"
+                            data-test-id={`provider-settings-${providerInfo.provider}`}
                             aria-label={t(
                               'common:modelPicker.providerSettings',
                               {

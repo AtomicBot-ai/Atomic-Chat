@@ -368,8 +368,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Other (15)
+## Other (16)
 
+- **2026-09-18** — [Drive the desktop UI through an embedded WebDriver on an isolated profile](2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md)
 - **2026-09-17** — [Re-point the web-app test storage globals at jsdom on Node ≥ 25](2026-09-17-repoint-web-app-test-storage-globals-at-jsdom-on-node-25.md)
 - **2026-09-17** — [Use a short default assistant prompt and migrate only exact defaults](2026-09-17-default-system-prompt-short.md)
 - **2026-09-16** — [Migrate Jan-branded assistant prompts to the Atomic Chat default by signature, not by version](2026-09-16-migrate-jan-branded-assistant-prompts.md)
