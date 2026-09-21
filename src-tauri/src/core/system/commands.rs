@@ -2385,12 +2385,21 @@ fn output_indicates_network_failure(output: &str) -> bool {
 /// Without these candidates the Launch page reports OpenClaw as missing and
 /// offers to install a second copy on top of the app's.
 ///
+/// ZCode is a desktop app that never touches `PATH` outside Linux, so its
+/// candidates are the app executables its installers write
+/// ([`zcode_app_candidates`]).
+///
 /// Returns an empty vector for every other agent: they all install onto `PATH`,
 /// and guessing locations for them would only produce false positives.
 pub fn off_path_candidates(bin: &str) -> Vec<PathBuf> {
-    if bin != "openclaw" {
-        return Vec::new();
+    match bin {
+        "openclaw" => openclaw_off_path_candidates(),
+        "zcode" => zcode_app_candidates(),
+        _ => Vec::new(),
     }
+}
+
+fn openclaw_off_path_candidates() -> Vec<PathBuf> {
     let Ok(home) = agent_home_dir() else {
         return Vec::new();
     };
@@ -3397,6 +3406,537 @@ pub fn launch_zed() -> Result<(), String> {
     Err("Could not launch Zed. Is it installed and on your PATH?".to_string())
 }
 
+// --- ZCode ------------------------------------------------------------------
+//
+// ZCode (github.com/zai-org/ZCode) is Z.ai's Electron desktop app. It ignores
+// OPENAI_BASE_URL and friends: the only source of custom providers is
+// `<dataBase>/.zcode/v2/provider_config.json`, shared by the desktop app, its
+// web UI and its CLI, and polled once a second — so writing that file is the
+// whole integration, and a running ZCode picks the change up by itself.
+//
+// The file is validated with strict Zod schemas, and an invalid file is not
+// rejected loudly: ZCode treats it as empty, so every custom provider the user
+// has silently disappears until it is fixed. Hence the care below — patch only
+// the entries we own, refuse rather than guess on anything unexpected, and write
+// under ZCode's own lock with a rename.
+
+/// Provider id we own inside `provider_config.json`. Personal providers may use
+/// any id that does not start with `account:`.
+const ZCODE_PROVIDER_ID: &str = "atomic-chat";
+const ZCODE_PROVIDER_NAME: &str = "Atomic Chat";
+/// ZCode only admits a provider whose API key is non-blank; the local server
+/// ignores it when auth is off.
+const ZCODE_KEY_PLACEHOLDER: &str = "atomic";
+/// ZCode assumes 200K of context for any model it does not recognise — a wild
+/// over-claim for a local model, which then never compacts and overflows mid-
+/// turn. Declare what `DSH_CONTEXT_WINDOW` declares for the same reason.
+const ZCODE_CONTEXT_WINDOW: u64 = 65536;
+const ZCODE_MAX_OUTPUT_TOKENS: u64 = 8192;
+/// ZCode's default request mapping for `openai-chat-completions` sends
+/// `thinking`, `enable_thinking`, `reasoning_effort` and `reasoning`, none of
+/// which llama-server reads, so its reasoning toggle would do nothing. llama-server
+/// does read `chat_template_kwargs`, and `enable_thinking` is the switch the
+/// Qwen3 / GLM / DeepSeek templates expose; templates without it ignore it.
+const ZCODE_REASONING_MAP: &str =
+    r#"{"chat_template_kwargs": {"enable_thinking": reasoningLevel == "enabled"}}"#;
+/// `max_completion_tokens` (ZCode's default) is an OpenAI-only alias;
+/// `max_tokens` is what every local backend understands.
+const ZCODE_MAX_TOKENS_MAP: &str = "{'max_tokens': maxOutputTokens}";
+/// ZCode's own writers wait up to 8 s for the lock.
+const ZCODE_LOCK_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+/// A ZCode write holds the lock for milliseconds. One this old was left behind
+/// by a process that died holding it.
+const ZCODE_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// ZCode's `.zcode/v2` directory, resolved the way the desktop app does it:
+/// `dataBaseDir` from `~/.zcode/v2/setting.json` (set when the user moves the
+/// data folder in ZCode's settings), then `$ZCODE_DATA_BASE_DIR`, then home.
+fn zcode_config_dir(home: &Path, env_base: Option<&str>) -> PathBuf {
+    let from_setting = std::fs::read_to_string(home.join(".zcode").join("v2").join("setting.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| {
+            v.get("dataBaseDir")
+                .and_then(|d| d.as_str())
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from)
+        });
+    let base = from_setting
+        .or_else(|| {
+            env_base
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from)
+        })
+        .unwrap_or_else(|| home.to_path_buf());
+    base.join(".zcode").join("v2")
+}
+
+/// Borrow `parent[key]` as a JSON array, creating it when absent. A value of the
+/// wrong type means the file is already invalid for ZCode; we refuse to paper
+/// over that.
+fn zcode_array<'a>(
+    parent: &'a mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    path: &str,
+) -> Result<&'a mut Vec<serde_json::Value>, String> {
+    parent
+        .entry(key)
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .ok_or_else(|| format!("{path} in provider_config.json is not an array"))
+}
+
+/// Borrow `parent[key]` as a JSON object, creating it when absent.
+fn zcode_object<'a>(
+    parent: &'a mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    path: &str,
+) -> Result<&'a mut serde_json::Map<String, serde_json::Value>, String> {
+    parent
+        .entry(key)
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| format!("{path} in provider_config.json is not an object"))
+}
+
+/// Apply Atomic Chat's provider, its model rule and the default selection to a
+/// parsed `provider_config.json` (`None` when the file does not exist yet).
+///
+/// Only entries whose `providerId` is ours are replaced; every other provider,
+/// rule and key is carried over untouched. Split out from
+/// [`configure_zcode_in`] so the merge rules are testable without the disk.
+fn zcode_patch_provider_config(
+    existing: Option<serde_json::Value>,
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("ZCode needs a model: load one in a chat first.".to_string());
+    }
+    let key = api_key
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .unwrap_or(ZCODE_KEY_PLACEHOLDER);
+
+    let mut root = existing.unwrap_or_else(|| serde_json::json!({ "schemaVersion": 1 }));
+    let root_obj = root
+        .as_object_mut()
+        .ok_or_else(|| "provider_config.json is not a JSON object".to_string())?;
+    // ZCode refuses a file without a version, and one newer than it knows. We
+    // know exactly one shape, so anything else is left for ZCode to handle.
+    match root_obj.get("schemaVersion").and_then(|v| v.as_u64()) {
+        Some(1) => {}
+        Some(v) => {
+            return Err(format!(
+                "ZCode's provider_config.json uses schemaVersion {v}, which this version of \
+                 Atomic Chat does not know. Update Atomic Chat, or add the provider in \
+                 ZCode's Model Settings."
+            ))
+        }
+        None => {
+            return Err(
+                "ZCode's provider_config.json has no schemaVersion, so ZCode is ignoring it. \
+                 Open Model Settings in ZCode to repair it, then try again."
+                    .to_string(),
+            )
+        }
+    }
+    let config = zcode_object(root_obj, "config", "config")?;
+
+    let provider = serde_json::json!({
+        "providerId": ZCODE_PROVIDER_ID,
+        "providerName": ZCODE_PROVIDER_NAME,
+        "enabled": true,
+        "config": {
+            "group": "standard-personal",
+            "access": { "type": "api-key", "apiKey": key },
+            "api": {
+                "type": "openai-chat-completions",
+                "baseUrl": api_url,
+                "headers": null
+            },
+            // Local servers expose no model catalogue ZCode can discover, so
+            // the provider lists exactly the model Run was pressed for.
+            "personalModelIds": [model],
+            "modelOrder": [model]
+        }
+    });
+    let provider_rules = zcode_array(
+        zcode_object(config, "providerConfigRules", "config.providerConfigRules")?,
+        "providerRules",
+        "config.providerConfigRules.providerRules",
+    )?;
+    match provider_rules
+        .iter()
+        .position(|rule| rule["providerId"] == ZCODE_PROVIDER_ID)
+    {
+        Some(i) => provider_rules[i] = provider,
+        None => provider_rules.push(provider),
+    }
+
+    // `providerOrder` is optional; ZCode appends unlisted providers itself, so
+    // only an existing list needs us added — at the top, where Run expects us.
+    if config.contains_key("providerOrder") {
+        let order = zcode_array(config, "providerOrder", "config.providerOrder")?;
+        if !order.iter().any(|id| *id == ZCODE_PROVIDER_ID) {
+            order.insert(0, serde_json::json!(ZCODE_PROVIDER_ID));
+        }
+    }
+
+    let model_rules = zcode_object(config, "modelConfigRules", "config.modelConfigRules")?;
+    // ZCode rejects the whole file when one provider/model pair has both a
+    // regular and a manual rule — and a manual rule is what its Advanced model
+    // settings write. So a rule of ours can only live in one of the two lists:
+    // drop our old rules from both before adding the new one.
+    let manual = zcode_array(
+        model_rules,
+        "manualProviderModelRules",
+        "config.modelConfigRules.manualProviderModelRules",
+    )?;
+    manual.retain(|rule| rule["providerId"] != ZCODE_PROVIDER_ID);
+    let rules = zcode_array(
+        model_rules,
+        "providerModelRules",
+        "config.modelConfigRules.providerModelRules",
+    )?;
+    rules.retain(|rule| rule["providerId"] != ZCODE_PROVIDER_ID);
+    rules.push(serde_json::json!({
+        "providerId": ZCODE_PROVIDER_ID,
+        "modelId": model,
+        "config": {
+            "properties": {
+                "contextWindow": ZCODE_CONTEXT_WINDOW,
+                // A model id that happens to match one of ZCode's built-in
+                // vision patterns would otherwise inherit image input a
+                // text-only GGUF cannot take.
+                "inputFormat": { "supportsImage": false }
+            },
+            "optionSpecs": {
+                "maxOutputTokens": {
+                    "max": ZCODE_MAX_OUTPUT_TOKENS,
+                    "map": ZCODE_MAX_TOKENS_MAP
+                },
+                "reasoningLevel": {
+                    "values": ["disabled", "enabled"],
+                    "map": ZCODE_REASONING_MAP
+                }
+            }
+        }
+    }));
+
+    // A selection has to name a reasoning level the model allows. `enabled` is
+    // what ZCode itself picks for a newly chosen model (the highest level).
+    config.insert(
+        "defaultModelSelection".to_string(),
+        serde_json::json!({
+            "providerId": ZCODE_PROVIDER_ID,
+            "modelId": model,
+            "options": { "reasoningLevel": "enabled" }
+        }),
+    );
+
+    Ok(root)
+}
+
+/// ZCode's lock around a config file (`packages/shared/src/node/atomicFileLock.ts`):
+/// a `<file>.lock` directory holding one `owner-<token>.json`. Taking it keeps a
+/// Run from interleaving with a save made in ZCode's own settings at that moment.
+/// Released on drop.
+struct ZcodeFileLock {
+    dir: PathBuf,
+    owner: PathBuf,
+}
+
+impl Drop for ZcodeFileLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.owner);
+        let _ = std::fs::remove_dir(&self.dir);
+    }
+}
+
+/// Whether a lock directory was left behind: judged by its newest entry, so a
+/// lock that was just re-taken by someone else is never reclaimed.
+fn zcode_lock_is_stale(dir: &Path, stale_after: std::time::Duration) -> bool {
+    let mut newest = std::fs::metadata(dir).and_then(|m| m.modified()).ok();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
+                newest = Some(newest.map_or(modified, |n| n.max(modified)));
+            }
+        }
+    }
+    // A timestamp in the future (clock skew, coarse filesystem clocks) reads as
+    // brand new rather than as abandoned.
+    newest
+        .map(|n| n.elapsed().unwrap_or_default())
+        .is_some_and(|age| age >= stale_after)
+}
+
+/// Remove an abandoned lock directory, reporting whether it is gone.
+fn zcode_remove_lock(dir: &Path) -> bool {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    std::fs::remove_dir(dir).is_ok()
+}
+
+fn acquire_zcode_lock(
+    file: &Path,
+    max_wait: std::time::Duration,
+    stale_after: std::time::Duration,
+) -> Result<ZcodeFileLock, String> {
+    const RETRY_DELAYS_MS: [u64; 5] = [25, 50, 100, 200, 400];
+
+    let mut dir = file.as_os_str().to_owned();
+    dir.push(".lock");
+    let dir = PathBuf::from(dir);
+    let started = std::time::Instant::now();
+    let mut attempt = 0;
+
+    loop {
+        match std::fs::create_dir(&dir) {
+            Ok(()) => {
+                let created_at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or_default();
+                let token = format!("{}-{}-atomic-chat", std::process::id(), created_at);
+                let owner = dir.join(format!("owner-{token}.json"));
+                let payload = serde_json::json!({
+                    "pid": std::process::id(),
+                    "createdAt": created_at,
+                    "token": token,
+                });
+                let lock = ZcodeFileLock {
+                    dir: dir.clone(),
+                    owner: owner.clone(),
+                };
+                std::fs::write(&owner, format!("{payload}\n"))
+                    .map_err(|e| format!("Failed to write {}: {}", owner.display(), e))?;
+                return Ok(lock);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // A lock we cannot remove falls through to the timeout below
+                // instead of being retried in a tight loop.
+                if zcode_lock_is_stale(&dir, stale_after) && zcode_remove_lock(&dir) {
+                    log::warn!("Reclaimed a stale ZCode lock at {}", dir.display());
+                    continue;
+                }
+                if started.elapsed() >= max_wait {
+                    return Err(
+                        "ZCode is saving its model settings right now. Try again in a moment."
+                            .to_string(),
+                    );
+                }
+                let delay = RETRY_DELAYS_MS[attempt.min(RETRY_DELAYS_MS.len() - 1)];
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
+            Err(e) => return Err(format!("Failed to lock {}: {}", file.display(), e)),
+        }
+    }
+}
+
+/// Filesystem half of [`configure_zcode`], taking the resolved `.zcode/v2`
+/// directory so it is testable.
+fn configure_zcode_in(
+    dir: &Path,
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Result<(), String> {
+    let path = dir.join("provider_config.json");
+
+    // ZCode imports the providers from its pre-3.x `config.json` exactly once:
+    // on the first start that finds no `provider_config.json`. Creating that
+    // file first would skip the import for good and the user's old providers
+    // would never come back. Let ZCode migrate them before we write anything.
+    if !path.exists() && dir.join("config.json").exists() {
+        return Err(
+            "Open ZCode once so it can import your existing model providers, then click \
+             Run again."
+                .to_string(),
+        );
+    }
+
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+    let _lock = acquire_zcode_lock(&path, ZCODE_LOCK_MAX_WAIT, ZCODE_LOCK_STALE_AFTER)?;
+
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
+    };
+    let existing = if text.trim().is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str::<serde_json::Value>(&text).map_err(|e| {
+                format!(
+                    "Could not parse {}: {}. ZCode ignores the file while it is invalid, so fix \
+                     or remove it and try again.",
+                    path.display(),
+                    e
+                )
+            })?,
+        )
+    };
+
+    let patched = zcode_patch_provider_config(existing, api_url, model, api_key)?;
+    let mut serialized = serde_json::to_string_pretty(&patched).map_err(|e| e.to_string())?;
+    serialized.push('\n');
+
+    // A file ZCode cannot validate costs the user every custom provider they
+    // have, so keep the pre-Atomic version once. It holds their API keys too,
+    // hence owner-only like the file itself.
+    if !text.trim().is_empty() {
+        let backup = dir.join("provider_config.json.atomic-backup");
+        if !backup.exists() && std::fs::write(&backup, &text).is_ok() {
+            restrict_to_owner(&backup);
+        }
+    }
+
+    write_atomically(&path, serialized.as_bytes())?;
+    restrict_to_owner(&path);
+
+    log::info!(
+        "ZCode configured: baseUrl={}, model={}, file={}",
+        api_url,
+        model,
+        path.display()
+    );
+    Ok(())
+}
+
+/// Point ZCode at the local server by upserting an "Atomic Chat" provider, a
+/// rule for the running model and the default model selection in its
+/// `provider_config.json`. ZCode polls that file, so no restart is needed.
+#[tauri::command]
+pub fn configure_zcode(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let home = agent_home_dir()?;
+    let env_base = std::env::var("ZCODE_DATA_BASE_DIR").ok();
+    let dir = zcode_config_dir(Path::new(&home), env_base.as_deref());
+    configure_zcode_in(&dir, &api_url, &model, api_key.as_deref())
+}
+
+/// Where each ZCode installer puts the desktop app's executable. The app puts
+/// nothing on `PATH` except on Linux, where the deb/rpm packages also link
+/// `/usr/bin/zcode`, so without these the Launch page reports ZCode missing.
+fn zcode_app_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    #[cfg(target_os = "macos")]
+    {
+        out.push(PathBuf::from(
+            "/Applications/ZCode.app/Contents/MacOS/ZCode",
+        ));
+        if let Ok(home) = agent_home_dir() {
+            out.push(PathBuf::from(home).join("Applications/ZCode.app/Contents/MacOS/ZCode"));
+        }
+    }
+    #[cfg(windows)]
+    {
+        // NSIS installs per user under `%LOCALAPPDATA%\Programs` and for all
+        // users under `%ProgramFiles%`; both are the installer's defaults.
+        for (var, sub) in [
+            ("LOCALAPPDATA", "Programs\\ZCode"),
+            ("ProgramFiles", "ZCode"),
+        ] {
+            if let Some(root) = std::env::var(var).ok().filter(|v| !v.is_empty()) {
+                out.push(PathBuf::from(root).join(sub).join("ZCode.exe"));
+            }
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        out.push(PathBuf::from("/opt/ZCode/zcode"));
+    }
+    out
+}
+
+/// The `.app` bundle an executable at `X.app/Contents/MacOS/<exe>` belongs to.
+fn macos_app_bundle(exe: &Path) -> Option<PathBuf> {
+    let bundle = exe.parent()?.parent()?.parent()?;
+    (bundle.extension()? == "app").then(|| bundle.to_path_buf())
+}
+
+/// Whether ZCode's desktop app is installed, and whether we brought it up.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZcodeAppStatus {
+    pub installed: bool,
+    pub launched: bool,
+}
+
+/// Open ZCode after [`configure_zcode`], if it is installed.
+///
+/// Best effort by design: the config is already written and ZCode reads it
+/// whenever it next runs, so a missing app is reported rather than failed.
+/// `path` is the launcher the Launch page detected off `PATH` (a custom binary
+/// path, or one of [`zcode_app_candidates`]).
+#[tauri::command]
+pub fn launch_zcode(path: Option<String>) -> ZcodeAppStatus {
+    use std::process::{Command, Stdio};
+
+    let exe = path
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+        .or_else(|| resolve_off_path("zcode"));
+    let found = exe.is_some();
+
+    let mut cmd = match exe {
+        Some(exe) => match macos_app_bundle(&exe).filter(|_| cfg!(target_os = "macos")) {
+            // Through LaunchServices, which also just focuses a running instance.
+            Some(bundle) => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg(bundle);
+                c
+            }
+            None => Command::new(exe),
+        },
+        // Linux packages link `/usr/bin/zcode`, which the login PATH resolves.
+        None if cfg!(all(unix, not(target_os = "macos"))) => Command::new("zcode"),
+        None => {
+            return ZcodeAppStatus {
+                installed: false,
+                launched: false,
+            }
+        }
+    };
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    apply_login_path(&mut cmd);
+
+    match cmd.spawn() {
+        Ok(_) => {
+            log::info!("Launched ZCode");
+            ZcodeAppStatus {
+                installed: true,
+                launched: true,
+            }
+        }
+        // For the bare Linux name, a failed spawn just means it is not there.
+        Err(e) => {
+            log::warn!("Could not launch ZCode: {e}");
+            ZcodeAppStatus {
+                installed: found,
+                launched: false,
+            }
+        }
+    }
+}
+
 /// Whether OpenClaw's desktop app is installed, and whether we brought it up.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -4189,12 +4729,12 @@ fn dsh_home_dir() -> Result<PathBuf, String> {
 /// disk cannot leave a truncated file behind.
 ///
 /// The existing `configure_*` commands use a plain `std::fs::write`, which is
-/// tolerable for a config file we are the sole author of. `settings.yaml` is
-/// shared with every other harness plugin, so a half-written file destroys
-/// configuration we do not own. Symlinks are resolved first: renaming onto a
-/// link would replace it with a regular file and silently detach a dotfile
-/// managed by stow/chezmoi.
-fn dsh_write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+/// tolerable for a config file we are the sole author of. DeepSeek Harness's
+/// `settings.yaml` and ZCode's `provider_config.json` hold configuration we do
+/// not own, so a half-written file destroys it. Symlinks are resolved first:
+/// renaming onto a link would replace it with a regular file and silently
+/// detach a dotfile managed by stow/chezmoi.
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
 
     let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
@@ -4220,13 +4760,13 @@ fn dsh_write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// Restrict a credential-bearing file to its owner. Best-effort: a permissions
 /// failure must not fail the configure.
 #[cfg(unix)]
-fn dsh_restrict_to_owner(path: &Path) {
+fn restrict_to_owner(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
 }
 
 #[cfg(not(unix))]
-fn dsh_restrict_to_owner(_path: &Path) {}
+fn restrict_to_owner(_path: &Path) {}
 
 /// Reject a value no dotenv line can carry.
 ///
@@ -4296,8 +4836,8 @@ fn dsh_write_managed_env(path: &Path, vars: &[(&str, &str)]) -> Result<(), Strin
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
     }
-    dsh_write_atomically(path, out.as_bytes())?;
-    dsh_restrict_to_owner(path);
+    write_atomically(path, out.as_bytes())?;
+    restrict_to_owner(path);
     Ok(())
 }
 
@@ -4360,7 +4900,7 @@ fn configure_dsh_at(
         }
     }
 
-    dsh_write_atomically(&settings_path, serialized.as_bytes())?;
+    write_atomically(&settings_path, serialized.as_bytes())?;
 
     // The secret itself never enters settings.yaml. dsh resolves the reference
     // from, in order: the inherited environment, `$DSH_HOME/.credentials.yaml`,
@@ -6234,10 +6774,10 @@ mod openclaw_tests {
         assert_eq!(parse_version("not a version"), None);
     }
 
-    /// Only OpenClaw ships a launcher that can live off PATH; guessing paths for
-    /// the other agents would only produce false positives.
+    /// Only OpenClaw's launcher and ZCode's desktop app live off PATH; guessing
+    /// paths for the other agents would only produce false positives.
     #[test]
-    fn off_path_candidates_are_openclaw_only() {
+    fn off_path_candidates_cover_only_openclaw_and_zcode() {
         assert!(off_path_candidates("claude").is_empty());
         assert!(off_path_candidates("codex").is_empty());
 
@@ -6253,5 +6793,300 @@ mod openclaw_tests {
         assert!(candidates
             .iter()
             .any(|p| p.to_string_lossy().contains(".openclaw")));
+    }
+}
+
+#[cfg(test)]
+mod zcode_tests {
+    use super::*;
+    use serde_json::json;
+
+    const URL: &str = "http://127.0.0.1:1337/v1";
+
+    fn patch(existing: Option<serde_json::Value>, model: &str) -> serde_json::Value {
+        zcode_patch_provider_config(existing, URL, model, None).expect("patch must succeed")
+    }
+
+    fn providers(root: &serde_json::Value) -> &Vec<serde_json::Value> {
+        root["config"]["providerConfigRules"]["providerRules"]
+            .as_array()
+            .expect("providerRules must be an array")
+    }
+
+    fn model_rules<'a>(root: &'a serde_json::Value, list: &str) -> &'a Vec<serde_json::Value> {
+        root["config"]["modelConfigRules"][list]
+            .as_array()
+            .expect("model rule lists must be arrays")
+    }
+
+    fn ours(rules: &[serde_json::Value]) -> Vec<&serde_json::Value> {
+        rules
+            .iter()
+            .filter(|r| r["providerId"] == ZCODE_PROVIDER_ID)
+            .collect()
+    }
+
+    /// A user's own provider as ZCode's Model Settings writes it.
+    fn user_file() -> serde_json::Value {
+        json!({
+            "schemaVersion": 1,
+            "config": {
+                "providerOrder": ["new-provider"],
+                "providerConfigRules": { "providerRules": [{
+                    "providerId": "new-provider",
+                    "providerName": "OpenRouter",
+                    "enabled": true,
+                    "config": {
+                        "group": "standard-personal",
+                        "access": { "type": "api-key", "apiKey": "sk-user" },
+                        "api": { "type": "openai-chat-completions", "baseUrl": "https://openrouter.ai/api/v1" },
+                        "personalModelIds": ["glm-5"]
+                    }
+                }] },
+                "modelConfigRules": {
+                    "providerModelRules": [
+                        { "providerId": "new-provider", "modelId": "glm-5", "config": { "enabled": true } }
+                    ],
+                    "manualProviderModelRules": []
+                },
+                "defaultModelSelection": { "providerId": "new-provider", "modelId": "glm-5" }
+            }
+        })
+    }
+
+    /// The file ZCode creates has to validate on its own: both model rule lists
+    /// are required, the provider needs a group, a non-blank key and an API.
+    #[test]
+    fn seeds_a_complete_file_from_nothing() {
+        let out = patch(None, "qwen3-4b");
+        assert_eq!(out["schemaVersion"], 1);
+
+        let provider = &providers(&out)[0];
+        assert_eq!(provider["providerId"], ZCODE_PROVIDER_ID);
+        assert_eq!(provider["enabled"], true);
+        let config = &provider["config"];
+        assert_eq!(config["group"], "standard-personal");
+        assert_eq!(config["access"]["type"], "api-key");
+        assert_eq!(config["access"]["apiKey"], ZCODE_KEY_PLACEHOLDER);
+        assert_eq!(config["api"]["type"], "openai-chat-completions");
+        assert_eq!(config["api"]["baseUrl"], URL);
+        assert_eq!(config["personalModelIds"], json!(["qwen3-4b"]));
+
+        assert!(model_rules(&out, "manualProviderModelRules").is_empty());
+        let rule = &model_rules(&out, "providerModelRules")[0];
+        assert_eq!(rule["modelId"], "qwen3-4b");
+        assert_eq!(
+            rule["config"]["properties"]["contextWindow"],
+            ZCODE_CONTEXT_WINDOW
+        );
+        assert_eq!(
+            rule["config"]["optionSpecs"]["reasoningLevel"]["map"],
+            ZCODE_REASONING_MAP
+        );
+        assert_eq!(
+            out["config"]["defaultModelSelection"],
+            json!({
+                "providerId": ZCODE_PROVIDER_ID,
+                "modelId": "qwen3-4b",
+                "options": { "reasoningLevel": "enabled" }
+            })
+        );
+        // A file ZCode never had gets no order list invented for it.
+        assert!(out["config"].get("providerOrder").is_none());
+    }
+
+    #[test]
+    fn uses_the_server_key_when_there_is_one() {
+        let out = zcode_patch_provider_config(None, URL, "m", Some(" sk-local ")).unwrap();
+        assert_eq!(providers(&out)[0]["config"]["access"]["apiKey"], "sk-local");
+    }
+
+    #[test]
+    fn keeps_the_users_providers_and_rules() {
+        let out = patch(Some(user_file()), "qwen3-4b");
+
+        let all = providers(&out);
+        assert_eq!(all.len(), 2);
+        assert_eq!(
+            all[0],
+            user_file()["config"]["providerConfigRules"]["providerRules"][0]
+        );
+
+        let rules = model_rules(&out, "providerModelRules");
+        assert!(rules.iter().any(|r| r["providerId"] == "new-provider"));
+        assert_eq!(
+            out["config"]["providerOrder"],
+            json!([ZCODE_PROVIDER_ID, "new-provider"])
+        );
+        // Run means "use this model": the default moves to ours.
+        assert_eq!(
+            out["config"]["defaultModelSelection"]["providerId"],
+            ZCODE_PROVIDER_ID
+        );
+    }
+
+    #[test]
+    fn running_again_or_switching_model_leaves_one_entry_of_ours() {
+        let once = patch(Some(user_file()), "qwen3-4b");
+        let twice = patch(Some(once.clone()), "qwen3-4b");
+        assert_eq!(once, twice, "a repeated Run must not change the file");
+
+        let switched = patch(Some(twice), "gemma-4");
+        assert_eq!(ours(providers(&switched)).len(), 1);
+        assert_eq!(
+            ours(providers(&switched))[0]["config"]["personalModelIds"],
+            json!(["gemma-4"])
+        );
+        let rules = ours(model_rules(&switched, "providerModelRules"));
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["modelId"], "gemma-4");
+        let order = switched["config"]["providerOrder"].as_array().unwrap();
+        assert_eq!(
+            order.iter().filter(|id| **id == ZCODE_PROVIDER_ID).count(),
+            1
+        );
+    }
+
+    /// ZCode rejects the whole file when a provider/model pair has both a
+    /// regular and a manual rule; its Advanced model settings write the manual one.
+    #[test]
+    fn drops_our_manual_rule_so_the_file_stays_valid() {
+        let mut file = user_file();
+        file["config"]["modelConfigRules"]["manualProviderModelRules"] = json!([
+            { "providerId": ZCODE_PROVIDER_ID, "modelId": "qwen3-4b", "config": {} },
+            { "providerId": "new-provider", "modelId": "glm-5", "config": {} }
+        ]);
+        let out = patch(Some(file), "qwen3-4b");
+        let manual = model_rules(&out, "manualProviderModelRules");
+        assert_eq!(manual.len(), 1);
+        assert_eq!(manual[0]["providerId"], "new-provider");
+    }
+
+    #[test]
+    fn refuses_files_it_does_not_understand() {
+        for bad in [
+            json!({ "schemaVersion": 2, "config": {} }),
+            json!({ "config": {} }),
+            json!([]),
+            json!({ "schemaVersion": 1, "config": { "providerConfigRules": { "providerRules": {} } } }),
+            json!({ "schemaVersion": 1, "config": { "providerOrder": "atomic-chat" } }),
+        ] {
+            assert!(
+                zcode_patch_provider_config(Some(bad.clone()), URL, "m", None).is_err(),
+                "{bad} must be refused"
+            );
+        }
+        assert!(zcode_patch_provider_config(None, URL, "  ", None).is_err());
+    }
+
+    #[test]
+    fn config_dir_follows_zcodes_own_resolution_order() {
+        let home = tempfile::tempdir().unwrap();
+        let v2 = home.path().join(".zcode").join("v2");
+
+        assert_eq!(zcode_config_dir(home.path(), None), v2);
+        assert_eq!(
+            zcode_config_dir(home.path(), Some("/data")),
+            Path::new("/data").join(".zcode").join("v2")
+        );
+
+        std::fs::create_dir_all(&v2).unwrap();
+        std::fs::write(v2.join("setting.json"), r#"{"dataBaseDir":"  "}"#).unwrap();
+        assert_eq!(zcode_config_dir(home.path(), None), v2);
+
+        std::fs::write(v2.join("setting.json"), r#"{"dataBaseDir":"/moved"}"#).unwrap();
+        assert_eq!(
+            zcode_config_dir(home.path(), Some("/data")),
+            Path::new("/moved").join(".zcode").join("v2")
+        );
+    }
+
+    #[test]
+    fn waits_for_zcode_to_import_its_legacy_config_first() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.json"), "{}").unwrap();
+
+        let err = configure_zcode_in(dir.path(), URL, "m", None).unwrap_err();
+        assert!(err.contains("Open ZCode once"), "{err}");
+        assert!(!dir.path().join("provider_config.json").exists());
+
+        // Once ZCode has migrated, the legacy file is only a rollback copy.
+        std::fs::write(
+            dir.path().join("provider_config.json"),
+            user_file().to_string(),
+        )
+        .unwrap();
+        configure_zcode_in(dir.path(), URL, "m", None).unwrap();
+    }
+
+    #[test]
+    fn writes_the_file_and_backs_up_the_users_version_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("provider_config.json");
+        let original = user_file().to_string();
+        std::fs::write(&path, &original).unwrap();
+
+        configure_zcode_in(dir.path(), URL, "qwen3-4b", None).unwrap();
+        configure_zcode_in(dir.path(), URL, "gemma-4", None).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            written["config"]["defaultModelSelection"]["modelId"],
+            "gemma-4"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("provider_config.json.atomic-backup")).unwrap(),
+            original
+        );
+        assert!(!dir.path().join("provider_config.json.lock").exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn leaves_an_unparseable_file_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("provider_config.json");
+        std::fs::write(&path, "{ not json").unwrap();
+
+        assert!(configure_zcode_in(dir.path(), URL, "m", None).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not json");
+    }
+
+    #[test]
+    fn respects_a_live_lock_and_reclaims_an_abandoned_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("provider_config.json");
+        let lock_dir = dir.path().join("provider_config.json.lock");
+        std::fs::create_dir(&lock_dir).unwrap();
+        std::fs::write(lock_dir.join("owner-1-2-x.json"), "{}").unwrap();
+
+        let short = std::time::Duration::from_millis(60);
+        let err = acquire_zcode_lock(&file, short, std::time::Duration::from_secs(60))
+            .err()
+            .expect("a fresh lock must be waited for");
+        assert!(err.contains("Try again"), "{err}");
+        assert!(lock_dir.exists());
+
+        let lock = acquire_zcode_lock(&file, short, std::time::Duration::ZERO)
+            .expect("an abandoned lock must be reclaimed");
+        assert_eq!(std::fs::read_dir(&lock_dir).unwrap().count(), 1);
+        drop(lock);
+        assert!(!lock_dir.exists());
+    }
+
+    #[test]
+    fn finds_the_bundle_of_a_macos_app_executable() {
+        assert_eq!(
+            macos_app_bundle(Path::new("/Applications/ZCode.app/Contents/MacOS/ZCode")),
+            Some(PathBuf::from("/Applications/ZCode.app"))
+        );
+        assert_eq!(macos_app_bundle(Path::new("/usr/bin/zcode")), None);
     }
 }
