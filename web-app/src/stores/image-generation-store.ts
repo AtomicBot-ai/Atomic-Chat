@@ -487,6 +487,16 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           }
           const waiter = waiters.get(event.job.id)
           if (waiter && isTerminal(event.job)) waiter(event.job)
+          // A picture nobody here is waiting for — an outside client on
+          // `/v1/images/generations`, or another window — still lands in the
+          // core's gallery; show it, as the run loop does for its own jobs.
+          if (
+            !waiter &&
+            event.job.state === 'completed' &&
+            event.job.outputs.length > 0
+          ) {
+            useImageGalleryStore.getState().prepend(event.job.outputs)
+          }
           return
         }
         case 'error': {
@@ -516,11 +526,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           // which still holds its configuration; the configure below sends
           // every setting the app keeps, so it restores a new core and
           // changes nothing on the old one. Take its status as the truth.
-          void get().applyIdleSettings().then(() => {
-            if (get().status?.model.state !== 'loaded') {
-              set({ capabilities: null })
-            }
-          })
+          void get()
+            .applyIdleSettings()
+            .then(() => {
+              if (get().status?.model.state !== 'loaded') {
+                set({ capabilities: null })
+              }
+            })
           return
         }
       }

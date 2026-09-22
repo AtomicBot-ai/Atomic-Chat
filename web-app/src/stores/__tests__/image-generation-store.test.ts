@@ -21,7 +21,9 @@ import { useImageSetting } from '@/hooks/useImageSetting'
 // catalog, config, arbiter and install modules — each of which has its own
 // tests; here they are the environment, not the subject.
 vi.mock('@/services/diffusion-catalog-registry', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/diffusion-catalog-registry')>()),
+  ...(await importOriginal<
+    typeof import('@/services/diffusion-catalog-registry')
+  >()),
   fetchDiffusionCatalog: vi.fn(async () => ({
     catalog: makeCatalog(),
     source: 'baseline' as const,
@@ -43,7 +45,10 @@ vi.mock('@/lib/diffusion/arbiter', () => ({
 }))
 const install = vi.hoisted(() => ({
   ensure: vi.fn(),
-  select: vi.fn(async () => ({ backendId: 'macos-arm64' as string | null, reason: undefined as string | undefined })),
+  select: vi.fn(async () => ({
+    backendId: 'macos-arm64' as string | null,
+    reason: undefined as string | undefined,
+  })),
   manifest: vi.fn(async () => ({
     manifest: {
       tag_name: 'master-849-d04e895',
@@ -59,7 +64,9 @@ vi.mock('@/services/diffusion/install', () => ({
   resolveSdcppManifest: install.manifest,
 }))
 vi.mock('@/lib/notifications', () => ({ notifyThreadCompleted: vi.fn() }))
-const captured = vi.hoisted(() => ({ events: [] as Array<[string, Record<string, unknown>]> }))
+const captured = vi.hoisted(() => ({
+  events: [] as Array<[string, Record<string, unknown>]>,
+}))
 vi.mock('@/lib/telemetry-queue', () => ({
   queuedCapture: vi.fn((event: string, props: Record<string, unknown>) => {
     captured.events.push([event, props])
@@ -73,8 +80,10 @@ import {
 } from '../image-generation-store'
 
 /** Emit after the loop has registered its waiter (a macrotask later). */
-const emitLater = (fake: FakeDiffusion, jobs: () => Parameters<FakeDiffusion['emit']>[0]) =>
-  setTimeout(() => fake.emit(jobs()), 0)
+const emitLater = (
+  fake: FakeDiffusion,
+  jobs: () => Parameters<FakeDiffusion['emit']>[0]
+) => setTimeout(() => fake.emit(jobs()), 0)
 
 describe('image-generation-store', () => {
   let fake: FakeDiffusion
@@ -83,8 +92,16 @@ describe('image-generation-store', () => {
     vi.useRealTimers()
     captured.events.length = 0
     install.ensure.mockReset()
-    install.select.mockResolvedValue({ backendId: 'macos-arm64', reason: undefined })
-    useImageSetting.setState({ selectedArtifactId: null, keepModelLoaded: false, idleUnloadMinutes: 10, outputDir: null })
+    install.select.mockResolvedValue({
+      backendId: 'macos-arm64',
+      reason: undefined,
+    })
+    useImageSetting.setState({
+      selectedArtifactId: null,
+      keepModelLoaded: false,
+      idleUnloadMinutes: 10,
+      outputDir: null,
+    })
     resetImageGenerationForTests()
     useImageGalleryStore.getState().reset()
     fake = makeFakeDiffusion()
@@ -122,7 +139,9 @@ describe('image-generation-store', () => {
           emitLater(fake, () => ({
             type: 'job',
             job: makeJob({
-              id, state: 'completed', request,
+              id,
+              state: 'completed',
+              request,
               outputs: [makeItem({ id: `${id}-00` })],
             }),
           }))
@@ -130,7 +149,9 @@ describe('image-generation-store', () => {
         })
 
         await useImageGenerationStore.getState().startGeneration({
-          request: makeRequest(), runs: 2, baseSeed: 100,
+          request: makeRequest(),
+          runs: 2,
+          baseSeed: 100,
         })
 
         expect(useImageGenerationStore.getState().generating).toBe(false)
@@ -140,6 +161,53 @@ describe('image-generation-store', () => {
         )
       }
     )
+
+    it('shows a picture made by a job this page did not start, and never doubles one of its own', async () => {
+      // An outside client on `/v1/images/generations` runs a job the core reports like any other.
+      fake.emit({
+        type: 'job',
+        job: makeJob({
+          id: 'outside-1',
+          state: 'completed',
+          outputs: [makeItem({ id: 'outside-1-00' })],
+        }),
+      })
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['outside-1-00'])
+      expect(useImageGalleryStore.getState().total).toBe(1)
+      // Not a picture yet: nothing to show for a job still running, and nothing for one that failed.
+      fake.emit({
+        type: 'job',
+        job: makeJob({ id: 'outside-2', state: 'generating', outputs: [] }),
+      })
+      fake.emit({
+        type: 'job',
+        job: makeJob({ id: 'outside-3', state: 'failed', outputs: [] }),
+      })
+      expect(useImageGalleryStore.getState().items).toHaveLength(1)
+
+      // A job of this page's own is shown once, by the run loop, not twice.
+      fake.generate.mockImplementation(async (request) => {
+        emitLater(fake, () => ({
+          type: 'job',
+          job: makeJob({
+            id: 'own-1',
+            state: 'completed',
+            request,
+            outputs: [makeItem({ id: 'own-1-00' })],
+          }),
+        }))
+        return { jobId: 'own-1' }
+      })
+      await useImageGenerationStore
+        .getState()
+        .startGeneration({ request: makeRequest(), runs: 1, baseSeed: null })
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['own-1-00', 'outside-1-00'])
+      expect(useImageGalleryStore.getState().total).toBe(2)
+    })
 
     it('advances the seed by the batch size per run and prepends every batch', async () => {
       let n = 0
@@ -151,7 +219,10 @@ describe('image-generation-store', () => {
             id,
             state: 'completed',
             request,
-            outputs: [makeItem({ id: `${id}-00` }), makeItem({ id: `${id}-01` })],
+            outputs: [
+              makeItem({ id: `${id}-00` }),
+              makeItem({ id: `${id}-01` }),
+            ],
           }),
         }))
         return { jobId: id }
@@ -163,11 +234,13 @@ describe('image-generation-store', () => {
         baseSeed: 100,
       })
 
-      expect(fake.generate.mock.calls.map(([request]) => request.seed)).toEqual([
-        100, 102, 104,
-      ])
+      expect(fake.generate.mock.calls.map(([request]) => request.seed)).toEqual(
+        [100, 102, 104]
+      )
       // Newest batch first, its images in order.
-      expect(useImageGalleryStore.getState().items.map((item) => item.id)).toEqual([
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual([
         'job-3-00',
         'job-3-01',
         'job-2-00',
@@ -251,9 +324,13 @@ describe('image-generation-store', () => {
       expect(fake.generate).toHaveBeenCalledTimes(1)
       expect(state.lastError?.code).toBe('OUT_OF_MEMORY')
       expect(state.generating).toBe(false)
-      expect(captured.events.map(([name, props]) => [name, props.generate_status, props.error_code])).toEqual([
-        ['image_generate', 'failed', 'OUT_OF_MEMORY'],
-      ])
+      expect(
+        captured.events.map(([name, props]) => [
+          name,
+          props.generate_status,
+          props.error_code,
+        ])
+      ).toEqual([['image_generate', 'failed', 'OUT_OF_MEMORY']])
     })
 
     it('reports each run without the prompt or the seed', async () => {
@@ -265,7 +342,11 @@ describe('image-generation-store', () => {
         return { jobId: 'job-1' }
       })
       await useImageGenerationStore.getState().startGeneration({
-        request: makeRequest({ prompt: 'secret garden', width: 768, height: 512 }),
+        request: makeRequest({
+          prompt: 'secret garden',
+          width: 768,
+          height: 512,
+        }),
         runs: 1,
         baseSeed: 1234,
       })
@@ -299,7 +380,11 @@ describe('image-generation-store', () => {
       vi.useFakeTimers()
       fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
       fake.getJob.mockResolvedValue(
-        makeJob({ id: 'job-1', state: 'completed', outputs: [makeItem({ id: 'job-1-00' })] })
+        makeJob({
+          id: 'job-1',
+          state: 'completed',
+          outputs: [makeItem({ id: 'job-1-00' })],
+        })
       )
       const done = useImageGenerationStore.getState().startGeneration({
         request: makeRequest(),
@@ -308,9 +393,9 @@ describe('image-generation-store', () => {
       })
       await vi.advanceTimersByTimeAsync(2_100)
       await done
-      expect(useImageGalleryStore.getState().items.map((item) => item.id)).toEqual([
-        'job-1-00',
-      ])
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['job-1-00'])
       expect(useImageGenerationStore.getState().generating).toBe(false)
     })
 
@@ -404,17 +489,26 @@ describe('image-generation-store', () => {
     it('drops the capabilities when the plugin reports the model gone', async () => {
       fake.emit({ type: 'state', status: makeStatus(), reason: 'idle' })
       expect(useImageGenerationStore.getState().capabilities).toBeNull()
-      expect(useImageGenerationStore.getState().status?.model.state).toBe('unloaded')
+      expect(useImageGenerationStore.getState().status?.model.state).toBe(
+        'unloaded'
+      )
     })
 
     it('configures a new core generation again and takes its status as the truth', async () => {
       const { configureDiffusion } = await import('@/lib/diffusion/config')
       const configure = vi.mocked(configureDiffusion)
       configure.mockClear()
-      useImageGenerationStore.setState({ status: makeLoadedStatus(), capabilities: makeCapabilities() })
+      useImageGenerationStore.setState({
+        status: makeLoadedStatus(),
+        capabilities: makeCapabilities(),
+      })
       fake.emit({ type: 'reset', generation: 2 })
       await waitFor(() => expect(configure).toHaveBeenCalledTimes(1))
-      await waitFor(() => expect(useImageGenerationStore.getState().status?.model.state).toBe('unloaded'))
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().status?.model.state).toBe(
+          'unloaded'
+        )
+      )
       expect(useImageGenerationStore.getState().capabilities).toBeNull()
     })
 
@@ -466,7 +560,9 @@ describe('image-generation-store', () => {
         useImageGenerationStore.setState({ status: null })
         fake.emit({ type: 'reset', generation: 3 })
         await waitFor(() =>
-          expect(useImageGenerationStore.getState().status?.outputDir).toBe('/data/images')
+          expect(useImageGenerationStore.getState().status?.outputDir).toBe(
+            '/data/images'
+          )
         )
         expect(configure.mock.calls.map(([settings]) => settings)).toEqual([
           { idleUnloadSecs: 600, outputDir: '/Volumes/Gone/AI' },
@@ -623,7 +719,10 @@ describe('image-generation-store', () => {
     })
 
     it('hands the plugin the resolved files and reads the capabilities back', async () => {
-      useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+      useImageGenerationStore.setState({
+        status: makeStatus(),
+        capabilities: null,
+      })
 
       await useImageGenerationStore.getState().loadModel('z-image:q4_k_m')
 
@@ -633,7 +732,9 @@ describe('image-generation-store', () => {
         family: 'z-image',
         modality: 'image',
       })
-      expect(request.files.diffusionModel).toContain('z-image-turbo-Q4_K_M.gguf')
+      expect(request.files.diffusionModel).toContain(
+        'z-image-turbo-Q4_K_M.gguf'
+      )
       expect(request.files.llm).toContain('Qwen3-4B-Q4_K_M.gguf')
       const state = useImageGenerationStore.getState()
       expect(state.capabilities?.maxBatch).toBe(4)
@@ -643,7 +744,10 @@ describe('image-generation-store', () => {
     })
 
     it('honours a memory override instead of the fit policy', async () => {
-      useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+      useImageGenerationStore.setState({
+        status: makeStatus(),
+        capabilities: null,
+      })
       useImageSetting.setState({ offloadOverride: 'model' })
 
       await useImageGenerationStore.getState().loadModel('z-image:q4_k_m')
@@ -654,11 +758,16 @@ describe('image-generation-store', () => {
     it('reports an unknown artifact as a missing model', async () => {
       await useImageGenerationStore.getState().loadModel('z-image:nope')
       expect(fake.loadModel).not.toHaveBeenCalled()
-      expect(useImageGenerationStore.getState().lastError?.code).toBe('MODEL_MISSING')
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'MODEL_MISSING'
+      )
     })
 
     it('keeps a plugin refusal as the last error', async () => {
-      fake.loadModel.mockRejectedValue({ code: 'OUT_OF_MEMORY', message: 'no vram' })
+      fake.loadModel.mockRejectedValue({
+        code: 'OUT_OF_MEMORY',
+        message: 'no vram',
+      })
       await useImageGenerationStore.getState().loadModel('z-image:q8_0')
       expect(useImageGenerationStore.getState().lastError).toMatchObject({
         code: 'OUT_OF_MEMORY',
@@ -683,7 +792,10 @@ describe('image-generation-store', () => {
       })
       expect(fake.generate).toHaveBeenCalledTimes(1)
       expect(useImageGenerationStore.getState().generating).toBe(true)
-      fake.emit({ type: 'job', job: makeJob({ id: 'job-1', state: 'completed' }) })
+      fake.emit({
+        type: 'job',
+        job: makeJob({ id: 'job-1', state: 'completed' }),
+      })
       await first
       expect(useImageGenerationStore.getState().generating).toBe(false)
     })
@@ -712,7 +824,9 @@ describe('image-generation-store', () => {
       })
       await vi.advanceTimersByTimeAsync(2_100)
       await done
-      expect(useImageGenerationStore.getState().lastError?.code).toBe('JOB_NOT_FOUND')
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'JOB_NOT_FOUND'
+      )
     })
 
     it('surfaces an error event for the running job, but not a cancel the user asked for', async () => {
@@ -725,17 +839,37 @@ describe('image-generation-store', () => {
       await waitFor(() =>
         expect(useImageGenerationStore.getState().currentJob?.id).toBe('job-1')
       )
-      fake.emit({ type: 'error', jobId: 'other', code: 'INTERNAL', message: 'elsewhere' })
+      fake.emit({
+        type: 'error',
+        jobId: 'other',
+        code: 'INTERNAL',
+        message: 'elsewhere',
+      })
       expect(useImageGenerationStore.getState().lastError).toBeNull()
 
-      fake.emit({ type: 'error', jobId: 'job-1', code: 'ENGINE_CRASHED', message: 'sd-server died' })
-      expect(useImageGenerationStore.getState().lastError?.code).toBe('ENGINE_CRASHED')
+      fake.emit({
+        type: 'error',
+        jobId: 'job-1',
+        code: 'ENGINE_CRASHED',
+        message: 'sd-server died',
+      })
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'ENGINE_CRASHED'
+      )
 
       useImageGenerationStore.setState({ lastError: null, stopRequested: true })
-      fake.emit({ type: 'error', jobId: 'job-1', code: 'CANCELLED', message: 'stopped' })
+      fake.emit({
+        type: 'error',
+        jobId: 'job-1',
+        code: 'CANCELLED',
+        message: 'stopped',
+      })
       expect(useImageGenerationStore.getState().lastError).toBeNull()
 
-      fake.emit({ type: 'job', job: makeJob({ id: 'job-1', state: 'cancelled' }) })
+      fake.emit({
+        type: 'job',
+        job: makeJob({ id: 'job-1', state: 'cancelled' }),
+      })
       await done
     })
 
@@ -756,7 +890,9 @@ describe('image-generation-store', () => {
           },
         }),
       })
-      expect(useImageGenerationStore.getState().lastError?.code).toBe('MODEL_LOAD_FAILED')
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'MODEL_LOAD_FAILED'
+      )
       useImageGenerationStore.getState().clearError()
       expect(useImageGenerationStore.getState().lastError).toBeNull()
     })
@@ -782,20 +918,31 @@ describe('image-generation-store', () => {
       })
       const run = useImageGenerationStore.getState().installEngine()
       await waitFor(() =>
-        expect(useImageGenerationStore.getState().engineInstall.transferred).toBe(50)
+        expect(
+          useImageGenerationStore.getState().engineInstall.transferred
+        ).toBe(50)
       )
       await run
       const state = useImageGenerationStore.getState()
       expect(state.engineInstall.inFlight).toBe(false)
       expect(state.status?.install.state).toBe('installed')
-      expect(captured.events.map(([name, props]) => [name, props.install_status, props.backend])).toEqual([
+      expect(
+        captured.events.map(([name, props]) => [
+          name,
+          props.install_status,
+          props.backend,
+        ])
+      ).toEqual([
         ['image_engine_install', 'started', 'macos-arm64'],
         ['image_engine_install', 'completed', 'macos-arm64'],
       ])
     })
 
     it('keeps the failure on the install row and reports its code', async () => {
-      install.ensure.mockRejectedValue({ code: 'UNSUPPORTED_BACKEND', message: 'no build' })
+      install.ensure.mockRejectedValue({
+        code: 'UNSUPPORTED_BACKEND',
+        message: 'no build',
+      })
       await useImageGenerationStore.getState().installEngine({ force: true })
       const state = useImageGenerationStore.getState()
       expect(state.engineInstall.error?.code).toBe('UNSUPPORTED_BACKEND')
@@ -809,15 +956,22 @@ describe('image-generation-store', () => {
     it('does not start a second install while one is running', async () => {
       let release: () => void = () => {}
       install.ensure.mockImplementation(
-        () => new Promise((resolve) => { release = () => resolve({} as never) })
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve({} as never)
+          })
       )
       const first = useImageGenerationStore.getState().installEngine()
       await useImageGenerationStore.getState().installEngine()
       expect(install.ensure).toHaveBeenCalledTimes(1)
-      expect(useImageGenerationStore.getState().engineInstall.inFlight).toBe(true)
+      expect(useImageGenerationStore.getState().engineInstall.inFlight).toBe(
+        true
+      )
       release()
       await first
-      expect(useImageGenerationStore.getState().engineInstall.inFlight).toBe(false)
+      expect(useImageGenerationStore.getState().engineInstall.inFlight).toBe(
+        false
+      )
     })
   })
 
@@ -830,9 +984,14 @@ describe('image-generation-store', () => {
     })
 
     it('keeps an unload refusal as the last error', async () => {
-      fake.unloadModel.mockRejectedValue({ code: 'JOB_BUSY', message: 'generating' })
+      fake.unloadModel.mockRejectedValue({
+        code: 'JOB_BUSY',
+        message: 'generating',
+      })
       await useImageGenerationStore.getState().unloadModel()
-      expect(useImageGenerationStore.getState().lastError?.code).toBe('JOB_BUSY')
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'JOB_BUSY'
+      )
     })
 
     it('removing the resident artifact unloads it first and clears the selection', async () => {
@@ -854,17 +1013,24 @@ describe('image-generation-store', () => {
       const { configureDiffusion } = await import('@/lib/diffusion/config')
       useImageSetting.setState({ keepModelLoaded: true })
       await useImageGenerationStore.getState().applyIdleSettings()
-      expect(vi.mocked(configureDiffusion).mock.calls.at(-1)?.[0]).toEqual({ idleUnloadSecs: 0 })
+      expect(vi.mocked(configureDiffusion).mock.calls.at(-1)?.[0]).toEqual({
+        idleUnloadSecs: 0,
+      })
       useImageSetting.setState({ keepModelLoaded: false, idleUnloadMinutes: 5 })
       await useImageGenerationStore.getState().applyIdleSettings()
-      expect(vi.mocked(configureDiffusion).mock.calls.at(-1)?.[0]).toEqual({ idleUnloadSecs: 300 })
+      expect(vi.mocked(configureDiffusion).mock.calls.at(-1)?.[0]).toEqual({
+        idleUnloadSecs: 300,
+      })
     })
   })
 
   describe('host without an engine build', () => {
     it('records the reason and never binds the event stream on an unsupported build', async () => {
       resetImageGenerationForTests()
-      install.select.mockResolvedValue({ backendId: null, reason: 'Intel Macs are not supported.' })
+      install.select.mockResolvedValue({
+        backendId: null,
+        reason: 'Intel Macs are not supported.',
+      })
       await useImageGenerationStore.getState().bind()
       expect(useImageGenerationStore.getState()).toMatchObject({
         hostBackendId: null,
@@ -881,14 +1047,22 @@ describe('image-generation-store', () => {
 
     it('unbind drops the subscription so events no longer reach the store', async () => {
       useImageGenerationStore.getState().unbind()
-      fake.emit({ type: 'state', status: makeStatus({ outputDir: '/elsewhere' }) })
-      expect(useImageGenerationStore.getState().status?.outputDir).toBe('/data/images')
+      fake.emit({
+        type: 'state',
+        status: makeStatus({ outputDir: '/elsewhere' }),
+      })
+      expect(useImageGenerationStore.getState().status?.outputDir).toBe(
+        '/data/images'
+      )
       expect(useImageGenerationStore.getState().bound).toBe(false)
     })
 
     it('opens and closes the setup wizard on a given step', () => {
       useImageGenerationStore.getState().openSetup(2)
-      expect(useImageGenerationStore.getState()).toMatchObject({ setupOpen: true, setupStep: 2 })
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        setupOpen: true,
+        setupStep: 2,
+      })
       useImageGenerationStore.getState().closeSetup()
       expect(useImageGenerationStore.getState().setupOpen).toBe(false)
     })
@@ -912,7 +1086,10 @@ describe('engine updates', () => {
     resetImageGenerationForTests()
     fake = makeFakeDiffusion()
     seedServiceHub({ diffusion: fake })
-    useImageGenerationStore.setState({ status: makeStatus(), hostBackendId: 'macos-arm64' })
+    useImageGenerationStore.setState({
+      status: makeStatus(),
+      hostBackendId: 'macos-arm64',
+    })
   })
 
   it('finds nothing when the manifest names the installed tag', async () => {
@@ -925,12 +1102,17 @@ describe('engine updates', () => {
 
   it('reports a newer tag only when it is published for this host', async () => {
     install.manifest.mockResolvedValue({
-      manifest: { tag_name: 'master-900-abc1234', assets: [{ backend: 'win-cuda12-x64', name: 'x.zip' }] },
+      manifest: {
+        tag_name: 'master-900-abc1234',
+        assets: [{ backend: 'win-cuda12-x64', name: 'x.zip' }],
+      },
       source: 'remote' as const,
       fetchedAt: 2,
     })
     await useImageGenerationStore.getState().checkEngineUpdate({ force: true })
-    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBeNull()
+    expect(
+      useImageGenerationStore.getState().engineUpdate.availableTag
+    ).toBeNull()
     expect(install.manifest).toHaveBeenLastCalledWith({ force: true })
 
     install.manifest.mockResolvedValue({
@@ -942,14 +1124,21 @@ describe('engine updates', () => {
       fetchedAt: 2,
     })
     await useImageGenerationStore.getState().checkEngineUpdate()
-    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe('master-900-abc1234')
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
+      'master-900-abc1234'
+    )
   })
 
   it('unloads the model, installs the new tag and clears the offer', async () => {
     useImageGenerationStore.setState({
       status: makeLoadedStatus(),
       capabilities: makeCapabilities(),
-      engineUpdate: { checking: false, availableTag: 'master-900-abc1234', checkedAt: 1, error: null },
+      engineUpdate: {
+        checking: false,
+        availableTag: 'master-900-abc1234',
+        checkedAt: 1,
+        error: null,
+      },
     })
     install.ensure.mockResolvedValue({
       dir: '/data/diffusion/backends/master-900-abc1234/macos-arm64',
@@ -962,7 +1151,9 @@ describe('engine updates', () => {
     expect(fake.unloadModel).toHaveBeenCalled()
     expect(install.ensure).toHaveBeenCalledTimes(1)
     expect(install.ensure.mock.calls[0][0]).toMatchObject({ force: undefined })
-    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBeNull()
+    expect(
+      useImageGenerationStore.getState().engineUpdate.availableTag
+    ).toBeNull()
   })
 
   it('does nothing without an offer or an installed engine', async () => {
@@ -979,7 +1170,9 @@ describe('engine updates', () => {
     })
     expect(captured.events).toEqual([])
 
-    useImageGenerationStore.setState({ status: makeStatus({ install: { state: 'not-installed' } }) })
+    useImageGenerationStore.setState({
+      status: makeStatus({ install: { state: 'not-installed' } }),
+    })
     await useImageGenerationStore.getState().checkEngineUpdate()
     expect(install.manifest).not.toHaveBeenCalled()
     // No check happened: nothing is offered and no check time is recorded
