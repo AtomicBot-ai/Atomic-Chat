@@ -188,8 +188,24 @@ export function modelFormat(model: CatalogModel): ModelFormat {
   return 'gguf'
 }
 
+/** The capabilities a model can be badged (and filtered) with. */
+export type CapabilityKey =
+  | 'vision'
+  | 'tools'
+  | 'reasoning'
+  | 'audio'
+  | 'coding'
+  | 'multilingual'
+
 export type Capability = {
-  label: 'Vision' | 'Tool Use' | 'Reasoning' | 'Audio'
+  key: CapabilityKey
+  label:
+    | 'Vision'
+    | 'Tool Use'
+    | 'Reasoning'
+    | 'Audio'
+    | 'Coding'
+    | 'Multilingual'
   className: string
 }
 
@@ -204,23 +220,41 @@ const CAP_COLORS = {
     'border border-fuchsia-200 bg-fuchsia-50 text-fuchsia-900 dark:border-fuchsia-800 dark:bg-fuchsia-950/45 dark:text-fuchsia-200',
   audio:
     'border border-teal-200 bg-teal-50 text-teal-900 dark:border-teal-800 dark:bg-teal-950/45 dark:text-teal-200',
+  coding:
+    'border border-lime-200 bg-lime-50 text-lime-900 dark:border-lime-800 dark:bg-lime-950/45 dark:text-lime-200',
+  multilingual:
+    'border border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950/45 dark:text-rose-200',
 } as const
 
-/** Manifest category -> badge, in the order the badges are rendered. */
-const CURATED_CAPABILITIES: ReadonlyArray<{
-  category: StaffPickCategory
-  label: Capability['label']
-  className: string
-}> = [
-  { category: 'vision', label: 'Vision', className: CAP_COLORS.vision },
-  { category: 'tools', label: 'Tool Use', className: CAP_COLORS.tool },
+/**
+ * Every capability badge, in the order badges (and the Models page filter
+ * choices) are shown. `category` is the staff-picks manifest name for it.
+ */
+export const CAPABILITIES: ReadonlyArray<
+  Capability & { category: StaffPickCategory }
+> = [
+  { key: 'vision', category: 'vision', label: 'Vision', className: CAP_COLORS.vision },
+  { key: 'tools', category: 'tools', label: 'Tool Use', className: CAP_COLORS.tool },
   {
+    key: 'reasoning',
     category: 'reasoning',
     label: 'Reasoning',
     className: CAP_COLORS.reasoning,
   },
-  { category: 'audio', label: 'Audio', className: CAP_COLORS.audio },
+  { key: 'audio', category: 'audio', label: 'Audio', className: CAP_COLORS.audio },
+  { key: 'coding', category: 'coding', label: 'Coding', className: CAP_COLORS.coding },
+  {
+    key: 'multilingual',
+    category: 'multilingual',
+    label: 'Multilingual',
+    className: CAP_COLORS.multilingual,
+  },
 ]
+
+const capability = (key: CapabilityKey): Capability => {
+  const { label, className } = CAPABILITIES.find((cap) => cap.key === key)!
+  return { key, label, className }
+}
 
 /**
  * Canonical capability badges (no synonyms).
@@ -232,7 +266,8 @@ const CURATED_CAPABILITIES: ReadonlyArray<{
  *     outright, including when it declares no capability at all: an entry
  *     listing only `general` means "we looked, there is nothing to badge".
  *  2. Otherwise the catalog signals: mmproj presence, the `tools` flag, plus
- *     keyword hints in the name/description/library for reasoning and audio.
+ *     keyword hints in the name/description/library for reasoning, audio,
+ *     coding and multilingual.
  *     Search results have no curated metadata, so they stay best-effort.
  *
  * `curated` being absent (not empty) is what selects the heuristic, so a pick
@@ -243,9 +278,9 @@ export function deriveCapabilities(
   curated?: readonly StaffPickCategory[]
 ): Capability[] {
   if (curated) {
-    return CURATED_CAPABILITIES.filter((entry) =>
+    return CAPABILITIES.filter((entry) =>
       curated.includes(entry.category)
-    ).map(({ label, className }) => ({ label, className }))
+    ).map(({ key }) => capability(key))
   }
 
   const hay =
@@ -253,16 +288,22 @@ export function deriveCapabilities(
   const caps: Capability[] = []
 
   if ((model.num_mmproj ?? 0) > 0 || /image-text-to-text|vision|multimodal|-vl\b/.test(hay)) {
-    caps.push({ label: 'Vision', className: CAP_COLORS.vision })
+    caps.push(capability('vision'))
   }
   if (model.tools || /function[- ]?calling|tool[- ]?use|\btools\b/.test(hay)) {
-    caps.push({ label: 'Tool Use', className: CAP_COLORS.tool })
+    caps.push(capability('tools'))
   }
   if (/reasoning|thinking|chain[- ]of[- ]thought|\br1\b/.test(hay)) {
-    caps.push({ label: 'Reasoning', className: CAP_COLORS.reasoning })
+    caps.push(capability('reasoning'))
   }
   if (/audio-text-to-text|\baudio\b|speech/.test(hay)) {
-    caps.push({ label: 'Audio', className: CAP_COLORS.audio })
+    caps.push(capability('audio'))
+  }
+  if (/\bcoder\b|coding|programming|codestral|starcoder|devstral|code[- ]generation/.test(hay)) {
+    caps.push(capability('coding'))
+  }
+  if (/multilingual|multi-lingual|translation|\btranslate/.test(hay)) {
+    caps.push(capability('multilingual'))
   }
   return caps
 }

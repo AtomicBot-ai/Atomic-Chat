@@ -22,7 +22,10 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 import { localStorageKey } from '@/constants/localStorage'
-import { BASELINE_MEDIA_PROVIDERS } from '@/constants/mediaProviders'
+import {
+  BASELINE_MEDIA_PROVIDERS,
+  RETIRED_BUILTIN_PROVIDER_IDS,
+} from '@/constants/mediaProviders'
 import { createMediaAdapter } from '@/services/media/providerFactory'
 import { getMediaProvidersOrFallback } from '@/services/media-registry'
 import type {
@@ -76,10 +79,16 @@ type MediaProviderState = {
  * Merge the bundled baseline with whatever was persisted. A persisted entry
  * wins outright so a user's own edits - notably having disabled a builtin -
  * survive, while a baseline entry added by a later release still appears.
+ * A builtin a later release retired is dropped; a user's own entry by the
+ * same name is kept.
  */
-const seedProviders = (
-  persisted: MediaProviderDescriptor[] = []
+export const seedProviders = (
+  saved: MediaProviderDescriptor[] = []
 ): MediaProviderDescriptor[] => {
+  const persisted = saved.filter(
+    (provider) =>
+      !(provider.origin === 'builtin' && RETIRED_BUILTIN_PROVIDER_IDS.has(provider.id))
+  )
   const known = new Set(persisted.map((provider) => provider.id))
   return [
     ...persisted,

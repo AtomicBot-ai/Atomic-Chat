@@ -58,5 +58,5 @@ test('the Models page offers the models folder setting', () => {
   const hub = read('web-app/src/routes/hub/index.tsx')
   assert.match(hub, /<ModelsFolderDialog \/>/)
   const labels = JSON.parse(read('web-app/src/locales/en/hub.json'))
-  assert.equal(labels.modelsFolder?.button, 'Models folder')
+  assert.equal(labels.modelsFolder?.button, 'Model settings')
 })

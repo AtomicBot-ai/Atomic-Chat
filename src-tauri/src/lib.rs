@@ -271,6 +271,10 @@ pub fn run() {
         core::media::commands::media_secret_get,
         core::media::commands::media_secret_delete,
         core::media::commands::media_secret_available,
+        core::media::runtime::media_engine_status,
+        core::media::runtime::media_engine_install,
+        core::media::runtime::media_engine_start,
+        core::media::runtime::media_engine_stop,
     ]);
 
     // Mobile: the same surface minus the desktop-only commands.
@@ -428,6 +432,7 @@ pub fn run() {
     ]);
 
     let app = app_builder
+        .manage(core::media::runtime::MediaEngineState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
@@ -742,6 +747,15 @@ pub fn run() {
                 let killed = state.agent_pty_sessions.kill_all();
                 if killed > 0 {
                     log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
+                }
+
+                // The built-in media engine holds gigabytes of graphics memory.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    let engine = app_handle.state::<core::media::runtime::MediaEngineState>();
+                    tauri::async_runtime::block_on(
+                        core::media::runtime::stop_engine_on_exit(&engine),
+                    );
                 }
 
                 // Check if cleanup already ran.

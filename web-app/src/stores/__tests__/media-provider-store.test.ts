@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ATOMIC_MEDIA_WORKER_PROVIDER_ID,
   BASELINE_MEDIA_PROVIDERS,
+  BUILTIN_ENGINE_PROVIDER_ID,
 } from '@/constants/mediaProviders'
 import { localStorageKey } from '@/constants/localStorage'
 import type {
@@ -19,6 +20,7 @@ vi.mock('@/services/media/providerFactory', () => ({
 
 import {
   getMediaProvidersSync,
+  seedProviders,
   useMediaProviderStore,
 } from '../media-provider-store'
 
@@ -91,12 +93,12 @@ const comfy: MediaProviderDescriptor = {
   origin: 'user',
 }
 
-const worker = BASELINE_MEDIA_PROVIDERS[0]!
+const engine = BASELINE_MEDIA_PROVIDERS[0]!
 
 beforeEach(() => {
   localStorage.clear()
   fakeAdapters = {
-    [ATOMIC_MEDIA_WORKER_PROVIDER_ID]: onlineAdapter(worker, ['shared-model']),
+    [BUILTIN_ENGINE_PROVIDER_ID]: onlineAdapter(engine, ['shared-model']),
     'comfy-local': onlineAdapter(comfy, ['shared-model', 'comfy-only']),
   }
   useMediaProviderStore.setState({
@@ -111,16 +113,52 @@ beforeEach(() => {
 
 describe('media provider store', () => {
   describe('baseline', () => {
-    it('has exactly the bundled worker on first run, enabled', () => {
+    it('has exactly the built-in engine on first run, enabled', () => {
       const providers = useMediaProviderStore.getState().providers
 
       expect(providers).toHaveLength(1)
       expect(providers[0]).toMatchObject({
-        id: ATOMIC_MEDIA_WORKER_PROVIDER_ID,
+        id: BUILTIN_ENGINE_PROVIDER_ID,
+        adapter: 'builtin-engine',
         origin: 'builtin',
         enabled: true,
-        base_url: 'http://127.0.0.1:13420',
       })
+    })
+
+    // Radium never shipped or started the Media Worker, so the old builtin
+    // entry was offline for everyone (2026-09-15).
+    it('drops the retired builtin worker from saved settings', () => {
+      const savedWorker: MediaProviderDescriptor = {
+        id: ATOMIC_MEDIA_WORKER_PROVIDER_ID,
+        label: 'Radium Media Worker',
+        kind: 'local_worker',
+        adapter: 'atomic-media-worker',
+        base_url: 'http://127.0.0.1:13420',
+        enabled: true,
+        origin: 'builtin',
+      }
+
+      expect(seedProviders([savedWorker, comfy]).map((p) => p.id)).toEqual([
+        'comfy-local',
+        BUILTIN_ENGINE_PROVIDER_ID,
+      ])
+    })
+
+    it('keeps a worker the user added themselves', () => {
+      const ownWorker: MediaProviderDescriptor = {
+        id: ATOMIC_MEDIA_WORKER_PROVIDER_ID,
+        label: 'My worker',
+        kind: 'local_worker',
+        adapter: 'atomic-media-worker',
+        base_url: 'http://127.0.0.1:13420',
+        enabled: true,
+        origin: 'user',
+      }
+
+      expect(seedProviders([ownWorker]).map((p) => p.id)).toEqual([
+        ATOMIC_MEDIA_WORKER_PROVIDER_ID,
+        BUILTIN_ENGINE_PROVIDER_ID,
+      ])
     })
 
     it('exposes providers synchronously for non-React callers', () => {
@@ -134,7 +172,7 @@ describe('media provider store', () => {
     it('persists a disabled builtin provider', () => {
       useMediaProviderStore
         .getState()
-        .setProviderEnabled(ATOMIC_MEDIA_WORKER_PROVIDER_ID, false)
+        .setProviderEnabled(BUILTIN_ENGINE_PROVIDER_ID, false)
 
       expect(useMediaProviderStore.getState().providers[0]?.enabled).toBe(false)
       const persisted = JSON.parse(
@@ -145,8 +183,8 @@ describe('media provider store', () => {
 
     it('re-enables it again', () => {
       const { setProviderEnabled } = useMediaProviderStore.getState()
-      setProviderEnabled(ATOMIC_MEDIA_WORKER_PROVIDER_ID, false)
-      setProviderEnabled(ATOMIC_MEDIA_WORKER_PROVIDER_ID, true)
+      setProviderEnabled(BUILTIN_ENGINE_PROVIDER_ID, false)
+      setProviderEnabled(BUILTIN_ENGINE_PROVIDER_ID, true)
 
       expect(useMediaProviderStore.getState().providers[0]?.enabled).toBe(true)
     })
@@ -161,7 +199,7 @@ describe('media provider store', () => {
       )
       expect(
         persisted.state.providers.map((p: MediaProviderDescriptor) => p.id)
-      ).toEqual([ATOMIC_MEDIA_WORKER_PROVIDER_ID, 'comfy-local'])
+      ).toEqual([BUILTIN_ENGINE_PROVIDER_ID, 'comfy-local'])
     })
 
     it('refuses to add a second provider with an id already in use', () => {
@@ -184,7 +222,7 @@ describe('media provider store', () => {
 
       const state = useMediaProviderStore.getState()
       expect(state.providers.map((p) => p.id)).toEqual([
-        ATOMIC_MEDIA_WORKER_PROVIDER_ID,
+        BUILTIN_ENGINE_PROVIDER_ID,
       ])
       expect(state.capabilities['comfy-local']).toBeUndefined()
       expect(state.health['comfy-local']).toBeUndefined()
@@ -193,11 +231,11 @@ describe('media provider store', () => {
     it('never removes a builtin provider, only disables it', () => {
       useMediaProviderStore
         .getState()
-        .removeProvider(ATOMIC_MEDIA_WORKER_PROVIDER_ID)
+        .removeProvider(BUILTIN_ENGINE_PROVIDER_ID)
 
       const providers = useMediaProviderStore.getState().providers
       expect(providers.map((p) => p.id)).toEqual([
-        ATOMIC_MEDIA_WORKER_PROVIDER_ID,
+        BUILTIN_ENGINE_PROVIDER_ID,
       ])
     })
   })
@@ -209,7 +247,7 @@ describe('media provider store', () => {
       await useMediaProviderStore.getState().refresh()
 
       const { health } = useMediaProviderStore.getState()
-      expect(health[ATOMIC_MEDIA_WORKER_PROVIDER_ID]?.state).toBe('online')
+      expect(health[BUILTIN_ENGINE_PROVIDER_ID]?.state).toBe('online')
       expect(health['comfy-local']?.state).toBe('online')
     })
 
@@ -222,7 +260,7 @@ describe('media provider store', () => {
       // Both providers expose a model whose local id is 'shared-model'. The
       // provider-qualified ids are what keep them distinct.
       expect(models.map((m) => m.id).sort()).toEqual([
-        'atomic-media-worker:shared-model',
+        'builtin-engine:shared-model',
         'comfy-local:comfy-only',
         'comfy-local:shared-model',
       ])
@@ -237,13 +275,13 @@ describe('media provider store', () => {
 
       const state = useMediaProviderStore.getState()
       // The healthy provider still produced its models.
-      expect(state.capabilities[ATOMIC_MEDIA_WORKER_PROVIDER_ID]).toBeTruthy()
+      expect(state.capabilities[BUILTIN_ENGINE_PROVIDER_ID]).toBeTruthy()
       expect(state.models().map((m) => m.id)).toEqual([
-        'atomic-media-worker:shared-model',
+        'builtin-engine:shared-model',
       ])
       // And the failure is recorded against the provider that failed, only.
       expect(state.errors['comfy-local']).toMatch(/offline/i)
-      expect(state.errors[ATOMIC_MEDIA_WORKER_PROVIDER_ID]).toBeNull()
+      expect(state.errors[BUILTIN_ENGINE_PROVIDER_ID]).toBeNull()
       expect(state.health['comfy-local']?.state).toBe('offline')
     })
 
@@ -285,11 +323,11 @@ describe('media provider store', () => {
       expect(state.refreshing).toBe(false)
       expect(state.errors['comfy-local']).toBeTruthy()
       // The provider that did answer is unaffected.
-      expect(state.health[ATOMIC_MEDIA_WORKER_PROVIDER_ID]?.state).toBe('online')
+      expect(state.health[BUILTIN_ENGINE_PROVIDER_ID]?.state).toBe('online')
     })
 
     it('clears refreshing even when every provider fails', async () => {
-      fakeAdapters[ATOMIC_MEDIA_WORKER_PROVIDER_ID] = offlineAdapter(worker)
+      fakeAdapters[BUILTIN_ENGINE_PROVIDER_ID] = offlineAdapter(engine)
 
       await useMediaProviderStore.getState().refresh()
 
@@ -315,7 +353,7 @@ describe('media provider store', () => {
       useMediaProviderStore.getState().setProviderEnabled('comfy-local', false)
 
       expect(useMediaProviderStore.getState().models().map((m) => m.id)).toEqual(
-        ['atomic-media-worker:shared-model']
+        ['builtin-engine:shared-model']
       )
     })
 
@@ -324,12 +362,12 @@ describe('media provider store', () => {
       await useMediaProviderStore.getState().refresh()
       useMediaProviderStore
         .getState()
-        .setSelectedModel('atomic-media-worker:shared-model')
+        .setSelectedModel('builtin-engine:shared-model')
 
       useMediaProviderStore.getState().setProviderEnabled('comfy-local', false)
 
       expect(useMediaProviderStore.getState().selectedModelId).toBe(
-        'atomic-media-worker:shared-model'
+        'builtin-engine:shared-model'
       )
     })
 

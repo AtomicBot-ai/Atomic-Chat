@@ -14,7 +14,6 @@ import { useThreadNotifications } from '@/hooks/useThreadNotifications'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
-import LocalModelLocationsCard from '@/containers/LocalModelLocationsCard'
 import { FactoryResetDialog } from '@/containers/dialogs'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
@@ -25,6 +24,7 @@ import {
   IconLogs,
   IconCopy,
   IconCopyCheck,
+  IconLoader2,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
@@ -93,6 +93,7 @@ function General() {
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [cliPath, setCliPath] = useState<string | null>(null)
   const [isCliLoading, setIsCliLoading] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
   const canManageAutostart = IS_TAURI && !isDev()
 
@@ -178,9 +179,14 @@ function General() {
       toast.error(t('settings:general.couldNotResetRootDirectory'))
       return
     }
+    setIsResetting(true)
     pausePolling()
-    // TODO: Loading indicator
-    await serviceHub.app().factoryReset()
+
+    try {
+      await serviceHub.app().factoryReset()
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   const handleOpenLogs = async () => {
@@ -603,8 +609,7 @@ function General() {
               />
             </Card>
 
-            {/* Detected model locations / scan folders - Desktop only */}
-            {IS_TAURI && <LocalModelLocationsCard />}
+            {/* Detected model locations moved to Models -> Model settings. */}
 
             {/* Advanced - Desktop only */}
             <Card title="Advanced">
@@ -650,7 +655,8 @@ function General() {
                 })}
                 actions={
                   <FactoryResetDialog onReset={resetApp}>
-                    <Button variant="destructive" size="sm">
+                    <Button variant="destructive" size="sm" disabled={isResetting}>
+                      {isResetting && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {t('common:reset')}
                     </Button>
                   </FactoryResetDialog>

@@ -1,37 +1,4 @@
-<img src="https://github.com/AtomicBot-ai/Atomic-Chat/raw/main/assets/logo.png" width="80" alt="Radium" />
 
-# Radium
-
-Local AI app and inference engine for agents. Run open-weight LLMs locally — private, on your machine.
-
-<a href="https://github.com/AtomicBot-ai/Atomic-Chat/stargazers"><img src="https://img.shields.io/github/stars/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Stars&color=f5c542" alt="Stars" /></a>&nbsp;
-<a href="https://github.com/AtomicBot-ai/Atomic-Chat/network/members"><img src="https://img.shields.io/github/forks/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Forks&color=4ac1f2" alt="Forks" /></a>&nbsp;
-<a href="https://github.com/AtomicBot-ai/Atomic-Chat/graphs/contributors"><img src="https://img.shields.io/github/contributors/AtomicBot-ai/Atomic-Chat?style=flat&logo=github&label=Contributors&color=ff69b4" alt="Contributors" /></a>&nbsp;
-<a href="https://github.com/AtomicBot-ai/Atomic-Chat/commits/main"><img src="https://img.shields.io/github/last-commit/AtomicBot-ai/Atomic-Chat?style=flat&label=Last%20Commit&color=blueviolet" alt="Last Commit" /></a>&nbsp;
-<img src="https://img.shields.io/badge/Built_with-Tauri-FFC131?style=flat&logo=tauri&logoColor=white" alt="Tauri" />&nbsp;
-<img src="https://img.shields.io/badge/Runtime-Node.js_≥20-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js" />
-
-[Getting Started](https://atomic.chat/) · [Hugging Face](https://huggingface.co/AtomicChat) · [Discord](https://discord.com/invite/8wGSsvmg4V) · [X / Twitter](https://x.com/atomic_chat_hq) · [Bug Reports](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-
-<p align="center">
-  <img src="https://github.com/AtomicBot-ai/.github/raw/main/assets/0529_final.gif" width="100%" alt="Radium — local AI chat in action" />
-</p>
-
----
-### 📦 Download
-
-<p align="left"><b>Desktop</b></p>
-<p align="left">
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
-  <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
-</p>
-
-<p align="left"><b>Mobile</b></p>
-<p align="left">
-  <a href="https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226"><img src="https://img.shields.io/badge/iOS-App_Store-0D96F6?style=for-the-badge&logo=appstore&logoColor=white" height="46" alt="Download for iOS" /></a>&nbsp;
-  <a href="https://play.google.com/store/apps/details?id=chat.atomic.app"><img src="https://img.shields.io/badge/Android-Google_Play-414141?style=for-the-badge&logo=googleplay&logoColor=white" height="46" alt="Download for Android" /></a>
-</p>
 
 ---
 
@@ -207,19 +174,7 @@ If prompted about FUSE on first launch: `sudo apt install fuse libfuse2` (Debian
 
 ---
 
-### 🧯 Troubleshooting
 
-If something isn't working:
-
-1. Copy your error logs and system specs
-2. Open an issue on [GitHub](https://github.com/AtomicBot-ai/Atomic-Chat/issues)
-3. Or ask for help in our [Discord](https://discord.com/invite/8wGSsvmg4V)
-
----
-
-### 👥 Contributors
-
-Radium is built by a small core team and **140+ contributors** — including everyone who shaped the project from its earliest days. Pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 
 <a href="https://github.com/Vect0rM"><img src="https://images.weserv.nl/?url=https://github.com/Vect0rM.png&w=110&h=110&fit=cover&mask=circle" width="48" height="48" alt="Vect0rM" /></a>
 <a href="https://github.com/dtorey-d"><img src="https://images.weserv.nl/?url=https://github.com/dtorey-d.png&w=110&h=110&fit=cover&mask=circle" width="48" height="48" alt="dtorey-d" /></a>

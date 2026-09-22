@@ -226,23 +226,30 @@ describe('ReplyModelGate', () => {
     const download = await screen.findByRole('button', {
       name: /replyGate.download/,
     })
+    await waitFor(() => expect(download).toBeEnabled())
     fireEvent.click(download)
 
-    expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
-      'AtomicChat/Qwen3.5-4B-Q4_K_M',
-      'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
-      undefined,
-      '',
-      true,
-      false
+    await waitFor(() =>
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+        'AtomicChat/Qwen3.5-4B-Q4_K_M',
+        'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
+        undefined,
+        '',
+        true,
+        false
+      )
     )
-    expect(onResolved).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'download', branch: 'none' })
+    await waitFor(() =>
+      expect(onResolved).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'download', branch: 'none' })
+      )
     )
-    expect(capturedEvent('reply_model_gate_outcome')).toMatchObject({
-      outcome: 'download',
-      branch: 'none',
-    })
+    await waitFor(() =>
+      expect(capturedEvent('reply_model_gate_outcome')).toMatchObject({
+        outcome: 'download',
+        branch: 'none',
+      })
+    )
   })
 
   it('lets the empty-handed point the scanner at their own folder', async () => {

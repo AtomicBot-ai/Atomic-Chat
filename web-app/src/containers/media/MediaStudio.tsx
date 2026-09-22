@@ -13,7 +13,10 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
-import { MediaGenerationForm } from './MediaGenerationForm'
+import {
+  MediaGenerationForm,
+  type MediaInstallProgress,
+} from './MediaGenerationForm'
 import { MediaJobStatus } from './MediaJobStatus'
 import { MediaPreview } from './MediaPreview'
 import { useMediaGeneration } from '@/hooks/useMediaGeneration'
@@ -21,12 +24,14 @@ import { useMediaJobAsset } from '@/hooks/useMediaJobAsset'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMediaProviderStore } from '@/stores/media-provider-store'
 import { isTerminalMediaJobState } from '@/services/media/jobManager'
+import { createMediaAdapter } from '@/services/media/providerFactory'
 import {
   takePendingMediaReRun,
   type PendingMediaReRun,
 } from '@/services/media/rerun'
 import type {
   MediaDeviceDescriptor,
+  MediaModelDescriptor,
   MediaTaskId,
   MediaTaskPresentation,
 } from '@/services/media/contract'
@@ -148,6 +153,22 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
   )
 
   const busy = latest ? !isTerminalMediaJobState(latest.state) : false
+
+  // Download a model in place (the built-in engine), then ask its provider
+  // again so the model reads as installed and Generate appears.
+  const installModel = async (
+    model: MediaModelDescriptor,
+    onProgress: (progress: MediaInstallProgress) => void
+  ) => {
+    const provider = providers.find((entry) => entry.id === model.provider_id)
+    if (!provider) throw new Error(`No provider "${model.provider_id}" is set up.`)
+    const adapter = createMediaAdapter(provider)
+    if (!adapter.install) {
+      throw new Error(`${provider.label} cannot download models.`)
+    }
+    await adapter.install(model.id, onProgress)
+    await refresh({ providerId: provider.id })
+  }
   const asset = useMediaJobAsset(latest, selectedModel?.label ?? '')
 
   const headerLabel = selectedProvider
@@ -179,8 +200,18 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
-        <div className="mx-auto grid w-full max-w-[1500px] gap-4 lg:grid-cols-[minmax(320px,0.82fr)_minmax(440px,1.45fr)]">
+      {/* On a wide window each column scrolls on its own, so the settings get
+          their own scroll bar (with arrows) beside the preview instead of
+          being cut off (the user, 2026-09-15). The row must be capped at the
+          grid's height (minmax(0,1fr)); an auto row grows to fit the content,
+          so the columns never overflowed and no scroll bar appeared.
+          Narrow windows scroll as one. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:overflow-hidden lg:p-5">
+        <div className="mx-auto grid w-full max-w-[1500px] gap-4 lg:h-full lg:grid-cols-[minmax(320px,0.82fr)_minmax(440px,1.45fr)] lg:grid-rows-[minmax(0,1fr)]">
+          <div
+            className="lg:min-h-0 lg:overflow-y-auto lg:pr-2"
+            data-testid="media-settings-column"
+          >
           <MediaGenerationForm
             // Remounted when a re-run arrives, so the handed-over values
             // replace the model's defaults instead of losing to them.
@@ -196,9 +227,11 @@ export function MediaStudio({ libraryLink }: MediaStudioProps = {}) {
             onSelectModel={setSelectedModel}
             disabled={busy}
             onSubmit={submit}
+            onInstallModel={installModel}
           />
+          </div>
 
-          <div className="flex min-h-0 flex-col gap-3">
+          <div className="flex min-h-0 flex-col gap-3 lg:overflow-y-auto">
             <MediaPreview asset={asset} />
             <MediaJobStatus
               job={latest ?? null}

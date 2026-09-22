@@ -39,9 +39,16 @@
   "allFormats": "All formats",
   "sortBy": "Sort by",
   "sortRecommended": "Recommended",
-  "sortLikes": "Likes",
-  "sortDownloads": "Downloads",
-  "sortLastModified": "Last modified",
+  "sortLikes": "Most liked",
+  "sortDownloads": "Most downloaded",
+  "sortLastModified": "Newest",
+  "sortDownloadsAsc": "Least downloaded",
+  "sortLikesAsc": "Least liked",
+  "sortLastModifiedAsc": "Oldest",
+  "sortSizeAsc": "Smallest file first",
+  "sortSizeDesc": "Largest file first",
+  "sortNameAsc": "Name A to Z",
+  "sortNameDesc": "Name Z to A",
   "onlyFitting": "Only include recommended models that fit on this device",
   "fitFilterLabel": "Only show models that fit",
   "uncensored": "Uncensored",
@@ -63,9 +70,9 @@
   "tooLargeDescription": "It needs more memory than this device has, so it may fail to load or run slowly.",
   "downloadAnyway": "Download anyway",
   "modelsFolder": {
-    "button": "Models folder",
-    "title": "Models folder",
-    "description": "Radium saves the models you download here, and loads your models from here.",
+    "button": "Model settings",
+    "title": "Model settings",
+    "description": "Where your models are saved and loaded from, and where Radium looks for models you already have.",
     "current": "Current folder",
     "new": "New folder",
     "default": "Default",
@@ -83,5 +90,8 @@
     "someSkipped": "Models folder changed. Some models were left where they were, because the new folder already has one with the same name.",
     "someNotMoved": "Models folder changed, but some models couldn't be moved",
     "failed": "Couldn't change the models folder"
-  }
+  },
+  "capabilitiesFilterHint": "Tick one or more to show only models that have all of them",
+  "menuSearch": "Search sorts and filters",
+  "menuNoMatches": "Nothing matches"
 }

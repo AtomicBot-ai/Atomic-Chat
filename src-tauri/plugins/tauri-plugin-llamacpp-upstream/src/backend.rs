@@ -404,6 +404,7 @@ pub struct SystemFeatures {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 pub struct SupportedBackendsResult {
     supported_backend_names: Vec<String>,
     merged_backends: Vec<BackendInfo>,
@@ -626,6 +627,7 @@ pub struct NvidiaInfo {
 
 #[derive(Deserialize)]
 pub struct VulkanInfo {
+    #[allow(dead_code)]
     api_version: String,
     /// PCI device id, the only gfx signal available on Windows (there is no
     /// `/sys/class/kfd` to read `gfx_target_version` from).
@@ -919,6 +921,7 @@ pub struct UpdateCheckResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct BackendConfigResult {
     pub best_available: String,
     pub effective_backend: String,

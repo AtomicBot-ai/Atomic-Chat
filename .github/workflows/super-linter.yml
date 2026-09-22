@@ -11,9 +11,18 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+permissions:
+  contents: read
+
 jobs:
   run-lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # super-linter reports each linter's outcome as a commit status. Without
+      # this the run still lints, but every status POST fails with a 403.
+      statuses: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,3 +36,27 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
           DEFAULT_BRANCH: "main"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # textlint's terminology preset cannot tell prose from identifiers or
+          # from quoted document titles, so it rejects "id", "api" and "ids"
+          # wherever they appear. Markdown style is covered by markdownlint
+          # (.github/linters/.markdownlint.json).
+          VALIDATE_NATURAL_LANGUAGE: false
+          # ts-standard runs against super-linter's own bundled tsconfig
+          # (/action/lib/.automation/tsconfig.json), which includes none of this
+          # repository's files, so it cannot parse any of them:
+          #   Parsing error: ESLint was configured to run on <file> using
+          #   parserOptions.project: .../action/lib/.automation/tsconfig.json
+          #   However, that TSConfig does not include this file.
+          # It also enforces standardjs style, which contradicts this
+          # repository's Prettier configuration. TYPESCRIPT_ES (eslint) passes
+          # and stays on; TypeScript is gated properly by `make verify`.
+          VALIDATE_TYPESCRIPT_STANDARD: false
+          # clippy here runs with super-linter's own bundled Cargo, which is too
+          # old to read this repository's lockfile at all:
+          #   error: failed to parse lock file at: src-tauri/Cargo.lock
+          #   lock file version `4` was found, but this version of Cargo does
+          #   not understand this lock file
+          # So it reports one error and no findings on any PR that touches
+          # Cargo.toml or Rust. radium-ci.yml runs the real clippy, over
+          # `make verify`, with the toolchain and system libraries it needs.
+          VALIDATE_RUST_CLIPPY: false

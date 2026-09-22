@@ -40,6 +40,8 @@ export {
   type MediaFitnessStatus,
   type MediaInstallState,
   type MediaModelDescriptor,
+  type MediaModelQuant,
+  type MediaDownloadFile,
   type MediaProviderFeatures,
 } from './models'
 
