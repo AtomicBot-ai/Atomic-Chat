@@ -545,7 +545,6 @@ impl PtyRegistry {
         }
         victims.len()
     }
-
 }
 
 fn write_journal_file(path: &Path, entries: &[JournalEntry]) -> std::io::Result<()> {

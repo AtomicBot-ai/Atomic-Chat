@@ -16,6 +16,10 @@ use crate::core::process_env::sanitize_std_command;
 use crate::core::process_env::APPIMAGE_RUNTIME_ENV_VARS;
 #[cfg(any(target_os = "linux", test))]
 use crate::core::process_env::strip_appimage_std_command;
+// Only the tests below read the variable list; importing it for a non-test Linux
+// build leaves it unused, which `-D warnings` rejects.
+#[cfg(test)]
+use crate::core::process_env::APPIMAGE_RUNTIME_ENV_VARS;
 use crate::core::state::AppState;
 
 fn is_safe_to_delete(path: &std::path::Path) -> bool {

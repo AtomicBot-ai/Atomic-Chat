@@ -24,8 +24,8 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'get_local_http',
-  // Built-in Radium Media engine lifecycle. Desktop only: the bundled
-  // stable-diffusion.cpp sidecar is not registered on mobile.
+  // Built-in media engine lifecycle commands. Desktop only on purpose: the
+  // shipped engine and its local process supervision do not exist on mobile.
   'media_engine_install',
   'media_engine_start',
   'media_engine_status',
