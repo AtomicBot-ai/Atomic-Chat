@@ -118,7 +118,7 @@ shared root.
 
 ### T01d — Emit and replay paired environment fixtures
 
-**Status:** blocked 2026-09-22, needs a decision. This card assumes the app's Rust implements the contract and emits fixtures from it, which is how every existing set works: those contracts were ported *out of* the app's Rust, so a Rust-emitted fixture is evidence from the real implementation. The environment contract runs the other way. It originates in the core, and the app's Rust has no environment types at all — it relays the JSON opaquely, and the consumer is the web app's TypeScript (T16a/T16b). Writing Rust structs that exist only to emit fixtures would prove nothing about the real consumer. Two ways out: emit the set from CORE, commit it into the app's fixture tree and have T16a replay it (this reverses the direction and needs `tests/core-contracts.test.mjs` to stop requiring a `.rs` source for every case), or fold this card into T16a, where the actual consumer exists. Pick one before dispatching it; T05b lists this card as a dependency and does not otherwise need it.
+**Status:** withdrawn 2026-09-22, folded into T16a. This card assumed the app's Rust implements the contract and emits fixtures from it, which is how every existing set works: those contracts were ported *out of* the app's Rust, so a Rust-emitted fixture is evidence from the real implementation. The environment contract runs the other way. It originates in the core, and the app's Rust has no environment types at all — it relays the JSON opaquely, and the consumer is the web app's TypeScript (T16a/T16b). Writing Rust structs that exist only to emit fixtures would prove nothing about the real consumer. Two ways out: emit the set from CORE, commit it into the app's fixture tree and have T16a replay it (this reverses the direction and needs `tests/core-contracts.test.mjs` to stop requiring a `.rs` source for every case), or fold this card into T16a, where the actual consumer exists. Decision: fold it into T16a. The fixtures are written where the consumer is, from the core that produces the shapes, so nothing is proved about Rust structs that would exist only to be emitted from. The app's `tests/core-contracts.test.mjs` keeps its rule that every case in the existing sets names a `.rs` source, because those sets really were ported out of Rust. T05b no longer depends on this card.
 
 **Repository:** CORE+APP. **Depends on:** T01a, T01b, T01c.
 **Files:** APP `src-tauri/src/core/atomic_core/test_support.rs`, `tests/fixtures/core-contracts/`;
@@ -251,7 +251,9 @@ and unload callbacks.
 
 ### T05b — Add control routes and client methods
 
-**Repository:** CORE. **Depends on:** T05a, T01d.
+**Status:** done 2026-09-22. New `src/server/control/routes/environments.ts` with 15 tests, the managed codes mapped in `src/server/http.ts`, a narrow `ManagedEnvironmentControl` in `types.ts` so the control layer does not depend on the runtime module, and seven client methods with 5 tests against a real server over a real socket. Bodies are validated including their unknown fields, and an id that is a path is refused before the service sees it. An unauthenticated call reaches nothing. A build with no managed runtime wired answers 422 rather than pretending. Two things the existing suite caught: a comment between `case` labels tripped `no-fallthrough`, and `MODEL_INCOMPATIBLE` is an image-generation code already pinned to 500, so the managed runtime carries it inside a model resolution instead of redefining its status.
+
+**Repository:** CORE. **Depends on:** T05a.
 **Files:** new `src/server/control/routes/environments.ts`; `src/server/control/{router,types}.ts`;
 `src/client/control-client.ts`.
 **Implement:** exact route/body/status contracts with existing auth; no per-route Tauri commands.
