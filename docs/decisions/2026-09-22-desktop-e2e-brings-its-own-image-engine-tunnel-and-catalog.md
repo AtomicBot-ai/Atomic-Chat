@@ -47,16 +47,7 @@ title: "Desktop e2e brings its own image engine, tunnel and catalog, and expects
     `backend.txt`) on top of the scripted one, and lists image engine trees the
     same way it lists backends (`imageEngines` per session).
   - The e2e window is visible on all Spaces (`visible_on_all_workspaces`), so it
-    is drawn wherever the operator is looking. "All Spaces" leaves out another
-    app's full-screen Space: the first full run after this record timed out on
-    the splash in every session while one was in front. So the e2e build also
-    turns off the webview's window occlusion detection
-    (`_setWindowOcclusionDetectionEnabled:`, private WebKit API, called only
-    with `--features e2e`); WebKit then counts the page as visible while the
-    window is ordered in, on whichever Space. WebKit reads the switch only when
-    it next works out the page's visibility, and the window is already on
-    screen when the switch is set, so the view is hidden and shown once right
-    after to make it do that at launch rather than at the next Space switch.
+    is drawn wherever the operator is looking.
 - **Consequences:** The suite runs offline again and cannot open a public URL
   or a desktop app. Image scenarios run in seconds against tiny files; the one
   real install flow (engine update, model download) goes through the mirror.
