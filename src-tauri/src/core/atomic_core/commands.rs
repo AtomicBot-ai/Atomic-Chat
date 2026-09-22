@@ -361,6 +361,29 @@ pub async fn shutdown<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Bring the app's mirror of the core's sessions up to date from the core itself.
+///
+/// The mirror is kept by events, and events can be missed: right after a new core generation the
+/// event stream is still being re-established, and a model loaded in that window has a session in
+/// the core that the mirror has not heard of. Whoever looks a session up and does not find it asks
+/// here before concluding that it does not exist.
+pub async fn refresh_sessions<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(client) = app.try_state::<AtomicCoreClient>() {
+        if let Err(error) = client.snapshot().await {
+            log::debug!("[atomic-core] could not refresh sessions: {}", error.message);
+        }
+    }
+}
+
+/// Undo `shutdown` when the app is staying up after all — a data-folder move that failed after
+/// the core had been stopped for it.
+pub async fn resume<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(client) = app.try_state::<AtomicCoreClient>() {
+        let _gate = client.transition.lock().await;
+        client.start(app).await;
+    }
+}
+
 /// Any control route, with the token attached here.
 ///
 /// `body` is passed through untouched: the control API's request shapes are its

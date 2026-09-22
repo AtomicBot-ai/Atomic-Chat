@@ -550,11 +550,23 @@ function ThreadDetail() {
         captureTurnOutcome('success', message)
       }
 
-      // Persist assistant message to backend (skip if aborted).
+      // Persist assistant message to backend.
       // For continuations, message.parts already contains partial + new content
       // because the stream wrapper prepended the partial text as the first delta.
-      if (!isAbort && message.role === 'assistant') {
-        const contentParts = extractContentPartsFromUIMessage(message)
+      // A reply the user stopped is kept too, as `Stopped`, the way a cancelled
+      // agent run is: it stays on the page, and a page that shows what the store
+      // does not hold loses it on the next reload. Only what was actually
+      // received is kept — a tool call cut off before its result would leave
+      // the history with a call no provider accepts unanswered.
+      if (message.role === 'assistant') {
+        const contentParts = isAbort
+          ? extractContentPartsFromUIMessage(message).filter((part) =>
+              part.type === ContentType.ToolCall
+                ? (part as { output?: unknown }).output !== undefined
+                : part.type === ContentType.Image ||
+                  (part.text?.value ?? '').trim() !== ''
+            )
+          : extractContentPartsFromUIMessage(message)
 
         if (contentParts.length > 0) {
           const messageMetadata = (message.metadata || {}) as Record<
@@ -569,7 +581,7 @@ function ThreadDetail() {
             id: message.id,
             object: 'thread.message',
             thread_id: threadId,
-            status: MessageStatus.Ready,
+            status: isAbort ? MessageStatus.Stopped : MessageStatus.Ready,
             created_at: Date.now(),
             completed_at: Date.now(),
             metadata: messageMetadata,
@@ -1773,6 +1785,11 @@ function ThreadDetail() {
       serviceHub,
     })
     if (!result.ok) {
+      // No reload will follow. Release the request here because the chat
+      // status is already "error" and its status effect will not run again.
+      setIsAutoIncreasingContext(false)
+      setIsChatRequestActive(false)
+      setPendingContinueMessage(null)
       if (result.reason === 'at_max') {
         toast.error('Model reached its maximum context, auto-expand stopped', {
           id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,

@@ -287,14 +287,17 @@ describe('DataProvider', () => {
       useAppState.getState().activeModels = ['crashed', 'other']
       const invalidate = vi.spyOn(ModelFactory, 'invalidateLocalSessionCache')
 
-      handleCoreSessionDied({
-        provider: 'llamacpp-upstream',
-        pid: 42,
-        model_id: 'crashed',
-        exit_code: null,
-        signal: 'SIGSEGV',
-        message: 'llama-server exited',
-      })
+      handleCoreSessionDied(
+        {
+          provider: 'llamacpp-upstream',
+          pid: 42,
+          model_id: 'crashed',
+          exit_code: null,
+          signal: 'SIGSEGV',
+          message: 'llama-server exited',
+        },
+        { generating: true, macos: false }
+      )
 
       expect(invalidate.mock.calls).toEqual([['llamacpp-upstream', 'crashed']])
       expect(mocks.setActiveModels.mock.calls).toEqual([[['other']]])
@@ -304,6 +307,19 @@ describe('DataProvider', () => {
       expect(toastOptions()?.id).toBe('session-died-crashed')
       expect(toastOptions()?.description).toContain('Vulkan')
       useAppState.getState().activeModels = []
+    })
+
+    it('does not blame a generation that was not running, nor Vulkan on macOS', () => {
+      handleCoreSessionDied(
+        { provider: 'llamacpp-upstream', pid: 42, model_id: 'idle' },
+        { generating: false, macos: true }
+      )
+
+      expect(mocks.toastError.mock.calls[0]?.[0]).toBe(
+        'Model stopped unexpectedly'
+      )
+      expect(toastOptions()?.description).not.toContain('Vulkan')
+      expect(toastOptions()?.description).not.toContain('CPU backend')
     })
 
     it('applies the same recovery to MLX without the llama.cpp backend advice', async () => {

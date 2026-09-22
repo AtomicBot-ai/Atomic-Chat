@@ -134,6 +134,7 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import WebSearchToggle from '@/containers/WebSearchToggle'
@@ -304,6 +305,17 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[composerThreadKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
+  // What the select shows is its own default until the user picks a mode, but
+  // MCP tools on such a thread follow the global "Allow All MCP Tool
+  // Permissions" switch, which is on unless the user turned it off (see
+  // lib/mcp-approval.ts). The label said "Ask for approval" while those tools
+  // ran unasked; it now says so where that is the case.
+  const mcpAutoApprovedHere = useAgentMode(
+    (state) => state.approvalModes[composerThreadKey] === undefined
+  )
+  const allowAllMCPPermissions = useToolApproval(
+    (state) => state.allowAllMCPPermissions
+  )
 
   useLayoutEffect(() => {
     setAgentSkillTokenWidth(agentSkillTokenRef.current?.offsetWidth ?? 0)
@@ -3160,7 +3172,11 @@ const ChatInput = memo(function ChatInput({
                     mode={approvalMode}
                     onChange={handleApprovalModeChange}
                     menuTitle={t('chat:agentApprovals.menuTitle')}
-                    manualSelectedLabel={t('chat:agentApprovals.manualSelected')}
+                    manualSelectedLabel={
+                      mcpAutoApprovedHere && allowAllMCPPermissions
+                        ? `${t('chat:agentApprovals.manualSelected')} · ${t('chat:agentApprovals.mcpAutoApproved')}`
+                        : t('chat:agentApprovals.manualSelected')
+                    }
                     manualLabel={t('chat:agentApprovals.manual')}
                     manualDescription={t(
                       'chat:agentApprovals.manualDescription'

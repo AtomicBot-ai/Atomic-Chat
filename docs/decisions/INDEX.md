@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-280 records, 2026-05-19 → 2026-09-18.
+310 records, 2026-05-19 → 2026-09-21.
 
 ---
 
@@ -146,7 +146,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 - **2026-05-19** — [Use `AtomicBot-ai/mlx-vlm` as the MLX backend](2026-05-19-use-atomicbot-ai-mlx-vlm-as-the-mlx-backend.md)
 
-## llama.cpp providers & backend selection (53)
+## llama.cpp providers & backend selection (55)
+
+- **2026-09-18** — [Honour "Ignore SSL certificates" for proxied plugin requests](2026-09-18-honour-ignore-ssl-for-proxied-plugin-requests.md)
+- **2026-09-18** — [Preserve the resolved backend during provider settings writes](2026-09-18-preserve-resolved-backend-during-settings-writes.md)
 
 - **2026-09-14** — [Ask before updating an inference engine](2026-09-14-ask-before-updating-an-inference-engine.md)
 - **2026-09-14** — [One GPU VRAM floor for every OS](2026-09-14-one-gpu-vram-floor-for-every-os.md)
@@ -233,8 +236,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (5)
+## Local API server & OpenAI compatibility (7)
 
+- **2026-09-19** — [Reload the served model when the API listener is recovered](2026-09-19-reload-the-served-model-when-the-api-listener-is-recovered.md)
+- **2026-09-18** — [Bind the API inspector's emitter on the core event path](2026-09-18-bind-the-api-inspector-emitter-on-the-core-event-path.md)
 - **2026-09-17** — [Expose the Local API Server through a bundled Cloudflare quick tunnel and on the LAN](2026-09-17-expose-the-local-api-server-through-a-cloudflare-tunnel-and-on-the-lan.md)
 - **2026-09-11** — [Make starting the Local API Server idempotent (ATO-524)](2026-09-11-make-starting-the-local-api-server-idempotent.md)
 - **2026-07-27** — [Reconcile remote providers before proxy-routed requests](2026-07-27-reconcile-remote-providers-before-proxy-routed-requests.md)
@@ -252,8 +257,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (14)
+## Packaging, installers, autostart & platform policy (16)
 
+- **2026-09-19** — [Keep document indexes in the data folder](2026-09-19-keep-document-indexes-in-the-data-folder.md)
+- **2026-09-18** — [Keep the HTTP plugin's JS client on the Rust plugin's version](2026-09-18-keep-the-http-plugin-js-client-on-the-rust-plugin-version.md)
 - **2026-09-04** — [Sanitize the AppImage environment before launching host processes](2026-09-04-sanitize-appimage-environment-before-launching-host-processes.md)
 - **2026-08-19** — [Leave launch at startup off for new installs](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
 - **2026-08-05** — [Default autostart on only for clean desktop installs](2026-08-05-default-autostart-on-only-for-clean-desktop-installs.md)
@@ -269,7 +276,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Pin static WiX `upgradeCode` to legacy Jan UUID for in-place MSI upgrades](2026-05-22-pin-static-wix-upgradecode-to-legacy-jan-uuid-for-in-place-msi.md)
 - **2026-05-19** — [Product identity is "Atomic Chat"; new code stops carrying Jan branding](2026-05-19-product-identity-is-atomic-chat-new-code-stops-carrying-jan.md)
 
-## UI / UX (40)
+## UI / UX (46)
+
+- **2026-09-19** — [Say when MCP tools are auto-approved](2026-09-19-say-when-mcp-tools-are-auto-approved.md)
+- **2026-09-18** — [Keep a reply the user stopped](2026-09-18-keep-a-reply-the-user-stopped.md)
+- **2026-09-18** — [Release chat after context growth stops](2026-09-18-release-chat-after-context-growth-stops.md)
 
 - **2026-09-15** — [Say what a model load is waiting on, and let it be cancelled](2026-09-15-say-what-a-model-load-is-waiting-on-and-let-it-be-cancelled.md)
 - **2026-09-15** — [Show every tool call as its own line in the message](2026-09-15-show-every-tool-call-as-its-own-line.md)
@@ -315,8 +326,13 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (18)
+## Inference core extraction — atomic-chat-core (23)
 
+- **2026-09-21** — [A factory reset removes the core's folder and keeps every provider's backends](2026-09-21-a-factory-reset-removes-the-cores-folder-and-keeps-every-providers-backends.md)
+- **2026-09-19** — [Ask the core before concluding a session does not exist](2026-09-19-ask-the-core-before-concluding-a-session-does-not-exist.md)
+- **2026-09-19** — [End a local stream on the channel, not on the command's return](2026-09-19-end-a-local-stream-on-the-channel-not-on-the-commands-return.md)
+- **2026-09-19** — [Restart through the exit handler](2026-09-19-restart-through-the-exit-handler.md)
+- **2026-09-18** — [Stop the core before moving the data folder](2026-09-18-stop-the-core-before-moving-the-data-folder.md)
 - **2026-09-17** — [Keep app mirrors coherent and import the pre-core optimum](2026-09-17-preserve-stage6-mirrors-and-optimal-cache.md)
 - **2026-09-17** — [The core owns every desktop runtime unconditionally](2026-09-17-the-core-owns-every-desktop-runtime-unconditionally.md)
 - **2026-09-17** — [Lease runtime loads across owner handover](2026-09-17-lease-runtime-loads-across-handover.md)
@@ -336,8 +352,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Other (12)
+## Other (14)
 
+- **2026-09-21** — [Run desktop e2e scenarios side by side](2026-09-21-run-desktop-e2e-scenarios-side-by-side.md)
+- **2026-09-18** — [Drive the desktop UI through an embedded WebDriver on an isolated profile](2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md)
 - **2026-09-16** — [Automate acceptance with layered Tauri evidence](2026-09-16-automate-acceptance-with-layered-tauri-evidence.md)
 - **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)

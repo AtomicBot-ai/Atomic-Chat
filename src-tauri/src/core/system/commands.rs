@@ -6,7 +6,9 @@ use crate::core::app::commands::{
     default_data_folder_path, get_app_configurations, get_jan_data_folder_path,
     update_app_configuration,
 };
-use crate::core::app::constants::{JAN_DATA_FILES, JAN_DATA_SUBDIRS};
+use crate::core::app::constants::{
+    BACKEND_PRESERVING_PROVIDERS, JAN_DATA_FILES, JAN_DATA_SUBDIRS,
+};
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::process_env::sanitize_std_command;
@@ -64,6 +66,47 @@ fn remove_jan_data_contents(data_folder: &std::path::Path) {
             if let Err(e) = fs::remove_file(&path) {
                 log::warn!("Failed to remove {}: {e}", path.display());
             }
+        }
+    }
+}
+
+/// Move each preserving provider's `backends` folder out of the data folder, into `aside`.
+/// Returns what was moved, as (provider, where it is now).
+fn set_backends_aside(
+    data_folder: &std::path::Path,
+    aside: &std::path::Path,
+) -> Vec<(&'static str, std::path::PathBuf)> {
+    let mut moved = Vec::new();
+    for provider in BACKEND_PRESERVING_PROVIDERS {
+        let backends = data_folder.join(provider).join("backends");
+        if !backends.is_dir() {
+            continue;
+        }
+        let parked = aside.join(format!("atomic-chat-backends-preserve-{provider}"));
+        if parked.exists() {
+            let _ = fs::remove_dir_all(&parked);
+        }
+        match fs::rename(&backends, &parked) {
+            Ok(()) => {
+                log::info!("Preserved {provider} backends to temp dir");
+                moved.push((*provider, parked));
+            }
+            Err(e) => log::warn!("Failed to preserve {provider} backends: {e}"),
+        }
+    }
+    moved
+}
+
+fn put_backends_back(
+    data_folder: &std::path::Path,
+    preserved: Vec<(&'static str, std::path::PathBuf)>,
+) {
+    for (provider, parked) in preserved {
+        let provider_dir = data_folder.join(provider);
+        let _ = fs::create_dir_all(&provider_dir);
+        match fs::rename(&parked, provider_dir.join("backends")) {
+            Ok(()) => log::info!("Restored {provider} backends after factory reset"),
+            Err(e) => log::warn!("Failed to restore {provider} backends: {e}"),
         }
     }
 }
@@ -163,38 +206,13 @@ pub async fn factory_reset<R: Runtime>(
             return Ok(());
         }
 
-        // Preserve downloaded llamacpp backends across factory reset so the user
-        // doesn't have to re-download CUDA/Vulkan binaries (can be hundreds of MB).
-        let backends_dir = data_folder.join("llamacpp").join("backends");
-        let temp_backends = std::env::temp_dir().join("atomic-chat-backends-preserve");
-        let backends_preserved = if backends_dir.is_dir() {
-            if temp_backends.exists() {
-                let _ = fs::remove_dir_all(&temp_backends);
-            }
-            match fs::rename(&backends_dir, &temp_backends) {
-                Ok(()) => {
-                    log::info!("Preserved llamacpp backends to temp dir");
-                    true
-                }
-                Err(e) => {
-                    log::warn!("Failed to preserve llamacpp backends: {e}");
-                    false
-                }
-            }
-        } else {
-            false
-        };
+        // Preserve downloaded backends across factory reset so the user doesn't have to
+        // re-download CUDA/Vulkan binaries (can be hundreds of MB).
+        let preserved = set_backends_aside(&data_folder, &std::env::temp_dir());
 
         remove_jan_data_contents(&data_folder);
 
-        if backends_preserved {
-            let llamacpp_dir = data_folder.join("llamacpp");
-            let _ = fs::create_dir_all(&llamacpp_dir);
-            match fs::rename(&temp_backends, &backends_dir) {
-                Ok(()) => log::info!("Restored llamacpp backends after factory reset"),
-                Err(e) => log::warn!("Failed to restore llamacpp backends: {e}"),
-            }
-        }
+        put_backends_back(&data_folder, preserved);
     }
 
     // Reset the configuration
@@ -203,7 +221,8 @@ pub async fn factory_reset<R: Runtime>(
     default_config.autostart_preference = autostart_preference;
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
-    restart_app(&app_handle)
+    restart_app(&app_handle);
+    Ok(())
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -215,7 +234,14 @@ fn sanitized_appimage_restart_command(appimage: &std::ffi::OsStr) -> std::proces
 }
 
 /// Restart without leaking AppRun's environment into host launchers.
-fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
+///
+/// The restart is *requested*, not performed here: `AppHandle::restart` called on the main thread
+/// — where a synchronous command such as `relaunch` runs — replaces the process without
+/// `RunEvent::Exit`, and that handler is the only place that stops the app's core and cleans up
+/// its MCP servers. A core left running keeps the data folder's lock, and the app that comes up
+/// next — after an update, a backend change, a data-folder move — has to wait out the vanished
+/// app's client lease (about 45 s) before it can replace it.
+fn restart_app<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "linux")]
     if let Some(appimage) = std::env::var_os("APPIMAGE") {
         app.cleanup_before_exit();
@@ -226,7 +252,7 @@ fn restart_app<R: Runtime>(app: &AppHandle<R>) -> ! {
             ),
         }
     }
-    app.restart()
+    app.request_restart();
 }
 
 #[tauri::command]
@@ -2878,7 +2904,9 @@ pub fn configure_codex(
     let final_content = if cleaned.trim().is_empty() {
         format!("{}\n{}", head, block)
     } else {
-        format!("{}\n{}\n{}", head, cleaned.trim_end(), block)
+        // `trim`, not `trim_end`: stripping the previous head block leaves its line break at the
+        // front of what remains, and keeping it made the file two lines longer on every run.
+        format!("{}\n{}\n{}", head, cleaned.trim(), block)
     };
 
     std::fs::write(&path, final_content)
@@ -5173,11 +5201,17 @@ pub fn configure_atomic_agent(
 /// using a just-configured agent in one click. The terminal stays open after
 /// the command (it launches an interactive TUI agent like codex/claude).
 #[tauri::command]
+#[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
 pub fn open_agent_terminal(command: String, proxy: Option<ProxyEnv>) -> Result<(), String> {
     let command = command.trim().to_string();
     if command.is_empty() {
         return Err("Empty terminal command".to_string());
     }
+
+    // An end-to-end build must not open terminal windows on the desktop of
+    // whoever runs the tests; it writes down what it would have run instead.
+    #[cfg(feature = "e2e")]
+    return crate::core::e2e::record_terminal(&crate::core::e2e::data_root(), &command);
 
     #[cfg(target_os = "macos")]
     {
@@ -6263,5 +6297,52 @@ mod openclaw_tests {
         assert!(candidates
             .iter()
             .any(|p| p.to_string_lossy().contains(".openclaw")));
+    }
+}
+
+#[cfg(test)]
+mod factory_reset_tests {
+    use super::{put_backends_back, remove_jan_data_contents, set_backends_aside};
+    use std::fs;
+
+    #[test]
+    fn a_reset_removes_the_cores_keys_and_keeps_both_providers_backends() {
+        let data = tempfile::tempdir().unwrap();
+        let aside = tempfile::tempdir().unwrap();
+        let root = data.path();
+        for dir in [
+            "threads/t1",
+            "atomic-core",
+            "db",
+            "llamacpp/backends/b1/macos-arm64",
+            "llamacpp/models/m",
+            "llamacpp-upstream/backends/b2/macos-arm64",
+        ] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        fs::write(root.join("atomic-core/credentials.json"), "{\"openai\":\"sk-secret\"}").unwrap();
+        fs::write(root.join("atomic-chatgpt-auth.json"), "{\"refresh_token\":\"secret\"}").unwrap();
+        fs::write(root.join("local-api-server.json"), "{}").unwrap();
+        fs::write(root.join("llamacpp-upstream/backends/b2/macos-arm64/llama-server"), "bin").unwrap();
+        fs::write(root.join("users-own-file.txt"), "not the app's to delete").unwrap();
+
+        let preserved = set_backends_aside(root, aside.path());
+        remove_jan_data_contents(root);
+        put_backends_back(root, preserved);
+
+        for gone in [
+            "threads",
+            "db",
+            "atomic-core",
+            "atomic-chatgpt-auth.json",
+            "local-api-server.json",
+            "llamacpp/models",
+        ] {
+            assert!(!root.join(gone).exists(), "{gone} survived the reset");
+        }
+        assert!(root.join("llamacpp/backends/b1/macos-arm64").is_dir());
+        assert!(root.join("llamacpp-upstream/backends/b2/macos-arm64/llama-server").is_file());
+        assert!(root.join("users-own-file.txt").is_file());
+        assert_eq!(fs::read_dir(aside.path()).unwrap().count(), 0);
     }
 }

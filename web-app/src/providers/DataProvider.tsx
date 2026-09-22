@@ -19,6 +19,7 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { ensureProjectsLoaded } from '@/hooks/useThreadManagement'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { shouldAttemptAutoStart, switchToModel } from '@/utils/switchModel'
@@ -67,6 +68,33 @@ export function applyAtomicCoreServerState(payload: { running: boolean; port: nu
   }
 }
 
+/**
+ * A recovered listener needs its model back. The core's public server loads nothing by itself: it
+ * serves the sessions that exist, and answers 503 "No models are available" when there are none.
+ * When the core dies, its sessions die with it; the app has the new core listen again on the same
+ * address (`recover_public_server`), and without this an outside client would find the server up
+ * and unusable for as long as nobody touched the app. The model is the one the server was last
+ * started with, or the user's default for it — what "Start server" itself would have loaded.
+ */
+export async function restoreServerModelAfterRecovery(
+  modelsService: Parameters<typeof ensureModelForServer>[0]['modelsService']
+): Promise<void> {
+  const { lastServerModels, defaultModelLocalApiServer } =
+    useLocalApiServer.getState()
+  const wanted = lastServerModels[0] ?? defaultModelLocalApiServer
+  try {
+    const result = await ensureModelForServer({
+      modelsService,
+      modelOverride: wanted,
+    })
+    if (result.status === 'no_model_available') {
+      console.warn('[LocalAPI] recovered server has no model to load')
+    }
+  } catch (error) {
+    console.warn('[LocalAPI] could not reload the model for the recovered server:', error)
+  }
+}
+
 /** Providers whose session lookups `ModelFactory` caches (Foundation Models resolves every time). */
 const SESSION_CACHED_PROVIDERS = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
 type SessionCachedProvider = (typeof SESSION_CACHED_PROVIDERS)[number]
@@ -92,7 +120,13 @@ export type CoreSessionDiedPayload = {
  * forget the cached port, mark the model inactive, and tell the user why generation stopped.
  */
 export function handleCoreSessionDied(
-  payload: CoreSessionDiedPayload | undefined
+  payload: CoreSessionDiedPayload | undefined,
+  // What the message depends on besides the event, which carries neither: a
+  // reply being produced, and the platform. Parameters so both can be tested.
+  context: { generating: boolean; macos: boolean } = {
+    generating: isAnyChatBusy(),
+    macos: IS_MACOS,
+  }
 ): void {
   console.warn('[LocalAPI] atomic-core session:died:', payload)
   const provider = payload?.provider ?? 'llamacpp-upstream'
@@ -113,13 +147,24 @@ export function handleCoreSessionDied(
       setActiveModels(activeModels.filter((id) => id !== modelId))
     }
   }
-  const llamaCpp = provider === 'llamacpp' || provider === 'llamacpp-upstream'
-  toast.error('Model crashed during generation', {
-    id: `session-died-${modelId ?? 'unknown'}`,
-    description: llamaCpp
-      ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
-      : "The model's backend process exited unexpectedly. Try reloading the model.",
-  })
+  // The core reports every exit of a loaded model, whether or not anything was
+  // being generated, so the title only says "during generation" when a reply
+  // was. The Vulkan advice is for llama.cpp where Vulkan backends exist; on
+  // macOS the backend is Metal and there is no CPU backend to switch to.
+  const vulkanAdvice =
+    (provider === 'llamacpp' || provider === 'llamacpp-upstream') &&
+    !context.macos
+  toast.error(
+    context.generating
+      ? 'Model crashed during generation'
+      : 'Model stopped unexpectedly',
+    {
+      id: `session-died-${modelId ?? 'unknown'}`,
+      description: vulkanAdvice
+        ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
+        : "The model's backend process exited unexpectedly. Try reloading the model.",
+    }
+  )
 }
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
@@ -790,6 +835,10 @@ export function DataProvider() {
             (event) => {
               coreServerWasRunning = event.payload.owner === 'core' && event.payload.running
               applyAtomicCoreServerState(event.payload)
+              // A generation comes only with a listener rebuilt on a new core.
+              if (coreServerWasRunning && event.payload.generation != null) {
+                void restoreServerModelAfterRecovery(serviceHub.models())
+              }
             }
           ),
         ])
@@ -811,7 +860,7 @@ export function DataProvider() {
       cancelled = true
       unlistenCoreSessionEvents.forEach((unsubscribe) => void unsubscribe())
     }
-  }, [])
+  }, [serviceHub])
 
   // Auto-start Local API Server on app startup, but only re-attach to an
   // already-running server or raise the proxy for a model that is already

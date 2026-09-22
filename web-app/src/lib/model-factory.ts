@@ -407,6 +407,9 @@ export function createLiveSessionFetch(
   }
 }
 
+/** How long a finished `stream_local_http` call waits for the channel's `done` before closing anyway. */
+const STREAM_END_GRACE_MS = 2_000
+
 /**
  * Fetch that bypasses tauri_plugin_http for localhost POST requests.
  * The plugin's ReadableStream bridge does not properly deliver SSE chunks
@@ -464,10 +467,16 @@ export function createLocalStreamingFetch(
     let notifyPull: (() => void) | null = null
     let notifyFirst: (() => void) | null = null
 
-    const channel = new Channel<{ data: string }>()
+    const channel = new Channel<{ data: string; done?: boolean }>()
     let firstChunkMarked = false
-    channel.onmessage = ({ data }: { data: string }) => {
-      chunks.push(data)
+    channel.onmessage = ({ data, done: last }: { data: string; done?: boolean }) => {
+      if (data) chunks.push(data)
+      // The end of the stream arrives here, after the last chunk and in order
+      // with it. See `markDone` below for why the command's return is not it.
+      if (last) {
+        markDone()
+        return
+      }
       if (!firstChunkMarked) {
         firstChunkMarked = true
         void import('@/lib/ttft-timing').then(({ ttftMark }) =>
@@ -535,8 +544,14 @@ export function createLocalStreamingFetch(
       onChunk: channel,
     })
 
+    // The command's return is not the end of the stream. It reaches the webview
+    // by another route than the channel's messages and can overtake them: a
+    // reply of two chunks — a tool call — was closed here before either had
+    // arrived, and the turn ended empty. The end is the channel's own `done`
+    // message; the return only starts a grace period, for a backend that never
+    // sends one.
     cmdPromise
-      .then(() => markDone())
+      .then(() => setTimeout(markDone, STREAM_END_GRACE_MS))
       .catch((e) => {
         error = String(e)
         markDone()
