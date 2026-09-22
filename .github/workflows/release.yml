@@ -234,10 +234,6 @@ jobs:
           make install-and-build
           make install-rust-targets
 
-      - name: Gate atomic-core lock identity (macOS)
-        run: |
-          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::atomic_core::lock::tests::
-
       - name: Build web app and generate icons
         env:
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
@@ -266,6 +262,38 @@ jobs:
           file src-tauri/icons/dmg/background.png
           ls -la src-tauri/icons/dmg/background.png
 
+      - name: Prepare bundled binaries (sidecars, atomic-chat-core, CLI)
+        run: |
+          yarn copy:assets:tauri
+
+          echo "=== Pre-build DMG verification ==="
+          file src-tauri/icons/dmg/background.png
+          grep -A2 '"background"' src-tauri/tauri.macos.conf.json
+
+          yarn download:bin
+          yarn download:core
+          # The release targets universal-apple-darwin, so the Remote access
+          # sidecar has to be a real fat binary (download-bin.mjs lipo's the
+          # two verified slices). One architecture under the universal name
+          # would only surface on an Intel Mac, as "bad CPU type".
+          cloudflared_archs="$(lipo -archs src-tauri/resources/bin/cloudflared-universal-apple-darwin)"
+          echo "cloudflared universal sidecar architectures: ${cloudflared_archs}"
+          case " ${cloudflared_archs} " in *" x86_64 "*) ;; *) echo "::error::cloudflared sidecar lacks the x86_64 slice"; exit 1 ;; esac
+          case " ${cloudflared_archs} " in *" arm64 "*) ;; *) echo "::error::cloudflared sidecar lacks the arm64 slice"; exit 1 ;; esac
+          yarn build:foundation-models-server
+          # Copies atomic-chat-core to jan-cli and signs the core pair with the
+          # imported Developer ID (hardened runtime + sidecar entitlements).
+          yarn build:cli
+
+      # Runs after the binaries are in place: the tauri build script requires
+      # every bundled resource and externalBin (jan-cli, the core pair, bun,
+      # uv, cloudflared) and the generated icons to exist, so this gate cannot
+      # compile any earlier in the job.
+      - name: Gate atomic-core lock identity (macOS)
+        timeout-minutes: 20
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri core::atomic_core::lock::tests::
+
       - name: Build app (universal binary)
         env:
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
@@ -291,25 +319,6 @@ jobs:
           SENTRY_ENVIRONMENT: production
           SENTRY_RELEASE: ${{ github.sha }}
         run: |
-          yarn copy:assets:tauri
-
-          echo "=== Pre-build DMG verification ==="
-          file src-tauri/icons/dmg/background.png
-          grep -A2 '"background"' src-tauri/tauri.macos.conf.json
-          echo "=== Building ==="
-
-          yarn download:bin
-          yarn download:core
-          # The release targets universal-apple-darwin, so the Remote access
-          # sidecar has to be a real fat binary (download-bin.mjs lipo's the
-          # two verified slices). One architecture under the universal name
-          # would only surface on an Intel Mac, as "bad CPU type".
-          cloudflared_archs="$(lipo -archs src-tauri/resources/bin/cloudflared-universal-apple-darwin)"
-          echo "cloudflared universal sidecar architectures: ${cloudflared_archs}"
-          case " ${cloudflared_archs} " in *" x86_64 "*) ;; *) echo "::error::cloudflared sidecar lacks the x86_64 slice"; exit 1 ;; esac
-          case " ${cloudflared_archs} " in *" arm64 "*) ;; *) echo "::error::cloudflared sidecar lacks the arm64 slice"; exit 1 ;; esac
-          yarn build:foundation-models-server
-          yarn build:cli
           # Universal macOS build + VOLNAME rename with the version + DMG re-sign/notarization
           make build-mac
 
@@ -551,6 +560,35 @@ jobs:
 
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
+
+      # The core pair ships as bundle resources, and "Sign Windows binaries
+      # with DigiCert" below runs after `tauri build`, when they are already
+      # packed inside the installers — so they are signed here, before
+      # bundling. Build CLI copies the signed atomic-chat-core.exe to
+      # jan-cli.exe. Bun keeps the payload in a `.bun` PE section, which the
+      # appended Authenticode signature leaves intact; --verify-only runs both
+      # signed binaries to prove it.
+      - name: Sign the atomic-chat-core binaries with DigiCert
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+        run: |
+          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
+            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
+          }
+          foreach ($name in @('atomic-chat-core.exe', 'atomic-chat-app-core.exe')) {
+            $path = "src-tauri\resources\bin\$name"
+            Write-Host "Signing: $path"
+            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$path"
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $path" }
+            signtool verify /pa "$path"
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
+          }
+          node scripts/download-core.mjs --verify-only
+          if ($LASTEXITCODE -ne 0) { throw "A signed atomic-chat-core binary no longer runs" }
 
       - name: Verify the cloudflared sidecar is Cloudflare's signed binary
         # cloudflared ships inside our installer with Cloudflare's own
