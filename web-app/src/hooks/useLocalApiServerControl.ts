@@ -60,6 +60,7 @@ export function useLocalApiServerControl() {
 
   const start = useCallback(
     async ({ ensureModel = true }: StartOptions = {}) => {
+      const requestedPort = serverPort
       toast.info('Starting server...', {
         description: `Attempting to start server on port ${serverPort}`,
       })
@@ -99,6 +100,18 @@ export function useLocalApiServerControl() {
         }
 
         await setLocalApiServerRunning(true)
+
+        // The core falls back to a free port when the configured one is taken, and the store
+        // follows it. Until now that happened in silence: the user points Codex, OpenCode or a
+        // script at the port they set, gets a refused connection, and has nothing on screen that
+        // explains why. Say it, and say it long enough to be read.
+        const boundPort = useLocalApiServer.getState().serverPort
+        if (boundPort && boundPort !== requestedPort) {
+          toast.warning('Server started on a different port', {
+            description: `Port ${requestedPort} was already in use, so the server is listening on ${boundPort}. Point anything you configured for ${requestedPort} at the new port.`,
+            duration: 30000,
+          })
+        }
       } catch (error: unknown) {
         console.error('Error starting server or model:', error)
         setIsModelLoading(false)
