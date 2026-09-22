@@ -360,6 +360,70 @@ describe('useAppUpdater', () => {
       consoleErrorSpy.mockRestore()
     })
 
+    it('downloads the update even when stopping local models fails', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {})
+      mockUpdaterCheck.mockResolvedValue({ version: '1.2.0' })
+      // What a release app says when the core behind the engines is missing.
+      mockStopAllModels.mockRejectedValue(
+        new Error('Command atomic_core_call not found')
+      )
+      mockUpdaterDownloadAndInstallWithProgress.mockResolvedValue(undefined)
+
+      const { result } = renderHook(() => useAppUpdater())
+      await act(async () => {
+        await result.current.checkForUpdate()
+      })
+      await act(async () => {
+        await result.current.downloadAndInstallUpdate()
+      })
+
+      expect(mockUpdaterDownloadAndInstallWithProgress).toHaveBeenCalled()
+      expect(mockRelaunch).toHaveBeenCalled()
+      expect(mockEvents.emit).not.toHaveBeenCalledWith(
+        'onAppUpdateDownloadError',
+        expect.anything()
+      )
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        'Could not stop local models before the update; updating anyway:',
+        expect.any(Error)
+      )
+
+      consoleWarnSpy.mockRestore()
+    })
+
+    it('downloads the update when stopping local models never finishes', async () => {
+      vi.useFakeTimers()
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {})
+      try {
+        mockUpdaterCheck.mockResolvedValue({ version: '1.2.0' })
+        mockStopAllModels.mockReturnValue(new Promise<void>(() => {}))
+        mockUpdaterDownloadAndInstallWithProgress.mockResolvedValue(undefined)
+
+        const { result } = renderHook(() => useAppUpdater())
+        await act(async () => {
+          await result.current.checkForUpdate()
+        })
+        await act(async () => {
+          const pending = result.current.downloadAndInstallUpdate()
+          // 15 s for the models, then the 1 s grace for sidecars to exit.
+          await vi.advanceTimersByTimeAsync(16_000)
+          await pending
+        })
+
+        expect(mockUpdaterDownloadAndInstallWithProgress).toHaveBeenCalled()
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          'Local models did not stop within 15000 ms; updating anyway'
+        )
+      } finally {
+        consoleWarnSpy.mockRestore()
+        vi.useRealTimers()
+      }
+    })
+
     it('should not download if no update info is available', async () => {
       const { result } = renderHook(() => useAppUpdater())
 

@@ -62,7 +62,10 @@ vi.mock('@/containers/HeaderPage', () => ({
 
 vi.mock('@/containers/hub/ModelDetailPanel', () => ({
   ModelDetailPanel: ({ model }: { model: CatalogModel | null }) => (
-    <aside data-testid="detail-panel">
+    <aside
+      data-testid="detail-panel"
+      data-quants={model?.quants?.length ?? 0}
+    >
       {model ? model.model_name : 'hub:selectModel'}
     </aside>
   ),
@@ -477,6 +480,29 @@ describe('/hub route', () => {
       'tiny-lab/experimental-3b',
       ''
     )
+  })
+
+  it('gives a selected Hugging Face search hit the files it can download', async () => {
+    // Hugging Face's search endpoint lists repos without their files, so the
+    // hit arrives with no quants; the panel needs the card fetched for it.
+    const repo = 'prism-ml/Ternary-Bonsai-2-27B-gguf'
+    mocks.search = { q: 'bonsai', model: repo }
+    mocks.searchHuggingFaceCandidates.mockImplementation(async () => [
+      model(repo, { quants: [], num_quants: 0 }),
+    ])
+    mocks.fetchHuggingFaceRepo.mockImplementation(async (repoId: string) =>
+      repoId === repo ? (model(repo) as unknown as HuggingFaceRepo) : null
+    )
+    render(<HubPage />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('detail-panel')).toHaveAttribute(
+        'data-quants',
+        '1'
+      )
+    )
+    expect(screen.getByTestId('detail-panel')).toHaveTextContent(repo)
+    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(repo, '')
   })
 
   it('lists and paginates uncensored builds under a stable heading', async () => {
