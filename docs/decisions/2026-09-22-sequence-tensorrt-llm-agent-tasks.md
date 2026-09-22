@@ -261,6 +261,8 @@ and unload callbacks.
 
 ### T05c — Wire startup recovery, snapshots and SSE
 
+**Status:** done 2026-09-22. New `src/runtime/environment/wiring.ts` with 10 tests, `create.ts`/`atomic-core.ts` wiring, the snapshot fields in `control/types.ts` and `router.ts`, the same fields on the client's `CoreSnapshot`, and `test/e2e/managed-operations.test.ts` with 7 tests against the compiled binary. Recovery runs before the endpoint is published, so the first snapshot a client sees already describes what the previous core was doing. The snapshot is synchronous while the record lives on a shared disk, so the wiring keeps an in-memory view refreshed on startup and on every change this core makes. `provisionerFor` returns null on every platform because no host recipe is qualified yet: an environment reports itself unsupported and a setup fails with an actionable blocker rather than appearing to install something. The e2e points `ATOMIC_CORE_MANAGED_ROOT` at a scratch directory so it never touches the real per-user environment. Not covered here and belonging to T24a: a restart in the middle of a running operation, which needs a fake provisioner the compiled binary can be given.
+
 **Repository:** CORE. **Depends on:** T05b.
 **Files:** `src/core/{create,atomic-core}.ts`; new `test/e2e/managed-operations.test.ts`.
 **Implement:** attach the service to the core lifecycle; expose snapshots and events after recovery.
