@@ -75,7 +75,8 @@ describe('starting the local API server', () => {
       await result.current.start({ ensureModel: false })
     })
 
-    expect(setRunning).toHaveBeenCalledWith(true)
+    // The port the user configured is the port that is serving, so there is nothing to say.
+    expect(useLocalApiServer.getState().serverPort).toBe(1337)
     expect(toastWarning).not.toHaveBeenCalled()
   })
 })
