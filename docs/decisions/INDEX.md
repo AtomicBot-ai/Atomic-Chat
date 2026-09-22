@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-310 records, 2026-05-19 → 2026-09-21.
+316 records, 2026-05-19 → 2026-09-22.
 
 ---
 
@@ -326,8 +326,14 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (23)
+## Inference core extraction — atomic-chat-core (29)
 
+- **2026-09-22** — **Proposed:** [Managed TensorRT-LLM architecture for text inference](2026-09-22-propose-managed-tensorrt-llm-architecture.md)
+- **2026-09-22** — **Proposed:** [Managed TensorRT-LLM functional behavior and repository ownership](2026-09-22-specify-managed-tensorrt-llm-flows.md)
+- **2026-09-22** — **Proposed:** [Managed TensorRT-LLM implementation plan](2026-09-22-plan-managed-tensorrt-llm-implementation.md)
+- **2026-09-22** — **Proposed:** [Executable managed-text coding-agent backlog, TensorRT-LLM first](2026-09-22-sequence-tensorrt-llm-agent-tasks.md)
+- **2026-09-22** — **Proposed:** [Managed-runtime coding contracts, transitions and test traces](2026-09-22-specify-managed-runtime-coding-contracts.md)
+- **2026-09-22** — **Proposed:** [Shared infrastructure for TensorRT-LLM, vLLM and SGLang](2026-09-22-share-managed-text-runtime-infrastructure.md)
 - **2026-09-21** — [A factory reset removes the core's folder and keeps every provider's backends](2026-09-21-a-factory-reset-removes-the-cores-folder-and-keeps-every-providers-backends.md)
 - **2026-09-19** — [Ask the core before concluding a session does not exist](2026-09-19-ask-the-core-before-concluding-a-session-does-not-exist.md)
 - **2026-09-19** — [End a local stream on the channel, not on the command's return](2026-09-19-end-a-local-stream-on-the-channel-not-on-the-commands-return.md)
