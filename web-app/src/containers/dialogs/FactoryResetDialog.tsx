@@ -48,7 +48,7 @@ export function FactoryResetDialog({
       toast.error(t('settings:general.factoryResetFailed'))
       console.error('Factory reset failed:', error)
     } finally {
-        if (isMountedRef.current) setIsResetting(false)
+      if (isMountedRef.current) setIsResetting(false)
       if (isMountedRef.current && shouldClose) setIsOpen(false)
     }
   }
