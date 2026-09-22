@@ -3,15 +3,30 @@ import { TauriHardwareService } from '../hardware/tauri'
 import { HardwareData, SystemUsage } from '@/hooks/useHardware'
 import type { InvokeArgs } from '@tauri-apps/api/core'
 import { mockIPC } from '@tauri-apps/api/mocks'
+import { LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
 
 describe('TauriHardwareService', () => {
   let hardwareService: TauriHardwareService
   let ipcHandler: ReturnType<typeof vi.fn>
+  let mockExtensionManager: any
 
   beforeEach(() => {
     ipcHandler = vi.fn()
     mockIPC((command: string, args?: InvokeArgs) => ipcHandler(command, args))
     hardwareService = new TauriHardwareService()
+
+    mockExtensionManager = {
+      getByName: vi.fn(),
+    }
+
+    // Mock window.core
+    Object.defineProperty(window, 'core', {
+      value: {
+        extensionManager: mockExtensionManager,
+      },
+      writable: true,
+    })
+
     vi.clearAllMocks()
   })
 
@@ -190,53 +205,29 @@ describe('TauriHardwareService', () => {
     })
   })
 
-  describe('setActiveGpus', () => {
-    let consoleSpy: ReturnType<typeof vi.spyOn>
+  describe('getLlamacppDevices', () => {
+    it('should return devices from llamacpp extension', async () => {
+      const mockDevices = [{ id: '0', name: 'GPU 0' }]
+      const mockExtension = {
+        getDevices: vi.fn().mockResolvedValue(mockDevices),
+      }
+      mockExtensionManager.getByName.mockReturnValue(mockExtension)
 
-    beforeEach(() => {
-      consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const result = await hardwareService.getLlamacppDevices()
+
+      expect(mockExtensionManager.getByName).toHaveBeenCalledWith(
+        LOCAL_LLAMACPP_EXTENSION_NAME
+      )
+      expect(mockExtension.getDevices).toHaveBeenCalled()
+      expect(result).toEqual(mockDevices)
     })
 
-    afterEach(() => {
-      consoleSpy.mockRestore()
-    })
+    it('should throw an error if llamacpp extension is not found', async () => {
+      mockExtensionManager.getByName.mockReturnValue(null)
 
-    it('should log the provided GPU data', async () => {
-      const gpuData = { gpus: [0, 1, 2] }
-
-      await hardwareService.setActiveGpus(gpuData)
-
-      expect(consoleSpy).toHaveBeenCalledWith(gpuData)
-    })
-
-    it('should handle empty GPU array', async () => {
-      const gpuData = { gpus: [] }
-
-      await hardwareService.setActiveGpus(gpuData)
-
-      expect(consoleSpy).toHaveBeenCalledWith(gpuData)
-    })
-
-    it('should handle single GPU', async () => {
-      const gpuData = { gpus: [1] }
-
-      await hardwareService.setActiveGpus(gpuData)
-
-      expect(consoleSpy).toHaveBeenCalledWith(gpuData)
-    })
-
-    it('should complete successfully', async () => {
-      const gpuData = { gpus: [0, 1] }
-
-      await expect(
-        hardwareService.setActiveGpus(gpuData)
-      ).resolves.toBeUndefined()
-    })
-
-    it('should not throw any errors', async () => {
-      const gpuData = { gpus: [0, 1, 2, 3] }
-
-      expect(() => hardwareService.setActiveGpus(gpuData)).not.toThrow()
+      await expect(hardwareService.getLlamacppDevices()).rejects.toThrow(
+        `llama.cpp extension '${LOCAL_LLAMACPP_EXTENSION_NAME}' not found`
+      )
     })
   })
 

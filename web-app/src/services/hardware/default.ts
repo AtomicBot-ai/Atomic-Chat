@@ -17,11 +17,6 @@ export class DefaultHardwareService implements HardwareService {
     return []
   }
 
-  async setActiveGpus(data: { gpus: number[] }): Promise<void> {
-    console.log('setActiveGpus called with data:', data)
-    // No-op - not implemented in default service
-  }
-
   async refreshHardwareInfo(): Promise<void> {
     // No-op outside Tauri (e.g. web)
   }
