@@ -22,7 +22,8 @@ const ATTACH_MENU = 'button[aria-haspopup="menu"].rounded-full.mr-2'
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND).each([
   { decision: 'Deny', name: 'refused' },
-  { decision: 'Allow folder', name: 'allowed' },
+  // "Allow" grants the folder for this run; "Always Allow" would add it to the thread's folders.
+  { decision: 'Allow', name: 'allowed' },
 ] as const)('agent mode on a local model, a folder outside the workspace $name', ({ decision, name }) => {
   let session: Session
   let notesPath = ''
@@ -78,7 +79,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND).each([
         { timeout: 90_000, timeoutMsg: 'the agent never asked about the file outside its workspace' }
       )
       const asked = (await browser.$('body').getText()).replace(/\s+/g, ' ')
-      expect(asked).toContain('os.fs.write needs access to this folder')
+      // The prompt no longer names the tool that asked for the folder. What it must still say is
+      // which folder, and what each answer costs — that is the whole of what the user decides on.
+      expect(asked).toContain('Allow folder access')
+      expect(asked).toContain('Allow grants access for this run')
       expect(asked).toContain(join(session.profile.home, 'Documents'))
       expect(await stat(outsidePath).then(() => true, () => false)).toBe(false)
       await browser.$(`//button[normalize-space(.)="${decision}"]`).click()

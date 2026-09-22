@@ -53,7 +53,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       await waitForChat(session)
 
       await browser.$('//*[normalize-space(text())="Cloud"]').click()
-      await chooseFromMenu(session, 'button=Select a provider', 'Custom (OpenAI-compatible)')
+      await chooseFromMenu(session, '[data-test-id="cloud-provider-select"]', 'Custom (OpenAI-compatible)')
       await browser.$('input[placeholder="Enter name for provider"]').setValue(PROVIDER_NAME)
       await browser.$('button=Create').click()
 

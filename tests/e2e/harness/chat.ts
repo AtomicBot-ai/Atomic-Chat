@@ -57,7 +57,10 @@ export async function waitForChat(session: Session): Promise<void> {
  * whose "Change model" button leads there. A model shows once per active
  * provider: on a fresh profile only the upstream llama.cpp provider is active,
  * though both llama.cpp providers share the models folder. The row is the
- * `div`; the `span` inside it repeats the title.
+ * `button`; the `span` inside it repeats the title, which is why the tag is
+ * named rather than matching on the attribute alone. The trigger carries the
+ * selected model's id as its own title, so it has to be excluded: otherwise the
+ * row appears to still be there once the popover has closed over it.
  */
 export async function pickModel(session: Session, modelId: string, provider?: string): Promise<void> {
   const browser = session.app.browser
@@ -67,8 +70,8 @@ export async function pickModel(session: Session, modelId: string, provider?: st
   // model has a row under each; a provider narrows the pick to its group, which
   // is the block around that provider's settings gear.
   const rowSelector = provider
-    ? `//*[@data-test-id="provider-settings-${provider}"]/../..//div[@title="${modelId}"]`
-    : `div[title="${modelId}"]`
+    ? `//*[@data-test-id="provider-settings-${provider}"]/../..//button[@title="${modelId}" and not(@data-test-id)]`
+    : `button[title="${modelId}"]:not([data-test-id="model-picker-trigger"])`
   const row = browser.$(rowSelector)
   // Queried afresh on every look: a `$$` result is resolved once and then
   // keeps answering with what it found the first time.
@@ -94,9 +97,13 @@ export async function pickModel(session: Session, modelId: string, provider?: st
   // The outcome is read off the trigger, which shows the selected model. The
   // row itself says nothing: it stays in the DOM while the popover animates
   // shut, and clicking it again then reopens the picker.
+  //
+  // Read from the trigger's title rather than its text: the text is a display name the app makes
+  // of the id — `e2e/fake-mlx-model` is offered as "Fake Model" — while the title is the id
+  // itself, which is what the scenario asked for.
   const picked = () =>
     browser
-      .waitUntil(async () => (await trigger.getText()).includes(modelId), { timeout: 5_000 })
+      .waitUntil(async () => (await trigger.getAttribute('title')) === modelId, { timeout: 5_000 })
       .then(() => true, () => false)
 
   await row.waitForClickable({ timeout: 15_000 })

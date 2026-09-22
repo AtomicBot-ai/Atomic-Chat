@@ -72,7 +72,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a factory reset', () => {
       await pageShows(session, REPLY, 90_000)
       // …and a cloud provider connected with a key, which the core keeps for it.
       await browser.$('//*[normalize-space(text())="Cloud"]').click()
-      await chooseFromMenu(session, 'button=Select a provider', 'Custom (OpenAI-compatible)')
+      await chooseFromMenu(session, '[data-test-id="cloud-provider-select"]', 'Custom (OpenAI-compatible)')
       await browser.$('input[placeholder="Enter name for provider"]').setValue('e2e-reset-cloud')
       await browser.$('button=Create').click()
       await browser.$(rowInput('Base URL')).waitForDisplayed({ timeout: 30_000 })
