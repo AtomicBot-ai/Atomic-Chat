@@ -47,6 +47,24 @@ export interface FakeBackendOptions {
   completionSteps?: string[]
   /** One scripted tool turn: call this tool when the app offers it, then repeat its result after the reply. */
   toolCall?: { name: string; arguments?: Record<string, unknown> }
+  /** Where this pack records every start; the run's own file unless a scenario wants its own. */
+  argvFile?: string
+  /** How its records name it; the provider and release it was installed as, unless overridden. */
+  label?: string
+}
+
+/**
+ * Every fake backend in a profile appends one JSON record per start here. It is what a scenario
+ * reads to prove a setting reached the process: `ps` answers only for a process that is alive, and
+ * a backend that failed to load, or that a model switch has already replaced, is not.
+ *
+ * It lives beside the other per-run journals in the profile root rather than in the data folder,
+ * because the data folder moves (`data-folder.spec.ts`) and is erased (`factory-reset.spec.ts`).
+ */
+export const SPAWNED_ARGV_FILE = 'spawned-argv.jsonl'
+
+export function spawnedArgvPath(profile: Profile): string {
+  return join(profile.root, SPAWNED_ARGV_FILE)
 }
 
 export async function installFakeBackend(
@@ -57,11 +75,18 @@ export async function installFakeBackend(
   const pack = await coreHelper<{
     installFakeBackend: (layout: unknown, options: Record<string, unknown>) => Promise<unknown>
   }>('test/helpers/fake-backend-pack.ts')
+  const provider = options.provider ?? FAKE_PROVIDER
+  const version = options.version ?? FAKE_BACKEND_VERSION
+  const argvFile = options.argvFile ?? spawnedArgvPath(profile)
+  // The fake appends; it does not create the directory or the file, so the profile does it here.
+  await writeFile(argvFile, '', { flag: 'a' })
   await pack.installFakeBackend(config.dataLayout(profile.dataFolder), {
-    provider: FAKE_PROVIDER,
-    version: FAKE_BACKEND_VERSION,
+    provider,
+    version,
     backend: FAKE_BACKEND,
     ...options,
+    argvFile,
+    label: options.label ?? `${provider}:${version}/${FAKE_BACKEND}`,
   })
 }
 

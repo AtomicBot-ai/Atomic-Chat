@@ -2,9 +2,12 @@
  * The steps and observations the chat scenarios share: what a user does to talk
  * to a local model, and what the core says about the sessions behind it.
  */
+import { readFileSync } from 'node:fs'
 import { expect } from 'vitest'
 import { coreRequest } from './core.js'
+import { spawnedArgvPath } from './fixtures.js'
 import { listProcesses } from './platform.js'
+import type { Profile } from './profile.js'
 import type { Session } from './session.js'
 
 export const CHAT_INPUT = '[data-testid="chat-input"]'
@@ -250,6 +253,62 @@ export function fakeBackendCommands(dataFolder: string): string[] {
   return listProcesses()
     .filter((p) => p.command.includes('fake-llama-server') && p.command.includes(dataFolder))
     .map((p) => p.command)
+}
+
+/** One start of a fake backend, as the backend itself recorded it. */
+export interface SpawnedBackend {
+  pid: number
+  atMs: number
+  /** `<provider>:<version>/<backend>` of the pack that launched it. */
+  label: string
+  exe: string
+  argv: string[]
+  /** The inference-relevant environment only; `PATH` and the rest are not recorded. */
+  env: Record<string, string>
+}
+
+/**
+ * Every fake backend this profile has started, oldest first — including the ones that have since
+ * exited, which is the difference from `fakeBackendCommands`. A scenario that changes a setting and
+ * loads a model reads the last record to see the argv the core built from it.
+ */
+export function spawnedBackends(profile: Profile): SpawnedBackend[] {
+  let raw: string
+  try {
+    raw = readFileSync(spawnedArgvPath(profile), 'utf8')
+  } catch {
+    return []
+  }
+  return raw
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as SpawnedBackend)
+    .sort((a, b) => a.atMs - b.atMs)
+}
+
+/** The starts that loaded this model, oldest first: its path is in the argv the core built. */
+export function spawnedFor(profile: Profile, modelId: string): SpawnedBackend[] {
+  return spawnedBackends(profile).filter((start) =>
+    start.argv.some((argument) => argument.includes(`/${modelId}/`))
+  )
+}
+
+/**
+ * The argv of the last start of this model. Fails with what was recorded instead of returning
+ * undefined, because "no record" almost always means the neighbouring core checkout predates
+ * `argvFile` rather than that the model never loaded.
+ */
+export function lastArgvFor(profile: Profile, modelId: string): string[] {
+  const starts = spawnedFor(profile, modelId)
+  const last = starts[starts.length - 1]
+  if (!last) {
+    const seen = spawnedBackends(profile).map((start) => start.label)
+    throw new Error(
+      `no backend start recorded for ${modelId}; recorded starts: ${JSON.stringify(seen)}. ` +
+        'If this is empty, the atomic-chat-core checkout may not support argvFile yet.'
+    )
+  }
+  return last.argv
 }
 
 export function isAlive(pid: number): boolean {
