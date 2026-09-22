@@ -48,7 +48,6 @@ dependencies = [
  "reqwest 0.11.27",
  "rfd 0.15.4",
  "rmcp",
- "secret-service",
  "sentry",
  "serde",
  "serde_json",
@@ -6462,7 +6461,7 @@ version = "5.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5107b24b91445dd2aa449a258a1807b63240942157292354dc5bfdbeb8bc6db8"
 dependencies = [
- "aes 0.9.3",
+ "aes 0.9.2",
  "cbc",
  "futures-util",
  "getrandom 0.4.2",
