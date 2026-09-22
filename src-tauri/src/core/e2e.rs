@@ -160,6 +160,11 @@ pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<(
             // somebody is working on the overlay stays over the whole UI and
             // swallows every click. Nothing can cover a window kept on top.
             .always_on_top(true)
+            // Nor does a window on another Space get frames: when whoever runs
+            // the tests has a full-screen app in front, a window on the desktop
+            // Space behind it waits for a Space switch that may never come. On
+            // every Space, it is drawn wherever they are looking.
+            .visible_on_all_workspaces(true)
             .build()?;
     }
     Ok(())

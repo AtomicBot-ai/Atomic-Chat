@@ -21,6 +21,13 @@ import {
   writeFakeModel,
   type FakeCloud,
 } from '../harness/fixtures.js'
+import {
+  IMAGE_BACKEND_ID,
+  IMAGE_ENGINE_TAG,
+  installFakeImageEngine,
+  writeFakeImageModel,
+  writeSourcePng,
+} from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
 
@@ -45,10 +52,15 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a factory reset', () => {
   beforeAll(async () => {
     cloud = await startFakeCloud({ apiKey: API_KEY, model: 'e2e-cloud-model', reply: 'unused' })
     session = await startSession('factory-reset', {
+      imageEngines: [`${IMAGE_ENGINE_TAG}/${IMAGE_BACKEND_ID}`],
       prepare: async (profile) => {
         await installFakeBackend(profile, { reply: REPLY })
         await writeFakeModel(profile, MODEL_ID)
         await writeFile(join(profile.dataFolder, 'users-own-notes.txt'), 'not the app\'s to delete')
+        // And the image side: an engine, a model and a picture in the gallery.
+        await installFakeImageEngine(profile)
+        await writeFakeImageModel(profile)
+        await writeSourcePng(join(profile.dataFolder, 'images', 'old-picture.png'))
       },
     })
   })
@@ -105,6 +117,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a factory reset', () => {
       // Kept: the downloaded backend of the default provider, and the user's own file.
       expect((await stat(backend)).isFile()).toBe(true)
       expect((await stat(join(dataFolder, 'users-own-notes.txt'))).isFile()).toBe(true)
+      // Gone with the rest: the image engine, the image models and the gallery.
+      expect(await stat(join(dataFolder, 'diffusion')).catch(() => null)).toBeNull()
+      expect(await stat(join(dataFolder, 'images')).catch(() => null)).toBeNull()
     })
   }, 300_000)
 })

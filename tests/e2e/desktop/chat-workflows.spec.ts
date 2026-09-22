@@ -8,7 +8,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chooseFromMenu, coreSessions, occurrences, pageShows, pickModel, send, waitForChat } from '../harness/chat.js'
+import { chooseFromMenu, coreSessions, occurrences, pageShows, pageText, pickModel, send, waitForChat } from '../harness/chat.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
@@ -202,4 +202,55 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('reworking a conversation', () => {
       await waitForChat(session)
     })
   })
+})
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a model that thinks first', () => {
+  // The scripted backend streams the tags like any other words; the app's
+  // reasoning middleware must fold them back into one thinking block.
+  const THOUGHT = 'E2E-THOUGHT-91c2 weighing the options'
+  const ANSWER = 'E2E-ANSWER-5d0e here it is'
+  let session: Session
+
+  beforeAll(async () => {
+    session = await startSession('chat-reasoning', {
+      prepare: async (profile) => {
+        await installFakeBackend(profile, { reply: `<think>${THOUGHT}</think> ${ANSWER}` })
+        await writeFakeModel(profile, MODEL_ID)
+      },
+    })
+  })
+
+  afterAll(async () => {
+    if (session) expect(await endSession(session)).toEqual([])
+  })
+
+  it("shows a model's thinking apart from its answer and stores both", async () => {
+    await withArtifacts(session, async () => {
+      const browser = session.app.browser
+      const dataFolder = session.profile.dataFolder
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
+      await send(session, 'think about it')
+      await pageShows(session, ANSWER, 90_000)
+
+      // The thinking sits in its own collapsed block, named by how long it took; the tags never show.
+      const text = await pageText(session)
+      expect(text).toMatch(/Thought for \d+s/)
+      expect(text).not.toContain('<think>')
+      const block = browser.$('[data-reasoning-viewport]')
+      expect(await block.isExisting()).toBe(true)
+      expect(await block.getAttribute('data-state')).toBe('closed')
+      await browser.$('//*[contains(normalize-space(text()), "Thought for")]').click()
+      await browser.waitUntil(async () => (await block.getAttribute('data-state')) === 'open', { timeout: 15_000 })
+      await pageShows(session, THOUGHT, 15_000)
+
+      // Both parts of the turn were stored.
+      const stored = await storedMessages(dataFolder)
+      const reply = stored.find((message) => message.role === 'assistant')
+      expect(reply?.text).toContain(ANSWER)
+      const raw = await readFile(join(dataFolder, 'threads', (await readdir(join(dataFolder, 'threads')))[0]!, 'messages.jsonl'), 'utf8')
+      expect(raw).toContain(THOUGHT)
+      expect(raw).not.toContain('<think>')
+    })
+  }, 300_000)
 })
