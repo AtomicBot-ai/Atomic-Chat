@@ -155,7 +155,9 @@ native PID unchanged; Agent, voice and RAG tests pass with a container-shaped se
 
 ### T02c — Activate the paired session protocol and fixtures
 
-**Repository:** CORE+APP. **Depends on:** T02a, T02b, T01d.
+**Status:** done 2026-09-22. Protocol 1 to 2 on both sides, with the six core assertions that pinned 1 moved with it and a new app test for the direction that matters: a core still speaking 1 is refused, because it would hand this app a session shape it cannot read and the session would vanish rather than fail. Version and owner-scope matching are untouched, and no container provider is registered. **Consequence:** the app now refuses the published core 0.3.0, which speaks protocol 1. Until a core release carrying this is cut, run the app against a locally built core (`ATOMIC_CORE_LOCAL` and `ATOMIC_APP_CORE_LOCAL` for `scripts/download-core.mjs`, or `ATOMIC_CORE_CMD`). The core pin moves in T21. The T01d dependency this card listed is gone with that card.
+
+**Repository:** CORE+APP. **Depends on:** T02a, T02b.
 **Files:** CORE `src/contracts/control-api.ts` and handshake tests; APP
 `src-tauri/src/core/atomic_core/{client,supervisor,relay}.rs`; shared session fixtures.
 **Implement:** bump protocol 1 to 2 as one paired change; keep exact version and scope matching.

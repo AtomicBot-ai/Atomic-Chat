@@ -20,7 +20,12 @@ use serde_json::Value;
 /// Wire version this app speaks. A core announcing anything else is refused
 /// rather than talked to: the control API is the only channel, and guessing
 /// across an incompatible version would corrupt state on the other side.
-pub const CONTROL_PROTOCOL_VERSION: u32 = 1;
+/// The wire contract's version, matched exactly against the core's.
+///
+/// 2 since a session stopped having to be a process on this machine: `pid` became nullable, and an
+/// app built against 1 cannot deserialize a container session — it would drop it silently instead
+/// of failing. This check is what turns that into a refusal to attach.
+pub const CONTROL_PROTOCOL_VERSION: u32 = 2;
 
 pub const CONTROL_API_PREFIX: &str = "/atomic/v1";
 
@@ -532,6 +537,24 @@ mod tests {
         let error = core.client().handshake(None).await.unwrap_err();
 
         assert_eq!(error.code, "CORE_PROTOCOL_MISMATCH");
+    }
+
+    #[tokio::test]
+    async fn handshake_refuses_a_core_older_than_this_app() {
+        // The direction that matters in practice: a released core still speaking 1 would hand this
+        // app a session shape it cannot read, and dropping it silently is worse than not attaching.
+        let core = FakeCore::start().await;
+        core.set_protocol(1);
+
+        let error = core.client().handshake(None).await.unwrap_err();
+
+        assert_eq!(error.code, "CORE_PROTOCOL_MISMATCH");
+        assert!(error.message.contains("protocol 1"), "{}", error.message);
+        assert!(
+            error.message.contains(&CONTROL_PROTOCOL_VERSION.to_string()),
+            "{}",
+            error.message
+        );
     }
 
     #[tokio::test]
