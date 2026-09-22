@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-347 records, 2026-05-19 → 2026-09-22.
+348 records, 2026-05-19 → 2026-09-22.
 
 ---
 
@@ -33,7 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (11)
+## Local image & video generation (12)
+
+- **2026-09-22** — [Wire the chat side of the GPU arbitration at the model-load chokepoint](2026-09-22-wire-the-chat-side-of-the-gpu-arbitration.md) — `releaseGpuForChat` was defined by the 2026-09-10 record and called from nowhere.
 
 - **2026-09-21** — [Gate Qwen-Image-2.1 on the installed engine](2026-09-21-gate-qwen-image-2-1-on-installed-engine.md)
 - **2026-09-21** — [Catalog Qwen-Image-2.1 for non-commercial use](2026-09-21-catalog-qwen-image-2-1-for-non-commercial-use.md)

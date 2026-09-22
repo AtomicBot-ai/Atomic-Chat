@@ -53,6 +53,7 @@ import { queuedCapture } from '@/lib/telemetry-queue'
 import { toast } from 'sonner'
 import i18n from '@/i18n/setup'
 import { preflightDownloadDiskSpace } from './downloadPreflight'
+import { makeRoomForChatModel } from './gpuRoom'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -903,6 +904,10 @@ export class DefaultModelsService implements ModelsService {
           ])
         )
       : undefined
+
+    // A chat model and an image model share one GPU: the image side makes
+    // room before it loads (lib/diffusion/arbiter.ts), and so does this side.
+    await makeRoomForChatModel(engine, model)
 
     return engine
       .load(model, settings, false, bypassAutoUnload, options)
