@@ -182,10 +182,7 @@ export function CloudPage() {
     <div className="flex h-svh w-full flex-col">
       <HeaderPage>
         <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
+          className="flex items-center justify-between w-full"
         >
           <span className="font-medium text-base font-studio">
             {t('cloud:title')}

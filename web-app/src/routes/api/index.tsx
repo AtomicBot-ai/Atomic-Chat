@@ -14,7 +14,6 @@ import { useApiServerLogFeed } from '@/hooks/useApiServerLogFeed'
 import { useApiServerModelNotices } from '@/hooks/useApiServerModelNotices'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
 import { computeApiServerStats } from '@/utils/apiServerStats'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,10 +84,7 @@ export function ApiPage() {
     <div className="flex h-svh w-full flex-col">
       <HeaderPage>
         <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
+          className="flex items-center justify-between w-full"
         >
           <span className="font-medium text-base font-studio">
             {t('api:title')}

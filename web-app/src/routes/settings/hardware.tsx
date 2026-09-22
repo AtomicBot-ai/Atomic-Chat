@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { HardwareData, SystemUsage } from '@/services/hardware/types'
-import { cn, formatMegaBytes, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { formatMegaBytes, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
@@ -145,7 +145,7 @@ function HardwareContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
+        <div className="flex items-center justify-between w-full">
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
           <Button
             variant="outline"

@@ -13,7 +13,6 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
 import { artifactId } from '@/lib/diffusion/models'
-import { cn } from '@/lib/utils'
 import type { ImageWorkflowId } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useImageGalleryStore } from '@/stores/image-gallery-store'
@@ -190,10 +189,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   const header = (
     <HeaderPage>
       <div
-        className={cn(
-          'flex w-full items-center gap-2 pr-3',
-          !IS_MACOS && 'pr-30'
-        )}
+        className="flex w-full items-center gap-2"
       >
         <span className="font-studio text-base font-medium">
           {t('images:page.title')}
