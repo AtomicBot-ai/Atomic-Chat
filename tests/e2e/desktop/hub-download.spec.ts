@@ -11,6 +11,8 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { coreSessions, pageShows, send, waitForChat } from '../harness/chat.js'
 import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
@@ -20,6 +22,11 @@ const MODEL_NAME = 'e2e/hub-fixture-GGUF'
 const QUANT_ID = 'e2e/hub-fixture-Q4_K_M'
 const TITLE = 'E2E Hub Fixture'
 const REPLY = 'ATOMIC-E2E-HUB 1f8a'
+
+/** A second model, for the scenarios where the server refuses to hand it over. */
+const REFUSED_MODEL_NAME = 'e2e/refused-model'
+const REFUSED_QUANT_ID = 'e2e/refused-model-Q4_K_M'
+const REFUSED_TITLE = 'E2E Refused Model'
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () => {
   let session: Session
@@ -46,7 +53,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       // No model yet, so the app opens on onboarding; the Hub is the way in here.
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Models"]').click()
+      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
 
       // The landing page shows the pick the fixture published.
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -137,7 +144,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
 
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Models"]').click()
+      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()
@@ -201,7 +208,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
 
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Models"]').click()
+      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()
@@ -237,6 +244,97 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
       expect(file.length).toBe(hub.modelBytes)
       expect(createHash('sha256').update(file).digest('hex')).toBe(hub.modelSha256)
       expect(await readFile(join(modelDir, 'model.yml'), 'utf8')).toContain(`size_bytes: ${hub.modelBytes}`)
+    })
+  })
+})
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () => {
+  let session: Session
+  let hub: HubFixture
+
+  /** The model's directory only exists once the importer has accepted a complete file. */
+  const modelYml = (): string =>
+    join(session.profile.dataFolder, 'llamacpp', 'models', ...REFUSED_QUANT_ID.split('/'), 'model.yml')
+
+  /** Open the fixture's model card and ask for it. Leaves the card open for the next attempt. */
+  async function askForTheModel(): Promise<void> {
+    const browser = session.app.browser
+    const card = browser.$(`//*[normalize-space(text())="${REFUSED_TITLE}"]`)
+    if (!(await card.isDisplayed().catch(() => false))) {
+      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await card.waitForDisplayed({ timeout: 60_000 })
+    }
+    await card.click()
+    const download = browser.$('//button[normalize-space(.)="Download"]')
+    await download.waitForClickable({ timeout: 30_000 })
+    await download.click()
+  }
+
+  beforeAll(async () => {
+    // Small on purpose: the last scenario drops the connection every half megabyte.
+    hub = await startHubFixture({ modelName: REFUSED_MODEL_NAME, quantId: REFUSED_QUANT_ID, title: REFUSED_TITLE, modelBytes: 4 * 1024 * 1024 })
+    session = await startSession('download-failures', {
+      prepare: async (profile) => installFakeBackend(profile),
+    })
+    await session.app.browser.$('button=Skip').click()
+    await waitForChat(session)
+  })
+
+  afterAll(async () => {
+    const left = await endSession(session)
+    await hub.stop()
+    expect(left).toEqual([])
+  })
+
+  it('names the rate limit, and says a token would raise it', async () => {
+    await withArtifacts(session, async () => {
+      hub.failWith(429)
+      await askForTheModel()
+
+      await pageShows(session, 'Rate limited by Hugging Face', 120_000)
+      const report = await session.app.browser.$('body').getText()
+      expect(report).toContain('Adding a token can increase rate limits')
+      expect(existsSync(modelYml())).toBe(false)
+    })
+  })
+
+  it('asks for a token when the model is gated, and does not offer to retry into the same wall', async () => {
+    await withArtifacts(session, async () => {
+      hub.failWith(401)
+      await askForTheModel()
+
+      await pageShows(session, 'Hugging Face token required', 120_000)
+      const report = await session.app.browser.$('body').getText()
+      expect(report).toContain('Add your token in Settings')
+      expect(existsSync(modelYml())).toBe(false)
+    })
+  })
+
+  it('carries a transfer that keeps dropping through to the end', async () => {
+    await withArtifacts(session, async () => {
+      hub.failWith(null)
+      // Every attempt dies half a megabyte in. The app is expected to resume rather than restart,
+      // so a connection this bad still ends in a whole file — and the bytes are checked, because
+      // resuming at the wrong offset would leave a file of the right size and the wrong contents.
+      hub.abortAfter(512 * 1024)
+      const before = hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET').length
+      await askForTheModel()
+
+      await pageShows(session, 'Download Complete', 240_000)
+      const attempts = hub
+        .requests()
+        .filter((r) => r.path === '/model.gguf' && r.method === 'GET')
+        .slice(before)
+      expect(attempts.length, 'the transfer took several attempts').toBeGreaterThan(2)
+      expect(
+        attempts.slice(1).some((r) => /^bytes=[1-9]/.test(r.range)),
+        'it resumed where it stopped instead of starting over'
+      ).toBe(true)
+
+      const yml = modelYml()
+      expect(existsSync(yml)).toBe(true)
+      const model = await readFile(join(yml, '..', 'model.gguf'))
+      expect(createHash('sha256').update(model).digest('hex')).toBe(hub.modelSha256)
     })
   })
 })
