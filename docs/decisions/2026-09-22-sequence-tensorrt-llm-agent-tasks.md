@@ -488,6 +488,8 @@ reservation hooks moved to T11b.
 
 ### T13a — Implement immutable artifact inventory and references
 
+**Status:** done 2026-09-22. New `src/models/{snapshot-plan,artifact-references}.ts` + 26 tests. Identity is repository, revision, file inventory and storage domain, hashed into a fixed-length directory name with readable provenance written beside the bytes; a revision whose files changed under it is a different artifact, and the native and guest domains never dedupe into each other. References are kept by reason rather than counted, and a delete states the revision it was decided on, so a checkpoint loaded while the caller was deciding cannot be removed. Compatibility is deliberately not part of identity.
+
 **Repository:** CORE. **Depends on:** T01b, T01c.
 **Files:** new `src/models/{snapshot-plan,artifact-references}.ts`.
 **Implement:** immutable repo/revision/inventory/storage-domain identity separate from engine
