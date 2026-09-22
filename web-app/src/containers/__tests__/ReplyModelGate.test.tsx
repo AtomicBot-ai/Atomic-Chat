@@ -97,8 +97,8 @@ const catalogModel: CatalogModel = {
   downloads: 0,
   quants: [
     {
-      model_id: 'AtomicChat/Qwen3.5-4B-Q4_K_M',
-      path: 'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
+      model_id: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+      path: 'https://example.test/LFM2.5-1.2B-Instruct-GGUF.gguf',
       file_size: '2.5 GB',
     },
   ],
@@ -231,8 +231,8 @@ describe('ReplyModelGate', () => {
 
     await waitFor(() =>
       expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
-        'AtomicChat/Qwen3.5-4B-Q4_K_M',
-        'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
+        'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+        'https://example.test/LFM2.5-1.2B-Instruct-GGUF.gguf',
         undefined,
         '',
         true,

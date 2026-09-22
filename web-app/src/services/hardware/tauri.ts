@@ -16,7 +16,7 @@ export class TauriHardwareService extends DefaultHardwareService {
     return invoke('plugin:hardware|get_system_usage') as Promise<SystemUsage>
   }
 
-  async getLlamacppDevices(): Promise<DeviceList[]> {
+  private getLlamacppExtension() {
     // Use the OS-appropriate extension name instead of a hardcoded
     // '@janhq/llamacpp-extension'. On Windows and Linux the turboquant
     // `@janhq/llamacpp-extension` is excluded from the installer bundle
@@ -36,12 +36,14 @@ export class TauriHardwareService extends DefaultHardwareService {
       )
     }
 
-    return llamacppExtension.getDevices()
+    return llamacppExtension as {
+      getDevices: () => Promise<DeviceList[]>
+    }
   }
 
-  async setActiveGpus(data: { gpus: number[] }): Promise<void> {
-    // TODO: llama.cpp extension should handle this
-    console.log(data)
+  async getLlamacppDevices(): Promise<DeviceList[]> {
+    const llamacppExtension = this.getLlamacppExtension()
+    return llamacppExtension.getDevices()
   }
 
   async refreshHardwareInfo(): Promise<void> {
