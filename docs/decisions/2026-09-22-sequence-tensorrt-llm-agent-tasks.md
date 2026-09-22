@@ -167,6 +167,8 @@ native PID unchanged; Agent, voice and RAG tests pass with a container-shaped se
 
 ### T03a — Build read-only host inventory harness
 
+**Status:** done 2026-09-22. `src/runtime/environment/{host-exec,inventory}.ts` with 20 unit tests, and `test/live/managed-host-inventory.test.ts`. The card's "parsers under test/helpers" predates T08a/T09a: the harness runs the product's own `probeLinux`/`probeWindows` instead of a second set of parsers, so what it reports cannot disagree with what setup would decide. `hostExec` and `redactInventory` live in `src` because the provisioners and the setup dialog's diagnostics need them too. Skipped unless both `ATOMIC_LIVE=1` and `ATOMIC_LIVE_MANAGED_INVENTORY=1`; when it runs, every command is checked against a read-only list before it is spawned. Not yet run on a real host: this development machine is macOS, where there is no managed runtime to ask about. Running it on the Ubuntu 4070 and the Windows 4070 is the first step of T03c/T03d.
+
 **Repository:** CORE. **Depends on:** T01a.
 **Files:** new `test/live/managed-host-inventory.test.ts`; parsers under `test/helpers/`.
 **Implement:** collect OS, GPU name, compute capability, VRAM, driver, RAM/disk, virtualization,
