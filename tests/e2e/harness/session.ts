@@ -147,8 +147,14 @@ function profileProcesses(root: string): { pid: number; command: string }[] {
  * root, and processes that outlived the app and the core. Both are failures of
  * the same kind — the run reached past its own end. The app goes first: while
  * it lives, its supervisor restarts a stopped core.
+ *
+ * A session that never started — `startSession` threw in `beforeAll` and has
+ * already cleaned up after itself — leaves nothing to report. Throwing here
+ * instead would skip the rest of the `afterAll`, and a fixture it stops, such as
+ * the Hub server on its fixed port, would fail every scenario after it.
  */
-export async function endSession(session: Session): Promise<string[]> {
+export async function endSession(session: Session | undefined): Promise<string[]> {
+  if (session === undefined) return []
   // Before the app goes: a watcher left polling a dead app only produces noise.
   await Promise.all(session.watchers.map((stop) => stop()))
   await session.app.stop()

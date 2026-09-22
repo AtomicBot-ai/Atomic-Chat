@@ -248,17 +248,20 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
 
 /**
  * The app covers itself with a full-window splash overlay and removes it from
- * an animation frame. A window that is not being rendered — minimised, on
- * another Space, the display asleep — gets no frames, so the overlay stays and
- * takes every click meant for the UI under it. Better said once, here, than
- * discovered as "element not clickable" in whichever scenario ran at the time.
+ * an animation frame. A window that is not being rendered — minimised, the
+ * display asleep — gets no frames, so the overlay stays and takes every click
+ * meant for the UI under it. (A window that is merely not seen, behind other
+ * windows or on another Space, keeps rendering on macOS: the e2e build turns
+ * WebKit's occlusion detection off, see `keep_rendering_unseen`.) Better said
+ * once, here, than discovered as "element not clickable" in whichever scenario
+ * ran at the time.
  */
 async function waitForSplashToGo(browser: Browser): Promise<void> {
   await browser.$('#initial-loader').waitForExist({
     reverse: true,
     timeout: 60_000,
     timeoutMsg:
-      'the splash overlay never went away: the app window is not being rendered. Keep it on a visible Space with the display awake.',
+      'the splash overlay never went away: the app window is not being rendered. Keep the display awake and the window not minimised.',
   })
 }
 
