@@ -192,14 +192,26 @@ export interface modelInfo {
 // 1. /list
 export type listResult = modelInfo[]
 
+/**
+ * How a session's backend runs. A native one is a process on this machine; a managed one is a
+ * container, which has no host process id of its own. Absent means native: every session a previous
+ * release described is one.
+ */
+export type SessionExecutionKind = 'native' | 'container'
+
 export interface SessionInfo {
-  pid: number // opaque handle for unload/chat
+  /** The backend's process id, or null when it is not a process on this machine. */
+  pid: number | null
   port: number // llama-server output port (corrected from portid)
   model_id: string //name of the model
   model_path: string // path of the loaded model
   is_embedding: boolean
   api_key: string
   mmproj_path?: string
+  /** Absent on every session written before managed runtimes, and on every native one. */
+  execution?: SessionExecutionKind
+  /** Changes each time the model is loaded again, so a stale caller cannot reach its replacement. */
+  generation?: string
 }
 
 export interface UnloadResult {

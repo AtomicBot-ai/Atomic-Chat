@@ -142,6 +142,8 @@ cannot reach native kill.
 
 ### T02b — Migrate APP session types and consumers
 
+**Status:** done 2026-09-22. `core/src/browser/extensions/engines/AIEngine.ts` and `src-tauri/src/core/sessions/mirror.rs`, 6 new Rust tests. `SessionInfo.pid` is nullable with an execution kind and a generation beside it; no TypeScript consumer reads the pid at all, so that half is pure widening. The real find was in the mirror: it was keyed by `model_id` alone, so two engines holding a model with the same name overwrote each other and the app would have sent one engine's requests to the other's port. It is now keyed by engine and model, an unload names the engine it belongs to (falling back to clearing the name entirely when an older core does not), and a lookup that names no engine answers in engine-name order rather than hash order. `resolver.rs` and the other listed consumers needed no change: none of them reads the pid, and they all go through the mirror. Gates: lint, typecheck, hardening, coverage and 979 Rust tests pass; `make verify` still stops at the pre-existing `test-quality` failure recorded under T00a.
+
 **Repository:** APP. **Depends on:** T02a.
 **Files:** `core/src/browser/extensions/engines/AIEngine.ts`; `extensions/shared/atomicCoreRuntime.ts`;
 `src-tauri/src/core/sessions/{mirror,resolver}.rs`; `web-app/src/lib/model-factory.ts`;

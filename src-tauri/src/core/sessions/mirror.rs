@@ -29,7 +29,10 @@ use crate::core::server::proxy::model_ids_match;
 /// a translation layer at every call site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreSession {
-    pub pid: i32,
+    /// `None` when the backend is not a process on this machine: a container has no host pid, and
+    /// the one inside it belongs to another kernel's numbering.
+    #[serde(default)]
+    pub pid: Option<i32>,
     pub port: i32,
     pub model_id: String,
     #[serde(default)]
@@ -43,6 +46,12 @@ pub struct CoreSession {
     /// `llamacpp-upstream`, `llamacpp`, `mlx`, … — which runtime inside the core holds it.
     #[serde(default = "default_provider")]
     pub provider: String,
+    /// `native` or `container`. Absent on every session a previous core described, and native.
+    #[serde(default)]
+    pub execution: Option<String>,
+    /// Changes each time the model is loaded again.
+    #[serde(default)]
+    pub generation: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -65,7 +74,11 @@ struct Mirror {
     /// The supervisor attachment this mirror belongs to. `None` when nothing is attached.
     generation: Option<u64>,
     instance_id: String,
-    by_model: HashMap<String, CoreSession>,
+    /// Keyed by `(provider, model_id)`. Two engines can hold a model with the same name — the same
+    /// checkpoint under llama.cpp and under a managed runtime is the ordinary case — and keying by
+    /// the name alone would let whichever loaded second silently replace the first in this table,
+    /// sending the app's requests to the wrong port.
+    by_session: HashMap<(String, String), CoreSession>,
 }
 
 /// The app's copy of the core's session table.
@@ -103,9 +116,9 @@ impl CoreSessions {
         }
         mirror.generation = Some(generation);
         mirror.instance_id = instance_id.to_string();
-        mirror.by_model = parse_sessions(snapshot)
+        mirror.by_session = parse_sessions(snapshot)
             .into_iter()
-            .map(|session| (session.model_id.clone(), session))
+            .map(|session| ((session.provider.clone(), session.model_id.clone()), session))
             .collect();
         true
     }
@@ -122,7 +135,8 @@ impl CoreSessions {
         match name {
             "session:started" => match serde_json::from_value::<CoreSession>(payload.clone()) {
                 Ok(session) => {
-                    mirror.by_model.insert(session.model_id.clone(), session);
+                    let key = (session.provider.clone(), session.model_id.clone());
+                    mirror.by_session.insert(key, session);
                     true
                 }
                 Err(e) => {
@@ -134,7 +148,19 @@ impl CoreSessions {
                 let Some(model_id) = payload.get("model_id").and_then(Value::as_str) else {
                     return false;
                 };
-                mirror.by_model.remove(model_id).is_some()
+                match payload.get("provider").and_then(Value::as_str) {
+                    Some(provider) => mirror
+                        .by_session
+                        .remove(&(provider.to_string(), model_id.to_string()))
+                        .is_some(),
+                    // A core old enough not to name the engine: drop every session with that name,
+                    // because leaving one behind would point the app at a port that has gone.
+                    None => {
+                        let before = mirror.by_session.len();
+                        mirror.by_session.retain(|(_, id), _| id != model_id);
+                        mirror.by_session.len() != before
+                    }
+                }
             }
             _ => false,
         }
@@ -172,21 +198,38 @@ impl CoreSessions {
     /// user to the core would silently break the models whose names contain a dot.
     pub fn find(&self, model_id: &str) -> Option<CoreSession> {
         let mirror = self.inner.read().expect("core sessions");
-        mirror
-            .by_model
-            .get(model_id)
-            .or_else(|| {
-                mirror
-                    .by_model
-                    .values()
-                    .find(|s| model_ids_match(&s.model_id, model_id))
-            })
-            .cloned()
+        // A caller that names no engine gets an exact name before a fuzzy one, and among equals the
+        // first engine in name order. Arbitrary, but the same answer every time: a lookup that
+        // depended on hash order would send two identical requests to two different ports.
+        let mut candidates: Vec<&CoreSession> = mirror
+            .by_session
+            .values()
+            .filter(|s| s.model_id == model_id)
+            .collect();
+        if candidates.is_empty() {
+            candidates = mirror
+                .by_session
+                .values()
+                .filter(|s| model_ids_match(&s.model_id, model_id))
+                .collect();
+        }
+        candidates.sort_by(|a, b| a.provider.cmp(&b.provider));
+        candidates.first().map(|session| (*session).clone())
     }
 
+    /// The session one engine holds. Exact on the engine; the model name matches as `find` does.
     pub fn find_by_provider(&self, provider: &str, model_id: &str) -> Option<CoreSession> {
-        self.find(model_id)
-            .filter(|session| session.provider == provider)
+        let mirror = self.inner.read().expect("core sessions");
+        mirror
+            .by_session
+            .get(&(provider.to_string(), model_id.to_string()))
+            .or_else(|| {
+                mirror
+                    .by_session
+                    .values()
+                    .find(|s| s.provider == provider && model_ids_match(&s.model_id, model_id))
+            })
+            .cloned()
     }
 
     /// An embedding session, preferring `preferred` when it is loaded.
@@ -195,12 +238,14 @@ impl CoreSessions {
     /// what happens to be loaded.
     pub fn find_embedding(&self, preferred: &str) -> Option<CoreSession> {
         let mirror = self.inner.read().expect("core sessions");
-        mirror
-            .by_model
-            .get(preferred)
-            .filter(|s| s.is_embedding)
-            .cloned()
-            .or_else(|| mirror.by_model.values().find(|s| s.is_embedding).cloned())
+        let mut embedding: Vec<&CoreSession> =
+            mirror.by_session.values().filter(|s| s.is_embedding).collect();
+        embedding.sort_by(|a, b| (&a.model_id, &a.provider).cmp(&(&b.model_id, &b.provider)));
+        embedding
+            .iter()
+            .find(|s| s.model_id == preferred)
+            .or_else(|| embedding.first())
+            .map(|session| (*session).clone())
     }
 
     pub fn list(&self) -> Vec<CoreSession> {
@@ -208,12 +253,13 @@ impl CoreSessions {
             .inner
             .read()
             .expect("core sessions")
-            .by_model
+            .by_session
             .values()
             .cloned()
             .collect();
-        // Stable order: `/models` and the UI should not reshuffle between reads.
-        sessions.sort_by(|a, b| a.model_id.cmp(&b.model_id));
+        // Stable order: `/models` and the UI should not reshuffle between reads. The engine breaks
+        // the tie, because two of them can hold the same model name.
+        sessions.sort_by(|a, b| (&a.model_id, &a.provider).cmp(&(&b.model_id, &b.provider)));
         sessions
     }
 
@@ -225,7 +271,7 @@ impl CoreSessions {
         self.inner
             .read()
             .expect("core sessions")
-            .by_model
+            .by_session
             .is_empty()
     }
 }
@@ -261,8 +307,140 @@ mod tests {
         })
     }
 
+    /// The same model name under another engine, and served from another port.
+    fn session_of(provider: &str, model_id: &str, port: i32) -> Value {
+        let mut value = session(model_id, port);
+        value["provider"] = json!(provider);
+        value
+    }
+
+    /// What a managed runtime reports: no process on this machine, and a generation of its own.
+    fn container_session(model_id: &str, port: i32) -> Value {
+        json!({
+            "pid": null,
+            "port": port,
+            "model_id": model_id,
+            "model_path": format!("/artifacts/{model_id}"),
+            "is_embedding": false,
+            "api_key": "k",
+            "provider": "tensorrt-llm",
+            "execution": "container",
+            "generation": "g7",
+        })
+    }
+
     fn snapshot(sessions: Vec<Value>) -> Value {
         json!({ "sessions": sessions, "cursor": "i:1" })
+    }
+
+    #[test]
+    fn two_engines_holding_the_same_model_name_stay_separate() {
+        let sessions = CoreSessions::new();
+        assert!(sessions.apply_snapshot(
+            1,
+            "i",
+            &snapshot(vec![
+                session_of("llamacpp-upstream", "qwen3-4b", 3001),
+                session_of("tensorrt-llm", "qwen3-4b", 3002),
+            ]),
+        ));
+
+        // Keyed by the name alone, whichever loaded second would have replaced the first here and
+        // the app would have sent llama.cpp's requests to the container's port.
+        assert_eq!(sessions.list().len(), 2);
+        assert_eq!(
+            sessions
+                .find_by_provider("llamacpp-upstream", "qwen3-4b")
+                .map(|s| s.port),
+            Some(3001)
+        );
+        assert_eq!(
+            sessions
+                .find_by_provider("tensorrt-llm", "qwen3-4b")
+                .map(|s| s.port),
+            Some(3002)
+        );
+    }
+
+    #[test]
+    fn unloading_one_engines_model_leaves_the_other_engines_alone() {
+        let sessions = CoreSessions::new();
+        sessions.apply_snapshot(
+            1,
+            "i",
+            &snapshot(vec![
+                session_of("llamacpp-upstream", "qwen3-4b", 3001),
+                session_of("tensorrt-llm", "qwen3-4b", 3002),
+            ]),
+        );
+
+        assert!(sessions.apply_event(
+            1,
+            "session:unloaded",
+            &json!({ "provider": "tensorrt-llm", "model_id": "qwen3-4b", "pid": null }),
+        ));
+
+        assert_eq!(sessions.list().len(), 1);
+        assert_eq!(sessions.list()[0].provider, "llamacpp-upstream");
+    }
+
+    #[test]
+    fn an_unload_that_names_no_engine_clears_every_session_with_that_name() {
+        let sessions = CoreSessions::new();
+        sessions.apply_snapshot(
+            1,
+            "i",
+            &snapshot(vec![
+                session_of("llamacpp-upstream", "qwen3-4b", 3001),
+                session_of("tensorrt-llm", "qwen3-4b", 3002),
+            ]),
+        );
+
+        // A core old enough not to name the engine. Leaving one behind would point the app at a
+        // port that has gone, so the whole name goes.
+        assert!(sessions.apply_event(1, "session:died", &json!({ "model_id": "qwen3-4b" })));
+        assert!(sessions.is_empty());
+    }
+
+    #[test]
+    fn a_session_with_no_process_on_this_machine_is_carried_intact() {
+        let sessions = CoreSessions::new();
+        assert!(sessions.apply_snapshot(1, "i", &snapshot(vec![container_session("llama-3.1-8b", 3100)])));
+
+        let found = sessions.find("llama-3.1-8b").expect("the session");
+        assert_eq!(found.pid, None);
+        assert_eq!(found.execution.as_deref(), Some("container"));
+        assert_eq!(found.generation.as_deref(), Some("g7"));
+        // What every caller actually needs is where it answers, and that is unchanged.
+        assert_eq!(found.base_url(), "http://127.0.0.1:3100");
+    }
+
+    #[test]
+    fn a_native_session_keeps_the_process_id_it_always_had() {
+        let sessions = CoreSessions::new();
+        sessions.apply_snapshot(1, "i", &snapshot(vec![session("qwen3-4b", 3001)]));
+        let found = sessions.find("qwen3-4b").expect("the session");
+        assert_eq!(found.pid, Some(100));
+        // Absent means native: nothing a previous release wrote has to be rewritten.
+        assert_eq!(found.execution, None);
+    }
+
+    #[test]
+    fn a_lookup_without_an_engine_answers_the_same_way_every_time() {
+        let sessions = CoreSessions::new();
+        sessions.apply_snapshot(
+            1,
+            "i",
+            &snapshot(vec![
+                session_of("tensorrt-llm", "qwen3-4b", 3002),
+                session_of("llamacpp-upstream", "qwen3-4b", 3001),
+                session_of("mlx", "qwen3-4b", 3003),
+            ]),
+        );
+        // Engine name order, not hash order: two identical requests must not reach two ports.
+        for _ in 0..5 {
+            assert_eq!(sessions.find("qwen3-4b").map(|s| s.provider), Some("llamacpp-upstream".into()));
+        }
     }
 
     #[test]
