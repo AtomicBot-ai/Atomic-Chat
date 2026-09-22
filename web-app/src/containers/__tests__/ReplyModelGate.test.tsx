@@ -231,8 +231,8 @@ describe('ReplyModelGate', () => {
 
     await waitFor(() =>
       expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
-        'AtomicChat/Qwen3.5-4B-Q4_K_M',
-        'https://example.test/Qwen3.5-4B-Q4_K_M.gguf',
+        'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+        'https://example.test/LFM2.5-1.2B-Instruct-GGUF.gguf',
         undefined,
         '',
         true,
