@@ -18,7 +18,7 @@ import type { Profile } from './profile.js'
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 export const CORE_REPO = process.env.ATOMIC_CORE_REPO ?? resolve(REPO_ROOT, '../atomic-chat-core')
 
-async function coreHelper<T>(file: string): Promise<T> {
+export async function coreHelper<T>(file: string): Promise<T> {
   return (await import(/* @vite-ignore */ pathToFileURL(join(CORE_REPO, file)).href)) as T
 }
 
@@ -39,6 +39,8 @@ export interface FakeBackendOptions {
   reply?: string
   /** `ready` by default; `exit-1` makes every load fail. */
   mode?: string
+  /** Hold the readiness line back this long: the window in which loading is on screen. */
+  delayMs?: number
   /** The release tag to install it as; `FAKE_BACKEND_VERSION` unless a scenario needs an older one. */
   version?: string
   /** The local provider to install it for; the upstream llama.cpp one unless a scenario runs another. */
@@ -274,6 +276,15 @@ export interface HubFixture {
   /** sha256 of the model file, to compare with what landed on disk. */
   modelSha256: string
   requests: () => HubFixtureRequest[]
+  /**
+   * How the next request for the model file is answered: a status instead of the file, or `null`
+   * to serve it. Hugging Face's own refusals are what the app classifies its download failures
+   * from — 401 wants a token, 403 an accepted licence, 429 is the rate limit — so a scenario sets
+   * one and reads the taxonomy the user sees.
+   */
+  failWith: (status: number | null) => void
+  /** Cut the connection once this many bytes have been sent; `null` serves the file whole. */
+  abortAfter: (bytes: number | null) => void
   stop: () => Promise<void>
 }
 
@@ -291,6 +302,11 @@ export async function startHubFixture(options: {
   quantId: string
   title: string
   modelBytes?: number
+  /**
+   * The size the catalog advertises, which is what the app's disk preflight judges before it asks
+   * for a single byte. A scenario that wants the refusal declares more than the machine has.
+   */
+  sizeLabel?: string
 }): Promise<HubFixture> {
   const modelBytes = options.modelBytes ?? 32 * 1024 * 1024
   const origin = `http://127.0.0.1:${HUB_FIXTURE_PORT}`
@@ -314,7 +330,9 @@ export async function startHubFixture(options: {
         description: 'A fixture model served by the desktop e2e suite.',
         downloads: 0,
         num_quants: 1,
-        quants: [{ model_id: options.quantId, path: `${origin}/model.gguf`, file_size: '0.03 GB' }],
+        quants: [
+          { model_id: options.quantId, path: `${origin}/model.gguf`, file_size: options.sizeLabel ?? '0.03 GB' },
+        ],
         num_mmproj: 0,
         mmproj_models: [],
         num_safetensors: 0,
@@ -330,6 +348,8 @@ export async function startHubFixture(options: {
   }
 
   const seen: HubFixtureRequest[] = []
+  let failStatus: number | null = null
+  let abortAfterBytes: number | null = null
   const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0] ?? ''
     seen.push({
@@ -344,6 +364,10 @@ export async function startHubFixture(options: {
     }
     if (path === '/catalog.json') return json(catalog)
     if (path === '/staff-picks.json') return json(picks)
+    if (path === '/model.gguf' && failStatus !== null) {
+      res.writeHead(failStatus, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ error: `fixture refused with ${failStatus}` }))
+    }
     if (path === '/model.gguf') {
       const range = /^bytes=(\d+)-/.exec(req.headers.range ?? '')
       const from = range ? Number(range[1]) : 0
@@ -360,6 +384,9 @@ export async function startHubFixture(options: {
       let offset = from
       const pump = () => {
         if (res.destroyed) return
+        // A transfer that dies with the promised length unmet: what a dropped connection looks
+        // like from the app's side, and the only way to reach the retry ladder from a fixture.
+        if (abortAfterBytes !== null && offset - from >= abortAfterBytes) return res.destroy()
         if (offset >= model.length) return res.end()
         const end = Math.min(offset + 1024 * 1024, model.length)
         res.write(model.subarray(offset, end))
@@ -382,6 +409,12 @@ export async function startHubFixture(options: {
     modelBytes: model.length,
     modelSha256: createHash('sha256').update(model).digest('hex'),
     requests: () => [...seen],
+    failWith: (status) => {
+      failStatus = status
+    },
+    abortAfter: (bytes) => {
+      abortAfterBytes = bytes
+    },
     stop: async () => {
       server.closeAllConnections()
       server.close()
