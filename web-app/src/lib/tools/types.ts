@@ -9,6 +9,7 @@ export type ToolPresentation =
       input?: unknown
       output?: unknown
       errorText?: string
+      deniedReason?: string
     }
   | {
       kind: 'web_search_exa'

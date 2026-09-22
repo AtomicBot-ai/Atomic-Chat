@@ -50,6 +50,17 @@ install-ios-rust-targets:
 	@rustup target list --installed | grep -q "x86_64-apple-ios" || rustup target add x86_64-apple-ios
 	@echo "iOS Rust targets ready!"
 
+# Download the pinned cloudflared sidecar (Settings → Remote & LAN) into
+# src-tauri/resources/bin, verified by sha256. Only downloads when it has to:
+# a verified install already in place is left alone, and a verified archive in
+# scripts/dist is reused offline. Version and hashes: scripts/download-bin.mjs.
+#
+# Every dev target below gets this for free: `yarn download:bin`, their first
+# step, runs the same install, so `make dev` on a checkout that has no
+# cloudflared yet fetches it before Tauri looks for the externalBin.
+download-cloudflared:
+	yarn download:cloudflared
+
 dev: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -326,7 +337,7 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-.PHONY: test test-all test-local test-web test-extensions test-rust stub-resources \
+.PHONY: test test-all test-local test-web test-layout test-extensions test-rust stub-resources \
 	typecheck verify-fast verify test-quality test-hardening-contracts \
 	test-telemetry-props test-coverage-critical capture-capabilities capture-hw-profile \
 	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants \
@@ -335,12 +346,20 @@ lint: install-and-build
 test-web:
 	yarn test
 
+# Real-browser layout gate: `*.layout.test.tsx` in headless Chromium with the
+# app's CSS and font, measuring rendered boxes (docs/ui-layout-rules.md).
+# Separate from test-web on purpose: jsdom has no layout engine.
+test-layout:
+	yarn workspace @janhq/web-app run test:layout
+
 test-extensions:
 	yarn --cwd extensions workspaces foreach -A \
+		--include '@janhq/assistant-extension' \
 		--include '@janhq/llamacpp-extension' \
 		--include '@janhq/llamacpp-upstream-extension' \
 		--include '@janhq/mlx-extension' \
 		--include '@janhq/download-extension' \
+		--include '@janhq/vector-db-extension' \
 		run test:run
 
 # Tauri validates bundle.resources and externalBin paths while compiling the
@@ -357,6 +376,7 @@ ifeq ($(OS),Windows_NT)
 			'src-tauri/resources/bin/atomic-chat-app-core.exe', \
 			'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/bin/uv-x86_64-pc-windows-msvc.exe', \
+			'src-tauri/resources/bin/cloudflared-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/llamacpp-backend/test-placeholder', \
 			'src-tauri/resources/llamacpp-backend-upstream/test-placeholder' \
 		); \
@@ -380,6 +400,8 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/bin/bun-x86_64-apple-darwin ] || touch src-tauri/resources/bin/bun-x86_64-apple-darwin
 	@[ -e src-tauri/resources/bin/uv-aarch64-apple-darwin ] || touch src-tauri/resources/bin/uv-aarch64-apple-darwin
 	@[ -e src-tauri/resources/bin/uv-x86_64-apple-darwin ] || touch src-tauri/resources/bin/uv-x86_64-apple-darwin
+	@[ -e src-tauri/resources/bin/cloudflared-aarch64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-aarch64-apple-darwin
+	@[ -e src-tauri/resources/bin/cloudflared-x86_64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-x86_64-apple-darwin
 else
 	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
@@ -388,6 +410,7 @@ else
 	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/sqlite-vec.so ] || touch src-tauri/resources/bin/sqlite-vec.so
 	@[ -e src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu
+	@[ -e src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu
 	@[ -e src-tauri/resources/llamacpp-backend/test-placeholder ] || touch src-tauri/resources/llamacpp-backend/test-placeholder
 	@[ -e src-tauri/resources/llamacpp-backend-upstream/test-placeholder ] || touch src-tauri/resources/llamacpp-backend-upstream/test-placeholder
 endif
@@ -496,7 +519,7 @@ test-live-cloud:
 # one this app bundles after `make download-core`.
 ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-app-core
 test-core-live:
-	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" cargo test --manifest-path src-tauri/Cargo.toml \
+	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" ATOMIC_CORE_SENTRY_ENVIRONMENT=development cargo test --manifest-path src-tauri/Cargo.toml \
 		-p Atomic-Chat --features test-tauri --lib core::atomic_core::live_tests -- --test-threads=1
 
 # Desktop UI end-to-end tests: the real app binary, the real core and a fake
@@ -518,7 +541,9 @@ E2E_DEAD_URL := http://127.0.0.1:9
 # The Hub's catalog and landing picks are baked into the build as URLs, so a
 # scenario that wants to serve them has to know the port at build time. Nothing
 # listens there in the other scenarios, which then see the same fast refusal as
-# from the dead address and fall back to what is bundled.
+# from the dead address and fall back to what is bundled. The image catalog and
+# the sd.cpp release manifest point at the dead address outright: every launch
+# fetches both, and a scenario seeds what it needs into the webview's cache.
 E2E_FIXTURE_PORT ?= 47391
 E2E_FIXTURE_URL := http://127.0.0.1:$(E2E_FIXTURE_PORT)
 build-app-e2e:
@@ -550,6 +575,8 @@ build-app-e2e:
 		VITE_PROVIDER_REGISTRY_URL=$(E2E_DEAD_URL)/providers.json \
 		VITE_RECOMMENDED_MODELS_REGISTRY_URL=$(E2E_DEAD_URL)/recommended.json \
 		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_FIXTURE_URL)/staff-picks.json \
+		VITE_DIFFUSION_CATALOG_URL=$(E2E_DEAD_URL)/diffusion.json \
+		VITE_SDCPP_MANIFEST_URL=$(E2E_DEAD_URL)/sdcpp-manifest.json \
 		./node_modules/.bin/tauri build --debug --no-bundle --features e2e \
 		--config src-tauri/tauri.e2e.conf.json
 

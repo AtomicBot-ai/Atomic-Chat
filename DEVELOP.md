@@ -12,6 +12,25 @@
 
 ## How to run reliably
 
+### Isolated QA/dev profile
+
+To check the first-run flow without reading or changing your usual profile,
+start the app with an absolute directory in `ATOMIC_CHAT_PROFILE_DIR`. Settings
+then live in `<profile>/settings.json` and data in `<profile>/data`; the legacy
+Atomic Chat/Jan directories are not used in this mode. The app hands
+`<profile>/data` to the core it starts (`--data-folder`).
+
+```bash
+ATOMIC_CHAT_PROFILE_DIR=/tmp/atomic-chat-clean-flow yarn dev
+```
+
+The CLI is the core's and does not read the variable: give it a folder of its
+own (it refuses the app's data folder), for example
+`bun run ../atomic-chat-core/src/cli/bin.ts --data-folder /tmp/atomic-chat-clean-cli --help`.
+
+The variable is meant for QA and development only. An empty or relative value,
+or one containing `..`, is ignored and the app uses the usual profile.
+
 ### One terminal, one process
 
 ```bash
@@ -71,6 +90,9 @@ Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **
 | `%APPDATA%\Atomic Chat\data\llamacpp\backends\` | **Legacy** (pre-2026-05-22) turboquant `llamacpp` backends. Left orphaned on existing installs and ignored by the Windows app; safe to delete manually. Models under `data\llamacpp\models\` are still active (shared root). | manual delete, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\models\` | Downloaded GGUF / MLX models | factory reset (UI), `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\threads\` | Chat history | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\diffusion\backends\` | Downloaded `stable-diffusion.cpp` (`sd-server`) builds, one tree per tag and backend id, sourced from `leejet/stable-diffusion.cpp` via `atomic-chat-conf/backends/sdcpp-manifest.json`. Trees carry an `.atomic-owned` marker. | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\diffusion\models\` | Image-generation checkpoints (`<family>\*.gguf`) and shared side files (`shared\<repo>\`: VAE, text encoders). Deliberately outside `models\` so the hub and the local-model scanner never list them. | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\images\` | Generated images (`<jobId>-<nn>.png` with the recipe in a PNG `tEXt` chunk, `.thumb.png` beside each) and `.flags.json`. Relocatable from Settings → Media. | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\extensions\` | Installed extensions (`@janhq/*`, `llamacpp-extension`, …) | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\logs\app.log` | Application logs (`tauri_plugin_log`) | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\store.json` | Migration / version store | factory reset, `make clean-windows-all`, uninstaller |

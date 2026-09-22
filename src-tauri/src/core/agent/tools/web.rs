@@ -50,14 +50,34 @@ async fn search(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome,
             return Ok(outcome);
         }
     }
-    match web_exa::search(&query, max_results).await {
-        Ok(results) => Ok(search_outcome(&query, results, "exa", None, false)),
+    search_keyless(&query, max_results).await
+}
+
+/// Shared no-key path for agent mode and the bundled composer capability.
+/// Retry Exa on each query so a transient outage never pins us to the fallback.
+pub(crate) async fn search_keyless(
+    query: &str,
+    max_results: usize,
+) -> Result<ToolOutcome, ToolOutcome> {
+    match web_exa::search(query, max_results).await {
+        Ok(results) => Ok(search_outcome(query, results, "exa", None, false)),
         Err(error) => annotate_fallback(
-            search_duckduckgo(&query, max_results).await,
+            search_duckduckgo(query, max_results).await,
             "duckduckgo",
             error,
         ),
     }
+}
+
+/// Shared no-key page reader for Agent mode and the bundled composer MCP.
+/// Exa is attempted first; Cloudflare/rate-limit failures fall back to the
+/// guarded direct extractor and, when useful, the Wayback recovery path.
+pub(crate) async fn fetch_keyless(
+    url: &str,
+    max_chars: usize,
+    working_dir: &Path,
+) -> Result<ToolOutcome, ToolOutcome> {
+    fetch_url(url, max_chars, ExtractMode::Markdown, working_dir).await
 }
 
 /// Serper is opt-in: it runs only when one of these env vars carries a key,
@@ -138,7 +158,8 @@ fn parse_serper_results(payload: &Value, max_results: usize) -> Vec<WebSearchRes
 
 async fn search_duckduckgo(query: &str, max_results: usize) -> Result<ToolOutcome, ToolOutcome> {
     let url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
+        "{}?q={}",
+        duckduckgo_search_url(),
         url::form_urlencoded::byte_serialize(query.as_bytes()).collect::<String>()
     );
     let mut headers = browser_headers();
@@ -146,8 +167,7 @@ async fn search_duckduckgo(query: &str, max_results: usize) -> Result<ToolOutcom
         ACCEPT,
         HeaderValue::from_static("text/html,application/xhtml+xml"),
     );
-    let response =
-        request_guarded(Method::GET, &url, headers, None, Duration::from_secs(30)).await?;
+    let response = web_request(Method::GET, &url, headers, None, Duration::from_secs(30)).await?;
     let status = response.status();
     let (html, response_truncated) = read_body_limited(response, MAX_RESPONSE_BYTES).await?;
     if !status.is_success() {
@@ -186,6 +206,19 @@ async fn search_duckduckgo(query: &str, max_results: usize) -> Result<ToolOutcom
             response_truncated,
         )),
     }
+}
+
+fn duckduckgo_search_url() -> String {
+    #[cfg(test)]
+    if let Some((_, url)) = test_overrides::search_urls() {
+        return url;
+    }
+    "https://html.duckduckgo.com/html/".to_owned()
+}
+
+#[cfg(test)]
+pub(super) fn exa_search_test_url() -> Option<String> {
+    test_overrides::search_urls().map(|(url, _)| url)
 }
 
 fn empty_search_outcome(
@@ -632,7 +665,7 @@ fn browser_headers() -> HeaderMap {
 /// All web-tool requests go through the SSRF-guarded HTTP path. In tests,
 /// loopback URLs are dispatched directly so fixture servers on 127.0.0.1 stay
 /// reachable despite the guard's private-address blocking.
-async fn web_request(
+pub(super) async fn web_request(
     method: Method,
     url: &str,
     headers: HeaderMap,
@@ -725,7 +758,16 @@ mod test_overrides {
 
     thread_local! {
         static WAYBACK_AVAILABILITY_URL: RefCell<Option<String>> = const { RefCell::new(None) };
+        static SEARCH_URLS: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
         static SERPER_SEARCH_URL: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn search_urls() -> Option<(String, String)> {
+        SEARCH_URLS.with(|urls| urls.borrow().clone())
+    }
+
+    pub(super) fn set_search_urls(urls: Option<(String, String)>) {
+        SEARCH_URLS.with(|slot| *slot.borrow_mut() = urls);
     }
 
     pub(super) fn wayback_availability_url() -> Option<String> {
@@ -816,6 +858,139 @@ mod tests {
             }
             self.task.abort();
         }
+    }
+
+    struct SearchFixture {
+        _server: FixtureServer,
+    }
+
+    impl SearchFixture {
+        async fn start(
+            exa_recovers: Arc<std::sync::atomic::AtomicBool>,
+            fallback_works: bool,
+        ) -> Self {
+            let server = FixtureServer::start(move |request| {
+                match request.uri().path() {
+                    "/exa" if exa_recovers.load(std::sync::atomic::Ordering::SeqCst) => {
+                        Response::new(Body::from(serde_json::json!({
+                            "jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text":
+                                "Title: Recovered Exa result\nURL: https://example.com/recovered\nText: Exa is back"
+                            }]}
+                        }).to_string()))
+                    }
+                    "/ddg" if fallback_works => {
+                        assert_eq!(request.uri().query(), Some("q=atomic+query"));
+                        Response::new(Body::from(r#"<a class="result__a" href="https://example.com/fallback">Fallback result</a><span class="result__snippet">A useful answer</span>"#))
+                    }
+                    _ => Response::builder().status(403).body(Body::from("HTTP 403 rmcp::transport secret stack dump")).unwrap(),
+                }
+            }).await;
+            test_overrides::set_search_urls(Some((server.url("/exa"), server.url("/ddg"))));
+            Self { _server: server }
+        }
+    }
+
+    impl Drop for SearchFixture {
+        fn drop(&mut self) {
+            test_overrides::set_search_urls(None);
+        }
+    }
+
+    fn search_app() -> tauri::App<tauri::test::MockRuntime> {
+        use tauri::Manager;
+        let app = tauri::test::mock_app();
+        app.manage(crate::core::state::AppState::default());
+        app
+    }
+
+    async fn failed_exa_startup(app: &tauri::App<tauri::test::MockRuntime>) {
+        use tauri::Manager;
+        let state = app.state::<crate::core::state::AppState>();
+        state.mcp_active_servers.lock().await.insert(
+            "exa".into(),
+            serde_json::json!({
+                "type": "http", "url": "https://mcp.exa.ai/mcp", "active": true
+            }),
+        );
+        state
+            .mcp_server_errors
+            .lock()
+            .await
+            .insert("exa".into(), "HTTP 403 rmcp::transport".into());
+    }
+
+    async fn composer_search(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> Result<rmcp::model::CallToolResult, String> {
+        use tauri::Manager;
+        crate::core::mcp::commands::call_tool(
+            app.handle().clone(),
+            app.state::<crate::core::state::AppState>(),
+            "web_search_exa".into(),
+            Some("exa".into()),
+            Some(
+                serde_json::json!({"query": "atomic query"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            Some("search-fixture".into()),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn composer_search_403_discovers_fallback_runs_query_and_recovers_exa() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tauri::Manager;
+        let recovered = Arc::new(AtomicBool::new(false));
+        let _fixture = SearchFixture::start(recovered.clone(), true).await;
+        let app = search_app();
+        failed_exa_startup(&app).await;
+        let discovery = crate::core::mcp::commands::get_tools(
+            app.handle().clone(),
+            app.state::<crate::core::state::AppState>(),
+        )
+        .await
+        .unwrap();
+        assert!(discovery
+            .tools
+            .iter()
+            .any(|tool| tool.name == "web_search_exa"));
+        let result = serde_json::to_string(&composer_search(&app).await.unwrap()).unwrap();
+        assert!(result.contains("Fallback result"));
+        assert!(result.contains("https://example.com/fallback"));
+        assert!(result.contains("duckduckgo"));
+        assert!(!result.contains("rmcp::"));
+        recovered.store(true, Ordering::SeqCst);
+        let result = serde_json::to_string(&composer_search(&app).await.unwrap()).unwrap();
+        assert!(result.contains("Recovered Exa result"));
+        assert!(!result.contains("duckduckgo"));
+        assert!(app
+            .state::<crate::core::state::AppState>()
+            .tool_call_cancellations
+            .lock()
+            .await
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn composer_search_both_providers_fail_with_only_friendly_error() {
+        use tauri::Manager;
+        let _fixture =
+            SearchFixture::start(Arc::new(std::sync::atomic::AtomicBool::new(false)), false).await;
+        let app = search_app();
+        failed_exa_startup(&app).await;
+        assert_eq!(
+            composer_search(&app).await.unwrap_err(),
+            "Web search is temporarily unavailable. Do not retry web search in this turn; use existing results or explain the limitation."
+        );
+        assert!(app
+            .state::<crate::core::state::AppState>()
+            .tool_call_cancellations
+            .lock()
+            .await
+            .is_empty());
     }
 
     /// A minimal one-page PDF with a text object; the xref offsets are

@@ -152,4 +152,104 @@ describe('TauriAppService', () => {
       path: '/tmp/config.yml',
     })
   })
+
+  describe('remote & LAN access', () => {
+    const online = {
+      state: 'online',
+      url: 'https://quiet-river.trycloudflare.com',
+      error: null,
+      blockReason: null,
+      canStart: false,
+      canStop: true,
+      serverHasApiKey: true,
+    }
+
+    it.each([
+      ['getRemoteAccessStatus', 'GET', '/remote-access'],
+      ['startRemoteAccess', 'POST', '/remote-access/start'],
+      ['stopRemoteAccess', 'POST', '/remote-access/stop'],
+    ] as const)('%s calls the core route %s %s and returns the status', async (method, verb, path) => {
+      ipcHandler.mockReturnValue(online)
+
+      await expect(appService[method]()).resolves.toEqual(online)
+      expect(ipcHandler).toHaveBeenCalledWith('atomic_core_call', {
+        method: verb,
+        path,
+        body: null,
+      })
+    })
+
+    it('reads a snake_case status, so a serde rename cannot blank the page', async () => {
+      ipcHandler.mockReturnValue({
+        state: 'off',
+        url: null,
+        error: null,
+        block_reason: 'server_stopped',
+        can_start: false,
+        can_stop: false,
+        server_has_api_key: false,
+      })
+
+      await expect(appService.getRemoteAccessStatus()).resolves.toEqual({
+        state: 'off',
+        url: null,
+        error: null,
+        blockReason: 'server_stopped',
+        canStart: false,
+        canStop: false,
+        serverHasApiKey: false,
+      })
+    })
+
+    it('rejects with a code when the reply is not a status', async () => {
+      ipcHandler.mockReturnValue({ running: true })
+
+      await expect(appService.getRemoteAccessStatus()).rejects.toThrow(
+        'malformed_status'
+      )
+    })
+
+    it("rethrows the core's refusal as the bare reason the page parses", async () => {
+      ipcHandler.mockRejectedValue({
+        code: 'REMOTE_ACCESS_SERVER_STOPPED',
+        message: 'Start the Local API Server first.',
+        details: 'server_stopped',
+      })
+
+      await expect(appService.startRemoteAccess()).rejects.toBe(
+        'server_stopped'
+      )
+    })
+
+    it('passes any other failure through untouched', async () => {
+      const unreachable = { code: 'CORE_UNREACHABLE', message: 'no core' }
+      ipcHandler.mockRejectedValue(unreachable)
+
+      await expect(appService.startRemoteAccess()).rejects.toBe(unreachable)
+    })
+
+    it('returns the LAN addresses in the order the core ranked them', async () => {
+      ipcHandler.mockReturnValue({ addresses: ['192.168.1.20', '10.0.0.7'] })
+
+      await expect(appService.getLanAddresses()).resolves.toEqual([
+        '192.168.1.20',
+        '10.0.0.7',
+      ])
+      expect(ipcHandler).toHaveBeenCalledWith('atomic_core_call', {
+        method: 'GET',
+        path: '/lan-addresses',
+        body: null,
+      })
+    })
+
+    it('treats a reply that is not a list of strings as no addresses', async () => {
+      ipcHandler.mockReturnValue(null)
+      await expect(appService.getLanAddresses()).resolves.toEqual([])
+
+      ipcHandler.mockReturnValue({ addresses: ['192.168.1.20', 7, null] })
+      await expect(appService.getLanAddresses()).resolves.toEqual([
+        '192.168.1.20',
+      ])
+    })
+  })
 })

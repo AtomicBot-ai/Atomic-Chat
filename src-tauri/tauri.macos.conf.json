@@ -33,8 +33,8 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/mlx-server", "resources/bin/mlx-server-version.txt", "resources/bin/mlx-server-backend.txt", "resources/bin/foundation-models-server", "resources/bin/jan-cli", "resources/bin/atomic-chat-core", "resources/bin/atomic-chat-app-core", "resources/llamacpp-backend/", "resources/llamacpp-backend-upstream/"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/mlx-server", "resources/bin/mlx-server-version.txt", "resources/bin/mlx-server-backend.txt", "resources/bin/foundation-models-server", "resources/bin/jan-cli", "resources/bin/atomic-chat-core", "resources/bin/atomic-chat-app-core", "resources/llamacpp-backend/", "resources/llamacpp-backend-upstream/", "licenses/cloudflared-LICENSE.txt"],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv", "resources/bin/cloudflared"],
     "macOS": {
       "entitlements": "./Entitlements.plist",
       "dmg": {

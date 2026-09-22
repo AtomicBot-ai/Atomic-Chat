@@ -224,7 +224,11 @@ async fn next_app_launch_replaces_an_idle_owner_with_an_outdated_lock_version() 
         .expect("replace the idle old app core");
     assert_ne!(replacement.instance_id, old.instance_id);
     assert_ne!(replacement.pid, old.pid);
-    assert_eq!(replacement.version, "0.2.0");
+    // The replacement is the core this build pins (`package.json` `atomicCore.version`).
+    assert_eq!(
+        Some(replacement.version.as_str()),
+        super::supervisor::expected_core_version()
+    );
     next.detach().await;
 }
 
@@ -756,4 +760,51 @@ async fn a_core_that_cannot_serve_reports_the_refusal_and_stays_stopped() {
     );
     assert_eq!(core.running_port().await, Ok(None), "nothing is left serving");
     live.supervisor().detach().await;
+}
+
+#[tokio::test]
+async fn the_core_reports_errors_only_under_the_consent_the_app_gives_it() {
+    // Core ADRs 2026-09-21-report-core-errors-to-its-own-sentry-project and
+    // 2026-09-22-the-core-owns-its-error-reporting: the launch flag carries the consent the Rust gate
+    // holds (off in a build that does not report, which a test build is), and `PUT /telemetry`
+    // carries every later change, the anonymous user and the hardware tags. The core keeps only
+    // allow-listed tags and never shows its DSN. `make test-core-live` runs the core in the
+    // `development` environment, so nothing here can reach the real project.
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let live = LiveCore::new(&binary);
+    let supervisor = live.supervisor();
+    crate::core::telemetry::set_consent(false);
+    let attached = supervisor.ensure_attached(true).await;
+    crate::core::telemetry::set_consent(true);
+    attached.expect("attach");
+
+    let launched = supervisor
+        .call("GET", super::telemetry::PATH, None, false)
+        .await
+        .expect("telemetry state");
+    assert_eq!(super::telemetry::consent_of(&launched), Some(false));
+    assert_eq!(launched["source"], "host");
+    assert_eq!(launched["host"], "atomic-chat");
+
+    let state = crate::core::telemetry::core_state::CoreTelemetry {
+        user_id: Some("device-live".into()),
+        tags: std::collections::HashMap::from([
+            ("gpu_model".to_string(), "Apple M3".to_string()),
+            ("hostname".to_string(), "never-sent".to_string()),
+        ]),
+    };
+    let body = crate::core::telemetry::core_state::body(true, &state);
+    let answer = supervisor
+        .call("PUT", super::telemetry::PATH, Some(body), false)
+        .await
+        .expect("telemetry update");
+    assert_eq!(super::telemetry::consent_of(&answer), Some(true));
+    assert_eq!(answer["has_user"], true);
+    assert_eq!(answer["tags"], json!({ "gpu_model": "Apple M3" }));
+    assert!(answer.get("dsn").is_none());
+
+    supervisor.detach().await;
 }

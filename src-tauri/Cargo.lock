@@ -35,6 +35,7 @@ dependencies = [
  "nix 0.30.1",
  "notify-rust",
  "oauth2",
+ "objc2",
  "once_cell",
  "parquet",
  "png 0.18.1",
@@ -3578,6 +3579,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "hmac",
+ "libc",
  "rand 0.8.5",
  "reqwest 0.11.27",
  "serde",

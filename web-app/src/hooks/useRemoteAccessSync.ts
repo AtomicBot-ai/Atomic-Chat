@@ -1,0 +1,131 @@
+import { useEffect, useRef } from 'react'
+import { toast } from 'sonner'
+
+import { useAppState } from '@/hooks/useAppState'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import {
+  refreshRemoteAccessStatus,
+  startRemoteAccess,
+  useRemoteAccessStore,
+} from '@/hooks/useRemoteAccess'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
+import { normalizeRemoteAccessStatus } from '@/lib/remoteLan'
+import { REMOTE_ACCESS_STATUS_EVENT } from '@/types/remoteAccess'
+
+/**
+ * The relay's snapshot, sent whenever it attaches to a core (a relaunched one,
+ * or the same one again after a lost stream) or resyncs with it. A relaunched
+ * core has no tunnel while the same one may still have its tunnel up, so the
+ * status is re-read either way rather than assumed; this is also what fills
+ * the card back in after the core was out of reach.
+ */
+const CORE_ATTACHED_EVENT = 'atomic-core://snapshot'
+
+/**
+ * Keeps `useRemoteAccessStore` in step with the tunnel the core owns
+ * (`/atomic/v1/remote-access*`), and starts the tunnel on its own when the
+ * user asked for that.
+ *
+ * Mounted once at the root rather than by the settings page: the tunnel lives
+ * for the whole session, and "Start automatically" has to work with the page
+ * closed. At launch the Local API Server is usually still down, so it cannot
+ * honestly mean "at launch" — it means every time the server comes up: app
+ * start, the tray, the API screen, sending a message.
+ *
+ * No-op wherever there is no Local API Server (mobile, web).
+ */
+export function useRemoteAccessSync(): void {
+  const { t } = useTranslation()
+  const serviceHub = useServiceHub()
+  const serverStatus = useAppState((state) => state.serverStatus)
+  const enabled = PlatformFeatures[PlatformFeature.LOCAL_API_SERVER]
+
+  // A new `t` identity must not tear the subscription down.
+  const translate = useRef(t)
+  translate.current = t
+
+  useEffect(() => {
+    if (!enabled) return
+
+    let cancelled = false
+    const detach: Array<() => void> = []
+    const subscribe = (
+      name: string,
+      handler: (event: { payload: unknown }) => void
+    ) => {
+      serviceHub
+        .events()
+        .listen<unknown>(name, handler)
+        .then((unlisten) => {
+          if (cancelled) unlisten()
+          else detach.push(unlisten)
+        })
+        .catch((error) => {
+          console.warn('Remote access events unavailable:', error)
+        })
+    }
+
+    // The core emits `remote-access:status` on every transition, relayed as
+    // `atomic-core://remote-access:status`; the URL arrives seconds after
+    // Start and nothing else would tell the page.
+    subscribe(REMOTE_ACCESS_STATUS_EVENT, (event) => {
+      const status = normalizeRemoteAccessStatus(event.payload)
+      if (status) useRemoteAccessStore.getState().applyStatus(status, 'event')
+    })
+    subscribe(CORE_ATTACHED_EVENT, () => {
+      void refreshRemoteAccessStatus(serviceHub)
+    })
+
+    void refreshRemoteAccessStatus(serviceHub)
+
+    // An event missed while the webview was suspended is caught up here.
+    const handleFocus = () => void refreshRemoteAccessStatus(serviceHub)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      cancelled = true
+      for (const unlisten of detach) unlisten()
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [enabled, serviceHub])
+
+  const previousServerStatus = useRef(serverStatus)
+
+  useEffect(() => {
+    if (!enabled) return
+    const previous = previousServerStatus.current
+    previousServerStatus.current = serverStatus
+    if (previous === serverStatus) return
+
+    void (async () => {
+      // The core drops the tunnel with the server and reports a different
+      // `blockReason`/`canStart` once it is back, so every transition is worth
+      // a re-read — and the auto-start below must not decide on a stale state.
+      await refreshRemoteAccessStatus(serviceHub)
+
+      // Only the server coming up starts a tunnel, and only if it is still up
+      // now that the re-read is back.
+      if (serverStatus !== 'running') return
+      if (useAppState.getState().serverStatus !== 'running') return
+      const { remoteAccessAutoStart, apiKey, exposeWithoutKeyAcknowledged } =
+        useLocalApiServer.getState()
+      if (!remoteAccessAutoStart) return
+      // Exposing the API without a key takes a yes from the user, given once
+      // on the settings page. Never assume it here.
+      if (apiKey.trim() === '' && !exposeWithoutKeyAcknowledged) return
+
+      const tunnel = useRemoteAccessStore.getState().status?.state
+      if (tunnel !== 'off' && tunnel !== 'error') return
+
+      const started = await startRemoteAccess(serviceHub, 'auto')
+      if (!started) {
+        toast.error(
+          translate.current('settings:remoteLan.remote.autoStartFailed')
+        )
+      }
+    })()
+  }, [enabled, serverStatus, serviceHub])
+}

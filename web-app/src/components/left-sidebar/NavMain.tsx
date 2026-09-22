@@ -21,6 +21,10 @@ import {
   type CloudIconHandle,
 } from '@/components/animated-icon/cloud'
 import { FolderPlusIcon } from '@/components/animated-icon/folder-plus'
+import {
+  ImageIcon,
+  type ImageIconHandle,
+} from '@/components/animated-icon/image'
 import { MessageCircleIcon } from '@/components/animated-icon/message-circle'
 import { PlugIcon, type PlugIconHandle } from '@/components/animated-icon/plug'
 import {
@@ -33,6 +37,7 @@ import {
 } from '@/components/animated-icon/radio-tower'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
+import { WORKFLOW_ICONS } from '@/containers/images/workflowIcons'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -40,6 +45,9 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { IMAGE_WORKFLOWS } from '@/lib/diffusion/workflows'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
 
 type AnimatedIconHandle = {
@@ -58,6 +66,7 @@ export function NavMain() {
   const projectIconRef = useRef<AnimatedIconHandle>(null)
   const integrationsIconRef = useRef<PlugIconHandle>(null)
   const apiIconRef = useRef<RadioTowerIconHandle>(null)
+  const imagesIconRef = useRef<ImageIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -66,6 +75,8 @@ export function NavMain() {
   )
   const pluginsExpanded = useLeftPanel((state) => state.pluginsExpanded)
   const setPluginsExpanded = useLeftPanel((state) => state.setPluginsExpanded)
+  const imagesExpanded = useLeftPanel((state) => state.imagesExpanded)
+  const setImagesExpanded = useLeftPanel((state) => state.setImagesExpanded)
   const { addFolder } = useThreadManagement()
   const projectDialogOpen = useProjectDialog((state) => state.open)
   const setProjectDialogOpen = useProjectDialog((state) => state.setOpen)
@@ -79,6 +90,13 @@ export function NavMain() {
   useEffect(() => {
     if (isPluginsRoute) setPluginsExpanded(true)
   }, [isPluginsRoute, setPluginsExpanded])
+
+  // On the Images page the workflow list is the page's own navigation, so it
+  // stays open; elsewhere the chevron decides.
+  const isImagesRoute = pathname.startsWith('/images')
+  useEffect(() => {
+    if (isImagesRoute) setImagesExpanded(true)
+  }, [isImagesRoute, setImagesExpanded])
 
   const handleNewChat = () => {
     navigate({ to: route.home })
@@ -125,10 +143,78 @@ export function NavMain() {
                 className="text-foreground/70"
                 size={16}
               />
-              <span>{t('common:models')}</span>
+              <span>{t('common:modelHub')}</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        {/* Local image generation. Desktop only: it needs the native plugin
+            that supervises sd-server, so the row is gated the same way voice
+            input is rather than shown and then refused. */}
+        {PlatformFeatures[PlatformFeature.MEDIA_GENERATION] && (
+          <Collapsible
+            open={imagesExpanded}
+            onOpenChange={setImagesExpanded}
+            className="group/images"
+          >
+            <SidebarMenuItem>
+              {/* Images is a section, like Plugins: the entire row toggles its
+                  children. A tiny chevron-only target made the row look
+                  clickable while most of it navigated somewhere else. */}
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton
+                  isActive={isImagesRoute && !imagesExpanded}
+                  className="data-[active=true]:bg-sidebar-foreground/15"
+                  onMouseEnter={() => imagesIconRef.current?.startAnimation()}
+                  onMouseLeave={() => imagesIconRef.current?.stopAnimation()}
+                  data-testid="images-disclosure"
+                >
+                  <ImageIcon
+                    ref={imagesIconRef}
+                    className="text-foreground/70"
+                    size={16}
+                  />
+                  <span>{t('common:images')}</span>
+                  <ChevronRight
+                    className={cn(
+                      'text-muted-foreground ml-auto size-4 shrink-0 transition-transform duration-200 ease-out',
+                      imagesExpanded && 'rotate-90'
+                    )}
+                  />
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent className={collapsiblePanelAnimation}>
+                <SidebarMenuSub data-testid="images-submenu">
+                  {IMAGE_WORKFLOWS.map((workflow) => {
+                    const Icon = WORKFLOW_ICONS[workflow.id]
+                    const active =
+                      workflow.id === 'create'
+                        ? pathname === '/images' || pathname === '/images/'
+                        : pathname.startsWith(workflow.path)
+                    return (
+                      <SidebarMenuSubItem key={workflow.id}>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={active}
+                          className="data-[active=true]:bg-sidebar-foreground/15"
+                        >
+                          <Link to={workflow.path}>
+                            <Icon
+                              size={14}
+                              className="shrink-0 text-foreground/70"
+                            />
+                            <span>
+                              {t(`images:workflow.${workflow.id}.label`)}
+                            </span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )
+                  })}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
+        )}
         {/* Cloud is offered in both modes: agent mode is what a user with no
             local engine is most likely to be blocked on, and connecting a
             provider is the fix. */}
@@ -223,65 +309,61 @@ export function NavMain() {
           </SidebarMenuItem>
         </Collapsible>
         <>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() => setProjectDialogOpen(true)}
-                onMouseEnter={() => projectIconRef.current?.startAnimation()}
-                onMouseLeave={() => projectIconRef.current?.stopAnimation()}
-              >
-                <FolderPlusIcon
-                  ref={projectIconRef}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/launch')}
+              className="data-[active=true]:bg-sidebar-foreground/15"
+              onMouseEnter={() => integrationsIconRef.current?.startAnimation()}
+              onMouseLeave={() => integrationsIconRef.current?.stopAnimation()}
+            >
+              <Link to={route.launch.index}>
+                <PlugIcon
+                  ref={integrationsIconRef}
                   className="text-foreground/70"
                   size={16}
                 />
-                <span>{t('common:projects.new')}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname.startsWith('/launch')}
-                className="data-[active=true]:bg-sidebar-foreground/15"
-                onMouseEnter={() =>
-                  integrationsIconRef.current?.startAnimation()
-                }
-                onMouseLeave={() =>
-                  integrationsIconRef.current?.stopAnimation()
-                }
-              >
-                <Link to={route.launch.index}>
-                  <PlugIcon
-                    ref={integrationsIconRef}
-                    className="text-foreground/70"
-                    size={16}
-                  />
-                  <span>{t('common:launch')}</span>
-                  {!integrationsBadgeSeen && (
-                    <span className="ml-auto shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
-                      {t('common:newBadge')}
-                    </span>
-                  )}
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname.startsWith('/api')}
-                className="data-[active=true]:bg-sidebar-foreground/15"
-                onMouseEnter={() => apiIconRef.current?.startAnimation()}
-                onMouseLeave={() => apiIconRef.current?.stopAnimation()}
-              >
-                <Link to={route.api.index}>
-                  <RadioTowerIcon
-                    ref={apiIconRef}
-                    className="text-foreground/70"
-                    size={16}
-                  />
-                  <span>{t('common:api')}</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+                <span>{t('common:launch')}</span>
+                {!integrationsBadgeSeen && (
+                  <span className="ml-auto shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
+                    {t('common:newBadge')}
+                  </span>
+                )}
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/api')}
+              className="data-[active=true]:bg-sidebar-foreground/15"
+              onMouseEnter={() => apiIconRef.current?.startAnimation()}
+              onMouseLeave={() => apiIconRef.current?.stopAnimation()}
+            >
+              <Link to={route.api.index}>
+                <RadioTowerIcon
+                  ref={apiIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
+                <span>{t('common:api')}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => setProjectDialogOpen(true)}
+              onMouseEnter={() => projectIconRef.current?.startAnimation()}
+              onMouseLeave={() => projectIconRef.current?.stopAnimation()}
+            >
+              <FolderPlusIcon
+                ref={projectIconRef}
+                className="text-foreground/70"
+                size={16}
+              />
+              <span>{t('common:projects.new')}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </>
       </SidebarMenu>
       <AddProjectDialog

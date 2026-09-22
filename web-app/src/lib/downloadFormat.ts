@@ -79,6 +79,71 @@ export function formatEta(
 }
 
 /**
+ * The status word of a transfer: `42%`, `Paused`, or — before the first byte,
+ * when the transfer has no meaningful numbers at all — what the downloader is
+ * doing, since "0%" there reads as a stalled download rather than a starting
+ * one. The panel's row and the composer's reply widget both read it from
+ * here, so the same transfer never reads differently between the two.
+ */
+export function downloadStatusLabel(
+  t: (key: string, vars?: Record<string, unknown>) => string,
+  {
+    progress,
+    total,
+    stage,
+    paused,
+  }: {
+    progress: number
+    total: number
+    stage?: { kind: string; attempt: number; maxAttempts: number }
+    paused?: boolean
+  }
+): string {
+  if (paused) return t('common:downloadPanel.paused')
+  if (total > 0) return `${Math.round(progress * 100)}%`
+  if (stage?.kind === 'retrying')
+    return t('common:downloadPanel.retrying', {
+      attempt: stage.attempt,
+      maxAttempts: stage.maxAttempts,
+    })
+  if (stage?.kind === 'connecting') return t('common:downloadPanel.preparing')
+  return t('common:downloadPanel.preparing')
+}
+
+/**
+ * A transfer's readout on one line: `42% · 4.20 / 12.40 GB · 7m 36s left`,
+ * `Paused · 4.20 / 12.40 GB`, or what the downloader is doing before the
+ * first byte.
+ *
+ * The parts are ordered by how much they matter, so a line that has to be
+ * cut loses the estimate at its end and never the size. The speed is not one
+ * of them: it is what pushed the panel's row past its width, and the estimate
+ * already folds it in. The reply gate quotes a running download the same way.
+ */
+export function formatDownloadReadout(
+  t: (key: string, vars?: Record<string, unknown>) => string,
+  download: {
+    progress: number
+    current: number
+    total: number
+    bytesPerSecond?: number | null
+    stage?: { kind: string; attempt: number; maxAttempts: number }
+    paused?: boolean
+  }
+): string {
+  const eta = download.paused
+    ? null
+    : formatEta(download.total - download.current, download.bytesPerSecond)
+  return [
+    downloadStatusLabel(t, download),
+    download.total > 0 && formatProgressPair(download.current, download.total),
+    eta && t('common:downloadPanel.left', { eta }),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/**
  * Strip the HuggingFace org prefix for display: `unsloth/Qwen3-4B-GGUF` reads
  * as `Qwen3-4B-GGUF`. The full id stays in the `title` attribute.
  */

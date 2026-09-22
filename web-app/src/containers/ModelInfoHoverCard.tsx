@@ -69,7 +69,7 @@ export const ModelInfoHoverCard = ({
         <div className="flex items-start gap-2">
           <div className="size-2 shrink-0 bg-yellow-500 rounded-full mt-1"></div>
           <span className="text-yellow-500 font-medium">
-            May be slow on your device
+            Might fit for your device
           </span>
         </div>
       )
@@ -78,7 +78,7 @@ export const ModelInfoHoverCard = ({
         <div className="flex items-start gap-2">
           <div className="size-2 shrink-0 bg-red-500 rounded-full mt-1"></div>
           <span className="text-red-500 font-medium">
-            May be incompatible with your device
+            Won’t fit your device
           </span>
         </div>
       )

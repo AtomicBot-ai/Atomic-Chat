@@ -28,7 +28,13 @@ export function getAnalyticsPlatform(): string {
 
 export type DownloadStatus = 'started' | 'completed' | 'failed' | 'cancelled'
 
-export type DownloadKind = 'model' | 'gpu_backend' | 'companion_artifact'
+export type DownloadKind =
+  | 'model'
+  | 'gpu_backend'
+  | 'companion_artifact'
+  // A diffusion checkpoint or one of its side files (VAE, text encoder),
+  // fetched by `lib/diffusion/models.ts` through the same download pipeline.
+  | 'diffusion_model'
 
 export type DownloadFailureReason =
   | 'http_404'
@@ -47,6 +53,10 @@ export type DownloadFailureReason =
   | 'disk_device_lost'
   | 'disk_io'
   | 'network'
+  // ATO — #290: split out of `network` so a dead or misconfigured HTTPS-proxy
+  // setting is distinguishable from the user simply being offline. Every
+  // report of "downloads never start" so far has been this.
+  | 'proxy'
   | 'cancelled'
   | 'path_guard'
   | 'unknown'
@@ -121,6 +131,42 @@ function diskFaultTag(err: string): DownloadFailureReason | null {
   return DISK_FAULT_TAGS.has(tag) ? tag : null
 }
 
+/**
+ * WinSock codes reqwest surfaces as `(os error NNNNN)` on Windows for a
+ * connection that never reached the server. Matched by code rather than by
+ * message text because the message is localised — the report that prompted
+ * this carried the Portuguese wording for "connection refused".
+ */
+const WINSOCK_CONNECT_ERRORS = [
+  10060, // WSAETIMEDOUT      — connection timed out
+  10061, // WSAECONNREFUSED   — actively refused
+  10065, // WSAEHOSTUNREACH   — no route to host
+  11001, // WSAHOST_NOT_FOUND — DNS lookup failed
+]
+
+/** Transport-level failure: the request never got an HTTP response back. */
+export function isTransportFailure(lowercased: string): boolean {
+  return (
+    lowercased.includes('tcp connect error') ||
+    lowercased.includes('error trying to connect') ||
+    lowercased.includes('error sending request') ||
+    lowercased.includes('network') ||
+    lowercased.includes('connection') ||
+    lowercased.includes('dns') ||
+    lowercased.includes('timed out') ||
+    lowercased.includes('timeout') ||
+    lowercased.includes('failed to download') ||
+    WINSOCK_CONNECT_ERRORS.some((code) =>
+      lowercased.includes(`os error ${code}`)
+    )
+  )
+}
+
+/** A transport failure the message itself attributes to a proxy. */
+export function isProxyFailure(lowercased: string): boolean {
+  return lowercased.includes('proxy') && isTransportFailure(lowercased)
+}
+
 /** Classify a stringly-typed download error into a stable enum. */
 export function classifyDownloadFailure(
   err?: string | null
@@ -142,6 +188,14 @@ export function classifyDownloadFailure(
 
   if (e.includes('hash verification')) return 'checksum_mismatch'
   if (e.includes('size verification')) return 'size_mismatch'
+
+  // Transport failures are classified BEFORE the disk heuristics below, which
+  // match on a bare `os error` and so used to claim every Windows connection
+  // refusal (`tcp connect error: … (os error 10061)`) as a disk fault — wrong
+  // in telemetry, and it cost the user the actionable toast (#290).
+  if (isProxyFailure(e)) return 'proxy'
+  if (isTransportFailure(e)) return 'network'
+
   if (
     e.includes('no such file') ||
     e.includes('permission denied') ||
@@ -158,15 +212,6 @@ export function classifyDownloadFailure(
       e.includes('traversal'))
   )
     return 'path_guard'
-  if (
-    e.includes('network') ||
-    e.includes('connection') ||
-    e.includes('dns') ||
-    e.includes('timed out') ||
-    e.includes('timeout') ||
-    e.includes('failed to download')
-  )
-    return 'network'
   return 'unknown'
 }
 
@@ -177,6 +222,10 @@ export function downloadKind(
 ): DownloadKind {
   const id = (idOrTask ?? '').toLowerCase()
   if (id.includes('cudart')) return 'companion_artifact'
+  // The sd.cpp binary is a GPU build like the llama.cpp ones; its checkpoints
+  // are not chat models and must not be counted as such.
+  if (id.startsWith('diffusion-backend')) return 'gpu_backend'
+  if (id.startsWith('diffusion')) return 'diffusion_model'
   if (downloadType === 'Backend' || id.includes('llamacpp-backend'))
     return 'gpu_backend'
   return 'model'

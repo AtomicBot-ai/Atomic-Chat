@@ -157,6 +157,25 @@ pub fn available_space_for(path: &Path) -> Option<u64> {
         .map(|disk| disk.available_space())
 }
 
+/// What the frontend needs to decide, before it creates a download entry,
+/// whether a model will fit: the free bytes on the volume holding the data
+/// folder and the headroom `ensure_free_space` will insist on. `available` is
+/// `None` when the volume cannot be identified; the frontend then lets the
+/// download try and the transfer-time check stays the guard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeSpaceReport {
+    pub available: Option<u64>,
+    pub headroom: u64,
+}
+
+pub fn free_space_report(target_dir: &Path) -> FreeSpaceReport {
+    FreeSpaceReport {
+        available: available_space_for(target_dir),
+        headroom: FREE_SPACE_HEADROOM,
+    }
+}
+
 /// How many bytes of `total_size` still have to be written, given the partial
 /// files already on disk for a resumed download.
 ///
@@ -426,5 +445,72 @@ mod tests {
     fn path_limit_is_a_no_op_off_windows() {
         let long = PathBuf::from(format!("/{}/model.gguf", "x".repeat(300)));
         assert!(ensure_path_within_limit(&long).is_ok());
+    }
+
+    // ===== Frontend preflight: free-space report =====
+
+    #[test]
+    fn free_space_report_carries_the_headroom_the_downloader_enforces() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = free_space_report(dir.path());
+        assert_eq!(report.headroom, FREE_SPACE_HEADROOM);
+        // Free space drifts between two reads (sibling tests write files), so
+        // only the provenance is exact: known here iff known to the volume probe.
+        assert_eq!(
+            report.available.is_some(),
+            available_space_for(dir.path()).is_some()
+        );
+    }
+
+    #[test]
+    fn free_space_report_agrees_with_the_transfer_time_check() {
+        // The frontend refuses when `size + headroom > available`, computed
+        // from this report. Both sides of that boundary must match what
+        // `ensure_free_space` would decide for the same numbers.
+        let dir = tempfile::tempdir().unwrap();
+        let report = free_space_report(dir.path());
+        let Some(available) = report.available else {
+            return;
+        };
+        // Does not fit: the whole volume, with no room for the headroom.
+        let error = ensure_free_space(dir.path(), available).unwrap_err();
+        assert!(error.starts_with("Error: [disk_full] "), "got {error}");
+        // Fits: what is left once the headroom is set aside, less a margin for
+        // the bytes sibling tests write between this read and the next.
+        let margin = 64 * 1024 * 1024;
+        if available > report.headroom + margin {
+            let needed = available - report.headroom - margin;
+            assert!(ensure_free_space(dir.path(), needed).is_ok());
+        }
+    }
+
+    #[test]
+    fn free_space_report_is_unknown_off_any_volume() {
+        // A relative path is under no mount point, which is the `None` the
+        // frontend treats as "cannot tell, let the download try".
+        let report = free_space_report(Path::new("nowhere/on/a/volume"));
+        assert_eq!(report.available, None);
+        assert_eq!(report.headroom, FREE_SPACE_HEADROOM);
+    }
+
+    #[test]
+    fn free_space_report_serializes_for_the_frontend() {
+        // The web side reads `{ available: number | null, headroom: number }`.
+        let known = FreeSpaceReport {
+            available: Some(10 * 1024 * 1024 * 1024),
+            headroom: FREE_SPACE_HEADROOM,
+        };
+        assert_eq!(
+            serde_json::to_value(known).unwrap(),
+            serde_json::json!({ "available": 10_737_418_240u64, "headroom": 536_870_912u64 })
+        );
+        let unknown = FreeSpaceReport {
+            available: None,
+            headroom: FREE_SPACE_HEADROOM,
+        };
+        assert_eq!(
+            serde_json::to_value(unknown).unwrap(),
+            serde_json::json!({ "available": null, "headroom": 536_870_912u64 })
+        );
     }
 }

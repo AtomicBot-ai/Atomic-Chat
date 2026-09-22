@@ -1,0 +1,21 @@
+{
+  "comparator": "telemetry-wire",
+  "expected": {
+    "body": {
+      "enabled": true,
+      "tags": {},
+      "user_id": null
+    }
+  },
+  "input": {
+    "consent": true,
+    "op": "update",
+    "tags": {},
+    "user_id": null
+  },
+  "name": "update_before_the_webview_reports",
+  "source": {
+    "commit": "254c29a6a4b8acb511196c26462f457951026d9f",
+    "file": "src-tauri/src/core/atomic_core/{launch,telemetry}.rs"
+  }
+}

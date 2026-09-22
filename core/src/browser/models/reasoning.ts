@@ -20,6 +20,8 @@ export type ReasoningEffortKwarg = 'reasoning_effort' | 'thinking_budget'
 export type ReasoningControls = {
   /** Template exposes a thinking phase in any form. */
   supportsThinking: boolean
+  /** Whether the template exposes a real way to skip that thinking phase. */
+  canDisable?: boolean
   /** Template-native effort knob, when the model has one. */
   effortKwarg?: ReasoningEffortKwarg
   /** Legal `reasoning_effort` values, weakest first, off-like values removed. */
@@ -147,6 +149,8 @@ export const detectReasoningControls = (
     )
     return {
       supportsThinking: true,
+      canDisable:
+        Boolean(offValue) || referencesKwarg(chatTemplate, 'enable_thinking'),
       effortKwarg: 'reasoning_effort',
       effortValues: levels.length ? levels : DEFAULT_EFFORT_VALUES,
       ...(offValue ? { offValue } : {}),
@@ -154,8 +158,15 @@ export const detectReasoningControls = (
   }
 
   if (referencesKwarg(chatTemplate, 'thinking_budget')) {
-    return { supportsThinking: true, effortKwarg: 'thinking_budget' }
+    return {
+      supportsThinking: true,
+      canDisable: referencesKwarg(chatTemplate, 'enable_thinking'),
+      effortKwarg: 'thinking_budget',
+    }
   }
 
-  return { supportsThinking: true }
+  return {
+    supportsThinking: true,
+    canDisable: referencesKwarg(chatTemplate, 'enable_thinking'),
+  }
 }

@@ -1,13 +1,24 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// The real download store, not a stub: the row's downloading and resumable
+// state is what the cancel test reads back.
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { seedServiceHub } from '@/test/service-hub'
 import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   pullModelWithMetadata: vi.fn(() => Promise.resolve()),
+  switchToModel: vi.fn(() => Promise.resolve()),
+  toastError: vi.fn(),
 }))
+
+vi.mock('@/utils/switchModel', () => ({
+  switchToModel: mocks.switchToModel,
+}))
+
+vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }))
 
 vi.mock('@/i18n', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -26,25 +37,6 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
     selector: (state: { huggingfaceToken: string }) => unknown
   ) => selector({ huggingfaceToken: '' }),
 }))
-
-vi.mock('@/hooks/useDownloadStore', () => {
-  const state = {
-    downloads: {},
-    localDownloadingModels: new Set<string>(),
-    resumableDownloads: new Set<string>(),
-    downloadOriginByModelId: {},
-    addLocalDownloadingModel: vi.fn(),
-    removeLocalDownloadingModel: vi.fn(),
-    markResumableDownload: vi.fn(),
-    clearResumableDownload: vi.fn(),
-    setDownloadOrigin: vi.fn(),
-    clearDownloadOrigin: vi.fn(),
-  }
-  const useDownloadStore = (selector?: (value: typeof state) => unknown) =>
-    selector ? selector(state) : state
-  useDownloadStore.getState = () => state
-  return { useDownloadStore }
-})
 
 import { ModelDownloadAction } from '../ModelDownloadAction'
 
@@ -65,7 +57,18 @@ const downloadButton = () =>
 describe('ModelDownloadAction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useModelProvider.setState({ providers: [] })
+    mocks.pullModelWithMetadata.mockResolvedValue(undefined)
+    useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      resumableDownloads: new Set(),
+      downloadOriginByModelId: {},
+    })
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
     seedServiceHub({
       models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
     })
@@ -77,18 +80,35 @@ describe('ModelDownloadAction', () => {
     expect(downloadButton()).toHaveAttribute('data-variant', 'default')
   })
 
-  it('downloads a variant that fits without asking', () => {
+  it('downloads a variant without selecting or starting it', () => {
+    const selectedModel = {
+      id: 'already-selected',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      selectedProvider: 'openai',
+      selectedModel,
+    })
     render(<ModelDownloadAction variant={variant} model={model} asButton />)
 
     fireEvent.click(downloadButton())
 
     expect(mocks.pullModelWithMetadata).toHaveBeenCalled()
+    expect(useModelProvider.getState().selectedProvider).toBe('openai')
+    expect(useModelProvider.getState().selectedModel).toBe(selectedModel)
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('warns before downloading a variant too large for the device', async () => {
     render(
-      <ModelDownloadAction variant={variant} model={model} asButton warnTooLarge />
+      <ModelDownloadAction
+        variant={variant}
+        model={model}
+        asButton
+        warnTooLarge
+      />
     )
 
     // The button is live, not disabled: the fit estimate is a guess.
@@ -114,7 +134,12 @@ describe('ModelDownloadAction', () => {
 
   it('downloads nothing when the warning is cancelled', async () => {
     render(
-      <ModelDownloadAction variant={variant} model={model} asButton warnTooLarge />
+      <ModelDownloadAction
+        variant={variant}
+        model={model}
+        asButton
+        warnTooLarge
+      />
     )
 
     fireEvent.click(downloadButton())
@@ -123,5 +148,28 @@ describe('ModelDownloadAction', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+  })
+
+  it('does not show a failure toast when an intentional cancel rejects the pull', async () => {
+    mocks.pullModelWithMetadata.mockRejectedValueOnce(
+      new Error('Download cancelled')
+    )
+    render(<ModelDownloadAction variant={variant} model={model} asButton />)
+
+    fireEvent.click(downloadButton())
+
+    await waitFor(() => expect(mocks.pullModelWithMetadata).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.toastError).not.toHaveBeenCalled()
+    // Silent, but not stuck: the row is back on "Download" rather than a
+    // dead progress button, and the partial file is kept for a resume.
+    await waitFor(() => expect(downloadButton()).toBeEnabled())
+    expect(
+      screen.queryByRole('button', { name: 'common:cancelDownload' })
+    ).toBeNull()
+    const downloads = useDownloadStore.getState()
+    expect(downloads.localDownloadingModels.has(variant.model_id)).toBe(false)
+    expect(downloads.downloadOriginByModelId[variant.model_id]).toBeUndefined()
+    expect(downloads.resumableDownloads.has(variant.model_id)).toBe(true)
   })
 })

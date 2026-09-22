@@ -1,7 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLastSeenVersion } from './useLastSeenVersion'
+import { QA_UPDATE_COMPLETE_KEY } from './useAppUpdater'
 
 const GITHUB_REPO = 'AtomicBot-ai/Atomic-Chat'
+const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
+
+const QA_PREVIEW_RELEASE: GithubRelease = {
+  tag_name: 'v2.0.41-preview',
+  name: 'Atomic Chat 2.0.41 preview',
+  body: `## Update complete
+
+- Image generation setup is clearer and faster
+- Failed GPU renders recover without corrupting the gallery
+- Reasoning, tools and sidebars move more smoothly
+- Model downloads and approvals are easier to understand`,
+}
+
+const BUNDLED_RELEASES: Record<string, GithubRelease> = {
+  '2.0.40': {
+    tag_name: 'v2.0.40',
+    name: 'Atomic Chat 2.0.40',
+    body: `## A smoother Atomic Chat
+
+- Rebuilt image-generation setup and a compact model picker
+- Safer local image rendering with automatic recovery after GPU failures
+- New uncensored FLUX image option and hardware-aware model recommendations
+- Stable reasoning, tool activity, scrolling and chat-message spacing
+- Cleaner approvals, API-key errors, downloads and connector feedback
+- Responsive left and right sidebars with a compact composer
+- Fixed project files on databases created by older builds`,
+  },
+}
 
 type GithubRelease = {
   tag_name: string
@@ -106,11 +135,29 @@ export const useWhatsNew = (): WhatsNewState => {
     didRunRef.current = true
 
     const run = async () => {
+      if (FORCE_UPDATE_PREVIEW) {
+        const completed = localStorage.getItem(QA_UPDATE_COMPLETE_KEY)
+        if (completed === '2.0.41-preview') {
+          setCurrentVersion(completed)
+          setRelease(QA_PREVIEW_RELEASE)
+          setOpen(true)
+        }
+        return
+      }
+
       const version = await getRuntimeVersion()
       setCurrentVersion(version)
 
+      const normalizedVersion = version.replace(/^v/i, '')
+      const bundled = BUNDLED_RELEASES[normalizedVersion] ?? null
+
       if (!lastSeenVersion) {
-        setLastSeenVersion(version)
+        if (bundled?.body) {
+          setRelease(bundled)
+          setOpen(true)
+        } else {
+          setLastSeenVersion(version)
+        }
         return
       }
 
@@ -123,7 +170,7 @@ export const useWhatsNew = (): WhatsNewState => {
       }
 
       const tag = version.startsWith('v') ? version : `v${version}`
-      const rel = await fetchReleaseByTag(tag)
+      const rel = (await fetchReleaseByTag(tag)) ?? bundled
 
       if (!rel || !rel.body) {
         setLastSeenVersion(version)

@@ -35,8 +35,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
     if (session) expect(await endSession(session)).toEqual([])
   })
 
-  // The select's trigger, whatever its label currently adds.
-  const APPROVAL_SELECT = 'button[aria-label^="Ask for approval"]'
+  const APPROVAL_SELECT = 'button[aria-label="Ask for approval"]'
   const newChat = async () => {
     await session.app.browser.$('//*[normalize-space(text())="New Chat"]').click()
     await waitForChat(session)
@@ -56,12 +55,13 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
       expect(calls).toHaveLength(1)
       expect(calls[0]).toMatchObject({ name: MCP_TOOL, arguments: { code: CODE } })
 
-      // It ran without a question, and the composer says so. On a thread whose
-      // approval mode the user has not touched, MCP tools follow the global
-      // "Allow All MCP Tool Permissions" switch, which the app turns on for
-      // everyone; the select used to read plain "Ask for approval" there.
+      // It ran without a question. On a thread whose approval mode the user has
+      // not touched, MCP tools follow the global "Allow All MCP Tool
+      // Permissions" switch in Settings, which the app turns on for everyone,
+      // while the composer's select shows its plain default. That is the
+      // product's choice (2026-09-22 record); both halves are pinned here.
       expect(await pageShows(session, 'Tool Approval Required', 1_000).then(() => true, () => false)).toBe(false)
-      await pageShows(session, 'MCP tools auto-approved', 10_000)
+      expect(await browser.$(APPROVAL_SELECT).isDisplayed()).toBe(true)
     })
   }, 300_000)
 
@@ -72,8 +72,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
 
       await newChat()
       await chooseFromMenu(session, APPROVAL_SELECT, 'Ask for approval')
-      // Chosen, it means what it says, and no longer adds the caveat.
-      await browser.$('button[aria-label="Ask for approval"]').waitForDisplayed({ timeout: 10_000 })
       await send(session, `look up record ${CODE} again`)
       await pageShows(session, 'Tool Approval Required', 60_000)
       expect((await browser.$('body').getText())).toContain(MCP_TOOL)

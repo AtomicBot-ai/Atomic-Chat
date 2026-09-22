@@ -88,6 +88,132 @@ async fn spawn_interrupted_download_server(
     )
 }
 
+/// First request: three bytes, then a body that never ends — a stream with no
+/// next chunk to wake the downloader. Ranged requests get the rest.
+async fn spawn_stalling_download_server(
+) -> (String, tokio::task::JoinHandle<Result<(), hyper::Error>>) {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let make_service = make_service_fn(move |_| {
+        let request_count = request_count.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                let request_count = request_count.clone();
+                async move {
+                    let first = request_count.fetch_add(1, Ordering::SeqCst) == 0;
+                    let response = if first {
+                        let (mut sender, body) = Body::channel();
+                        tokio::spawn(async move {
+                            sender.send_data(Bytes::from_static(b"abc")).await.unwrap();
+                            std::future::pending::<()>().await;
+                            drop(sender);
+                        });
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_LENGTH, "6")
+                            .body(body)
+                            .unwrap()
+                    } else if request.headers().get(RANGE).is_some() {
+                        Response::builder()
+                            .status(StatusCode::PARTIAL_CONTENT)
+                            .header(CONTENT_RANGE, "bytes 3-5/6")
+                            .body(Body::from("def"))
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .body(Body::from("abcdef"))
+                            .unwrap()
+                    };
+                    Ok::<_, Infallible>(response)
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    (format!("http://{address}/model.gguf"), tokio::spawn(server))
+}
+
+/// Field log, 2026-09-21: pause and resume in the same second on a slow link.
+/// The paused stream only noticed its cancellation at the next chunk, eight
+/// seconds on, so two invocations had one `.tmp` open; the file ended up the
+/// right size with the wrong hash.
+#[tokio::test]
+async fn a_resume_waits_for_the_cancelled_writer_and_cancellation_does_not_wait_for_a_chunk() {
+    let (url, server) = spawn_stalling_download_server().await;
+    let save_path = test_download_path("model.gguf");
+    let tmp_path = sidecar_path(&save_path, "tmp");
+    let item = DownloadItem {
+        url,
+        save_path: save_path.to_string_lossy().into_owned(),
+        proxy: None,
+        sha256: None,
+        size: Some(6),
+        model_id: Some("test/model".to_string()),
+    };
+    let app = mock_app();
+
+    let paused_token = CancellationToken::new();
+    let paused = tokio::spawn({
+        let (app, item, save_path, token) = (
+            app.handle().clone(),
+            item.clone(),
+            save_path.clone(),
+            paused_token.clone(),
+        );
+        async move {
+            download_single_file_with_token_for_test(app, &item, &save_path, 6, true, token).await
+        }
+    });
+    // The stalled writer has its file open; nothing of "abc" is flushed yet.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !tmp_path.exists() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("first download never opened its partial");
+
+    let resumed = tokio::spawn({
+        let (app, item, save_path) = (app.handle().clone(), item.clone(), save_path.clone());
+        async move {
+            download_single_file_with_token_for_test(
+                app,
+                &item,
+                &save_path,
+                6,
+                true,
+                CancellationToken::new(),
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert!(
+        !resumed.is_finished() && !save_path.exists(),
+        "the resume wrote while the paused download still held the file"
+    );
+
+    paused_token.cancel();
+    let paused_result = tokio::time::timeout(std::time::Duration::from_secs(5), paused)
+        .await
+        .expect("cancellation waited for a chunk that never came")
+        .unwrap();
+    assert_eq!(paused_result.unwrap_err(), "Download cancelled");
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), resumed)
+        .await
+        .expect("the resume never got the file")
+        .unwrap()
+        .unwrap();
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+
+    server.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
 async fn spawn_preflight_head_server(
     failures_before_success: usize,
     fail_status: StatusCode,
@@ -150,7 +276,7 @@ async fn preflight_uses_catalog_size_without_a_head_request() {
     let (url, request_count, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
     let item = preflight_test_item(url, Some(6));
     let client = reqwest::Client::new();
-    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+    let size = preflight_file_size(&client, &item, &CancellationToken::new(), None)
         .await
         .unwrap();
     assert_eq!(size, 6);
@@ -166,7 +292,7 @@ async fn preflight_aborts_before_request_when_cancelled() {
     let cancel_token = CancellationToken::new();
     cancel_token.cancel();
 
-    let error = preflight_file_size(&client, &item, &cancel_token)
+    let error = preflight_file_size(&client, &item, &cancel_token, None)
         .await
         .unwrap_err();
 
@@ -181,7 +307,7 @@ async fn preflight_head_retries_transient_failures() {
         spawn_preflight_head_server(2, StatusCode::INTERNAL_SERVER_ERROR).await;
     let item = preflight_test_item(url, None);
     let client = reqwest::Client::new();
-    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+    let size = preflight_file_size(&client, &item, &CancellationToken::new(), None)
         .await
         .unwrap();
     assert_eq!(size, 42);
@@ -195,7 +321,7 @@ async fn preflight_head_failure_is_not_fatal() {
         spawn_preflight_head_server(usize::MAX, StatusCode::INTERNAL_SERVER_ERROR).await;
     let item = preflight_test_item(url, None);
     let client = reqwest::Client::new();
-    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+    let size = preflight_file_size(&client, &item, &CancellationToken::new(), None)
         .await
         .unwrap();
     assert_eq!(size, 0);
@@ -246,7 +372,7 @@ async fn preflight_head_retries_dropped_connections() {
     let (url, attempt_count, server) = spawn_connection_dropping_head_server(2).await;
     let item = preflight_test_item(url, None);
     let client = reqwest::Client::new();
-    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+    let size = preflight_file_size(&client, &item, &CancellationToken::new(), None)
         .await
         .unwrap();
     assert_eq!(size, 42);
@@ -348,7 +474,7 @@ async fn preflight_head_does_not_retry_fatal_status() {
         spawn_preflight_head_server(usize::MAX, StatusCode::NOT_FOUND).await;
     let item = preflight_test_item(url, None);
     let client = reqwest::Client::new();
-    let size = preflight_file_size(&client, &item, &CancellationToken::new())
+    let size = preflight_file_size(&client, &item, &CancellationToken::new(), None)
         .await
         .unwrap();
     assert_eq!(size, 0);
@@ -691,6 +817,7 @@ fn test_download_event_creation() {
     let event = DownloadEvent {
         transferred: 1024,
         total: 2048,
+        stage: None,
     };
 
     assert_eq!(event.transferred, 1024);
@@ -815,11 +942,34 @@ fn test_download_event_serialization() {
     let event = DownloadEvent {
         transferred: 512,
         total: 1024,
+        stage: None,
     };
 
     let json = serde_json::to_string(&event).unwrap();
     assert!(json.contains("\"transferred\":512"));
     assert!(json.contains("\"total\":1024"));
+    // A plain progress tick must not carry a stage key at all, so the frontend
+    // can tell "bytes moved" from "status changed" by presence alone.
+    assert!(!json.contains("stage"));
+}
+
+#[test]
+fn test_download_event_stage_serialization() {
+    let event = DownloadEvent {
+        transferred: 0,
+        total: 0,
+        stage: Some(DownloadStage {
+            kind: DownloadStage::RETRYING,
+            attempt: 2,
+            max_attempts: 5,
+        }),
+    };
+
+    let json = serde_json::to_string(&event).unwrap();
+    assert!(json.contains("\"kind\":\"retrying\""));
+    assert!(json.contains("\"attempt\":2"));
+    // camelCase, because the payload is consumed directly by the webview.
+    assert!(json.contains("\"maxAttempts\":5"));
 }
 
 #[test]
@@ -865,4 +1015,108 @@ fn a_plain_cancellation_is_not_a_supersede() {
 
     assert!(task.cancel_token.is_cancelled());
     assert!(!task.was_superseded());
+}
+
+// ===== ATO — #290: a refused connection has to be visible =====
+
+/// A port nothing listens on, so a connect attempt is refused immediately.
+/// Bound and dropped so the OS has genuinely handed it out and then freed it.
+async fn refused_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    port
+}
+
+#[tokio::test]
+async fn preflight_reports_every_retry_so_the_ui_is_not_left_silent() {
+    // Before this, both retry ladders ran for ~31s each emitting nothing, so a
+    // download against an unreachable host was indistinguishable from one that
+    // had not started. The reporter is what the download card reads.
+    let (url, _request_count, server) =
+        spawn_preflight_head_server(2, StatusCode::INTERNAL_SERVER_ERROR).await;
+    let item = preflight_test_item(url, None);
+    let client = reqwest::Client::new();
+
+    let stages = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = stages.clone();
+    let reporter = StageReporter::from_fn(move |stage| {
+        recorded
+            .lock()
+            .unwrap()
+            .push((stage.kind, stage.attempt, stage.max_attempts));
+    });
+
+    let size = preflight_file_size(&client, &item, &CancellationToken::new(), Some(&reporter))
+        .await
+        .unwrap();
+    assert_eq!(size, 42);
+
+    let stages = stages.lock().unwrap().clone();
+    assert_eq!(
+        stages,
+        vec![
+            (DownloadStage::CONNECTING, 0, 5),
+            (DownloadStage::RETRYING, 1, 5),
+            (DownloadStage::RETRYING, 2, 5),
+        ],
+        "the ladder must announce the attempt it is on, not go quiet"
+    );
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn proxy_test_reports_a_refused_proxy_rather_than_failing_silently() {
+    // The exact shape of https://github.com/AtomicBot-ai/Atomic-Chat/issues/290:
+    // a proxy address that nothing is listening on. `validate_proxy_config`
+    // passes it happily — only an actual connection attempt can tell.
+    let port = refused_port().await;
+    let result = super::commands::test_proxy_connection(ProxyConfig {
+        url: format!("http://127.0.0.1:{port}"),
+        username: None,
+        password: None,
+        no_proxy: None,
+        ignore_ssl: None,
+    })
+    .await
+    .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.kind, "unreachable");
+    assert!(!result.detail.is_empty());
+}
+
+#[tokio::test]
+async fn proxy_test_rejects_a_malformed_url_without_touching_the_network() {
+    let result = super::commands::test_proxy_connection(ProxyConfig {
+        url: "not a url".to_string(),
+        username: None,
+        password: None,
+        no_proxy: None,
+        ignore_ssl: None,
+    })
+    .await
+    .unwrap();
+
+    assert!(!result.ok);
+    assert_eq!(result.kind, "invalid_config");
+}
+
+#[tokio::test]
+async fn proxy_test_says_so_when_no_proxy_would_skip_the_proxy_entirely() {
+    // Otherwise the test would pass for the wrong reason: the request never
+    // went through the proxy at all, so it proves nothing about it.
+    let port = refused_port().await;
+    let result = super::commands::test_proxy_connection(ProxyConfig {
+        url: format!("http://127.0.0.1:{port}"),
+        username: None,
+        password: None,
+        no_proxy: Some(vec!["huggingface.co".to_string()]),
+        ignore_ssl: None,
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(result.kind, "bypassed");
 }

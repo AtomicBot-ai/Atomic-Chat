@@ -1,0 +1,63 @@
+.generation-dotted-field {
+  overflow: visible;
+  transform-origin: center;
+  animation: generation-field-drift 16s linear infinite;
+  will-change: transform;
+}
+
+.generation-dot {
+  opacity: var(--dot-rest-opacity);
+  filter: blur(var(--dot-blur));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: generation-dot-wave 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite
+    both;
+  animation-delay: var(--dot-delay);
+}
+
+.generation-dotted-field--tile {
+  width: 96%;
+  height: 96%;
+}
+
+.generation-dotted-field--viewer {
+  width: min(12rem, 55cqw, 55cqh);
+  height: min(12rem, 55cqw, 55cqh);
+}
+
+@keyframes generation-field-drift {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes generation-dot-wave {
+  0%,
+  100% {
+    opacity: var(--dot-low-opacity);
+    transform: scale(0.72);
+  }
+
+  35% {
+    opacity: var(--dot-peak-opacity);
+    transform: scale(1.16);
+  }
+
+  62% {
+    opacity: var(--dot-fall-opacity);
+    transform: scale(0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generation-dotted-field {
+    animation: none;
+    transform: none;
+  }
+
+  .generation-dot {
+    animation: none;
+    opacity: var(--dot-static-opacity);
+    transform: none;
+  }
+}

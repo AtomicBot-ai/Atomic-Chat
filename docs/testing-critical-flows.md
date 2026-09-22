@@ -199,6 +199,23 @@ proxy transformations, and Responses API translation. The frontend hook tests
 cover state transitions. There is no real socket round-trip through the local
 server to a deterministic backend stub.
 
+`/v1/images/generations` and Remote & LAN (the `cloudflared` quick tunnel,
+per-request trusted hosts, the LAN address list) are served by the core on
+desktop (ADR 2026-09-18). Here the seam is proved by
+`services/__tests__/app.test.ts` (the four remote-access calls hit their core
+routes and a refused start keeps the core's `details` for
+`parseRemoteAccessRejection`), `hooks/__tests__/useRemoteAccessSync.test.ts`
+and `routes/settings/__tests__/remote-lan.test.tsx` on the page, and in Rust by
+`atomic_core::launch` (`--cloudflared-bin` only when the sidecar is there),
+`atomic_core::relay::legacy_events` (`download:stage` under the legacy task
+name) and `server::api_request_analytics` (the image labels). A status read
+the core fails no longer marks remote access unavailable
+(`useRemoteAccess.test.ts`, `useRemoteAccessSync.test.ts`), and a core
+failure reaches the UI and telemetry as its code (`remoteLan.test.ts`). The
+llama extensions' index tests prove a relayed `download:stage` frame of a core
+backend install becomes a named row's status, never progress. Nothing here
+starts a tunnel or generates an image; the core's e2e and live tests do.
+
 ### Agent turn and approval — strong at the deterministic runtime boundary
 
 Production entrypoints:
@@ -251,6 +268,99 @@ Production entrypoints:
 There are focused process, unload, and error-path tests, but no deterministic
 scenario proves start, readiness, routing, cancellation, unload, and orphan
 cleanup as one lifecycle.
+
+Cancelling a model load is the core's (`POST /models/:provider/:id/load/cancel`,
+ADR 2026-09-18); the three runtime extensions share
+`extensions/shared/loadCancel.ts` on top of it. `llamacpp-upstream-extension`
+`src/adapter/sharedLoadCancel.test.ts` proves the protocol against a fake core:
+the cancel is retried while the load request is still on its way, a session
+that came up first is unloaded again, the load rejects with
+`code: 'MODEL_LOAD_CANCELLED'`, and a core refusal keeps its code. Each
+extension's `index.test.ts` (`mlx-extension/src/loadCancel.test.ts`) then
+proves its own `load` reports the `installingEngine`/`loadingWeights` stages
+before the core call and that `cancelLoad` reaches through it. The core-side
+registry is proved in `atomic-chat-core` (test/e2e/load-cancel.test.ts there).
+
+### Local image generation — partial, P1
+
+Production entrypoints:
+
+- `atomic-chat-core` `src/diffusion/` — the engine (`sd-server`) process, the
+  jobs, step progress, the gallery and engine installs; reached through
+  `/atomic/v1/diffusion/*` and relayed as `atomic-core://diffusion:*`
+  (ADR 2026-09-18, image generation runs in the core).
+- `web-app/src/services/diffusion/tauri.ts` — the seam: one `atomic_core_call`
+  per operation, the core's four envelopes unwrapped, the four events plus the
+  `atomic-core://snapshot` reset stamped with their discriminant.
+- `web-app/src/stores/image-generation-store.ts` — binds to that service,
+  adopts a running job, runs the multi-run loop
+  (`seed = base + run × batchSize`), stops, lands outputs in the gallery, and
+  configures the core again on every `reset` (each attachment's snapshot) with
+  the idle interval and the output folder it keeps in `useImageSetting`.
+- `web-app/src/services/diffusion/install.ts` — downloads and unpacks the
+  engine here, asks the core for free space (`POST /disk/available`) and hands
+  the tree over (`POST /diffusion/backends/finalize`).
+- `web-app/src/containers/images/*`, `containers/dialogs/ImageSetupDialog.tsx`,
+  `routes/settings/media.tsx` — the Images page, the first-run wizard and the
+  Media settings page.
+- `web-app/src/lib/diffusion/{size,recipe,generation-stop,errors,telemetry}.ts`
+  — pure helpers: size snapping, recipe restore and export naming, the
+  stop/report decisions, the error-code routing table, PostHog props.
+
+Existing evidence:
+
+- `services/diffusion/__tests__/tauri.test.ts` runs the production
+  `TauriDiffusionService` against `mockIPC`: every operation hits its one core
+  route with the interface parameters as the body, load and generate requests
+  pass through unchanged, the four envelopes are unwrapped, ids are escaped, a
+  core refusal keeps its `code`, and `subscribe` listens on the four relayed
+  events plus the snapshot reset and detaches each listener exactly once.
+- `image-generation-store.test.ts` drives the loop against a fake
+  `DiffusionService` and asserts the seeds handed to `generate`, the gallery
+  order after three runs, that Stop ends the loop without a toast, that a
+  failure stops it with the code surfaced, the 2 s `getJob` fallback when the
+  terminal event never arrives, adoption of `getStatus().activeJob`, that bind
+  and a `reset` both re-send the stored output folder, that a folder the core
+  cannot create falls back to the default while the choice is kept (and that a
+  core outage does not), that a `reset` drops stale capabilities, and that the
+  telemetry payload carries neither prompt nor seed. `media.test.tsx` proves
+  the chosen folder is persisted, a refused one leaves the old choice, and
+  picking the default folder stores none. `lib/diffusion/__tests__/errors.test.ts`
+  walks core and relay codes outside the 21 (message kept, code in details).
+- `services/diffusion/__tests__/install.test.ts` proves the engine install
+  end to end against the download and core mocks: the host's qualifying
+  build, the free-space refusal and the go-ahead when the core cannot tell,
+  retiring the previous tree unless a session still runs from it.
+- The core's own evidence — the hand-ported sd.cpp tables, the fake
+  `sd-server`, the diffusion e2e on the compiled binary (test/e2e/diffusion.test.ts
+  there) and the live run on a real engine (test/live/diffusion.test.ts) —
+  lives in `atomic-chat-core/docs/testing-critical-flows.md`.
+- `size.test.ts`, `recipe.test.ts`, `generation-stop.test.ts`, `errors.test.ts`
+  cover the pure helpers as tables; `errors.test.ts` walks every code in the
+  contract and checks each has English copy.
+- `useImageArtifact.test.ts` derives installed/downloading/loaded from the
+  real `listInstalledArtifacts` and the download store.
+- `ImagePromptForm.test.tsx`, `ImageJobProgress.test.tsx`,
+  `ImageModelSelector.test.tsx`, `ImageViewer.test.tsx`,
+  `ImageSetupDialog.test.tsx`, `media.test.tsx` render the production
+  components against the fake service and assert what the user sees: the
+  Ctrl+Enter submit, the Generate/Stop swap, capability-gated controls, the
+  download plan's present/missing rows, Restore filling the form with the batch
+  seed, the export filename handed to the save dialog, delete removing the
+  tile, the wizard's Done gate, and the output-folder change.
+- `NavMain.test.tsx` checks the Images row sits after Models and disappears
+  without the media-generation feature.
+
+Gap:
+
+- The store's event handling is proved only through the fake service; no test
+  drives the production store through the relayed `atomic-core://diffusion:*`
+  events end to end.
+- The full-page composition (`ImageGenerationPage`) and the deep-link
+  `?model=&quant=` preselect have no test.
+- OS notification on completion and the GPU arbiter hand-off are mocked.
+- `make test-core-live` does not yet generate an image through the packaged
+  app core; the live engine run is the core's `ATOMIC_LIVE=1` test.
 
 ## Coverage snapshot
 
@@ -354,6 +464,10 @@ now regression-tested rather than retroactively rewriting the score.
    its successor); the default gate still has matching logic only.
 4. ServiceHub construction is smoke evidence; adapter behavior belongs to the
    dedicated `mockIPC` suites.
+5. Local image generation is proved through the seam (`tauri.test.ts`) and a
+   fake `DiffusionService` in the store; the page composition and the
+   deep-link preselect are untested, and no app-level test generates an
+   image through the packaged core.
 
 ### P2 — cleanup
 
@@ -419,7 +533,7 @@ The suite is outside `make verify`.
 | Local API after the core dies | `tests/e2e/desktop/local-api.spec.ts` (second scenario) | with the server started from the API page, the core is killed: the listener goes with it, the supervisor starts another core, and the server is listening again on the same port with the same key (401 without it) with nobody touching the app; the model it was serving is loaded again — a session for it appears in the new core — and a streamed completion from the outside client is answered; the page still shows the server as running. Until 2026-09-19 only the listener came back: the core's public server loads nothing itself, so every request got `503 No models are available` until the user did something in the app; and the model had been remembered under the first provider that lists it, which for a llama.cpp model is TurboQuant — off, with no backend | a core that dies in the middle of a streamed reply; several models served at once; a model that fails to load again (logged, the listener stays up); the tray's start/stop |
 | Factory reset | `tests/e2e/desktop/factory-reset.spec.ts` | with a conversation, a local model and a cloud provider connected with a key (found in `atomic-core/credentials.json` beforehand), "Reset" in settings and its confirmation restart the app by itself; it comes back on onboarding, the previous core is gone, the thread and the model are gone from disk, the key is in no file under the data folder, the default provider's downloaded backend is still there, and a file of the user's own in the folder is untouched. Until 2026-09-21 the reset left the whole `atomic-core/` folder — the cloud keys included — and the ChatGPT subscription's token file, and kept only TurboQuant's backends, so the default provider's backend was thrown away and fetched again | the webview's own storage is cleared by the web app and re-seeded by the e2e build, so what survives there is not judged; the ChatGPT token file is covered by the unit test only; Windows file-handle timing; a reset while a download runs |
 | Restart by the app itself | `tests/e2e/desktop/relaunch.spec.ts` | `relaunch` — the call the updater, the backend dialogs and the settings pages end with — takes the app's core down with it (the previous core's pid is gone when the new app is up), the restarted app has a core of its own within fifteen seconds, the conversation is there and the next message is answered. Until 2026-09-19 the restart replaced the process without the exit handler, the core stayed up holding the folder's lock, and the new app waited about 45 s for the vanished app's lease to lapse | **open, unexplained:** twice in some forty full runs this scenario hung until the test's own limit, and twenty loaded repetitions did not reproduce it. The WebDriver client used to wait two minutes, three times, for a command the app never answered — longer than any test — so the hang left no error and no artifacts; commands now fail after thirty seconds, by name, and the next occurrence will say which one. The AppImage restart path on Linux still spawns and exits without the exit handler; a restart in the middle of a download or a generation; the updater's own install step |
-| 7. MCP tool in a chat | `tests/e2e/desktop/mcp-tool.spec.ts` | the app starts the stdio MCP server named in `mcp_config.json`, offers its tool to the model, the scripted model calls it with its own arguments, the server receives exactly that call and its answer reaches the model. Once the user picks "Ask for approval" in the composer, the call waits in "Tool Approval Required" naming the tool: Deny keeps it from the server and the model is told "Tool execution denied by user"; Allow Once lets it through. On a thread whose approval mode was never touched, MCP tools run unprompted — they follow the global "Allow All MCP Tool Permissions" switch, which the app deliberately turns on for everyone — and the composer says so: "Ask for approval · MCP tools auto-approved". Until 2026-09-19 it read plain "Ask for approval" there. Once a mode is chosen the label is the plain one and means it | the server is a fixture with one tool; HTTP/SSE servers; "Always allow"; per-tool disables; a server that dies or times out; the settings page for MCP servers |
+| 7. MCP tool in a chat | `tests/e2e/desktop/mcp-tool.spec.ts` | the app starts the stdio MCP server named in `mcp_config.json`, offers its tool to the model, the scripted model calls it with its own arguments, the server receives exactly that call and its answer reaches the model. Once the user picks "Ask for approval" in the composer, the call waits in "Tool Approval Required" naming the tool: Deny keeps it from the server and the model is told "Tool execution denied by user"; Allow Once lets it through. On a thread whose approval mode was never touched, MCP tools run unprompted — they follow the global "Allow All MCP Tool Permissions" switch in Settings, which the app deliberately turns on for everyone — while the composer's select shows its plain default, "Ask for approval". From 2026-09-19 to 2026-09-22 the label added "· MCP tools auto-approved" there; that was reverted (2026-09-22 record). The scenario pins both the label and the behaviour | the server is a fixture with one tool; HTTP/SSE servers; "Always allow"; per-tool disables; a server that dies or times out; the settings page for MCP servers |
 | 8. Agent mode, local model | `tests/e2e/desktop/agent-mode.spec.ts` | with Agent mode on, the Rust loop drives the chat model's own core session through the raw `/completion` endpoint (no second session appears): it reads a file in the default workspace, writes one there without asking, and for a write outside the workspace shows "Allow folder access" naming the tool and the folder, with nothing written meanwhile. Refused, the file is never created; allowed, it is written. Either way the turn ends with the model's reply, and the reply shows the read file's text had reached the model's prompt | the model's part is three scripted steps: the grammar, the prompt, repair steps and loop guards are not exercised by a real model; shell, web and git tools; MCP tools inside the agent (`mcp.*`); cloud and MLX transports; cancelling a run; whether a second approval follows "Allow folder" is tolerated, not asserted |
 | 6. Document attached for retrieval | `tests/e2e/desktop/document-attachment.spec.ts` | a text file chosen through the composer's menu is attached to the thread; with the next message the app parses and chunks it and the core embeds the chunks — the embedding model runs as a process of its own with `--embedding --pooling mean` — and the thread's collection holds one file and one chunk with the document's words and exactly the vector the scripted backend gives for a text of that length. Then the model asks: the app offers `retrieve` because the thread has documents, the scripted chat model calls it, the query is embedded by the core and matched, and the tool's result in the thread store carries the document's words, which the model's answer repeats. Nothing is downloaded: the embedding model is placed in the profile. **Found by these tool scenarios and fixed on 2026-09-19:** about once in a dozen long runs a turn in which the model calls a tool ended empty. Replies from local models are relayed over an IPC channel, and every reader took the relaying command's return for the end of the stream; the return can overtake chunks still on their way, and a reply of two chunks — a tool call — was closed before it arrived. The end now travels on the channel. The scenario still prints the thread store and the tool-related console lines if a tool turn ever ends empty again. The thread's collection is in `<data folder>/db` and nothing is left in the fixed place under the home directory the plugin used until 2026-09-19 (it ignored the data folder, so a moved folder left the indexes behind and a factory reset did not remove them) | the file is picked through the e2e build's dialog queue, not the native dialog; drag-and-drop; `auto` and `inline` modes and the per-file prompt (the scenario pins `embeddings`); PDF/DOCX parsing; ranking among many chunks (the scripted vectors differ only by text length); the ANN index (`sqlite-vec` ships on Linux only; the scenario pins linear search); project-scoped collections; the agent's `docs.*` path |
 | 4. Local API request log | `tests/e2e/desktop/api-inspector.spec.ts` | with the API page open and the server started, a streamed completion made by an outside client appears in the list by itself — nobody reopens or refreshes the page — and opens to its method and path, the prompt it carried, the reply it got and its stop reason; a request refused for lack of a key is counted as the one error (Requests 2, Completed 1, Errors 1). This is the path core → Rust relay → inspector → webview; until 2026-09-18 its last step dropped every live event, because the emitter was bound only when the app's own proxy started, which no longer happens with the core serving the API | token counts and speeds are whatever the scripted backend yields, not checked; progress events while a long reply streams; the log's filters, search and Clear |

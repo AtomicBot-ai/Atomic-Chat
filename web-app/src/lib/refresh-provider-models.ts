@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getModelCapabilities } from '@/lib/models'
 import type { ServiceHub } from '@/services'
+import { useProviderModelFetchStore } from '@/stores/provider-model-fetch-store'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 
@@ -109,6 +110,9 @@ export async function refreshProviderModels({
         console.info(
           `[providers:${provider.provider}] live /models: ${liveModelIds.length} total, ${liveNewModels.length} new`
         )
+        useProviderModelFetchStore
+          .getState()
+          .clearFetchError(provider.provider)
       } catch (liveErr) {
         // Non-fatal: registry results still apply even if the live
         // endpoint is unreachable or returns an error. We surface the error
@@ -119,6 +123,12 @@ export async function refreshProviderModels({
           `[providers:${provider.provider}] live /models fetch failed (non-fatal):`,
           liveErr
         )
+        // The toast below is transient and fires on whichever page triggered
+        // the refresh; remember the reason so the models list can keep saying
+        // it, instead of reading as "this server has no models" (#293).
+        useProviderModelFetchStore
+          .getState()
+          .setFetchError(provider.provider, liveFetchError.message)
       }
     }
 

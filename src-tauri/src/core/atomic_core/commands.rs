@@ -232,6 +232,21 @@ impl AtomicCoreClient {
         self.supervisor.call(method, path, body, true).await
     }
 
+    /// A call for the core that owns the folder now, which never starts one: for
+    /// state the next snapshot restates anyway (error-reporting consent).
+    pub(crate) async fn call_attached(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value, CoreError> {
+        let _operation = self.operations.read().await;
+        if !self.enabled.load(Ordering::SeqCst) {
+            return Err(Self::stopped_error());
+        }
+        self.supervisor.call(method, path, body, false).await
+    }
+
     async fn snapshot(&self) -> Result<Value, CoreError> {
         let _operation = self.operations.read().await;
         if !self.enabled.load(Ordering::SeqCst) {
@@ -262,6 +277,8 @@ impl<R: Runtime> EventSink for TauriSink<R> {
         if name == relay::SNAPSHOT_EVENT {
             // A (re)attached core starts with previews off; restate what the API screen wants.
             super::api_requests::push_inspecting(&self.app);
+            // And it knows only the consent it was launched with, or none if another start won.
+            super::telemetry::push(&self.app);
             if let Some(generation) = payload.get("generation").and_then(Value::as_u64) {
                 let app = self.app.clone();
                 tauri::async_runtime::spawn(async move { recover_public_server(&app, generation).await; });

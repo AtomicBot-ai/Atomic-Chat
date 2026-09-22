@@ -136,6 +136,22 @@ test('the webview no longer reaches for ownership flags, leases or the legacy cr
     'list_provider_configs',
     'llamacpp_upstream_session_died',
     '@janhq/tauri-plugin-foundation-models-api',
+    // Moved into the core with image generation: the tunnel and LAN listing are
+    // `/atomic/v1/remote-access` and `/lan-addresses`, free disk space is `POST /disk/available`,
+    // and a load is cancelled with `POST /models/:provider/:id/load/cancel`.
+    'get_remote_access_status',
+    'start_remote_access',
+    'stop_remote_access',
+    'get_lan_addresses',
+    'available_disk_space',
+    // The image-generation plugin of v2.0.38-2.0.40, now `/atomic/v1/diffusion/*` in the core. Its
+    // seam built command names from a prefix (`${PLUGIN}|configure`) and listened on
+    // `atomic-diffusion://state`, so the prefixes themselves are what must not come back.
+    'plugin:atomic-diffusion',
+    'atomic-diffusion://',
+    // The runtime plugins' own load-cancel commands, now the core's `load/cancel` route.
+    'cancel_llama_model_load',
+    'cancel_mlx_model_load',
   ]
   const offenders = []
   for (const path of webviewSources()) {
@@ -158,6 +174,13 @@ test('the app Rust has no ownership flags, handover or plugin session maps', () 
     'cleanup_mlx_processes',
     'tauri_plugin_foundation_models',
     'core::cli::',
+    // Image generation, the public image route, the Remote Access tunnel, per-request trusted
+    // hosts and load cancellation all moved into the core (its `src/diffusion/`,
+    // `src/server/public/{images,dynamic-hosts}.ts`, `src/remote-access/`, `load-cancel.ts`).
+    'tauri_plugin_atomic_diffusion',
+    'mod remote_access',
+    'mod images_route',
+    'mod dynamic_hosts',
   ]
   const offenders = []
   for (const path of sources(join(ROOT, 'src-tauri', 'src'), ['.rs'])) {
@@ -165,6 +188,30 @@ test('the app Rust has no ownership flags, handover or plugin session maps', () 
     for (const needle of removed) if (source.includes(needle)) offenders.push(`${where(path)}: ${needle}`)
     for (const [use] of source.matchAll(/tauri_plugin_(?:llamacpp_upstream|llamacpp|mlx)::\w+/g))
       if (!use.endsWith('::init')) offenders.push(`${where(path)}: ${use}`)
+  }
+  assert.deepEqual(offenders, [], offenders.join('\n'))
+})
+
+test('the utils crate and the runtime plugins carry no load-cancel machinery', () => {
+  // v2.0.40 kept it in `src-tauri/utils/src/load_cancel.rs` (`jan_utils::load_cancel`) and in each
+  // runtime plugin's state and commands; the core's `load/cancel` route replaced all of it.
+  const roots = [
+    join(ROOT, 'src-tauri', 'utils', 'src'),
+    ...readdirSync(join(ROOT, 'src-tauri', 'plugins'))
+      .map((name) => join(ROOT, 'src-tauri', 'plugins', name, 'src'))
+      .filter((dir) => {
+        try {
+          return statSync(dir).isDirectory()
+        } catch {
+          return false
+        }
+      }),
+  ]
+  const offenders = []
+  for (const path of roots.flatMap((dir) => sources(dir, ['.rs']))) {
+    const source = readFileSync(path, 'utf8')
+    for (const needle of ['load_cancel', 'LoadCancelRegistry', 'cancel_llama_model_load', 'cancel_mlx_model_load'])
+      if (source.includes(needle)) offenders.push(`${where(path)}: ${needle}`)
   }
   assert.deepEqual(offenders, [], offenders.join('\n'))
 })

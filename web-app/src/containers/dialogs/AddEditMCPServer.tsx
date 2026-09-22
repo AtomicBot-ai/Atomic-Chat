@@ -342,9 +342,6 @@ export default function AddEditMCPServer({
       <DialogContent
         className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl"
         showCloseButton={false}
-        onInteractOutside={(e) => {
-          e.preventDefault()
-        }}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
@@ -433,8 +430,8 @@ export default function AddEditMCPServer({
                   className={cn(
                     'flex-1',
                     connection === 'local'
-                      ? 'bg-background text-foreground shadow-xs hover:bg-background'
-                      : 'text-muted-foreground hover:bg-transparent hover:text-foreground'
+                      ? 'bg-background text-foreground shadow-xs hover:bg-background dark:hover:bg-background'
+                      : 'text-muted-foreground hover:bg-transparent dark:hover:bg-transparent hover:text-foreground'
                   )}
                   onClick={() => {
                     setConnection('local')
@@ -450,8 +447,8 @@ export default function AddEditMCPServer({
                   className={cn(
                     'flex-1',
                     connection === 'remote'
-                      ? 'bg-background text-foreground shadow-xs hover:bg-background'
-                      : 'text-muted-foreground hover:bg-transparent hover:text-foreground'
+                      ? 'bg-background text-foreground shadow-xs hover:bg-background dark:hover:bg-background'
+                      : 'text-muted-foreground hover:bg-transparent dark:hover:bg-transparent hover:text-foreground'
                   )}
                   onClick={() => {
                     setConnection('remote')

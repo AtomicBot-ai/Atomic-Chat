@@ -61,6 +61,7 @@ export const getLoadedModels = core.getLoadedModels
 export const findSession = core.findSession
 export const load = core.load as (modelId: string, options?: CoreLoadOptions) => Promise<SessionInfo>
 export const unload = core.unload as (modelId: string) => Promise<UnloadResult>
+export const cancelLoad = core.cancelLoad
 export const increaseContext = core.increaseContext
 export const recreateSession = core.recreateSession
 export const importSettings = core.importSettings

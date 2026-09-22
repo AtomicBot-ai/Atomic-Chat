@@ -5,6 +5,18 @@
       "body": {
         "json": {
           "components": {
+            "responses": {
+              "ImageApiError": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/ImageApiErrorResponseDto"
+                    }
+                  }
+                },
+                "description": "OpenAI-shaped image generation error"
+              }
+            },
             "schemas": {
               "AnthropicMessage": {
                 "description": "A single message in the Anthropic Messages API format.",
@@ -552,6 +564,53 @@
                 ],
                 "type": "object"
               },
+              "CreateImageGenerationDto": {
+                "properties": {
+                  "model": {
+                    "description": "Optional id or display name of the loaded image model. A different model returns 503.",
+                    "type": "string"
+                  },
+                  "n": {
+                    "default": 1,
+                    "description": "Number of images to generate in this request.",
+                    "maximum": 4,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "negative_prompt": {
+                    "description": "Optional text describing what to avoid.",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "Text description of the image to generate.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "response_format": {
+                    "default": "b64_json",
+                    "description": "Only base64 JSON responses are supported.",
+                    "enum": [
+                      "b64_json"
+                    ],
+                    "type": "string"
+                  },
+                  "seed": {
+                    "description": "Optional deterministic seed.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "size": {
+                    "default": "auto",
+                    "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT. Each dimension must be 256–2048 and a multiple of 16.",
+                    "example": "1024x1024",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prompt"
+                ],
+                "type": "object"
+              },
               "CreateMessageDto": {
                 "description": "Request body for `POST /v1/messages`. Follows Anthropic Messages API specification.",
                 "properties": {
@@ -655,6 +714,108 @@
                 "required": [
                   "model",
                   "messages"
+                ],
+                "type": "object"
+              },
+              "ImageApiErrorDetailDto": {
+                "properties": {
+                  "code": {
+                    "example": "model_not_loaded",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "param": {
+                    "example": "size",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "type": {
+                    "example": "invalid_request_error",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message",
+                  "type",
+                  "param",
+                  "code"
+                ],
+                "type": "object"
+              },
+              "ImageApiErrorResponseDto": {
+                "properties": {
+                  "error": {
+                    "$ref": "#/components/schemas/ImageApiErrorDetailDto"
+                  }
+                },
+                "required": [
+                  "error"
+                ],
+                "type": "object"
+              },
+              "ImageGenerationAtomicDto": {
+                "properties": {
+                  "job_id": {
+                    "description": "Atomic Chat diffusion job id.",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "description": "Local paths of the PNGs saved to the Atomic Chat gallery.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "seed": {
+                    "description": "Seed used by the first generated image.",
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "paths"
+                ],
+                "type": "object"
+              },
+              "ImageGenerationDataDto": {
+                "properties": {
+                  "b64_json": {
+                    "description": "Base64-encoded PNG bytes.",
+                    "format": "byte",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "b64_json"
+                ],
+                "type": "object"
+              },
+              "ImageGenerationResponseDto": {
+                "properties": {
+                  "atomic": {
+                    "$ref": "#/components/schemas/ImageGenerationAtomicDto"
+                  },
+                  "created": {
+                    "description": "Unix timestamp in seconds.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/ImageGenerationDataDto"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "created",
+                  "data",
+                  "atomic"
                 ],
                 "type": "object"
               },
@@ -1030,6 +1191,65 @@
                 ]
               }
             },
+            "/images/generations": {
+              "post": {
+                "description": "Generates PNG images with the image model already loaded in Atomic Chat. The Local API Server and an image model must both be running. Images are returned as base64 and are also saved to the local gallery; URL responses and automatic model loading are not supported.",
+                "operationId": "createImageGeneration",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "example": {
+                        "n": 1,
+                        "prompt": "A paper boat on a moonlit lake",
+                        "response_format": "b64_json",
+                        "size": "1024x1024"
+                      },
+                      "schema": {
+                        "$ref": "#/components/schemas/CreateImageGenerationDto"
+                      }
+                    }
+                  },
+                  "required": true
+                },
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/ImageGenerationResponseDto"
+                        }
+                      }
+                    },
+                    "description": "Generated PNG images encoded as base64, with Atomic Chat job and gallery metadata"
+                  },
+                  "400": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  },
+                  "429": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "500": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "503": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "504": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  }
+                },
+                "summary": "Generate local images",
+                "tags": [
+                  "Images"
+                ]
+              }
+            },
             "/messages": {
               "post": {
                 "description": "Generates a response based on input messages. Streaming mode is supported. This endpoint follows the Anthropic Messages API specification and is compatible with Claude models.",
@@ -1113,6 +1333,10 @@
             {
               "description": "Endpoint for generating completions (chat or text) from a model",
               "name": "Inference"
+            },
+            {
+              "description": "OpenAI-compatible local image generation using the image model already loaded in Atomic Chat",
+              "name": "Images"
             }
           ]
         }
@@ -1151,7 +1375,7 @@
     "<fc_id>"
   ],
   "source": {
-    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "commit": "5e7ae739c37be537dd831ecefe7992521624543b",
     "file": "src-tauri/src/core/server/proxy.rs"
   }
 }

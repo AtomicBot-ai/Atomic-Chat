@@ -13,19 +13,31 @@ import {
   cleanup,
   fireEvent,
   within,
+  act,
+  waitFor,
 } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import { localStorageKey } from '@/constants/localStorage'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: vi.fn(),
+const selectionMocks = vi.hoisted(() => ({
+  switchToModel: vi.fn(() => Promise.resolve()),
 }))
+vi.mock('@/utils/switchModel', () => ({
+  switchToModel: selectionMocks.switchToModel,
+}))
+vi.mock('@/hooks/useModelProvider', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/hooks/useModelProvider')>()
+  return { useModelProvider: Object.assign(vi.fn(), actual.useModelProvider) }
+})
 
 // The component subscribes with selectors, so the mock has to apply them.
 const mockModelProvider = (state: Record<string, unknown>) => {
@@ -77,8 +89,16 @@ vi.mock('@/components/ui/popover', () => ({
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="popover-trigger">{children}</div>
   ),
-  PopoverContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="popover-content">{children}</div>
+  PopoverContent: ({
+    children,
+    className,
+  }: {
+    children: React.ReactNode
+    className?: string
+  }) => (
+    <div data-testid="popover-content" className={className}>
+      {children}
+    </div>
   ),
 }))
 
@@ -145,6 +165,7 @@ describe('DropdownModelProvider - the composer pill', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    useModelLoad.setState({ modelSelectionDeferred: false })
     seedServiceHub({
       models: {
         checkMmprojExists: vi.fn().mockResolvedValue(false),
@@ -169,11 +190,113 @@ describe('DropdownModelProvider - the composer pill', () => {
     cleanup()
   })
 
+  it.each([false, true])(
+    'keeps Select Model after Skip with preload %s, including library refresh and remount',
+    async (preload) => {
+      const { useModelProvider: realStore } = await vi.importActual<
+        typeof import('@/hooks/useModelProvider')
+      >('@/hooks/useModelProvider')
+      vi.mocked(useModelProvider).mockImplementation(realStore)
+      realStore.setState({
+        providers: providers as ModelProvider[],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      useGeneralSetting.setState({ preloadModelOnStartup: preload })
+      useModelLoad.setState({ modelSelectionDeferred: true })
+
+      const first = render(<DropdownModelProvider />)
+      await act(async () => {})
+      expect(pill()).toHaveTextContent('common:selectAModel')
+      expect(realStore.getState().selectedModel).toBeNull()
+      await act(async () =>
+        realStore.getState().setProviders([...providers] as ModelProvider[])
+      )
+      first.unmount()
+      render(<DropdownModelProvider />)
+      await act(async () => {})
+      expect(pill()).toHaveTextContent('common:selectAModel')
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(selectionMocks.switchToModel).not.toHaveBeenCalled()
+      expect(useGeneralSetting.getState().preloadModelOnStartup).toBe(preload)
+
+      fireEvent.click(screen.getByText('Qwen 3'))
+      await waitFor(() => expect(pill()).toHaveTextContent('Qwen 3'))
+      expect(realStore.getState().selectedModel?.id).toBe(thinkingModel.id)
+      expect(selectionMocks.switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: thinkingModel.id,
+          providerName: 'llamacpp-upstream',
+        })
+      )
+    }
+  )
+
   it('names the model and its reasoning level', () => {
     render(<DropdownModelProvider />)
 
     expect(pill()).toHaveTextContent('Qwen 3')
     expect(pill()).toHaveTextContent('common:reasoningEffort.medium')
+    expect(screen.getByTestId('model-picker-pill-shell')).toHaveClass(
+      'w-[10.5rem]'
+    )
+    expect(screen.getByTestId('model-picker-pill-shell')).not.toHaveClass(
+      'transition-[width]'
+    )
+  })
+
+  it('does not render a stale provider avatar without a selected model', () => {
+    mockModelProvider({
+      providers,
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: null,
+      getProviderByName: vi.fn((name: string) =>
+        providers.find((provider) => provider.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+
+    render(<DropdownModelProvider />)
+
+    expect(pill()).toHaveTextContent('common:selectAModel')
+    expect(
+      pill().querySelector('[data-testid="provider-avatar-llamacpp-upstream"]')
+    ).toBeNull()
+  })
+
+  it('keeps the composer name compact and shows the author in both inner layers', () => {
+    const namespacedModel = {
+      id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',
+      capabilities: ['completion'],
+      reasoning: { supportsThinking: true },
+    } as Model
+    const namespacedProvider = {
+      provider: 'llamacpp-upstream',
+      active: true,
+      api_key: '',
+      models: [namespacedModel],
+      settings: [],
+    } as ModelProvider
+    mockModelProvider({
+      providers: [namespacedProvider],
+      selectedProvider: namespacedProvider.provider,
+      selectedModel: namespacedModel,
+      getProviderByName: vi.fn(() => namespacedProvider),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+
+    render(<DropdownModelProvider />)
+
+    expect(pill()).toHaveTextContent('LFM2.5 2.6B')
+    expect(pill()).not.toHaveTextContent('LiquidAI/')
+    expect(modelRow()).toHaveTextContent('LiquidAI/LFM2.5 2.6B')
+
+    fireEvent.click(modelRow()!)
+    expect(screen.getByText('LiquidAI/LFM2.5 2.6B')).toBeVisible()
   })
 
   it('opens on the model row with the effort slider under it', () => {
@@ -189,7 +312,27 @@ describe('DropdownModelProvider - the composer pill', () => {
       'common:reasoningEffort.medium'
     )
     expect(searchField()).toBeNull()
-    expect(screen.queryByText('other.gguf')).toBeNull()
+    expect(screen.queryByText('Other')).toBeNull()
+  })
+
+  it('gives settings a bounded reading column and exposes the full model title', () => {
+    selectModel({
+      ...thinkingModel,
+      displayName: 'Qwen 3 with a very long model name',
+    })
+    render(<DropdownModelProvider />)
+
+    expect(screen.getByTestId('popover-content')).toHaveClass(
+      'w-[min(22rem,calc(100dvw-2rem))]'
+    )
+    expect(
+      within(modelRow()!).getByText('Qwen 3 with a very long model name')
+    ).toHaveAttribute('title', 'Qwen 3 with a very long model name')
+    expect(modelRow()).toHaveClass('min-w-0')
+    expect(screen.getByRole('slider')).toHaveAttribute(
+      'aria-valuetext',
+      'common:reasoningEffort.medium'
+    )
   })
 
   it('steps into the model list and back', () => {
@@ -198,7 +341,10 @@ describe('DropdownModelProvider - the composer pill', () => {
     fireEvent.click(modelRow()!)
 
     expect(searchField()).toBeInTheDocument()
-    expect(screen.getByText('other.gguf')).toBeInTheDocument()
+    expect(screen.getByTestId('popover-content')).toHaveClass(
+      'w-[min(22rem,calc(100dvw-2rem))]'
+    )
+    expect(screen.getByText('Other')).toBeInTheDocument()
     expect(screen.queryByRole('slider')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'common:back' }))
@@ -258,6 +404,7 @@ describe('DropdownModelProvider - the composer pill', () => {
     expect(
       within(pill()).getByTestId('provider-avatar-llamacpp-upstream')
     ).toBeInTheDocument()
+    expect(screen.getByTestId('model-picker-pill-shell')).toHaveClass('w-20')
   })
 
   it('keeps the name with one bar open, or with nothing to fold down to', () => {

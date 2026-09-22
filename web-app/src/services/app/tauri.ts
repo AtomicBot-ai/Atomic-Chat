@@ -10,6 +10,46 @@ import {
 } from '@/constants/localStorage'
 import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
+import { normalizeRemoteAccessStatus } from '@/lib/remoteLan'
+import type { RemoteAccessStatus } from '@/types/remoteAccess'
+
+/**
+ * One relayed control call. A `REMOTE_ACCESS_*` refusal from the core carries
+ * the reason the page has always parsed (`server_stopped`, …) in `details`;
+ * it is rethrown bare so `parseRemoteAccessRejection` reads it as before.
+ */
+async function coreCall<T = unknown>(
+  method: 'GET' | 'POST',
+  path: string
+): Promise<T> {
+  try {
+    return await invoke<T>('atomic_core_call', { method, path, body: null })
+  } catch (error) {
+    const record =
+      error && typeof error === 'object'
+        ? (error as { code?: unknown; details?: unknown })
+        : null
+    if (
+      record &&
+      typeof record.code === 'string' &&
+      record.code.startsWith('REMOTE_ACCESS_') &&
+      typeof record.details === 'string'
+    ) {
+      throw record.details
+    }
+    throw error
+  }
+}
+
+/**
+ * A reply that is not a status is a contract break, not "off": reject with a
+ * code so the card reports it instead of showing a tunnel state it made up.
+ */
+function expectRemoteAccessStatus(raw: unknown): RemoteAccessStatus {
+  const status = normalizeRemoteAccessStatus(raw)
+  if (!status) throw new Error('malformed_status')
+  return status
+}
 
 export class TauriAppService extends DefaultAppService {
   async factoryReset(): Promise<void> {
@@ -112,5 +152,33 @@ export class TauriAppService extends DefaultAppService {
 
   async readYaml<T = unknown>(path: string): Promise<T> {
     return await invoke<T>('read_yaml', { path })
+  }
+
+  // Desktop-only, served by the core; `PlatformFeature.LOCAL_API_SERVER`
+  // gates every caller, so mobile never reaches them.
+  async getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+    return expectRemoteAccessStatus(await coreCall('GET', '/remote-access'))
+  }
+
+  async startRemoteAccess(): Promise<RemoteAccessStatus> {
+    return expectRemoteAccessStatus(
+      await coreCall('POST', '/remote-access/start')
+    )
+  }
+
+  async stopRemoteAccess(): Promise<RemoteAccessStatus> {
+    return expectRemoteAccessStatus(
+      await coreCall('POST', '/remote-access/stop')
+    )
+  }
+
+  async getLanAddresses(): Promise<string[]> {
+    const reply = await coreCall<{ addresses?: unknown }>('GET', '/lan-addresses')
+    const addresses = reply && typeof reply === 'object' ? reply.addresses : null
+    return Array.isArray(addresses)
+      ? addresses.filter(
+          (address): address is string => typeof address === 'string'
+        )
+      : []
   }
 }

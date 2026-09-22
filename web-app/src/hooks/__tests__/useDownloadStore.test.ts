@@ -8,6 +8,8 @@ describe('useDownloadStore', () => {
       downloads: {},
       localDownloadingModels: new Set(),
       resumableDownloads: new Set(),
+      downloadOriginByModelId: {},
+      downloadRequestOriginByModelId: {},
     })
   })
 
@@ -18,6 +20,48 @@ describe('useDownloadStore', () => {
       expect(result.current.downloads).toEqual({})
       expect(result.current.localDownloadingModels).toEqual(new Set())
       expect(result.current.resumableDownloads).toEqual(new Set())
+    })
+  })
+
+  describe('download request origins', () => {
+    it('marks ordinary download surfaces as standalone by default', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.setDownloadOrigin('model-1', 'owner/model')
+      })
+
+      expect(result.current.downloadOriginByModelId['model-1']).toBe(
+        'owner/model'
+      )
+      expect(result.current.downloadRequestOriginByModelId['model-1']).toBe(
+        'standalone'
+      )
+    })
+
+    it('records and clears reply-gate intent independently of repo identity', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.setDownloadOrigin(
+          'model-1',
+          'owner/model',
+          'reply-gate'
+        )
+      })
+
+      expect(result.current.downloadRequestOriginByModelId['model-1']).toBe(
+        'reply-gate'
+      )
+
+      act(() => {
+        result.current.clearDownloadOrigin('model-1')
+      })
+
+      expect(result.current.downloadOriginByModelId['model-1']).toBeUndefined()
+      expect(
+        result.current.downloadRequestOriginByModelId['model-1']
+      ).toBeUndefined()
     })
   })
 
@@ -381,6 +425,68 @@ describe('useDownloadStore', () => {
 
       expect(result.current.resumableDownloads.has('model-1')).toBe(false)
       expect(result.current.localDownloadingModels.has('model-1')).toBe(true)
+    })
+  })
+
+  describe('updateStage (ATO — #290)', () => {
+    it('reports a retry without rewinding the transferred bytes', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateProgress('model-1', 0.5, 'model-1', 500, 1000)
+        result.current.updateStage('model-1', {
+          kind: 'retrying',
+          attempt: 2,
+          maxAttempts: 5,
+        })
+      })
+
+      const entry = result.current.downloads['model-1']
+      // The whole point of a separate action: a stage event carries no byte
+      // counts, and routing it through updateProgress published 0/0.
+      expect(entry.current).toBe(500)
+      expect(entry.total).toBe(1000)
+      expect(entry.progress).toBe(0.5)
+      expect(entry.stage).toEqual({
+        kind: 'retrying',
+        attempt: 2,
+        maxAttempts: 5,
+      })
+    })
+
+    it('clears the stage once bytes actually move', () => {
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateStage('model-1', {
+          kind: 'connecting',
+          attempt: 0,
+          maxAttempts: 5,
+        })
+        result.current.updateProgress('model-1', 0.1, 'model-1', 100, 1000)
+      })
+
+      expect(result.current.downloads['model-1'].stage).toBeUndefined()
+    })
+
+    it('creates an entry for a download that has not reported bytes yet', () => {
+      // The first stage event arrives before any progress event, because the
+      // preflight ladder runs before a single byte is requested.
+      const { result } = renderHook(() => useDownloadStore())
+
+      act(() => {
+        result.current.updateStage('model-1', {
+          kind: 'connecting',
+          attempt: 0,
+          maxAttempts: 5,
+        })
+      })
+
+      const entry = result.current.downloads['model-1']
+      expect(entry).toBeDefined()
+      expect(entry.name).toBe('model-1')
+      expect(entry.total).toBe(0)
+      expect(entry.stage?.kind).toBe('connecting')
     })
   })
 

@@ -233,6 +233,7 @@ pub fn endpoint_label(value: &str) -> &'static str {
         "models" => "models",
         "muse-code/models" => "muse-code/models",
         "metrics" => "metrics",
+        "images/generations" => "images/generations",
         _ => "other",
     }
 }
@@ -243,6 +244,8 @@ pub fn backend_label(value: &str) -> &'static str {
         "llamacpp-upstream" => "llamacpp-upstream",
         "mlx" => "mlx",
         "remote" => "remote",
+        // `/v1/images/generations`, served by the core's own sd.cpp runner.
+        "atomic-diffusion" => "atomic-diffusion",
         _ => "unknown",
     }
 }
@@ -259,6 +262,11 @@ pub fn error_kind_label(value: &str) -> &'static str {
         "upstream_error" => "upstream_error",
         "local_model_error" => "local_model_error",
         "local_model_unreachable" => "local_model_unreachable",
+        // The image route's own kinds: a loaded model already generating (429), the run
+        // outliving its ceiling (504), and any other failure the runner reported.
+        "busy" => "busy",
+        "timeout" => "timeout",
+        "upstream" => "upstream",
         _ => "other",
     }
 }
@@ -418,6 +426,20 @@ mod tests {
         }))
         .expect("observation");
         assert_eq!((odd.endpoint, odd.backend, odd.error_kind), ("other", "unknown", Some("other")));
+        let image = observation_from_core(&serde_json::json!({
+            "endpoint": "images/generations",
+            "method": "POST",
+            "backend": "atomic-diffusion",
+            "status": 429,
+            "error_kind": "busy"
+        }))
+        .unwrap();
+        assert_eq!(
+            (image.endpoint, image.backend, image.error_kind),
+            ("images/generations", "atomic-diffusion", Some("busy"))
+        );
+        assert_eq!(error_kind_label("timeout"), "timeout");
+        assert_eq!(error_kind_label("upstream"), "upstream");
         assert!(observation_from_core(&serde_json::json!({"method": "GET"})).is_none());
         assert!(observation_from_core(&serde_json::json!(null)).is_none());
     }

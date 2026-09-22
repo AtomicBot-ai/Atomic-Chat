@@ -11,7 +11,7 @@ import type { MCPServerConfig, MCPServers } from '@/hooks/useMCPServers'
 
 export type ConnectorSecret = {
   kind: 'env' | 'header'
-  /** Env var name (SERPER_API_KEY) or header name (Authorization). */
+  /** Env var name (RESEND_API_KEY) or header name (Authorization). */
   key: string
   /** i18n key under mcp-connectors for the input label. */
   labelKey: string
@@ -31,6 +31,12 @@ export type MCPConnector = {
   author: string
   /** i18n key: mcp-connectors:descriptions.<id>. */
   descriptionKey: string
+  /**
+   * i18n key: mcp-connectors:taglines.<id>. Two or three words on what the
+   * connector does ("Web search"); the plugins menu shows it under the name
+   * instead of a tool count.
+   */
+  taglineKey?: string
   /** Brand tile background; no image asset means a monogram is rendered. */
   icon: { bg: string; src?: string }
   /** Featured connector: badge + sorts first. */
@@ -90,6 +96,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Exa',
     author: 'Exa',
     descriptionKey: 'mcp-connectors:descriptions.exa',
+    taglineKey: 'mcp-connectors:taglines.exa',
     icon: { bg: '#1741f6', src: '/images/connectors/exa.svg' },
     featured: true,
     docsUrl: 'https://docs.exa.ai',
@@ -107,6 +114,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Atomic Mail',
     author: 'Atomic Mail',
     descriptionKey: 'mcp-connectors:descriptions.atomicmail',
+    taglineKey: 'mcp-connectors:taglines.atomicmail',
     // The mark ships on its own dark tile, so the bg matches it.
     icon: { bg: '#0b1017', src: '/images/connectors/atomicmail.png' },
     featured: true,
@@ -124,6 +132,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Linear',
     author: 'Linear',
     descriptionKey: 'mcp-connectors:descriptions.linear',
+    taglineKey: 'mcp-connectors:taglines.linear',
     icon: { bg: '#5E6AD2', src: '/images/connectors/linear.svg' },
     docsUrl: 'https://linear.app/docs/mcp',
     matchUrls: ['mcp.linear.app'],
@@ -142,8 +151,10 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Notion',
     author: 'Notion',
     descriptionKey: 'mcp-connectors:descriptions.notion',
+    taglineKey: 'mcp-connectors:taglines.notion',
     // Notion's mark is black on a white page, so the tile is white too
-    // (the same treatment as Serper) instead of an inverted black tile.
+    // (the same treatment as Cloudflare and Airtable) instead of an inverted
+    // black tile.
     icon: { bg: '#ffffff', src: '/images/connectors/notion.svg' },
     docsUrl: 'https://developers.notion.com/docs/mcp',
     matchUrls: ['mcp.notion.com'],
@@ -161,6 +172,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Sentry',
     author: 'Sentry',
     descriptionKey: 'mcp-connectors:descriptions.sentry',
+    taglineKey: 'mcp-connectors:taglines.sentry',
     icon: { bg: '#362D59', src: '/images/connectors/sentry.svg' },
     docsUrl: 'https://docs.sentry.io/product/sentry-mcp/',
     matchUrls: ['mcp.sentry.dev'],
@@ -178,6 +190,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Atlassian',
     author: 'Atlassian',
     descriptionKey: 'mcp-connectors:descriptions.atlassian',
+    taglineKey: 'mcp-connectors:taglines.atlassian',
     icon: { bg: '#0052CC', src: '/images/connectors/atlassian.svg' },
     docsUrl:
       'https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/',
@@ -193,27 +206,6 @@ export const MCP_CONNECTORS: MCPConnector[] = [
       env: {},
     },
   },
-  {
-    serverKey: 'serper',
-    name: 'Serper',
-    author: 'Serper',
-    descriptionKey: 'mcp-connectors:descriptions.serper',
-    // The mark ships on its own white tile, so the bg matches it.
-    icon: { bg: '#ffffff', src: '/images/connectors/serper.png' },
-    docsUrl: 'https://serper.dev',
-    config: {
-      command: 'npx',
-      args: ['-y', 'serper-search-scrape-mcp-server'],
-      env: {},
-    },
-    secret: {
-      kind: 'env',
-      key: 'SERPER_API_KEY',
-      labelKey: 'mcp-connectors:secrets.serperApiKey',
-      placeholder: 'sk-...',
-      helpUrl: 'https://serper.dev/api-key',
-    },
-  },
   // Remote OAuth connectors below were probed for MCP OAuth discovery +
   // Dynamic Client Registration before landing here. Probed and left out:
   // Figma (registration endpoint answers 403), Stack Overflow (no
@@ -223,6 +215,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Stripe',
     author: 'Stripe',
     descriptionKey: 'mcp-connectors:descriptions.stripe',
+    taglineKey: 'mcp-connectors:taglines.stripe',
     icon: { bg: '#635BFF', src: '/images/connectors/stripe.svg' },
     docsUrl: 'https://docs.stripe.com/mcp',
     matchUrls: ['mcp.stripe.com'],
@@ -240,6 +233,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Supabase',
     author: 'Supabase',
     descriptionKey: 'mcp-connectors:descriptions.supabase',
+    taglineKey: 'mcp-connectors:taglines.supabase',
     icon: { bg: '#3ECF8E', src: '/images/connectors/supabase.svg' },
     docsUrl: 'https://supabase.com/docs/guides/getting-started/mcp',
     matchUrls: ['mcp.supabase.com'],
@@ -257,6 +251,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Cloudflare',
     author: 'Cloudflare',
     descriptionKey: 'mcp-connectors:descriptions.cloudflare',
+    taglineKey: 'mcp-connectors:taglines.cloudflare',
     // Full-colour mark (two oranges) lifted from cloudflare.com/icons.svg, so
     // the tile is white like Notion's instead of a brand-colour fill.
     icon: { bg: '#ffffff', src: '/images/connectors/cloudflare.svg' },
@@ -277,6 +272,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'PostHog',
     author: 'PostHog',
     descriptionKey: 'mcp-connectors:descriptions.posthog',
+    taglineKey: 'mcp-connectors:taglines.posthog',
     icon: { bg: '#1D4AFF', src: '/images/connectors/posthog.svg' },
     docsUrl: 'https://posthog.com/docs/model-context-protocol',
     matchUrls: ['mcp.posthog.com'],
@@ -294,6 +290,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'PayPal',
     author: 'PayPal',
     descriptionKey: 'mcp-connectors:descriptions.paypal',
+    taglineKey: 'mcp-connectors:taglines.paypal',
     // PayPal's post-2024 navy, sampled from their own monogram asset
     // (paypalobjects.com/marketing/web/icons/monogram); #003087 was the old one.
     icon: { bg: '#002991', src: '/images/connectors/paypal.svg' },
@@ -313,6 +310,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Trello',
     author: 'Atlassian',
     descriptionKey: 'mcp-connectors:descriptions.trello',
+    taglineKey: 'mcp-connectors:taglines.trello',
     icon: { bg: '#0052CC', src: '/images/connectors/trello.svg' },
     docsUrl: 'https://support.atlassian.com/trello/docs/trello-mcp-server/',
     matchUrls: ['mcp.trello.com'],
@@ -330,6 +328,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Granola',
     author: 'Granola',
     descriptionKey: 'mcp-connectors:descriptions.granola',
+    taglineKey: 'mcp-connectors:taglines.granola',
     // The mark ships on its own olive tile, so the bg matches it.
     icon: { bg: '#b2c248', src: '/images/connectors/granola.png' },
     docsUrl: 'https://www.granola.ai/docs/mcp',
@@ -348,6 +347,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Cal.com',
     author: 'Cal.com',
     descriptionKey: 'mcp-connectors:descriptions.calcom',
+    taglineKey: 'mcp-connectors:taglines.calcom',
     icon: { bg: '#292929', src: '/images/connectors/calcom.svg' },
     docsUrl: 'https://cal.com/docs/developing/guides/mcp',
     matchUrls: ['mcp.cal.com'],
@@ -365,6 +365,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Airtable',
     author: 'Airtable',
     descriptionKey: 'mcp-connectors:descriptions.airtable',
+    taglineKey: 'mcp-connectors:taglines.airtable',
     // Full-colour mark taken from Airtable's own inline logo on airtable.com;
     // the three brand colours need a white tile, not a blue one.
     icon: { bg: '#ffffff', src: '/images/connectors/airtable.svg' },
@@ -384,6 +385,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Webflow',
     author: 'Webflow',
     descriptionKey: 'mcp-connectors:descriptions.webflow',
+    taglineKey: 'mcp-connectors:taglines.webflow',
     icon: { bg: '#146EF5', src: '/images/connectors/webflow.svg' },
     docsUrl: 'https://developers.webflow.com/data/docs/ai-tools',
     matchUrls: ['mcp.webflow.com'],
@@ -402,6 +404,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Firecrawl',
     author: 'Firecrawl',
     descriptionKey: 'mcp-connectors:descriptions.firecrawl',
+    taglineKey: 'mcp-connectors:taglines.firecrawl',
     icon: { bg: '#FF6B1A', src: '/images/connectors/firecrawl.svg' },
     docsUrl: 'https://docs.firecrawl.dev/mcp-server',
     matchUrls: ['mcp.firecrawl.dev'],
@@ -426,6 +429,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Perplexity',
     author: 'Perplexity',
     descriptionKey: 'mcp-connectors:descriptions.perplexity',
+    taglineKey: 'mcp-connectors:taglines.perplexity',
     icon: { bg: '#20808D', src: '/images/connectors/perplexity.svg' },
     docsUrl: 'https://docs.perplexity.ai/guides/mcp-server',
     matchUrls: ['api.perplexity.ai/mcp'],
@@ -450,6 +454,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Zapier',
     author: 'Zapier',
     descriptionKey: 'mcp-connectors:descriptions.zapier',
+    taglineKey: 'mcp-connectors:taglines.zapier',
     icon: { bg: '#FF4A00', src: '/images/connectors/zapier.svg' },
     docsUrl: 'https://docs.zapier.com/mcp',
     matchUrls: ['mcp.zapier.com'],
@@ -474,6 +479,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Resend',
     author: 'Resend',
     descriptionKey: 'mcp-connectors:descriptions.resend',
+    taglineKey: 'mcp-connectors:taglines.resend',
     icon: { bg: '#000000', src: '/images/connectors/resend.svg' },
     docsUrl: 'https://resend.com/docs/knowledge-base/mcp-server',
     config: {
@@ -494,6 +500,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'Shopify Dev',
     author: 'Shopify',
     descriptionKey: 'mcp-connectors:descriptions.shopify-dev',
+    taglineKey: 'mcp-connectors:taglines.shopify-dev',
     icon: { bg: '#96BF48', src: '/images/connectors/shopify-dev.svg' },
     docsUrl: 'https://shopify.dev/docs/apps/build/devmcp',
     config: {
@@ -512,6 +519,7 @@ export const MCP_CONNECTORS: MCPConnector[] = [
     name: 'GitHub',
     author: 'GitHub',
     descriptionKey: 'mcp-connectors:descriptions.github',
+    taglineKey: 'mcp-connectors:taglines.github',
     icon: { bg: '#181717', src: '/images/connectors/github.svg' },
     docsUrl: 'https://github.com/github/github-mcp-server',
     matchUrls: ['api.githubcopilot.com'],

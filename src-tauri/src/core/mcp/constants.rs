@@ -68,6 +68,31 @@ pub fn filesystem_mcp_pinned_spec() -> String {
     format!("{FILESYSTEM_MCP_PACKAGE}@{FILESYSTEM_MCP_PINNED_VERSION}")
 }
 
+/// Schema version `migrate_mcp_servers` stores in `mcp_version` once every
+/// step has run. Each step is gated on its own literal (`mcp_version < N`);
+/// bump this together with the newest gate.
+pub const MCP_CONFIG_VERSION: i64 = 4;
+
+/// Key of the web-search server `DEFAULT_MCP_CONFIG_TEMPLATE` seeded from its
+/// introduction (`e1c8d98bf`, 2025-08-15) until `0ae50bca7` (2026-09-17)
+/// dropped it: switched off behind a placeholder key, next to an always-on Exa
+/// doing the same job.
+pub const RETIRED_SERPER_SERVER_KEY: &str = "serper";
+
+/// The exact entry that template wrote for `serper` — the only shape it ever
+/// had. Migration 4 removes a `serper` entry from an existing
+/// `mcp_config.json` only when it equals this value (key order aside); an
+/// entry the user changed — switched on, a real key, other args, an added
+/// field — is theirs and stays.
+pub fn retired_serper_default_server() -> serde_json::Value {
+    serde_json::json!({
+        "command": "npx",
+        "args": ["-y", "serper-search-scrape-mcp-server"],
+        "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
+        "active": false
+    })
+}
+
 const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
   "mcpServers": {
     "Jan Browser MCP": {
@@ -98,12 +123,6 @@ const DEFAULT_MCP_CONFIG_TEMPLATE: &str = r#"{
       "command": "uvx",
       "args": ["mcp-server-fetch"],
       "env": {},
-      "active": false
-    },
-    "serper": {
-      "command": "npx",
-      "args": ["-y", "serper-search-scrape-mcp-server"],
-      "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
       "active": false
     },
     "filesystem": {

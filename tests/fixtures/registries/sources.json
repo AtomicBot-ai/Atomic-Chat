@@ -8,7 +8,7 @@
       "staff-picks.json",
       "provider-registry.json"
     ],
-    "note": "The backend fixture is exact. The provider fixture is a deterministic representative slice of the pinned registry. recommended-models.json mirrors the two-model onboarding list and runs ahead of the pinned revision: refresh the revision once that manifest lands on main. staff-picks.json is a representative slice covering every optional field, and predates the pinned revision: refresh the revision once the staff-picks manifest is published to main. turboquant-manifest.json is now only the legacy fallback index for the TurboQuant provider, which resolves releases from turboquant-index.json published on the fork's releases."
+    "note": "The backend fixture is exact. The provider fixture is a deterministic representative slice of the pinned registry. recommended-models.json is a verbatim copy of models/recommended.json at 34ecae48ccda1ea58cc6e1a479c19e004f1a6e88 (the 128 GiB tiers), ahead of the pinned revision. staff-picks.json is a representative slice covering every optional field, and predates the pinned revision: refresh the revision once the staff-picks manifest is published to main. turboquant-manifest.json is now only the legacy fallback index for the TurboQuant provider, which resolves releases from turboquant-index.json published on the fork's releases."
   },
   "atomic-chat-model-catalog": {
     "revision": "355f4c0f37f4c56eaf241705b10dc862faa9b450",

@@ -830,6 +830,28 @@ export function getIndexedAssetName(
   return release?.variants.find((v) => v.id === id)?.asset
 }
 
+/**
+ * Archive size in bytes for `tag/backend`, as published in the release index.
+ *
+ * Unlike {@link getIndexedAssetName} this awaits {@link fetchStableIndex}, so
+ * it still answers when the in-memory cache is cold — the engine-update banner
+ * (ATO-528) quotes the download size and a blank line there is worse than one
+ * cached index read. Returns `undefined` when the index does not describe the
+ * pair, which is what an unmirrored or disk-only build looks like.
+ */
+export async function getIndexedVariantSize(
+  version: string,
+  backend: string
+): Promise<number | undefined> {
+  const tag = version.replace(/\uFEFF/g, '').trim()
+  const id = backend.replace(/\uFEFF/g, '').trim()
+  const catalog = await fetchStableIndex()
+  const size = catalog.releases
+    .find((r) => r.tag === tag)
+    ?.variants.find((v) => v.id === id)?.size
+  return typeof size === 'number' && size > 0 ? size : undefined
+}
+
 export async function listSupportedBackends(
   options: { force?: boolean } = {}
 ): Promise<BackendVersion[]> {

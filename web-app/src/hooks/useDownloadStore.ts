@@ -1,12 +1,27 @@
 import { create } from 'zustand'
 import { advanceSpeedSample, type SpeedSample } from '@/lib/downloadFormat'
 
+/**
+ * What the Rust downloader is doing while it has no bytes to report. Mirrors
+ * `DownloadStage` in `src-tauri/src/core/downloads/models.rs`, relayed by the
+ * download extension.
+ */
+export interface DownloadStage {
+  kind: string
+  attempt: number
+  maxAttempts: number
+}
+
 export interface DownloadProgressProps {
   id: string
   progress: number
   name: string
   current: number
   total: number
+  // ATO — #290: a transfer that cannot reach the host spends ~60s inside the
+  // retry ladders with no bytes and no events, which rendered as a permanent
+  // "Preparing". The stage is the only thing the row can show in that window.
+  stage?: DownloadStage
   // ATO-462: speed and ETA are the two numbers the panel needs and the app
   // never had. They live here rather than in the panel so the Hub card, the
   // onboarding screen and the panel all quote the same figure, and so the
@@ -27,6 +42,16 @@ export interface DownloadResumeParams {
   skipVerification?: boolean
 }
 
+/**
+ * Why a text-model download was started.
+ *
+ * A download is passive unless a blocked Send explicitly adopts it. Keeping
+ * this separate from `downloadOriginByModelId` is intentional: that map names
+ * the Hugging Face card/repository for collision handling, while this map
+ * carries the user intent that is allowed to select/start the model later.
+ */
+export type DownloadRequestOrigin = 'standalone' | 'reply-gate'
+
 // Zustand store for thinking block state
 export type DownloadState = {
   downloads: { [id: string]: DownloadProgressProps }
@@ -42,6 +67,9 @@ export type DownloadState = {
   // fixes the root cause; this map keeps the UI honest for clients on
   // an older cached catalog.
   downloadOriginByModelId: { [modelId: string]: string }
+  downloadRequestOriginByModelId: {
+    [modelId: string]: DownloadRequestOrigin
+  }
   // ATO-154: ids the user has paused (vs cancelled). A paused id keeps its
   // `downloads[id]` entry so the popover row survives, and makes the
   // stop/error listeners early-return instead of cleaning up.
@@ -56,6 +84,7 @@ export type DownloadState = {
     current?: number,
     total?: number
   ) => void
+  updateStage: (id: string, stage: DownloadStage) => void
   addLocalDownloadingModel: (modelId: string) => void
   removeLocalDownloadingModel: (modelId: string) => void
   markResumableDownload: (modelId: string) => void
@@ -64,7 +93,15 @@ export type DownloadState = {
   clearPausedDownload: (modelId: string) => void
   setResumeParams: (modelId: string, params: DownloadResumeParams) => void
   clearResumeParams: (modelId: string) => void
-  setDownloadOrigin: (modelId: string, modelName: string) => void
+  setDownloadOrigin: (
+    modelId: string,
+    modelName: string,
+    requestOrigin?: DownloadRequestOrigin
+  ) => void
+  setDownloadRequestOrigin: (
+    modelId: string,
+    requestOrigin: DownloadRequestOrigin
+  ) => void
   clearDownloadOrigin: (modelId: string) => void
 }
 
@@ -78,6 +115,7 @@ export const useDownloadStore = create<DownloadState>((set) => ({
   pausedDownloads: new Set(),
   resumeParams: {},
   downloadOriginByModelId: {},
+  downloadRequestOriginByModelId: {},
   removeDownload: (id: string) =>
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -102,6 +140,32 @@ export const useDownloadStore = create<DownloadState>((set) => ({
             current: nextCurrent,
             total: total ?? previous?.total ?? 0,
             speed: advanceSpeedSample(previous?.speed, nextCurrent),
+            // Bytes moved, so whatever the ladder was reporting is stale.
+            stage: undefined,
+          },
+        },
+      }
+    }),
+
+  // A stage update is a status change, never progress: it must not touch
+  // `current`/`total`, or a retry would rewind the bar to zero.
+  updateStage: (id, stage) =>
+    set((state) => {
+      const previous = state.downloads[id]
+      return {
+        downloads: {
+          ...state.downloads,
+          [id]: {
+            ...previous,
+            // A stage can come first (the preflight ladder runs before any
+            // byte): name the row after its id, as `updateProgress` callers
+            // do, so the panel labels it and routes its Cancel by that id.
+            name: previous?.name ?? id,
+            progress: previous?.progress ?? 0,
+            current: previous?.current ?? 0,
+            total: previous?.total ?? 0,
+            speed: advanceSpeedSample(previous?.speed, previous?.current ?? 0),
+            stage,
           },
         },
       }
@@ -163,21 +227,48 @@ export const useDownloadStore = create<DownloadState>((set) => ({
       return { resumeParams: rest }
     }),
 
-  setDownloadOrigin: (modelId: string, modelName: string) =>
+  setDownloadOrigin: (
+    modelId: string,
+    modelName: string,
+    requestOrigin: DownloadRequestOrigin = 'standalone'
+  ) =>
     set((state) => ({
       downloadOriginByModelId: {
         ...state.downloadOriginByModelId,
         [modelId]: modelName,
       },
+      downloadRequestOriginByModelId: {
+        ...state.downloadRequestOriginByModelId,
+        [modelId]: requestOrigin,
+      },
+    })),
+
+  // A Send may intentionally adopt a transfer that was already running from
+  // the Hub/reminder. That is the only promotion from passive to reply-gated.
+  setDownloadRequestOrigin: (modelId, requestOrigin) =>
+    set((state) => ({
+      downloadRequestOriginByModelId: {
+        ...state.downloadRequestOriginByModelId,
+        [modelId]: requestOrigin,
+      },
     })),
 
   clearDownloadOrigin: (modelId: string) =>
     set((state) => {
-      if (!(modelId in state.downloadOriginByModelId)) {
+      if (
+        !(modelId in state.downloadOriginByModelId) &&
+        !(modelId in state.downloadRequestOriginByModelId)
+      ) {
         return state
       }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [modelId]: _, ...rest } = state.downloadOriginByModelId
-      return { downloadOriginByModelId: rest }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [modelId]: __, ...requestOrigins } =
+        state.downloadRequestOriginByModelId
+      return {
+        downloadOriginByModelId: rest,
+        downloadRequestOriginByModelId: requestOrigins,
+      }
     }),
 }))

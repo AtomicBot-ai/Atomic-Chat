@@ -11,7 +11,7 @@ export function GenericToolRenderer({
   const { input, output, errorText } = presentation
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {input !== undefined && <ToolInput input={input} />}
 
       <ToolOutput

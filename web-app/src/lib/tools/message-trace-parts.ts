@@ -3,17 +3,55 @@ import type { AgentRunSummary } from '@/types/agent'
 import { TraceBlock } from './types'
 import { presentTool } from './registry'
 
+type ActivityTraceBlock = Extract<TraceBlock, { kind: 'activity' }>
+
+/** Permission waits belong to the same turn as running tools and reasoning. */
+export function isAgentTurnActive(status: AgentRunSummary['status']): boolean {
+  return (
+    status === 'running' ||
+    status === 'awaiting_approval' ||
+    status === 'awaiting_folder_access'
+  )
+}
+
+/**
+ * Whether an activity block has anything behind its header: tool calls (the
+ * terminal `reply` / `finish` are the answer itself, not a step), agent loops,
+ * or a run's error. Without any of those the header is all there is.
+ */
+export function activityHasDetails(
+  block: Pick<ActivityTraceBlock, 'tools' | 'agentSummary'>
+): boolean {
+  const summary = block.agentSummary
+  const summaryToolCount =
+    summary?.tools.filter(({ tool }) => tool !== 'reply' && tool !== 'finish')
+      .length ?? 0
+  return (
+    block.tools.length > 0 ||
+    summaryToolCount > 0 ||
+    (summary?.loops.length ?? 0) > 0 ||
+    Boolean(summary?.error)
+  )
+}
+
+/**
+ * Projects a message's parts into render blocks. A message renders the parts
+ * it actually has: whether reasoning was requested is decided per request
+ * (see `custom-chat-transport.ts` and `buildAgentReasoningRequest`), never
+ * here, so the transcript on screen does not move when the effort setting
+ * changes.
+ */
 export function buildTraceBlocks(
   message: UIMessage,
-  disableReasoning: boolean,
   options: { ensureActivity?: boolean } = {}
 ): TraceBlock[] {
   const blocks: TraceBlock[] = []
   const metadata = message.metadata as
-    { agent_run?: AgentRunSummary; activityDurationMs?: number } | undefined
+    | { agent_run?: AgentRunSummary; activityDurationMs?: number }
+    | undefined
   const agentRun = metadata?.agent_run
   const reasoning: Array<{ key: string; text: string }> = []
-  const tools: Extract<TraceBlock, { kind: 'activity' }>['tools'] = []
+  const tools: ActivityTraceBlock['tools'] = []
   let reasoningIndex = -1
   let reasoningState: 'streaming' | 'done' | undefined
   let answeredAfterReasoning = false
@@ -40,7 +78,7 @@ export function buildTraceBlocks(
     }
 
     if (part.type === 'reasoning') {
-      if (!disableReasoning && part.text?.trim()) {
+      if (part.text?.trim()) {
         if (reasoningIndex < 0) reasoningIndex = blocks.length
         reasoningState = part.state
         answeredAfterReasoning = false
@@ -113,16 +151,24 @@ export function buildTraceBlocks(
     (reasoningState === 'streaming' ||
       (reasoningState !== 'done' && !answeredAfterReasoning))
 
-  // A block that exists only because of `ensureActivity` (no tools, no agent
-  // run, no recorded duration) is a bare "Working" shimmer. While the thinking
-  // stream is live, "Thinking..." already signals activity — showing both
-  // stacks two spinners on one message.
-  const activityIsPlaceholder =
-    tools.length === 0 &&
-    !agentRun &&
-    metadata?.activityDurationMs === undefined
-  const showActivity =
-    activityIndex >= 0 && !(activityIsPlaceholder && reasoningStreaming)
+  // Whether the block is still reporting live work: the turn this message
+  // belongs to is in flight, or its agent run has not reached an end state.
+  const isLive =
+    options.ensureActivity ??
+    (agentRun !== undefined && isAgentTurnActive(agentRun.status))
+
+  // What the block is allowed to be:
+  //
+  //  - Something to expand — tool calls, agent loops, a run's error. Shown
+  //    whenever it exists; that list is the only place those are traced.
+  //  - A live "Working" row before the first call and between calls. It remains
+  //    mounted through reasoning and answer streaming so activity never looks
+  //    complete, disappears, and then restarts while the enclosing turn lives.
+  //  - Never a bare "Worked for 2.9s" once the turn is over (ATO-534). With
+  //    nothing to expand it only restated the "Thought for" header right above
+  //    it. The duration stays in the message metadata for telemetry.
+  const hasDetails = activityHasDetails({ tools, agentSummary: agentRun })
+  const showActivity = activityIndex >= 0 && (hasDetails || isLive)
 
   if (showActivity) {
     blocks.splice(activityIndex, 0, {

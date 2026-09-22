@@ -1,3 +1,4 @@
+import type { MCPTool } from '@/types/completion'
 import type { MCPServerConfig, MCPServers } from '@/hooks/useMCPServers'
 
 export type WebSearchServer = {
@@ -25,7 +26,7 @@ const knownKeyRank = (key: string) => {
   return rank === -1 ? KNOWN_WEB_SEARCH_KEYS.length : rank
 }
 
-const isWebSearchServer = (key: string, config: MCPServerConfig) =>
+export const isWebSearchServer = (key: string, config: MCPServerConfig) =>
   KNOWN_WEB_SEARCH_KEYS.includes(normalizeKey(key)) ||
   (config.url ?? '').includes('exa.ai')
 
@@ -47,4 +48,29 @@ export function findWebSearchServer(
     [...candidates].sort(([a], [b]) => knownKeyRank(a) - knownKeyRank(b))[0]
 
   return { key, config }
+}
+
+// A connected fetch-only server does not provide web search.
+export function hasWebSearchTool(server: WebSearchServer, tools: MCPTool[]) {
+  return tools.some(
+    (tool) => tool.server === server.key && /search/i.test(tool.name)
+  )
+}
+
+export function isWebSearchEnabled(
+  server: WebSearchServer | undefined,
+  tools: MCPTool[],
+  disabledTools: string[],
+  mutedServers: string[]
+): boolean {
+  return Boolean(
+    server?.config.active &&
+      !mutedServers.includes(server.key) &&
+      hasWebSearchTool(
+        server,
+        tools.filter(
+          (tool) => !disabledTools.includes(`${tool.server}::${tool.name}`)
+        )
+      )
+  )
 }

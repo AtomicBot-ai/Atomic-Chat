@@ -1,0 +1,426 @@
+{
+  "page": {
+    "title": "Images",
+    "loading": "Getting things ready…"
+  },
+  "workflow": {
+    "create": {
+      "label": "Create",
+      "title": "Create images",
+      "hint": "Generate a new image from a prompt"
+    },
+    "transform": {
+      "label": "Transform",
+      "title": "Transform",
+      "hint": "Redraw an image from your prompt"
+    },
+    "inpaint": {
+      "label": "Inpaint",
+      "title": "Inpaint",
+      "hint": "Regenerate a painted region"
+    },
+    "extend": {
+      "label": "Extend",
+      "title": "Extend",
+      "hint": "Grow the canvas and fill the edges"
+    },
+    "upscale": {
+      "label": "Upscale",
+      "title": "Upscale",
+      "hint": "Enlarge and re-detail an image"
+    },
+    "reference": {
+      "label": "Reference",
+      "title": "Reference",
+      "hint": "Generate guided by a reference image"
+    },
+    "edit": {
+      "label": "Edit",
+      "title": "Edit",
+      "hint": "Change an image with an instruction"
+    },
+    "unavailable": "The loaded model cannot do this",
+    "unavailableSelected": "The selected model cannot do this"
+  },
+  "setup": {
+    "step": "Step {{current}} of {{total}}",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "doneBlocked": "Install the engine and at least one model first.",
+    "intro": {
+      "title": "Make images on this computer",
+      "description": "Type a prompt, pick a size, and the image is rendered locally.",
+      "bulletLocal": "Runs on this computer — prompts never leave it.",
+      "bulletRecipes": "Every image keeps its settings, so you can redo or tweak it.",
+      "bulletApi": "Also available to other apps at localhost:1337/v1/images."
+    },
+    "engine": {
+      "title": "Install the image engine",
+      "description": "A small renderer (stable-diffusion.cpp) built for this computer.",
+      "rowTitle": "stable-diffusion.cpp",
+      "rowDescription": "Build for {{backend}} · downloaded once, updated with the app.",
+      "install": "Install",
+      "installed": "Installed",
+      "unsupported": "There is no image engine build for this computer yet.",
+      "unsupportedShort": "Not available",
+      "failed": "The engine could not be installed.",
+      "progress": "{{current}} / {{total}} GB",
+      "backend": "{{backend}} · {{tag}}",
+      "note": "About 100 MB. Installed under the app data folder."
+    },
+    "model": {
+      "title": "Get an image model",
+      "description": "Pick a model and size that fits your memory. Bigger is slower.",
+      "diskNote": "Models are 4–12 GB. Shared files are downloaded once."
+    },
+    "ready": {
+      "title": "Ready to create",
+      "description": "A model is on disk. Press Run to start it, or Done and start it later from the model menu.",
+      "descriptionRunning": "The model is running. Press Done and write your first prompt."
+    },
+    "card": {
+      "title": "Set up image generation",
+      "description": "Two things are needed before the first image: the engine and a model.",
+      "engine": "Install the image engine",
+      "model": "Download an image model",
+      "button": "Set up"
+    }
+  },
+  "model": {
+    "installed": "Installed",
+    "available": "Available",
+    "download": "Download",
+    "finishDownload": "Finish download",
+    "progress": "{{current}} / {{total}} GB",
+    "downloadFailed": "Could not download {{name}}",
+    "loadingCatalog": "Loading the model catalog…",
+    "noneInCatalog": "No image models are listed for this engine.",
+    "pick": "Select {{name}} {{quant}}",
+    "sizeGb": "{{size}} GB",
+    "recommended": "Recommended",
+    "incomplete": "Incomplete",
+    "load": "Run",
+    "loading": "Starting…",
+    "unload": "Stop",
+    "loaded": "Running",
+    "readyToLoad": "Starts on first Generate",
+    "notInstalled": "Not downloaded",
+    "remove": "Remove",
+    "removeTitle": "Remove {{name}} ({{quant}})?",
+    "removeDescription": "The model file is deleted. Side files shared with other models are kept.",
+    "removeFailed": "The model could not be removed",
+    "selector": "Model",
+    "none": "No model selected",
+    "change": "Change",
+    "select": "Select image model",
+    "selectorHint": "Pick the checkpoint the form generates with. Models not on disk are downloaded first.",
+    "notForWorkflow": "Not for {{workflow}}"
+  },
+  "plan": {
+    "title": "Download {{name}} · {{quant}}",
+    "description": "These files are needed. Ones already on disk are skipped.",
+    "kind": {
+      "transformer": "Model",
+      "vae": "VAE",
+      "text_encoder": "Text encoder"
+    },
+    "present": "On disk",
+    "sizeGb": "{{size}} GB",
+    "total": "{{missing}} GB to download ({{total}} GB in total).",
+    "gatedHint": "This model is gated on Hugging Face. Add a token with access in",
+    "gatedLink": "General settings.",
+    "download": "Download"
+  },
+  "form": {
+    "prompt": "Prompt",
+    "promptPlaceholder": "Describe the image…",
+    "shortcut": "Ctrl+Enter to generate",
+    "shortcutMac": "⌘ Enter to generate",
+    "negativePrompt": "Negative prompt",
+    "negativePlaceholder": "What to avoid…",
+    "advanced": "Advanced",
+    "reset": "Reset",
+    "steps": "Steps",
+    "cfgScale": "CFG scale",
+    "cfgScaleHint": "How strictly the prompt is followed. Higher is stricter and slower to converge.",
+    "guidance": "Guidance",
+    "guidanceHint": "Distilled guidance strength for FLUX-style models.",
+    "seed": "Seed",
+    "seedPlaceholder": "Random",
+    "seedRandom": "New random seed",
+    "seedLock": "Lock the seed",
+    "seedUnlock": "Unlock the seed",
+    "batchSize": "Batch size",
+    "runs": "Runs",
+    "generate": "Generate",
+    "generateCount": "Generate {{count}} images",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "disabled": {
+      "noEngine": "Install the image engine first.",
+      "noModel": "Download and load an image model first.",
+      "modelLoading": "The model is still loading.",
+      "emptyPrompt": "Write a prompt first.",
+      "busy": "A generation is already running.",
+      "noSource": "Choose a source image first.",
+      "noMask": "Paint the area to change first.",
+      "noSides": "Pick at least one side to extend.",
+      "unsupportedWorkflow": "The loaded model cannot run this workflow."
+    },
+    "negativeHint": "What to steer the image away from. Only used when guidance is above 1.",
+    "stepsHint": "Denoising passes. More is slower and rarely helps past the model default.",
+    "batchSizeHint": "Images rendered in one pass. Faster than one by one, but uses more memory.",
+    "runsHint": "Repeat the generation, one run after another. Each run takes the next seed.",
+    "seedHint": "Leave empty for a fresh random seed each run.",
+    "advancedHint": "Load-time options. They apply the next time the model is loaded.",
+    "mediaSettings": "More in Media settings",
+    "resetHint": "Put the settings back to the model defaults. The prompt stays.",
+    "memory": "Memory",
+    "memoryHint": "Where the weights sit while generating. Auto picks from the model size and this computer; offloading frees GPU memory at the cost of speed.",
+    "memoryAuto": "Auto",
+    "memoryNone": "Keep on GPU",
+    "memoryGroup": "Offload weights",
+    "memoryModel": "Offload everything",
+    "engineHint": "Which renderer serves generation.",
+    "evictChat": "Free chat model",
+    "sourceImage": "Source image",
+    "referenceImage": "Reference image",
+    "dropzone": "Click or drop an image",
+    "imageFiles": "Images",
+    "removeImage": "Remove image",
+    "replaceImage": "Replace image",
+    "sourceUnreadable": "The image could not be used",
+    "sourceSize": "{{width}}×{{height}}",
+    "mask": "Mask",
+    "maskHint": "Paint over what should change. Everything else is kept.",
+    "clearMask": "Clear mask",
+    "brushSize": "Brush size",
+    "strength": "Strength",
+    "strengthHint": "How far the picture is redrawn. Low keeps the source; 1 starts over from noise.",
+    "expandBy": "Expand by",
+    "expandHint": "How much each chosen side grows, as a percent of the source.",
+    "sides": "Sides",
+    "side": {
+      "top": "Top",
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right"
+    },
+    "scale": "Scale",
+    "scaleHint": "How many times larger. Capped by the model's size limit.",
+    "detailStrength": "Detail strength",
+    "detailStrengthHint": "How much new detail is painted into the enlarged picture. Higher drifts further from the source.",
+    "addReference": "Add another reference",
+    "referenceN": "Reference {{index}}",
+    "removeReference": "Remove reference {{index}}",
+    "instruction": "Instruction",
+    "instructionPlaceholder": "Describe the edit, e.g. make the sky sunset orange",
+    "outputSize": "Output {{width}}×{{height}}",
+    "fromGallery": "or choose from the gallery",
+    "galleryPickerTitle": "Choose from the gallery",
+    "galleryPickerDescription": "Click an image to use it.",
+    "galleryPickerEmpty": "No images in the gallery yet.",
+    "addReferenceFromGallery": "Add a reference from the gallery"
+  },
+  "size": {
+    "title": "Size",
+    "megapixels": "{{mp}} MP",
+    "aspect": {
+      "square": "Square",
+      "photo": "Photo",
+      "landscape": "Landscape",
+      "widescreen": "Widescreen",
+      "ultrawide": "Ultrawide",
+      "custom": "Custom"
+    },
+    "width": "Width",
+    "height": "Height",
+    "longEdge": "Long edge",
+    "portrait": "Portrait",
+    "landscape": "Landscape",
+    "aspectRatio": "Aspect ratio",
+    "aspectHint": "The shape of the image. Flip turns it between landscape and portrait; Custom frees width and height.",
+    "resolution": "Resolution",
+    "resolutionHint": "Width and height in pixels, within the range the loaded model accepts.",
+    "resolutionPresetHint": "Pixel size at this aspect ratio. Choose Custom to type any width and height.",
+    "flip": "Flip width and height",
+    "toPortrait": "Switch to portrait",
+    "toLandscape": "Switch to landscape",
+    "presets": "{{label}} presets"
+  },
+  "progress": {
+    "label": "Generation progress",
+    "stopping": "Stopping the renderer…",
+    "step": "Step {{step}}/{{total}}",
+    "eta": "~{{seconds}} s",
+    "finalizingImage": "Finalizing image…",
+    "image": "image {{index}} of {{total}}",
+    "run": "run {{run}} of {{total}}",
+    "phase": {
+      "queued": "Queued",
+      "encoding": "Encoding the prompt…",
+      "sampling": "Sampling…",
+      "decoding": "Decoding image…",
+      "postprocessing": "Preparing final image…",
+      "saving": "Saving to gallery…",
+      "generating": "Starting…",
+      "completed": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "gallery": {
+    "empty": {
+      "title": "No images yet",
+      "description": "Your images appear here with their settings."
+    },
+    "loadMore": "Load more",
+    "tileLabel": "Image {{size}}",
+    "title": "Gallery",
+    "selectedCount": "{{count}} selected",
+    "emptyNoModel": "Select an image model to start."
+  },
+  "viewer": {
+    "empty": "Select an image to see it here.",
+    "recipe": "Details",
+    "saveAs": "Save as…",
+    "reveal": "Show in folder",
+    "delete": "Delete",
+    "deleteCount": "Delete {{count}}",
+    "previous": "Previous image",
+    "next": "Next image",
+    "fullscreen": "View full size",
+    "restore": "Restore these settings",
+    "restoreAndLoad": "Restore settings and switch model",
+    "restored": "Settings restored to the form.",
+    "loadOffer": "This image used a different model. Load it now?",
+    "copyPrompt": "Copy prompt",
+    "promptCopied": "Prompt copied",
+    "saved": "Image saved.",
+    "saveFailed": "The image could not be saved",
+    "revealFailed": "The folder could not be opened",
+    "details": {
+      "model": "Model",
+      "size": "Size",
+      "steps": "Steps",
+      "cfg": "CFG",
+      "guidance": "Guidance",
+      "seed": "Seed",
+      "batchSeed": "Batch seed",
+      "sampler": "Sampler",
+      "engine": "Engine",
+      "duration": "Took",
+      "seconds": "{{seconds}} s"
+    },
+    "useAsSource": "Use as source",
+    "useAsSourceDone": "Set as the source image."
+  },
+  "delete": {
+    "title": "Delete {{count}} images?",
+    "titleOne": "Delete this image?",
+    "description": "The files are removed from the output folder. This cannot be undone.",
+    "confirm": "Delete",
+    "failed": "The images could not be deleted"
+  },
+  "errors": {
+    "actions": {
+      "install": "Install the engine",
+      "download": "Download the model",
+      "openSettings": "Open Media settings",
+      "openOutputFolder": "Open the output folder",
+      "reduceSize": "Try 768×768",
+      "reduceUpscale": "Try a smaller scale",
+      "pickSmallerQuant": "Pick a smaller quant",
+      "retry": "Try again"
+    },
+    "ENGINE_MISSING": {
+      "title": "The image engine is not installed",
+      "body": "Install stable-diffusion.cpp to render images on this computer."
+    },
+    "ENGINE_INSTALL_FAILED": {
+      "title": "The engine could not be installed",
+      "body": "The download or unpacking failed. Check your connection and disk space, then try again."
+    },
+    "ENGINE_CRASHED": {
+      "title": "The renderer stopped unexpectedly",
+      "body": "sd-server exited during the job. Generating again restarts it; if it keeps happening, try a smaller model."
+    },
+    "MODEL_MISSING": {
+      "title": "The model file is missing",
+      "body": "The checkpoint is not on disk. Download it again from the model list."
+    },
+    "SIDE_FILE_MISSING": {
+      "title": "A side file is missing",
+      "body": "The VAE or a text encoder this model needs is not on disk. Finish the download to restore it."
+    },
+    "MODEL_LOAD_FAILED": {
+      "title": "The model could not be loaded",
+      "body": "The renderer refused the checkpoint. The details below say why."
+    },
+    "MODEL_INCOMPATIBLE": {
+      "title": "This model does not run on this engine build",
+      "body": "Pick a different quant or family; some builds cannot run every checkpoint."
+    },
+    "MODEL_NOT_LOADED": {
+      "title": "No image model is loaded",
+      "body": "Select a model and load it before generating."
+    },
+    "OUT_OF_MEMORY": {
+      "title": "Out of memory",
+      "body": "The image did not fit in memory. A smaller size or a smaller quant usually fixes it."
+    },
+    "UNSUPPORTED_BACKEND": {
+      "title": "No engine build for this computer",
+      "body": "The installed engine does not match this hardware. Check the engine in Media settings."
+    },
+    "UNSUPPORTED_WORKFLOW": {
+      "title": "This model cannot do that",
+      "body": "The loaded model does not support this workflow."
+    },
+    "INVALID_DIMENSIONS": {
+      "title": "Unsupported image size",
+      "body": "Width and height must be within the model's range and a multiple of its step."
+    },
+    "INVALID_REQUEST": {
+      "title": "The request was rejected",
+      "body": "One of the settings is outside what the model accepts."
+    },
+    "JOB_BUSY": {
+      "title": "The renderer is busy",
+      "body": "Another job is running. Wait for it to finish, or stop it."
+    },
+    "JOB_NOT_FOUND": {
+      "title": "The job disappeared",
+      "body": "The renderer no longer knows this job. It may have restarted."
+    },
+    "QUEUE_FULL": {
+      "title": "Too many jobs queued",
+      "body": "Let the current jobs finish before adding more."
+    },
+    "CANCELLED": {
+      "title": "Generation stopped",
+      "body": "The job was cancelled before it finished."
+    },
+    "DISK_FULL": {
+      "title": "The disk is full",
+      "body": "The image could not be saved. Free some space in the output folder."
+    },
+    "BACKEND_IN_USE": {
+      "title": "The engine is in use",
+      "body": "Unload the model before changing the engine."
+    },
+    "NOT_CONFIGURED": {
+      "title": "Image generation is not set up",
+      "body": "The data folder is not configured yet. Check Media settings."
+    },
+    "INTERNAL": {
+      "title": "Something went wrong",
+      "body": "An unexpected error happened in the renderer. The details below may help."
+    }
+  },
+  "notifications": {
+    "readyTitle": "Images ready",
+    "readyBody": "{{count}} new images are in the gallery."
+  }
+}

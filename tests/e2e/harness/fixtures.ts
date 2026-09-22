@@ -39,6 +39,8 @@ export interface FakeBackendOptions {
   reply?: string
   /** `ready` by default; `exit-1` makes every load fail. */
   mode?: string
+  /** Milliseconds before the fake reports ready: a load long enough to cancel. */
+  delayMs?: number
   /** The release tag to install it as; `FAKE_BACKEND_VERSION` unless a scenario needs an older one. */
   version?: string
   /** The local provider to install it for; the upstream llama.cpp one unless a scenario runs another. */
@@ -266,7 +268,10 @@ export async function startHubFixture(options: {
   quantId: string
   title: string
   modelBytes?: number
+  /** Answer the first N requests for the file with a 503, the way a flaky mirror does. */
+  failFirst?: number
 }): Promise<HubFixture> {
+  let failuresLeft = options.failFirst ?? 0
   const modelBytes = options.modelBytes ?? 32 * 1024 * 1024
   const origin = `http://127.0.0.1:${HUB_FIXTURE_PORT}`
   const header = Buffer.alloc(24)
@@ -320,6 +325,11 @@ export async function startHubFixture(options: {
     if (path === '/catalog.json') return json(catalog)
     if (path === '/staff-picks.json') return json(picks)
     if (path === '/model.gguf') {
+      if (failuresLeft > 0) {
+        failuresLeft -= 1
+        res.writeHead(503, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' })
+        return res.end('try again')
+      }
       const range = /^bytes=(\d+)-/.exec(req.headers.range ?? '')
       const from = range ? Number(range[1]) : 0
       res.writeHead(range ? 206 : 200, {

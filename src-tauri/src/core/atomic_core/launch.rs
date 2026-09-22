@@ -22,9 +22,11 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Overrides the binary the app would otherwise start. This is how a developer
 /// runs the core from source against a dev build of the app:
-/// `ATOMIC_CORE_CMD="bun run ../atomic-chat-core/src/cli/bin.ts" yarn dev`.
-/// `bin.ts`, not `main.ts`: `main.ts` is the injectable command table and has no
-/// side effects on import, so running it starts nothing.
+/// `ATOMIC_CORE_CMD="bun run /abs/path/atomic-chat-core/src/app-daemon.ts" yarn dev`.
+/// `app-daemon.ts`, not the CLI entry `src/cli/bin.ts`: the app accepts only an
+/// app-scope core, and the CLI's `daemon` starts a CLI-scope one. The path must be
+/// absolute: the core inherits the app's working directory (`src-tauri/` under
+/// `tauri dev`).
 pub const CORE_COMMAND_ENV: &str = "ATOMIC_CORE_CMD";
 
 /// The bundled core, under the app's resource directory.
@@ -38,13 +40,18 @@ pub struct CoreCommand {
     /// The app's bundled sidecar binaries (`<resources>/resources/bin`): where the core finds
     /// `mlx-server` and `foundation-models-server` once it owns those runtimes.
     pub resources_dir: Option<String>,
+    /// The bundled `cloudflared` (a Tauri `externalBin`, so it sits next to the app's own
+    /// executable, not under `resources/bin`). The core runs the Remote Access tunnel with it;
+    /// without one it reports `cloudflared_unavailable`.
+    pub cloudflared_bin: Option<String>,
 }
 
 impl CoreCommand {
     /// The full argv for `daemon`, which is the only way the app starts a core:
     /// `--control-port 0` lets the OS pick, and the port is read back from the
-    /// lock rather than guessed.
-    pub fn daemon_args(&self, data_folder: &Path) -> Vec<String> {
+    /// lock rather than guessed. `telemetry` is the `productAnalytic` consent the
+    /// core reports its own errors under until `PUT /telemetry` says otherwise.
+    pub fn daemon_args(&self, data_folder: &Path, telemetry: bool) -> Vec<String> {
         let mut args = self.prefix.clone();
         args.push("daemon".into());
         args.push("--data-folder".into());
@@ -55,14 +62,20 @@ impl CoreCommand {
             args.push("--resources-dir".into());
             args.push(resources.clone());
         }
+        if let Some(cloudflared) = &self.cloudflared_bin {
+            args.push("--cloudflared-bin".into());
+            args.push(cloudflared.clone());
+        }
+        args.push("--telemetry".into());
+        args.push(if telemetry { "on" } else { "off" }.into());
         args
     }
 
-    pub fn display(&self, data_folder: &Path) -> String {
+    pub fn display(&self, data_folder: &Path, telemetry: bool) -> String {
         format!(
             "{} {}",
             self.program,
-            self.daemon_args(data_folder).join(" ")
+            self.daemon_args(data_folder, telemetry).join(" ")
         )
     }
 }
@@ -120,6 +133,7 @@ pub fn resolve_core_command(
             program,
             prefix: parts.collect(),
             resources_dir: Some(sidecar_resources_dir(resource_dir)),
+            cloudflared_bin: bundled_cloudflared().map(|p| p.to_string_lossy().to_string()),
         });
     }
 
@@ -138,7 +152,42 @@ pub fn resolve_core_command(
         program: bundled.to_string_lossy().to_string(),
         prefix: Vec::new(),
         resources_dir: Some(sidecar_resources_dir(resource_dir)),
+        cloudflared_bin: bundled_cloudflared().map(|p| p.to_string_lossy().to_string()),
     })
+}
+
+#[cfg(windows)]
+const CLOUDFLARED_FILE_NAME: &str = "cloudflared.exe";
+#[cfg(not(windows))]
+const CLOUDFLARED_FILE_NAME: &str = "cloudflared";
+
+/// The bundled `cloudflared`, or `None` when this build does not carry one (a dev build that
+/// skipped `download:bin`, or a platform without the sidecar).
+pub fn bundled_cloudflared() -> Option<PathBuf> {
+    // An end-to-end build never starts the real tunnel, which would expose the test's API on a
+    // public URL: a run brings its own `cloudflared` in its sidecars folder, or has none.
+    #[cfg(feature = "e2e")]
+    {
+        e2e_cloudflared(&crate::core::e2e::data_root())
+    }
+    #[cfg(not(feature = "e2e"))]
+    {
+        bundled_cloudflared_next_to(&std::env::current_exe().ok()?)
+    }
+}
+
+/// The `cloudflared` an e2e run put next to its scripted sidecars (`core::e2e::sidecar_dir`).
+#[cfg(feature = "e2e")]
+fn e2e_cloudflared(root: &Path) -> Option<PathBuf> {
+    crate::core::e2e::sidecar_dir(root)
+        .map(|dir| dir.join(CLOUDFLARED_FILE_NAME))
+        .filter(|path| path.is_file())
+}
+
+#[cfg_attr(feature = "e2e", allow(dead_code))]
+fn bundled_cloudflared_next_to(executable: &Path) -> Option<PathBuf> {
+    let candidate = executable.parent()?.join(CLOUDFLARED_FILE_NAME);
+    candidate.is_file().then_some(candidate)
 }
 
 /// Where the MLX and Foundation Models plugins looked for their servers: `<resources>/resources/bin`.
@@ -203,8 +252,15 @@ pub async fn launch_and_wait(
     if reaped > 0 {
         log::info!("[atomic-core] released {reaped} exited core process(es)");
     }
-    log::info!("[atomic-core] starting: {}", command.display(data_folder));
-    let mut child = spawn_detached(command, data_folder)?;
+    // The Rust gate as it stands (on until the webview reconciles the persisted
+    // `productAnalytic`, like the app's own panic reports), and off in a build
+    // that does not report itself.
+    let telemetry = crate::core::telemetry::core_consent();
+    log::info!(
+        "[atomic-core] starting: {}",
+        command.display(data_folder, telemetry)
+    );
+    let mut child = spawn_detached(command, data_folder, telemetry)?;
 
     let deadline = Instant::now() + timeout;
     loop {
@@ -308,13 +364,14 @@ async fn wait_for_ready_owner(data_folder: &Path, deadline: Instant) -> Option<L
 fn spawn_detached(
     command: &CoreCommand,
     data_folder: &Path,
+    telemetry: bool,
 ) -> Result<std::process::Child, CoreError> {
     // The environment is inherited as-is: `process_env`'s AppImage stripping is
     // for host executables like `curl` or a terminal, and the core is the
     // opposite of that — it loads the llama.cpp libraries the AppImage brings,
     // so removing `LD_LIBRARY_PATH` would break every backend it starts.
     let mut cmd = Command::new(&command.program);
-    cmd.args(command.daemon_args(data_folder))
+    cmd.args(command.daemon_args(data_folder, telemetry))
         .stdin(Stdio::null())
         // Readiness is read from the lock, so stdout is not needed — and a pipe
         // we stopped reading would eventually block the core on a full buffer.
@@ -424,11 +481,22 @@ mod tests {
             program: "core".into(),
             prefix: vec![],
             resources_dir: Some("/app/resources/bin".into()),
+            cloudflared_bin: None,
         };
 
         assert_eq!(
-            command.daemon_args(Path::new("/data")),
-            vec!["daemon", "--data-folder", "/data", "--control-port", "0", "--resources-dir", "/app/resources/bin"]
+            command.daemon_args(Path::new("/data"), true),
+            vec![
+                "daemon",
+                "--data-folder",
+                "/data",
+                "--control-port",
+                "0",
+                "--resources-dir",
+                "/app/resources/bin",
+                "--telemetry",
+                "on"
+            ]
         );
         assert_eq!(
             sidecar_resources_dir(Path::new("/app")),
@@ -437,22 +505,71 @@ mod tests {
     }
 
     #[test]
+    fn the_daemon_argv_names_the_bundled_cloudflared_only_when_it_is_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("Atomic Chat");
+        std::fs::write(&executable, b"").unwrap();
+        assert_eq!(bundled_cloudflared_next_to(&executable), None);
+
+        let sidecar = dir.path().join(CLOUDFLARED_FILE_NAME);
+        std::fs::write(&sidecar, b"").unwrap();
+        assert_eq!(bundled_cloudflared_next_to(&executable), Some(sidecar.clone()));
+
+        let command = CoreCommand {
+            program: "core".into(),
+            prefix: vec![],
+            resources_dir: None,
+            cloudflared_bin: Some(sidecar.to_string_lossy().to_string()),
+        };
+        assert_eq!(
+            command.daemon_args(Path::new("/data"), false),
+            vec![
+                "daemon".to_string(),
+                "--data-folder".into(),
+                "/data".into(),
+                "--control-port".into(),
+                "0".into(),
+                "--cloudflared-bin".into(),
+                sidecar.to_string_lossy().to_string(),
+                "--telemetry".into(),
+                "off".into()
+            ]
+        );
+    }
+
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn an_e2e_run_starts_only_the_cloudflared_it_brought() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(e2e_cloudflared(root.path()), None);
+        let sidecars = root.path().join(crate::core::e2e::SIDECAR_DIR);
+        std::fs::create_dir(&sidecars).unwrap();
+        assert_eq!(e2e_cloudflared(root.path()), None);
+        let tunnel = sidecars.join(CLOUDFLARED_FILE_NAME);
+        std::fs::write(&tunnel, b"").unwrap();
+        assert_eq!(e2e_cloudflared(root.path()), Some(tunnel));
+    }
+
+    #[test]
     fn the_daemon_argv_pins_the_folder_and_lets_the_os_pick_the_port() {
         let command = CoreCommand {
             program: "core".into(),
             prefix: vec!["run".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         assert_eq!(
-            command.daemon_args(Path::new("/data")),
+            command.daemon_args(Path::new("/data"), false),
             vec![
                 "run",
                 "daemon",
                 "--data-folder",
                 "/data",
                 "--control-port",
-                "0"
+                "0",
+                "--telemetry",
+                "off"
             ]
         );
     }
@@ -464,6 +581,7 @@ mod tests {
             program: "atomic-core-that-does-not-exist".into(),
             prefix: Vec::new(),
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(200))
@@ -481,6 +599,7 @@ mod tests {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "exit 3".into(), "sh".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(500))
@@ -507,6 +626,7 @@ mod tests {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "exit 0".into(), "sh".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
         let _ = launch_and_wait(&command, dir.path(), Duration::from_millis(300)).await;
         let child = std::process::Command::new("/bin/sh")
@@ -533,6 +653,7 @@ mod tests {
                 "sh".into(),
             ],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(500))
@@ -553,6 +674,7 @@ mod tests {
             program: "/bin/sh".into(),
             prefix: vec!["-c".into(), "sleep 30".into(), "sh".into()],
             resources_dir: None,
+            cloudflared_bin: None,
         };
 
         let error = launch_and_wait(&command, dir.path(), Duration::from_millis(300))
