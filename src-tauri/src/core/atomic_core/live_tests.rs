@@ -764,9 +764,12 @@ async fn a_core_that_cannot_serve_reports_the_refusal_and_stays_stopped() {
 
 #[tokio::test]
 async fn the_core_reports_errors_only_under_the_consent_the_app_gives_it() {
-    // Core ADR 2026-09-21-report-core-errors-to-its-own-sentry-project: the launch flag carries the
-    // consent the Rust gate holds, and `PUT /telemetry` carries every later change, the anonymous
-    // user and the hardware tags. The core keeps only allow-listed tags and never shows its DSN.
+    // Core ADRs 2026-09-21-report-core-errors-to-its-own-sentry-project and
+    // 2026-09-22-the-core-owns-its-error-reporting: the launch flag carries the consent the Rust gate
+    // holds (off in a build that does not report, which a test build is), and `PUT /telemetry`
+    // carries every later change, the anonymous user and the hardware tags. The core keeps only
+    // allow-listed tags and never shows its DSN. `make test-core-live` runs the core in the
+    // `development` environment, so nothing here can reach the real project.
     let Some(binary) = core_binary() else {
         eprintln!("skipping: ATOMIC_CORE_BIN is not set");
         return;
@@ -783,6 +786,8 @@ async fn the_core_reports_errors_only_under_the_consent_the_app_gives_it() {
         .await
         .expect("telemetry state");
     assert_eq!(super::telemetry::consent_of(&launched), Some(false));
+    assert_eq!(launched["source"], "host");
+    assert_eq!(launched["host"], "atomic-chat");
 
     let state = crate::core::telemetry::core_state::CoreTelemetry {
         user_id: Some("device-live".into()),

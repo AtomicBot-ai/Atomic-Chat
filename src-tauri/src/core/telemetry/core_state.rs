@@ -40,7 +40,7 @@ pub fn current_body() -> Value {
         .ok()
         .and_then(|guard| guard.clone())
         .unwrap_or_default();
-    body(super::consent_enabled(), &state)
+    body(super::core_consent(), &state)
 }
 
 /// The body itself: the consent, the user (`null` until the webview sends one)

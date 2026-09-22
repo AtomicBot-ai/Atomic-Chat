@@ -519,7 +519,7 @@ test-live-cloud:
 # one this app bundles after `make download-core`.
 ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-app-core
 test-core-live:
-	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" cargo test --manifest-path src-tauri/Cargo.toml \
+	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" ATOMIC_CORE_SENTRY_ENVIRONMENT=development cargo test --manifest-path src-tauri/Cargo.toml \
 		-p Atomic-Chat --features test-tauri --lib core::atomic_core::live_tests -- --test-threads=1
 
 # Desktop UI end-to-end tests: the real app binary, the real core and a fake

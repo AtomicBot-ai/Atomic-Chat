@@ -234,9 +234,10 @@ pub async fn launch_and_wait(
     if reaped > 0 {
         log::info!("[atomic-core] released {reaped} exited core process(es)");
     }
-    // The Rust gate as it stands: on until the webview reconciles the persisted
-    // `productAnalytic`, like the app's own panic reports.
-    let telemetry = crate::core::telemetry::consent_enabled();
+    // The Rust gate as it stands (on until the webview reconciles the persisted
+    // `productAnalytic`, like the app's own panic reports), and off in a build
+    // that does not report itself.
+    let telemetry = crate::core::telemetry::core_consent();
     log::info!(
         "[atomic-core] starting: {}",
         command.display(data_folder, telemetry)
