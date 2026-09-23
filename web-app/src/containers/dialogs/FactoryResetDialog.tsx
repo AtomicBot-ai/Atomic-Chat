@@ -53,6 +53,13 @@ export function FactoryResetDialog({
     }
   }
 
+  // While a reset is running the dialog must not be dismissed. Escape,
+  // pointer-down-outside and interact-outside share one guard so the behaviour
+  // stays in a single place.
+  const preventCloseWhileResetting = (event: { preventDefault: () => void }) => {
+    if (isResetting) event.preventDefault()
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -63,15 +70,9 @@ export function FactoryResetDialog({
           e.preventDefault()
           resetButtonRef.current?.focus()
         }}
-        onEscapeKeyDown={(e) => {
-          if (isResetting) e.preventDefault()
-        }}
-        onPointerDownOutside={(e) => {
-          if (isResetting) e.preventDefault()
-        }}
-        onInteractOutside={(e) => {
-          if (isResetting) e.preventDefault()
-        }}
+        onEscapeKeyDown={preventCloseWhileResetting}
+        onPointerDownOutside={preventCloseWhileResetting}
+        onInteractOutside={preventCloseWhileResetting}
       >
         <DialogHeader>
           <DialogTitle>{t('settings:general.factoryResetTitle')}</DialogTitle>
