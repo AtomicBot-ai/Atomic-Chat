@@ -36,6 +36,13 @@ jobs:
           VALIDATE_ALL_CODEBASE: false
           DEFAULT_BRANCH: "main"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # src-tauri/resources/agent-skills/ holds third-party skills bundled
+          # verbatim (UI UX Pro Max, MIT). Their bodies are kept byte-for-byte
+          # from upstream on purpose, so linting them to this repo's Python,
+          # Markdown and duplicate-code rules only produces failures we must not
+          # "fix" by editing vendored code. Exclude the whole vendored tree; the
+          # skills are reviewed on import and gated by cargo tests instead.
+          FILTER_REGEX_EXCLUDE: "src-tauri/resources/agent-skills/"
           # textlint's terminology preset cannot tell prose from identifiers or
           # from quoted document titles, so it rejects "id", "api" and "ids"
           # wherever they appear. Markdown style is covered by markdownlint
@@ -60,3 +67,14 @@ jobs:
           # Cargo.toml or Rust. radium-ci.yml runs the real clippy, over
           # `make verify`, with the toolchain and system libraries it needs.
           VALIDATE_RUST_CLIPPY: false
+          # super-linter's rustfmt validators cannot lint this crate either. The
+          # crate is edition 2021, so RUST_2015 and RUST_2018 abort on the first
+          # `async fn` (error[E0670]: `async fn` is not permitted in Rust 2015),
+          # and RUST_2021 runs a different rustfmt build than the repo's pinned
+          # toolchain, so it reports formatting diffs on files that the repo's
+          # own `cargo fmt` considers clean. Rust lints are enforced
+          # authoritatively by rust-clippy.yml and radium-ci.yml (real
+          # toolchain); keep these three super-linter validators off.
+          VALIDATE_RUST_2015: false
+          VALIDATE_RUST_2018: false
+          VALIDATE_RUST_2021: false

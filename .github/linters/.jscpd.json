@@ -1,0 +1,14 @@
+{
+  "threshold": 0,
+  "minTokens": 200,
+  "gitignore": true,
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/target/**",
+    "**/src-tauri/resources/agent-skills/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**"
+  ]
+}
