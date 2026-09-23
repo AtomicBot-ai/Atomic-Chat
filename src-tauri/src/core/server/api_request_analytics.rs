@@ -234,6 +234,8 @@ pub fn endpoint_label(value: &str) -> &'static str {
         "muse-code/models" => "muse-code/models",
         "metrics" => "metrics",
         "images/generations" => "images/generations",
+        // `/v1/videos*`, the core's video facade over the same sd.cpp runner.
+        "videos" => "videos",
         _ => "other",
     }
 }
@@ -438,6 +440,19 @@ mod tests {
             (image.endpoint, image.backend, image.error_kind),
             ("images/generations", "atomic-diffusion", Some("busy"))
         );
+        let video = observation_from_core(&serde_json::json!({
+            "endpoint": "videos",
+            "method": "POST",
+            "backend": "atomic-diffusion",
+            "status": 503,
+            "error_kind": "model_not_loaded"
+        }))
+        .unwrap();
+        assert_eq!(
+            (video.endpoint, video.backend),
+            ("videos", "atomic-diffusion")
+        );
+        assert_eq!(endpoint_label("videos/abc/content"), "other");
         assert_eq!(error_kind_label("timeout"), "timeout");
         assert_eq!(error_kind_label("upstream"), "upstream");
         assert!(observation_from_core(&serde_json::json!({"method": "GET"})).is_none());
