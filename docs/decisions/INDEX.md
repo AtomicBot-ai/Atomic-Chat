@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-351 records, 2026-05-19 → 2026-09-22.
+352 records, 2026-05-19 → 2026-09-23.
 
 ---
 
@@ -261,8 +261,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (14)
+## Packaging, installers, autostart & platform policy (15)
 
+- **2026-09-23** — [Keep bun-compiled binaries out of linuxdeploy's reach](2026-09-23-keep-bun-compiled-binaries-out-of-linuxdeploy.md) — bun payloads sit after the ELF sections; patchelf drops them.
 - **2026-09-19** — [Keep document indexes in the data folder](2026-09-19-keep-document-indexes-in-the-data-folder.md)
 - **2026-09-18** — [Keep the HTTP plugin's JS client on the Rust plugin's version](2026-09-18-keep-the-http-plugin-js-client-on-the-rust-plugin-version.md)
 - **2026-09-04** — [Sanitize the AppImage environment before launching host processes](2026-09-04-sanitize-appimage-environment-before-launching-host-processes.md)
