@@ -181,9 +181,7 @@ export function CloudPage() {
   return (
     <div className="flex h-svh w-full flex-col">
       <HeaderPage>
-        <div
-          className="flex items-center justify-between w-full"
-        >
+        <div className="flex items-center justify-between w-full">
           <span className="font-medium text-base font-studio">
             {t('cloud:title')}
           </span>

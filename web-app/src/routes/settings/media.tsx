@@ -17,9 +17,7 @@ function MediaSettingsContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div
-          className="flex items-center justify-between w-full"
-        >
+        <div className="flex items-center justify-between w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>

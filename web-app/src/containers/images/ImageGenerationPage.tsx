@@ -188,9 +188,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
 
   const header = (
     <HeaderPage>
-      <div
-        className="flex w-full items-center gap-2"
-      >
+      <div className="flex w-full items-center gap-2">
         <span className="font-studio text-base font-medium">
           {t('images:page.title')}
         </span>

@@ -9,11 +9,11 @@ import {
   useState,
   type ChangeEvent,
 } from 'react'
-import { IconSearch } from '@tabler/icons-react'
 import { Loader } from 'lucide-react'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { HubFilters } from '@/containers/hub/HubFilters'
+import { HubSearchField } from '@/containers/hub/HubSearchField'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
 import { ModelListRow } from '@/containers/hub/ModelListRow'
 import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
@@ -332,12 +332,16 @@ function HubContent() {
   const fetchExactRepo = useCallback(
     (rawValue: string) => {
       const normalized = rawValue.trim()
-      if (normalized.length < 3) return
-
-      setIsSearching(true)
       if (exactRepoTimeoutRef.current) {
         clearTimeout(exactRepoTimeoutRef.current)
+        exactRepoTimeoutRef.current = null
       }
+      if (normalized.length < 3) {
+        setIsSearching(false)
+        return
+      }
+
+      setIsSearching(true)
       exactRepoTimeoutRef.current = setTimeout(async () => {
         try {
           const repoInfo = await serviceHub
@@ -681,6 +685,10 @@ function HubContent() {
   }
 
   const clearSearch = () => {
+    if (exactRepoTimeoutRef.current) {
+      clearTimeout(exactRepoTimeoutRef.current)
+      exactRepoTimeoutRef.current = null
+    }
     setIsSearching(false)
     setSearchValue('')
     setHubSearchQuery('')
@@ -797,43 +805,12 @@ function HubContent() {
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
       <HeaderPage>
-        {/* `-mx-2` pulls the field to the column's 8px insets so its edges
-            line up with the model rows below (the list's `p-2`). No right
-            reserve: window controls overlay the detail column, not this
-            header. */}
-        <div
-          className="relative z-20 -mx-2 flex h-10 w-[calc(100%+1rem)] items-center"
-          {...(IS_WINDOWS || IS_MACOS
-            ? { 'data-tauri-drag-region': true }
-            : {})}
-        >
-          {/* The box is what makes it a field: a bare input on the header
-              read as a label. */}
-          <div className="flex h-8 w-full items-center gap-2 rounded-md border border-border/60 px-2.5 transition-colors focus-within:border-border">
-            {isSearching || hfSearching ? (
-              <Loader className="size-4 shrink-0 animate-spin text-muted-foreground" />
-            ) : (
-              <IconSearch
-                className="shrink-0 text-muted-foreground"
-                size={14}
-              />
-            )}
-            <input
-              placeholder={t('hub:searchPlaceholder')}
-              value={searchValue}
-              onChange={handleSearchChange}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape' && searchValue) {
-                  e.preventDefault()
-                  clearSearch()
-                }
-              }}
-              autoComplete="off"
-              aria-label={t('hub:searchPlaceholder')}
-              className="hub-models-search-input w-full min-w-0 flex-1 bg-transparent bg-clip-padding text-foreground shadow-none transition-none animate-none placeholder:text-muted-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-            />
-          </div>
-        </div>
+        <HubSearchField
+          loading={isSearching || hfSearching}
+          value={searchValue}
+          onChange={handleSearchChange}
+          onClear={clearSearch}
+        />
       </HeaderPage>
 
       <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
