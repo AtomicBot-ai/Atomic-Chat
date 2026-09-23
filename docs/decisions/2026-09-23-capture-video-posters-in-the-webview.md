@@ -17,11 +17,13 @@ title: "Capture video posters in the webview"
   side, and sends the PNG as base64 to the core's
   `PUT /diffusion/video/gallery/:id/poster`, which stores `<id>.thumb.png` and
   answers the item with `posterPath`; the gallery store patches the item in
-  place. The asset protocol answers with CORS headers, so the canvas is
-  clean; should a build ever taint it (`SecurityError` on `toDataURL`), the
-  bytes are read through the paged `read_file_chunk` command into a
-  same-origin blob URL and drawn from there, as the Extend workflow already
-  reads its source. Listed clips without a poster (made before posters
+  place. WebKit taints the canvas for that clip (`SecurityError` on
+  `toDataURL`), and — measured in the e2e webview on 2026-09-23 — for a
+  same-origin blob URL of the same bytes too; only a `data:` URL stays
+  origin-clean. So when the asset attempt taints or refuses to load, the
+  bytes are read through the paged `read_file_chunk` command, as the Extend
+  workflow reads its source, and the frame is drawn from a `data:video/webm`
+  URL. Listed clips without a poster (made before posters
   existed, or by an outside client while the app was closed) are backfilled
   two at a time as their tiles come into view (`IntersectionObserver`), and a
   clip whose capture failed is not retried in the session.
@@ -31,8 +33,9 @@ title: "Capture video posters in the webview"
     neutral mark with the duration in the corner.
   - A capture that never yields a frame is abandoned after 10 s; the clip
     itself is unaffected.
-  - The blob fallback reads the whole file into memory and is capped at
-    256 MiB; a larger clip that taints the canvas keeps no poster.
+  - The data-URL fallback reads the whole file into memory (and a third
+    more as base64) and is capped at 64 MiB; a larger clip that taints the
+    canvas keeps no poster.
   - `capturePosterPng` is tested against a scripted `<video>` in jsdom
     (decode, seek, error, taint, timeout); the real decode is exercised by
     the desktop e2e suite.

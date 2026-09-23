@@ -3,10 +3,10 @@
  * the core, which cannot decode video itself (it takes no media dependency).
  *
  * A detached `<video>` loads the clip over the asset protocol, seeks to the
- * wanted time and is drawn onto a canvas at thumbnail size. The asset
- * protocol answers with CORS headers, so `crossOrigin="anonymous"` keeps the
- * canvas clean; should a build ever taint it, the bytes are read through
- * the paged file command into a same-origin blob URL and drawn from there.
+ * wanted time and is drawn onto a canvas at thumbnail size. When that taints
+ * the canvas (WebKit does, for the asset protocol and for a blob URL alike:
+ * the probe of 2026-09-23 found only a `data:` URL origin-clean), the bytes
+ * are read through the paged file command and drawn from a `data:` URL.
  */
 
 import { convertFileSrc } from '@tauri-apps/api/core'
@@ -16,8 +16,8 @@ import type { GalleryVideoItem } from '@/services/diffusion/types'
 
 /** The longer side of a poster, in pixels. Matches the image thumbnails. */
 export const POSTER_EDGE = 256
-/** The largest clip the blob-URL fallback will read into memory. */
-export const MAX_POSTER_SOURCE_BYTES = 256 * 1024 * 1024
+/** The largest clip the data-URL fallback will read into memory (its base64 is a third larger). */
+export const MAX_POSTER_SOURCE_BYTES = 64 * 1024 * 1024
 /** How long a clip may take to yield a frame before the capture is abandoned. */
 export const POSTER_CAPTURE_TIMEOUT_MS = 10_000
 
@@ -39,6 +39,12 @@ export type CapturePosterOptions = {
   /** The time to capture at; 0 is the first frame. */
   atSeconds?: number
   timeoutMs?: number
+  /**
+   * Ask for the clip with CORS so a cross-origin source (the asset protocol)
+   * can leave the canvas clean; a `data:` URL carries its own origin and is
+   * asked for without it.
+   */
+  crossOrigin?: 'anonymous' | null
 }
 
 /** The poster's size: `edge` on the longer side, at least one pixel on the other. */
@@ -70,6 +76,7 @@ export function capturePosterPng(
     edge = POSTER_EDGE,
     atSeconds = 0,
     timeoutMs = POSTER_CAPTURE_TIMEOUT_MS,
+    crossOrigin = 'anonymous',
   }: CapturePosterOptions = {}
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
@@ -78,7 +85,10 @@ export function capturePosterPng(
     const timer = setTimeout(
       () =>
         fail(
-          new PosterCaptureError('timeout', 'The clip did not yield a frame in time.')
+          new PosterCaptureError(
+            'timeout',
+            'The clip did not yield a frame in time.'
+          )
         ),
       timeoutMs
     )
@@ -133,7 +143,7 @@ export function capturePosterPng(
     video.muted = true
     video.playsInline = true
     video.preload = 'auto'
-    video.crossOrigin = 'anonymous'
+    if (crossOrigin) video.crossOrigin = crossOrigin
     video.addEventListener('error', () =>
       fail(new PosterCaptureError('load', 'The clip could not be decoded.'))
     )
@@ -154,8 +164,12 @@ export function capturePosterPng(
 }
 
 /**
- * The poster of a gallery clip: over the asset protocol first, and through a
- * same-origin blob of the file if that tainted the canvas.
+ * The poster of a gallery clip: over the asset protocol first, and from a
+ * `data:` URL of the file if that tainted the canvas or would not load at
+ * all — a media element asked for a clean canvas (`crossOrigin`) refuses an
+ * asset response without CORS headers before decoding a byte, which is the
+ * same clip the viewer plays without one. A clip that will not decode from
+ * the data URL either is the clip's own fault.
  */
 export async function capturePosterForClip(
   path: string,
@@ -164,19 +178,34 @@ export async function capturePosterForClip(
   try {
     return await capturePosterPng(convertFileSrc(path), options)
   } catch (error) {
-    if (!(error instanceof PosterCaptureError) || error.reason !== 'security') {
+    if (
+      !(error instanceof PosterCaptureError) ||
+      (error.reason !== 'security' && error.reason !== 'load')
+    ) {
       throw error
     }
   }
   const { bytes } = await readFileBytes(path, {
     maxBytes: MAX_POSTER_SOURCE_BYTES,
   })
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'video/webm' }))
-  try {
-    return await capturePosterPng(url, options)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  return capturePosterPng(await dataUrlOf(bytes, 'video/webm'), {
+    ...options,
+    crossOrigin: null,
+  })
+}
+
+/** `data:<type>;base64,…` of the bytes, encoded by the browser rather than a byte loop. */
+export function dataUrlOf(
+  bytes: Uint8Array<ArrayBuffer>,
+  type: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('The clip could not be encoded.'))
+    reader.readAsDataURL(new Blob([bytes], { type }))
+  })
 }
 
 export type PosterBackfillOptions = {
@@ -241,7 +270,11 @@ export class PosterBackfillQueue {
       void this.run(item)
         .catch((error) => {
           this.failed.add(item.id)
-          console.warn(`[videos] poster for ${item.id} not made:`, error)
+          console.warn(
+            `[videos] poster for ${item.id} not made: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          )
         })
         .finally(() => {
           this.running.delete(item.id)

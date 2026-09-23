@@ -386,7 +386,7 @@ Production entrypoints:
   `lib/video/{duration,validate,recipe,poster}.ts` — the video settings and
   form, the request builder, the frame-lattice durations, the request
   validation mirrored from the core, recipe restore and export naming, and
-  the poster capture with its blob fallback and backfill queue.
+  the poster capture with its data-URL fallback and backfill queue.
 - `web-app/src/containers/videos/*`, `containers/dialogs/DeleteGalleryVideosDialog.tsx`,
   `routes/videos/index.tsx` — the Video page; `ImageSetupCard`,
   `ImageSetupDialog`, `ImageEmptyState`, `ImageGenerationPlaceholder`,
@@ -422,7 +422,7 @@ Existing evidence:
   out-of-range counts are refused with the core's messages, image-to-video
   is refused in every spelling, the export name and the restored draft,
   and the poster capture against a scripted `<video>` (decode, seek, error,
-  tainted canvas with the blob fallback, timeout, the backfill queue's
+  tainted canvas with the data-URL fallback, timeout, the backfill queue's
   concurrency and no-retry rule).
 - `VideoPromptForm.test.tsx`, `VideoViewer.test.tsx`,
   `VideoGenerationPage.test.tsx` render the production components against

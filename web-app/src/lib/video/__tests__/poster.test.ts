@@ -3,16 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeVideoItem } from '@/lib/diffusion/__tests__/video-fixtures'
 
 vi.mock('@tauri-apps/api/core', () => ({
-  convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
+  convertFileSrc: (path: string) =>
+    `asset://localhost/${encodeURIComponent(path)}`,
 }))
 const files = vi.hoisted(() => ({
-  readFileBytes: vi.fn(async () => ({ bytes: new Uint8Array([1, 2, 3]), size: 3 })),
+  readFileBytes: vi.fn(async () => ({
+    bytes: new Uint8Array([1, 2, 3]),
+    size: 3,
+  })),
 }))
 vi.mock('@/lib/readFileBytes', () => ({ readFileBytes: files.readFileBytes }))
 
 import {
   capturePosterForClip,
   capturePosterPng,
+  dataUrlOf,
   MAX_POSTER_SOURCE_BYTES,
   POSTER_EDGE,
   PosterBackfillQueue,
@@ -29,11 +34,6 @@ const video = vi.hoisted(() => ({
   created: [] as HTMLVideoElement[],
 }))
 
-/** jsdom has no object URLs; give the tests a pair to spy on. */
-const ensureObjectUrls = () => {
-  const url = URL as unknown as Record<string, unknown>
-  if (typeof url.createObjectURL !== 'function') url.createObjectURL = () => 'blob:stub'
-  if (typeof url.revokeObjectURL !== 'function') url.revokeObjectURL = () => {}
 }
 
 describe('posterSize', () => {
@@ -41,7 +41,10 @@ describe('posterSize', () => {
     expect(posterSize(768, 512)).toEqual({ width: 256, height: 171 })
     expect(posterSize(704, 1216)).toEqual({ width: 148, height: 256 })
     expect(posterSize(1, 1000, 100)).toEqual({ width: 1, height: 100 })
-    expect(posterSize(0, 0)).toEqual({ width: POSTER_EDGE, height: POSTER_EDGE })
+    expect(posterSize(0, 0)).toEqual({
+      width: POSTER_EDGE,
+      height: POSTER_EDGE,
+    })
   })
 })
 
@@ -68,7 +71,9 @@ describe('capturePosterPng', () => {
           set: () => {
             if (video.mode === 'hang') return
             setTimeout(() => {
-              media.dispatchEvent(new Event(video.mode === 'fail' ? 'error' : 'loadeddata'))
+              media.dispatchEvent(
+                new Event(video.mode === 'fail' ? 'error' : 'loadeddata')
+              )
             }, 1)
           },
           get: () => '',
@@ -77,7 +82,9 @@ describe('capturePosterPng', () => {
       }
       if (tag === 'canvas') {
         const canvas = element as HTMLCanvasElement
-        canvas.getContext = vi.fn(() => ({ drawImage })) as unknown as HTMLCanvasElement['getContext']
+        canvas.getContext = vi.fn(() => ({
+          drawImage,
+        })) as unknown as HTMLCanvasElement['getContext']
         canvas.toDataURL = vi.fn(() => {
           if (video.taints) {
             const error = new Error('tainted')
@@ -107,7 +114,10 @@ describe('capturePosterPng', () => {
   })
 
   it('seeks when a later moment is wanted', async () => {
-    const pending = capturePosterPng('asset://clip.webm', { atSeconds: 1.5, edge: 64 })
+    const pending = capturePosterPng('asset://clip.webm', {
+      atSeconds: 1.5,
+      edge: 64,
+    })
     await vi.advanceTimersByTimeAsync(5)
     const media = video.created[0]
     expect(media.currentTime).toBe(1.5)
@@ -118,7 +128,9 @@ describe('capturePosterPng', () => {
 
   it('names a clip that will not decode, a tainted canvas and a clip that takes too long', async () => {
     video.mode = 'fail'
-    const load = expect(capturePosterPng('asset://clip.webm')).rejects.toMatchObject({
+    const load = expect(
+      capturePosterPng('asset://clip.webm')
+    ).rejects.toMatchObject({
       name: 'PosterCaptureError',
       reason: 'load',
     })
@@ -127,7 +139,9 @@ describe('capturePosterPng', () => {
 
     video.mode = 'ok'
     video.taints = true
-    const taint = expect(capturePosterPng('asset://clip.webm')).rejects.toMatchObject({
+    const taint = expect(
+      capturePosterPng('asset://clip.webm')
+    ).rejects.toMatchObject({
       reason: 'security',
     })
     await vi.advanceTimersByTimeAsync(5)
@@ -144,12 +158,16 @@ describe('capturePosterPng', () => {
   })
 
   it('reports a missing canvas context', async () => {
-    const pending = expect(capturePosterPng('asset://clip.webm')).rejects.toMatchObject({
+    const pending = expect(
+      capturePosterPng('asset://clip.webm')
+    ).rejects.toMatchObject({
       reason: 'canvas',
     })
     vi.mocked(document.createElement).mockImplementationOnce((tag: string) => {
       const canvas = originalCreate(tag) as HTMLCanvasElement
-      canvas.getContext = vi.fn(() => null) as unknown as HTMLCanvasElement['getContext']
+      canvas.getContext = vi.fn(
+        () => null
+      ) as unknown as HTMLCanvasElement['getContext']
       return canvas
     })
     await vi.advanceTimersByTimeAsync(5)
@@ -159,104 +177,138 @@ describe('capturePosterPng', () => {
 
 describe('capturePosterForClip', () => {
   beforeEach(() => {
-    ensureObjectUrls()
     files.readFileBytes.mockClear()
   })
 
   it('goes through the asset protocol, and never reads the bytes when the canvas stays clean', async () => {
     const originalCreate = document.createElement.bind(document)
-    const spy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      const element = originalCreate(tag)
-      if (tag === 'video') {
-        const media = element as HTMLVideoElement
-        media.load = vi.fn()
-        Object.defineProperty(media, 'src', {
-          set: () => queueMicrotask(() => media.dispatchEvent(new Event('loadeddata'))),
-          get: () => '',
-        })
-      }
-      if (tag === 'canvas') {
-        const canvas = element as HTMLCanvasElement
-        canvas.getContext = vi.fn(() => ({ drawImage: vi.fn() })) as unknown as HTMLCanvasElement['getContext']
-        canvas.toDataURL = vi.fn(() => 'data:image/png;base64,QUJD')
-      }
-      return element
-    })
-    await expect(capturePosterForClip('/data/videos/a.webm')).resolves.toBe('QUJD')
+    const spy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tag: string) => {
+        const element = originalCreate(tag)
+        if (tag === 'video') {
+          const media = element as HTMLVideoElement
+          media.load = vi.fn()
+          Object.defineProperty(media, 'src', {
+            set: () =>
+              queueMicrotask(() =>
+                media.dispatchEvent(new Event('loadeddata'))
+              ),
+            get: () => '',
+          })
+        }
+        if (tag === 'canvas') {
+          const canvas = element as HTMLCanvasElement
+          canvas.getContext = vi.fn(() => ({
+            drawImage: vi.fn(),
+          })) as unknown as HTMLCanvasElement['getContext']
+          canvas.toDataURL = vi.fn(() => 'data:image/png;base64,QUJD')
+        }
+        return element
+      })
+    await expect(capturePosterForClip('/data/videos/a.webm')).resolves.toBe(
+      'QUJD'
+    )
     expect(files.readFileBytes).not.toHaveBeenCalled()
     spy.mockRestore()
   })
 
-  it('reads the bytes into a blob URL after a tainted canvas, and gives up on any other failure', async () => {
+  it('reads the bytes into a data URL after a tainted canvas, and gives up on any other failure', async () => {
     const originalCreate = document.createElement.bind(document)
     let attempt = 0
-    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
-    const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:clip')
-    const spy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      const element = originalCreate(tag)
-      if (tag === 'video') {
-        const media = element as HTMLVideoElement
-        media.load = vi.fn()
-        Object.defineProperty(media, 'src', {
-          set: () => queueMicrotask(() => media.dispatchEvent(new Event('loadeddata'))),
-          get: () => '',
-        })
-      }
-      if (tag === 'canvas') {
-        const canvas = element as HTMLCanvasElement
-        canvas.getContext = vi.fn(() => ({ drawImage: vi.fn() })) as unknown as HTMLCanvasElement['getContext']
-        canvas.toDataURL = vi.fn(() => {
-          attempt += 1
-          if (attempt === 1) {
-            const error = new Error('tainted')
-            error.name = 'SecurityError'
-            throw error
-          }
-          return 'data:image/png;base64,QUJD'
-        })
-      }
-      return element
-    })
-    await expect(capturePosterForClip('/data/videos/a.webm')).resolves.toBe('QUJD')
+    const created: HTMLVideoElement[] = []
+    const sources: string[] = []
+    const spy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tag: string) => {
+        const element = originalCreate(tag)
+        if (tag === 'video') {
+          const media = element as HTMLVideoElement
+          media.load = vi.fn()
+          created.push(media)
+          Object.defineProperty(media, 'src', {
+            set: (value: string) => {
+              sources.push(value)
+              queueMicrotask(() =>
+                media.dispatchEvent(new Event('loadeddata'))
+              )
+            },
+            get: () => '',
+          })
+        }
+        if (tag === 'canvas') {
+          const canvas = element as HTMLCanvasElement
+          canvas.getContext = vi.fn(() => ({
+            drawImage: vi.fn(),
+          })) as unknown as HTMLCanvasElement['getContext']
+          canvas.toDataURL = vi.fn(() => {
+            attempt += 1
+            if (attempt === 1) {
+              const error = new Error('tainted')
+              error.name = 'SecurityError'
+              throw error
+            }
+            return 'data:image/png;base64,QUJD'
+          })
+        }
+        return element
+      })
+    await expect(capturePosterForClip('/data/videos/a.webm')).resolves.toBe(
+      'QUJD'
+    )
     expect(files.readFileBytes).toHaveBeenCalledWith('/data/videos/a.webm', {
       maxBytes: MAX_POSTER_SOURCE_BYTES,
     })
-    expect(create).toHaveBeenCalledTimes(1)
-    expect(revoke).toHaveBeenCalledWith('blob:clip')
+    // The asset attempt asked with CORS; the data URL carries the bytes and is asked without it.
+    expect(created.map((media) => media.crossOrigin)).toEqual(['anonymous', null])
+    expect(sources[0]).toMatch(/^asset:/)
+    expect(sources[1]).toBe('data:video/webm;base64,AQID')
 
-    // A decode failure is final.
+    // A clip that will not decode from the data URL either is final: one read, no poster.
+    files.readFileBytes.mockClear()
     spy.mockImplementation((tag: string) => {
       const element = originalCreate(tag)
       if (tag === 'video') {
         const media = element as HTMLVideoElement
         media.load = vi.fn()
         Object.defineProperty(media, 'src', {
-          set: () => queueMicrotask(() => media.dispatchEvent(new Event('error'))),
+          set: () =>
+            queueMicrotask(() => media.dispatchEvent(new Event('error'))),
           get: () => '',
         })
       }
       return element
     })
-    files.readFileBytes.mockClear()
-    await expect(capturePosterForClip('/data/videos/b.webm')).rejects.toBeInstanceOf(
-      PosterCaptureError
-    )
-    expect(files.readFileBytes).not.toHaveBeenCalled()
+    await expect(
+      capturePosterForClip('/data/videos/b.webm')
+    ).rejects.toBeInstanceOf(PosterCaptureError)
+    expect(files.readFileBytes).toHaveBeenCalledTimes(1)
     spy.mockRestore()
-    create.mockRestore()
-    revoke.mockRestore()
+  })
+
+  it('encodes bytes as a data URL through the browser', async () => {
+    await expect(dataUrlOf(new Uint8Array([1, 2, 3]), 'video/webm')).resolves.toBe(
+      'data:video/webm;base64,AQID'
+    )
   })
 })
 
 describe('PosterBackfillQueue', () => {
   it('runs at most `concurrency` captures at once, once per clip, and never retries a failure', async () => {
-    const resolvers = new Map<string, { resolve: () => void; reject: (e: Error) => void }>()
+    const resolvers = new Map<
+      string,
+      { resolve: () => void; reject: (e: Error) => void }
+    >()
     const run = vi.fn(
       (item: { id: string }) =>
-        new Promise<void>((resolve, reject) => resolvers.set(item.id, { resolve, reject }))
+        new Promise<void>((resolve, reject) =>
+          resolvers.set(item.id, { resolve, reject })
+        )
     )
     const queue = new PosterBackfillQueue({ run, concurrency: 2 })
-    const items = ['a', 'b', 'c'].map((id) => makeVideoItem({ id, posterPath: null }))
+    const items = ['a', 'b', 'c'].map((id) =>
+      makeVideoItem({ id, posterPath: null })
+    )
     for (const item of items) queue.request(item)
     queue.request(items[0])
     expect(run).toHaveBeenCalledTimes(2)
@@ -274,7 +326,9 @@ describe('PosterBackfillQueue', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(queue.hasFailed('b')).toBe(true)
-    expect(warn).toHaveBeenCalledWith('[videos] poster for b not made:', expect.any(Error))
+    expect(warn).toHaveBeenCalledWith(
+      '[videos] poster for b not made: no frame'
+    )
     queue.request(items[1])
     expect(run).toHaveBeenCalledTimes(3)
 
