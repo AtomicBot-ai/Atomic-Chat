@@ -22,10 +22,15 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 
 // Mock the AI SDK providers
 vi.mock('@ai-sdk/openai-compatible', () => {
-  const MockChatModel = vi.fn().mockImplementation(() => ({
-    type: 'foundation-models',
-    modelId: 'apple/on-device',
-  }))
+  // Regular function, not an arrow: model-factory calls
+  // `new OpenAICompatibleChatLanguageModel(...)`, and an arrow implementation
+  // cannot be used as a constructor.
+  const MockChatModel = vi.fn().mockImplementation(function () {
+    return {
+      type: 'foundation-models',
+      modelId: 'apple/on-device',
+    }
+  })
   return {
     createOpenAICompatible: vi.fn(() => ({
       languageModel: vi.fn(() => ({ type: 'openai-compatible' })),

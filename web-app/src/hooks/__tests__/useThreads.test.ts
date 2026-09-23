@@ -25,9 +25,11 @@ vi.mock('ulidx', () => ({
 
 // Mock fzf
 vi.mock('fzf', () => ({
-  Fzf: vi.fn(() => ({
-    find: vi.fn(() => []),
-  })),
+  // Regular function, not an arrow: the hook calls `new Fzf(...)`, and an
+  // arrow implementation cannot be used as a constructor.
+  Fzf: vi.fn(function () {
+    return { find: vi.fn(() => []) }
+  }),
 }))
 global.__TAURI_INTERNALS__ = {
   plugins: {
