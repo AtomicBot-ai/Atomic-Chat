@@ -28,11 +28,16 @@ import type {
   GalleryImageItem,
   GalleryListOptions,
   GalleryPage,
+  GalleryVideoItem,
   ImageCapabilities,
   ImageGenerateRequest,
   ImageJob,
   LoadDiffusionModelRequest,
   LoadedDiffusionModel,
+  VideoCapabilities,
+  VideoGalleryPage,
+  VideoGenerateRequest,
+  VideoJob,
 } from './types'
 
 /** The core's control-route prefix for image generation. */
@@ -44,6 +49,8 @@ export const EVENT_MAP = {
   'atomic-core://diffusion:progress': 'progress',
   'atomic-core://diffusion:job': 'job',
   'atomic-core://diffusion:error': 'error',
+  'atomic-core://diffusion:video-progress': 'video-progress',
+  'atomic-core://diffusion:video-job': 'video-job',
 } as const
 
 /**
@@ -215,6 +222,93 @@ export class TauriDiffusionService extends DefaultDiffusionService {
 
   override async setOutputDir(path: string): Promise<DiffusionStatus> {
     return coreCall<DiffusionStatus>('PUT', '/output-dir', { path })
+  }
+
+  // --- video ---------------------------------------------------------------
+
+  override async getVideoCapabilities(): Promise<VideoCapabilities> {
+    return coreCall<VideoCapabilities>('GET', '/video/capabilities')
+  }
+
+  override async generateVideo(
+    request: VideoGenerateRequest
+  ): Promise<{ jobId: string }> {
+    return coreCall<{ jobId: string }>('POST', '/video/jobs', request)
+  }
+
+  override async getVideoJob(jobId: string): Promise<VideoJob | null> {
+    const { job } = await coreCall<{ job: VideoJob | null }>(
+      'GET',
+      `/video/jobs/${encodeURIComponent(jobId)}`
+    )
+    return job
+  }
+
+  override async cancelVideoJob(
+    jobId: string
+  ): Promise<{ cancelled: boolean; serverStopped: boolean }> {
+    return coreCall<{ cancelled: boolean; serverStopped: boolean }>(
+      'POST',
+      `/video/jobs/${encodeURIComponent(jobId)}/cancel`
+    )
+  }
+
+  override async listVideoGallery(
+    options: GalleryListOptions
+  ): Promise<VideoGalleryPage> {
+    const query = new URLSearchParams({
+      offset: String(options.offset),
+      limit: String(options.limit),
+    })
+    if (options.includeArchived !== undefined) {
+      query.set('includeArchived', String(options.includeArchived))
+    }
+    return coreCall<VideoGalleryPage>('GET', `/video/gallery?${query.toString()}`)
+  }
+
+  override async getVideoGalleryItem(
+    id: string
+  ): Promise<GalleryVideoItem | null> {
+    const { item } = await coreCall<{ item: GalleryVideoItem | null }>(
+      'GET',
+      `/video/gallery/${encodeURIComponent(id)}`
+    )
+    return item
+  }
+
+  override async deleteVideoGalleryItems(ids: string[]): Promise<void> {
+    await coreCall('POST', '/video/gallery/delete', { ids })
+  }
+
+  override async setVideoGalleryFlags(
+    id: string,
+    flags: GalleryFlags
+  ): Promise<GalleryVideoItem> {
+    return coreCall<GalleryVideoItem>(
+      'PATCH',
+      `/video/gallery/${encodeURIComponent(id)}/flags`,
+      flags
+    )
+  }
+
+  override async exportVideoGalleryItem(
+    id: string,
+    targetPath: string
+  ): Promise<void> {
+    await coreCall('POST', `/video/gallery/${encodeURIComponent(id)}/export`, {
+      targetPath,
+    })
+  }
+
+  override async setVideoPoster(
+    id: string,
+    pngBase64: string
+  ): Promise<GalleryVideoItem> {
+    return coreCall<GalleryVideoItem>(
+      'PUT',
+      `/video/gallery/${encodeURIComponent(id)}/poster`,
+      { png: pngBase64 }
+    )
   }
 
   override subscribe(handler: (event: DiffusionEvent) => void): () => void {

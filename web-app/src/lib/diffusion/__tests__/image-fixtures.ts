@@ -135,7 +135,9 @@ export function makeStatus(
     },
     model: { state: 'unloaded', loaded: null },
     activeJob: null,
+    activeVideoJob: null,
     outputDir: '/data/images',
+    videoOutputDir: '/data/videos',
     idleUnloadSecs: 600,
     ...overrides,
   }
@@ -310,6 +312,18 @@ export function makeFakeDiffusion(
       status = { ...status, outputDir: path }
       return status
     }),
+    getVideoCapabilities: vi.fn(async () => {
+      throw { code: 'MODEL_INCOMPATIBLE', message: 'The loaded model generates images, not video.' }
+    }),
+    generateVideo: vi.fn(async () => ({ jobId: 'vjob-1' })),
+    getVideoJob: vi.fn(async () => null),
+    cancelVideoJob: vi.fn(async () => ({ cancelled: true, serverStopped: true })),
+    listVideoGallery: vi.fn(async () => ({ items: [], hasMore: false, total: 0 })),
+    getVideoGalleryItem: vi.fn(async () => null),
+    deleteVideoGalleryItems: vi.fn(async () => undefined),
+    setVideoGalleryFlags: vi.fn(),
+    exportVideoGalleryItem: vi.fn(async () => undefined),
+    setVideoPoster: vi.fn(),
     subscribe: vi.fn((handler) => {
       handlers.add(handler)
       return () => handlers.delete(handler)

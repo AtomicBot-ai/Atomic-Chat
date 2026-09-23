@@ -248,7 +248,9 @@ describe('releaseGpuForChat', () => {
     install: { state: 'not-installed' },
     model: { state, loaded: null },
     activeJob: null,
+    activeVideoJob: null,
     outputDir: '/data/images',
+    videoOutputDir: '/data/videos',
     idleUnloadSecs: 600,
   })
 

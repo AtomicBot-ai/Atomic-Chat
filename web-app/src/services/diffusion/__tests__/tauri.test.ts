@@ -18,7 +18,9 @@ const status: DiffusionStatus = {
   install: { state: 'not-installed' },
   model: { state: 'unloaded', loaded: null },
   activeJob: null,
+  activeVideoJob: null,
   outputDir: '/data/images',
+  videoOutputDir: '/data/videos',
   idleUnloadSecs: 600,
 }
 
@@ -54,6 +56,18 @@ describe('TauriDiffusionService commands', () => {
           return { items: [], hasMore: false, total: 0 }
         case 'GET /diffusion/gallery/job-1-00':
           return { item: { id: 'job-1-00' } }
+        case 'POST /diffusion/video/jobs':
+          return { jobId: 'vjob-1' }
+        case 'GET /diffusion/video/jobs/vjob-1':
+          return { job: { id: 'vjob-1', state: 'queued' } }
+        case 'POST /diffusion/video/jobs/vjob-1/cancel':
+          return { cancelled: true, serverStopped: false }
+        case 'GET /diffusion/video/gallery':
+          return { items: [], hasMore: false, total: 0 }
+        case 'GET /diffusion/video/gallery/vjob-1':
+          return { item: { id: 'vjob-1' } }
+        case 'PUT /diffusion/video/gallery/vjob-1/poster':
+          return { id: 'vjob-1', posterPath: '/data/videos/vjob-1.thumb.png' }
         default:
           return {}
       }
@@ -127,6 +141,53 @@ describe('TauriDiffusionService commands', () => {
     ])
   })
 
+  it('calls one core route per video operation, unwrapping the lookups', async () => {
+    await service.getVideoCapabilities()
+    const started = await service.generateVideo({
+      prompt: 'a cat walking',
+      width: 768,
+      height: 512,
+      frames: 25,
+      steps: 8,
+      cfgScale: 1,
+    })
+    expect(started).toEqual({ jobId: 'vjob-1' })
+    expect(await service.getVideoJob('vjob-1')).toEqual({ id: 'vjob-1', state: 'queued' })
+    expect(await service.getVideoJob('nope')).toBeUndefined()
+    await service.cancelVideoJob('vjob-1')
+    await service.listVideoGallery({ offset: 0, limit: 60 })
+    await service.listVideoGallery({ offset: 60, limit: 60, includeArchived: true })
+    expect(await service.getVideoGalleryItem('vjob-1')).toEqual({ id: 'vjob-1' })
+    await service.deleteVideoGalleryItems(['vjob-1'])
+    await service.setVideoGalleryFlags('vjob-1', { archived: true })
+    await service.exportVideoGalleryItem('vjob-1', '/tmp/out.webm')
+    const poster = await service.setVideoPoster('vjob-1', 'data:image/png;base64,iVBORw0KGgo=')
+    expect(poster.posterPath).toBe('/data/videos/vjob-1.thumb.png')
+
+    expect(calls).toEqual([
+      { method: 'GET', path: '/diffusion/video/capabilities', body: null },
+      {
+        method: 'POST',
+        path: '/diffusion/video/jobs',
+        body: { prompt: 'a cat walking', width: 768, height: 512, frames: 25, steps: 8, cfgScale: 1 },
+      },
+      { method: 'GET', path: '/diffusion/video/jobs/vjob-1', body: null },
+      { method: 'GET', path: '/diffusion/video/jobs/nope', body: null },
+      { method: 'POST', path: '/diffusion/video/jobs/vjob-1/cancel', body: null },
+      { method: 'GET', path: '/diffusion/video/gallery?offset=0&limit=60', body: null },
+      { method: 'GET', path: '/diffusion/video/gallery?offset=60&limit=60&includeArchived=true', body: null },
+      { method: 'GET', path: '/diffusion/video/gallery/vjob-1', body: null },
+      { method: 'POST', path: '/diffusion/video/gallery/delete', body: { ids: ['vjob-1'] } },
+      { method: 'PATCH', path: '/diffusion/video/gallery/vjob-1/flags', body: { archived: true } },
+      { method: 'POST', path: '/diffusion/video/gallery/vjob-1/export', body: { targetPath: '/tmp/out.webm' } },
+      {
+        method: 'PUT',
+        path: '/diffusion/video/gallery/vjob-1/poster',
+        body: { png: 'data:image/png;base64,iVBORw0KGgo=' },
+      },
+    ])
+  })
+
   it('passes the load and generate requests through unchanged', async () => {
     const load = {
       modelId: 'z-image:q4_k_m',
@@ -194,7 +255,7 @@ describe('TauriDiffusionService.subscribe', () => {
     listen.mockReset()
   })
 
-  it('listens on the four relayed core events and stamps the discriminant', async () => {
+  it('listens on the six relayed core events and stamps the discriminant', async () => {
     const handlers = new Map<string, (event: { payload: unknown }) => void>()
     listen.mockImplementation(async (name: string, handler: (event: { payload: unknown }) => void) => {
       handlers.set(name, handler)
@@ -236,7 +297,7 @@ describe('TauriDiffusionService.subscribe', () => {
     expect(unsubscribe()).toBeUndefined()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1, 1, 1])
+    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual(unlistens.map(() => 1))
   })
 
   it('still detaches listeners whose registration finishes after unsubscribe', async () => {
@@ -254,6 +315,6 @@ describe('TauriDiffusionService.subscribe', () => {
     resolvers.forEach((resolve, i) => resolve(unlistens[i]))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual([1, 1, 1, 1, 1])
+    expect(unlistens.map((fn) => fn.mock.calls.length)).toEqual(unlistens.map(() => 1))
   })
 })

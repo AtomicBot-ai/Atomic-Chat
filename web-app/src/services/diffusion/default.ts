@@ -23,11 +23,16 @@ import type {
   GalleryImageItem,
   GalleryListOptions,
   GalleryPage,
+  GalleryVideoItem,
   ImageCapabilities,
   ImageGenerateRequest,
   ImageJob,
   LoadDiffusionModelRequest,
   LoadedDiffusionModel,
+  VideoCapabilities,
+  VideoGalleryPage,
+  VideoGenerateRequest,
+  VideoJob,
 } from './types'
 
 export const DIFFUSION_UNSUPPORTED =
@@ -38,7 +43,9 @@ const INERT_STATUS: DiffusionStatus = {
   install: { state: 'not-installed' },
   model: { state: 'unloaded', loaded: null },
   activeJob: null,
+  activeVideoJob: null,
   outputDir: '',
+  videoOutputDir: '',
   idleUnloadSecs: 0,
 }
 
@@ -51,6 +58,23 @@ const INERT_CAPABILITIES: ImageCapabilities = {
   supportsGuidance: false,
   cancelGenerating: false,
   maxBatch: 0,
+  defaults: { steps: 0, cfgScale: 0, width: 0, height: 0 },
+  ranges: { steps: [0, 0], dims: [0, 0], dimMultiple: 1 },
+}
+
+const INERT_VIDEO_CAPABILITIES: VideoCapabilities = {
+  workflows: [],
+  minDim: 0,
+  maxDim: 0,
+  dimMultiple: 1,
+  supportsNegativePrompt: false,
+  supportsGuidance: false,
+  cancelGenerating: false,
+  fps: 0,
+  frames: { min: 0, max: 0, step: 1, offset: 0, default: 0 },
+  resolutionPresets: [],
+  outputFormat: 'webm',
+  webmSupported: null,
   defaults: { steps: 0, cfgScale: 0, width: 0, height: 0 },
   ranges: { steps: [0, 0], dims: [0, 0], dimMultiple: 1 },
 }
@@ -154,6 +178,51 @@ export class DefaultDiffusionService implements DiffusionService {
   }
 
   async setOutputDir(_path: string): Promise<DiffusionStatus> {
+    return unsupported()
+  }
+
+  async getVideoCapabilities(): Promise<VideoCapabilities> {
+    return { ...INERT_VIDEO_CAPABILITIES }
+  }
+
+  async generateVideo(_request: VideoGenerateRequest): Promise<{ jobId: string }> {
+    return unsupported()
+  }
+
+  async getVideoJob(_jobId: string): Promise<VideoJob | null> {
+    return null
+  }
+
+  async cancelVideoJob(
+    _jobId: string
+  ): Promise<{ cancelled: boolean; serverStopped: boolean }> {
+    return unsupported()
+  }
+
+  async listVideoGallery(_options: GalleryListOptions): Promise<VideoGalleryPage> {
+    return { items: [], hasMore: false, total: 0 }
+  }
+
+  async getVideoGalleryItem(_id: string): Promise<GalleryVideoItem | null> {
+    return null
+  }
+
+  async deleteVideoGalleryItems(_ids: string[]): Promise<void> {
+    return unsupported()
+  }
+
+  async setVideoGalleryFlags(
+    _id: string,
+    _flags: GalleryFlags
+  ): Promise<GalleryVideoItem> {
+    return unsupported()
+  }
+
+  async exportVideoGalleryItem(_id: string, _targetPath: string): Promise<void> {
+    return unsupported()
+  }
+
+  async setVideoPoster(_id: string, _pngBase64: string): Promise<GalleryVideoItem> {
     return unsupported()
   }
 
