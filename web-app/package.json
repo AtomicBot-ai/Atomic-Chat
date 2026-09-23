@@ -1,7 +1,7 @@
 {
   "name": "@janhq/web-app",
   "private": true,
-  "version": "2.0.62",
+  "version": "2.0.65",
   "type": "module",
   "scripts": {
     "seed-catalog": "node scripts/fetch-seed-catalog.mjs",
@@ -105,7 +105,7 @@
     "unified": "11.0.5",
     "unist-util-visit": "^5.0.0",
     "use-stick-to-bottom": "^1.1.6",
-    "uuid": "14.0.0",
+    "uuid": "14.0.1",
     "vaul": "^1.1.2",
     "vfile": "^6.0.3",
     "zod": "^4.1.13",
@@ -147,7 +147,7 @@
     "tailwind-merge": "3.3.1",
     "typescript": "5.9.2",
     "typescript-eslint": "8.31.0",
-    "vite": "6.4.3",
+    "vite": "8.3.0",
     "vite-plugin-node-polyfills": "0.23.0",
     "vite-plugin-pwa": "1.0.3",
     "vitest": "3.2.6"
