@@ -457,11 +457,22 @@ Existing evidence:
   `test/e2e/videos-api.test.ts`) and the live block — lives in
   `atomic-chat-core/docs/testing-critical-flows.md`.
 
+- `tests/e2e/desktop/video-{generation,failures,settings,chat-handoff}.spec.ts`
+  (harness `videos.ts`) drive the built app on the core's scripted engine
+  in video mode: the model loaded with the audio VAE and the connectors on
+  the argv, a clip generated and played by the webview itself (metadata and
+  a frame size read back from the player), its poster rendered by the app
+  and stored as `<id>.thumb.png`, the WebM and its JSON sidecar on disk, the
+  gallery back after a restart; a clip the engine fails and one stopped
+  halfway; the video folder changed in Settings → Media and kept across a
+  restart, a clip deleted with its sidecar and poster; the chat model
+  evicted for a video model and brought back. Run on 2026-09-23 on macOS
+  arm64 against core 0.4.0: every scenario passes; the restart scenario's
+  teardown reports a leftover bundled llama.cpp backend process, which the
+  unchanged image restart scenario reports on the same machine too.
+
 Gap:
 
-- The desktop e2e scenarios (`tests/e2e/*video*.spec.ts`) are not written
-  yet; the real decode of a clip in the webview, the poster on disk and the
-  chat hand-off are unproved end to end.
 - No live run through the packaged app core; the live engine run is the
   core's `ATOMIC_LIVE=1` video block, still to be run on a real LTX-2.3.
 - OS notification on completion and the GPU arbiter hand-off are mocked, as
