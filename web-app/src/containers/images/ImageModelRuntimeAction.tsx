@@ -14,9 +14,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
-import { useImageSetting } from '@/hooks/useImageSetting'
+import { useSelectedArtifact } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
+import type { DiffusionModality } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 
 type RuntimePhase = 'idle' | 'starting' | 'ready' | 'stopping'
@@ -24,6 +25,8 @@ type RuntimePhase = 'idle' | 'starting' | 'ready' | 'stopping'
 type ImageModelRuntimeActionProps = {
   artifactId: string
   modelName: string
+  /** Whose selection Run records: the Images page's or the Video page's. */
+  modality?: DiffusionModality
   appearance?: 'row' | 'indicator'
   disabled?: boolean
   className?: string
@@ -38,6 +41,7 @@ type ImageModelRuntimeActionProps = {
 export function ImageModelRuntimeAction({
   artifactId,
   modelName,
+  modality = 'image',
   appearance = 'row',
   disabled = false,
   className,
@@ -52,9 +56,7 @@ export function ImageModelRuntimeAction({
   const unloadingArtifactId = useImageGenerationStore(
     (state) => state.unloadingArtifactId
   )
-  const setSelectedArtifactId = useImageSetting(
-    (state) => state.setSelectedArtifactId
-  )
+  const { setSelectedArtifactId } = useSelectedArtifact(modality)
 
   const phase: RuntimePhase = artifact.unloading
     ? 'stopping'

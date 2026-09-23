@@ -14,8 +14,17 @@ import {
   MODELS_ROOT,
   type FakeDiffusion,
 } from '@/lib/diffusion/__tests__/image-fixtures'
+import {
+  LTX_2,
+  LTX_Q4_ID,
+  makeVideoCapabilities,
+  makeVideoLoadedStatus,
+} from '@/lib/diffusion/__tests__/video-fixtures'
 import { seedServiceHub } from '@/test/service-hub'
+import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { useVideoForm } from '@/hooks/useVideoForm'
+import { useVideoSetting } from '@/hooks/useVideoSetting'
 
 // The store talks to the plugin through the hub (faked below) and to the
 // catalog, config, arbiter and install modules — each of which has its own
@@ -38,6 +47,7 @@ vi.mock('@/lib/diffusion/config', async (importOriginal) => ({
     modelsRoot: MODELS_ROOT,
     backendsRoot: '/data/diffusion/backends',
     imagesDir: '/data/images',
+    videosDir: '/data/videos',
   })),
 }))
 vi.mock('@/lib/diffusion/arbiter', () => ({
@@ -102,6 +112,7 @@ describe('image-generation-store', () => {
       idleUnloadMinutes: 10,
       outputDir: null,
     })
+    useVideoSetting.setState({ selectedArtifactId: null, outputDir: null })
     resetImageGenerationForTests()
     useImageGalleryStore.getState().reset()
     fake = makeFakeDiffusion()
@@ -1062,9 +1073,207 @@ describe('image-generation-store', () => {
       expect(useImageGenerationStore.getState()).toMatchObject({
         setupOpen: true,
         setupStep: 2,
+        setupModality: 'image',
       })
       useImageGenerationStore.getState().closeSetup()
       expect(useImageGenerationStore.getState().setupOpen).toBe(false)
+      useImageGenerationStore.getState().openSetup(1, 'video')
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        setupOpen: true,
+        setupStep: 1,
+        setupModality: 'video',
+      })
+    })
+  })
+
+  describe('video models', () => {
+    beforeEach(() => {
+      useImageGenerationStore.setState({
+        catalog: makeCatalog([Z_IMAGE, LTX_2]),
+        status: makeStatus(),
+        capabilities: null,
+      })
+      fake.getVideoCapabilities.mockResolvedValue(makeVideoCapabilities())
+    })
+
+    it('loads a video checkpoint into the video slot, leaving the image side as it was', async () => {
+      useImageSetting.setState({ selectedArtifactId: 'z-image:q4_k_m' })
+      useImageForm.setState({ steps: 17 })
+      useVideoForm.setState({ frames: 25, steps: 3, width: 704, height: 1216 })
+      fake.loadModel.mockImplementation(async (request) => {
+        const status = makeVideoLoadedStatus(request.modelId)
+        fake.getStatus.mockResolvedValue(status)
+        return status.model.loaded!
+      })
+
+      await useImageGenerationStore.getState().loadModel(LTX_Q4_ID)
+
+      const request = fake.loadModel.mock.calls[0][0]
+      expect(request).toMatchObject({
+        modelId: LTX_Q4_ID,
+        family: 'ltx-2',
+        modality: 'video',
+      })
+      expect(request.files.audioVae).toContain('ltx-2.3-22b-distilled_audio_vae')
+      expect(request.files.embeddingsConnectors).toContain('embeddings_connectors')
+      expect(request.defaults.video?.frames).toBe(121)
+      expect(fake.getCapabilities).not.toHaveBeenCalled()
+      const state = useImageGenerationStore.getState()
+      expect(state.videoCapabilities?.fps).toBe(24)
+      expect(state.capabilities).toBeNull()
+      expect(state.lastError).toBeNull()
+      expect(useVideoSetting.getState().selectedArtifactId).toBe(LTX_Q4_ID)
+      expect(useImageSetting.getState().selectedArtifactId).toBe('z-image:q4_k_m')
+      // The video form took the family defaults; the image form was not touched.
+      expect(useVideoForm.getState()).toMatchObject({
+        frames: 121,
+        steps: 8,
+        width: 768,
+        height: 512,
+      })
+      expect(useImageForm.getState().steps).toBe(17)
+    })
+
+    it('counts the audio VAE among the bytes the GPU must find room for', async () => {
+      const { acquireGpuForDiffusion } = await import('@/lib/diffusion/arbiter')
+      vi.mocked(acquireGpuForDiffusion).mockClear()
+      await useImageGenerationStore.getState().loadModel(LTX_Q4_ID)
+      const [{ requiredBytes }] = vi.mocked(acquireGpuForDiffusion).mock.calls[0]
+      // Transformer + video VAE + audio VAE, plus the text encoders unless
+      // they sit on the CPU (macOS).
+      expect(requiredBytes).toBe(
+        14_000_000_000 +
+          1_400_000_000 +
+          360_000_000 +
+          (IS_MACOS ? 0 : 7_400_000_000 + 2_300_000_000)
+      )
+    })
+
+    it('files a failed video load under the Video page', async () => {
+      fake.loadModel.mockRejectedValue({
+        code: 'OUT_OF_MEMORY',
+        message: 'no room',
+      })
+      await useImageGenerationStore.getState().loadModel(LTX_Q4_ID)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        lastError: { code: 'OUT_OF_MEMORY' },
+        lastErrorModality: 'video',
+      })
+      expect(useVideoSetting.getState().selectedArtifactId).toBeNull()
+
+      fake.loadModel.mockRejectedValue({ code: 'OUT_OF_MEMORY', message: 'x' })
+      await useImageGenerationStore.getState().loadModel('z-image:q4_k_m')
+      expect(useImageGenerationStore.getState().lastErrorModality).toBe('image')
+
+      useImageGenerationStore.getState().clearError()
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        lastError: null,
+        lastErrorModality: null,
+      })
+    })
+
+    it('reads the video capabilities when a video model turns out to be resident', async () => {
+      fake.emit({
+        type: 'state',
+        status: makeVideoLoadedStatus(),
+        reason: 'loaded',
+      })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().videoCapabilities?.frames.step).toBe(8)
+      )
+      expect(fake.getCapabilities).not.toHaveBeenCalled()
+      expect(useImageGenerationStore.getState().capabilities).toBeNull()
+
+      // Gone again: both slots empty.
+      fake.emit({ type: 'state', status: makeStatus(), reason: 'idle' })
+      expect(useImageGenerationStore.getState().videoCapabilities).toBeNull()
+
+      // A model error while a video model was loading is the Video page's.
+      useImageGenerationStore.setState({ loadingArtifactId: LTX_Q4_ID })
+      fake.emit({
+        type: 'state',
+        status: makeStatus({
+          model: {
+            state: 'error',
+            loaded: null,
+            error: { code: 'ENGINE_CRASHED', message: 'gone' },
+          },
+        }),
+        reason: 'crashed',
+      })
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        lastError: { code: 'ENGINE_CRASHED' },
+        lastErrorModality: 'video',
+      })
+    })
+
+    it('adopts a resident video model on bind', async () => {
+      resetImageGenerationForTests()
+      fake.getStatus.mockResolvedValue(makeVideoLoadedStatus())
+      await useImageGenerationStore.getState().bind()
+      expect(useImageGenerationStore.getState().videoCapabilities?.fps).toBe(24)
+      expect(useImageGenerationStore.getState().capabilities).toBeNull()
+    })
+
+    it('unloading a video model empties the video slot and files a refusal under Video', async () => {
+      useImageGenerationStore.setState({
+        status: makeVideoLoadedStatus(),
+        videoCapabilities: makeVideoCapabilities(),
+      })
+      await useImageGenerationStore.getState().unloadModel()
+      expect(useImageGenerationStore.getState().videoCapabilities).toBeNull()
+
+      useImageGenerationStore.setState({ status: makeVideoLoadedStatus() })
+      fake.unloadModel.mockRejectedValue({ code: 'JOB_BUSY', message: 'busy' })
+      await useImageGenerationStore.getState().unloadModel()
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        lastError: { code: 'JOB_BUSY' },
+        lastErrorModality: 'video',
+      })
+    })
+
+    it('removing a video checkpoint clears the Video selection, not the image one', async () => {
+      useImageSetting.setState({ selectedArtifactId: 'z-image:q4_k_m' })
+      useVideoSetting.setState({ selectedArtifactId: LTX_Q4_ID })
+      fake.listModelFiles.mockResolvedValue([])
+      await useImageGenerationStore.getState().removeArtifact(LTX_Q4_ID)
+      expect(useVideoSetting.getState().selectedArtifactId).toBeNull()
+      expect(useImageSetting.getState().selectedArtifactId).toBe('z-image:q4_k_m')
+    })
+
+    it('sends the video folder with every configure and drops both folders when one is unusable', async () => {
+      const { configureDiffusion } = await import('@/lib/diffusion/config')
+      const configure = vi.mocked(configureDiffusion)
+      useImageSetting.setState({ outputDir: '/pictures' })
+      useVideoSetting.setState({ outputDir: '/movies' })
+      configure.mockClear()
+      await useImageGenerationStore.getState().applyIdleSettings()
+      expect(configure.mock.calls.at(-1)?.[0]).toEqual({
+        idleUnloadSecs: 600,
+        outputDir: '/pictures',
+        videoOutputDir: '/movies',
+      })
+
+      configure.mockClear()
+      configure.mockRejectedValueOnce({ code: 'INTERNAL', message: 'mkdir' })
+      await useImageGenerationStore.getState().applyIdleSettings()
+      expect(configure.mock.calls).toEqual([
+        [{ idleUnloadSecs: 600, outputDir: '/pictures', videoOutputDir: '/movies' }],
+        [{ idleUnloadSecs: 600 }],
+      ])
+      expect(useImageSetting.getState().outputDir).toBe('/pictures')
+      expect(useVideoSetting.getState().outputDir).toBe('/movies')
+      expect(useImageGenerationStore.getState().lastError).toBeNull()
+
+      // Only the video folder stored: the same fallback.
+      useImageSetting.setState({ outputDir: null })
+      configure.mockClear()
+      configure.mockRejectedValueOnce({ code: 'DISK_FULL', message: 'full' })
+      await useImageGenerationStore.getState().applyIdleSettings()
+      expect(configure.mock.calls).toEqual([
+        [{ idleUnloadSecs: 600, videoOutputDir: '/movies' }],
+        [{ idleUnloadSecs: 600 }],
+      ])
     })
   })
 })

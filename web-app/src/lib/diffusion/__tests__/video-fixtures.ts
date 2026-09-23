@@ -7,6 +7,7 @@
  * import it.
  */
 import type {
+  DiffusionStatus,
   GalleryVideoItem,
   VideoCapabilities,
   VideoGenerateRequest,
@@ -14,6 +15,7 @@ import type {
   VideoRecipe,
 } from '@/services/diffusion/types'
 import type { DiffusionCatalogFamily } from '@/services/diffusion-catalog-registry'
+import { makeStatus } from './image-fixtures'
 
 export const LTX_2: DiffusionCatalogFamily = {
   id: 'ltx-2',
@@ -154,6 +156,31 @@ export const WAN_22: DiffusionCatalogFamily = {
 
 export const LTX_Q4_ID = 'ltx-2:q4_k_m'
 export const WAN_Q4_ID = 'wan2.2-ti2v-5b:q4_k_m'
+
+/** The core's status while a video checkpoint is resident. */
+export function makeVideoLoadedStatus(
+  modelId = LTX_Q4_ID,
+  family = 'ltx-2'
+): DiffusionStatus {
+  return makeStatus({
+    model: {
+      state: 'loaded',
+      loaded: {
+        modelId,
+        family,
+        modality: 'video',
+        displayName: 'LTX-2.3 Distilled Q4_K_M',
+        engine: 'sd-cpp',
+        backend: 'metal',
+        offload: 'group',
+        cpuFallback: false,
+        port: 43112,
+        pid: 4243,
+        loadedAtMs: 1_000,
+      },
+    },
+  })
+}
 
 export function makeVideoCapabilities(
   overrides: Partial<VideoCapabilities> = {}

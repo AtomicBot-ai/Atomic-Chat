@@ -37,6 +37,7 @@ vi.mock('@/lib/diffusion/config', async (importOriginal) => ({
     modelsRoot: '/data/diffusion/models',
     backendsRoot: '/data/diffusion/backends',
     imagesDir: '/data/images',
+    videosDir: '/data/videos',
   })),
 }))
 vi.mock('@/lib/diffusion/models', async (importOriginal) => ({
@@ -71,6 +72,7 @@ describe('useImageArtifact', () => {
         modelsRoot: '/data/diffusion/models',
         backendsRoot: '/data/diffusion/backends',
         imagesDir: '/data/images',
+        videosDir: '/data/videos',
       },
     })
   })

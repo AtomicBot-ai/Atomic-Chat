@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { IconChevronDown, IconPhoto } from '@tabler/icons-react'
+import { IconChevronDown, IconMovie, IconPhoto } from '@tabler/icons-react'
 
 import {
   Popover,
@@ -9,12 +9,13 @@ import {
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
 import { useImageForm } from '@/hooks/useImageForm'
-import { useImageSetting } from '@/hooks/useImageSetting'
+import { useSelectedArtifact } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { parseArtifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
+import type { DiffusionModality } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
 import { ImageModelSelector } from './ImageModelSelector'
@@ -22,6 +23,12 @@ import { ImageModelSelector } from './ImageModelSelector'
 type ImageModelPickerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * The page the picker serves. It shows and selects only that modality's
+   * checkpoints: a resident video model is not the Images page's model, and
+   * the other way round.
+   */
+  modality?: DiffusionModality
 }
 
 /**
@@ -32,6 +39,7 @@ type ImageModelPickerProps = {
 export const ImageModelPicker = memo(function ImageModelPicker({
   open,
   onOpenChange,
+  modality = 'image',
 }: ImageModelPickerProps) {
   const { t } = useTranslation()
   const status = useImageGenerationStore((state) => state.status)
@@ -41,9 +49,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const unloadingArtifactId = useImageGenerationStore(
     (state) => state.unloadingArtifactId
   )
-  const selectedArtifactId = useImageSetting(
-    (state) => state.selectedArtifactId
-  )
+  const { selectedArtifactId } = useSelectedArtifact(modality)
   const loadedArtifactId = status?.model.loaded?.modelId ?? null
   const runtimeArtifactId =
     loadedArtifactId ?? loadingArtifactId ?? unloadingArtifactId
@@ -52,16 +58,25 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const workflow = useImageForm((state) => state.workflow)
   const runtimeFamilyId =
     runtime.family?.id ?? parseArtifactId(runtimeArtifactId ?? '')?.family ?? null
+  // The catalog names the modality of a family it knows; for one it does
+  // not, the core's own report of the resident model does.
+  const runtimeModality =
+    runtime.family?.modality ?? status?.model.loaded?.modality ?? null
   const runtimeCompatible =
     Boolean(runtimeArtifactId) &&
-    (runtimeFamilyId === null || familySupportsWorkflow(runtimeFamilyId, workflow))
+    (runtimeModality === null || runtimeModality === modality) &&
+    (modality === 'video' ||
+      runtimeFamilyId === null ||
+      familySupportsWorkflow(runtimeFamilyId, workflow))
   const selectedFamilyId =
     selected.family?.id ??
     parseArtifactId(selectedArtifactId ?? '')?.family ??
     null
   const selectedCompatible =
     Boolean(selectedArtifactId && selected.complete) &&
-    (selectedFamilyId === null ||
+    (selected.family === null || selected.family.modality === modality) &&
+    (modality === 'video' ||
+      selectedFamilyId === null ||
       familySupportsWorkflow(selectedFamilyId, workflow))
   const displayArtifactId = runtimeCompatible
     ? runtimeArtifactId
@@ -109,6 +124,8 @@ export const ImageModelPicker = memo(function ImageModelPicker({
                 author={displayArtifact.family.developer}
                 className="size-5 rounded-md"
               />
+            ) : modality === 'video' ? (
+              <IconMovie size={16} className="shrink-0 text-muted-foreground" />
             ) : (
               <IconPhoto size={16} className="shrink-0 text-muted-foreground" />
             )}
@@ -139,13 +156,18 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           // which is the same white, and must read as lifted off it.
           className="max-h-[min(60vh,480px)] w-[380px] max-w-[calc(100vw-2rem)] origin-[var(--radix-popover-content-transform-origin)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
         >
-          <ImageModelSelector variant="page" workflow={workflow} />
+          <ImageModelSelector
+            variant="page"
+            modality={modality}
+            {...(modality === 'image' ? { workflow } : {})}
+          />
         </PopoverContent>
       </Popover>
       {showArtifact && displayArtifactId && (
         <ImageModelRuntimeAction
           artifactId={displayArtifactId}
           modelName={name}
+          modality={modality}
           appearance="indicator"
         />
       )}

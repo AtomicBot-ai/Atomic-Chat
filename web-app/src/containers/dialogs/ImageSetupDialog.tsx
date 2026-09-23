@@ -237,6 +237,7 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
   const { t } = useTranslation()
   const open = useImageGenerationStore((state) => state.setupOpen)
   const step = useImageGenerationStore((state) => state.setupStep)
+  const setupModality = useImageGenerationStore((state) => state.setupModality)
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const closeSetup = useImageGenerationStore((state) => state.closeSetup)
   const hasModel = useImageGenerationStore((state) =>
@@ -250,8 +251,8 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
 
   const go = useCallback(
     (next: number) =>
-      openSetup(Math.min(2, Math.max(0, next)) as ImageSetupStep),
-    [openSetup]
+      openSetup(Math.min(2, Math.max(0, next)) as ImageSetupStep, setupModality),
+    [openSetup, setupModality]
   )
 
   const ready = engineInstalled && hasModel
@@ -277,7 +278,12 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
       : 'images:setup.ready.description'
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? openSetup(step) : dismiss())}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) =>
+        next ? openSetup(step, setupModality) : dismiss()
+      }
+    >
       <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         <DialogHeader
           data-testid="image-setup-header"
@@ -323,6 +329,7 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
           {step === 2 && (
             <ImageModelSelector
               variant="dialog"
+              modality={setupModality}
               onDownloadStarted={closeSetup}
             />
           )}
