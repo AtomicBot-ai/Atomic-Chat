@@ -1,3 +1,4 @@
+import { LTX_2 } from './video-fixtures'
 import { describe, expect, it } from 'vitest'
 
 import type { HardwareProfile } from '@/lib/hardware-tier'
@@ -242,5 +243,22 @@ describe('recommendedQuant', () => {
 
   it("keeps the catalog's pick while hardware is unknown", () => {
     expect(recommendedId(null)).toBe('q4_k_m')
+  })
+})
+
+describe('video families', () => {
+  it('counts the audio VAE with the video VAE as resident weights', () => {
+    const quant = LTX_2.transformer.quants[0]!
+    const estimate = fitForQuant(LTX_2, quant, null, { teOnCpu: true })
+    expect(estimate.residentBytes).toBe(
+      estimateResidentBytes({
+        transformerBytes: quant.bytes,
+        vaeBytes: 1_400_000_000 + 360_000_000,
+        teBytes: 7_400_000_000 + 2_300_000_000,
+        teOnCpu: true,
+        width: 768,
+        height: 512,
+      })
+    )
   })
 })
