@@ -11,7 +11,6 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { coreSessions, pageShows, send, waitForChat } from '../harness/chat.js'
 import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
@@ -337,4 +336,66 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
       expect(createHash('sha256').update(model).digest('hex')).toBe(hub.modelSha256)
     })
   })
+})
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () => {
+  let session: Session
+  let hub: HubFixture
+
+  beforeAll(async () => {
+    // The first two answers are a 503: the app's downloader backs off and tries again.
+    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE, failFirst: 2 })
+    session = await startSession('hub-download-retry', {
+      prepare: async (profile) => installFakeBackend(profile, { reply: REPLY }),
+    })
+  })
+
+  afterAll(async () => {
+    const left = await endSession(session)
+    await hub.stop()
+    expect(left).toEqual([])
+  })
+
+  it('tells the user it is retrying when the server fails at first, and then downloads the file', async () => {
+    await withArtifacts(session, async () => {
+      const browser = session.app.browser
+      const dataFolder = session.profile.dataFolder
+      await browser.$('button=Skip').click()
+      await waitForChat(session)
+      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
+      await card.waitForDisplayed({ timeout: 60_000 })
+      await card.click()
+      const download = browser.$('//button[normalize-space(.)="Download"]')
+      await download.waitForClickable({ timeout: 30_000 })
+
+      const statuses: string[] = []
+      let watching = true
+      const watcher = (async () => {
+        while (watching) {
+          const now = await browser
+            .execute(() => {
+              const panel = document.querySelector('[role="region"][aria-label="Downloads"]')
+              return panel ? (panel as HTMLElement).innerText.replace(/\s+/g, ' ').trim() : null
+            })
+            .catch(() => null)
+          if (now) statuses.push(now)
+          await new Promise((r) => setTimeout(r, 100))
+        }
+      })()
+      await download.click()
+      await pageShows(session, 'Download Complete', 180_000)
+      watching = false
+      await watcher
+
+      // The retry was said, as its own line, not as progress going backwards.
+      const retrying = statuses.filter((status) => /Connection failed, retrying \(\d+\/\d+\)/.test(status))
+      expect(retrying.length, `the panel showed: ${JSON.stringify([...new Set(statuses)])}`).toBeGreaterThan(0)
+      // And the file arrived whole, from the third answer on.
+      const modelDir = join(dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
+      expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
+      const fileRequests = hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET')
+      expect(fileRequests.length).toBeGreaterThanOrEqual(3)
+    })
+  }, 300_000)
 })

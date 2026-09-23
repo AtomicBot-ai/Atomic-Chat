@@ -62,7 +62,7 @@ test-tauri = [
 gaia-eval = ["dep:env_logger", "dep:indicatif", "dep:parquet"]
 # Desktop UI end-to-end builds only: embeds a WebDriver server in the app. Never
 # part of `default` or `desktop`, so a release build does not contain it.
-e2e = ["dep:tauri-plugin-wdio-webdriver"]
+e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:objc2"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -168,6 +168,11 @@ tempfile = "3.20.0"
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process", "resource"] }
 libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# e2e only: keeps an unseen e2e window rendering (`core::e2e`). Already in the
+# lockfile through wry.
+objc2 = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }

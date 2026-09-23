@@ -3923,6 +3923,7 @@ pub struct ZcodeAppStatus {
 /// `path` is the launcher the Launch page detected off `PATH` (a custom binary
 /// path, or one of [`zcode_app_candidates`]).
 #[tauri::command]
+#[cfg_attr(feature = "e2e", allow(unreachable_code))]
 pub fn launch_zcode(path: Option<String>) -> ZcodeAppStatus {
     use std::process::{Command, Stdio};
 
@@ -3931,6 +3932,24 @@ pub fn launch_zcode(path: Option<String>) -> ZcodeAppStatus {
         .filter(|p| p.is_file())
         .or_else(|| resolve_off_path("zcode"));
     let found = exe.is_some();
+
+    // An end-to-end build must not open a desktop app on the machine of whoever runs the tests;
+    // like `open_agent_terminal`, it writes down what it would have opened.
+    #[cfg(feature = "e2e")]
+    {
+        let program = exe
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "zcode".to_string());
+        let _ = crate::core::e2e::record_terminal(
+            &crate::core::e2e::data_root(),
+            &format!("zcode {program}"),
+        );
+        return ZcodeAppStatus {
+            installed: found,
+            launched: found,
+        };
+    }
 
     let mut cmd = match exe {
         Some(exe) => match macos_app_bundle(&exe).filter(|_| cfg!(target_os = "macos")) {

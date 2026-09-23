@@ -35,6 +35,7 @@ dependencies = [
  "nix 0.30.1",
  "notify-rust",
  "oauth2",
+ "objc2",
  "once_cell",
  "parquet",
  "png 0.18.1",

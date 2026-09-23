@@ -171,6 +171,22 @@ export async function followRelaunch(app: RunningApp): Promise<void> {
   await waitForSplashToGo(app.browser)
 }
 
+let launches = 0
+
+/**
+ * Where the next window goes. Workers run side by side and each cascades by
+ * its number; within one worker the sessions come one after another, and the
+ * window of the one just ended may still be on its way out — kept on top, at
+ * exactly the place the next one would open, which then gets no animation
+ * frames until it is gone. So consecutive launches of one worker cascade too.
+ */
+function windowSlot(): number {
+  const worker = Number(process.env.VITEST_POOL_ID ?? '1') || 1
+  const slot = ((worker - 1 + (launches % 4) * 4) % 16) + 1
+  launches += 1
+  return slot
+}
+
 export async function launchApp(extraEnv: Record<string, string>): Promise<RunningApp> {
   const driverPort = await freePort()
   const { child, output } = spawnApp(
@@ -179,7 +195,7 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
       TAURI_WEBDRIVER_PORT: String(driverPort),
       // Workers run side by side, each with its window kept on top; the build
       // cascades them by this number so that none is covered completely.
-      ATOMIC_E2E_WINDOW_SLOT: process.env.VITEST_POOL_ID ?? '1',
+      ATOMIC_E2E_WINDOW_SLOT: String(windowSlot()),
     })
   )
   try {
@@ -232,17 +248,20 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
 
 /**
  * The app covers itself with a full-window splash overlay and removes it from
- * an animation frame. A window that is not being rendered — minimised, on
- * another Space, the display asleep — gets no frames, so the overlay stays and
- * takes every click meant for the UI under it. Better said once, here, than
- * discovered as "element not clickable" in whichever scenario ran at the time.
+ * an animation frame. A window that is not being rendered — minimised, the
+ * display asleep — gets no frames, so the overlay stays and takes every click
+ * meant for the UI under it. (A window that is merely not seen, behind other
+ * windows or on another Space, keeps rendering on macOS: the e2e build turns
+ * WebKit's occlusion detection off, see `keep_rendering_unseen`.) Better said
+ * once, here, than discovered as "element not clickable" in whichever scenario
+ * ran at the time.
  */
 async function waitForSplashToGo(browser: Browser): Promise<void> {
   await browser.$('#initial-loader').waitForExist({
     reverse: true,
     timeout: 60_000,
     timeoutMsg:
-      'the splash overlay never went away: the app window is not being rendered. Keep it on a visible Space with the display awake.',
+      'the splash overlay never went away: the app window is not being rendered. Keep the display awake and the window not minimised.',
   })
 }
 

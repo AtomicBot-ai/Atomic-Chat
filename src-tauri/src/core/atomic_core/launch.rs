@@ -164,9 +164,27 @@ const CLOUDFLARED_FILE_NAME: &str = "cloudflared";
 /// The bundled `cloudflared`, or `None` when this build does not carry one (a dev build that
 /// skipped `download:bin`, or a platform without the sidecar).
 pub fn bundled_cloudflared() -> Option<PathBuf> {
-    bundled_cloudflared_next_to(&std::env::current_exe().ok()?)
+    // An end-to-end build never starts the real tunnel, which would expose the test's API on a
+    // public URL: a run brings its own `cloudflared` in its sidecars folder, or has none.
+    #[cfg(feature = "e2e")]
+    {
+        e2e_cloudflared(&crate::core::e2e::data_root())
+    }
+    #[cfg(not(feature = "e2e"))]
+    {
+        bundled_cloudflared_next_to(&std::env::current_exe().ok()?)
+    }
 }
 
+/// The `cloudflared` an e2e run put next to its scripted sidecars (`core::e2e::sidecar_dir`).
+#[cfg(feature = "e2e")]
+fn e2e_cloudflared(root: &Path) -> Option<PathBuf> {
+    crate::core::e2e::sidecar_dir(root)
+        .map(|dir| dir.join(CLOUDFLARED_FILE_NAME))
+        .filter(|path| path.is_file())
+}
+
+#[cfg_attr(feature = "e2e", allow(dead_code))]
 fn bundled_cloudflared_next_to(executable: &Path) -> Option<PathBuf> {
     let candidate = executable.parent()?.join(CLOUDFLARED_FILE_NAME);
     candidate.is_file().then_some(candidate)
@@ -517,6 +535,19 @@ mod tests {
                 "off".into()
             ]
         );
+    }
+
+    #[cfg(feature = "e2e")]
+    #[test]
+    fn an_e2e_run_starts_only_the_cloudflared_it_brought() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(e2e_cloudflared(root.path()), None);
+        let sidecars = root.path().join(crate::core::e2e::SIDECAR_DIR);
+        std::fs::create_dir(&sidecars).unwrap();
+        assert_eq!(e2e_cloudflared(root.path()), None);
+        let tunnel = sidecars.join(CLOUDFLARED_FILE_NAME);
+        std::fs::write(&tunnel, b"").unwrap();
+        assert_eq!(e2e_cloudflared(root.path()), Some(tunnel));
     }
 
     #[test]

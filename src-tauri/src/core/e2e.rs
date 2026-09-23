@@ -151,7 +151,7 @@ pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<(
     let store = webview_data_store(&root);
     let (x, y) = window_position(std::env::var(WINDOW_SLOT_ENV).ok().as_deref());
     for window in app.config().app.windows.clone() {
-        tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+        let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
             .position(x, y)
             .data_store_identifier(store)
             .data_directory(root.join(WEBVIEW_DATA_DIR))
@@ -160,8 +160,56 @@ pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<(
             // somebody is working on the overlay stays over the whole UI and
             // swallows every click. Nothing can cover a window kept on top.
             .always_on_top(true)
+            // Nor does a window on another Space get frames. On every Space, it
+            // is drawn wherever whoever runs the tests is looking — except on
+            // another app's full-screen Space, which `keep_rendering_unseen`
+            // covers.
+            .visible_on_all_workspaces(true)
             .build()?;
+        keep_rendering_unseen(&window)?;
     }
+    Ok(())
+}
+
+/// WebKit stops a page's animation frames while the window is not seen, and a
+/// window kept on top and on every Space is still not seen from another app's
+/// full-screen Space: a run started while its operator had one in front timed
+/// out on the splash overlay in every session. With occlusion detection off
+/// WebKit counts the page as visible for as long as the window is ordered in,
+/// wherever that is. The switch is private WebKit API, which only an e2e build
+/// calls.
+///
+/// WebKit reads the switch the next time it works out whether the page is
+/// visible, not when it is set, and the window is already on screen by now:
+/// hiding and showing the view again makes it do that at once instead of at the
+/// operator's next Space switch.
+#[cfg(target_os = "macos")]
+fn keep_rendering_unseen<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> tauri::Result<()> {
+    window.with_webview(|webview| {
+        use objc2::runtime::{AnyObject, Bool};
+        use objc2::{msg_send, sel};
+        // SAFETY: on macOS `inner()` is the window's WKWebView, alive for as long as the window,
+        // and `with_webview` runs this on the main thread.
+        let Some(view) = (unsafe { webview.inner().cast::<AnyObject>().as_ref() }) else {
+            return;
+        };
+        let selector = sel!(_setWindowOcclusionDetectionEnabled:);
+        let supported: Bool = unsafe { msg_send![view, respondsToSelector: selector] };
+        if !supported.as_bool() {
+            log::warn!("e2e: this WebKit cannot keep an unseen window rendering");
+            return;
+        }
+        unsafe {
+            let _: () = msg_send![view, _setWindowOcclusionDetectionEnabled: Bool::NO];
+            let _: () = msg_send![view, setHidden: Bool::YES];
+            let _: () = msg_send![view, setHidden: Bool::NO];
+        }
+        log::info!("e2e: the window keeps rendering while it is not seen");
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keep_rendering_unseen<R: tauri::Runtime>(_window: &tauri::WebviewWindow<R>) -> tauri::Result<()> {
     Ok(())
 }
 

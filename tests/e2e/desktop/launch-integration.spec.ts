@@ -8,8 +8,12 @@
  * The home is the profile's stand-in, `codex` is a stand-in on the app's PATH
  * that is never executed, and an e2e build writes down the terminal it would
  * have opened instead of opening one on the desktop of whoever runs the tests.
+ *
+ * ZCode is the other kind of agent: a desktop app that reads a provider file
+ * the page writes under ZCode's own lock, and is then opened rather than run
+ * in a terminal — an e2e build writes that down too.
  */
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { clickWhenStill, coreSessions, pageShows, pickModel, waitForChat } from '../harness/chat.js'
@@ -114,4 +118,110 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running a coding agent from the Integrat
     expect(afterSecondRun).not.toBe('')
     expect(afterSecondRun).toBe(afterFirstRun)
   })
+})
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running ZCode from the Integrations page', () => {
+  const ZCODE = 'ZCode'
+  const zcodeRun = `//*[normalize-space(text())="${ZCODE}"]/ancestor::*[.//button[normalize-space(.)="Run"]][1]//button[normalize-space(.)="Run"]`
+  /** The user's own provider, which must survive untouched. */
+  const THEIRS = {
+    schemaVersion: 1,
+    config: {
+      providerConfigRules: {
+        providerRules: [
+          {
+            providerId: 'their-provider',
+            providerName: 'Theirs',
+            enabled: true,
+            config: {
+              group: 'standard-personal',
+              access: { type: 'api-key', apiKey: 'sk-theirs' },
+              api: { type: 'openai-chat-completions', baseUrl: 'https://example.test/v1', headers: null },
+              personalModelIds: ['their-model'],
+              modelOrder: ['their-model'],
+            },
+          },
+        ],
+      },
+      modelConfigRules: { providerModelRules: [], manualProviderModelRules: [] },
+    },
+  }
+  let session: Session
+  let providerFile = ''
+  let terminalsPath = ''
+
+  const openedTerminals = async (): Promise<string[]> =>
+    (await readFile(terminalsPath, 'utf8').catch(() => ''))
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as string)
+
+  beforeAll(async () => {
+    session = await startSession('launch-zcode', {
+      apiServer: { apiKey: LOCAL_API_KEY },
+      prepare: async (profile) => {
+        await writeFakeModel(profile, MODEL_ID)
+        await writeFile(join(profile.binDir, 'zcode'), '#!/bin/sh\nexit 0\n')
+        await chmod(join(profile.binDir, 'zcode'), 0o755)
+        await mkdir(join(profile.home, '.zcode', 'v2'), { recursive: true })
+        await writeFile(join(profile.home, '.zcode', 'v2', 'provider_config.json'), JSON.stringify(THEIRS, null, 2))
+      },
+    })
+    providerFile = join(session.profile.home, '.zcode', 'v2', 'provider_config.json')
+    terminalsPath = join(session.profile.root, 'opened-terminals.jsonl')
+  })
+
+  afterAll(async () => {
+    expect(await endSession(session)).toEqual([])
+  })
+
+  it("writes ZCode's provider file for the running model, keeps the user's own provider, and does it the same way twice", async () => {
+    await withArtifacts(session, async () => {
+      const browser = session.app.browser
+      const localApi = `http://127.0.0.1:${session.apiPort}/v1`
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
+      await expect.poll(async () => (await coreSessions(session.profile.dataFolder)).length, { timeout: 60_000 }).toBe(1)
+
+      await browser.$('//*[normalize-space(text())="Integrations"]').click()
+      await clickWhenStill(session, zcodeRun)
+      await pageShows(session, `${ZCODE} configured`, 60_000)
+
+      const written = JSON.parse(await readFile(providerFile, 'utf8')) as {
+        schemaVersion: number
+        config: {
+          providerConfigRules: { providerRules: Array<{ providerId: string; config: Record<string, unknown> }> }
+          modelConfigRules: { providerModelRules: Array<{ providerId: string; modelId: string; config: { properties: { contextWindow: number } } }> }
+        }
+      }
+      expect(written.schemaVersion).toBe(1)
+      const rules = written.config.providerConfigRules.providerRules
+      expect(rules.map((rule) => rule.providerId)).toEqual(['their-provider', 'atomic-chat'])
+      expect(rules[0]?.config).toEqual(THEIRS.config.providerConfigRules.providerRules[0]?.config)
+      expect(rules[1]?.config).toMatchObject({
+        api: { type: 'openai-chat-completions', baseUrl: localApi },
+        access: { apiKey: LOCAL_API_KEY },
+        personalModelIds: [MODEL_ID],
+      })
+      expect(written.config.modelConfigRules.providerModelRules).toEqual([
+        expect.objectContaining({
+          providerId: 'atomic-chat',
+          modelId: MODEL_ID,
+          config: expect.objectContaining({ properties: expect.objectContaining({ contextWindow: 65536 }) }),
+        }),
+      ])
+      // The pre-Atomic file is kept once; ZCode's lock is not left behind.
+      expect(JSON.parse(await readFile(`${providerFile}.atomic-backup`, 'utf8'))).toEqual(THEIRS)
+      expect(await stat(`${providerFile}.lock`).catch(() => null)).toBeNull()
+      // ZCode itself would have been opened, once.
+      await expect.poll(openedTerminals, { timeout: 15_000 }).toHaveLength(1)
+      expect((await openedTerminals())[0]).toContain('zcode')
+
+      const first = await readFile(providerFile, 'utf8')
+      await clickWhenStill(session, zcodeRun)
+      await expect.poll(openedTerminals, { timeout: 60_000 }).toHaveLength(2)
+      expect(await readFile(providerFile, 'utf8')).toBe(first)
+      expect(JSON.parse(await readFile(`${providerFile}.atomic-backup`, 'utf8'))).toEqual(THEIRS)
+    })
+  }, 300_000)
 })

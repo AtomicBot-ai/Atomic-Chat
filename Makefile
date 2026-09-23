@@ -541,7 +541,9 @@ E2E_DEAD_URL := http://127.0.0.1:9
 # The Hub's catalog and landing picks are baked into the build as URLs, so a
 # scenario that wants to serve them has to know the port at build time. Nothing
 # listens there in the other scenarios, which then see the same fast refusal as
-# from the dead address and fall back to what is bundled.
+# from the dead address and fall back to what is bundled. The image catalog and
+# the sd.cpp release manifest point at the dead address outright: every launch
+# fetches both, and a scenario seeds what it needs into the webview's cache.
 E2E_FIXTURE_PORT ?= 47391
 E2E_FIXTURE_URL := http://127.0.0.1:$(E2E_FIXTURE_PORT)
 build-app-e2e:
@@ -573,6 +575,8 @@ build-app-e2e:
 		VITE_PROVIDER_REGISTRY_URL=$(E2E_DEAD_URL)/providers.json \
 		VITE_RECOMMENDED_MODELS_REGISTRY_URL=$(E2E_DEAD_URL)/recommended.json \
 		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_FIXTURE_URL)/staff-picks.json \
+		VITE_DIFFUSION_CATALOG_URL=$(E2E_DEAD_URL)/diffusion.json \
+		VITE_SDCPP_MANIFEST_URL=$(E2E_DEAD_URL)/sdcpp-manifest.json \
 		./node_modules/.bin/tauri build --debug --no-bundle --features e2e \
 		--config src-tauri/tauri.e2e.conf.json
 
