@@ -136,6 +136,14 @@
   "errors": {
     "actions": {
       "reduceSize": "Try the smallest size"
+    },
+    "OUT_OF_MEMORY": {
+      "title": "Not enough memory for this clip",
+      "body": "{{frames}} frames at {{size}} ({{seconds}} s) did not fit in memory. A shorter duration or a smaller size usually fixes it."
+    },
+    "INTERNAL": {
+      "title": "The video engine failed",
+      "body": "The engine stopped without a clip. The details are in the app log."
     }
   },
   "notifications": {

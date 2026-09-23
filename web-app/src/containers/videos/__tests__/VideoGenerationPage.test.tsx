@@ -22,8 +22,12 @@ import { seedServiceHub } from '@/test/service-hub'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
-    t: (key: string, values?: Record<string, number>) =>
-      key === 'videos:progress.elapsed' ? `${values?.seconds} s` : key,
+    t: (key: string, values?: Record<string, number | string>) =>
+      key === 'videos:progress.elapsed'
+        ? `${values?.seconds} s`
+        : key === 'videos:errors.OUT_OF_MEMORY.body'
+          ? `${values?.frames} frames at ${values?.size} (${values?.seconds} s)`
+          : key,
   }),
 }))
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }))
@@ -205,11 +209,15 @@ describe('VideoGenerationPage', () => {
       lastError: { code: 'OUT_OF_MEMORY', message: 'no room' },
       lastErrorModality: 'video',
     })
-    useVideoForm.setState({ width: 1216, height: 704 })
+    useVideoForm.setState({ width: 1216, height: 704, frames: 121 })
     await renderPage()
     const banner = screen.getByTestId('image-error-banner')
     const viewer = screen.getByTestId('video-viewer')
     expect(banner.compareDocumentPosition(viewer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The clip's own words, with what it asked for, not the picture's.
+    expect(banner).toHaveTextContent('videos:errors.OUT_OF_MEMORY.title')
+    expect(banner).toHaveTextContent('121 frames at 1216×704 (5.0 s)')
+    expect(banner).not.toHaveTextContent('images:errors.OUT_OF_MEMORY')
     // "Smaller" here is the smallest preset of the family.
     await userEvent.click(
       screen.getByRole('button', { name: 'videos:errors.actions.reduceSize' })

@@ -18,6 +18,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
 import { artifactId } from '@/lib/diffusion/models'
 import { cn } from '@/lib/utils'
+import { formatSeconds, secondsForFrames } from '@/lib/video/duration'
 import {
   selectHasInstalledModel,
   useImageGenerationStore,
@@ -31,6 +32,18 @@ import { VideoViewer } from './VideoViewer'
 /** "Make it smaller" on this page means the smallest preset, not 768². */
 const VIDEO_ERROR_LABELS = {
   reduceSize: 'videos:errors.actions.reduceSize',
+} as const
+
+/** The codes whose image copy would mislead here: a clip that did not fit, an engine that failed a clip. */
+const VIDEO_ERROR_COPY = {
+  OUT_OF_MEMORY: {
+    titleKey: 'videos:errors.OUT_OF_MEMORY.title',
+    bodyKey: 'videos:errors.OUT_OF_MEMORY.body',
+  },
+  INTERNAL: {
+    titleKey: 'videos:errors.INTERNAL.title',
+    bodyKey: 'videos:errors.INTERNAL.body',
+  },
 } as const
 
 type VideoGenerationPageProps = {
@@ -78,13 +91,15 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
   const patchForm = useVideoForm((state) => state.patch)
   const draftWidth = useVideoForm((state) => state.width)
   const draftHeight = useVideoForm((state) => state.height)
+  const draftFrames = useVideoForm((state) => state.frames)
   const setSelectedArtifactId = useVideoSetting(
     (state) => state.setSelectedArtifactId
   )
   const [modelsOpen, setModelsOpen] = useState(false)
 
   const modelLoaded =
-    status?.model.state === 'loaded' && status.model.loaded?.modality === 'video'
+    status?.model.state === 'loaded' &&
+    status.model.loaded?.modality === 'video'
   const showLivePreview = generating && viewerMode === 'live'
   const pendingSize = {
     width: currentJob?.request.width || draftWidth,
@@ -98,6 +113,18 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
   // A job error is this page's; a model error is shown here only when it
   // was filed under video (the image page shows the rest).
   const lastError = jobError ?? modelError
+  // What the failed clip asked for: the job's request while it is known, else the form.
+  const failedRequest = currentJob?.request
+  const errorValues = {
+    frames: failedRequest?.frames ?? draftFrames,
+    seconds: formatSeconds(
+      secondsForFrames(
+        failedRequest?.frames ?? draftFrames,
+        failedRequest?.fps ?? capabilities?.fps ?? 24
+      )
+    ),
+    size: `${failedRequest?.width ?? draftWidth}×${failedRequest?.height ?? draftHeight}`,
+  }
   const clearError = useCallback(() => {
     clearJobError()
     if (useImageGenerationStore.getState().lastErrorModality === 'video') {
@@ -201,6 +228,8 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
             onAction={onErrorAction}
             onDismiss={clearError}
             actionLabelKeys={VIDEO_ERROR_LABELS}
+            copyKeys={VIDEO_ERROR_COPY}
+            copyValues={errorValues}
           />
           <div
             className="flex min-h-0 flex-1 overflow-y-auto"
@@ -241,6 +270,8 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
               onAction={onErrorAction}
               onDismiss={clearError}
               actionLabelKeys={VIDEO_ERROR_LABELS}
+              copyKeys={VIDEO_ERROR_COPY}
+              copyValues={errorValues}
             />
           </div>
         )}

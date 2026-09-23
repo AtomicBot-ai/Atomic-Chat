@@ -16,6 +16,12 @@ type ImageErrorBannerProps = {
   onDismiss: () => void
   /** Label keys for actions that mean something else on this page. */
   actionLabelKeys?: Partial<Record<DiffusionErrorAction, string>>
+  /** Title and body keys for codes that mean something else on this page (a clip, not a picture). */
+  copyKeys?: Partial<
+    Record<DiffusionError['code'], { titleKey: string; bodyKey: string }>
+  >
+  /** Values the copy may name: the frames, seconds and size of the clip that failed. */
+  copyValues?: Record<string, string | number>
 }
 
 /**
@@ -32,10 +38,13 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
   onAction,
   onDismiss,
   actionLabelKeys,
+  copyKeys,
+  copyValues,
 }: ImageErrorBannerProps) {
   const { t } = useTranslation()
   if (!error) return null
   const described = describeDiffusionError(error.code)
+  const copy = copyKeys?.[error.code] ?? described
   const labelKey = (action: DiffusionErrorAction) =>
     actionLabelKeys?.[action] ?? errorActionLabelKey(action)
 
@@ -45,17 +54,24 @@ export const ImageErrorBanner = memo(function ImageErrorBanner({
       data-testid="image-error-banner"
       className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
     >
-      <IconAlertTriangle size={18} className="mt-0.5 shrink-0 text-destructive" />
+      <IconAlertTriangle
+        size={18}
+        className="mt-0.5 shrink-0 text-destructive"
+      />
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm font-medium">{t(described.titleKey)}</p>
-        <p className="text-xs text-muted-foreground">{t(described.bodyKey)}</p>
+        <p className="text-sm font-medium">{t(copy.titleKey, copyValues)}</p>
+        <p className="text-xs text-muted-foreground">
+          {t(copy.bodyKey, copyValues)}
+        </p>
         {(described.action || described.secondaryAction) && (
           <div className="flex flex-wrap gap-2 pt-1">
             {described.action && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onAction(described.action as DiffusionErrorAction)}
+                onClick={() =>
+                  onAction(described.action as DiffusionErrorAction)
+                }
               >
                 {t(labelKey(described.action))}
               </Button>
