@@ -28,7 +28,7 @@ import { FitBadge } from '@/containers/hub/FitBadge'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
-import { useImageSetting } from '@/hooks/useImageSetting'
+import { useSelectedArtifact } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fitForQuant, recommendedQuant } from '@/lib/diffusion/fit'
 import { artifactId } from '@/lib/diffusion/models'
@@ -40,7 +40,10 @@ import type {
   DiffusionCatalogFamily,
   DiffusionCatalogQuant,
 } from '@/services/diffusion-catalog-registry'
-import type { ImageWorkflowId } from '@/services/diffusion/types'
+import type {
+  DiffusionModality,
+  ImageWorkflowId,
+} from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageArtifactDownloadButton } from './ImageArtifactDownloadButton'
 import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
@@ -48,6 +51,11 @@ import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
 type ImageModelSelectorProps = {
   /** `dialog` hides Remove and keeps the list short; `page` is the full manager. */
   variant?: 'page' | 'dialog'
+  /**
+   * Which families the list offers and which page's selection it writes:
+   * image checkpoints for the Images page, video ones for the Video page.
+   */
+  modality?: DiffusionModality
   /**
    * The workflow the list is picked for. Only families that can run it are
    * offered — the setup wizard passes nothing and offers everything.
@@ -68,6 +76,7 @@ const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
  */
 export const ImageModelSelector = memo(function ImageModelSelector({
   variant = 'page',
+  modality = 'image',
   workflow,
   className,
   onDownloadStarted,
@@ -83,12 +92,12 @@ export const ImageModelSelector = memo(function ImageModelSelector({
       (catalog?.families ?? [])
         .filter(
           (family) =>
-            family.modality === 'image' &&
+            family.modality === modality &&
             family.engines.includes('sdcpp') &&
             (workflow === undefined ||
               familySupportsWorkflow(family.id, workflow))
         ),
-    [catalog, workflow]
+    [catalog, modality, workflow]
   )
 
   const installedIds = useMemo(
@@ -140,6 +149,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
           <SetupFamilyRow
             key={family.id}
             family={family}
+            modality={modality}
             onDownloadStarted={onDownloadStarted}
           />
         ))}
@@ -160,14 +170,24 @@ export const ImageModelSelector = memo(function ImageModelSelector({
       {sections.installed.length > 0 && (
         <Section title={t('images:model.installed')}>
           {sections.installed.map(([family, quants]) => (
-            <FamilyBlock key={family.id} family={family} quants={quants} />
+            <FamilyBlock
+              key={family.id}
+              family={family}
+              quants={quants}
+              modality={modality}
+            />
           ))}
         </Section>
       )}
       {sections.available.length > 0 && (
         <Section title={t('images:model.available')}>
           {sections.available.map(([family, quants]) => (
-            <FamilyBlock key={family.id} family={family} quants={quants} />
+            <FamilyBlock
+              key={family.id}
+              family={family}
+              quants={quants}
+              modality={modality}
+            />
           ))}
         </Section>
       )}
@@ -182,9 +202,11 @@ export const ImageModelSelector = memo(function ImageModelSelector({
 
 function SetupFamilyRow({
   family,
+  modality,
   onDownloadStarted,
 }: {
   family: DiffusionCatalogFamily
+  modality: DiffusionModality
   onDownloadStarted?: (artifactId: string) => void
 }) {
   const { t } = useTranslation()
@@ -198,9 +220,7 @@ function SetupFamilyRow({
     family.transformer.quants[0]!
   const id = artifactId(family.id, quant.id)
   const artifact = useImageArtifact(id)
-  const setSelectedArtifactId = useImageSetting(
-    (state) => state.setSelectedArtifactId
-  )
+  const { setSelectedArtifactId } = useSelectedArtifact(modality)
 
   const start = () => {
     setSelectedArtifactId(id)
@@ -252,6 +272,7 @@ function SetupFamilyRow({
                 const totalBytes =
                   option.bytes +
                   (family.vae?.bytes ?? 0) +
+                  (family.audio_vae?.bytes ?? 0) +
                   family.text_encoders.reduce(
                     (sum, encoder) => sum + encoder.bytes,
                     0
@@ -330,20 +351,17 @@ function Section({
 type FamilyBlockProps = {
   family: DiffusionCatalogFamily
   quants: DiffusionCatalogQuant[]
+  modality: DiffusionModality
 }
 
-function FamilyBlock({ family, quants }: FamilyBlockProps) {
+function FamilyBlock({ family, quants, modality }: FamilyBlockProps) {
   const { t } = useTranslation()
   const { profile } = useHardwareTier()
   const installedArtifacts = useImageGenerationStore(
     (state) => state.installedArtifacts
   )
-  const selectedArtifactId = useImageSetting(
-    (state) => state.selectedArtifactId
-  )
-  const setSelectedArtifactId = useImageSetting(
-    (state) => state.setSelectedArtifactId
-  )
+  const { selectedArtifactId, setSelectedArtifactId } =
+    useSelectedArtifact(modality)
   const generating = useImageGenerationStore((state) => state.generating)
   const installedIds = useMemo(
     () => new Set(installedArtifacts.map((item) => item.id)),
@@ -542,6 +560,7 @@ function FamilyBlock({ family, quants }: FamilyBlockProps) {
           <ImageModelRuntimeAction
             artifactId={id}
             modelName={family.name}
+            modality={modality}
             disabled={generating}
           />
         )}
@@ -663,6 +682,7 @@ function AvailableQuantRow({
   const totalBytes =
     option.bytes +
     (family.vae?.bytes ?? 0) +
+    (family.audio_vae?.bytes ?? 0) +
     family.text_encoders.reduce((sum, encoder) => sum + encoder.bytes, 0)
 
   return (

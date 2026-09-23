@@ -65,7 +65,11 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
     state.installedArtifacts.some((artifact) => artifact.complete)
   )
   const catalog = useImageGenerationStore((state) => state.catalog)
-  const lastError = useImageGenerationStore((state) => state.lastError)
+  // A model-level error filed under the Video page (a video checkpoint that
+  // would not load) is that page's to show; everything else is this page's.
+  const lastError = useImageGenerationStore((state) =>
+    state.lastErrorModality === 'video' ? null : state.lastError
+  )
   const clearError = useImageGenerationStore((state) => state.clearError)
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const loadModel = useImageGenerationStore((state) => state.loadModel)

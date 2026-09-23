@@ -49,7 +49,11 @@ import type {
   LoadDiffusionModelRequest,
 } from '@/services/diffusion/types'
 
-export type DiffusionArtifactEntryKind = 'transformer' | 'vae' | 'text_encoder'
+export type DiffusionArtifactEntryKind =
+  | 'transformer'
+  | 'vae'
+  | 'audio_vae'
+  | 'text_encoder'
 
 export type DiffusionArtifactEntry = {
   kind: DiffusionArtifactEntryKind
@@ -243,6 +247,13 @@ export function planArtifactDownload(
       `${DIFFUSION_SHARED_DIR}/${sharedRepoDir(family.vae.repo)}/${basenameOf(family.vae.filename)}`
     )
   }
+  if (family.audio_vae) {
+    push(
+      'audio_vae',
+      family.audio_vae,
+      `${DIFFUSION_SHARED_DIR}/${sharedRepoDir(family.audio_vae.repo)}/${basenameOf(family.audio_vae.filename)}`
+    )
+  }
   for (const encoder of family.text_encoders) {
     push(
       'text_encoder',
@@ -410,6 +421,8 @@ export function buildLoadRequest(
     if (entry.kind === 'vae') {
       modelFiles.vae = absolutePathOf(entry, files)
       if (family.vae_format) modelFiles.vaeFormat = family.vae_format
+    } else if (entry.kind === 'audio_vae') {
+      modelFiles.audioVae = absolutePathOf(entry, files)
     } else if (entry.kind === 'text_encoder') {
       if (!entry.required) continue
       const path = absolutePathOf(entry, files)
@@ -428,6 +441,9 @@ export function buildLoadRequest(
           break
         case 't5xxl':
           modelFiles.t5xxl = path
+          break
+        case 'embeddings_connectors':
+          modelFiles.embeddingsConnectors = path
           break
       }
     }
@@ -452,11 +468,33 @@ export function buildLoadRequest(
         : {}),
       width: defaults.width,
       height: defaults.height,
+      ...(defaults.sigmas ? { sigmas: [...defaults.sigmas] } : {}),
+      ...(family.video
+        ? {
+            video: {
+              fps: family.video.fps,
+              frames: family.video.frames,
+              frameStep: family.video.frame_step,
+              frameOffset: family.video.frame_offset,
+              resolutionPresets: family.video.resolution_presets.map(
+                ([w, h]) => [w, h] as [number, number]
+              ),
+            },
+          }
+        : {}),
     },
     ranges: {
       steps: [ranges.steps[0], ranges.steps[1]],
       dims: [ranges.dims[0], ranges.dims[1]],
       dimMultiple: ranges.dim_multiple,
+      ...(family.video
+        ? {
+            frames: [family.video.frame_range[0], family.video.frame_range[1]] as [
+              number,
+              number,
+            ],
+          }
+        : {}),
     },
     offload: opts.offload,
     ...(opts.engine ? { engine: opts.engine } : {}),

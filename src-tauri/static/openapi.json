@@ -23,6 +23,10 @@
     {
       "name": "Images",
       "description": "OpenAI-compatible local image generation using the image model already loaded in Atomic Chat"
+    },
+    {
+      "name": "Videos",
+      "description": "OpenAI Videos-shaped local video generation using the video model already loaded in Atomic Chat"
     }
   ],
   "paths": {
@@ -139,6 +143,218 @@
         }
       }
     },
+    "/videos": {
+      "post": {
+        "summary": "Generate a local video",
+        "description": "Starts a video job with the video model already loaded in Atomic Chat and returns the queued video object at once. The Local API Server and a video model must both be running; poll GET /videos/{video_id} until the status is completed, then fetch the WebM from /videos/{video_id}/content. Clips are also saved to the local gallery. Image-to-video and automatic model loading are not supported.",
+        "operationId": "createVideo",
+        "tags": ["Videos"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVideoDto"
+              },
+              "example": {
+                "prompt": "A paper boat drifting across a moonlit lake",
+                "seconds": "2",
+                "size": "768x512"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The queued video object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/VideoApiError"
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "429": {
+            "$ref": "#/components/responses/VideoApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/VideoApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/VideoApiError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List local videos",
+        "description": "Lists running video jobs and the clips in the local gallery, newest first.",
+        "operationId": "listVideos",
+        "tags": ["Videos"],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "string"},
+            "description": "The id of the last video of the previous page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of video objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/VideoApiError"
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          }
+        }
+      }
+    },
+    "/videos/{video_id}": {
+      "get": {
+        "summary": "Retrieve a local video",
+        "description": "The video object of a running job or of a clip in the local gallery.",
+        "operationId": "retrieveVideo",
+        "tags": ["Videos"],
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The video object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "404": {
+            "$ref": "#/components/responses/VideoApiError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a local video",
+        "description": "Cancels a running job, or removes a finished clip (its recipe and poster included) from the local gallery.",
+        "operationId": "deleteVideo",
+        "tags": ["Videos"],
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deletion receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteVideoResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "404": {
+            "$ref": "#/components/responses/VideoApiError"
+          }
+        }
+      }
+    },
+    "/videos/{video_id}/content": {
+      "get": {
+        "summary": "Download a local video",
+        "description": "Streams the WebM of a completed clip. A clip still being made answers 404.",
+        "operationId": "downloadVideoContent",
+        "tags": ["Videos"],
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "string", "enum": ["video", "thumbnail"], "default": "video"},
+            "description": "thumbnail streams the PNG poster the app rendered, when the clip has one."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The clip",
+            "content": {
+              "video/webm": {
+                "schema": {"type": "string", "format": "binary"}
+              },
+              "image/png": {
+                "schema": {"type": "string", "format": "binary"}
+              }
+            }
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "404": {
+            "$ref": "#/components/responses/VideoApiError"
+          }
+        }
+      }
+    },
     "/messages": {
       "post": {
         "summary": "Create a message",
@@ -180,6 +396,16 @@
     "responses": {
       "ImageApiError": {
         "description": "OpenAI-shaped image generation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ImageApiErrorResponseDto"
+            }
+          }
+        }
+      },
+      "VideoApiError": {
+        "description": "OpenAI-shaped video generation error",
         "content": {
           "application/json": {
             "schema": {
@@ -324,6 +550,183 @@
         "properties": {
           "error": {
             "$ref": "#/components/schemas/ImageApiErrorDetailDto"
+          }
+        }
+      },
+      "CreateVideoDto": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Optional id or display name of the loaded video model. A different model returns 503."
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Text description of the clip to generate."
+          },
+          "seconds": {
+            "oneOf": [{"type": "number"}, {"type": "string"}],
+            "example": "4",
+            "description": "Clip length in seconds, 0 < seconds <= 600. Snapped to the nearest frame count the loaded model accepts (its frame lattice) and clamped to its range; omitted, the model's default length is used."
+          },
+          "size": {
+            "type": "string",
+            "default": "auto",
+            "example": "768x512",
+            "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT from the model's resolution presets."
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional deterministic seed."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "description": "Optional text describing what to avoid; refused by models that do not take one."
+          }
+        }
+      },
+      "VideoAtomicDto": {
+        "type": "object",
+        "required": ["job_id", "seed", "path", "poster_path"],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Atomic Chat diffusion job id; the same as the video id."
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Seed used by the clip, once it is completed."
+          },
+          "path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Local path of the WebM saved to the Atomic Chat gallery, once completed."
+          },
+          "poster_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Local path of the PNG poster the app rendered for the clip, when it has one."
+          }
+        }
+      },
+      "VideoErrorDto": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "out_of_memory"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "VideoDto": {
+        "type": "object",
+        "required": ["id", "object", "model", "status", "progress", "created_at", "completed_at", "expires_at", "seconds", "size", "prompt", "remixed_from_video_id", "error", "atomic"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": ["video"]
+          },
+          "model": {
+            "type": "string",
+            "description": "Id of the video model the clip was made with."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["queued", "in_progress", "completed", "failed"],
+            "description": "A cancelled job reports failed with error code cancelled."
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp in seconds."
+          },
+          "completed_at": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Always null: clips stay in the local gallery until deleted."
+          },
+          "seconds": {
+            "type": "string",
+            "example": "2.04",
+            "description": "The clip length, frames over the frame rate."
+          },
+          "size": {
+            "type": "string",
+            "example": "768x512"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "remixed_from_video_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Always null: remixing is not supported."
+          },
+          "error": {
+            "nullable": true,
+            "allOf": [{"$ref": "#/components/schemas/VideoErrorDto"}]
+          },
+          "atomic": {
+            "$ref": "#/components/schemas/VideoAtomicDto"
+          }
+        }
+      },
+      "VideoListResponseDto": {
+        "type": "object",
+        "required": ["object", "data", "has_more"],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["list"]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VideoDto"
+            },
+            "description": "Running jobs first, then the gallery, newest first."
+          },
+          "has_more": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DeleteVideoResponseDto": {
+        "type": "object",
+        "required": ["id", "object", "deleted"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": ["video"]
+          },
+          "deleted": {
+            "type": "boolean"
           }
         }
       },

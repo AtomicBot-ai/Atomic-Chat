@@ -14,6 +14,11 @@ import {
   Z_IMAGE,
   type FakeDiffusion,
 } from '@/lib/diffusion/__tests__/image-fixtures'
+import {
+  LTX_2,
+  LTX_Q4_ID,
+  WAN_22,
+} from '@/lib/diffusion/__tests__/video-fixtures'
 import { seedServiceHub } from '@/test/service-hub'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -76,6 +81,7 @@ const ONE_QUANT_ID = 'flux.2-klein:q4_k_m'
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { useVideoSetting } from '@/hooks/useVideoSetting'
 import {
   diffusionDownloadTaskId,
   listInstalledArtifacts,
@@ -120,8 +126,49 @@ describe('ImageModelSelector', () => {
         modelsRoot: MODELS_ROOT,
         backendsRoot: '/data/diffusion/backends',
         imagesDir: '/data/images',
+        videosDir: '/data/videos',
       },
     })
+  })
+
+  it('lists the families of one modality and writes that modality\'s selection', async () => {
+    useImageGenerationStore.setState({
+      catalog: makeCatalog([Z_IMAGE, LTX_2, WAN_22]),
+    })
+    useVideoSetting.setState({ selectedArtifactId: null })
+    const { unmount } = render(<ImageModelSelector />)
+    expect(screen.getByTestId('family-z-image')).toBeInTheDocument()
+    expect(screen.queryByTestId('family-ltx-2')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('family-wan2.2-ti2v-5b')).not.toBeInTheDocument()
+    unmount()
+
+    render(<ImageModelSelector modality="video" />)
+    expect(screen.queryByTestId('family-z-image')).not.toBeInTheDocument()
+    expect(screen.getByTestId('family-ltx-2')).toBeInTheDocument()
+    expect(screen.getByTestId('family-wan2.2-ti2v-5b')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'images:model.installed' })
+    ).not.toBeInTheDocument()
+
+    // Downloading a video quant records it as the Video page's pick, not the Images page's.
+    const ltx = screen.getByTestId('family-ltx-2')
+    await userEvent.click(
+      within(ltx).getByRole('button', { name: 'images:model.download' })
+    )
+    expect(useVideoSetting.getState().selectedArtifactId).toBe(LTX_Q4_ID)
+    expect(useImageSetting.getState().selectedArtifactId).toBeNull()
+    expect(transfer.download).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ltx-2' }),
+      'q4_k_m',
+      expect.anything()
+    )
+  })
+
+  it('offers the video families in the wizard, with the audio VAE in the size', () => {
+    useImageGenerationStore.setState({ catalog: makeCatalog([Z_IMAGE, LTX_2]) })
+    render(<ImageModelSelector variant="dialog" modality="video" />)
+    expect(screen.getByTestId(`artifact-${LTX_Q4_ID}`)).toBeInTheDocument()
+    expect(screen.queryByTestId('artifact-z-image:q4_k_m')).not.toBeInTheDocument()
   })
 
   it.each(['reference', 'edit'] as const)(

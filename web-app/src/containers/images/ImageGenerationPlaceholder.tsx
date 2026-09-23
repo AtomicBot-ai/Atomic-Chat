@@ -5,13 +5,21 @@ import type { ImageJobProgress } from '@/services/diffusion/types'
 import { cn } from '@/lib/utils'
 import './ImageGenerationPlaceholder.css'
 
+/** What the placeholder reads of a job's progress; an image and a video job both carry it. */
+export type PlaceholderProgress = Pick<
+  ImageJobProgress,
+  'phase' | 'step' | 'totalSteps' | 'elapsedMs'
+>
+
 type ImageGenerationPlaceholderProps = {
   variant: 'viewer' | 'tile'
   width: number
   height: number
-  progress: ImageJobProgress | null
+  progress: PlaceholderProgress | null
   startedAtMs: number
   index?: number
+  /** Which words the status uses: an image is "generated", a clip is "encoded". */
+  kind?: 'image' | 'video'
 }
 
 type Translation = ReturnType<typeof useTranslation>['t']
@@ -21,6 +29,24 @@ type ProgressCopy = {
   detail: string | null
 }
 
+/** The keys of one kind's progress copy; the image keys are the ones the page always had. */
+const COPY_KEYS = {
+  image: {
+    generating: 'images:progress.generatingImage',
+    finalizing: 'images:progress.finalizingImage',
+    step: 'images:progress.step',
+    elapsed: 'images:progress.elapsed',
+    phase: 'images:progress.phase',
+  },
+  video: {
+    generating: 'videos:progress.generatingVideo',
+    finalizing: 'videos:progress.finalizingVideo',
+    step: 'videos:progress.step',
+    elapsed: 'videos:progress.elapsed',
+    phase: 'videos:progress.phase',
+  },
+} as const
+
 /**
  * Sampling owns the numeric step label only while there are steps left. Once
  * sampling is complete, the renderer's phase is more truthful than `20/20`:
@@ -28,9 +54,11 @@ type ProgressCopy = {
  * time. Older/ambiguous progress falls back to an honest finalizing state.
  */
 function progressCopy(
-  progress: ImageJobProgress | null,
-  t: Translation
+  progress: PlaceholderProgress | null,
+  t: Translation,
+  kind: 'image' | 'video' = 'image'
 ): ProgressCopy {
+  const keys = COPY_KEYS[kind]
   const phase = progress?.phase ?? 'queued'
   const hasSteps = Boolean(progress && progress.totalSteps > 0)
   const samplingComplete = Boolean(
@@ -38,21 +66,21 @@ function progressCopy(
   )
 
   if (phase === 'decoding') {
-    return { status: t('images:progress.phase.decoding'), detail: null }
+    return { status: t(`${keys.phase}.decoding`), detail: null }
   }
   if (phase === 'postprocessing') {
-    return { status: t('images:progress.phase.postprocessing'), detail: null }
+    return { status: t(`${keys.phase}.postprocessing`), detail: null }
   }
   if (phase === 'saving') {
-    return { status: t('images:progress.phase.saving'), detail: null }
+    return { status: t(`${keys.phase}.saving`), detail: null }
   }
   if (samplingComplete) {
-    return { status: t('images:progress.finalizingImage'), detail: null }
+    return { status: t(keys.finalizing), detail: null }
   }
   if (phase === 'sampling' && progress && hasSteps) {
     return {
-      status: t('images:progress.generatingImage'),
-      detail: t('images:progress.step', {
+      status: t(keys.generating),
+      detail: t(keys.step, {
         step: progress.step,
         total: progress.totalSteps,
       }),
@@ -60,8 +88,8 @@ function progressCopy(
   }
 
   return {
-    status: t('images:progress.generatingImage'),
-    detail: t(`images:progress.phase.${phase}`),
+    status: t(keys.generating),
+    detail: t(`${keys.phase}.${phase}`),
   }
 }
 
@@ -153,6 +181,7 @@ export const ImageGenerationPlaceholder = memo(
     progress,
     startedAtMs,
     index = 0,
+    kind = 'image',
   }: ImageGenerationPlaceholderProps) {
     const { t } = useTranslation()
     const [now, setNow] = useState(Date.now())
@@ -173,8 +202,8 @@ export const ImageGenerationPlaceholder = memo(
       0,
       Math.floor(Math.max(progress?.elapsedMs ?? 0, wallElapsedMs) / 1000)
     )
-    const copy = progressCopy(progress, t)
-    const elapsed = t('images:progress.elapsed', { seconds: elapsedSeconds })
+    const copy = progressCopy(progress, t, kind)
+    const elapsed = t(COPY_KEYS[kind].elapsed, { seconds: elapsedSeconds })
     const announcement = copy.detail
       ? `${copy.status}. ${copy.detail}.`
       : copy.status

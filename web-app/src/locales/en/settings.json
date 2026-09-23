@@ -606,6 +606,9 @@
     "evictAlways": "Always",
     "outputTitle": "Output",
     "outputFolder": "Output folder",
+    "videoOutputFolder": "Video output folder",
+    "openVideoFolder": "Open the video folder",
+    "changeVideoFolder": "Change the video folder",
     "openFolder": "Open folder",
     "change": "Change…",
     "changeFailed": "The output folder could not be changed",
@@ -636,6 +639,10 @@
     "apiResponseContract": "200 response: created plus data[].b64_json PNGs. atomic includes job_id, seed, and local gallery paths.",
     "apiErrorContract": "Generation errors use { error: { message, type, param, code } }. Proxy authentication and Trusted Hosts rejections are plain-text 401 and 403 responses. Other common statuses: 400 invalid request, 429 busy, 503 image model not loaded, and 504 timeout.",
     "apiCurlExample": "curl example",
-    "apiCopyCurl": "Copy curl example"
+    "apiCopyCurl": "Copy curl example",
+    "videoApiTitle": "Video generation API",
+    "videoApiRequestContract": "JSON request: prompt is required. seconds picks the clip length (snapped to the model’s frame grid), size a WxH the model offers, seed and negative_prompt are optional. The response is the video object with its status; poll GET /videos/{id} until it is completed.",
+    "videoApiResponseContract": "GET /videos/{id}/content streams the WebM. GET /videos lists clips, DELETE /videos/{id} cancels a running one or deletes a finished one.",
+    "videoApiErrorContract": "Errors use the OpenAI shape: 503 model_not_loaded while no video model is resident, 400 for a bad prompt, size or seconds, 404 for an unknown clip."
   }
 }

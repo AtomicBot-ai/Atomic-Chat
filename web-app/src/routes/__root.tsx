@@ -30,6 +30,7 @@ import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialo
 import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
 import ImageSetupDialog from '@/containers/dialogs/ImageSetupDialog'
 import { ImageGenerationProvider } from '@/providers/ImageGenerationProvider'
+import { VideoGenerationProvider } from '@/providers/VideoGenerationProvider'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
@@ -114,6 +115,9 @@ const AppLayout = () => {
             of the app: a job lives in the plugin, so the run loop and the
             event subscription must outlive the Images page. */}
         <ImageGenerationProvider />
+        {/* The video job store, bound once for the same reason; it reads the
+            engine and the resident model through the image store. */}
+        <VideoGenerationProvider />
       </SidebarProvider>
     </div>
   )

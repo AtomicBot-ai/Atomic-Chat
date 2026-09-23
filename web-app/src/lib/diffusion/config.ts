@@ -8,6 +8,7 @@
  *   <dataFolder>/diffusion/models/<family>/<file>         transformers
  *   <dataFolder>/diffusion/models/shared/<repo>/<file>    VAEs, text encoders
  *   <dataFolder>/images/                                  gallery PNGs
+ *   <dataFolder>/videos/                                  gallery WebMs with their JSON recipes
  *
  * Image checkpoints never live under `llamacpp/models`: they are not chat
  * models and must not surface in the Hub or in `/v1/models`.
@@ -23,12 +24,14 @@ export const DIFFUSION_BACKENDS_DIR = 'backends'
 export const DIFFUSION_MODELS_DIR = 'models'
 export const DIFFUSION_SHARED_DIR = 'shared'
 export const IMAGES_DIR = 'images'
+export const VIDEOS_DIR = 'videos'
 
 export type DiffusionPaths = {
   dataFolder: string
   modelsRoot: string
   backendsRoot: string
   imagesDir: string
+  videosDir: string
 }
 
 /**
@@ -64,6 +67,7 @@ export function diffusionPathsFor(dataFolder: string): DiffusionPaths {
       DIFFUSION_BACKENDS_DIR
     ),
     imagesDir: joinDiffusionPath(dataFolder, IMAGES_DIR),
+    videosDir: joinDiffusionPath(dataFolder, VIDEOS_DIR),
   }
 }
 
@@ -101,7 +105,11 @@ export async function getDiffusionPaths(): Promise<DiffusionPaths> {
  * when it binds, on a new core attachment and after a setting changes.
  */
 export async function configureDiffusion(
-  overrides: { outputDir?: string; idleUnloadSecs?: number } = {}
+  overrides: {
+    outputDir?: string
+    videoOutputDir?: string
+    idleUnloadSecs?: number
+  } = {}
 ): Promise<DiffusionStatus> {
   const { dataFolder } = await getDiffusionPaths()
   return getServiceHub()
@@ -109,6 +117,9 @@ export async function configureDiffusion(
     .configure({
       dataFolder,
       ...(overrides.outputDir ? { outputDir: overrides.outputDir } : {}),
+      ...(overrides.videoOutputDir
+        ? { videoOutputDir: overrides.videoOutputDir }
+        : {}),
       ...(overrides.idleUnloadSecs !== undefined
         ? { idleUnloadSecs: overrides.idleUnloadSecs }
         : {}),

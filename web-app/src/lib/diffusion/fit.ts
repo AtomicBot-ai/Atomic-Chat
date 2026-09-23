@@ -126,7 +126,7 @@ export function fitForQuant(
   return estimateDiffusionFit(
     {
       transformerBytes: quant.bytes,
-      vaeBytes: family.vae?.bytes ?? 0,
+      vaeBytes: (family.vae?.bytes ?? 0) + (family.audio_vae?.bytes ?? 0),
       teBytes: textEncoderBytes(family),
       teOnCpu: opts.teOnCpu,
       width: family.defaults.width,

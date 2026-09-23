@@ -16,6 +16,7 @@ import type {
 
 import type { AppService } from '@/services/app/types'
 
+import { LTX_2, WAN_22 } from './video-fixtures'
 import {
   artifactId,
   buildLoadRequest,
@@ -814,5 +815,91 @@ describe('downloadArtifact', () => {
   it('cancels under the same task id the panel shows', async () => {
     await cancelArtifactDownload('z-image:q4_k_m')
     expect(cancelled).toEqual(['diffusion-model-z-image_q4_k_m'])
+  })
+})
+
+describe('video families', () => {
+  const ltxShared = `shared/${sharedRepoDir('unsloth/LTX-2.3-GGUF')}`
+  const gemmaShared = `shared/${sharedRepoDir('unsloth/gemma-3-12b-it-qat-GGUF')}`
+
+  it('plans the audio VAE and the connectors as shared side files', () => {
+    const plan = planArtifactDownload(LTX_2, 'q4_k_m', [], ROOT)
+    expect(plan.entries.map((e) => [e.kind, e.relativePath])).toEqual([
+      ['transformer', 'ltx-2/ltx-2.3-22b-distilled-Q4_K_M.gguf'],
+      ['vae', `${ltxShared}/ltx-2.3-22b-distilled_video_vae.safetensors`],
+      ['audio_vae', `${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`],
+      ['text_encoder', `${gemmaShared}/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf`],
+      ['text_encoder', `${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`],
+    ])
+    expect(plan.entries.every((e) => e.required)).toBe(true)
+    expect(plan.totalBytes).toBe(
+      14_000_000_000 + 1_400_000_000 + 360_000_000 + 7_400_000_000 + 2_300_000_000
+    )
+  })
+
+  it('maps the video files, the sigma schedule, the video defaults and the frame range onto the load request', () => {
+    const files = planArtifactDownload(LTX_2, 'q4_k_m', [], ROOT).entries.map((e) => ({
+      path: e.savePath,
+      relativePath: e.relativePath,
+      bytes: e.bytes,
+    }))
+    const request = buildLoadRequest(LTX_2, 'q4_k_m', files, ROOT, { offload: 'group' })
+    expect(request).toEqual({
+      modelId: 'ltx-2:q4_k_m',
+      family: 'ltx-2',
+      modality: 'video',
+      displayName: 'LTX-2.3 Distilled Q4_K_M',
+      files: {
+        diffusionModel: `${ROOT}/ltx-2/ltx-2.3-22b-distilled-Q4_K_M.gguf`,
+        vae: `${ROOT}/${ltxShared}/ltx-2.3-22b-distilled_video_vae.safetensors`,
+        audioVae: `${ROOT}/${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`,
+        llm: `${ROOT}/${gemmaShared}/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf`,
+        embeddingsConnectors: `${ROOT}/${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`,
+      },
+      defaults: {
+        steps: 8,
+        cfgScale: 1,
+        samplingMethod: 'euler',
+        width: 768,
+        height: 512,
+        sigmas: [1, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875],
+        video: {
+          fps: 24,
+          frames: 121,
+          frameStep: 8,
+          frameOffset: 1,
+          resolutionPresets: [
+            [768, 512],
+            [1216, 704],
+            [704, 1216],
+            [512, 768],
+          ],
+        },
+      },
+      ranges: { steps: [1, 50], dims: [256, 1216], dimMultiple: 32, frames: [9, 257] },
+      offload: 'group',
+    })
+    const wan = buildLoadRequest(WAN_22, 'q4_k_m', [], ROOT, { offload: 'none' })
+    expect(wan.files.t5xxl).toContain('umt5-xxl-encoder-Q4_K_M.gguf')
+    expect(wan.files).not.toHaveProperty('audioVae')
+    expect(wan.defaults).toMatchObject({ flowShift: 5, video: { fps: 24, frameStep: 4, frameOffset: 1 } })
+    expect(wan.defaults).not.toHaveProperty('sigmas')
+    expect(wan.ranges.frames).toEqual([5, 241])
+  })
+
+  it('keeps the shared audio VAE while another quant of the family still needs it', () => {
+    const catalog = { schema_version: 1, updated_at: '2026-09-23', families: [LTX_2] }
+    const files = [
+      ...planArtifactDownload(LTX_2, 'q4_k_m', [], '').entries,
+      ...planArtifactDownload(LTX_2, 'q8_0', [], '').entries,
+    ].map((e) => ({ path: `/m/${e.relativePath}`, relativePath: e.relativePath, bytes: e.bytes }))
+    const { remove, kept } = planArtifactDeletion(LTX_2, 'q4_k_m', files, catalog)
+    expect(remove.map((f) => f.relativePath)).toEqual(['ltx-2/ltx-2.3-22b-distilled-Q4_K_M.gguf'])
+    expect(kept.map((f) => f.relativePath)).toEqual([
+      `${ltxShared}/ltx-2.3-22b-distilled_video_vae.safetensors`,
+      `${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`,
+      `${gemmaShared}/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf`,
+      `${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`,
+    ])
   })
 })

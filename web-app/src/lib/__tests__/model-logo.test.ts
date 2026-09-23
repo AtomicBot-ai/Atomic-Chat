@@ -143,6 +143,7 @@ describe('image and video families', () => {
     expect(modelFamilyLogoSrc('city96/flux1-dev-gguf')).toBe('/svg/bfl.svg')
     expect(modelFamilyLogoSrc('Z-Image Turbo')).toBe('/svg/z-image.svg')
     expect(modelFamilyLogoSrc('Qwen-Image')).toBe('/svg/qwen-color.svg')
+    expect(modelFamilyLogoSrc('Wan 2.2 TI2V 5B')).toBe('/svg/qwen-color.svg')
     expect(modelFamilyLogoSrc('Wan-AI/Wan2.2-TI2V-5B')).toBe(
       '/svg/qwen-color.svg'
     )

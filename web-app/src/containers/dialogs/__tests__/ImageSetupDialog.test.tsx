@@ -20,6 +20,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 const modelSelector = vi.hoisted(() => ({
   dispatchDownload: vi.fn(),
   startDownload: () => {},
+  modality: 'image' as 'image' | 'video',
 }))
 
 // The model selector has its own tests; here it exposes the accepted-download
@@ -27,9 +28,12 @@ const modelSelector = vi.hoisted(() => ({
 vi.mock('@/containers/images/ImageModelSelector', () => ({
   ImageModelSelector: ({
     onDownloadStarted,
+    modality,
   }: {
     onDownloadStarted?: (artifactId: string) => void
+    modality?: 'image' | 'video'
   }) => {
+    modelSelector.modality = modality ?? 'image'
     modelSelector.startDownload = () => {
       modelSelector.dispatchDownload()
       onDownloadStarted?.('z-image:q4_k_m')
@@ -98,6 +102,27 @@ describe('ImageSetupDialog', () => {
     render(<ImageSetupDialog />)
     expect(screen.getByText('images:setup.intro.title')).toBeInTheDocument()
     expect(screen.getByText('images:setup.intro.description')).toBeInTheDocument()
+  })
+
+  it('speaks for the Video page when it opened the wizard, and keeps its modality across steps', async () => {
+    useImageGenerationStore.setState({ setupModality: 'video' })
+    render(<ImageSetupDialog />)
+    expect(screen.getByText('videos:setup.intro.title')).toBeInTheDocument()
+    expect(screen.getByText('videos:setup.intro.bulletLocal')).toBeInTheDocument()
+    expect(screen.queryByText('images:setup.intro.title')).not.toBeInTheDocument()
+
+    await act(async () => {
+      await userEvent.click(screen.getByText('images:setup.next'))
+    })
+    // The engine step is the shared one; the wizard still belongs to Video.
+    expect(screen.getByText('images:setup.engine.title')).toBeInTheDocument()
+    expect(useImageGenerationStore.getState().setupModality).toBe('video')
+
+    act(() => {
+      useImageGenerationStore.setState({ setupStep: 2 })
+    })
+    expect(screen.getByText('videos:setup.model.title')).toBeInTheDocument()
+    expect(modelSelector.modality).toBe('video')
   })
 
   it('ends the tour at the engine: Done, never on to a model step', async () => {
