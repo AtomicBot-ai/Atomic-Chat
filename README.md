@@ -367,8 +367,8 @@ Atomic Chat is built by a small core team and **140+ contributors** — includin
 
 ### ⭐ Star History
 
-<a href="https://star-history.com/#AtomicBot-ai/Atomic-Chat&Date">
-  <img src="https://api.star-history.com/svg?repos=AtomicBot-ai/Atomic-Chat&type=Date&cache=1" width="100%" alt="Star History" />
+<a href="https://star-history.dera.page/#AtomicBot-ai/Atomic-Chat&type=Date">
+  <img src="https://star-history.dera.page/svg?repos=AtomicBot-ai/Atomic-Chat&type=Date&cache=1" width="100%" alt="Star History" />
 </a>
 
 ---
