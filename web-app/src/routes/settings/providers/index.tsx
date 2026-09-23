@@ -8,7 +8,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
 import { IconSettings } from '@tabler/icons-react'
-import { cn, getProviderTitle } from '@/lib/utils'
+import { getProviderTitle } from '@/lib/utils'
 import { isLocalEngineProvider } from '@/lib/cloud-providers'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
@@ -46,12 +46,7 @@ function ModelProviders() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
+        <div className="flex items-center justify-between w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>

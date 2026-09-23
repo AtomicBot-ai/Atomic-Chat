@@ -5,7 +5,6 @@ import HeaderPage from '@/containers/HeaderPage'
 import { MediaSettingsPanel } from '@/containers/images/MediaSettingsPanel'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.media as any)({
@@ -18,12 +17,7 @@ function MediaSettingsContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
+        <div className="flex items-center justify-between w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>

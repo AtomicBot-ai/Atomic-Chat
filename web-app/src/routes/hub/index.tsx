@@ -9,10 +9,11 @@ import {
   useState,
   type ChangeEvent,
 } from 'react'
-import { IconSearch } from '@tabler/icons-react'
 import { Loader } from 'lucide-react'
+
 import HeaderPage from '@/containers/HeaderPage'
 import { HubFilters } from '@/containers/hub/HubFilters'
+import { HubSearchField } from '@/containers/hub/HubSearchField'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
 import { ModelListRow } from '@/containers/hub/ModelListRow'
 import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
@@ -44,7 +45,6 @@ import {
 } from '@/lib/hub-installed'
 import { getMemoryBudgetBytes } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
-import { cn } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import { useModelCatalogStore } from '@/stores/model-catalog-store'
 import type { CatalogModel, HuggingFaceFeedSort } from '@/services/models/types'
@@ -332,12 +332,16 @@ function HubContent() {
   const fetchExactRepo = useCallback(
     (rawValue: string) => {
       const normalized = rawValue.trim()
-      if (normalized.length < 3) return
-
-      setIsSearching(true)
       if (exactRepoTimeoutRef.current) {
         clearTimeout(exactRepoTimeoutRef.current)
+        exactRepoTimeoutRef.current = null
       }
+      if (normalized.length < 3) {
+        setIsSearching(false)
+        return
+      }
+
+      setIsSearching(true)
       exactRepoTimeoutRef.current = setTimeout(async () => {
         try {
           const repoInfo = await serviceHub
@@ -680,6 +684,17 @@ function HubContent() {
     }
   }
 
+  const clearSearch = () => {
+    if (exactRepoTimeoutRef.current) {
+      clearTimeout(exactRepoTimeoutRef.current)
+      exactRepoTimeoutRef.current = null
+    }
+    setIsSearching(false)
+    setSearchValue('')
+    setHubSearchQuery('')
+    setHuggingFaceRepo(null)
+  }
+
   // ---- Virtual list -----------------------------------------------------
 
   const rowVirtualizer = useVirtualizer({
@@ -783,37 +798,19 @@ function HubContent() {
 
   const isEmpty = listItems.length === 0
   const uncensoredLoading =
-    filters.uncensored &&
-    (uncensoredFeed.loading || abliteratedFeed.loading)
+    filters.uncensored && (uncensoredFeed.loading || abliteratedFeed.loading)
   const showSkeleton =
     isEmpty && ((loading && !isSearchMode) || hfSearching || uncensoredLoading)
 
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
       <HeaderPage>
-        <div
-          className={cn(
-            'relative z-20 flex h-10 w-full items-center gap-2 py-3 pr-3',
-            !IS_MACOS && !IS_WINDOWS && 'pr-30'
-          )}
-          {...(IS_WINDOWS || IS_MACOS
-            ? { 'data-tauri-drag-region': true }
-            : {})}
-        >
-          {isSearching || hfSearching ? (
-            <Loader className="size-4 shrink-0 animate-spin text-muted-foreground" />
-          ) : (
-            <IconSearch className="shrink-0 text-muted-foreground" size={14} />
-          )}
-          <input
-            placeholder={t('hub:searchPlaceholder')}
-            value={searchValue}
-            onChange={handleSearchChange}
-            autoComplete="off"
-            aria-label={t('hub:searchPlaceholder')}
-            className="hub-models-search-input w-full min-w-0 flex-1 bg-transparent bg-clip-padding text-foreground shadow-none transition-none animate-none placeholder:text-muted-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-          />
-        </div>
+        <HubSearchField
+          loading={isSearching || hfSearching}
+          value={searchValue}
+          onChange={handleSearchChange}
+          onClear={clearSearch}
+        />
       </HeaderPage>
 
       <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
@@ -872,7 +869,7 @@ function HubContent() {
                     }}
                   >
                     {item.sectionLabel && (
-                      <h2 className="px-2 pb-2 pt-4 text-base font-semibold text-foreground">
+                      <h2 className="p-2 text-base font-semibold text-foreground">
                         {item.sectionLabel}
                       </h2>
                     )}

@@ -3,7 +3,6 @@ import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
 import { VoiceSettingsPanel } from '@/containers/VoiceSettingsPanel'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,12 +16,7 @@ function VoiceSettingsContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
+        <div className="flex items-center justify-between w-full">
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
