@@ -118,5 +118,53 @@
     "branches": 85,
     "functions": 100,
     "lines": 95
+  },
+  "web-app/src/stores/media-gallery-store.ts": {
+    "statements": 90,
+    "branches": 80,
+    "functions": 100,
+    "lines": 90
+  },
+  "web-app/src/stores/video-generation-store.ts": {
+    "statements": 80,
+    "branches": 70,
+    "functions": 85,
+    "lines": 80
+  },
+  "web-app/src/hooks/useVideoForm.ts": {
+    "statements": 90,
+    "branches": 80,
+    "functions": 100,
+    "lines": 90
+  },
+  "web-app/src/hooks/useVideoSetting.ts": {
+    "statements": 90,
+    "branches": 80,
+    "functions": 100,
+    "lines": 90
+  },
+  "web-app/src/lib/video/duration.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/video/validate.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/video/recipe.ts": {
+    "statements": 95,
+    "branches": 85,
+    "functions": 100,
+    "lines": 95
+  },
+  "web-app/src/lib/video/poster.ts": {
+    "statements": 85,
+    "branches": 75,
+    "functions": 100,
+    "lines": 85
   }
 }

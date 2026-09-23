@@ -83,3 +83,48 @@ export type ImageGalleryAction =
 export function captureImageGalleryAction(action: ImageGalleryAction): void {
   queuedCapture('image_gallery_action', { gallery_action: action })
 }
+
+export type VideoGenerateProps = {
+  generate_status: ImageGenerateStatus
+  model_family: DiffusionFamilyId | null
+  quant: string | null
+  engine: DiffusionEngineId | null
+  backend: DiffusionBackend | null
+  width: number
+  height: number
+  frames: number
+  fps: number
+  steps: number
+  duration_ms: number | null
+  error_code: NativeDiffusionErrorCode | null
+}
+
+/** One event per video job; never the prompt, the seed or a path. */
+export function captureVideoGenerate(props: VideoGenerateProps): void {
+  queuedCapture('video_generate', {
+    generate_status: props.generate_status,
+    model_family: props.model_family,
+    quant: props.quant,
+    engine: props.engine,
+    backend: props.backend,
+    width: props.width,
+    height: props.height,
+    frames: props.frames,
+    fps: props.fps,
+    steps: props.steps,
+    duration_ms: props.duration_ms,
+    error_code: props.error_code,
+  })
+}
+
+export type VideoGalleryAction =
+  | 'open'
+  | 'save_as'
+  | 'reveal'
+  | 'delete'
+  | 'restore_recipe'
+  | 'copy_prompt'
+
+export function captureVideoGalleryAction(action: VideoGalleryAction): void {
+  queuedCapture('video_gallery_action', { gallery_action: action })
+}
