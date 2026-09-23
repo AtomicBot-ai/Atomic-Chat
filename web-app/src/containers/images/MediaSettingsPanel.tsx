@@ -29,6 +29,7 @@ import {
   type ImageOffloadOverride,
 } from '@/hooks/useImageSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getDiffusionPaths } from '@/lib/diffusion/config'
 import { parseArtifactId } from '@/lib/diffusion/models'
@@ -75,9 +76,12 @@ export function MediaSettingsPanel() {
     setOffloadOverride,
     setOutputDir: rememberOutputDir,
   } = useImageSetting()
+  const videoOutputDir = useVideoSetting((state) => state.outputDir)
+  const rememberVideoOutputDir = useVideoSetting((state) => state.setOutputDir)
 
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [changingDir, setChangingDir] = useState(false)
+  const [changingVideoDir, setChangingVideoDir] = useState(false)
 
   const engineLabel = (value: ImageEngineOverride) =>
     value === 'auto'
@@ -155,6 +159,41 @@ export function MediaSettingsPanel() {
       })
     } finally {
       setChangingDir(false)
+    }
+  }
+
+  /**
+   * The video folder has no route of its own: the core takes it with every
+   * configure, so the app remembers the choice and configures again. A
+   * folder the core cannot use makes the configure fall back to the default
+   * folders, which is visible in the status: the choice is then put back.
+   */
+  const changeVideoOutputDir = async () => {
+    setChangingVideoDir(true)
+    const previous = videoOutputDir
+    try {
+      const picked = await serviceHub.dialog().open({
+        directory: true,
+        defaultPath: status?.videoOutputDir,
+      })
+      const dir = Array.isArray(picked) ? picked[0] : picked
+      if (!dir) return
+      const chosen = isSameFolder(dir, await defaultVideoOutputDir()) ? '' : dir
+      rememberVideoOutputDir(chosen)
+      await applyIdleSettings()
+      const applied = useImageGenerationStore.getState().status?.videoOutputDir
+      if (chosen && !isSameFolder(chosen, applied)) {
+        rememberVideoOutputDir(previous)
+        await applyIdleSettings()
+        toast.error(t('settings:media.changeFailed'))
+      }
+    } catch (error) {
+      rememberVideoOutputDir(previous)
+      toast.error(t('settings:media.changeFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setChangingVideoDir(false)
     }
   }
 
@@ -478,6 +517,43 @@ export function MediaSettingsPanel() {
           }
         />
         <CardItem
+          title={t('settings:media.videoOutputFolder')}
+          description={
+            <span
+              className="break-all font-mono text-xs"
+              data-testid="media-video-output-dir"
+            >
+              {status?.videoOutputDir ?? '—'}
+            </span>
+          }
+          actions={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!status?.videoOutputDir}
+                aria-label={t('settings:media.openVideoFolder')}
+                onClick={() =>
+                  status?.videoOutputDir &&
+                  void serviceHub.opener().openPath(status.videoOutputDir)
+                }
+              >
+                <IconFolderOpen size={14} />
+                {t('settings:media.openFolder')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={changingVideoDir || generating}
+                aria-label={t('settings:media.changeVideoFolder')}
+                onClick={() => void changeVideoOutputDir()}
+              >
+                {t('settings:media.change')}
+              </Button>
+            </div>
+          }
+        />
+        <CardItem
           title={t('settings:media.resetDefaults')}
           description={t('settings:media.resetDefaultsDescription')}
           actions={
@@ -499,6 +575,15 @@ export default MediaSettingsPanel
 async function defaultOutputDir(): Promise<string | undefined> {
   try {
     return (await getDiffusionPaths())?.imagesDir
+  } catch {
+    return undefined
+  }
+}
+
+/** `<data>/videos`, where the core puts clips without a chosen folder. */
+async function defaultVideoOutputDir(): Promise<string | undefined> {
+  try {
+    return (await getDiffusionPaths())?.videosDir
   } catch {
     return undefined
   }
