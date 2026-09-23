@@ -64,9 +64,9 @@
     "jsdom": "^26.1.0",
     "rimraf": "^3.0.2",
     "run-script-os": "^1.1.6",
-    "tar": "^7.5.21",
+    "tar": "^7.5.22",
     "unzipper": "^0.12.3",
-    "vitest": "^3.2.6"
+    "vitest": "^5.0.1"
   },
   "version": "0.0.0",
   "installConfig": {
