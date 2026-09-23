@@ -362,6 +362,111 @@ Gap:
 - `make test-core-live` does not yet generate an image through the packaged
   app core; the live engine run is the core's `ATOMIC_LIVE=1` test.
 
+### Local video generation — partial, P1
+
+Production entrypoints:
+
+- `atomic-chat-core` `src/diffusion/{video-job,video-gallery,video-recipe}.ts`
+  and `src/server/public/videos.ts` — the video job on the same resident
+  `sd-server` session, the WebM gallery with its JSON recipe sidecar and the
+  app-made poster, and the OpenAI-shaped `/v1/videos` facade; reached through
+  `/atomic/v1/diffusion/video/*` and relayed as
+  `atomic-core://diffusion:video-progress` / `video-job` (ADR 2026-09-23,
+  one runtime, two pages).
+- `web-app/src/stores/image-generation-store.ts` — the modality axis: the
+  `videoCapabilities` slot, `lastErrorModality`, the video branch of
+  `loadModel`, the configure that carries `videoOutputDir`.
+- `web-app/src/stores/video-generation-store.ts` — one clip per Generate:
+  validate, submit, wait for the terminal `video-job` with a polling
+  fallback, land the clip, render and upload its poster, report without the
+  prompt or the seed; adoption of `status.activeVideoJob` on bind.
+- `web-app/src/stores/media-gallery-store.ts` — the paged, selectable
+  gallery both the image and the video gallery are instances of.
+- `web-app/src/hooks/{useVideoSetting,useVideoForm,useVideoGeneration}.ts`,
+  `lib/video/{duration,validate,recipe,poster}.ts` — the video settings and
+  form, the request builder, the frame-lattice durations, the request
+  validation mirrored from the core, recipe restore and export naming, and
+  the poster capture with its blob fallback and backfill queue.
+- `web-app/src/containers/videos/*`, `containers/dialogs/DeleteGalleryVideosDialog.tsx`,
+  `routes/videos/index.tsx` — the Video page; `ImageSetupCard`,
+  `ImageSetupDialog`, `ImageEmptyState`, `ImageGenerationPlaceholder`,
+  `ImageApiSettingsCard` and `ImageModelPicker`/`Selector`/`RuntimeAction`
+  serve it through a `modality`, `kind` or `resource` prop.
+
+Existing evidence:
+
+- `services/diffusion/__tests__/tauri.test.ts` covers the ten video
+  operations on their `/video/*` routes and the two video events beside the
+  image ones.
+- `image-generation-store.test.ts` (the `video models` block) proves a video
+  checkpoint loads into the video slot with the audio VAE and the connectors
+  on the request and in the GPU budget, records the Video page's selection
+  and resets the video form while the image side is untouched, files a
+  failed video load and a refusal under Video, reads the video capabilities
+  of an already resident video model on bind and on a state event, clears the
+  Video selection on removal, and sends `videoOutputDir` with every configure
+  and drops both folders when one is unusable.
+- `video-generation-store.test.ts` drives a clip from submit to gallery
+  against the fake service: progress marks the job generating, the clip is
+  prepended and gets a poster through `setVideoPoster`, the telemetry carries
+  neither prompt nor seed, a failure is surfaced and a user Stop is not, a
+  second Generate is ignored while one runs, the polling fallback lands a
+  clip and fails a forgotten job, a foreign completed job lands with a
+  poster, a running job is adopted on bind, and a failed poster capture is
+  remembered and not retried.
+- `media-gallery-store.test.ts` covers paging without doubling, selection
+  survival across a reload, prepend under live and gallery modes, `patch`,
+  removal landing on the neighbour, shift/meta selection and stepping.
+- `lib/video/__tests__/{duration,validate,recipe,poster}.test.ts` are tables:
+  1/2/3/5 s become 25/49/73/121 frames on both lattices, off-lattice and
+  out-of-range counts are refused with the core's messages, image-to-video
+  is refused in every spelling, the export name and the restored draft,
+  and the poster capture against a scripted `<video>` (decode, seek, error,
+  tainted canvas with the blob fallback, timeout, the backfill queue's
+  concurrency and no-retry rule).
+- `VideoPromptForm.test.tsx`, `VideoViewer.test.tsx`,
+  `VideoGenerationPage.test.tsx` render the production components against
+  the fake service: Generate gated on a prompt and submitting the video
+  request, Ctrl+Enter, the family presets and lattice durations with the
+  fixed rate, guidance and the negative prompt hidden for LTX and shown for
+  Wan, the Advanced fold writing to the shared image settings and showing the
+  `/videos` API card, the player fed over the asset protocol with its poster
+  and the system-player fallback on a decode error, a poster-less tile
+  asking for and receiving its poster, Restore with the requested frame
+  count, the model switch offer, Save as, reveal, delete, the arrow and
+  Delete keys, the onboarding card for video, the empty canvas asking for a
+  video model while only an image one is on disk, the deep-link preselect,
+  the live placeholder with the pending tile, and which errors the page shows
+  and clears.
+- `ImageSetupCard.test.tsx`, `ImageSetupDialog.test.tsx`,
+  `ImageGenerationPlaceholder.test.tsx`, `ImageModelPicker.test.tsx`,
+  `ImageModelSelector.test.tsx`, `NavMain.test.tsx` and `media.test.tsx`
+  cover the shared components' video variants: the card's copy, done row and
+  wizard modality, the wizard keeping its modality across steps, the video
+  progress words, a resident video model kept off the Images picker, the
+  selector's modality filter writing the Video selection, the sidebar row
+  after Images, and the video output folder's change, default and refusal.
+- `VideoStudio.layout.test.tsx` and `VideoViewer.layout.test.tsx` (browser
+  layout suite) hold the resolution and duration pills on one line in the
+  340 px column at both type sizes, the Advanced fold at the card width with
+  the video API card, the player frame at the clip's aspect inside the
+  region, the toolbar on one row with labels folded below 32 rem, and video
+  tiles the size of image tiles with the duration badge inside.
+- The core's own evidence — the video block of the fake `sd-server`, the
+  video e2e on the compiled binary (`test/e2e/video.test.ts`,
+  `test/e2e/videos-api.test.ts`) and the live block — lives in
+  `atomic-chat-core/docs/testing-critical-flows.md`.
+
+Gap:
+
+- The desktop e2e scenarios (`tests/e2e/*video*.spec.ts`) are not written
+  yet; the real decode of a clip in the webview, the poster on disk and the
+  chat hand-off are unproved end to end.
+- No live run through the packaged app core; the live engine run is the
+  core's `ATOMIC_LIVE=1` video block, still to be run on a real LTX-2.3.
+- OS notification on completion and the GPU arbiter hand-off are mocked, as
+  for images.
+
 ## Coverage snapshot
 
 Commands run on 2026-07-29:

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-352 records, 2026-05-19 → 2026-09-23.
+355 records, 2026-05-19 → 2026-09-23.
 
 ---
 
@@ -263,6 +263,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Packaging, installers, autostart & platform policy (15)
 
+- **2026-09-23** — [Add a Video page that shares the image runtime](2026-09-23-add-a-video-page-that-shares-the-image-runtime.md)
+- **2026-09-23** — [Capture video posters in the webview](2026-09-23-capture-video-posters-in-the-webview.md)
+- **2026-09-23** — [Catalog video families with a video block](2026-09-23-catalog-video-families-with-a-video-block.md)
 - **2026-09-23** — [Keep bun-compiled binaries out of linuxdeploy's reach](2026-09-23-keep-bun-compiled-binaries-out-of-linuxdeploy.md) — bun payloads sit after the ELF sections; patchelf drops them.
 - **2026-09-19** — [Keep document indexes in the data folder](2026-09-19-keep-document-indexes-in-the-data-folder.md)
 - **2026-09-18** — [Keep the HTTP plugin's JS client on the Rust plugin's version](2026-09-18-keep-the-http-plugin-js-client-on-the-rust-plugin-version.md)
