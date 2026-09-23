@@ -1079,6 +1079,24 @@ function isFolderFailure(error: unknown): boolean {
   return code === 'INTERNAL' || code === 'DISK_FULL'
 }
 
+/**
+ * Whether a complete checkpoint of `modality` is on disk, by the catalog's
+ * word on each installed family. An artifact of a family the catalog no
+ * longer lists counts as an image one, which is what it was before video.
+ */
+export function selectHasInstalledModel(
+  modality: DiffusionModality
+): (state: ImageGenerationState) => boolean {
+  return (state) =>
+    state.installedArtifacts.some((artifact) => {
+      if (!artifact.complete) return false
+      const family = state.catalog
+        ? findFamily(state.catalog, artifact.family)
+        : undefined
+      return (family?.modality ?? 'image') === modality
+    })
+}
+
 /** Test seam: drop the waiters of a previous test. */
 export function resetImageGenerationForTests(): void {
   useImageGenerationStore.getState().reset()

@@ -165,9 +165,10 @@ describe('video-generation-store', () => {
       ])
       expect(JSON.stringify(captured.events)).not.toContain('lighthouse')
       expect(JSON.stringify(captured.events)).not.toContain('42')
+      // The real locale is loaded: the notification carries the English words.
       expect(notifications.notify).toHaveBeenCalledWith(
-        'videos:notifications.readyTitle',
-        'videos:notifications.readyBody'
+        'Video ready',
+        'Your clip is in the gallery.'
       )
       focus.mockRestore()
     })

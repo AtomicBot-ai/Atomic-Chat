@@ -2,14 +2,25 @@ import { memo } from 'react'
 import { IconCircleCheckFilled, IconSparkles } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
+import { ClapperboardIcon } from '@/components/animated-icon/clapperboard'
 import { ImageIcon } from '@/components/animated-icon/image'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
-import { useImageGenerationStore } from '@/stores/image-generation-store'
+import type { DiffusionModality } from '@/services/diffusion/types'
+import {
+  selectHasInstalledModel,
+  useImageGenerationStore,
+} from '@/stores/image-generation-store'
 
 type ImageSetupCardProps = {
   className?: string
+  /**
+   * The page the card stands on. The engine step is the same for both; the
+   * words, the mark and the model row are the page's own, and the wizard
+   * opens with that page's model list.
+   */
+  modality?: DiffusionModality
 }
 
 /**
@@ -20,14 +31,15 @@ type ImageSetupCardProps = {
  */
 export const ImageSetupCard = memo(function ImageSetupCard({
   className,
+  modality = 'image',
 }: ImageSetupCardProps) {
   const { t } = useTranslation()
   const { hostBackendId, hostBackendReason } = useImageEngine()
-  const hasModel = useImageGenerationStore((state) =>
-    state.installedArtifacts.some((artifact) => artifact.complete)
-  )
+  const hasModel = useImageGenerationStore(selectHasInstalledModel(modality))
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const unsupported = hostBackendId === null && Boolean(hostBackendReason)
+  const ns = modality === 'video' ? 'videos' : 'images'
+  const Icon = modality === 'video' ? ClapperboardIcon : ImageIcon
 
   const rows: Array<{
     id: 'engine' | 'model'
@@ -38,14 +50,14 @@ export const ImageSetupCard = memo(function ImageSetupCard({
     {
       id: 'engine',
       done: false,
-      label: t('images:setup.card.engine'),
-      description: t('images:setup.card.engineDescription'),
+      label: t(`${ns}:setup.card.engine`),
+      description: t(`${ns}:setup.card.engineDescription`),
     },
     {
       id: 'model',
       done: hasModel,
-      label: t('images:setup.card.model'),
-      description: t('images:setup.card.modelDescription'),
+      label: t(`${ns}:setup.card.model`),
+      description: t(`${ns}:setup.card.modelDescription`),
     },
   ]
 
@@ -53,18 +65,19 @@ export const ImageSetupCard = memo(function ImageSetupCard({
     <div
       className={cn('w-full max-w-2xl space-y-7 px-6 py-8', className)}
       data-testid="image-setup-card"
+      data-modality={modality}
     >
       <div className="flex flex-col items-center text-center">
         <div className="mb-5 grid size-16 place-items-center rounded-2xl border bg-secondary/60 shadow-sm">
-          <ImageIcon size={32} aria-hidden />
+          <Icon size={32} aria-hidden />
         </div>
         <h1 className="font-studio text-3xl font-semibold tracking-tight">
-          {t('images:setup.card.title')}
+          {t(`${ns}:setup.card.title`)}
         </h1>
         <p className="mt-2 max-w-lg text-pretty text-sm leading-relaxed text-muted-foreground">
           {unsupported
             ? t('images:setup.engine.unsupported')
-            : t('images:setup.card.description')}
+            : t(`${ns}:setup.card.description`)}
         </p>
       </div>
       <ol className="grid gap-3 sm:grid-cols-2">
@@ -96,7 +109,7 @@ export const ImageSetupCard = memo(function ImageSetupCard({
               {row.id === 'engine' ? (
                 <button
                   type="button"
-                  onClick={() => openSetup(1)}
+                  onClick={() => openSetup(1, modality)}
                   className={cn(
                     frame,
                     'transition-colors hover:border-foreground/20 hover:bg-secondary/40'
@@ -114,11 +127,11 @@ export const ImageSetupCard = memo(function ImageSetupCard({
       <Button
         size="lg"
         className="mx-auto flex min-w-48"
-        onClick={() => openSetup(0)}
+        onClick={() => openSetup(0, modality)}
         data-testid="image-setup-open"
       >
         <IconSparkles size={17} />
-        {t('images:setup.card.button')}
+        {t(`${ns}:setup.card.button`)}
       </Button>
     </div>
   )

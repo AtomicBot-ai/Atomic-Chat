@@ -16,6 +16,8 @@ type ImageSeedFieldProps = {
   value: string
   onChange: (value: string) => void
   disabled?: boolean
+  /** The input's id; the Video form gives it its own so labels never collide. */
+  id?: string
 }
 
 /**
@@ -31,20 +33,21 @@ export const ImageSeedField = memo(function ImageSeedField({
   value,
   onChange,
   disabled,
+  id = 'image-seed',
 }: ImageSeedFieldProps) {
   const { t } = useTranslation()
   const locked = value.trim().length > 0
 
   return (
     <ImageField
-      htmlFor="image-seed"
+      htmlFor={id}
       label={t('images:form.seed')}
       hint={t('images:form.seedHint')}
       labelClassName="text-foreground"
     >
       <div className="flex items-center gap-1.5">
         <Input
-          id="image-seed"
+          id={id}
           inputMode="numeric"
           placeholder={t('images:form.seedPlaceholder')}
           value={value}

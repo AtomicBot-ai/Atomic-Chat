@@ -18,7 +18,29 @@ import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
 
 type ImageApiSettingsCardProps = {
   variant?: 'default' | 'embedded'
+  /** Which public route the card describes: `/images/generations` or `/videos`. */
+  resource?: 'images' | 'videos'
 }
+
+const RESOURCES = {
+  images: {
+    path: '/images/generations',
+    title: 'settings:media.apiTitle',
+    request: 'settings:media.apiRequestContract',
+    response: 'settings:media.apiResponseContract',
+    error: 'settings:media.apiErrorContract',
+    curlBody:
+      '{"prompt":"A paper boat on a moonlit lake","size":"1024x1024","response_format":"b64_json"}',
+  },
+  videos: {
+    path: '/videos',
+    title: 'settings:media.videoApiTitle',
+    request: 'settings:media.videoApiRequestContract',
+    response: 'settings:media.videoApiResponseContract',
+    error: 'settings:media.videoApiErrorContract',
+    curlBody: '{"prompt":"A paper boat drifting across a moonlit lake","seconds":"2","size":"768x512"}',
+  },
+} as const
 
 /**
  * Discoverability for the public image endpoint. The server and model controls
@@ -27,39 +49,46 @@ type ImageApiSettingsCardProps = {
  */
 export function ImageApiSettingsCard({
   variant = 'default',
+  resource = 'images',
 }: ImageApiSettingsCardProps) {
   const { t } = useTranslation()
   const serverStatus = useAppState((state) => state.serverStatus)
   const model = useImageGenerationStore((state) => state.status?.model)
   const { serverHost, serverPort, apiPrefix, apiKey } = useLocalApiServer()
+  const spec = RESOURCES[resource]
 
   const endpoint = useMemo(
-    () => `${getLocalApiServerUrl().replace(/\/+$/, '')}/images/generations`,
+    () => `${getLocalApiServerUrl().replace(/\/+$/, '')}${spec.path}`,
     // getLocalApiServerUrl reads the same persisted store values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [serverHost, serverPort, apiPrefix]
+    [serverHost, serverPort, apiPrefix, spec.path]
   )
   const serverReady = serverStatus === 'running'
-  const modelReady = model?.state === 'loaded'
+  // The route needs a model of its own kind: a resident image model does not serve /videos.
+  const modelReady =
+    model?.state === 'loaded' &&
+    (model.loaded?.modality ?? 'image') ===
+      (resource === 'videos' ? 'video' : 'image')
   const authRequired = apiKey.trim().length > 0
   const embedded = variant === 'embedded'
   const curl = [
     `curl -X POST '${endpoint}' \\`,
     `  -H 'Content-Type: application/json' \\`,
     ...(authRequired ? [`  -H 'Authorization: Bearer YOUR_API_KEY' \\`] : []),
-    `  -d '{"prompt":"A paper boat on a moonlit lake","size":"1024x1024","response_format":"b64_json"}'`,
+    `  -d '${spec.curlBody}'`,
   ].join('\n')
 
   if (embedded) {
     return (
       <Card
-        title={t('settings:media.apiTitle')}
+        title={t(spec.title)}
         className="w-full min-w-0 rounded-xl border border-border/60 bg-card/60 p-3 text-muted-foreground"
       >
         <div
           className="min-w-0"
           data-testid="image-api-settings-card"
           data-variant={variant}
+          data-resource={resource}
         >
           <CardItem
             align="start"
@@ -102,8 +131,12 @@ export function ImageApiSettingsCard({
   }
 
   return (
-    <Card title={t('settings:media.apiTitle')}>
-      <div data-testid="image-api-settings-card" data-variant={variant}>
+    <Card title={t(spec.title)}>
+      <div
+        data-testid="image-api-settings-card"
+        data-variant={variant}
+        data-resource={resource}
+      >
         <CardItem
           align="start"
           title={t('settings:media.apiEndpoint')}
@@ -190,13 +223,13 @@ export function ImageApiSettingsCard({
             {t('settings:media.apiContract')}
           </h2>
           <p className="mt-1.5 text-sm leading-relaxed">
-            {t('settings:media.apiRequestContract')}
+            {t(spec.request)}
           </p>
           <p className="mt-1 text-sm leading-relaxed">
-            {t('settings:media.apiResponseContract')}
+            {t(spec.response)}
           </p>
           <p className="mt-1 text-sm leading-relaxed">
-            {t('settings:media.apiErrorContract')}
+            {t(spec.error)}
           </p>
         </div>
 
