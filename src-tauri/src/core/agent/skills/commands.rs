@@ -187,15 +187,40 @@ pub async fn agent_delete_skill<R: Runtime>(
         .map_err(|error| format!("Failed to delete skill `{name}`: {error}"))
 }
 
+/// Code the skill can run: what a reviewer must see before allowing it.
+fn is_runnable_preview_file(relative: &str) -> bool {
+    relative.starts_with("scripts/")
+        || matches!(
+            Path::new(relative)
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some(
+                "sh" | "bash" | "ps1" | "py" | "js" | "mjs" | "cjs" | "ts" | "cmd" | "bat" | "rb"
+                    | "pl"
+            )
+        )
+}
+
 /// The files that come with a skill besides its SKILL.md, for the review
 /// screen's Preview (Task 28, D36): relative paths with `/` separators in a
 /// fixed order, contents as text, each cut to PREVIEW_FILE_MAX_BYTES. A symbolic
 /// link is shown as a link and never followed, so Preview cannot read outside
 /// the skill.
+///
+/// Runnable files come first, then everything else, each group by path. Plain
+/// alphabetical order let a large skill push its scripts past
+/// PREVIEW_MAX_FILES: ui-styling's 98 files begin with bundled fonts, so its
+/// two Python scripts never reached the screen a user approves.
 fn collect_skill_files(skill_root: &Path) -> Result<Vec<AgentSkillFile>, String> {
     let mut entries = Vec::new();
     collect_preview_entries(skill_root, skill_root, &mut entries)?;
-    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries.sort_by(|left, right| {
+        is_runnable_preview_file(&right.0)
+            .cmp(&is_runnable_preview_file(&left.0))
+            .then_with(|| left.0.cmp(&right.0))
+    });
     let mut files = Vec::new();
     for (relative, is_link) in entries
         .into_iter()
@@ -327,17 +352,45 @@ Body",
 
         let files = collect_skill_files(root).unwrap();
 
+        // Runnable code first: that is what a reviewer is deciding about.
         assert_eq!(
             files
                 .iter()
                 .map(|file| file.path.as_str())
                 .collect::<Vec<_>>(),
-            ["notes.txt", "scripts/run.sh"]
+            ["scripts/run.sh", "notes.txt"]
         );
-        assert_eq!(files[1].content, "echo hi");
-        assert!(!files[1].truncated);
-        assert!(files[0].truncated);
-        assert_eq!(files[0].content.len(), PREVIEW_FILE_MAX_BYTES);
+        assert_eq!(files[0].content, "echo hi");
+        assert!(!files[0].truncated);
+        assert!(files[1].truncated);
+        assert_eq!(files[1].content.len(), PREVIEW_FILE_MAX_BYTES);
+    }
+
+    /// A skill with more files than Preview shows must still show its code.
+    /// ui-styling ships 98 files whose names begin with fonts, so in plain
+    /// alphabetical order its two Python scripts fell past the cap and a user
+    /// approved code the screen never displayed.
+    #[test]
+    fn preview_shows_runnable_files_even_when_data_files_exceed_the_cap() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join("SKILL.md"), "---\nname: x\ndescription: y\n---\nBody").unwrap();
+        std::fs::create_dir_all(root.join("canvas-fonts")).unwrap();
+        for index in 0..PREVIEW_MAX_FILES + 20 {
+            std::fs::write(
+                root.join("canvas-fonts").join(format!("Aa{index:03}.ttf")),
+                "font",
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(root.join("scripts")).unwrap();
+        std::fs::write(root.join("scripts").join("zz_add.py"), "print('hi')").unwrap();
+
+        let files = collect_skill_files(root).unwrap();
+
+        assert_eq!(files.len(), PREVIEW_MAX_FILES);
+        assert_eq!(files[0].path, "scripts/zz_add.py");
+        assert_eq!(files[0].content, "print('hi')");
     }
 
     #[test]
