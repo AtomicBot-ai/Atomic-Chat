@@ -162,6 +162,10 @@ export interface FakeSdOptions {
   ignoreSigterm?: boolean
   blankSeed?: number
   onceMarker?: string
+  /** `supported_modes` the fake advertises; `img_gen` by default, `vid_gen` for a video engine. */
+  modes?: Array<'img_gen' | 'vid_gen'>
+  /** What `output_formats_by_mode.vid_gen` says: every format, none with WebM, or nothing at all. */
+  vidFormats?: 'all' | 'no-webm' | 'unreported'
   /** Where the fake appends its pid on every start. */
   pidFile?: string
   /** Where the fake writes the argv of its last start. */
@@ -313,9 +317,15 @@ export async function sdPids(engine: Pick<FakeImageEngine, 'pidFile'>): Promise<
 export interface DiffusionStatus {
   configured: boolean
   install: { state: string; tag?: string; backendId?: string; dir?: string }
-  model: { state: string; loaded: { pid: number; modelId: string } | null; error?: { code: string } }
+  model: {
+    state: string
+    loaded: { pid: number; modelId: string; modality?: 'image' | 'video' } | null
+    error?: { code: string }
+  }
   activeJob: { id: string; state: string } | null
+  activeVideoJob?: { id: string; state: string } | null
   outputDir: string
+  videoOutputDir?: string
   idleUnloadSecs: number
 }
 
