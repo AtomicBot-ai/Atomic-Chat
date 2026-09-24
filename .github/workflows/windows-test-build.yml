@@ -27,9 +27,9 @@ on:
       - 'yarn.lock'
 
 permissions:
-  # write: a successful build tags the commit it built as test-build/v<version>
-  # (tracker D34), so a later build can refuse to reuse that number.
-  contents: write
+  # The build no longer pushes version tags — every build's number comes from
+  # the workflow run number — so read access is enough.
+  contents: read
 
 jobs:
   build-windows-test:
@@ -40,17 +40,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Every build gets a new version number (the user's rule, tracker D34):
-      # refuse to build when this version was already built from another commit.
-      - name: Check this build has a new version number
-        id: version
-        shell: bash
-        run: |
-          git fetch --tags --force origin
-          version=$(node scripts/check-build-version.mjs --prefix test-build/v)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building Radium $version"
-
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
@@ -59,6 +48,21 @@ jobs:
           # before corepack has activated Yarn 4 below; the Cache Yarn step
           # already does this.
           package-manager-cache: false
+
+      # Every test build a user downloads gets its own version number (tracker
+      # D34). The number is the workflow run number: it increments once per run,
+      # repo-wide for this workflow, so two builds can never share a number and
+      # nobody has to bump anything by hand. This replaces the old refuse-a-
+      # reused-number gate, which forced a manual `make bump-version` on every
+      # branch and collided whenever main was merged in.
+      - name: Stamp this build with a version number
+        id: version
+        shell: bash
+        run: |
+          version="2.0.${{ github.run_number }}"
+          node scripts/set-build-version.mjs "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building Radium $version"
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -232,18 +236,3 @@ jobs:
           path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 14
-
-      # Only real (push) builds record and push the version tag. On a PR this
-      # would burn a version number and, via the "refuse to reuse a version"
-      # rule (D34), could make a later main build fail — so guard it to push.
-      - name: Record the version this commit was built as
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          tag="test-build/v${{ steps.version.outputs.version }}"
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "$tag already marks this commit"
-          else
-            git tag "$tag" "$GITHUB_SHA"
-            git push origin "refs/tags/$tag"
-          fi

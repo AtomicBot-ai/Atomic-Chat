@@ -1,150 +1,110 @@
 /**
- * A test build refuses to start when its version number was already used by a
- * different commit - the enforcement half of the user's rule that every build
- * gets a new version (tracker D34, Task 27). A successful build leaves a tag
- * `test-build/v<version>` on the commit it built, so a later build can see
- * which commit a number belongs to. Rebuilding the same commit is allowed.
+ * Every test build a user downloads carries its own version number (tracker
+ * D34, Task 27). The number is the workflow run number, stamped into the two
+ * version files at build time by scripts/set-build-version.mjs — so no two
+ * builds share a number, nobody bumps by hand, and merging main into a branch
+ * can no longer collide a manually-committed version. This test guards that
+ * contract: the writer, and the workflow wiring that uses it.
  */
 import { strict as assert } from 'node:assert'
-import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-import { checkBuildVersion } from '../scripts/check-build-version.mjs'
+import { setVersion } from '../scripts/set-build-version.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const cli = path.join(repoRoot, 'scripts', 'check-build-version.mjs')
-const PREFIX = 'test-build/v'
 
-const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+const TAURI = 'src-tauri/tauri.conf.json'
+const WEB = 'web-app/package.json'
 
-function writeVersions(root, tauri, web = tauri) {
-  writeFileSync(
-    path.join(root, 'src-tauri', 'tauri.conf.json'),
-    `{\n  "productName": "Radium",\n  "version": "${tauri}"\n}\n`
-  )
-  writeFileSync(
-    path.join(root, 'web-app', 'package.json'),
-    `{\n  "name": "@janhq/web-app",\n  "version": "${web}"\n}\n`
-  )
-}
-
-function commit(root, message) {
-  git(root, 'add', '-A')
-  git(root, 'commit', '-q', '-m', message)
-  return git(root, 'rev-parse', 'HEAD')
-}
-
-function makeRepo(version = '2.0.38') {
-  const root = mkdtempSync(path.join(tmpdir(), 'build-version-'))
-  git(root, 'init', '-q', '-b', 'main')
-  git(root, 'config', 'user.email', 'test@example.invalid')
-  git(root, 'config', 'user.name', 'Build Version Test')
+/** A scratch repo with both files, laid out like the real ones. */
+function scratch(version = '2.0.37') {
+  const root = mkdtempSync(path.join(tmpdir(), 'set-version-'))
   mkdirSync(path.join(root, 'src-tauri'))
   mkdirSync(path.join(root, 'web-app'))
-  writeVersions(root, version)
-  commit(root, 'first build')
+  // The nested "version": "latest" is a plugin setting, not the app version.
+  writeFileSync(
+    path.join(root, TAURI),
+    `{\n  "productName": "Radium",\n  "version": "${version}",\n  "plugins": {\n    "backend": {\n      "version": "latest"\n    }\n  }\n}\n`
+  )
+  writeFileSync(
+    path.join(root, WEB),
+    `{\n  "name": "@janhq/web-app",\n  "private": true,\n  "version": "${version}",\n  "type": "module"\n}\n`
+  )
   return root
 }
 
-test('a version nobody has built yet may be built', () => {
-  const root = makeRepo('2.0.38')
+const read = (root, rel) => readFileSync(path.join(root, rel), 'utf8')
+
+test('stamping a build sets the same version in both files', () => {
+  const root = scratch('2.0.37')
   try {
-    assert.deepEqual(checkBuildVersion({ root, prefix: PREFIX }), {
-      ok: true,
-      version: '2.0.38',
-      tag: 'test-build/v2.0.38',
-      alreadyTagged: false,
-    })
+    assert.equal(setVersion('2.0.204', { root }), '2.0.204')
+    assert.equal(JSON.parse(read(root, TAURI)).version, '2.0.204')
+    assert.equal(JSON.parse(read(root, WEB)).version, '2.0.204')
+    assert.match(read(root, TAURI), /"version": "latest"/, 'the plugin setting must not change')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('rebuilding the commit that already carries the version is allowed', () => {
-  const root = makeRepo('2.0.38')
+test('a run number is accepted even when it is lower than the committed value', () => {
+  // Run numbers are not ordered against the placeholder in the files, so unlike
+  // a manual bump, setVersion must not require the new number to be larger.
+  const root = scratch('2.0.500')
   try {
-    git(root, 'tag', 'test-build/v2.0.38')
-    const result = checkBuildVersion({ root, prefix: PREFIX })
-    assert.equal(result.ok, true)
-    assert.equal(result.alreadyTagged, true)
+    assert.equal(setVersion('2.0.12', { root }), '2.0.12')
+    assert.equal(JSON.parse(read(root, WEB)).version, '2.0.12')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('a different commit with a version already built is refused, naming the fix', () => {
-  const root = makeRepo('2.0.38')
+test('a malformed version is refused and leaves the files untouched', () => {
+  const root = scratch('2.0.37')
   try {
-    const first = git(root, 'rev-parse', 'HEAD')
-    git(root, 'tag', 'test-build/v2.0.38')
-    writeFileSync(path.join(root, 'change.txt'), 'new work\n')
-    commit(root, 'more work, same version')
-
-    const result = checkBuildVersion({ root, prefix: PREFIX })
-    assert.equal(result.ok, false)
-    assert.match(result.reason, /2\.0\.38/)
-    assert.match(result.reason, new RegExp(first.slice(0, 9)))
-    assert.match(result.reason, /make bump-version/)
-
-    writeVersions(root, '2.0.39')
-    commit(root, 'bump')
-    assert.equal(checkBuildVersion({ root, prefix: PREFIX }).ok, true)
+    assert.throws(() => setVersion('2.0', { root }), /not a version/)
+    assert.equal(JSON.parse(read(root, TAURI)).version, '2.0.37')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('two version files that disagree are refused', () => {
-  const root = makeRepo('2.0.38')
-  try {
-    writeVersions(root, '2.0.38', '2.0.40')
-    commit(root, 'half-edited')
-    const result = checkBuildVersion({ root, prefix: PREFIX })
-    assert.equal(result.ok, false)
-    assert.match(result.reason, /disagree/)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+test('the installer and the app start from the same committed version', () => {
+  const tauri = JSON.parse(readFileSync(path.join(repoRoot, TAURI), 'utf8')).version
+  const web = JSON.parse(readFileSync(path.join(repoRoot, WEB), 'utf8')).version
+  assert.equal(tauri, web, `${TAURI} says ${tauri} but ${WEB} says ${web}`)
+  assert.match(tauri, /^\d+\.\d+\.\d+$/)
 })
 
-test('the command exits non-zero when refused and prints the version when not', () => {
-  const root = makeRepo('2.0.38')
-  try {
-    const fine = spawnSync(process.execPath, [cli, '--root', root, '--prefix', PREFIX], { encoding: 'utf8' })
-    assert.equal(fine.status, 0, fine.stderr)
-    assert.equal(fine.stdout.trim(), '2.0.38')
-
-    git(root, 'tag', 'test-build/v2.0.38')
-    writeFileSync(path.join(root, 'change.txt'), 'new work\n')
-    commit(root, 'more work, same version')
-    const refused = spawnSync(process.execPath, [cli, '--root', root, '--prefix', PREFIX], { encoding: 'utf8' })
-    assert.equal(refused.status, 1)
-    assert.match(refused.stderr, /make bump-version/)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
-})
-
-test('the Windows test build checks its version, names the installer with it, and records it', () => {
+test('the Windows test build derives its version from the run number', () => {
   const workflow = readFileSync(path.join(repoRoot, '.github/workflows/windows-test-build.yml'), 'utf8')
   assert.match(
     workflow,
-    /node scripts\/check-build-version\.mjs --prefix test-build\/v/,
-    'the workflow no longer refuses a reused version number'
+    /version="2\.0\.\$\{\{ github\.run_number \}\}"/,
+    'the build no longer stamps a unique run-number version'
+  )
+  assert.match(
+    workflow,
+    /node scripts\/set-build-version\.mjs "\$version"/,
+    'the build no longer writes the version into the project files'
+  )
+  assert.doesNotMatch(
+    workflow,
+    /git push origin "refs\/tags/,
+    'the build must not push version tags any more'
+  )
+  assert.doesNotMatch(
+    workflow,
+    /contents: write/,
+    'the build no longer needs write access now that it pushes no tags'
   )
   assert.match(
     workflow,
     /name: radium-windows-test-\$\{\{ steps\.version\.outputs\.version \}\}-/,
-    'the installer artifact no longer carries its version'
+    'the installer artifact still carries its version'
   )
-  assert.match(
-    workflow,
-    /git push origin "refs\/tags\/\$tag"/,
-    'a successful build no longer records the version it used'
-  )
-  assert.match(workflow, /contents: write/, 'the build cannot push the version tag without contents: write')
 })

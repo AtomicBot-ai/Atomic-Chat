@@ -321,12 +321,12 @@
   {
     "id": "radium-version",
     "feature": "Every build has its own version number",
-    "forUsers": "Each Radium installer carries a new version number, and a test build refuses to reuse one (tracker D34).",
+    "forUsers": "Each Radium test build carries its own version number, derived from the workflow run number so no two builds share one (tracker D34).",
     "paths": [
       "src-tauri/tauri.conf.json",
       "web-app/package.json",
       "scripts/bump-version.mjs",
-      "scripts/check-build-version.mjs",
+      "scripts/set-build-version.mjs",
       ".github/workflows/windows-test-build.yml"
     ],
     "checks": [
