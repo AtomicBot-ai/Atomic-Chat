@@ -10,6 +10,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { CloudConnectionCard } from '@/containers/cloud/CloudConnectionCard'
 import { CloudModelsCard } from '@/containers/cloud/CloudModelsCard'
 import { CloudSubscriptionCard } from '@/containers/cloud/CloudSubscriptionCard'
+import ClaudeCodeConnection from '@/containers/ClaudeCodeConnection'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { useChatGptAuth } from '@/hooks/useChatGptAuth'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -18,7 +19,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   isCloudProvider,
   isProviderConnected,
-  isSubscriptionProvider,
 } from '@/lib/cloud-providers'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
 import { cn } from '@/lib/utils'
@@ -249,7 +249,9 @@ export function CloudPage() {
             serviceHub={serviceHub}
           />
 
-          {isSubscriptionProvider(selected?.provider) && (
+          {selected?.provider === 'claude-code' && <ClaudeCodeConnection />}
+
+          {selected?.provider === 'chatgpt' && (
             <CloudSubscriptionCard
               state={subscription.state}
               account={subscription.account}

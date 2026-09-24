@@ -840,7 +840,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               />
             </button>
             {/* Mounted with the panel, so a fresh open always starts settled. */}
-            <ReasoningEffortPanel className="mt-2 min-w-0 border-t pt-3" />
+            {selectedProvider !== 'claude-code' && <ReasoningEffortPanel className="mt-2 min-w-0 border-t pt-3" />}
           </div>
         ) : (
           <div

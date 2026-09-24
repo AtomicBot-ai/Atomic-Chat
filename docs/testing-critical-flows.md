@@ -676,3 +676,15 @@ Journeys beyond the six contract items, all against the core-owned runtime:
 | Cloud provider through the core | `tests/e2e/desktop/cloud-provider.spec.ts` | a custom OpenAI-compatible provider created on the Cloud page (the provider menu is driven from the keyboard) connects with a key to a scripted endpoint that answers 401 without it; the core lists the provider and does not hand the key back; a chat in the app gets the endpoint's reply and, with auto-start off, is what starts the local API — the app reaches a cloud provider through the core; an outside client of the local API naming the cloud model gets the reply while the endpoint receives the provider's key, which that client never had; the key is absent from the core's settings file, the app log and the page | the model is added by hand: "Reload models" refreshes the provider registry first and gives up when it is unreachable, as it is in an e2e build, before asking the provider. Found on the way and fixed on 2026-09-18: a custom provider used to be created with OpenAI's address and at once asked `api.openai.com` for models (it is created without an address now, OpenAI's stays as the field's placeholder); a model-list request that finished late could replace a newer list or write back an older key (the list is written alone, onto the provider as it is when the answer lands); and "Reload models" stopped at an unreachable registry without asking the provider's own endpoint — all three covered by unit tests, not by this scenario |
 | Model stopped by hand | `tests/e2e/desktop/model-stop.spec.ts` | "Stop" in the provider page's row unloads the model in the core and ends its process with no crash toast; back in the conversation, with the model still selected, auto-start leaves it down; the next message brings it back and is answered | "Start" in the same row; MLX and TurboQuant |
 | Model switch | `tests/e2e/desktop/model-switch.spec.ts` | picking another local model mid-conversation leaves one session in the core — the new model's — ends the first model's process, shows no crash toast for that deliberate stop, and the conversation continues | unloading from Settings; MLX and TurboQuant; two providers holding the same model |
+
+### Claude subscription through the official CLI — partial
+
+The core owns the official Claude process. The desktop bridge is covered by
+`src-tauri/src/core/system/claude_chat.rs` IPC tests and the control-client stream test.
+Frontend routing, catalog migration and cancellation are covered by
+`web-app/src/lib/__tests__/claude-code-chat.test.ts` and
+`web-app/src/lib/__tests__/custom-chat-transport.claude-code.test.ts`.
+`web-app/src/containers/ClaudeCodeConnection.layout.test.tsx` measures the real browser.
+The native acceptance scenario is `tests/e2e/desktop/claude-subscription.spec.ts`; it
+requires the companion core build and has not been run in this change. Fresh real-account
+browser consent and Windows/Linux native CLI execution remain manual/CI validation.

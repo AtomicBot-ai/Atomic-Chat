@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import ClaudeCodeConnection from '@/containers/ClaudeCodeConnection'
 import { useChatGptAuth } from '@/hooks/useChatGptAuth'
 import { captureSubscriptionCardShown } from '@/lib/subscription-telemetry'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -492,6 +493,12 @@ export function AddCloudProviderDialog({
                 })}
               </div>
             )}
+          </>
+        ) : step.name === 'subscription' && step.provider.provider === 'claude-code' ? (
+          <>
+            <DialogHeader><DialogTitle>{t('cloud:claudeCode.title')}</DialogTitle><DialogDescription>{t('cloud:claudeCode.description')}</DialogDescription></DialogHeader>
+            <ClaudeCodeConnection onConnected={modelId => finishWith({ providerName: 'claude-code', modelId })} />
+            <DialogFooter><Button variant="link" onClick={reset}>{t('common:back')}</Button></DialogFooter>
           </>
         ) : step.name === 'subscription' ? (
           <SubscriptionStep

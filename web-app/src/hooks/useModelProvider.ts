@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { CLAUDE_CODE_PROVIDER, resolveClaudeModel } from '@/lib/claude-code-chat'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -40,7 +41,9 @@ const resolveSelectedModel = (
 ): Model | null => {
   if (!provider || provider.active === false) return null
   if (isCloudProvider(provider) && !isProviderConnected(provider)) return null
-  return provider.models.find((model) => model.id === selectedModel.id) ?? null
+  return (provider.provider === CLAUDE_CODE_PROVIDER
+    ? resolveClaudeModel(provider.models, selectedModel.id)
+    : provider.models.find((model) => model.id === selectedModel.id)) ?? null
 }
 
 type ModelProviderState = {
@@ -163,7 +166,7 @@ export const useModelProvider = create<ModelProviderState>()(
                   mergedCapabilities.length > 0
                     ? mergedCapabilities
                     : undefined,
-                displayName: existingModel?.displayName || model.displayName,
+                displayName: provider.provider === CLAUDE_CODE_PROVIDER ? model.displayName : existingModel?.displayName || model.displayName,
               }
             })
 
@@ -280,7 +283,7 @@ export const useModelProvider = create<ModelProviderState>()(
         let modelObject: Model | undefined = undefined
 
         if (provider && provider.models) {
-          modelObject = provider.models.find((model) => model.id === modelName)
+          modelObject = resolvedName === CLAUDE_CODE_PROVIDER ? resolveClaudeModel(provider.models, modelName) : provider.models.find((model) => model.id === modelName)
         }
 
         // Persist the *resolved* provider id so subsequent reads (e.g.

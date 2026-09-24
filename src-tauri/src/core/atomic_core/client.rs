@@ -296,6 +296,23 @@ impl ControlClient {
         Ok(response)
     }
 
+    /// A request-scoped stream. Never retried: replaying a prompt can consume a subscription twice.
+    pub async fn open_claude_chat(&self, body: Value) -> Result<reqwest::Response, CoreError> {
+        let response = self.http.post(self.url("/claude-code/chat"))
+            .bearer_auth(&self.token)
+            .header(reqwest::header::ACCEPT, "text/event-stream")
+            .json(&body)
+            .timeout(CALL_TIMEOUT + Duration::from_secs(30))
+            .send().await
+            .map_err(|e| CoreError::unreachable("Could not reach the Claude Code runtime", e.to_string()))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(error_from_body(status, &body));
+        }
+        Ok(response)
+    }
+
     async fn request(
         &self,
         method: reqwest::Method,
@@ -400,6 +417,17 @@ fn urlencoding_minimal(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::core::atomic_core::test_support::FakeCore;
+
+    #[tokio::test]
+    async fn claude_stream_carries_the_control_token_and_sends_one_mutation() {
+        let mut core = super::super::test_support::FakeCore::start().await;
+        let response = core.client().open_claude_chat(serde_json::json!({"prompt":"hello"})).await.unwrap();
+        assert_eq!(response.headers().get("content-type").unwrap(), "text/event-stream");
+        assert!(response.text().await.unwrap().contains("\"text\":\"OK\""));
+        assert_eq!(core.last_authorization(), Some(format!("Bearer {}", core.token())));
+        assert_eq!(core.applied_mutations(), 1);
+        core.stop().await;
+    }
 
     #[test]
     fn builds_control_urls_under_the_versioned_prefix() {

@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import { CLAUDE_CODE_PROVIDER, requireClaudeSubscription } from '@/lib/claude-code-chat'
 import { MODEL_LOAD_CANCELLED_CODE } from '@janhq/core'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -652,6 +653,15 @@ export async function switchToModel(params: {
         'provider:',
         params.providerName
       )
+      return
+    }
+
+    if (params.providerName === CLAUDE_CODE_PROVIDER) {
+      await requireClaudeSubscription()
+      useModelProvider.getState().selectModelProvider(params.providerName, params.modelId)
+      setLastUsedModel(params.providerName, params.modelId)
+      useThreads.getState().updateCurrentThreadModel({ id: params.modelId, provider: params.providerName })
+      clearModelLoadError()
       return
     }
 

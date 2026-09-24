@@ -106,6 +106,10 @@ pub fn run() {
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app_builder = app_builder.invoke_handler(tauri::generate_handler![
+        core::system::claude_chat::atomic_claude_status,
+        core::system::claude_chat::atomic_claude_login,
+        core::system::claude_chat::atomic_claude_chat,
+        core::system::claude_chat::atomic_claude_cancel,
         // FS commands - Deperecate soon
         core::filesystem::commands::join_path,
         core::filesystem::commands::mkdir,
@@ -759,6 +763,9 @@ pub fn run() {
                 tokio::task::block_in_place(|| {
                     tauri::async_runtime::block_on(async {
                         use crate::core::mcp::helpers::background_cleanup_mcp_servers;
+
+                        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                        core::system::claude_chat::shutdown().await;
 
                         let state = app_handle.state::<AppState>();
 
