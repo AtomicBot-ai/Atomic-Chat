@@ -6,6 +6,12 @@ status: proposed
 
 # Managed TensorRT-LLM: architecture proposal
 
+**2026-09-23 amendment:** Read the
+[deployment-boundary handoff](2026-09-23-preserve-containerized-core-deployment-seams.md)
+before continuing the affected cards. It preserves future containerized-core deployment through
+internal seams only; server delivery remains deferred. Completed wire/storage contracts and
+desktop behavior remain in force.
+
 **Status: proposed; not implemented or hardware-qualified.** Second revision, after the product
 review of 2026-09-22. It replaces the earlier rootless-Docker, session-gateway and in-container
 guardian design with the decisions recorded in §0. The [functional specification](2026-09-22-specify-managed-tensorrt-llm-flows.md)
@@ -97,7 +103,9 @@ readiness, unload, residency rule, logs, recovery, update and data lifecycle. Ap
 screens, progress/errors, OS elevation interaction, settings/catalog integration and data-move UX.
 The core independently re-probes the result of any privileged operation.
 
-One executor contract covers probe, pull/inspect, create/start/stop/remove, logs and health. Its
+One executor contract covers probe, pull/inspect, create/start/stop/remove, logs, target resolution
+and health. Engine launch requirements are bound to desktop publication/storage by an injected
+deployment adapter; shared lifecycle does not select Docker transport or host paths. Its
 adapters are local Docker and Docker inside the owned WSL distribution. Commands are explicit
 argv arrays with an explicit socket/config; never a shell and never the user's Docker context.
 
@@ -105,7 +113,8 @@ Provider `tensorrt-llm` implements `LocalRuntime` through a shared managed-text 
 compiled engine adapter. Future adapters supply their own validation, argv, readiness and
 capabilities. Descriptors cannot carry code or shell commands.
 
-Inference callers keep today's shape: the session exposes a loopback `host:port` and callers speak
+Desktop inference callers keep today's shape: `SessionInfo.port` identifies a loopback backend
+and callers speak
 OpenAI-compatible HTTP to it. `trtllm-serve` does not enforce an API key [N2]; the port is bound to
 loopback only, on Linux directly and on Windows through WSL's localhost forwarding.
 

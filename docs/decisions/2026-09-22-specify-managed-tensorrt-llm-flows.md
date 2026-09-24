@@ -6,6 +6,12 @@ status: proposed
 
 # Managed TensorRT-LLM: functional specification and integration map
 
+**2026-09-23 amendment:** Read the
+[deployment-boundary handoff](2026-09-23-preserve-containerized-core-deployment-seams.md)
+before continuing the affected cards. It preserves future containerized-core deployment through
+internal seams only; server delivery remains deferred. Completed wire/storage contracts and
+desktop behavior remain in force.
+
 - **Context:** The [architecture](2026-09-22-propose-managed-tensorrt-llm-architecture.md) uses one
   container image on Linux and Windows/WSL, a shared per-user environment and a one-resident-model
   GPU rule. We need observable behavior and repository boundaries before ordering the work.
@@ -128,7 +134,8 @@ container, verify identity and readiness, publish the loopback session endpoint.
 is honored while queued; a cancelled load cannot publish a ready session. Unload stops the
 container and waits for confirmed exit.
 
-Agent, voice, RAG and the public API reach the session at its loopback `host:port` exactly as they
+For this desktop release, Agent, voice, RAG and the public API reach the loopback backend using
+the existing session port, projected from the internal executor-resolved target, exactly as they
 reach llama.cpp today. Agent resolves `tensorrt-llm` as a local OpenAI-compatible provider and must
 not fall into the cloud branch. `bypassAutoUnload` does not exempt a caller from the residency rule.
 

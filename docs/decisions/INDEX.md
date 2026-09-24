@@ -326,7 +326,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (29)
+## Inference core extraction — atomic-chat-core (30)
+
+- **2026-09-23** — [Preserve deployment seams for a future containerized core; amendment and agent handoff](2026-09-23-preserve-containerized-core-deployment-seams.md)
 
 - **2026-09-22** — **Proposed:** [Managed TensorRT-LLM architecture for text inference](2026-09-22-propose-managed-tensorrt-llm-architecture.md)
 - **2026-09-22** — **Proposed:** [Managed TensorRT-LLM functional behavior and repository ownership](2026-09-22-specify-managed-tensorrt-llm-flows.md)

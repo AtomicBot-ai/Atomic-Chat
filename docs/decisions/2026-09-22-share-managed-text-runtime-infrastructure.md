@@ -6,6 +6,12 @@ status: proposed
 
 # Managed text engines: TensorRT-LLM first, vLLM and SGLang next
 
+**2026-09-23 amendment:** Read the
+[deployment-boundary handoff](2026-09-23-preserve-containerized-core-deployment-seams.md)
+before continuing the affected cards. It preserves future containerized-core deployment through
+internal seams only; server delivery remains deferred. Completed wire/storage contracts and
+desktop behavior remain in force.
+
 - **Context:** vLLM and SGLang are planned additions. The TensorRT backlog must not make
   environment installation, storage, UI or GPU ownership depend on one engine name.
 - **Decision:** Build shared managed-text infrastructure now; ship TensorRT-LLM as its first
@@ -59,7 +65,10 @@ launch argv/env, health/readiness probe, declared API routes, resource estimate 
 
 Define `ManagedTextAdapter` in CORE `src/runtime/managed-text/` with a compiled registry. It exposes
 `engineId`, `validateModel`, `validateSettings`, `buildLaunchSpec`, `probeReady`, `describeApi` and
-`estimateResources`. Pure validators/builders are separate from injected probe I/O. The common
+`estimateResources`. `buildLaunchSpec` returns engine requirements (`EngineLaunchSpec`); an injected
+deployment binding adds desktop port publication and heartbeat. Internal endpoint and mount resolution
+follow the 2026-09-23 amendment without adding server wire variants.
+Pure validators/builders are separate from injected probe I/O. The common
 lifecycle owns residency reservation, container creation, journal, heartbeat and stop.
 
 Descriptors reference a registered `adapter_id` and contract version; downloaded metadata cannot

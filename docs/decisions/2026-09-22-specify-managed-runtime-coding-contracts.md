@@ -6,6 +6,12 @@ status: proposed
 
 # Managed text runtime: implementation contracts
 
+**2026-09-23 amendment:** Read the
+[deployment-boundary handoff](2026-09-23-preserve-containerized-core-deployment-seams.md)
+before continuing the affected cards. It preserves future containerized-core deployment through
+internal seams only; server delivery remains deferred. Completed wire/storage contracts and
+desktop behavior remain in force.
+
 - **Context:** Small coding assignments need exact shared types, methods and observable transitions.
 - **Decision:** The signatures and transition rules below are the implementation target for the
   [agent backlog](2026-09-22-sequence-tensorrt-llm-agent-tasks.md). Change this contract through its
@@ -20,9 +26,11 @@ container-runtime host action, model resolution and the residency contract are a
 
 ## Ownership and conventions
 
-T01a owns wire types, T01b descriptor parsing and canonical JSON, T01c paths, T01d paired fixtures.
-T04a owns the operation reducer; T06a the executor contract; T11a the residency contract; T14a the
-compiled adapter registry; T13d model resolution.
+T01a owns wire types, T01b descriptor parsing and canonical JSON, T01c paths. T01d was folded
+into T16a, which owns environment fixture replay at the actual APP consumer. T01e owns the initial
+internal deployment/executor type declarations and desktop target projection.
+T04a owns the operation reducer; T06a implements executor bindings and argv; T11a owns the
+residency contract, T14a the compiled adapter registry, and T13d model resolution.
 
 The TypeScript blocks form one type-checkable declaration set; split them into the stated modules.
 Internal interfaces are not exported through control API JSON. `AtomicCoreError` is the thrown
@@ -402,6 +410,11 @@ Unspecified combinations return `MANAGED_OPERATION_CONFLICT` without effects.
 
 ## Container executor and compiled adapter signatures
 
+Amended 2026-09-23 for T01e. These execution/adapter interfaces are internal and were not yet
+implemented at the inspected CORE revision. Persisted `ArtifactLocation`, wire `ExecutorKind`,
+`RuntimeDescriptor` and `ModelResolution` below keep their existing shapes. `BackendTarget` is
+internal; it does not replace `SessionInfo.port` or broaden desktop network exposure.
+
 ```ts
 export type ArtifactLocation =
   | { kind: 'native'; storage_domain: string; absolute_path: string }
@@ -443,6 +456,24 @@ export interface LaunchSpec {
   shared_memory_bytes: number;
   gpu_id: string;
 }
+export type EngineLaunchSpec = Omit<LaunchSpec, 'host_port' | 'bind_host' | 'heartbeat'>;
+export interface BackendTarget {
+  base_url: string;            // trusted server-root URL resolved for this execution, no /v1 prefix
+}
+export interface ManagedDeployment {
+  prepareLaunch(binding: EngineBinding, engine: EngineLaunchSpec,
+    heartbeat: LaunchSpec['heartbeat'], signal: AbortSignal): Promise<LaunchSpec>;
+}
+export interface ResolvedMountSource {
+  kind: 'bind';                // only implemented mount kind today; named volumes deferred
+  source_path: string;         // absolute path in the bound Docker daemon's filesystem namespace
+  storage_domain: string;
+  engine_identity: string;
+}
+export interface MountSourceResolver {
+  resolve(binding: EngineBinding, source: ArtifactLocation,
+    signal: AbortSignal): Promise<ResolvedMountSource>;
+}
 export interface CreateContainer {
   execution_id: string;
   installation_id: string;
@@ -470,6 +501,7 @@ export interface ContainerExecutor {
   inspect(identity: ExecutionIdentity, signal: AbortSignal): Promise<ContainerState | null>;
   create(binding: EngineBinding, input: CreateContainer, signal: AbortSignal): Promise<ExecutionIdentity>;
   start(identity: ExecutionIdentity, signal: AbortSignal): Promise<void>;
+  resolveTarget(identity: ExecutionIdentity, signal: AbortSignal): Promise<BackendTarget>;
   logs(identity: ExecutionIdentity, after: string | null, signal: AbortSignal): AsyncIterable<string>;
   stop(identity: ExecutionIdentity, timeoutMs: number, signal: AbortSignal): Promise<StopEvidence>;
   remove(evidence: StopEvidence, signal: AbortSignal): Promise<void>;
@@ -524,11 +556,9 @@ export interface AdapterContext {
   artifact: ModelArtifact;
   settings: SettingValues;
   gpu: GpuFacts;
-  host_port: number;
   container_port: number;
   cache: ArtifactLocation;
 }
-export interface BackendTarget { host: '127.0.0.1'; port: number; }
 export interface ProbeIO {
   request(target: BackendTarget, path: string, method: 'GET' | 'POST',
     body: string | null, signal: AbortSignal): Promise<{ status: number; body: string }>;
@@ -544,13 +574,35 @@ export interface ManagedTextAdapter {
   readonly contractVersion: 1;
   validateModel(descriptor: RuntimeDescriptor, model: ModelArtifact, gpu: GpuFacts): Result<void>;
   validateSettings(descriptor: RuntimeDescriptor, settings: SettingValues): Result<SettingValues>;
-  buildLaunchSpec(context: AdapterContext): Result<LaunchSpec>;
+  buildLaunchSpec(context: AdapterContext): Result<EngineLaunchSpec>;
   probeReady(target: BackendTarget, io: ProbeIO, signal: AbortSignal):
     Promise<'ready' | 'starting' | 'failed'>;
   describeApi(descriptor: RuntimeDescriptor, model: ModelArtifact): ApiPolicy;
   estimateResources(context: AdapterContext): { resident_bytes: number | null; peak_bytes: number | null };
 }
 ```
+
+`ManagedDeployment` prepares the desktop launch: it selects loopback publication and adds the
+bound heartbeat location. Engine builders never receive a host port. Preparation performs only
+bounded probes and pure assembly; it creates no persistent resources and starts no engine. Port
+collisions during create/start follow the ordinary failed-load cleanup path. Platform selection
+happens at core composition.
+
+`MountSourceResolver` lowers validated artifact/cache/entrypoint/heartbeat locations for Docker
+argv. Check scope/storage-domain bounds before mapping and daemon identity after mapping. Linux
+and WSL are the only concrete mappings in this delivery; tests may inject a different namespace.
+The generic lifecycle never dereferences an `ArtifactLocation` as a local filesystem path.
+
+`resolveTarget` checks the recorded execution against its bound daemon, then returns the URL
+reachable by core using verified port publication and the selected transport. It cannot accept a
+caller-supplied URL. Desktop implementations return loopback HTTP; unknown reachability is failure.
+`ProbeIO` validates the deployment-bound target and rejects redirects outside that binding (or all
+redirects). A fake can return a private hostname for internal lifecycle tests. T14d must run T01e's
+pure desktop projection before publishing `SessionInfo.port`. Projection requires HTTP, exactly
+`127.0.0.1`, a valid TCP port, an empty/root path, and no credentials/query/fragment. Other loopback
+addresses also fail: dropping their host and keeping only the port would send existing callers to
+a different listener. Rejection fails the load and follows verified cleanup. No new public URL
+field or control protocol bump.
 
 T06a validates the LaunchSpec: source locations belong to the bound storage scope, no duplicate or
 escaping targets, bounded IPC, loopback publication, pinned digest, no Docker socket, no privileged

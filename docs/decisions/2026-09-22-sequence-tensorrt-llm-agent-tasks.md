@@ -6,6 +6,12 @@ status: proposed
 
 # Managed text engines: coding-agent backlog, TensorRT-LLM first
 
+**2026-09-23 amendment:** Read the
+[deployment-boundary handoff](2026-09-23-preserve-containerized-core-deployment-seams.md)
+before continuing the affected cards. It preserves future containerized-core deployment through
+internal seams only; server delivery remains deferred. Completed wire/storage contracts and
+desktop behavior remain in force.
+
 Apply the [shared-engine decision](2026-09-22-share-managed-text-runtime-infrastructure.md) and the
 product decisions in the [architecture's §0](2026-09-22-propose-managed-tensorrt-llm-architecture.md).
 T00-T24 remain parent labels; T10 (session gateway), T12 (caller migration) and T23 (separate NVFP4
@@ -17,7 +23,7 @@ qualification) are withdrawn. Dispatch lowercase-suffix children only.
   and execute one child at a time. A card delivers code and evidence, not another plan.
 - **Consequences:** Shared files have one writer at a time. Core/app protocol changes are paired.
   Hardware cards name their host.
-- **Owner:** the operator with coding agents. Progress is marked per child below. This document does not
+- **Owner:** the operator with coding agents. Progress is marked per child below (as of the 2026-09-23 amendment: 19 of 71 live children done, T01e pending and T03c in progress; roll-up in the [plan's §0](2026-09-22-plan-managed-tensorrt-llm-implementation.md#0-progress)). This document does not
   authorize committing, publishing or changing a test host.
 
 ## Dispatch rules
@@ -49,9 +55,17 @@ beside modules using the repository's conventions. Agents read the applicable AG
 - CONF: its own validation workflow once checked out.
 - A blocked command is reported, never silently skipped.
 
+## Amendment checkpoint for agents already implementing this plan
+
+Read the [2026-09-23 handoff](2026-09-23-preserve-containerized-core-deployment-seams.md). Complete new **T01e** before T06a or T14a;
+then use the amended requirements on T06/T07/T13/T14/T19b/T24a. Existing done cards stay done,
+and independent pending cards may continue. Do not build a server, supervisor or installer image.
+If a dependent card has already started in another checkout, reconcile its internal interfaces
+against T01e before integration; preserve its work and record that reconciliation in the handoff.
+
 ## Dispatch children, never a whole parent
 
-- First queue: **T00a**, **T00b**, **T01a**. After T01a: **T01b**, **T01c**, **T02a**, **T03a**,
+- Original bootstrap queue (already completed): **T00a**, **T00b**, **T01a**. After T01a: **T01b**, **T01c**, **T02a**, **T03a**,
   **T04a**, **T08a**, **T09a**, **T11a**.
 - Live cards need real hosts: T03c (Ubuntu 4070), T03d (Windows 4070), T03e (5090), T07c, T08e,
   T09g, T14e, T22a/T22b. T20b needs a writable CONF checkout; T21 needs signing inputs.
@@ -127,6 +141,29 @@ CORE `test/contract/`, fixture importer.
 engine descriptors, a `relogin-required` operation and a `MODEL_INCOMPATIBLE` resolution.
 **Acceptance:** APP checksum test and CORE replay agree; null, Unicode, errors and unknown schema match.
 
+### T01e — Isolate deployment bindings without changing public contracts
+
+**Status:** pending; added 2026-09-23. Read the [amendment handoff](2026-09-23-preserve-containerized-core-deployment-seams.md).
+**Repository:** CORE. **Depends on:** T01a, T01c, T02c, T05c, T13a.
+**Files:** new `src/runtime/managed-text/deployment.ts` and adjacent tests; internal type-only
+`src/runtime/container/types.ts`; CORE ADR and `docs/contracts.md` for the private boundary.
+T01e owns the initial executor type declarations; T06a extends those files instead of duplicating them.
+**Implement:** the amended internal signatures in the coding contract: `BackendTarget`,
+`EngineLaunchSpec`, `ManagedDeployment`, mount-source resolution and `resolveTarget` on the
+executor. Add a pure desktop target-to-port projection that validates a loopback HTTP server-root
+URL on exactly `127.0.0.1` and returns the existing session port. Allow an empty/root path only;
+reject other hosts (including other loopback addresses), credentials, query and fragment;
+never publish a guessed port. Keep `SessionInfo`, protocol 2, `ExecutorKind`, descriptor schema,
+`ArtifactLocation`, artifact hashes and persisted operation shapes unchanged. Document that the
+existing provisioner injection is the preparation boundary and native OS selection is desktop wiring.
+No concrete executor, lifecycle, server mode or named-volume implementation belongs to this card.
+**Acceptance:** projection preserves the desktop port and rejects `http://engine.test:8000`;
+an internal fake target can retain that hostname without being projected into an APP session.
+Fake deployment bindings typecheck with `EngineLaunchSpec` and the executor types;
+T14a still owns `ManagedTextAdapter` and the registry. Tests must
+exercise URL validation/projection behavior, not just assert TypeScript declarations. Run CORE
+verification and record that persisted/wire formats are unchanged. T06/T14/T24 own runtime evidence.
+
 ## T02 — session identity across core, extensions and Rust
 
 ### T02a — Make CORE session execution identity explicit
@@ -149,7 +186,7 @@ cannot reach native kill.
 `src-tauri/src/core/sessions/{mirror,resolver}.rs`; `web-app/src/lib/model-factory.ts`;
 `web-app/src/lib/voice/engine.ts`; `src-tauri/src/core/agent/{target,rag_bridge}.rs`.
 **Implement:** accept the revised session type; lookup identity is provider + model + generation;
-every consumer reads `host:port` from the session and tolerates a null PID. No routing changes.
+every consumer uses the existing session port on loopback and tolerates a null PID. No routing changes.
 **Acceptance:** two providers with the same basename stay distinct; stale generation discarded;
 native PID unchanged; Agent, voice and RAG tests pass with a container-shaped session fixture.
 
@@ -167,7 +204,7 @@ native PID unchanged; Agent, voice and RAG tests pass with a container-shaped se
 
 ### T03a — Build read-only host inventory harness
 
-**Status:** done 2026-09-22. `src/runtime/environment/{host-exec,inventory}.ts` with 20 unit tests, and `test/live/managed-host-inventory.test.ts`. The card's "parsers under test/helpers" predates T08a/T09a: the harness runs the product's own `probeLinux`/`probeWindows` instead of a second set of parsers, so what it reports cannot disagree with what setup would decide. `hostExec` and `redactInventory` live in `src` because the provisioners and the setup dialog's diagnostics need them too. Skipped unless both `ATOMIC_LIVE=1` and `ATOMIC_LIVE_MANAGED_INVENTORY=1`; when it runs, every command is checked against a read-only list before it is spawned. Not yet run on a real host: this development machine is macOS, where there is no managed runtime to ask about. Running it on the Ubuntu 4070 and the Windows 4070 is the first step of T03c/T03d.
+**Status:** done 2026-09-22. `src/runtime/environment/{host-exec,inventory}.ts` with 20 unit tests, and `test/live/managed-host-inventory.test.ts`. The card's "parsers under test/helpers" predates T08a/T09a: the harness runs the product's own `probeLinux`/`probeWindows` instead of a second set of parsers, so what it reports cannot disagree with what setup would decide. `hostExec` and `redactInventory` live in `src` because the provisioners and the setup dialog's diagnostics need them too. Skipped unless both `ATOMIC_LIVE=1` and `ATOMIC_LIVE_MANAGED_INVENTORY=1`; when it runs, every command is checked against a read-only list before it is spawned. First real run 2026-09-22 on the Ubuntu host (see T03c); the Windows run is still to come.
 
 **Repository:** CORE. **Depends on:** T01a.
 **Files:** new `test/live/managed-host-inventory.test.ts`; parsers under `test/helpers/`.
@@ -186,6 +223,8 @@ before/after, watchdog kill, with model pins as required inputs.
 interruption leaves an explicit owned cleanup inventory.
 
 ### T03c — Record Ubuntu 4070 evidence
+
+**Status:** in progress 2026-09-22. The inventory (T03a) ran on the Linux host, which turned out to be Ubuntu 26.04 with an RTX 4070 **Laptop** GPU (compute capability 8.9, 8 GB VRAM, not the 12 GB this plan assumed) and driver 595.91.07. The report exposed two probe defects to fix before this evidence counts: a Docker CLI whose daemon could not be read was reported as a missing Docker Engine, and an installed NVIDIA Container Toolkit was reported missing because the daemon's runtime list could not be read. Its only blocker was the distribution allowlist (24.04 only). Experiment runs wait for T03b.
 
 **Repository:** CORE. **Depends on:** T03b. **Host:** Ubuntu 4070.
 **Files:** new `docs/tensorrt-hardware-evidence.md` Linux section; qualified experiment fixture.
@@ -279,13 +318,17 @@ operation; old instance events cannot resurrect state.
 
 ### T06a — Define executor types and pure Docker argv
 
-**Repository:** CORE. **Depends on:** T01a, T01c.
-**Files:** new `src/runtime/container/{index,types,args}.ts` and test.
+**Repository:** CORE. **Depends on:** T01a, T01c, T01e.
+**Files:** `src/runtime/container/types.ts` (from T01e); new `src/runtime/container/{index,args}.ts`
+and desktop deployment/mount resolver with adjacent tests.
 **Implement:** `ContainerExecutor` types and validated argv builders: explicit socket, pinned digest,
 `--restart=no`, loopback publish, bounded `--shm-size`, `--gpus device=<id>`, read-only entrypoint
-and model mounts, writable cache and heartbeat mounts. No shell.
+and model mounts, writable cache and heartbeat mounts. Implement desktop `prepareLaunch`; resolve
+validated locations into daemon-visible mount sources via the injected resolver before building argv.
+Engine adapters do not select host ports or convert artifact paths. No shell.
 **Acceptance:** metacharacter paths remain one argv item; socket or escaping mounts rejected;
-ambient context irrelevant; no `latest`, no wildcard publish.
+ambient context irrelevant; no `latest`, no wildcard publish. A fake mapping from a core path to a
+different daemon path appears correctly in argv; wrong scope/daemon and traversal fail before spawn.
 
 ### T06b — Implement bounded process I/O and cancellation
 
@@ -302,9 +345,11 @@ never reports the container stopped.
 **Files:** new `src/runtime/container/docker.ts` and test.
 **Implement:** lifecycle, digest pull with progress, `probe` including the `--gpus` test container,
 inspect verifying engine ID and full container ID, `StopEvidence` only after verified exit or
-absence, `touchHeartbeat`.
+absence, `touchHeartbeat`, and `resolveTarget` from verified publication/transport information.
+Desktop targets remain loopback-only; lifecycle must not reconstruct them from a host-port guess.
 **Acceptance:** wrong daemon or reused ID cannot be stopped; failed inspect is not absence; timeout
-retains ownership; GPU test failure reported distinctly from daemon unreachable.
+retains ownership; GPU test failure reported distinctly from daemon unreachable; stale/wrong-engine
+target resolution fails. Resolve WSL reachability through T09e when that transport is integrated.
 
 ## T07 — container journal and heartbeat watchdog
 
@@ -313,7 +358,8 @@ retains ownership; GPU test failure reported distinctly from daemon unreachable.
 **Repository:** CORE. **Depends on:** T02a, T06c, T01c.
 **Files:** new `src/runtime/container/journal.ts`; `src/lock/process-journal.ts` if wiring needs it.
 **Implement:** full execution identity in the scope's `executions/`; native journal still readable;
-journal before exposing a session.
+journal before exposing a session. Preserve the explicit engine binding rather than inferring
+execution location from the current OS, container name or label.
 **Acceptance:** old native record loads; mismatched container record cannot authorize a kill; two
 engines with the same model name stay distinct.
 
@@ -324,7 +370,8 @@ engines with the same model name stay distinct.
 scripts including the script as a verified resource.
 **Implement:** POSIX shell entrypoint per the contract (child `trtllm-serve`, heartbeat mtime poll,
 TERM then KILL, exit with child status); core-side periodic `touchHeartbeat` per live session;
-digest recorded in the descriptor.
+digest recorded in the descriptor. Only the executor writes the heartbeat through its bound storage
+transport; generic lifecycle has no direct filesystem/WSL writes and no heartbeat-disable option.
 **Acceptance:** script tested with a fake child under `sh`: stale heartbeat kills within the limit,
 fresh heartbeat never kills, child exit propagates status; core stops touching after unload.
 
@@ -360,7 +407,7 @@ invalidates approval; unsupported distribution -> blocker with instructions.
 
 ### T08c — Implement the bundled pkexec helper
 
-**Repository:** APP. **Depends on:** T08b, T01d.
+**Repository:** APP. **Depends on:** T08b, T01a.
 **Files:** new `src-tauri/src/core/runtime_setup/{mod,linux}.rs`; helper binary target in
 `src-tauri/src/bin/` and `Cargo.toml`; Linux bundle scripts.
 **Implement:** validate HostStep, nonce, revision and digests; invoke the helper through `pkexec`;
@@ -403,7 +450,7 @@ original user; no change during probe.
 
 ### T09b — Implement the Windows feature-enable helper
 
-**Repository:** APP. **Depends on:** T09a, T01d.
+**Repository:** APP. **Depends on:** T09a, T01a.
 **Files:** new `src-tauri/src/core/runtime_setup/windows.rs`; helper target; signing scripts.
 **Implement:** UAC entry for `windows.enable-wsl` only; common receipt validation; never register
 the guest as administrator.
@@ -508,7 +555,9 @@ remove-last-reference race cannot delete a live artifact.
 **Repository:** CORE. **Depends on:** T13a.
 **Files:** new `src/models/snapshot-download.ts`; `src/downloads` helpers; registry integration.
 **Implement:** download the complete inventory with resumable staging, verification and an atomic
-ready marker; injected native/guest file transport; gated credentials in the core.
+ready marker; injected native/guest file transport; gated credentials in the core. Keep the
+transport separate from the executor mount resolver: a path readable by core is not automatically
+a bind source readable by Docker. Preserve T13a identity and reference formats.
 **Acceptance:** fixture server covers range resume, corruption, missing shard, auth, low disk,
 cancellation; incomplete artifact never registered; GGUF imports unchanged.
 
@@ -536,9 +585,11 @@ reported; supported FP8 on sm89 accepted.
 
 ### T14a — Implement the compiled adapter registry
 
-**Repository:** CORE. **Depends on:** T01b.
-**Files:** new `src/runtime/managed-text/{index,adapter,registry}.ts`.
+**Repository:** CORE. **Depends on:** T01b, T01e.
+**Files:** new `src/runtime/managed-text/{index,adapter,registry}.ts`; reuse T01e `deployment.ts`.
 **Implement:** contract declarations, capability lookup, explicit registry; two fake adapters in tests.
+`buildLaunchSpec` returns `EngineLaunchSpec` without host publication/heartbeat; probe I/O accepts
+the internal `BackendTarget`. No deployment choice belongs in an engine adapter.
 **Acceptance:** unknown adapter unavailable; mismatched version rejected; descriptor cannot execute
 code; per-adapter route policies stay separate.
 
@@ -547,10 +598,14 @@ code; per-adapter route policies stay separate.
 **Repository:** CORE. **Depends on:** T14a, T06c, T07b, T11b, T05c, T13b.
 **Files:** new `src/runtime/managed-text/lifecycle.ts`.
 **Implement:** artifact validation, residency eviction and reservation, create/journal/start/
-heartbeat/readiness, session publication with loopback `host:port`, stop with confirmed exit.
-No TensorRT conditionals.
+heartbeat/readiness, internal target resolution, stop with confirmed exit. Inject deployment
+preparation, executor, storage and session publisher. Pass the resolved target to readiness and
+the publisher; T14d supplies desktop projection. Do not branch on engine, OS, tray state or assume
+the lifecycle can call Docker CLI or install host prerequisites.
 **Acceptance:** cancel at every boundary, readiness failure and failed stop preserve journal and
-reservation; two fake adapters follow the same lifecycle; heartbeat stops after unload.
+reservation; two fake adapters follow the same lifecycle; heartbeat stops after unload. A fake
+non-loopback target reaches readiness unchanged; a publisher rejection triggers cleanup and cannot
+leave a ready session or release residency before verified exit.
 
 ### T14c — Implement the TensorRT adapter
 
@@ -568,8 +623,10 @@ starting from failed.
 **Repository:** CORE. **Depends on:** T14b, T14c, T13d.
 **Files:** new `src/runtime/tensorrt-llm/runtime.ts`; `src/contracts/session.ts`; `core/create`,
 `router/resolve`, `config/paths`, settings provider maps.
-**Implement:** provider ID and exhaustive map entries; delegate `LocalRuntime` to the generic
-lifecycle; `autoIncreaseCtx` returns `unsupported`; gate on environment and descriptor readiness.
+**Implement:** provider ID and exhaustive map entries; compose the generic lifecycle with desktop
+deployment services and T01e target-to-port projection before publishing the existing `SessionInfo`.
+Retain protocol 2 and direct desktop callers; do not expose arbitrary backend URLs on the wire.
+Delegate `LocalRuntime` to that lifecycle; `autoIncreaseCtx` returns `unsupported`; gate on environment and descriptor readiness.
 **Acceptance:** compiled fake-backed core load/cancel/unload/recreate and public chat pass; missing
 environment reports `setup-required`; native models unchanged; no vLLM/SGLang registration.
 
@@ -605,7 +662,7 @@ no cloud registry entry; extension discovered by the app build.
 
 ### T16a — Add the typed environment relay client
 
-**Repository:** APP. **Depends on:** T01d, T05b.
+**Repository:** APP. **Depends on:** T01a, T01b, T01c, T05b.
 **Files:** new `web-app/src/services/managed-runtime.ts`; `src-tauri/src/core/atomic_core/commands.rs`
 for the validated host bridge only.
 **Implement:** wrap `atomic_core_call` for the environment and resolve routes with typed errors.
@@ -685,7 +742,9 @@ artifacts on Windows are not copied as Windows paths.
 **Repository:** CORE+APP. **Depends on:** T18b, T07c, T09g.
 **Files:** CORE shutdown/recovery; APP `src-tauri/src/core/system/commands.rs`; supervisor exit path.
 **Implement:** reset uses targeted removal before deleting authority records; full exit stops owned
-containers; tray keeps them; CLI independent.
+containers; tray keeps them; CLI independent. Apply these choices in the existing owner/APP
+shutdown path, calling normal lifecycle unload; do not add app/tray branches to the engine lifecycle
+or boolean flags that disable the watchdog. Future server restart policy remains deferred.
 **Acceptance:** interrupted reset cannot orphan a container without a journal; exit vs tray differ;
 restart reconciles old identities.
 
@@ -769,9 +828,14 @@ Separate NVFP4 qualification merged into T03e (evidence) and T13d (compute-capab
 **Repository:** CORE. **Depends on:** T14b, T18b, T20a.
 **Files:** new `test/e2e/managed-text-engines.test.ts`; fixture adapters.
 **Implement:** install A and B in one fake environment with different launch/API policies; update
-and remove A while B remains; drive real core routes with fake Docker.
+and remove A while B remains; drive real core routes with fake Docker. Also exercise the same
+lifecycle directly through a fake deployment with `http://engine.test:8000` and a different daemon
+mount namespace. Test-only injection supplies no real remote executor or public server setting.
 **Acceptance:** one host preparation, distinct digests and caches, OP07 and GPU traces; adding B
-changes no shared production module.
+changes no shared production module. The fake deployment reaches readiness and verified cleanup
+without invoking native probes, local filesystem mounts or Docker CLI. Desktop projection refuses
+its DNS target before session publication. Existing desktop endpoint, watchdog, restart and
+residency checks still pass; this evidence does not qualify a server deployment.
 
 ### T24b — Prove shared-artifact ownership under contention
 
@@ -794,15 +858,15 @@ Each of `vllm` and `sglang` adds a descriptor with its own supported-architectur
 tables, `src/runtime/<engine>/adapter.ts`, core registration, an app extension and its own live
 tests. TensorRT's tables and evidence do not transfer.
 
-## Copyable first coding prompt
+## Copyable next coding prompt after the amendment
 
-> Implement T01a from docs/decisions/2026-09-22-sequence-tensorrt-llm-agent-tasks.md in Atomic-Chat.
-> The edit repository for T01a is the sibling atomic-chat-core on branch feat/tenzor-rt. Read its
-> AGENTS.md and the linked coding-contract document. Deliver the wire types/events/error codes and
-> adjacent tests only. Do not implement the rest of parent T01 or change APP fixtures yet. Preserve
-> unrelated work. No new dependencies, commits, publishing or host provisioning. Run focused tests
-> and CORE npm run verify; report pre-existing toolchain failures separately. Hand off the exact
-> changed files, passing/failing commands and remaining acceptance items.
+> Implement T01e from docs/decisions/2026-09-22-sequence-tensorrt-llm-agent-tasks.md in Atomic-Chat.
+> The edit repository is the sibling atomic-chat-core on branch feat/tenzor-rt. Read its AGENTS.md,
+> the 2026-09-23 deployment-boundary handoff and the amended coding contracts first. Inspect current
+> status before editing. Deliver T01e internal types, desktop target projection and its tests only;
+> preserve completed contracts and protocol 2. Do not build server modes, a supervisor, named-volume
+> support, or the concrete Docker executor. Run CORE verification, record exact results and remaining
+> gates, and mark only T01e complete when its acceptance passes. No commits or host provisioning.
 
 ### Required handoff form
 
@@ -815,7 +879,7 @@ tests. TensorRT's tables and evidence do not transfer.
 
 ## Coverage and known release inputs
 
-71 child assignments. Parent coverage: W0 -> T03; W1 -> T01-T02, T20; W2 -> T04-T05; W3 -> T06-T07;
+72 child headings, 71 live assignments (T01d withdrawn); 19 done, new T01e pending. Parent coverage: W0 -> T03; W1 -> T01-T02, T20; W2 -> T04-T05; W3 -> T06-T07;
 W4-L/W -> T08-T09; W5 -> T11; W6 -> T13-T15; W7 -> T16-T17; W8 -> T18-T19; W9 -> T03e + T13d;
 W10 -> T21-T22; shared-engine proof -> T24.
 
