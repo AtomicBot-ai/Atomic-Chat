@@ -9,7 +9,7 @@
     "**/src-tauri/resources/agent-skills/**",
     "**/*.test.ts",
     "**/*.test.tsx",
-    "**/__tests__/**",
+"**/__tests__/**",
     "**/locales/**"
   ]
 }

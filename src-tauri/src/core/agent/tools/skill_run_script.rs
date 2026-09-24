@@ -356,6 +356,15 @@ fn interpreter_invocation(
                 "Windows batch scripts cannot run on this platform",
             ))
         }
+        // Without this a .py script was handed to the OS as the program itself,
+        // which fails on Windows and needs a shebang plus an executable bit
+        // everywhere else. `python3` does not exist on a stock Windows, and
+        // `python` is the launcher Windows installs, so each platform gets the
+        // name it actually has.
+        "py" => (
+            if cfg!(windows) { "python" } else { "python3" }.into(),
+            prepend(path, user_args),
+        ),
         _ => (path, user_args),
     };
     Ok(invocation)
@@ -400,6 +409,37 @@ mod tests {
         let mut registry = SkillRegistry::load(root, &BTreeSet::new(), &BTreeSet::new()).unwrap();
         registry.trust_all();
         registry
+    }
+
+    /// A bundled skill's Python script runs through an interpreter. Handing the
+    /// .py file to the OS as the program (what the fallback arm does) fails on
+    /// Windows, where the UI UX Pro Max skills' search scripts would never run.
+    #[tokio::test]
+    async fn python_scripts_run_through_the_platforms_python() {
+        let temp = TempDir::new().unwrap();
+        let registry = registry_with_script(&temp, "search.py", "print('ok')");
+
+        let invocation = prepare(
+            &serde_json::json!({
+                "skill": "test-skill",
+                "script": "search.py",
+                "args": ["a query", "--domain", "style"],
+            }),
+            &registry,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            invocation.program,
+            if cfg!(windows) { "python" } else { "python3" }
+        );
+        assert_eq!(
+            invocation.arguments.last().map(String::as_str),
+            Some("style")
+        );
+        assert!(invocation.arguments[0].ends_with("search.py"));
     }
 
     #[cfg(windows)]
