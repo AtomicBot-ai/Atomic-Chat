@@ -40,6 +40,7 @@
   "failedToRelocateDataFolderDesc": "Failed to relocate data folder. Please try again.",
   "factoryResetTitle": "Reset to Factory Settings",
   "factoryResetDesc": "This will reset all app settings to their defaults. This can't be undone. We only recommend this if the app is corrupted.",
+  "factoryResetFailed": "Failed to reset Radium",
   "cancel": "Cancel",
   "reset": "Reset",
   "resources": "Resources",

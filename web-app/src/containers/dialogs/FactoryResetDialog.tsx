@@ -1,4 +1,6 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { IconLoader2 } from '@tabler/icons-react'
+import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -13,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 
 interface FactoryResetDialogProps {
-  onReset: () => void
+  onReset: () => void | Promise<void>
   children: React.ReactNode
 }
 
@@ -22,26 +24,55 @@ export function FactoryResetDialog({
   children,
 }: FactoryResetDialogProps) {
   const { t } = useTranslation()
+  const isMountedRef = useRef(true)
   const resetButtonRef = useRef<HTMLButtonElement>(null)
+  const [isOpen, setIsOpen] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
-  const handleReset = () => {
-    onReset()
-  }
+  useEffect(
+    () => () => {
+      isMountedRef.current = false
+    },
+    []
+  )
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleReset()
+  const handleReset = async () => {
+    if (isResetting) return
+
+    let shouldClose = false
+    setIsResetting(true)
+    try {
+      await onReset()
+      shouldClose = true
+    } catch (error) {
+      toast.error(t('settings:general.factoryResetFailed'))
+      console.error('Factory reset failed:', error)
+    } finally {
+      if (isMountedRef.current) setIsResetting(false)
+      if (isMountedRef.current && shouldClose) setIsOpen(false)
     }
   }
 
+  // While a reset is running the dialog must not be dismissed. Escape,
+  // pointer-down-outside and interact-outside share one guard so the behaviour
+  // stays in a single place.
+  const preventCloseWhileResetting = (event: { preventDefault: () => void }) => {
+    if (isResetting) event.preventDefault()
+  }
+
   return (
-    <Dialog>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
+        aria-busy={isResetting}
+        showCloseButton={!isResetting}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           resetButtonRef.current?.focus()
         }}
+        onEscapeKeyDown={preventCloseWhileResetting}
+        onPointerDownOutside={preventCloseWhileResetting}
+        onInteractOutside={preventCloseWhileResetting}
       >
         <DialogHeader>
           <DialogTitle>{t('settings:general.factoryResetTitle')}</DialogTitle>
@@ -50,27 +81,35 @@ export function FactoryResetDialog({
           </DialogDescription>
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="hover:no-underline w-full sm:w-auto"
+                disabled={isResetting}
               >
                 {t('settings:general.cancel')}
               </Button>
             </DialogClose>
-            <DialogClose asChild>
-              <Button
-                ref={resetButtonRef}
-                variant="destructive"
-                onClick={handleReset}
-                onKeyDown={handleKeyDown}
-                size="sm"
-                className="w-full sm:w-auto"
-                aria-label={t('settings:general.reset')}
-              >
-                {t('settings:general.reset')}
-              </Button>
-            </DialogClose>
+            <Button
+              ref={resetButtonRef}
+              variant="destructive"
+              onClick={() => void handleReset()}
+              size="sm"
+              className="w-full sm:w-auto"
+              aria-label={t('settings:general.reset')}
+              aria-busy={isResetting}
+              disabled={isResetting}
+            >
+              {isResetting && (
+                <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              {t('settings:general.reset')}
+            </Button>
+            {isResetting && (
+              <span className="sr-only" role="status" aria-live="polite">
+                {t('common:loading')}
+              </span>
+            )}
           </DialogFooter>
         </DialogHeader>
       </DialogContent>
