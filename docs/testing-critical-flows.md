@@ -350,6 +350,17 @@ Existing evidence:
   tile, the wizard's Done gate, and the output-folder change.
 - `NavMain.test.tsx` checks the Images row sits after Models and disappears
   without the media-generation feature.
+- The endpoint's Local API Server comes up for an image model with no chat
+  model (ADR 2026-09-25): `localApiServerControl.test.ts` reads a loaded or
+  loading model as resident and raises a stopped server only with auto-start
+  on; `image-generation-store.test.ts` raises it once the image or video model
+  is resident and never after a refused load; `useLocalApiServerControl.test.tsx`
+  proves Start keeps a resident image model and loads no chat model beside it;
+  `ImageApiSettingsCard.test.tsx` starts a stopped server from the embedded
+  card. On the desktop build, `image-api.spec.ts` gets a picture from an
+  image-only profile through the auto-started server, "Start server" and the
+  Images page's card. Run on 2026-09-25 on macOS arm64 against core 0.4.0:
+  all three scenarios pass.
 
 Gap:
 
@@ -470,6 +481,14 @@ Existing evidence:
   arm64 against core 0.4.0: every scenario passes; the restart scenario's
   teardown reports a leftover bundled llama.cpp backend process, which the
   unchanged image restart scenario reports on the same machine too.
+- `/v1/videos` gets its Local API Server with a video model and no chat model
+  (ADR 2026-09-25): `image-generation-store.test.ts` raises the server once
+  a video model is resident, `ImageApiSettingsCard.test.tsx` starts a
+  stopped one from the Video page's card, and `video-api.spec.ts` on the
+  desktop build queues a clip, polls it to completion and downloads the WebM
+  from a video-only profile, through the auto-started server and through the
+  Video page's card. Run on 2026-09-25 on macOS arm64 against core 0.4.0:
+  both scenarios pass.
 
 Gap:
 

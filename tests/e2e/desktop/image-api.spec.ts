@@ -2,7 +2,9 @@
  * The image endpoint for outside clients: Settings → Media shows where it is
  * and how to call it; an OpenAI-style client gets a picture through the local
  * API with the same key gate as chat; and the picture it made shows up in the
- * app's gallery without a restart.
+ * app's gallery without a restart. An image-only user — no chat model at all —
+ * gets the server that serves it: with the image model when auto-start is on,
+ * from "Start server" or from the Images page's own card when it is off.
  */
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -98,6 +100,114 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for outside clients',
         timeoutMsg: "the outside client's picture did not reach the gallery",
       })
       expect((await diffusionStatus(dataFolder)).activeJob).toBeNull()
+    })
+  }, 300_000)
+})
+
+/** Resolves once the profile's Local API Server accepts connections. */
+async function serverListening(session: Session): Promise<void> {
+  await session.app.browser.waitUntil(
+    async () => {
+      try {
+        await fetch(`http://127.0.0.1:${session.apiPort}/v1/models`)
+        return true
+      } catch {
+        return false
+      }
+    },
+    { timeout: 60_000, timeoutMsg: 'the Local API Server never came up' }
+  )
+}
+
+/** A picture requested the way an outside client would, answered as PNG bytes. */
+async function expectPicture(session: Session, prompt: string): Promise<void> {
+  const made = await fetch(`http://127.0.0.1:${session.apiPort}/v1/images/generations`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${LOCAL_API_KEY}` },
+    body: JSON.stringify({ prompt, n: 1, seed: 3, size: '256x256' }),
+  })
+  expect(made.status, await made.clone().text()).toBe(200)
+  const answer = (await made.json()) as { data: Array<{ b64_json: string }> }
+  expect(Buffer.from(answer.data[0]?.b64_json ?? '', 'base64').subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+}
+
+function imageOnlySession(name: string, apiServer: Record<string, unknown>): Promise<Session> {
+  return startSession(name, {
+    apiServer: { apiKey: LOCAL_API_KEY, ...apiServer },
+    webviewSeed: imageSeed(),
+    imageEngines: [`${IMAGE_ENGINE_TAG}/${IMAGE_BACKEND_ID}`],
+    prepare: async (profile) => {
+      await installFakeImageEngine(profile)
+      await writeFakeImageModel(profile)
+    },
+  })
+}
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for an image-only user, auto-start on', () => {
+  let session: Session
+
+  beforeAll(async () => {
+    session = await imageOnlySession('image-api-auto-start', { enableOnStartup: true })
+  })
+
+  afterAll(async () => {
+    if (session) expect(await endSession(session)).toEqual([])
+  })
+
+  it('brings the Local API Server up with the image model', async () => {
+    await withArtifacts(session, async () => {
+      await openImages(session)
+      // Auto-start raises the server for a running model, and nothing runs yet.
+      await expect(fetch(`http://127.0.0.1:${session.apiPort}/v1/models`)).rejects.toThrow()
+
+      await loadImageModel(session)
+      await serverListening(session)
+      await expectPicture(session, 'a cube for a client of the auto-started server')
+    })
+  }, 300_000)
+})
+
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for an image-only user, auto-start off', () => {
+  let session: Session
+
+  beforeAll(async () => {
+    session = await imageOnlySession('image-api-start', {})
+  })
+
+  afterAll(async () => {
+    if (session) expect(await endSession(session)).toEqual([])
+  })
+
+  it('starts the server with no chat model, from the API screen and from the Images page', async () => {
+    await withArtifacts(session, async () => {
+      const browser = session.app.browser
+      const models = `http://127.0.0.1:${session.apiPort}/v1/models`
+
+      await openImages(session)
+      await loadImageModel(session)
+      // Auto-start is off: the model is resident and nothing listens.
+      await expect(fetch(models)).rejects.toThrow()
+
+      // "Start server" used to load a chat model first; with none on disk it never started.
+      await browser.$('a=API').click()
+      await browser.$('button=Start server').click()
+      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      await expectPicture(session, 'a cube for a client of the API screen')
+      await browser.$('button=Stop server').click()
+      await browser.$('button=Start server').waitForDisplayed({ timeout: 30_000 })
+      await expect(fetch(models)).rejects.toThrow()
+
+      // The Images page's own card says the server is down and brings it up in place.
+      await openImages(session)
+      await browser.$('[data-testid="image-advanced-toggle"]').click()
+      const stopped = browser.$('[data-testid="image-api-server-stopped"]')
+      await stopped.waitForDisplayed({ timeout: 30_000 })
+      await browser.$('[data-testid="image-api-start-server"]').click()
+      await stopped.waitForDisplayed({ reverse: true, timeout: 60_000 })
+      await expectPicture(session, 'a cube for a client of the Images page')
+
+      // Neither start loaded anything beside the image model, and it is still the one resident.
+      expect((await diffusionStatus(session.profile.dataFolder)).model.state).toBe('loaded')
     })
   }, 300_000)
 })

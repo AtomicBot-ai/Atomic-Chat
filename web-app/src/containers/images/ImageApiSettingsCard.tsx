@@ -12,6 +12,7 @@ import { Card, CardItem } from '@/containers/Card'
 import { CopyButton } from '@/containers/CopyButton'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
@@ -43,9 +44,48 @@ const RESOURCES = {
 } as const
 
 /**
- * Discoverability for the public image endpoint. The server and model controls
- * stay on their existing screens; this card only describes the shared route
- * and reflects whether its two prerequisites are currently available.
+ * The endpoint shown above answers nothing while the Local API Server is down,
+ * so the card says so and starts it in place. No chat model is loaded for it:
+ * the route needs the image or video model, and a chat model could evict it.
+ */
+function StartServerAction() {
+  const { t } = useTranslation()
+  const server = useLocalApiServerControl()
+  const pending = server.status === 'pending'
+
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-2 pt-3"
+      data-testid="image-api-server-stopped"
+    >
+      <span className="flex min-w-0 items-center gap-1.5 text-xs">
+        <IconCircleX size={14} className="shrink-0" />
+        <span className="min-w-0">{t('settings:media.apiServerStopped')}</span>
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full min-w-0 rounded-full"
+        disabled={pending}
+        onClick={() => void server.start({ ensureModel: false })}
+        data-testid="image-api-start-server"
+      >
+        <span className="truncate">
+          {pending
+            ? t('settings:localApiServer.startingServer')
+            : t('settings:localApiServer.startServer')}
+        </span>
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * Discoverability for the public image endpoint. The model controls and the
+ * server settings stay on their existing screens; this card describes the
+ * shared route and reflects whether its two prerequisites are currently
+ * available. The embedded one on the Images and Video pages can also start a
+ * stopped server.
  */
 export function ImageApiSettingsCard({
   variant = 'default',
@@ -125,6 +165,7 @@ export function ImageApiSettingsCard({
               </Link>
             </Button>
           </div>
+          {!serverReady && <StartServerAction />}
         </div>
       </Card>
     )

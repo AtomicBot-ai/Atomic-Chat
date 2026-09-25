@@ -14,6 +14,7 @@ const { appState, localApiState, startServer, stopServer } = vi.hoisted(() => ({
     corsEnabled: true,
     verboseLogs: true,
     proxyTimeout: 600,
+    enableOnStartup: true,
     setServerPort: vi.fn(),
   },
   startServer: vi.fn(),
@@ -28,7 +29,15 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
 }))
 
 import {
+  makeLoadedStatus,
+  makeStatus,
+} from '@/lib/diffusion/__tests__/image-fixtures'
+import type { DiffusionStatus } from '@/services/diffusion/types'
+
+import {
   getLocalApiServerUrl,
+  hasResidentMediaModel,
+  raiseLocalApiServerForMediaModel,
   setLocalApiServerRunning,
   startLocalApiServer,
   stopLocalApiServer,
@@ -40,6 +49,8 @@ describe('localApiServerControl', () => {
     localApiState.serverHost = '127.0.0.1'
     localApiState.serverPort = 1337
     localApiState.apiPrefix = '/v1'
+    localApiState.enableOnStartup = true
+    appState.serverStatus = 'stopped'
     startServer.mockResolvedValue(1337)
     stopServer.mockResolvedValue(undefined)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,6 +129,87 @@ describe('localApiServerControl', () => {
       'pending',
       'stopped',
     ])
+  })
+
+  describe('hasResidentMediaModel', () => {
+    const diffusionWith = (status: DiffusionStatus, supported = true) => ({
+      isSupported: () => supported,
+      getStatus: vi.fn(async () => status),
+    })
+
+    it.each([
+      ['a loaded image model', true, makeLoadedStatus()],
+      [
+        'a model still loading',
+        true,
+        makeStatus({ model: { state: 'loading', loaded: null } }),
+      ],
+      ['nothing loaded', false, makeStatus()],
+      [
+        'a host the plugin refuses',
+        false,
+        { ...makeLoadedStatus(), configured: false },
+      ],
+    ])('reads %s as resident: %s', async (_label, expected, status) => {
+      await expect(hasResidentMediaModel(diffusionWith(status))).resolves.toBe(
+        expected
+      )
+    })
+
+    it('never asks a build without image generation', async () => {
+      const diffusion = diffusionWith(makeLoadedStatus(), false)
+      await expect(hasResidentMediaModel(diffusion)).resolves.toBe(false)
+      expect(diffusion.getStatus).not.toHaveBeenCalled()
+    })
+
+    it('reads a status it cannot get as nothing resident', async () => {
+      const diffusion = {
+        isSupported: () => true,
+        getStatus: vi.fn(async () => {
+          throw new Error('core is gone')
+        }),
+      }
+      await expect(hasResidentMediaModel(diffusion)).resolves.toBe(false)
+    })
+  })
+
+  describe('raiseLocalApiServerForMediaModel', () => {
+    it('starts a stopped server when auto-start is on', async () => {
+      await raiseLocalApiServerForMediaModel()
+      expect(startServer).toHaveBeenCalledTimes(1)
+      expect(appState.setServerStatus.mock.calls.map((c) => c[0])).toEqual([
+        'pending',
+        'running',
+      ])
+    })
+
+    it('leaves the server down when auto-start is off', async () => {
+      localApiState.enableOnStartup = false
+      await raiseLocalApiServerForMediaModel()
+      expect(startServer).not.toHaveBeenCalled()
+      expect(appState.setServerStatus).not.toHaveBeenCalled()
+    })
+
+    it.each(['running', 'pending'] as const)(
+      'leaves a %s server alone',
+      async (status) => {
+        appState.serverStatus = status
+        await raiseLocalApiServerForMediaModel()
+        expect(startServer).not.toHaveBeenCalled()
+      }
+    )
+
+    it('swallows a failed start, leaving the status stopped', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      startServer.mockRejectedValue(new Error('Address already in use'))
+      await expect(raiseLocalApiServerForMediaModel()).resolves.toBeUndefined()
+      expect(appState.setServerStatus.mock.calls.map((c) => c[0])).toEqual([
+        'pending',
+        'stopped',
+      ])
+      expect(warn).toHaveBeenCalled()
+      warn.mockRestore()
+    })
   })
 
   describe('getLocalApiServerUrl', () => {

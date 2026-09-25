@@ -14,12 +14,17 @@ import {
   findProviderForModel,
 } from '@/utils/ensureModelForServer'
 import {
+  hasResidentMediaModel,
   setLocalApiServerRunning,
   stopLocalApiServer,
 } from '@/utils/localApiServerControl'
 
 type StartOptions = {
-  /** Load a model first when none is running. Defaults to `true`. */
+  /**
+   * Load a chat model first when none is running. Defaults to `true`; skipped
+   * while an image or video model is resident, which the server serves by
+   * itself and which a chat model could evict.
+   */
   ensureModel?: boolean
 }
 
@@ -67,7 +72,10 @@ export function useLocalApiServerControl() {
       setServerStatus('pending')
 
       try {
-        if (ensureModel) {
+        if (
+          ensureModel &&
+          !(await hasResidentMediaModel(serviceHub.diffusion()))
+        ) {
           // ATO-270: the model load has no timeout of its own; without this
           // watchdog a stuck backend leaves the button spinning forever.
           const result = await withTimeout(
