@@ -15,6 +15,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Card } from '@/containers/Card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { OllamaPanel } from '@/containers/runtimes/OllamaPanel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -47,13 +48,20 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function Chip({ children, tone = 'muted' }: { children: React.ReactNode; tone?: 'muted' | 'good' | 'warn' }) {
+function Chip({
+  children,
+  tone = 'muted',
+}: {
+  children: React.ReactNode
+  tone?: 'muted' | 'good' | 'warn'
+}) {
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
         tone === 'muted' && 'bg-secondary text-muted-foreground',
-        tone === 'good' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+        tone === 'good' &&
+          'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
         tone === 'warn' && 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
       )}
     >
@@ -78,7 +86,9 @@ function DetectionActions({
   if (target.kind === 'media') {
     return (
       <Button asChild size="xs" variant="outline">
-        <Link to={route.settings.media}>{t('settings:runtimes.setUpInMedia')}</Link>
+        <Link to={route.settings.media}>
+          {t('settings:runtimes.setUpInMedia')}
+        </Link>
       </Button>
     )
   }
@@ -86,7 +96,12 @@ function DetectionActions({
     return (
       <span className="flex items-center gap-2">
         <Chip tone="good">{t('settings:runtimes.connected')}</Chip>
-        <Button size="xs" variant="ghost" onClick={onConnect} disabled={connecting}>
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={onConnect}
+          disabled={connecting}
+        >
           {t('settings:runtimes.refreshModels')}
         </Button>
       </span>
@@ -95,7 +110,9 @@ function DetectionActions({
   return (
     <Button size="xs" onClick={onConnect} disabled={connecting}>
       <IconPlugConnected />
-      {connecting ? t('settings:runtimes.connecting') : t('settings:runtimes.connect')}
+      {connecting
+        ? t('settings:runtimes.connecting')
+        : t('settings:runtimes.connect')}
     </Button>
   )
 }
@@ -115,14 +132,18 @@ function DetectionRow({
   return (
     <li className="flex flex-col gap-1 border-b border-border/40 pb-3 last:border-none last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-foreground">{detectionName(detection, byId)}</span>
+        <span className="font-medium text-foreground">
+          {detectionName(detection, byId)}
+        </span>
         {detection.confidence === 'confirmed' ? (
           <Chip tone="good">{t('settings:runtimes.confirmed')}</Chip>
         ) : (
           <Chip tone="warn">{t('settings:runtimes.portGuess')}</Chip>
         )}
         {detection.version && <Chip>{detection.version}</Chip>}
-        <span className="text-xs text-muted-foreground font-mono">{detection.baseUrl}</span>
+        <span className="text-xs text-muted-foreground font-mono">
+          {detection.baseUrl}
+        </span>
         {actions && <span className="ml-auto">{actions}</span>}
       </div>
       <div className="text-sm text-muted-foreground">
@@ -130,10 +151,13 @@ function DetectionRow({
           // ComfyUI and InvokeAI list no models through this API; say nothing
           // rather than "Models: 0".
           detection.models.length > 0 &&
-            t('settings:runtimes.modelCount', { count: detection.models.length }),
+            t('settings:runtimes.modelCount', {
+              count: detection.models.length,
+            }),
           detection.loadedModels.length > 0 &&
             `${t('settings:runtimes.loaded')}: ${detection.loadedModels.join(', ')}`,
-          generated && t('settings:runtimes.tokensGenerated', { count: generated }),
+          generated &&
+            t('settings:runtimes.tokensGenerated', { count: generated }),
           typeof running === 'number' &&
             t('settings:runtimes.requestsRunning', { count: running }),
         ]
@@ -154,7 +178,9 @@ function DetectionRow({
       {detection.runtimeId && detection.alternatives.length > 0 && (
         <div className="text-xs text-muted-foreground">
           {t('settings:runtimes.orPossibly', {
-            names: detection.alternatives.map((id) => byId.get(id)?.name ?? id).join(', '),
+            names: detection.alternatives
+              .map((id) => byId.get(id)?.name ?? id)
+              .join(', '),
           })}
         </div>
       )}
@@ -188,14 +214,20 @@ function CatalogRow({
         </span>
         <span className="ml-auto flex items-center gap-2">
           {runtime.maintenance !== 'active' && (
-            <Chip tone="warn">{t(`settings:runtimes.maintenance.${runtime.maintenance}`)}</Chip>
+            <Chip tone="warn">
+              {t(`settings:runtimes.maintenance.${runtime.maintenance}`)}
+            </Chip>
           )}
-          <span className="text-xs text-muted-foreground">{runtime.license.spdx}</span>
+          <span className="text-xs text-muted-foreground">
+            {runtime.license.spdx}
+          </span>
           {runtime.verified && (
             <IconCircleCheck
               size={14}
               className="text-emerald-600"
-              aria-label={t('settings:runtimes.verified', { date: runtime.verified_on })}
+              aria-label={t('settings:runtimes.verified', {
+                date: runtime.verified_on,
+              })}
             />
           )}
         </span>
@@ -204,17 +236,25 @@ function CatalogRow({
         <div className="flex flex-col gap-1 pb-3 pl-6 text-sm text-muted-foreground">
           <p className="text-foreground">{runtime.note}</p>
           <p>
-            {t('settings:runtimes.formats')}: {runtime.formats.join(', ') || '—'} ·{' '}
-            {t('settings:runtimes.capabilities')}: {runtime.capabilities.join(', ') || '—'}
+            {t('settings:runtimes.formats')}:{' '}
+            {runtime.formats.join(', ') || '—'} ·{' '}
+            {t('settings:runtimes.capabilities')}:{' '}
+            {runtime.capabilities.join(', ') || '—'}
           </p>
           <p>
-            Windows: {runtime.platforms.windows} · Linux: {runtime.platforms.linux} · macOS:{' '}
-            {runtime.platforms.macos}
+            Windows: {runtime.platforms.windows} · Linux:{' '}
+            {runtime.platforms.linux} · macOS: {runtime.platforms.macos}
             {runtime.default_port !== null && (
-              <> · {t('settings:runtimes.port')}: {runtime.default_port}</>
+              <>
+                {' '}
+                · {t('settings:runtimes.port')}: {runtime.default_port}
+              </>
             )}
             {runtime.wraps.length > 0 && (
-              <> · {t('settings:runtimes.wraps')}: {runtime.wraps.join(', ')}</>
+              <>
+                {' '}
+                · {t('settings:runtimes.wraps')}: {runtime.wraps.join(', ')}
+              </>
             )}
           </p>
           <a
@@ -240,8 +280,13 @@ function RuntimesSettings() {
   const [scanError, setScanError] = useState<string | null>(null)
   const [address, setAddress] = useState('')
   const [extra, setExtra] = useState<string[]>([])
-  const [filter, setFilter] = useState<RuntimeFilter>({ tier: 'all', query: '' })
+  const [filter, setFilter] = useState<RuntimeFilter>({
+    tier: 'all',
+    query: '',
+  })
   const [openId, setOpenId] = useState<string | null>(null)
+  // The full catalog is reference material: folded away until asked for.
+  const [catalogOpen, setCatalogOpen] = useState(false)
   const [connectingUrl, setConnectingUrl] = useState<string | null>(null)
   const serviceHub = useServiceHub()
   const { providers, addProvider, updateProvider } = useModelProvider()
@@ -280,7 +325,8 @@ function RuntimesSettings() {
           providers: useModelProvider.getState().providers,
           addProvider,
           updateProvider,
-          getProviderByName: (name) => useModelProvider.getState().getProviderByName(name),
+          getProviderByName: (name) =>
+            useModelProvider.getState().getProviderByName(name),
           serviceHub,
         })
         toast.success(
@@ -290,7 +336,9 @@ function RuntimesSettings() {
           })
         )
       } catch (error) {
-        toast.error(t('settings:runtimes.connectFailed'), { description: errorText(error) })
+        toast.error(t('settings:runtimes.connectFailed'), {
+          description: errorText(error),
+        })
       } finally {
         setConnectingUrl(null)
       }
@@ -307,13 +355,30 @@ function RuntimesSettings() {
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
-          <span className="font-medium text-base font-studio">{t('common:settings')}</span>
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col gap-4 w-full">
+            <Card
+              header={
+                <div className="mb-3">
+                  <h1 className="font-medium text-foreground text-base">
+                    {t('settings:runtimes.yourRuntimesTitle')}
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings:runtimes.yourRuntimesDesc')}
+                  </p>
+                </div>
+              }
+            >
+              <OllamaPanel />
+            </Card>
+
             <Card
               header={
                 <div className="flex items-center justify-between mb-2 gap-4">
@@ -327,7 +392,9 @@ function RuntimesSettings() {
                   </div>
                   <Button size="sm" onClick={scan} disabled={scanning}>
                     <IconRadar />
-                    {scanning ? t('settings:runtimes.scanning') : t('settings:runtimes.scan')}
+                    {scanning
+                      ? t('settings:runtimes.scanning')
+                      : t('settings:runtimes.scan')}
                   </Button>
                 </div>
               }
@@ -340,7 +407,12 @@ function RuntimesSettings() {
                   onChange={(event) => setAddress(event.target.value)}
                   onKeyDown={(event) => event.key === 'Enter' && addAddress()}
                 />
-                <Button size="sm" variant="outline" onClick={addAddress} disabled={!address.trim()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addAddress}
+                  disabled={!address.trim()}
+                >
                   {t('settings:runtimes.addAddress')}
                 </Button>
               </div>
@@ -355,7 +427,9 @@ function RuntimesSettings() {
                       <button
                         type="button"
                         aria-label={t('settings:runtimes.remove', { url })}
-                        onClick={() => setExtra(extra.filter((item) => item !== url))}
+                        onClick={() =>
+                          setExtra(extra.filter((item) => item !== url))
+                        }
                       >
                         <IconX size={12} />
                       </button>
@@ -363,15 +437,24 @@ function RuntimesSettings() {
                   ))}
                 </div>
               )}
-              {scanError && <p className="text-sm text-destructive">{scanError}</p>}
+              {scanError && (
+                <p className="text-sm text-destructive">{scanError}</p>
+              )}
               {detections === null && !scanError && (
-                <p className="text-sm text-muted-foreground">{t('settings:runtimes.notScanned')}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t('settings:runtimes.notScanned')}
+                </p>
               )}
               {detections !== null && detections.length === 0 && (
-                <p className="text-sm text-muted-foreground">{t('settings:runtimes.noneFound')}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t('settings:runtimes.noneFound')}
+                </p>
               )}
               {detections !== null && detections.length > 0 && (
-                <ul className="flex flex-col gap-3" data-testid="runtime-detections">
+                <ul
+                  className="flex flex-col gap-3"
+                  data-testid="runtime-detections"
+                >
                   {detections.map((detection) => {
                     const target = connectTarget(detection, byId)
                     return (
@@ -397,46 +480,78 @@ function RuntimesSettings() {
             <Card
               header={
                 <div className="flex flex-col gap-2 mb-2">
-                  <h1 className="font-medium text-foreground text-base">
-                    {t('settings:runtimes.catalogTitle', { count: catalog.length })}
-                  </h1>
-                  <p className="text-sm text-muted-foreground">
-                    {t('settings:runtimes.catalogDesc')}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(['all', ...TIER_ORDER] as const).map((tier) => (
-                      <Button
-                        key={tier}
-                        size="xs"
-                        variant={filter.tier === tier ? 'default' : 'outline'}
-                        onClick={() => setFilter({ ...filter, tier })}
-                      >
-                        {tier === 'all'
-                          ? t('settings:runtimes.all', { count: catalog.length })
-                          : `${t(`settings:runtimes.tier.${tier}`)} (${counts[tier]})`}
-                      </Button>
-                    ))}
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h1 className="font-medium text-foreground text-base">
+                        {t('settings:runtimes.catalogTitle', {
+                          count: catalog.length,
+                        })}
+                      </h1>
+                      <p className="text-sm text-muted-foreground">
+                        {t('settings:runtimes.catalogDesc')}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-expanded={catalogOpen}
+                      onClick={() => setCatalogOpen(!catalogOpen)}
+                    >
+                      {catalogOpen
+                        ? t('settings:runtimes.hideCatalog')
+                        : t('settings:runtimes.showCatalog')}
+                    </Button>
                   </div>
-                  <Input
-                    value={filter.query}
-                    placeholder={t('settings:runtimes.search')}
-                    aria-label={t('settings:runtimes.search')}
-                    onChange={(event) => setFilter({ ...filter, query: event.target.value })}
-                  />
+                  {catalogOpen && (
+                    <>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(['all', ...TIER_ORDER] as const).map((tier) => (
+                          <Button
+                            key={tier}
+                            size="xs"
+                            variant={
+                              filter.tier === tier ? 'default' : 'outline'
+                            }
+                            onClick={() => setFilter({ ...filter, tier })}
+                          >
+                            {tier === 'all'
+                              ? t('settings:runtimes.all', {
+                                  count: catalog.length,
+                                })
+                              : `${t(`settings:runtimes.tier.${tier}`)} (${counts[tier]})`}
+                          </Button>
+                        ))}
+                      </div>
+                      <Input
+                        value={filter.query}
+                        placeholder={t('settings:runtimes.search')}
+                        aria-label={t('settings:runtimes.search')}
+                        onChange={(event) =>
+                          setFilter({ ...filter, query: event.target.value })
+                        }
+                      />
+                    </>
+                  )}
                 </div>
               }
             >
-              {catalogError && <p className="text-sm text-destructive">{catalogError}</p>}
-              <ul data-testid="runtime-catalog">
-                {rows.map((runtime) => (
-                  <CatalogRow
-                    key={runtime.id}
-                    runtime={runtime}
-                    open={openId === runtime.id}
-                    onToggle={() => setOpenId(openId === runtime.id ? null : runtime.id)}
-                  />
-                ))}
-              </ul>
+              {catalogError && (
+                <p className="text-sm text-destructive">{catalogError}</p>
+              )}
+              {catalogOpen && (
+                <ul data-testid="runtime-catalog">
+                  {rows.map((runtime) => (
+                    <CatalogRow
+                      key={runtime.id}
+                      runtime={runtime}
+                      open={openId === runtime.id}
+                      onToggle={() =>
+                        setOpenId(openId === runtime.id ? null : runtime.id)
+                      }
+                    />
+                  ))}
+                </ul>
+              )}
             </Card>
           </div>
         </div>

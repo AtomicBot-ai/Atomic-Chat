@@ -541,6 +541,10 @@
     "refreshModels": "Refresh models",
     "setUpInMedia": "Set up in Media",
     "connectedToast": "{{name}} connected with {{count}} models. They are in the model picker now.",
-    "connectFailed": "Could not connect"
+    "connectFailed": "Could not connect",
+    "yourRuntimesTitle": "Your runtimes",
+    "yourRuntimesDesc": "Install, start, configure and pick models for each runtime here, without switching to its own window.",
+    "showCatalog": "Show all runtimes",
+    "hideCatalog": "Hide"
   }
 }

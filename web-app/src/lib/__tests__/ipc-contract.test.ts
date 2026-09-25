@@ -47,6 +47,23 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   // adapter-layer.md.
   'runtimes_catalog',
   'runtimes_detect',
+  // Settings > Runtimes > Ollama: install, run, configure and manage models
+  // of Radium's Ollama. Desktop only for the same reason. See docs/decisions/
+  // 2026-09-25-manage-ollama-from-radium.md.
+  'ollama_delete_model',
+  'ollama_install',
+  'ollama_load_model',
+  'ollama_logs',
+  'ollama_models',
+  'ollama_pull',
+  'ollama_pull_cancel',
+  'ollama_restart',
+  'ollama_settings_set',
+  'ollama_start',
+  'ollama_status',
+  'ollama_stop',
+  'ollama_take_over',
+  'ollama_unload_model',
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',

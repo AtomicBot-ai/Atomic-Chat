@@ -7,6 +7,7 @@
 pub mod commands;
 pub mod descriptor;
 pub mod gpu;
+pub mod ollama;
 pub mod ports;
 pub mod probe;
 pub mod registry;

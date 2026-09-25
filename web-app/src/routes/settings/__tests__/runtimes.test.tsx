@@ -4,6 +4,10 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 const invoke = vi.fn()
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invoke(...args) }))
 
+vi.mock('@/containers/runtimes/OllamaPanel', () => ({
+  OllamaPanel: () => <div data-testid="ollama-panel" />,
+}))
+
 vi.mock('@/containers/SettingsMenu', () => ({
   default: () => <div data-testid="settings-menu" />,
 }))
@@ -96,7 +100,10 @@ const catalog = [
 
 function renderPage() {
   const Component = (Route as unknown as { component: React.ComponentType }).component
-  return render(<Component />)
+  const view = render(<Component />)
+  // The catalog is folded away until asked for.
+  fireEvent.click(screen.getByRole('button', { name: 'settings:runtimes.showCatalog' }))
+  return view
 }
 
 describe('Settings > Runtimes', () => {
@@ -207,5 +214,14 @@ describe('Settings > Runtimes', () => {
     rerender(<Component />)
     expect(await screen.findByText('settings:runtimes.connected')).toBeInTheDocument()
     expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it('shows the managed runtimes first and keeps the catalog folded until asked', async () => {
+    const Component = (Route as unknown as { component: React.ComponentType }).component
+    render(<Component />)
+    expect(screen.getByTestId('ollama-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('runtime-catalog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'settings:runtimes.showCatalog' }))
+    expect(await screen.findByTestId('runtime-catalog')).toBeInTheDocument()
   })
 })
