@@ -134,7 +134,12 @@ export function ImageModelRuntimeAction({
               disabled={actionDisabled}
               onClick={activate}
               className={cn(
-                'group/image-runtime flex size-7 shrink-0 items-center justify-center rounded-full border bg-secondary/40 outline-none transition-colors hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default',
+                'group/image-runtime flex size-7 shrink-0 items-center justify-center rounded-full border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default',
+                // Start is the call to action, like Load in the list row; a
+                // running or switching model stays a quiet secondary status.
+                phase === 'idle'
+                  ? 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
+                  : 'bg-secondary/40 hover:bg-secondary/70',
                 className
               )}
             >
@@ -160,12 +165,7 @@ export function ImageModelRuntimeAction({
                   />
                 </>
               ) : (
-                <IconPlayerPlay
-                  size={14}
-                  stroke={1.8}
-                  aria-hidden
-                  className="text-muted-foreground"
-                />
+                <IconPlayerPlay size={14} stroke={1.8} aria-hidden />
               )}
             </button>
           </TooltipTrigger>

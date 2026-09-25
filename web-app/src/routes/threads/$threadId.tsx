@@ -11,6 +11,7 @@ import {
   canDisableReasoning,
 } from '@/lib/reasoning-effort'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+import { selectThreadModelIfNone } from '@/utils/switchModel'
 
 import HeaderPage from '@/containers/HeaderPage'
 import HeaderContextSize from '@/containers/HeaderContextSize'
@@ -1565,6 +1566,9 @@ function ThreadDetail() {
       ) {
         return
       }
+      selectThreadModelIfNone(
+        searchThreadModel ?? useThreads.getState().threads[threadId]?.model
+      )
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       let isAgentThread =
         resolveThreadExecutionRoute(threadId).route === 'agent-ipc'
@@ -1685,6 +1689,7 @@ function ThreadDetail() {
       deleteMessage,
       processAndRunAgent,
       regenerate,
+      searchThreadModel,
       setChatMessages,
       threadId,
     ]
@@ -1701,6 +1706,9 @@ function ThreadDetail() {
       ) {
         return
       }
+      selectThreadModelIfNone(
+        searchThreadModel ?? useThreads.getState().threads[threadId]?.model
+      )
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
         (m) => m.id === messageId
@@ -1769,6 +1777,7 @@ function ThreadDetail() {
       handleRegenerate,
       setChatMessages,
       regenerate,
+      searchThreadModel,
     ]
   )
 

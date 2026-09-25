@@ -198,12 +198,20 @@ describe.each(localProviders)('explicit unload from %s', (provider) => {
       useModelProvider.getState().getProviderByName(provider)?.models
     ).toEqual([model])
   })
-  it('keeps the selection through a temporary backend restart and a failed load', async () => {
+  it('keeps the selection through a temporary backend restart', async () => {
     select(provider)
     render(<DropdownModelProvider />)
     await act(() => restartLocalModel(hub, provider, model.id))
     expect(pill()).toHaveTextContent('Qwen 3')
     expect(indicator()).toHaveAttribute('data-status', 'ready')
+  })
+  it('goes back to Select Model after a failed load, and a pick retries it', async () => {
+    select(provider)
+    localStorage.setItem(
+      localStorageKey.lastUsedModel,
+      JSON.stringify({ provider, model: model.id })
+    )
+    const view = render(<DropdownModelProvider />)
     act(() => {
       loaded.delete(provider)
       useAppState.getState().setActiveModels([])
@@ -221,8 +229,15 @@ describe.each(localProviders)('explicit unload from %s', (provider) => {
         })
       ).rejects.toThrow('unsupported architecture')
     })
-    expect(pill()).toHaveTextContent('Qwen 3')
-    expect(indicator()).toHaveAttribute('data-status', 'failed')
+    expect(pill()).toHaveTextContent('Select Model')
+    expect(pill()).not.toHaveTextContent('Qwen 3')
+    expect(indicator()).toBeNull()
+    // Preload must not put the model that just failed back on remount.
+    view.unmount()
+    render(<DropdownModelProvider />)
+    await act(async () => {})
+    expect(pill()).toHaveTextContent('Select Model')
+    expect(useModelProvider.getState().selectedProvider).toBe('')
     await act(() =>
       switchToModel({
         providerName: provider,
@@ -230,6 +245,7 @@ describe.each(localProviders)('explicit unload from %s', (provider) => {
         serviceHub: hub,
       })
     )
+    expect(pill()).toHaveTextContent('Qwen 3')
     expect(indicator()).toHaveAttribute('data-status', 'ready')
   })
 })

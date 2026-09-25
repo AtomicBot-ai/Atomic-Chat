@@ -12,6 +12,7 @@ import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useAgentRun } from '@/hooks/useAgentRun'
@@ -209,6 +210,7 @@ describe('ChatInput', () => {
       resumeParams: {},
     })
     useDeferredFirstSend.setState({ queued: null })
+    useModelLoad.getState().setModelLoadError(undefined)
 
     const model = {
       id: 'test-model',
@@ -817,6 +819,118 @@ describe('ChatInput', () => {
       ).not.toBeInTheDocument()
     )
     expect(onSubmit).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('drops a waiting send when the load it waits for fails', async () => {
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+
+    // The failure as `switchToModel` leaves it, in one step: the error is
+    // recorded and the selection is gone.
+    act(() => {
+      useModelLoad
+        .getState()
+        .setModelLoadError('unsupported architecture', model.id)
+      useModelProvider.getState().selectModelProvider('', '')
+    })
+    // A model picked and loaded later must not carry the old message out.
+    act(() => {
+      useModelProvider
+        .getState()
+        .selectModelProvider('llamacpp-upstream', model.id)
+      useModelLoad.getState().setModelLoadError(undefined)
+      useAppState.setState({ activeModels: [model.id] })
+    })
+
+    await act(async () => {})
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Invoke the machine spirit'
+    )
+    unmount()
+  })
+
+  it('sends once a model that failed before comes up on the next Send', async () => {
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    // The previous load failed and cleared the selection; its error stays
+    // recorded until a load succeeds.
+    useModelLoad.getState().setModelLoadError('unsupported architecture', model.id)
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+    expect(useModelProvider.getState().selectedModel?.id).toBe(model.id)
+
+    act(() => useAppState.setState({ loadingModel: true }))
+    act(() => {
+      useModelLoad.getState().setModelLoadError(undefined)
+      useAppState.setState({ activeModels: [model.id], loadingModel: false })
+    })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Invoke the machine spirit',
+        undefined,
+        undefined
+      )
+    )
     unmount()
   })
 
