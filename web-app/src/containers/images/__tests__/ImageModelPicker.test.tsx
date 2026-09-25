@@ -172,6 +172,25 @@ describe('ImageModelPicker', () => {
     expect(screen.getAllByRole('button')).toHaveLength(2)
   })
 
+  it('makes Start the primary action and keeps a running model secondary', () => {
+    const { unmount } = render(
+      <ImageModelPicker open={false} onOpenChange={vi.fn()} />
+    )
+    const ready = screen.getByTestId('image-model-runtime-indicator')
+    expect(ready).toHaveAttribute('data-phase', 'ready')
+    expect(ready).toHaveClass('bg-secondary/40')
+    expect(ready).not.toHaveClass('bg-primary')
+    unmount()
+
+    state.status.model = { state: 'unloaded', loaded: null }
+    render(<ImageModelPicker open={false} onOpenChange={vi.fn()} />)
+    const start = screen.getByTestId('image-model-runtime-indicator')
+    expect(start).toHaveAttribute('data-phase', 'idle')
+    expect(start).toHaveAccessibleName('images:model.load')
+    expect(start).toHaveClass('bg-primary', 'text-primary-foreground')
+    expect(start).not.toHaveClass('bg-secondary/40')
+  })
+
   it('keeps Starting out of the pill and in the reserved status slot', () => {
     state.status.model = { state: 'loading', loaded: null }
     state.loadingArtifactId = 'z-image:q4_k_m'
