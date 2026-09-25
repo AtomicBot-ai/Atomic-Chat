@@ -1341,10 +1341,17 @@ const ChatInput = memo(function ChatInput({
 
   // A model that failed to come up will never satisfy the queued send. Drop
   // the promise rather than leave "starting…" on screen forever; the load
-  // error toast says what happened, and the text is still in the field.
+  // error toast says what happened, and the text is still in the field. The
+  // failure clears the selection (`switchToModel`), so losing it is the
+  // signal: the error itself outlives the failure, and would also drop a send
+  // that starts the same model again. A send armed on a download has no
+  // selection yet, so only the change counts.
+  const hadSelectionRef = useRef(!!selectedModel)
   useEffect(() => {
-    if (queuedSend && selectedModelLoadFailed) setQueuedSend(null)
-  }, [queuedSend, selectedModelLoadFailed])
+    const lostSelection = hadSelectionRef.current && !selectedModel
+    hadSelectionRef.current = !!selectedModel
+    if (queuedSend && lostSelection) setQueuedSend(null)
+  }, [queuedSend, selectedModel])
 
   // Nor will a model the user stops while the send waits — a Cancel on its
   // load, or a Stop (ATO-530). Only the change counts: a send made *to* a

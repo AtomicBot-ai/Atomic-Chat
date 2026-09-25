@@ -315,6 +315,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       // or provider refresh. Last-used/preload must not undo that user choice.
       if (useAppState.getState().userStoppedModels.length > 0) return
 
+      // A failed load leaves the composer empty too (`switchToModel`); putting
+      // the last-used model back would only show the one that just failed.
+      if (useModelLoad.getState().modelLoadError) return
+
       const { preloadModelOnStartup } = useGeneralSetting.getState()
       if (!preloadModelOnStartup) {
         // Preload is disabled: don't pre-select the last used model or

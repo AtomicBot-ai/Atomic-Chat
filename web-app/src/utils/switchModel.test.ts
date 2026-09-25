@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 import type { ServiceHub } from '@/services'
 import { captureHandledError } from '@/lib/sentry'
@@ -12,6 +12,7 @@ import {
   describeModelLoadFailure,
   isExplicitSwitchPending,
   planOomRetry,
+  selectThreadModelIfNone,
   shouldAttemptAutoStart,
   splitModelLoadError,
   stopAllLocalModelsByUser,
@@ -61,6 +62,8 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
           settings: [] as unknown[],
         },
       ] as Array<Record<string, unknown>>,
+      selectedProvider: '',
+      selectedModel: null as { id: string } | null,
       selectModelProvider: vi.fn(),
       // Mirrors the store: a partial update replaces the listed fields.
       updateProvider: (name: string, data: Record<string, unknown>) => {
@@ -709,6 +712,162 @@ describe('load progress and cancel', () => {
     expect(stopModel).toHaveBeenCalledWith('ready-model', 'mlx')
     expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(false)
     appState.userStoppedModels = []
+  })
+
+  describe('the selection after a load that did not come up', () => {
+    const clearedSelection = () =>
+      modelProviderState.selectModelProvider.mock.calls.filter(
+        ([provider, model]) => provider === '' && model === ''
+      )
+
+    beforeEach(() => {
+      modelProviderState.selectedProvider = 'mlx'
+      modelProviderState.selectedModel = { id: 'ready-model' }
+    })
+
+    afterEach(() => {
+      modelProviderState.selectedProvider = ''
+      modelProviderState.selectedModel = null
+    })
+
+    it.each([false, true])(
+      'clears the model that failed (auto-start=%s)',
+      async (isAutoStart) => {
+        const serviceHub = hubWith({
+          startModel: vi.fn().mockRejectedValue(new Error('engine crashed')),
+        })
+
+        await expect(
+          switchToModel({
+            modelId: 'ready-model',
+            providerName: 'mlx',
+            serviceHub,
+            isAutoStart,
+          })
+        ).rejects.toThrow('engine crashed')
+
+        expect(clearedSelection()).toHaveLength(1)
+      }
+    )
+
+    it('keeps a selection that moved on while the load was failing', async () => {
+      modelProviderState.selectedModel = { id: 'other-model' }
+      const serviceHub = hubWith({
+        startModel: vi.fn().mockRejectedValue(new Error('engine crashed')),
+      })
+
+      await expect(
+        switchToModel({ modelId: 'ready-model', providerName: 'mlx', serviceHub })
+      ).rejects.toThrow('engine crashed')
+
+      expect(clearedSelection()).toHaveLength(0)
+    })
+
+    it('keeps the selection when the user cancelled the load', async () => {
+      let rejectLoad: (error: unknown) => void = () => {}
+      const startModel = vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            rejectLoad = reject
+          })
+      )
+      const serviceHub = hubWith({
+        startModel,
+        cancelModelLoad: vi.fn(async () => {
+          rejectLoad(cancelled())
+          return true
+        }),
+      })
+
+      const pending = switchToModel({
+        modelId: 'ready-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      const outcome = expect(pending).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+      })
+      await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
+      await cancelModelLoad(serviceHub)
+      await outcome
+
+      expect(clearedSelection()).toHaveLength(0)
+      appState.userStoppedModels = []
+    })
+
+    it('leaves the selection to a switch requested after the failing one', async () => {
+      let rejectLoad: (error: unknown) => void = () => {}
+      const startModel = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              rejectLoad = reject
+            })
+        )
+        .mockResolvedValueOnce(undefined)
+      const serviceHub = hubWith({ startModel })
+
+      const failing = switchToModel({
+        modelId: 'ready-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      const failed = expect(failing).rejects.toThrow('engine crashed')
+      await vi.waitFor(() => expect(startModel).toHaveBeenCalledOnce())
+      // The user asks for the same model again while the first load runs.
+      const retry = switchToModel({
+        modelId: 'ready-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      rejectLoad(new Error('engine crashed'))
+      await failed
+      await retry
+
+      expect(startModel).toHaveBeenCalledTimes(2)
+      expect(clearedSelection()).toHaveLength(0)
+    })
+  })
+})
+
+describe('selectThreadModelIfNone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    modelProviderState.selectedProvider = ''
+    modelProviderState.selectedModel = null
+    // Mirrors the store here: the selection is what these cases check.
+    modelProviderState.selectModelProvider.mockImplementation(
+      (provider: string, modelId: string) => {
+        modelProviderState.selectedProvider = provider
+        modelProviderState.selectedModel = { id: modelId }
+      }
+    )
+  })
+
+  afterEach(() => {
+    modelProviderState.selectModelProvider.mockReset()
+    modelProviderState.selectedProvider = ''
+    modelProviderState.selectedModel = null
+  })
+
+  it("points an empty composer back at the thread's model", () => {
+    selectThreadModelIfNone({ id: 'broken-model', provider: 'mlx' })
+
+    expect(modelProviderState.selectedProvider).toBe('mlx')
+    expect(modelProviderState.selectedModel).toEqual({ id: 'broken-model' })
+  })
+
+  it('leaves a model the user picked since, and a thread with no model', () => {
+    selectThreadModelIfNone(undefined)
+    expect(modelProviderState.selectedModel).toBeNull()
+
+    modelProviderState.selectedProvider = 'llamacpp-upstream'
+    modelProviderState.selectedModel = { id: 'shared-model' }
+    selectThreadModelIfNone({ id: 'broken-model', provider: 'mlx' })
+
+    expect(modelProviderState.selectedProvider).toBe('llamacpp-upstream')
+    expect(modelProviderState.selectedModel).toEqual({ id: 'shared-model' })
   })
 })
 

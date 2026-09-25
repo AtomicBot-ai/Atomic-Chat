@@ -442,6 +442,31 @@ function clearUnloadedSelection(providerName: string, modelId: string): void {
   }
 }
 
+/**
+ * Point an empty composer back at a thread's own model before a Retry. A
+ * failed load clears the selection (see {@link switchToModel}), and the chat
+ * transport answers with whatever is selected, so the Retry under that very
+ * failure had no model to try again. A model the user has picked since wins.
+ */
+export function selectThreadModelIfNone(
+  model: { id: string; provider: string } | undefined
+): void {
+  const state = useModelProvider.getState()
+  if (state.selectedModel || !model) return
+  state.selectModelProvider(model.provider, model.id)
+}
+
+function clearFailedSelection(providerName: string, modelId: string): void {
+  const state = useModelProvider.getState()
+  // The user may have picked another model while this one was failing.
+  if (
+    state.selectedProvider === providerName &&
+    state.selectedModel?.id === modelId
+  ) {
+    state.selectModelProvider('', '')
+  }
+}
+
 function recordUserStop(providerName: string, modelId: string): void {
   const { userStoppedModels, setUserStoppedModels } = useAppState.getState()
   const key = modelStopKey(providerName, modelId)
@@ -680,7 +705,18 @@ export async function switchToModel(params: {
       return
     }
 
-    await doSwitchToModel(params)
+    try {
+      await doSwitchToModel(params)
+    } catch (error) {
+      // A failed load leaves nothing to chat with, so the composer goes back
+      // to "Select Model" rather than showing the model that did not come
+      // up. A cancel keeps its selection, and a switch requested after this
+      // one owns the selection from here on.
+      if (!isModelLoadCancelled(error) && mySeq === switchSeq) {
+        clearFailedSelection(params.providerName, params.modelId)
+      }
+      throw error
+    }
   }
 
   // Chain strictly after any in-flight/queued switch. A prior failure must not

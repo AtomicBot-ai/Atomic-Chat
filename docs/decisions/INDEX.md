@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-356 records, 2026-05-19 → 2026-09-25.
+357 records, 2026-05-19 → 2026-09-25.
 
 ---
 
@@ -283,8 +283,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (81)
+## UI / UX (82)
 
+- **2026-09-25** — [Clear the composer selection after a failed model load](2026-09-25-clear-the-composer-selection-after-a-failed-load.md)
 - **2026-09-22** — [Keep the composer's approval label plain](2026-09-22-keep-the-composers-approval-label-plain.md)
 - **2026-09-19** — [Say when MCP tools are auto-approved](2026-09-19-say-when-mcp-tools-are-auto-approved.md)
 - **2026-09-18** — [Keep a reply the user stopped](2026-09-18-keep-a-reply-the-user-stopped.md)
