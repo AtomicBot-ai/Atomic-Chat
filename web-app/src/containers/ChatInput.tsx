@@ -897,6 +897,10 @@ const ChatInput = memo(function ChatInput({
   }, [composerThreadKey])
 
   const handleSendMessage = async (submitted: string) => {
+    if (selectedProvider === 'claude-code' && attachments.length > 0) {
+      toast.error(t('cloud:claudeCode.textOnly'))
+      return
+    }
     let prompt = submitted
     // Flush the tail phrase first, or pressing Enter mid-sentence drops the
     // last few words the user just spoke. `stop()` resolves only once that

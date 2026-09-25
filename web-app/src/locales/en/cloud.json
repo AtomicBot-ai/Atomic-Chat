@@ -42,5 +42,22 @@
     "searchPlaceholder": "Search models",
     "noResults": "No model matches this search.",
     "reload": "Reload models"
+  },
+  "claudeCode": {
+    "title": "Claude subscription",
+    "enable": "Enable Claude subscription",
+    "description": "Connect your Claude plan through the official Claude Code CLI. Sign-in opens in your browser; an existing Claude Code login is detected automatically.",
+    "checking": "Checking Claude Code…",
+    "connecting": "Finish signing in through Claude Code in your browser…",
+    "connected": "Connected · {{plan}} plan",
+    "apiAccount": "An API account is signed in. Connect your subscription here, or use the Anthropic API provider for API billing.",
+    "signInNeeded": "Claude Code is installed. Sign in to connect your subscription.",
+    "installNeeded": "Install the official native Claude Code CLI, then check the connection.",
+    "connect": "Connect in browser",
+    "check": "Check connection",
+    "install": "Installation guide",
+    "limits": "Text chat only. Models and versions come from your Claude Code catalog. Messages are processed in Anthropic’s cloud and use your plan’s limits or enabled usage credits. Fable may use paid usage credits depending on your plan.",
+    "textOnly": "Claude Code currently supports text chat. Remove attachments to continue.",
+    "unavailable": "Connection unavailable"
   }
 }

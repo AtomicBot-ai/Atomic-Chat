@@ -101,7 +101,7 @@ export function CloudModelsCard({
                     : t('cloud:models.reload')}
                 </span>
               </Button>
-              <DialogAddModel provider={provider} />
+              {provider.provider !== 'claude-code' && <DialogAddModel provider={provider} />}
             </div>
           </div>
           {models.length > 0 && (
@@ -155,8 +155,10 @@ export function CloudModelsCard({
                 >
                   <FavoriteModelAction model={model} />
                 </div>
-                <DialogEditModel provider={provider} modelId={model.id} />
-                <DialogDeleteModel provider={provider} modelId={model.id} />
+                {provider.provider !== 'claude-code' && <>
+                  <DialogEditModel provider={provider} modelId={model.id} />
+                  <DialogDeleteModel provider={provider} modelId={model.id} />
+                </>}
               </div>
             }
           />
