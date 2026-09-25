@@ -425,11 +425,12 @@
   {
     "id": "radium-runtimes",
     "feature": "Inference runtime catalog and scan",
-    "forUsers": "Settings > Runtimes lists the 63 local inference runtimes Radium plans for, with how each will run on Windows with NVIDIA GPUs, and finds the ones already running on this computer (Ollama, LM Studio, KoboldCpp, llama.cpp, ComfyUI, vLLM and others) without changing them.",
+    "forUsers": "Settings > Runtimes lists the 63 local inference runtimes Radium plans for, with how each will run on Windows with NVIDIA GPUs, and finds the ones already running on this computer (Ollama, LM Studio, KoboldCpp, llama.cpp, ComfyUI, vLLM and others) without changing them. A found runtime connects in one click and its models appear in the model picker.",
     "paths": [
       "src-tauri/src/core/runtimes/**",
       "web-app/src/routes/settings/runtimes.tsx",
-      "web-app/src/services/runtimes.ts"
+      "web-app/src/services/runtimes.ts",
+      "web-app/src/lib/connect-runtime.ts"
     ],
     "checks": [
       {
@@ -440,11 +441,12 @@
         ]
       },
       {
-        "run": "npx vitest run src/services/__tests__/runtimes.test.ts src/routes/settings/__tests__/runtimes.test.tsx",
+        "run": "npx vitest run src/services/__tests__/runtimes.test.ts src/routes/settings/__tests__/runtimes.test.tsx src/lib/__tests__/connect-runtime.test.ts",
         "cwd": "web-app",
         "files": [
           "web-app/src/services/__tests__/runtimes.test.ts",
-          "web-app/src/routes/settings/__tests__/runtimes.test.tsx"
+          "web-app/src/routes/settings/__tests__/runtimes.test.tsx",
+          "web-app/src/lib/__tests__/connect-runtime.test.ts"
         ]
       }
     ],

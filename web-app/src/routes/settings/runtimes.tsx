@@ -1,7 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import {
   IconCircleCheck,
+  IconPlugConnected,
   IconChevronDown,
   IconChevronRight,
   IconRadar,
@@ -15,6 +17,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import {
+  connectRuntime,
+  connectTarget,
+  isConnected,
+  type ConnectTarget,
+} from '@/lib/connect-runtime'
 import {
   countByTier,
   detectRuntimes,
@@ -52,12 +62,52 @@ function Chip({ children, tone = 'muted' }: { children: React.ReactNode; tone?: 
   )
 }
 
+function DetectionActions({
+  target,
+  connected,
+  connecting,
+  onConnect,
+}: {
+  target: ConnectTarget | null
+  connected: boolean
+  connecting: boolean
+  onConnect: () => void
+}) {
+  const { t } = useTranslation()
+  if (!target) return null
+  if (target.kind === 'media') {
+    return (
+      <Button asChild size="xs" variant="outline">
+        <Link to={route.settings.media}>{t('settings:runtimes.setUpInMedia')}</Link>
+      </Button>
+    )
+  }
+  if (connected) {
+    return (
+      <span className="flex items-center gap-2">
+        <Chip tone="good">{t('settings:runtimes.connected')}</Chip>
+        <Button size="xs" variant="ghost" onClick={onConnect} disabled={connecting}>
+          {t('settings:runtimes.refreshModels')}
+        </Button>
+      </span>
+    )
+  }
+  return (
+    <Button size="xs" onClick={onConnect} disabled={connecting}>
+      <IconPlugConnected />
+      {connecting ? t('settings:runtimes.connecting') : t('settings:runtimes.connect')}
+    </Button>
+  )
+}
+
 function DetectionRow({
   detection,
   byId,
+  actions,
 }: {
   detection: RuntimeDetection
   byId: Map<string, RuntimeDescriptor>
+  actions?: React.ReactNode
 }) {
   const { t } = useTranslation()
   const generated = formatCount(detection.counters?.generated_tokens_total)
@@ -73,6 +123,7 @@ function DetectionRow({
         )}
         {detection.version && <Chip>{detection.version}</Chip>}
         <span className="text-xs text-muted-foreground font-mono">{detection.baseUrl}</span>
+        {actions && <span className="ml-auto">{actions}</span>}
       </div>
       <div className="text-sm text-muted-foreground">
         {[
@@ -191,6 +242,9 @@ function RuntimesSettings() {
   const [extra, setExtra] = useState<string[]>([])
   const [filter, setFilter] = useState<RuntimeFilter>({ tier: 'all', query: '' })
   const [openId, setOpenId] = useState<string | null>(null)
+  const [connectingUrl, setConnectingUrl] = useState<string | null>(null)
+  const serviceHub = useServiceHub()
+  const { providers, addProvider, updateProvider } = useModelProvider()
 
   useEffect(() => {
     listRuntimes()
@@ -217,6 +271,32 @@ function RuntimesSettings() {
     }
   }, [extra])
 
+  const connect = useCallback(
+    async (detection: RuntimeDetection, target: ConnectTarget | null) => {
+      if (!target || target.kind !== 'provider') return
+      setConnectingUrl(detection.baseUrl)
+      try {
+        const result = await connectRuntime(target, detection.models, {
+          providers: useModelProvider.getState().providers,
+          addProvider,
+          updateProvider,
+          getProviderByName: (name) => useModelProvider.getState().getProviderByName(name),
+          serviceHub,
+        })
+        toast.success(
+          t('settings:runtimes.connectedToast', {
+            name: result.providerId,
+            count: result.modelCount,
+          })
+        )
+      } catch (error) {
+        toast.error(t('settings:runtimes.connectFailed'), { description: errorText(error) })
+      } finally {
+        setConnectingUrl(null)
+      }
+    },
+    [addProvider, updateProvider, serviceHub, t]
+  )
   const addAddress = () => {
     const value = address.trim()
     if (value && !extra.includes(value)) setExtra([...extra, value])
@@ -292,9 +372,24 @@ function RuntimesSettings() {
               )}
               {detections !== null && detections.length > 0 && (
                 <ul className="flex flex-col gap-3" data-testid="runtime-detections">
-                  {detections.map((detection) => (
-                    <DetectionRow key={detection.baseUrl} detection={detection} byId={byId} />
-                  ))}
+                  {detections.map((detection) => {
+                    const target = connectTarget(detection, byId)
+                    return (
+                      <DetectionRow
+                        key={detection.baseUrl}
+                        detection={detection}
+                        byId={byId}
+                        actions={
+                          <DetectionActions
+                            target={target}
+                            connected={isConnected(target, providers)}
+                            connecting={connectingUrl === detection.baseUrl}
+                            onConnect={() => connect(detection, target)}
+                          />
+                        }
+                      />
+                    )
+                  })}
                 </ul>
               )}
             </Card>

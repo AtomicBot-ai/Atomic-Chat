@@ -22,7 +22,42 @@ vi.mock('@/constants/routes', () => ({
 vi.mock('@tanstack/react-router', () => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   createFileRoute: () => (config: any) => config,
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
 }))
+
+const toastSuccess = vi.fn()
+const toastError = vi.fn()
+vi.mock('sonner', () => ({
+  toast: {
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}))
+
+const fetchModelsFromProvider = vi.fn()
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({ providers: () => ({ fetchModelsFromProvider }) }),
+}))
+
+// A minimal stand-in for the zustand provider store: a hook plus getState().
+const providerStore = vi.hoisted(() => {
+  const state = {
+    providers: [] as ModelProvider[],
+    addProvider: (provider: ModelProvider) => {
+      state.providers = [...state.providers, provider]
+    },
+    updateProvider: (name: string, data: Partial<ModelProvider>) => {
+      state.providers = state.providers.map((p) => (p.provider === name ? { ...p, ...data } : p))
+    },
+    getProviderByName: (name: string) => state.providers.find((p) => p.provider === name),
+  }
+  return state
+})
+vi.mock('@/hooks/useModelProvider', () => {
+  const useModelProvider = () => providerStore
+  useModelProvider.getState = () => providerStore
+  return { useModelProvider }
+})
 
 import { Route } from '../runtimes'
 
@@ -66,6 +101,10 @@ function renderPage() {
 
 describe('Settings > Runtimes', () => {
   beforeEach(() => {
+    providerStore.providers = []
+    toastSuccess.mockReset()
+    toastError.mockReset()
+    fetchModelsFromProvider.mockReset()
     invoke.mockReset()
     invoke.mockImplementation(async (command: string) => {
       if (command === 'runtimes_catalog') return catalog
@@ -148,5 +187,25 @@ describe('Settings > Runtimes', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /settings:runtimes.scan$/ }))
     expect(await screen.findByText(/must start with http/)).toBeInTheDocument()
+  })
+
+  it('connects a found runtime as a provider and shows it as connected', async () => {
+    fetchModelsFromProvider.mockResolvedValue(['qwen3:8b', 'llama3.2:3b'])
+    const { rerender } = renderPage()
+    await screen.findByTestId('runtime-catalog')
+    fireEvent.click(screen.getByRole('button', { name: /settings:runtimes.scan$/ }))
+    const found = await screen.findByTestId('runtime-detections')
+
+    fireEvent.click(within(found).getByRole('button', { name: /settings:runtimes.connect$/ }))
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+
+    const ollama = providerStore.providers.find((p) => p.provider === 'ollama')
+    expect(ollama?.base_url).toBe('http://127.0.0.1:11434/v1')
+    expect(ollama?.models.map((m) => m.id)).toEqual(['qwen3:8b', 'llama3.2:3b'])
+
+    const Component = (Route as unknown as { component: React.ComponentType }).component
+    rerender(<Component />)
+    expect(await screen.findByText('settings:runtimes.connected')).toBeInTheDocument()
+    expect(toastError).not.toHaveBeenCalled()
   })
 })

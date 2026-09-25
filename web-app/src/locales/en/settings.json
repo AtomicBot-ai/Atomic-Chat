@@ -534,6 +534,13 @@
       "low_activity": "Low activity",
       "maintenance_mode": "Maintenance mode",
       "archived": "Archived"
-    }
+    },
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "connected": "Connected",
+    "refreshModels": "Refresh models",
+    "setUpInMedia": "Set up in Media",
+    "connectedToast": "{{name}} connected with {{count}} models. They are in the model picker now.",
+    "connectFailed": "Could not connect"
   }
 }
