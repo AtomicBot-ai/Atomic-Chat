@@ -128,6 +128,13 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
+      title: 'common:runtimes',
+      route: route.settings.runtimes,
+      hasSubMenu: false,
+      // The scan and catalog commands exist in the desktop build only.
+      isEnabled: IS_TAURI && !IS_IOS && !IS_ANDROID,
+    },
+    {
       title: 'common:media',
       route: route.settings.media,
       hasSubMenu: false,

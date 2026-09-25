@@ -421,5 +421,34 @@
     ],
     "decision": "Tracker D37, Task 29 (PR #19)",
     "status": "pending"
+  },
+  {
+    "id": "radium-runtimes",
+    "feature": "Inference runtime catalog and scan",
+    "forUsers": "Settings > Runtimes lists the 63 local inference runtimes Radium plans for, with how each will run on Windows with NVIDIA GPUs, and finds the ones already running on this computer (Ollama, LM Studio, KoboldCpp, llama.cpp, ComfyUI, vLLM and others) without changing them.",
+    "paths": [
+      "src-tauri/src/core/runtimes/**",
+      "web-app/src/routes/settings/runtimes.tsx",
+      "web-app/src/services/runtimes.ts"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri --lib core::runtimes",
+        "files": [
+          "src-tauri/src/core/runtimes/probe.rs",
+          "src-tauri/src/core/runtimes/registry.rs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/services/__tests__/runtimes.test.ts src/routes/settings/__tests__/runtimes.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/services/__tests__/runtimes.test.ts",
+          "web-app/src/routes/settings/__tests__/runtimes.test.tsx"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-09-24-integrate-inference-runtimes-behind-one-adapter-layer.md",
+    "status": "pending"
   }
 ]

@@ -275,6 +275,8 @@ pub fn run() {
         core::media::runtime::media_engine_install,
         core::media::runtime::media_engine_start,
         core::media::runtime::media_engine_stop,
+        core::runtimes::commands::runtimes_catalog,
+        core::runtimes::commands::runtimes_detect,
     ]);
 
     // Mobile: the same surface minus the desktop-only commands.

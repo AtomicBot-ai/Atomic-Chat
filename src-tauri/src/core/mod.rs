@@ -15,6 +15,8 @@ pub mod notifications;
 pub(crate) mod process_env;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod process_reaper;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod runtimes;
 pub mod server;
 pub mod setup;
 pub mod state;

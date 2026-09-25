@@ -40,6 +40,13 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'media_secret_get',
   'media_secret_set',
   'post_local_http',
+  // Settings > Runtimes: the inference runtime catalog and the loopback scan
+  // for running runtimes. Desktop only on purpose: the `core::runtimes`
+  // module is compiled out of mobile builds, which run no local runtimes. See
+  // docs/decisions/2026-09-24-integrate-inference-runtimes-behind-one-
+  // adapter-layer.md.
+  'runtimes_catalog',
+  'runtimes_detect',
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',

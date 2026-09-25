@@ -487,5 +487,53 @@
     "setupTitle": "Setup",
     "runSetupAgain": "Run setup again",
     "runSetupAgainDescription": "Walk through microphone access and the model download once more."
+  },
+  "runtimes": {
+    "runningTitle": "Running on this computer",
+    "runningDesc": "Finds inference runtimes that are already running (Ollama, LM Studio, KoboldCpp, llama.cpp, ComfyUI, vLLM and others) by asking their usual ports. Read-only: nothing is started, loaded or changed.",
+    "scan": "Scan this PC",
+    "scanning": "Scanning…",
+    "addAddress": "Add address",
+    "remove": "Remove {{url}}",
+    "notScanned": "Not scanned yet.",
+    "noneFound": "No running runtime answered. Start one, or add its address above if it uses another port or machine.",
+    "confirmed": "Confirmed",
+    "portGuess": "Guessed from port",
+    "modelCount": "Models: {{count}}",
+    "loaded": "Loaded",
+    "tokensGenerated": "Tokens generated: {{count}}",
+    "requestsRunning": "Requests running: {{count}}",
+    "orPossibly": "Could also be: {{names}}",
+    "catalogTitle": "Runtime catalog ({{count}})",
+    "catalogDesc": "Every runtime Radium plans for, with how it will run it on Windows with NVIDIA GPUs. A tick means the status was checked against the project's own sources.",
+    "all": "All ({{count}})",
+    "search": "Search by name, format or capability",
+    "verified": "Checked on {{date}}",
+    "formats": "Formats",
+    "capabilities": "Serves",
+    "port": "Default port",
+    "wraps": "Runs on",
+    "tier": {
+      "p0": "Phase 1",
+      "p1": "Phase 2",
+      "p2": "Phase 3",
+      "p3": "Phase 4",
+      "deferred": "Deferred",
+      "out_of_scope": "Out of scope"
+    },
+    "mode": {
+      "bundled": "Radium runs it",
+      "managed_install": "Radium installs it on demand",
+      "attach": "Connects to yours",
+      "in_process": "Inside Radium",
+      "wsl_hosted": "Runs in WSL",
+      "out_of_scope": "Not for this hardware"
+    },
+    "maintenance": {
+      "active": "Active",
+      "low_activity": "Low activity",
+      "maintenance_mode": "Maintenance mode",
+      "archived": "Archived"
+    }
   }
 }
