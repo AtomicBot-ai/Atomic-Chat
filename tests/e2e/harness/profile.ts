@@ -97,10 +97,11 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   // the UI. By default the local API server starts with the app and binds 1337,
   // the port of the operator's own Atomic Chat. Shape and version follow the
   // persisted store in web-app/src/hooks/useLocalApiServer.ts; a partial state
-  // merges over the defaults.
+  // merges over the defaults. Auto-start is off unless the scenario turns it
+  // on; the port is always the profile's own.
   const seed: Record<string, string> = {
     'setting-local-api-server': JSON.stringify({
-      state: { ...options.apiServer, enableOnStartup: false, serverPort: options.apiPort },
+      state: { enableOnStartup: false, ...options.apiServer, serverPort: options.apiPort },
       version: 3,
     }),
     ...options.webviewSeed,

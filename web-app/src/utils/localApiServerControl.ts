@@ -10,6 +10,7 @@
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { SERVER_START_WATCHDOG_MS, withTimeout } from '@/lib/utils'
+import type { DiffusionService } from '@/services/diffusion/types'
 
 /**
  * Starts the proxy with the persisted configuration and returns the port it
@@ -71,6 +72,48 @@ export async function setLocalApiServerRunning(running: boolean): Promise<void> 
     // Reset rather than leaving the UI stuck in a permanent pending state.
     setServerStatus('stopped')
     throw error
+  }
+}
+
+/**
+ * Whether an image or video model is resident (or on its way in). The core
+ * serves `/v1/images/generations` and `/v1/videos` from such a model with no
+ * chat model loaded, so the server has something to answer without one — and
+ * loading one for it could unload this model to make room on the GPU. Anything
+ * that cannot tell reads as "no".
+ */
+export async function hasResidentMediaModel(
+  diffusion: Pick<DiffusionService, 'isSupported' | 'getStatus'>
+): Promise<boolean> {
+  try {
+    if (!diffusion.isSupported()) return false
+    const status = await diffusion.getStatus()
+    return (
+      status.configured &&
+      (status.model.state === 'loaded' || status.model.state === 'loading')
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * An image or video model just became resident. Outside clients reach it only
+ * through the Local API Server, so the server comes up with it the way it does
+ * for a local chat model (`switchModel.ts`): when auto-start is on. A server
+ * that is up or coming up is left alone, and no chat model is loaded for it.
+ * Never the reason a model load fails.
+ */
+export async function raiseLocalApiServerForMediaModel(): Promise<void> {
+  if (useAppState.getState().serverStatus !== 'stopped') return
+  if (!useLocalApiServer.getState().enableOnStartup) return
+  try {
+    await setLocalApiServerRunning(true)
+  } catch (error) {
+    console.warn(
+      '[LocalAPI] could not start the server for the image model:',
+      error
+    )
   }
 }
 

@@ -53,6 +53,10 @@ vi.mock('@/lib/diffusion/config', async (importOriginal) => ({
 vi.mock('@/lib/diffusion/arbiter', () => ({
   acquireGpuForDiffusion: vi.fn(async () => ({ evicted: [] })),
 }))
+const raiseServer = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/utils/localApiServerControl', () => ({
+  raiseLocalApiServerForMediaModel: raiseServer,
+}))
 const install = vi.hoisted(() => ({
   ensure: vi.fn(),
   select: vi.fn(async () => ({
@@ -101,6 +105,7 @@ describe('image-generation-store', () => {
   beforeEach(async () => {
     vi.useRealTimers()
     captured.events.length = 0
+    raiseServer.mockClear()
     install.ensure.mockReset()
     install.select.mockResolvedValue({
       backendId: 'macos-arm64',
@@ -784,6 +789,24 @@ describe('image-generation-store', () => {
         code: 'OUT_OF_MEMORY',
       })
       expect(useImageGenerationStore.getState().loadingArtifactId).toBeNull()
+      // Nothing is resident, so there is nothing for the Local API Server to serve.
+      expect(raiseServer).not.toHaveBeenCalled()
+    })
+
+    // `/v1/images/generations` lives on the Local API Server, which used to come up only with a
+    // chat model: an image-only user had a working Images page and a dead endpoint.
+    it('raises the Local API Server once the image model is resident', async () => {
+      useImageGenerationStore.setState({ status: makeStatus(), capabilities: null })
+      let residentWhenRaised: string | null | undefined
+      raiseServer.mockImplementationOnce(async () => {
+        residentWhenRaised =
+          useImageGenerationStore.getState().status?.model.loaded?.modelId
+      })
+
+      await useImageGenerationStore.getState().loadModel('z-image:q4_k_m')
+
+      expect(raiseServer).toHaveBeenCalledTimes(1)
+      expect(residentWhenRaised).toBe('z-image:q4_k_m')
     })
   })
 
@@ -1147,6 +1170,24 @@ describe('image-generation-store', () => {
           360_000_000 +
           (IS_MACOS ? 0 : 7_400_000_000 + 2_300_000_000)
       )
+    })
+
+    it('raises the Local API Server for a video model too', async () => {
+      fake.loadModel.mockImplementation(async (request) => {
+        const status = makeVideoLoadedStatus(request.modelId)
+        fake.getStatus.mockResolvedValue(status)
+        return status.model.loaded!
+      })
+      let residentWhenRaised: string | null | undefined
+      raiseServer.mockImplementationOnce(async () => {
+        residentWhenRaised =
+          useImageGenerationStore.getState().status?.model.loaded?.modelId
+      })
+
+      await useImageGenerationStore.getState().loadModel(LTX_Q4_ID)
+
+      expect(raiseServer).toHaveBeenCalledTimes(1)
+      expect(residentWhenRaised).toBe(LTX_Q4_ID)
     })
 
     it('files a failed video load under the Video page', async () => {

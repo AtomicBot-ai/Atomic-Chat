@@ -58,6 +58,7 @@ import {
   type DiffusionCatalog,
 } from '@/services/diffusion-catalog-registry'
 import { useImageGalleryStore } from '@/stores/image-gallery-store'
+import { raiseLocalApiServerForMediaModel } from '@/utils/localApiServerControl'
 
 /** 0 = what it is, 1 = install the engine, 2 = pick and download a model. */
 export type ImageSetupStep = 0 | 1 | 2
@@ -862,6 +863,10 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           }
         }
         await get().refreshStatus()
+        // `/v1/images/generations` and `/v1/videos` live on the Local API
+        // Server; without this an image-only user never gets it up. Not
+        // awaited: the model is loaded whatever the server does.
+        void raiseLocalApiServerForMediaModel()
       } catch (error) {
         const described = toDiffusionError(error)
         set({ lastError: described, lastErrorModality: family.modality })
