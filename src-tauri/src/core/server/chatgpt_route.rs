@@ -42,10 +42,14 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// `/codex/models` hides any slug whose `minimal_client_version` exceeds the
 /// version we claim, so this is what decides which models the account is shown.
+///
+/// The core lists the subscription's models now (stage 6). This constant and
+/// `normalize_model` stay only for the fixture emitter that froze that contract.
+#[cfg(test)]
 const CLIENT_VERSION: &str = "0.156.0";
 
 /// One model the subscription offers.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SubscriptionModel {
     pub id: String,
     pub display_name: String,
@@ -58,6 +62,7 @@ pub struct SubscriptionModel {
     pub listed: bool,
 }
 
+#[cfg(test)]
 fn normalize_model(item: &Value) -> Option<SubscriptionModel> {
     let slug = item.get("slug").and_then(|v| v.as_str())?;
     if slug.is_empty() || slug.len() > 128 {
@@ -92,72 +97,6 @@ fn normalize_model(item: &Value) -> Option<SubscriptionModel> {
             .unwrap_or_default(),
         listed: item.get("visibility").and_then(|v| v.as_str()) == Some("list"),
     })
-}
-
-/// Ask the subscription what it can serve.
-///
-/// There is no curated fallback here on purpose: a made-up catalogue puts
-/// models in the picker that the account may not carry, and every send then
-/// fails with no explanation.
-pub async fn list_models(
-    client: &Client,
-    auth: &ChatGptAuthState,
-    data_dir: &std::path::Path,
-) -> Result<Vec<SubscriptionModel>, String> {
-    let mut forced = false;
-    let response = loop {
-        let token = auth.access_token(data_dir, forced).await?;
-        let sent = client
-            .get(format!("{CHATGPT_BASE_URL}/models"))
-            .query(&[("client_version", CLIENT_VERSION)])
-            .header("Authorization", format!("Bearer {}", token.token))
-            .header("Accept", "application/json")
-            .header("originator", ORIGINATOR)
-            .header("User-Agent", USER_AGENT);
-        let sent = match token.account_id.as_deref() {
-            Some(account) => sent.header("chatgpt-account-id", account),
-            None => sent,
-        };
-
-        match sent.send().await {
-            Err(err) => return Err(format!("Could not reach ChatGPT: {err}")),
-            // The upstream can reject a token before its recorded expiry while
-            // the refresh credential is still good — spend one forced refresh
-            // on that, the way the streaming path does.
-            Ok(resp) if resp.status() == reqwest::StatusCode::UNAUTHORIZED && !forced => {
-                forced = true;
-                continue;
-            }
-            Ok(resp) => break resp,
-        }
-    };
-
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Could not read the ChatGPT model list: {e}"))?;
-    if !status.is_success() {
-        return Err(format!("Could not list ChatGPT models ({status}): {body}"));
-    }
-
-    let parsed: Value = serde_json::from_str(&body)
-        .map_err(|e| format!("ChatGPT returned an unreadable model list: {e}"))?;
-    let mut seen = std::collections::HashSet::new();
-    let models = parsed
-        .get("models")
-        .and_then(|v| v.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(normalize_model)
-                // A slug repeated in one payload describes itself twice; first
-                // wins so the list and anything keyed off it agree.
-                .filter(|m| seen.insert(m.id.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(models)
 }
 
 /// Outcome of looking at a `/chat/completions` request.
@@ -378,3 +317,7 @@ pub fn client() -> Result<Client, String> {
         .build()
         .map_err(|e| format!("cannot build the ChatGPT HTTP client: {e}"))
 }
+
+#[cfg(test)]
+#[path = "chatgpt_route_fixture_dump.rs"]
+mod fixture_dump;

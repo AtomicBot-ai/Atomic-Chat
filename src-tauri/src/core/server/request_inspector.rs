@@ -279,6 +279,8 @@ pub struct RequestInspector {
     dropped_events: AtomicU64,
     sink: OnceLock<InspectorSink>,
     log: Mutex<VecDeque<ApiRequestRecord>>,
+    /// Requests the core announced, by the core's id, with the sequence number given here.
+    core_requests: Mutex<std::collections::HashMap<String, u64>>,
 }
 
 impl RequestInspector {
@@ -369,6 +371,115 @@ impl RequestInspector {
             stash: Mutex::new(None),
             inspector: Arc::clone(self),
         })))
+    }
+
+    /// Take one `api:request` event from the core, which serves the Local API instead of the app's
+    /// proxy, and turn it into the same ring records and `api-inspector://` events the proxy makes.
+    ///
+    /// The core's own sequence numbers are not reused: requests get this inspector's next number
+    /// when they start, so the UI keeps one monotonic sequence across a change of server owner.
+    pub fn ingest_core_event(&self, event: &serde_json::Value) {
+        use crate::core::server::api_request_analytics::{endpoint_label, error_kind_label};
+
+        let Some(id) = event.get("id").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let text = |key: &str| event.get(key).and_then(|v| v.as_str()).map(str::to_string);
+        let number = |value: Option<&serde_json::Value>| value.and_then(|v| v.as_u64());
+        match event.get("phase").and_then(|v| v.as_str()) {
+            Some("started") => {
+                let seq = self.seq.fetch_add(1, Ordering::Relaxed);
+                self.in_flight.fetch_add(1, Ordering::Relaxed);
+                if let Ok(mut ids) = self.core_requests.lock() {
+                    ids.insert(id.to_string(), seq);
+                }
+                let fields = StartedFields {
+                    endpoint: endpoint_label(event.get("endpoint").and_then(|v| v.as_str()).unwrap_or("other")),
+                    method: text("method").unwrap_or_default(),
+                    model_id: text("model_id"),
+                    stream: event.get("stream").and_then(|v| v.as_bool()).unwrap_or(false),
+                    message_count: number(event.get("message_count")).and_then(|v| u32::try_from(v).ok()),
+                    prompt_preview: text("prompt_preview"),
+                    prompt_chars: number(event.get("prompt_chars")),
+                    has_non_text_parts: event.get("has_non_text_parts").and_then(|v| v.as_bool()).unwrap_or(false),
+                    client_max_tokens: number(event.get("client_max_tokens")),
+                };
+                let started_at_ms = number(event.get("started_at_ms")).unwrap_or_else(now_ms);
+                let payload = serde_json::to_value(StartedEvent {
+                    id,
+                    seq,
+                    started_at_ms,
+                    fields: &fields,
+                })
+                .unwrap_or(serde_json::Value::Null);
+                self.push_record(ApiRequestRecord {
+                    id: id.to_string(),
+                    seq,
+                    started_at_ms,
+                    started: fields,
+                    done: false,
+                    finished_at_ms: None,
+                    finish: FinishFields::default(),
+                });
+                self.emit(API_INSPECTOR_STARTED, payload);
+            }
+            Some("progress") => {
+                let Some(seq) = self.core_requests.lock().ok().and_then(|ids| ids.get(id).copied()) else {
+                    return;
+                };
+                let payload = serde_json::to_value(ProgressEvent {
+                    id,
+                    seq,
+                    ttft_ms: number(event.get("ttft_ms")),
+                    completion_tokens: number(event.get("completion_tokens")),
+                    reply_chars: number(event.get("reply_chars")).unwrap_or(0),
+                    elapsed_ms: number(event.get("elapsed_ms")).unwrap_or(0),
+                })
+                .unwrap_or(serde_json::Value::Null);
+                self.emit(API_INSPECTOR_PROGRESS, payload);
+            }
+            Some("finished") => {
+                let Some(seq) = self.core_requests.lock().ok().and_then(|mut ids| ids.remove(id)) else {
+                    return;
+                };
+                let _ = self
+                    .in_flight
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v.saturating_sub(1)));
+                let Some(finish) = event.get("finish").filter(|f| f.is_object()) else {
+                    return;
+                };
+                let f = |key: &str| finish.get(key);
+                let fields = FinishFields {
+                    status: number(f("status")).and_then(|v| u16::try_from(v).ok()),
+                    error_kind: f("error_kind").and_then(|v| v.as_str()).map(error_kind_label),
+                    aborted: f("aborted").and_then(|v| v.as_bool()).unwrap_or(false),
+                    headers_ms: number(f("headers_ms")),
+                    ttft_ms: number(f("ttft_ms")),
+                    duration_ms: number(f("duration_ms")),
+                    prompt_tokens: number(f("prompt_tokens")),
+                    completion_tokens: number(f("completion_tokens")),
+                    total_tokens: number(f("total_tokens")),
+                    tokens_estimated: f("tokens_estimated").and_then(|v| v.as_bool()).unwrap_or(false),
+                    prompt_per_second: f("prompt_per_second").and_then(|v| v.as_f64()),
+                    predicted_per_second: f("predicted_per_second").and_then(|v| v.as_f64()),
+                    finish_reason: f("finish_reason").and_then(|v| v.as_str()).map(str::to_string),
+                    reply_preview: f("reply_preview").and_then(|v| v.as_str()).map(str::to_string),
+                    reply_chars: number(f("reply_chars")),
+                };
+                let finished_at_ms = number(event.get("finished_at_ms")).unwrap_or_else(now_ms);
+                self.patch_record(id, true, finished_at_ms, &fields);
+                let payload = serde_json::to_value(FinishedEvent {
+                    id,
+                    seq,
+                    done: true,
+                    finished_at_ms,
+                    fields: &fields,
+                })
+                .unwrap_or(serde_json::Value::Null);
+                self.emit(API_INSPECTOR_FINISHED, payload);
+            }
+            _ => {}
+        }
     }
 
     fn emit(&self, channel: &'static str, payload: serde_json::Value) {
@@ -1634,3 +1745,88 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod core_ingest_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn inspector() -> (Arc<RequestInspector>, Arc<Mutex<Vec<(&'static str, serde_json::Value)>>>) {
+        let inspector = Arc::new(RequestInspector::new());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink_seen = Arc::clone(&seen);
+        inspector.attach_sink(Arc::new(move |channel, payload| {
+            sink_seen.lock().unwrap().push((channel, payload));
+        }));
+        (inspector, seen)
+    }
+
+    /// The exact shapes the core emits (atomic-chat-core `src/contracts/events.ts` `ApiRequestEvent`).
+    #[test]
+    fn core_events_become_the_same_records_and_channels_the_proxy_makes() {
+        let (inspector, seen) = inspector();
+        // An earlier legacy request already used a sequence number.
+        inspector.seq.fetch_add(7, Ordering::Relaxed);
+
+        inspector.ingest_core_event(&json!({
+            "phase": "started", "id": "apireq_abc", "seq": 0, "started_at_ms": 1000,
+            "endpoint": "chat/completions", "method": "POST", "model_id": "demo", "stream": true,
+            "message_count": 2, "prompt_preview": "hi", "prompt_chars": 2,
+            "has_non_text_parts": false, "client_max_tokens": 64
+        }));
+        assert_eq!(inspector.snapshot().in_flight, 1);
+        inspector.ingest_core_event(&json!({
+            "phase": "progress", "id": "apireq_abc", "seq": 0, "ttft_ms": 30,
+            "completion_tokens": null, "reply_chars": 5, "elapsed_ms": 1000
+        }));
+        inspector.ingest_core_event(&json!({
+            "phase": "finished", "id": "apireq_abc", "seq": 0, "finished_at_ms": 2000,
+            "observation": {"endpoint": "chat/completions"},
+            "finish": {
+                "status": 200, "error_kind": null, "aborted": false, "headers_ms": 10, "ttft_ms": 30,
+                "duration_ms": 900, "prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5,
+                "tokens_estimated": false, "prompt_per_second": null, "predicted_per_second": 41.5,
+                "finish_reason": "stop", "reply_preview": "Hello", "reply_chars": 5
+            }
+        }));
+
+        let snapshot = inspector.snapshot();
+        assert_eq!(snapshot.in_flight, 0);
+        let record = &snapshot.records[0];
+        assert_eq!((record.seq, record.done, record.started_at_ms), (7, true, 1000));
+        assert_eq!(record.started.prompt_preview.as_deref(), Some("hi"));
+        assert_eq!(record.finish.reply_preview.as_deref(), Some("Hello"));
+        assert_eq!(record.finish.predicted_per_second, Some(41.5));
+
+        let seen = seen.lock().unwrap();
+        let channels: Vec<_> = seen.iter().map(|(c, _)| *c).collect();
+        assert_eq!(channels, vec![API_INSPECTOR_STARTED, API_INSPECTOR_PROGRESS, API_INSPECTOR_FINISHED]);
+        assert!(seen.iter().all(|(_, payload)| payload["seq"] == json!(7)));
+        assert_eq!(seen[2].1["total_tokens"], json!(5));
+    }
+
+    #[test]
+    fn events_for_requests_it_never_saw_start_are_ignored() {
+        let (inspector, seen) = inspector();
+        inspector.ingest_core_event(&json!({"phase": "progress", "id": "ghost", "reply_chars": 1}));
+        inspector.ingest_core_event(&json!({"phase": "finished", "id": "ghost", "finish": {"status": 200}, "observation": null}));
+        inspector.ingest_core_event(&json!({"phase": "started"}));
+        inspector.ingest_core_event(&json!({"id": "x", "phase": "unknown"}));
+        assert!(seen.lock().unwrap().is_empty());
+        assert!(inspector.snapshot().records.is_empty());
+    }
+
+    #[test]
+    fn an_analytics_only_finish_releases_the_slot_without_an_event() {
+        let (inspector, seen) = inspector();
+        inspector.ingest_core_event(&json!({"phase": "started", "id": "a", "endpoint": "/v1/x", "method": "GET"}));
+        inspector.ingest_core_event(&json!({"phase": "finished", "id": "a", "finish": null, "observation": null}));
+        assert_eq!(inspector.snapshot().in_flight, 0);
+        assert_eq!(inspector.snapshot().records[0].started.endpoint, "other");
+        assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+}
+
+#[cfg(test)]
+#[path = "request_inspector_fixture_dump.rs"]
+mod fixture_dump;

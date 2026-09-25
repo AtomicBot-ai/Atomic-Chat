@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "OUT_OF_MEMORY",
+    "details": "vk::Device::allocateMemory: ErrorOutOfDeviceMemory\n",
+    "message": "Out of memory. The model requires more RAM or VRAM than available."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "vk::Device::allocateMemory: ErrorOutOfDeviceMemory\n",
+    "stdout": ""
+  },
+  "name": "oom_vulkan_device_memory",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

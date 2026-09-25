@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-305 records, 2026-05-19 → 2026-09-21.
+357 records, 2026-05-19 → 2026-09-25.
 
 ---
 
@@ -33,10 +33,14 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (8)
+## Local image & video generation (12)
+
+- **2026-09-22** — [Wire the chat side of the GPU arbitration at the model-load chokepoint](2026-09-22-wire-the-chat-side-of-the-gpu-arbitration.md) — `releaseGpuForChat` was defined by the 2026-09-10 record and called from nowhere.
 
 - **2026-09-21** — [Gate Qwen-Image-2.1 on the installed engine](2026-09-21-gate-qwen-image-2-1-on-installed-engine.md)
 - **2026-09-21** — [Catalog Qwen-Image-2.1 for non-commercial use](2026-09-21-catalog-qwen-image-2-1-for-non-commercial-use.md)
+- **2026-09-18** — [Image generation, load cancellation and Remote & LAN run in the core](2026-09-18-image-generation-load-cancel-and-remote-access-run-in-the-core.md)
+- **2026-09-18** — [Keep the image-generation data layout the core now owns](2026-09-18-keep-the-image-generation-data-layout-the-core-now-owns.md)
 - **2026-09-10** — [Generate images locally with stable-diffusion.cpp in its own Tauri plugin](2026-09-10-generate-images-locally-with-stable-diffusion-cpp-in-its-own-plugin.md)
 - **2026-09-10** — [Mirror, pin and verify stable-diffusion.cpp prebuilts in atomic-chat-conf](2026-09-10-mirror-pin-and-verify-stable-diffusion-cpp-prebuilts-in-atomic-chat-conf.md)
 - **2026-09-10** — [Arbitrate the GPU between chat and diffusion in the web app](2026-09-10-arbitrate-the-gpu-between-chat-and-diffusion-in-the-web-app.md)
@@ -146,7 +150,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (48)
+## llama.cpp providers & backend selection (50)
+
+- **2026-09-18** — [Honour "Ignore SSL certificates" for proxied plugin requests](2026-09-18-honour-ignore-ssl-for-proxied-plugin-requests.md)
+- **2026-09-18** — [Preserve the resolved backend during provider settings writes](2026-09-18-preserve-resolved-backend-during-settings-writes.md)
 
 - **2026-09-17** — [Recover an installed upstream backend before waiting for the catalog](2026-09-17-recover-installed-upstream-backend-before-catalog-wait.md)
 - **2026-09-16** — [Bound the model load's wait on backend configuration, then load from disk](2026-09-16-bound-the-model-load-wait-on-backend-configuration.md)
@@ -231,16 +238,21 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (5)
+## Local API server & OpenAI compatibility (8)
 
+- **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
+- **2026-09-19** — [Reload the served model when the API listener is recovered](2026-09-19-reload-the-served-model-when-the-api-listener-is-recovered.md)
+- **2026-09-18** — [Bind the API inspector's emitter on the core event path](2026-09-18-bind-the-api-inspector-emitter-on-the-core-event-path.md)
 - **2026-09-17** — [Expose the Local API Server through a bundled Cloudflare quick tunnel and on the LAN](2026-09-17-expose-the-local-api-server-through-a-cloudflare-tunnel-and-on-the-lan.md)
 - **2026-09-11** — [Make starting the Local API Server idempotent (ATO-524)](2026-09-11-make-starting-the-local-api-server-idempotent.md)
 - **2026-07-27** — [Reconcile remote providers before proxy-routed requests](2026-07-27-reconcile-remote-providers-before-proxy-routed-requests.md)
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (8)
+## Telemetry, crash reporting & error handling (10)
 
+- **2026-09-22** — [Tell the core "off" in a build that does not report](2026-09-22-tell-the-core-off-in-a-build-that-does-not-report.md)
+- **2026-09-21** — [Tell the core the error-reporting consent, and leave local engine errors to it](2026-09-21-tell-the-core-the-error-reporting-consent-and-leave-local-engine-errors-to-it.md)
 - **2026-09-14** — [Register the shared HTTP commands on mobile, and make a refused connection say so](2026-09-14-register-shared-http-commands-on-mobile-and-surface-network-failures.md)
 - **2026-08-17** — [Rename the string `status` property that PostHog had globally typed numeric, which silently hid ~63k events](2026-08-17-rename-the-string-status-property-that-posthog-had-typed-numeric.md)
 - **2026-08-17** — [Track LLM response outcomes (`chat_response_received`) and close the onboarding funnel's blind spots](2026-08-17-track-llm-response-outcomes-and-close-onboarding-funnel-gaps.md)
@@ -250,8 +262,14 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (12)
+## Packaging, installers, autostart & platform policy (15)
 
+- **2026-09-23** — [Add a Video page that shares the image runtime](2026-09-23-add-a-video-page-that-shares-the-image-runtime.md)
+- **2026-09-23** — [Capture video posters in the webview](2026-09-23-capture-video-posters-in-the-webview.md)
+- **2026-09-23** — [Catalog video families with a video block](2026-09-23-catalog-video-families-with-a-video-block.md)
+- **2026-09-23** — [Keep bun-compiled binaries out of linuxdeploy's reach](2026-09-23-keep-bun-compiled-binaries-out-of-linuxdeploy.md) — bun payloads sit after the ELF sections; patchelf drops them.
+- **2026-09-19** — [Keep document indexes in the data folder](2026-09-19-keep-document-indexes-in-the-data-folder.md)
+- **2026-09-18** — [Keep the HTTP plugin's JS client on the Rust plugin's version](2026-09-18-keep-the-http-plugin-js-client-on-the-rust-plugin-version.md)
 - **2026-09-04** — [Sanitize the AppImage environment before launching host processes](2026-09-04-sanitize-appimage-environment-before-launching-host-processes.md)
 - **2026-08-19** — [Leave launch at startup off for new installs](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
 - **2026-08-05** — [Default autostart on only for clean desktop installs](2026-08-05-default-autostart-on-only-for-clean-desktop-installs.md)
@@ -265,30 +283,29 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (76)
+## UI / UX (82)
+
+- **2026-09-25** — [Clear the composer selection after a failed model load](2026-09-25-clear-the-composer-selection-after-a-failed-load.md)
+- **2026-09-22** — [Keep the composer's approval label plain](2026-09-22-keep-the-composers-approval-label-plain.md)
+- **2026-09-19** — [Say when MCP tools are auto-approved](2026-09-19-say-when-mcp-tools-are-auto-approved.md)
+- **2026-09-18** — [Keep a reply the user stopped](2026-09-18-keep-a-reply-the-user-stopped.md)
+- **2026-09-18** — [Release chat after context growth stops](2026-09-18-release-chat-after-context-growth-stops.md)
 
 - **2026-09-18** — [Preserve gallery selection during image generation](2026-09-18-image-viewer-live-selection.md)
 - **2026-09-17** — [Describe collapsed tool calls with localized human actions](2026-09-17-tool-call-friendly-copy.md)
 - **2026-09-17** — [Dock inline approvals to the composer border](2026-09-17-agent-approval-composer-stack.md)
 - **2026-09-17** — [Show connector actions according to configuration state](2026-09-17-connector-card-state-actions.md)
 - **2026-09-17** — [Widen the model selector and distinguish supported download formats](2026-09-17-model-selector-format-width.md)
-## UI / UX (76)
 - **2026-09-17** — [Wrap chat code within a consistent padded surface](2026-09-17-chat-code-block-wrap.md)
 - **2026-09-17** — [Keep live reasoning bounded through completion](2026-09-17-reasoning-stream-layout-stability.md)
-
 - **2026-09-17** — [Keep onboarding download actions compact and stable](2026-09-17-onboarding-row-polish.md)
 - **2026-09-17** — [Clear the composer selection after an explicit local model unload](2026-09-17-unload-clears-model-selection.md)
 - **2026-09-17** — [Keep connector logos in rounded-square tiles](2026-09-17-connector-icon-rounded-square.md)
-## UI / UX (76)
-## UI / UX (76)
 - **2026-09-17** — [Keep model-loading snackbar copy stable across stages](2026-09-17-model-load-stable-copy.md)
 - **2026-09-17** — [Show web search availability from discovered tools](2026-09-17-web-search-reliability.md)
 - **2026-09-17** — [Keep model selection empty after skipping onboarding](2026-09-17-onboarding-skip-no-autostart.md)
 - **2026-09-17** — [Keep the model-ready snackbar compact](2026-09-17-compact-model-loaded-snackbar.md)
-## UI / UX (76)
 - **2026-09-17** — [Give the composer model settings a bounded reading width](2026-09-17-model-settings-popover-reading-width.md)
-
-## UI / UX (76)
 - **2026-09-17** — [Give the approval menu room for a complete Full access sentence](2026-09-17-approval-menu-copy-width.md)
 - **2026-09-17** — [Give every connector card one anatomy: the action at the top-right, a status + toggle footer on every card](2026-09-17-one-anatomy-for-every-connector-card.md)
 - **2026-09-17** — [Keep the download panel's readout on one fixed line](2026-09-17-keep-the-download-panel-readout-on-one-line.md)
@@ -296,9 +313,6 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-17** — [Lay the onboarding rows out as one column: a fit badge with a word, the size inside the button, one button width](2026-09-17-one-button-column-and-a-fit-badge-on-the-onboarding-rows.md)
 - **2026-09-17** — [Seed one web search on a fresh install, and lay connector rows out like model rows](2026-09-17-seed-one-web-search-and-lay-out-connector-rows-like-model-rows.md)
 - **2026-09-17** — [Text fonts lead the font stacks; the emoji face is carved out of them with `unicode-range`](2026-09-17-text-fonts-lead-the-stack-the-emoji-face-is-carved-out-by-unicode-range.md)
-## UI / UX (76)
-
-## UI / UX (76)
 - **2026-09-17** — [Show onboarding's full recommended list in the reply gate, marks and sizes included, and seat the folder route among the routes](2026-09-17-reply-gate-shows-the-full-recommended-list.md)
 - **2026-09-16** — [Confirm Full access before enabling it, every time](2026-09-16-confirm-full-access-before-enabling-it.md)
 - **2026-09-16** — [Unfold the release notes inside the update banner](2026-09-16-unfold-release-notes-inside-the-update-banner.md)
@@ -307,9 +321,6 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-16** — [Let the composer's model list download: recommendations when empty, Hugging Face under the search](2026-09-16-model-selector-download-picks.md)
 - **2026-09-16** — [Show the running download first in the reply gate, arm the message on it, and share the panel's Cancel](2026-09-16-show-the-running-download-first-in-the-reply-gate.md)
 - **2026-09-16** — [Stay on the Welcome screen until the download lands](2026-09-16-stay-on-the-welcome-screen-until-the-download-lands.md)
-## UI / UX (76)
-
-## UI / UX (76)
 - **2026-09-16** — [Mark each recommended row with its fit, and list the picks by it](2026-09-16-mark-each-recommended-row-with-its-fit.md)
 - **2026-09-16** — [Offer the manifest's recommendation on the reminder card too, and stop waiting for it after 8 s](2026-09-16-offer-the-manifest-recommendation-on-the-reminder-card-too.md)
 - **2026-09-15** — [Ask for a model with the same rows and the same list as onboarding, and open the Hub from both](2026-09-15-ask-for-a-model-with-the-same-rows-and-list-as-onboarding.md)
@@ -358,11 +369,42 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Other (14)
+## Inference core extraction — atomic-chat-core (24)
 
+- **2026-09-22** — [Desktop e2e brings its own image engine, tunnel and catalog, and expects what the app unpacks by itself](2026-09-22-desktop-e2e-brings-its-own-image-engine-tunnel-and-catalog.md)
+- **2026-09-21** — [A factory reset removes the core's folder and keeps every provider's backends](2026-09-21-a-factory-reset-removes-the-cores-folder-and-keeps-every-providers-backends.md)
+- **2026-09-19** — [Ask the core before concluding a session does not exist](2026-09-19-ask-the-core-before-concluding-a-session-does-not-exist.md)
+- **2026-09-19** — [End a local stream on the channel, not on the command's return](2026-09-19-end-a-local-stream-on-the-channel-not-on-the-commands-return.md)
+- **2026-09-19** — [Restart through the exit handler](2026-09-19-restart-through-the-exit-handler.md)
+- **2026-09-18** — [Stop the core before moving the data folder](2026-09-18-stop-the-core-before-moving-the-data-folder.md)
+- **2026-09-17** — [Keep app mirrors coherent and import the pre-core optimum](2026-09-17-preserve-stage6-mirrors-and-optimal-cache.md)
+- **2026-09-17** — [The core owns every desktop runtime unconditionally](2026-09-17-the-core-owns-every-desktop-runtime-unconditionally.md)
+- **2026-09-17** — [Lease runtime loads across owner handover](2026-09-17-lease-runtime-loads-across-handover.md)
+- **2026-09-17** — [Reconcile app-core server ownership before reporting success](2026-09-17-reconcile-core-server-ownership.md)
+- **2026-09-17** — [Isolate application and CLI core owners](2026-09-17-isolate-app-and-cli-cores.md)
+- **2026-09-16** — [Bridge core-owned backend work into existing app events](2026-09-16-bridge-core-owned-backend-progress-and-cache.md)
+- **2026-09-16** — [Change the inference runtime owner only while it is idle](2026-09-16-change-runtime-owner-only-while-idle.md)
+- **2026-09-16** — [Retry only read-only core calls and resume events after the snapshot cursor](2026-09-16-retry-only-read-only-core-calls-and-resume-after-snapshot.md)
+- **2026-09-16** — [The webview reaches the core only through Rust](2026-09-16-the-webview-reaches-the-core-only-through-rust.md)
+- **2026-09-16** — [Keep handles to the cores we start, purely to reap them](2026-09-16-reap-the-cores-we-start-even-though-we-detach-them.md)
+- **2026-09-16** — [Claim models before mutating runtime state](2026-09-16-claim-models-before-mutating-runtime-state.md)
+- **2026-09-15** — [Extract the inference core into atomic-chat-core](2026-09-15-extract-the-inference-core-into-atomic-chat-core.md)
+- **2026-09-15** — [Migrate to the core in phases](2026-09-15-migrate-to-the-core-in-phases.md)
+- **2026-09-15** — [Pin wire contracts with Rust fixtures](2026-09-15-pin-wire-contracts-with-rust-fixtures.md)
+- **2026-09-15** — [The core ships as a bundled resource and runs as an independent owner](2026-09-15-the-core-is-a-bundled-resource-and-an-independent-owner.md)
+- **2026-09-15** — [jan-cli keeps its file name and becomes a copy of the core](2026-09-15-jan-cli-keeps-its-name-and-becomes-the-core.md)
+- **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
+- **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
+
+## Other (18)
+
+- **2026-09-22** — [Keep an unseen e2e window rendering](2026-09-22-keep-an-unseen-e2e-window-rendering.md)
+- **2026-09-21** — [Run desktop e2e scenarios side by side](2026-09-21-run-desktop-e2e-scenarios-side-by-side.md)
+- **2026-09-18** — [Drive the desktop UI through an embedded WebDriver on an isolated profile](2026-09-18-drive-the-desktop-ui-through-an-embedded-webdriver-on-an-isolated-profile.md)
 - **2026-09-17** — [Re-point the web-app test storage globals at jsdom on Node ≥ 25](2026-09-17-repoint-web-app-test-storage-globals-at-jsdom-on-node-25.md)
 - **2026-09-17** — [Use a short default assistant prompt and migrate only exact defaults](2026-09-17-default-system-prompt-short.md)
 - **2026-09-16** — [Migrate Jan-branded assistant prompts to the Atomic Chat default by signature, not by version](2026-09-16-migrate-jan-branded-assistant-prompts.md)
+- **2026-09-16** — [Automate acceptance with layered Tauri evidence](2026-09-16-automate-acceptance-with-layered-tauri-evidence.md)
 - **2026-09-14** — [Re-pin filesystem MCP specs the app wrote itself](2026-09-14-re-pin-filesystem-mcp-specs-the-app-wrote-itself.md)
 - **2026-08-21** — [Strip every non-image file part before the model converter](2026-08-21-strip-every-non-image-file-part-before-the-model-converter.md)
 - **2026-07-31** — [Surface MCP server runtime errors (ATO-385)](2026-07-31-surface-mcp-server-runtime-errors.md)

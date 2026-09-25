@@ -324,6 +324,93 @@ function createAudioInjectingFetch(
 }
 
 /**
+ * Where `atomic-chat-core` serves this Foundation Models session. The core owns every local runtime
+ * on desktop, and Rust answers from its mirror of the core's session table; `null` means nothing is
+ * loaded.
+ */
+export async function findFoundationModelsSession(
+  modelId: string
+): Promise<SessionInfo | null> {
+  return invoke<SessionInfo | null>('resolve_local_session', {
+    provider: 'foundation-models',
+    modelId,
+  })
+}
+
+/**
+ * Where `atomic-chat-core` serves this model. Rust answers from its mirror of the core's session
+ * table rather than the webview reading a cache of its own: a cached answer could be a moment out
+ * of date and name a port that now belongs to nothing. `null` and errors are authoritative.
+ */
+export async function findLocalSession(
+  providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+  modelId: string
+): Promise<SessionInfo | null> {
+  return invoke<SessionInfo | null>('resolve_local_session', {
+    provider: providerName,
+    modelId,
+  })
+}
+
+/**
+ * Point a request at `port`, whatever port it was built for.
+ *
+ * Only loopback requests are touched: a local model's URL is the only thing this layer is entitled
+ * to rewrite, and a cloud provider's must pass through untouched.
+ */
+export function retargetLocalRequest(
+  input: RequestInfo | URL,
+  port: number
+): RequestInfo | URL {
+  const raw =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url
+  if (
+    !raw.startsWith('http://localhost:') &&
+    !raw.startsWith('http://127.0.0.1:')
+  ) {
+    return input
+  }
+  const url = new URL(raw)
+  if (url.port === String(port)) return input
+  url.port = String(port)
+  const retargeted = url.toString()
+  if (typeof input === 'string' || input instanceof URL) return retargeted
+  return new Request(retargeted, input)
+}
+
+/** Replace the bearer token, leaving every other header alone. An empty key removes it. */
+export function withBearer(
+  init: RequestInit | undefined,
+  apiKey: string
+): RequestInit | undefined {
+  const headers = new Headers(init?.headers ?? {})
+  if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`)
+  else headers.delete('Authorization')
+  return { ...(init ?? {}), headers }
+}
+
+/** Resolve the target before every call; a failed resolve must never reuse a stale credential. */
+export function createLiveSessionFetch(
+  baseFetch: typeof httpFetch,
+  resolve: () => Promise<SessionInfo>
+): typeof httpFetch {
+  return async (input, init) => {
+    const current = await resolve()
+    return baseFetch(
+      retargetLocalRequest(input, current.port),
+      withBearer(init, current.api_key)
+    )
+  }
+}
+
+/** How long a finished `stream_local_http` call waits for the channel's `done` before closing anyway. */
+const STREAM_END_GRACE_MS = 2_000
+
+/**
  * Fetch that bypasses tauri_plugin_http for localhost POST requests.
  * The plugin's ReadableStream bridge does not properly deliver SSE chunks
  * from local inference servers, causing the UI to hang. This uses the
@@ -380,10 +467,16 @@ export function createLocalStreamingFetch(
     let notifyPull: (() => void) | null = null
     let notifyFirst: (() => void) | null = null
 
-    const channel = new Channel<{ data: string }>()
+    const channel = new Channel<{ data: string; done?: boolean }>()
     let firstChunkMarked = false
-    channel.onmessage = ({ data }: { data: string }) => {
-      chunks.push(data)
+    channel.onmessage = ({ data, done: last }: { data: string; done?: boolean }) => {
+      if (data) chunks.push(data)
+      // The end of the stream arrives here, after the last chunk and in order
+      // with it. See `markDone` below for why the command's return is not it.
+      if (last) {
+        markDone()
+        return
+      }
       if (!firstChunkMarked) {
         firstChunkMarked = true
         void import('@/lib/ttft-timing').then(({ ttftMark }) =>
@@ -451,8 +544,14 @@ export function createLocalStreamingFetch(
       onChunk: channel,
     })
 
+    // The command's return is not the end of the stream. It reaches the webview
+    // by another route than the channel's messages and can overtake them: a
+    // reply of two chunks — a tool call — was closed here before either had
+    // arrived, and the turn ended empty. The end is the channel's own `done`
+    // message; the return only starts a grace period, for a backend that never
+    // sends one.
     cmdPromise
-      .then(() => markDone())
+      .then(() => setTimeout(markDone, STREAM_END_GRACE_MS))
       .catch((e) => {
         error = String(e)
         markDone()
@@ -548,7 +647,7 @@ function getLocalApiServerBaseURL(): {
 /**
  * Cached `SessionInfo` (port + api_key) for an already-warm local
  * llama.cpp / MLX session, keyed by `providerName::modelId`. Avoids paying
- * 100–200ms of redundant IPC (`startModel` + `find_session_by_model`) on
+ * 100–200ms of redundant IPC (`startModel` + `resolve_local_session`) on
  * every `sendMessages` for a session that is clearly still alive.
  *
  * TTL is short so that if the user stops/restarts the model the cache
@@ -568,7 +667,10 @@ export class ModelFactory {
   private static readonly FM_AVAILABILITY_TTL_MS = 30 * 60 * 1000
   private static localSessionCache: Map<string, CachedSession> = new Map()
 
-  private static sessionCacheKey(providerName: string, modelId: string): string {
+  private static sessionCacheKey(
+    providerName: string,
+    modelId: string
+  ): string {
     return `${providerName}::${modelId}`
   }
 
@@ -596,8 +698,8 @@ export class ModelFactory {
 
   /**
    * Resolve `SessionInfo` for a llama.cpp or MLX model, reusing a cached
-   * entry when fresh, otherwise calling `startModel` + the appropriate
-   * `find_session_by_model` IPC and populating the cache. Concurrent
+   * entry when fresh, otherwise calling `startModel` +
+   * `resolve_local_session` and populating the cache. Concurrent
    * resolves for the same key share a single in-flight promise so the
    * pre-warm from the chat input and the real send don't both hit IPC.
    */
@@ -641,13 +743,7 @@ export class ModelFactory {
         }
       }
 
-      const ipcName =
-        providerName === 'llamacpp'
-          ? 'plugin:llamacpp|find_session_by_model'
-          : providerName === 'llamacpp-upstream'
-            ? 'plugin:llamacpp-upstream|find_session_by_model'
-            : 'plugin:mlx|find_mlx_session_by_model'
-      const sessionInfo = await invoke<SessionInfo | null>(ipcName, { modelId })
+      const sessionInfo = await findLocalSession(providerName, modelId)
       if (!sessionInfo) {
         throw new Error(
           `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
@@ -677,6 +773,37 @@ export class ModelFactory {
         entry.inFlight = undefined
       }
     }
+  }
+
+  /** Resolve immediately before a request; never reuse a cached bearer key or port. */
+  private static async resolveFreshLocalSession(
+    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+    modelId: string,
+    provider: ProviderObject | undefined
+  ): Promise<SessionInfo> {
+    let sessionInfo = await findLocalSession(providerName, modelId)
+    if (!sessionInfo && provider) {
+      const { useServiceStore } = await import('@/hooks/useServiceHub')
+      const serviceHub = useServiceStore.getState().serviceHub
+      if (serviceHub) {
+        await serviceHub.models().startModel(provider, modelId)
+        sessionInfo = await findLocalSession(providerName, modelId)
+      }
+    }
+    if (!sessionInfo) {
+      ModelFactory.invalidateLocalSessionCache(providerName, modelId)
+      throw new Error(
+        `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
+      )
+    }
+    ModelFactory.localSessionCache.set(
+      ModelFactory.sessionCacheKey(providerName, modelId),
+      {
+        sessionInfo,
+        expiresAt: Date.now() + LOCAL_SESSION_CACHE_TTL_MS,
+      }
+    )
+    return sessionInfo
   }
 
   /**
@@ -742,7 +869,7 @@ export class ModelFactory {
       const baseUrl = `http://localhost:${sessionInfo.port}`
       const headers = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${sessionInfo.api_key}`,
+        'Authorization': `Bearer ${sessionInfo.api_key}`,
       }
       const applied = await invoke<string>('post_local_http', {
         url: `${baseUrl}/apply-template`,
@@ -775,10 +902,13 @@ export class ModelFactory {
     ) {
       return ModelFactory.fmAvailabilityCache.status
     }
-    const status = await invoke<string>(
-      'plugin:foundation-models|check_foundation_models_availability',
-      {}
-    )
+    // The core probes the Swift server's availability; `status` carries the same tokens the
+    // plugin check used to return (`available`, `notEligible`, `modelNotReady`, …).
+    const { status } = await invoke<{ status: string }>('atomic_core_call', {
+      method: 'GET',
+      path: '/runtimes/foundation-models/availability',
+      body: null,
+    })
     ModelFactory.fmAvailabilityCache = { status, at: now }
     return status
   }
@@ -872,10 +1002,11 @@ export class ModelFactory {
 
   /**
    * Create a llamacpp model by starting the model and finding the running session.
-   * The `engineName` selects which Tauri plugin to talk to: `'llamacpp'` (our
-   * TurboQuant fork) or `'llamacpp-upstream'` (official ggml-org/llama.cpp).
-   * Both expose an OpenAI-compatible HTTP surface, so the rest of the factory
-   * is identical — only the session-discovery IPC differs.
+   * The `engineName` selects which of the core's llama.cpp runtimes serves it:
+   * `'llamacpp'` (our TurboQuant fork) or `'llamacpp-upstream'` (official
+   * ggml-org/llama.cpp). Both expose an OpenAI-compatible HTTP surface, so the
+   * rest of the factory is identical — only the provider passed to
+   * `resolve_local_session` differs.
    */
   private static async createLlamaCppModel(
     modelId: string,
@@ -891,6 +1022,18 @@ export class ModelFactory {
 
     const customFetch = createLocalStreamingFetch(httpFetch, parameters)
 
+    // The session is resolved again immediately before every request, and the URL and bearer key
+    // the model object was built with are replaced with what comes back.
+    //
+    // Without this, a model object carries the port it was created with for its whole life — and
+    // that port stops being true the moment the model is reloaded, which happens on its own
+    // whenever a prompt overflows the context window and the engine reloads it one step larger.
+    // The symptom was a conversation that worked until it grew, and then failed against a port
+    // nothing was listening on.
+    const liveFetch = createLiveSessionFetch(customFetch, () =>
+      ModelFactory.resolveFreshLocalSession(engineName, modelId, provider)
+    )
+
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: engineName,
       headers: () => ({
@@ -902,7 +1045,7 @@ export class ModelFactory {
         return url.toString()
       },
       includeUsage: true,
-      fetch: customFetch,
+      fetch: liveFetch,
       metadataExtractor: providerMetadataExtractor,
     })
 
@@ -983,8 +1126,8 @@ export class ModelFactory {
   }
 
   /**
-   * Create a Foundation Models model (Apple on-device) by starting the local
-   * Swift server via the Tauri plugin and connecting over localhost.
+   * Create a Foundation Models model (Apple on-device): the core starts the
+   * local Swift server, and the model connects to it over localhost.
    */
   private static async createFoundationModelsModel(
     modelId: string,
@@ -1025,10 +1168,7 @@ export class ModelFactory {
       }
     }
 
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:foundation-models|find_foundation_models_session',
-      {}
-    )
+    const sessionInfo = await findFoundationModelsSession(modelId)
 
     if (!sessionInfo) {
       throw new Error(

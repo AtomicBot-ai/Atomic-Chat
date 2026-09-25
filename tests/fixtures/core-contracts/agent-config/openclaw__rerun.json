@@ -1,0 +1,29 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".openclaw/openclaw.json": "{\n  \"agents\": {\n    \"defaults\": {\n      \"model\": {\n        \"primary\": \"atomic/AtomicChat/Qwen3.5-9B-GGUF\"\n      },\n      \"models\": {\n        \"atomic/AtomicChat/Qwen3.5-9B-GGUF\": {}\n      },\n      \"timeoutSeconds\": 240\n    }\n  },\n  \"gateway\": {\n    \"auth\": {\n      \"mode\": \"none\"\n    },\n    \"mode\": \"local\"\n  },\n  \"models\": {\n    \"mode\": \"merge\",\n    \"providers\": {\n      \"atomic\": {\n        \"api\": \"openai-completions\",\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n        \"models\": [\n          {\n            \"id\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n            \"name\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n          }\n        ]\n      }\n    }\n  }\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "openclaw",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "prior_runs": [
+      {
+        "api_key": "sk-atomic-fixture-key",
+        "api_url": "http://127.0.0.1:1337/v1",
+        "model": "AtomicChat/Qwen3.5-9B-GGUF"
+      }
+    ],
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "openclaw__rerun",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

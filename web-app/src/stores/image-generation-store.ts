@@ -4,6 +4,8 @@ import { useHardware } from '@/hooks/useHardware'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useVideoForm } from '@/hooks/useVideoForm'
+import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { acquireGpuForDiffusion } from '@/lib/diffusion/arbiter'
 import { configureDiffusion, getDiffusionPaths } from '@/lib/diffusion/config'
@@ -40,12 +42,14 @@ import {
 import type {
   DiffusionError,
   DiffusionEvent,
+  DiffusionModality,
   DiffusionModelFile,
   DiffusionStatus,
   ImageCapabilities,
   ImageGenerateRequest,
   ImageJob,
   ImageJobState,
+  VideoCapabilities,
 } from '@/services/diffusion/types'
 import {
   fetchDiffusionCatalog,
@@ -54,6 +58,7 @@ import {
   type DiffusionCatalog,
 } from '@/services/diffusion-catalog-registry'
 import { useImageGalleryStore } from '@/stores/image-gallery-store'
+import { raiseLocalApiServerForMediaModel } from '@/utils/localApiServerControl'
 
 /** 0 = what it is, 1 = install the engine, 2 = pick and download a model. */
 export type ImageSetupStep = 0 | 1 | 2
@@ -79,6 +84,7 @@ export type DiffusionPaths = {
   modelsRoot: string
   backendsRoot: string
   imagesDir: string
+  videosDir: string
 }
 
 export type StartGenerationOptions = {
@@ -92,7 +98,10 @@ export type StartGenerationOptions = {
 type ImageGenerationState = {
   bound: boolean
   status: DiffusionStatus | null
+  /** The resident image model's capabilities; null while a video model is resident. */
   capabilities: ImageCapabilities | null
+  /** The resident video model's capabilities; null while an image model is resident. */
+  videoCapabilities: VideoCapabilities | null
   catalog: DiffusionCatalog | null
   catalogSource: 'remote' | 'cache' | 'baseline' | null
   modelFiles: DiffusionModelFile[]
@@ -113,6 +122,13 @@ type ImageGenerationState = {
   /** Stable clock origin for the canvas/gallery generation placeholders. */
   generationStartedAtMs: number | null
   lastError: DiffusionError | null
+  /**
+   * Which page a model-level `lastError` belongs to: the family of the
+   * artifact that was loading, else the resident model's. Null for errors of
+   * the image run loop and for anything raised before a model was involved,
+   * which the Images page shows as it always has.
+   */
+  lastErrorModality: DiffusionModality | null
 
   /** A `loadModel` is in flight for this artifact id. */
   loadingArtifactId: string | null
@@ -124,6 +140,8 @@ type ImageGenerationState = {
 
   setupOpen: boolean
   setupStep: ImageSetupStep
+  /** Which page opened the wizard: its intro copy and its model list follow. */
+  setupModality: DiffusionModality
 
   bind: () => Promise<void>
   unbind: () => void
@@ -131,6 +149,11 @@ type ImageGenerationState = {
   refreshStatus: () => Promise<void>
   refreshCatalog: () => Promise<void>
   refreshModelFiles: () => Promise<void>
+  /**
+   * Configure the core again with every setting it keeps in memory: the idle
+   * interval and the chosen output folder. After a residency setting changes,
+   * and on a new core attachment.
+   */
   applyIdleSettings: () => Promise<void>
 
   installEngine: (opts?: { force?: boolean; family?: string }) => Promise<void>
@@ -149,7 +172,7 @@ type ImageGenerationState = {
   stop: () => Promise<void>
   clearError: () => void
 
-  openSetup: (step?: ImageSetupStep) => void
+  openSetup: (step?: ImageSetupStep, modality?: DiffusionModality) => void
   closeSetup: () => void
   reset: () => void
 }
@@ -202,6 +225,7 @@ const initial = {
   bound: false,
   status: null as DiffusionStatus | null,
   capabilities: null as ImageCapabilities | null,
+  videoCapabilities: null as VideoCapabilities | null,
   catalog: null as DiffusionCatalog | null,
   catalogSource: null as ImageGenerationState['catalogSource'],
   modelFiles: [] as DiffusionModelFile[],
@@ -217,6 +241,7 @@ const initial = {
   generating: false,
   generationStartedAtMs: null as number | null,
   lastError: null as DiffusionError | null,
+  lastErrorModality: null as DiffusionModality | null,
   loadingArtifactId: null as string | null,
   unloadingArtifactId: null as string | null,
   engineInstall: emptyInstall,
@@ -224,6 +249,7 @@ const initial = {
   pendingEngineArtifactId: null,
   setupOpen: false,
   setupStep: 0 as ImageSetupStep,
+  setupModality: 'image' as DiffusionModality,
 }
 
 export const useImageGenerationStore = create<ImageGenerationState>()((
@@ -300,6 +326,38 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     })
   }
 
+  /**
+   * Read the resident model's capabilities into the slot of its modality and
+   * clear the other: one session, one resident model, so the two can never
+   * both be set. Nothing to read while no model is resident.
+   */
+  const refreshCapabilities = async () => {
+    const loaded = get().status?.model.loaded
+    if (!loaded) {
+      set({ capabilities: null, videoCapabilities: null })
+      return
+    }
+    try {
+      if (loaded.modality === 'video') {
+        const videoCapabilities = await diffusion().getVideoCapabilities()
+        set({ videoCapabilities, capabilities: null })
+      } else {
+        const capabilities = await diffusion().getCapabilities()
+        set({ capabilities, videoCapabilities: null })
+      }
+    } catch (error) {
+      console.error('[images] capabilities unavailable:', error)
+    }
+  }
+
+  /** The modality a model-level error belongs to; see `lastErrorModality`. */
+  const errorModality = (): DiffusionModality | null => {
+    const { catalog, loadingArtifactId, status } = get()
+    const parsed = loadingArtifactId ? parseArtifactId(loadingArtifactId) : null
+    const family = catalog && parsed ? findFamily(catalog, parsed.family) : null
+    return family?.modality ?? status?.model.loaded?.modality ?? null
+  }
+
   const reportJob = (job: ImageJob, runs: number) => {
     const loaded = get().status?.model.loaded
     // An id the parser does not know reports the run without the model.
@@ -353,7 +411,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       unsubscribe = service.subscribe((event) => get().handleEvent(event))
 
       try {
-        const status = await configureDiffusion(idleOverrides())
+        const status = await configureCore()
         set({ status })
       } catch (error) {
         console.error('[images] configure failed:', error)
@@ -426,11 +484,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
       // The capabilities only exist while a model is resident.
       if (get().status?.model.state === 'loaded') {
-        try {
-          set({ capabilities: await service.getCapabilities() })
-        } catch (error) {
-          console.error('[images] capabilities unavailable:', error)
-        }
+        await refreshCapabilities()
       }
     },
 
@@ -446,18 +500,19 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           const previous = get().status
           set({ status: event.status })
           if (event.status.model.state !== 'loaded') {
-            set({ capabilities: null })
+            set({ capabilities: null, videoCapabilities: null })
           } else if (
             previous?.model.state !== 'loaded' &&
-            get().capabilities === null
+            get().capabilities === null &&
+            get().videoCapabilities === null
           ) {
-            void diffusion()
-              .getCapabilities()
-              .then((capabilities) => set({ capabilities }))
-              .catch(() => {})
+            void refreshCapabilities()
           }
           if (event.status.model.error && !get().generating) {
-            set({ lastError: event.status.model.error })
+            set({
+              lastError: event.status.model.error,
+              lastErrorModality: errorModality(),
+            })
           }
           return
         }
@@ -482,6 +537,16 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           }
           const waiter = waiters.get(event.job.id)
           if (waiter && isTerminal(event.job)) waiter(event.job)
+          // A picture nobody here is waiting for — an outside client on
+          // `/v1/images/generations`, or another window — still lands in the
+          // core's gallery; show it, as the run loop does for its own jobs.
+          if (
+            !waiter &&
+            event.job.state === 'completed' &&
+            event.job.outputs.length > 0
+          ) {
+            useImageGalleryStore.getState().prepend(event.job.outputs)
+          }
           return
         }
         case 'error': {
@@ -502,6 +567,22 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
               })
             }
           }
+          return
+        }
+        case 'reset': {
+          // A new core generation knows nothing: neither the output folder
+          // nor the idle interval, nor a job that was running. The relay
+          // also sends this on a reattach or a resync to the same core,
+          // which still holds its configuration; the configure below sends
+          // every setting the app keeps, so it restores a new core and
+          // changes nothing on the old one. Take its status as the truth.
+          void get()
+            .applyIdleSettings()
+            .then(() => {
+              if (get().status?.model.state !== 'loaded') {
+                set({ capabilities: null, videoCapabilities: null })
+              }
+            })
           return
         }
       }
@@ -536,7 +617,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
     applyIdleSettings: async () => {
       try {
-        set({ status: await configureDiffusion(idleOverrides()) })
+        set({ status: await configureCore() })
       } catch (error) {
         console.error('[images] idle settings not applied:', error)
       }
@@ -638,7 +719,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         // Forget retained idle/failed specs as well as resident servers.
         // The native finalizer also invalidates old sessions under load_lock.
         await diffusion().unloadModel()
-        set({ capabilities: null })
+        set({ capabilities: null, videoCapabilities: null })
         await get().installEngine({ ...(family ? { family } : {}) })
         if (get().engineInstall.error === null) {
           set({ engineUpdate: { ...noUpdate, checkedAt: Date.now() } })
@@ -692,11 +773,16 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       )
       const sideBytes =
         (family.vae?.bytes ?? 0) +
+        (family.audio_vae?.bytes ?? 0) +
         (teOnCpu
           ? 0
           : requiredTextEncoders.reduce((sum, file) => sum + file.bytes, 0))
 
-      set({ loadingArtifactId: artifactId, lastError: null })
+      set({
+        loadingArtifactId: artifactId,
+        lastError: null,
+        lastErrorModality: null,
+      })
       try {
         // Check live native status before evicting a chat model or launching.
         // Bundling a newer manifest does not upgrade existing profile binaries.
@@ -756,19 +842,34 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           }
         )
         await diffusion().loadModel(request)
-        const capabilities = await diffusion().getCapabilities()
-        set({ capabilities })
-        settings.setSelectedArtifactId(artifactId)
-        if (previousModelId !== artifactId) {
-          // A FLUX checkpoint at Qwen's old 30-step / high-guidance values
-          // can overflow or produce garbage. Switching model families also
-          // switches their numeric recipe, while keeping the user's prompt.
-          useImageForm.getState().resetToDefaults(capabilities.defaults)
+        if (family.modality === 'video') {
+          // The Video page owns its selection and its form; the image ones
+          // are left as they were, for when an image model is loaded again.
+          const videoCapabilities = await diffusion().getVideoCapabilities()
+          set({ videoCapabilities, capabilities: null })
+          useVideoSetting.getState().setSelectedArtifactId(artifactId)
+          if (previousModelId !== artifactId) {
+            useVideoForm.getState().resetToDefaults(videoCapabilities)
+          }
+        } else {
+          const capabilities = await diffusion().getCapabilities()
+          set({ capabilities, videoCapabilities: null })
+          settings.setSelectedArtifactId(artifactId)
+          if (previousModelId !== artifactId) {
+            // A FLUX checkpoint at Qwen's old 30-step / high-guidance values
+            // can overflow or produce garbage. Switching model families also
+            // switches their numeric recipe, while keeping the user's prompt.
+            useImageForm.getState().resetToDefaults(capabilities.defaults)
+          }
         }
         await get().refreshStatus()
+        // `/v1/images/generations` and `/v1/videos` live on the Local API
+        // Server; without this an image-only user never gets it up. Not
+        // awaited: the model is loaded whatever the server does.
+        void raiseLocalApiServerForMediaModel()
       } catch (error) {
         const described = toDiffusionError(error)
-        set({ lastError: described })
+        set({ lastError: described, lastErrorModality: family.modality })
         if (described.code === 'ENGINE_UPDATE_REQUIRED') {
           set({
             pendingEngineArtifactId: artifactId,
@@ -785,14 +886,21 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     },
 
     unloadModel: async () => {
-      const artifactId = get().status?.model.loaded?.modelId ?? null
-      set({ unloadingArtifactId: artifactId, lastError: null })
+      const loaded = get().status?.model.loaded ?? null
+      set({
+        unloadingArtifactId: loaded?.modelId ?? null,
+        lastError: null,
+        lastErrorModality: null,
+      })
       try {
         await diffusion().unloadModel()
-        set({ capabilities: null })
+        set({ capabilities: null, videoCapabilities: null })
         await get().refreshStatus()
       } catch (error) {
-        set({ lastError: toDiffusionError(error) })
+        set({
+          lastError: toDiffusionError(error),
+          lastErrorModality: loaded?.modality ?? null,
+        })
       } finally {
         set({ unloadingArtifactId: null })
       }
@@ -808,9 +916,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         await get().unloadModel()
       }
       await deleteArtifactFiles(family, parsed.quantId, modelFiles, catalog)
-      const settings = useImageSetting.getState()
-      if (settings.selectedArtifactId === artifactId) {
-        settings.setSelectedArtifactId(null)
+      for (const settings of [
+        useImageSetting.getState(),
+        useVideoSetting.getState(),
+      ]) {
+        if (settings.selectedArtifactId === artifactId) {
+          settings.setSelectedArtifactId(null)
+        }
       }
       await get().refreshModelFiles()
     },
@@ -899,9 +1011,10 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       }
     },
 
-    clearError: () => set({ lastError: null }),
+    clearError: () => set({ lastError: null, lastErrorModality: null }),
 
-    openSetup: (step = 0) => set({ setupOpen: true, setupStep: step }),
+    openSetup: (step = 0, modality = 'image') =>
+      set({ setupOpen: true, setupStep: step, setupModality: modality }),
     closeSetup: () => set({ setupOpen: false }),
 
     reset: () => {
@@ -911,10 +1024,82 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
   }
 })
 
-/** Idle-unload seconds from the settings, for `configureDiffusion`. */
-function idleOverrides(): { idleUnloadSecs: number } {
-  const { keepModelLoaded, idleUnloadMinutes } = useImageSetting.getState()
-  return { idleUnloadSecs: keepModelLoaded ? 0 : idleUnloadMinutes * 60 }
+/**
+ * Every setting the core must be given again on each configure, for
+ * `configureDiffusion`: it keeps them only in memory and replaces all of them
+ * at once, so a setting left out here is reset to the core's default.
+ */
+function coreSettings(): {
+  idleUnloadSecs: number
+  outputDir?: string
+  videoOutputDir?: string
+} {
+  const { keepModelLoaded, idleUnloadMinutes, outputDir } =
+    useImageSetting.getState()
+  const videoOutputDir = useVideoSetting.getState().outputDir
+  const folder = typeof outputDir === 'string' ? outputDir.trim() : ''
+  const videoFolder =
+    typeof videoOutputDir === 'string' ? videoOutputDir.trim() : ''
+  return {
+    idleUnloadSecs: keepModelLoaded ? 0 : idleUnloadMinutes * 60,
+    ...(folder ? { outputDir: folder } : {}),
+    ...(videoFolder ? { videoOutputDir: videoFolder } : {}),
+  }
+}
+
+/**
+ * Configure the core with `coreSettings`. A stored folder the core can no
+ * longer create (a drive that is not plugged in) must not take image or video
+ * generation down: configure again without either folder, which means the
+ * default folders, and keep both choices for the next configure. The core
+ * does not say which folder failed, so neither is retried alone.
+ */
+async function configureCore(): Promise<DiffusionStatus> {
+  const settings = coreSettings()
+  const folders = [settings.outputDir, settings.videoOutputDir].filter(
+    (folder): folder is string => folder !== undefined
+  )
+  try {
+    return await configureDiffusion(settings)
+  } catch (error) {
+    if (folders.length === 0 || !isFolderFailure(error)) throw error
+    console.warn(
+      `[images] output folder ${folders.join(' or ')} not usable, using the default:`,
+      error
+    )
+    return configureDiffusion({ idleUnloadSecs: settings.idleUnloadSecs })
+  }
+}
+
+/**
+ * How the core reports a folder it cannot create: an I/O failure (INTERNAL) or
+ * a full disk. A core that is down, or that refuses the data folder, fails the
+ * same way without the folder, so retrying would only hide the real error.
+ */
+function isFolderFailure(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined
+  return code === 'INTERNAL' || code === 'DISK_FULL'
+}
+
+/**
+ * Whether a complete checkpoint of `modality` is on disk, by the catalog's
+ * word on each installed family. An artifact of a family the catalog no
+ * longer lists counts as an image one, which is what it was before video.
+ */
+export function selectHasInstalledModel(
+  modality: DiffusionModality
+): (state: ImageGenerationState) => boolean {
+  return (state) =>
+    state.installedArtifacts.some((artifact) => {
+      if (!artifact.complete) return false
+      const family = state.catalog
+        ? findFamily(state.catalog, artifact.family)
+        : undefined
+      return (family?.modality ?? 'image') === modality
+    })
 }
 
 /** Test seam: drop the waiters of a previous test. */

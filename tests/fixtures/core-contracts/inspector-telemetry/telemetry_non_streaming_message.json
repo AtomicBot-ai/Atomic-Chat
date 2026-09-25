@@ -1,0 +1,45 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion_tokens": 1,
+    "finish_reason": "stop",
+    "predicted_per_second": null,
+    "prompt_per_second": null,
+    "prompt_tokens": 3,
+    "reply_chars": 8,
+    "reply_preview": "whole",
+    "tokens_estimated": false,
+    "total_tokens": 4,
+    "ttft_ms": null
+  },
+  "input": {
+    "frames": [
+      {
+        "json": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "message": {
+                "content": "whole",
+                "reasoning_content": "hmm"
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1,
+            "prompt_tokens": 3,
+            "total_tokens": 4
+          }
+        },
+        "offset_ms": 30
+      }
+    ],
+    "kind": "stream_telemetry",
+    "whole_response": true
+  },
+  "name": "telemetry_non_streaming_message",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

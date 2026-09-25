@@ -1,0 +1,29 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".hermes/config.yaml": "model:\n  default: AtomicChat/Qwen3.5-9B-GGUF\n  provider: custom\n  base_url: http://127.0.0.1:1337/v1\ncustom_providers:\n- name: atomic-chat\n  base_url: http://127.0.0.1:1337/v1\n  model: AtomicChat/Qwen3.5-9B-GGUF\n  models:\n    AtomicChat/Qwen3.5-9B-GGUF:\n      context_length: 65536\nproviders:\n  custom:\n    request_timeout_seconds: 180\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "hermes",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "prior_runs": [
+      {
+        "api_key": "sk-atomic-fixture-key",
+        "api_url": "http://127.0.0.1:1337/v1",
+        "model": "AtomicChat/Qwen3.5-9B-GGUF"
+      }
+    ],
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "hermes__rerun",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

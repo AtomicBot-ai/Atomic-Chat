@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_ARCH_NOT_SUPPORTED",
+    "details": "llama_model_loader: key not found in model: gemma4.context_length\n",
+    "message": "The model's architecture or format is not supported by this version of the backend."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "llama_model_loader: key not found in model: gemma4.context_length\n",
+    "stdout": ""
+  },
+  "name": "arch_key_not_found",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

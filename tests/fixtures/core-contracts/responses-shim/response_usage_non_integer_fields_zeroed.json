@@ -1,0 +1,69 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "created_at": 0,
+      "id": "resp_fixture",
+      "model": "m",
+      "object": "response",
+      "output": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "x",
+              "type": "output_text"
+            }
+          ],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "status": "completed",
+      "tool_choice": "auto",
+      "tools": [],
+      "usage": {
+        "input_tokens": 0,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 0,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 0
+      }
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "message": {
+            "content": "x"
+          }
+        }
+      ],
+      "model": "m",
+      "usage": {
+        "completion_tokens": 2.5,
+        "prompt_tokens": -1,
+        "total_tokens": "9"
+      }
+    },
+    "kind": "response",
+    "model_fallback": "fallback-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "response_usage_non_integer_fields_zeroed",
+  "placeholders": [
+    "<msg_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

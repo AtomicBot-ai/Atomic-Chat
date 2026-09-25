@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
 import {
-  cancelLlamaModelLoad,
   getSupportedFeaturesFromRust,
-  normalizeLlamacppConfig,
-  unloadLlamaModel,
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 import { listSupportedBackends } from '../backend'
 import { getSystemInfo } from '../hardware'
@@ -36,11 +33,8 @@ vi.mock('../backend', async () => {
       releases: [],
       source: 'none' as const,
     })),
-    // Explicitly mocked rather than left to the real implementation: it
-    // resolves the release index itself, so the actual function would reach
-    // the network from a unit test.
-    getIndexedVariantSize: vi.fn(),
     invalidateStableIndexCache: vi.fn(),
+    getIndexedVariantSize: vi.fn(async () => 11 * 1024 * 1024),
   }
 })
 
@@ -59,11 +53,16 @@ vi.mock(
       mapOldBackendToNew: vi.fn(),
       removeOldBackendVersions: vi.fn(),
       readGgufMetadata: vi.fn(),
-      unloadLlamaModel: vi.fn(),
-      cancelLlamaModelLoad: vi.fn(),
     }
   }
 )
+
+// A backend install the core runs reports through `listen('download-<taskId>')`.
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async () => () => {}),
+  emit: vi.fn(async () => undefined),
+}))
+
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
@@ -774,7 +773,7 @@ describe('llamacpp_extension', () => {
         api_key: 'test-api-key',
       }
       extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
-      extension['performLoad'] = vi.fn().mockResolvedValue(session)
+      extension['loadThroughCore'] = vi.fn().mockResolvedValue(session)
       global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue({ status: 'ok' }),
@@ -783,7 +782,7 @@ describe('llamacpp_extension', () => {
       const result = await extension.load('test-model')
 
       expect(result).toEqual(session)
-      expect(extension['performLoad']).toHaveBeenCalledWith(
+      expect(extension['loadThroughCore']).toHaveBeenCalledWith(
         'test-model',
         undefined,
         false,
@@ -791,117 +790,65 @@ describe('llamacpp_extension', () => {
         undefined
       )
     })
-  })
 
-  // ATO-530. `performLoad` is stood in for by one plugin invoke the test
-  // controls, so what is exercised is the cancel bookkeeping around it.
-  describe('cancelLoad', () => {
-    const session = {
-      model_id: 'test-model',
-      pid: 123,
-      port: 3000,
-      api_key: 'test-api-key',
-    }
-
-    const loadThroughPlugin = (invoke: () => Promise<unknown>) => {
+    it('keeps the code on a core refusal and names the stages a watcher waits on', async () => {
       extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
-      extension['syncLoadedCtxSize'] = vi.fn()
-      extension['reportBackendMismatch'] = vi.fn()
-      extension['performLoad'] = vi.fn((modelId: string) =>
-        extension['loadInPlugin'](modelId, invoke)
+      extension['coreSettings'] = { ensureReady: vi.fn(async () => undefined) } as any
+      extension['isConfiguredBackendInstalled'] = vi.fn(async () => false)
+      extension['modelFilePaths'] = vi.fn(async () => ['/data/llamacpp/models/m/model.gguf'])
+      const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+      const stages: unknown[] = []
+      extension['core'] = {
+        load: vi.fn(async () => session),
+        unload: vi.fn(),
+        cancelLoad: vi.fn(async () => true),
+      } as any
+      extension['loadCancel'] = new (await import('../../../shared/loadCancel')).LoadCancelTracker(
+        extension['core'] as any
       )
-      return extension.load('test-model')
-    }
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation(async (command) =>
+        command === 'get_page_cache_resident_fraction' ? 0.5 : undefined
+      )
+      await expect(
+        extension.load('m', undefined, false, false, { onStage: (stage) => stages.push(stage) })
+      ).resolves.toEqual(session)
+      expect(stages).toEqual([
+        { kind: 'installingEngine' },
+        { kind: 'loadingWeights', cachedFraction: 0.5 },
+      ])
 
-    it('has nothing to cancel when no load of the model is running', async () => {
-      await expect(extension.cancelLoad('test-model')).resolves.toBe(false)
+      extension['core'].load = vi.fn(async () => {
+        throw { code: 'MODEL_LOAD_CANCELLED', message: 'The model load was cancelled.' }
+      })
+      await expect(extension.load('m')).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+        message: 'The model load was cancelled. [MODEL_LOAD_CANCELLED]',
+      })
     })
 
-    it('retries until the plugin has the load, which then ends cancelled', async () => {
-      let rejectLoad: (error: unknown) => void = () => {}
-      const load = loadThroughPlugin(
-        () =>
-          new Promise((_, reject) => {
-            rejectLoad = reject
-          })
-      )
-      const outcome = expect(load).rejects.toMatchObject({
-        code: 'MODEL_LOAD_CANCELLED',
-      })
-      vi.mocked(cancelLlamaModelLoad)
-        .mockResolvedValueOnce(false)
-        .mockImplementationOnce(async () => {
-          rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'cancelled' })
+    it('cancels a load through the core, and the load rejects as cancelled', async () => {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
+      extension['coreSettings'] = { ensureReady: vi.fn(async () => undefined) } as any
+      let rejectLoad!: (error: unknown) => void
+      extension['core'] = {
+        load: vi.fn(() => new Promise((_, reject) => (rejectLoad = reject))),
+        unload: vi.fn(),
+        cancelLoad: vi.fn(async () => {
+          rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'The model load was cancelled.' })
           return true
-        })
-      await vi.waitFor(() =>
-        expect(extension['pluginLoadsInFlight'].has('test-model')).toBe(true)
+        }),
+      } as any
+      extension['loadCancel'] = new (await import('../../../shared/loadCancel')).LoadCancelTracker(
+        extension['core'] as any
       )
-
-      await expect(extension.cancelLoad('test-model')).resolves.toBe(true)
-      await outcome
-      expect(cancelLlamaModelLoad).toHaveBeenCalledTimes(2)
-    })
-
-    it('takes down a server that came up before the cancel reached it', async () => {
-      let resolveLoad: (value: unknown) => void = () => {}
-      const load = loadThroughPlugin(
-        () =>
-          new Promise((resolve) => {
-            resolveLoad = resolve
-          })
-      )
-      const outcome = expect(load).rejects.toMatchObject({
-        code: 'MODEL_LOAD_CANCELLED',
-      })
-      vi.mocked(unloadLlamaModel).mockResolvedValue({ success: true } as any)
-      vi.mocked(cancelLlamaModelLoad).mockImplementation(async () => {
-        resolveLoad(session)
-        return false
-      })
-      await vi.waitFor(() =>
-        expect(extension['pluginLoadsInFlight'].has('test-model')).toBe(true)
-      )
-
-      await extension.cancelLoad('test-model')
-
-      await outcome
-      expect(unloadLlamaModel).toHaveBeenCalledWith(123)
-    })
-  })
-
-  describe('unload', () => {
-    it('should throw error if no active session found', async () => {
-      await expect(extension.unload('nonexistent-model')).rejects.toThrow(
-        'No active session found'
-      )
-    })
-
-    it('should unload model successfully', async () => {
-      const { unloadLlamaModel } = await import(
-        '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
-      )
-
-      extension['sessionCache'].set('test-model', {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key',
-      })
-
-      vi.mocked(unloadLlamaModel).mockResolvedValue({
-        success: true,
-        error: null,
-      })
-
-      const result = await extension.unload('test-model')
-
-      expect(result).toEqual({
-        success: true,
-        error: null,
-      })
-
-      expect(extension['sessionCache'].has('test-model')).toBe(false)
+      expect(await extension.cancelLoad('m')).toBe(false)
+      const load = extension.load('m')
+      load.catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(await extension.cancelLoad('m')).toBe(true)
+      expect(extension['core'].cancelLoad).toHaveBeenCalledWith('m')
+      await expect(load).rejects.toMatchObject({ code: 'MODEL_LOAD_CANCELLED' })
     })
   })
 
@@ -920,14 +867,18 @@ describe('llamacpp_extension', () => {
     it('should handle non-streaming chat request', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
-      extension['sessionCache'].set('test-model', {
-        model_id: 'test-model',
-        pid: 123,
-        port: 3000,
-        api_key: 'test-key',
+      // The session comes from the core's session list, asked on every call.
+      vi.mocked(invoke).mockResolvedValue({
+        sessions: [
+          {
+            model_id: 'test-model',
+            pid: 123,
+            port: 3000,
+            api_key: 'test-key',
+            provider: 'llamacpp',
+          },
+        ],
       })
-
-      vi.mocked(invoke).mockResolvedValue(true) // is_process_running
 
       const mockResponse = {
         id: 'test-id',
@@ -1194,13 +1145,24 @@ describe('llamacpp_extension', () => {
     })
   })
   describe('getLoadedModels', () => {
-    it('should return list of loaded models', async () => {
+    it('should return the models the core runs for this provider', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
-      vi.mocked(invoke).mockResolvedValue(['model1', 'model2'])
+      vi.mocked(invoke).mockResolvedValue({
+        sessions: [
+          { model_id: 'model1', provider: 'llamacpp' },
+          { model_id: 'upstream-model', provider: 'llamacpp-upstream' },
+          { model_id: 'model2', provider: 'llamacpp' },
+        ],
+      })
 
       const result = await extension.getLoadedModels()
 
       expect(result).toEqual(['model1', 'model2'])
+      expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
+        method: 'GET',
+        path: '/sessions',
+        body: null,
+      })
     })
   })
 
@@ -1391,6 +1353,111 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('backend install through the core', () => {
+    it('routes a relayed stage frame to the row status, not the progress bar', async () => {
+      const { events } = await import('@janhq/core')
+      const { listen } = await import('@tauri-apps/api/event')
+      type Frame = {
+        transferred: number
+        total: number
+        stage?: { kind: string; attempt: number; maxAttempts: number }
+      }
+      let frame: ((event: { payload: Frame }) => void) | undefined
+      const unlisten = vi.fn()
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        frame = callback as typeof frame
+        return unlisten
+      })
+      const stage = { kind: 'retrying', attempt: 2, maxAttempts: 5 }
+      extension['core'] = {
+        installBackend: vi.fn(async () => {
+          frame?.({ payload: { transferred: 10, total: 20 } })
+          // What the relay makes of the core's `download:stage`: the same name, counters at zero.
+          frame?.({ payload: { transferred: 0, total: 0, stage } })
+          frame?.({ payload: { transferred: 15, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }),
+      } as any
+
+      await extension['installBackendThroughCore']('b1/macos-arm64', 'b1', 'macos-arm64')
+
+      const taskId = 'llamacpp-backend-b1/macos-arm64'
+      expect(vi.mocked(listen).mock.calls[0]?.[0]).toBe(`download-${taskId}`)
+      const updates = vi
+        .mocked(events.emit)
+        .mock.calls.filter(([name]) => name === 'onFileDownloadUpdate')
+        .map(([, payload]) => payload)
+      expect(updates).toEqual([
+        {
+          modelId: taskId,
+          percent: 0.5,
+          size: { transferred: 10, total: 20 },
+          downloadType: 'Backend',
+        },
+        { modelId: taskId, downloadType: 'Backend', stage },
+        {
+          modelId: taskId,
+          percent: 0.75,
+          size: { transferred: 15, total: 20 },
+          downloadType: 'Backend',
+        },
+      ])
+      expect(unlisten).toHaveBeenCalledOnce()
+    })
+
+    it('names the row after the task id when a stage frame comes before any byte', async () => {
+      const { events } = await import('@janhq/core')
+      const { listen } = await import('@tauri-apps/api/event')
+      type Frame = {
+        transferred: number
+        total: number
+        stage?: { kind: string; attempt: number; maxAttempts: number }
+      }
+      let frame: ((event: { payload: Frame }) => void) | undefined
+      vi.mocked(listen).mockImplementation(async (_name, callback) => {
+        frame = callback as typeof frame
+        return vi.fn()
+      })
+      // The core's order: the preflight's stages, then the bytes.
+      const connecting = { kind: 'connecting', attempt: 0, maxAttempts: 6 }
+      const retrying = { kind: 'retrying', attempt: 1, maxAttempts: 6 }
+      extension['core'] = {
+        installBackend: vi.fn(async () => {
+          frame?.({ payload: { transferred: 0, total: 0, stage: connecting } })
+          frame?.({ payload: { transferred: 0, total: 0, stage: retrying } })
+          frame?.({ payload: { transferred: 10, total: 20 } })
+          return { installed: true, version: 'b1', backend: 'macos-arm64', path: '/pack' }
+        }),
+      } as any
+
+      await extension['installBackendThroughCore']('b1/macos-arm64', 'b1', 'macos-arm64')
+
+      const taskId = 'llamacpp-backend-b1/macos-arm64'
+      const updates = vi
+        .mocked(events.emit)
+        .mock.calls.filter(([name]) => name === 'onFileDownloadUpdate')
+        .map(([, payload]) => payload)
+      expect(updates).toEqual([
+        // A progress update names the row (a stage update would leave it blank, and its Cancel
+        // would not reach the core task), once.
+        {
+          modelId: taskId,
+          percent: 0,
+          size: { transferred: 0, total: 0 },
+          downloadType: 'Backend',
+        },
+        { modelId: taskId, downloadType: 'Backend', stage: connecting },
+        { modelId: taskId, downloadType: 'Backend', stage: retrying },
+        {
+          modelId: taskId,
+          percent: 0.5,
+          size: { transferred: 10, total: 20 },
+          downloadType: 'Backend',
+        },
+      ])
+    })
+  })
+
   describe('backend replacement', () => {
     const RECOMMENDED = 'v1.2.0/windows-x64-cuda-13.3'
     const PENDING_KEY = 'turboquant_pending_backend'
@@ -1432,7 +1499,7 @@ describe('llamacpp_extension', () => {
         .value
     }
 
-    beforeEach(() => {
+    beforeEach(async () => {
       vi.stubGlobal('IS_MAC', false)
       vi.stubGlobal('IS_WINDOWS', false)
       vi.mocked(localStorage.getItem).mockReset()
@@ -1442,10 +1509,33 @@ describe('llamacpp_extension', () => {
         version_backend: 'v1.0.0/windows-x64-cpu',
         device: '',
       } as any
+      // The optimal-backend record is stored in the core; accept every write.
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockImplementation((async (
+        command: string,
+        args?: { method?: string; path?: string; body?: any }
+      ) => {
+        if (
+          command === 'atomic_core_call' &&
+          args?.method === 'PUT' &&
+          args.path === '/backends/llamacpp/optimal'
+        ) {
+          return {
+            status: 'updated',
+            current: {
+              revision: args.body.expected_revision + 1,
+              optimal: args.body.optimal,
+            },
+          }
+        }
+        return undefined
+      }) as never)
     })
 
-    afterEach(() => {
+    afterEach(async () => {
       delete (window as any).dispatchEvent
+      const { invoke } = await import('@tauri-apps/api/core')
+      vi.mocked(invoke).mockReset()
     })
 
     describe('version update', () => {
@@ -1978,17 +2068,6 @@ describe('llamacpp_extension', () => {
         releaseNotesUrl:
           'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/tag/b10018-1.3.0',
       })
-    })
-
-    it('announces the offer so a mounted banner picks it up', async () => {
-      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-        updateNeeded: true,
-        newVersion: 'b10018-1.3.0',
-        targetBackend: TARGET,
-      })
-
-      await extension['reconcileBackendReleaseTag']()
-
       const event = vi.mocked((window as any).dispatchEvent).mock
         .calls[0]?.[0] as CustomEvent
       expect(event?.type).toBe('app:engine-update-available')
@@ -2019,7 +2098,6 @@ describe('llamacpp_extension', () => {
       await extension['reconcileBackendReleaseTag']()
 
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
-      expect(publishedOffer()).toBeNull()
     })
 
     it('offers an engine update on macOS too, without an app release', async () => {
@@ -2055,7 +2133,6 @@ describe('llamacpp_extension', () => {
       await extension['reconcileBackendReleaseTag']()
 
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
-      expect(publishedOffer()).toBeNull()
     })
 
     it('skips while no concrete backend is configured yet', async () => {
@@ -2404,56 +2481,5 @@ describe('llamacpp_extension', () => {
         )
       ).toBe('Vulkan · turboquant-linux-x64-vulkan-d86eb0b')
     })
-  })
-})
-
-describe('normalizeLlamacppConfig', () => {
-  describe('parallel field', () => {
-    it('should default parallel to 1 when undefined', () => {
-      const result = normalizeLlamacppConfig({})
-      expect(result.parallel).toBe(1)
-    })
-
-    it('should default parallel to 1 when null', () => {
-      const result = normalizeLlamacppConfig({ parallel: null })
-      expect(result.parallel).toBe(1)
-    })
-
-    it('should default parallel to 1 when empty string', () => {
-      const result = normalizeLlamacppConfig({ parallel: '' })
-      expect(result.parallel).toBe(1)
-    })
-
-    it('should parse parallel as a number', () => {
-      const result = normalizeLlamacppConfig({ parallel: 4 })
-      expect(result.parallel).toBe(4)
-    })
-
-    it('should parse parallel from a string number', () => {
-      const result = normalizeLlamacppConfig({ parallel: '2' })
-      expect(result.parallel).toBe(2)
-    })
-
-    it('should allow parallel of 0 (disables the flag)', () => {
-      const result = normalizeLlamacppConfig({ parallel: 0 })
-      expect(result.parallel).toBe(0)
-    })
-  })
-
-  it('preserves reasoning and extra argument settings for IPC', () => {
-    const result = normalizeLlamacppConfig({
-      reasoning_preserve: 'true',
-      extra_args: '--reasoning-format deepseek',
-    })
-
-    expect(result.reasoning_preserve).toBe(true)
-    expect(result.extra_args).toBe('--reasoning-format deepseek')
-  })
-
-  it('defaults reasoning preservation and extra arguments safely', () => {
-    const result = normalizeLlamacppConfig({})
-
-    expect(result.reasoning_preserve).toBe(false)
-    expect(result.extra_args).toBe('')
   })
 })

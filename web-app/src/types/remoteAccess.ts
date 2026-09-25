@@ -1,9 +1,10 @@
 /**
  * Domain types for Settings → Remote & LAN.
  *
- * The wire shape comes from the Rust tunnel manager
- * (`src-tauri/src/core/server/remote_access/`). Only `lib/remoteLan.ts` reads
- * that shape; everything else works against the types below.
+ * The wire shape comes from the core's tunnel manager (`atomic-chat-core`,
+ * `src/remote-access/`, `RemoteAccessStatus` in its contracts), relayed by
+ * Rust. Only `lib/remoteLan.ts` reads that shape; everything else works
+ * against the types below.
  *
  * PRIVACY: the tunnel URL and the LAN addresses identify the user's machine.
  * They live in memory only and must never be persisted or sent to analytics.
@@ -43,8 +44,8 @@ export type RemoteAccessStatus = {
   serverHasApiKey: boolean
 }
 
-/** Emitted by Rust on every tunnel transition, with a `RemoteAccessStatus`. */
-export const REMOTE_ACCESS_STATUS_EVENT = 'remote-access:status'
+/** The core's `remote-access:status` as the relay re-emits it, with a `RemoteAccessStatus`. */
+export const REMOTE_ACCESS_STATUS_EVENT = 'atomic-core://remote-access:status'
 
 /** The tunnel at rest, and what a platform without a tunnel reports. */
 export const REMOTE_ACCESS_OFF: RemoteAccessStatus = {

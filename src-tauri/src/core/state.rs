@@ -174,13 +174,13 @@ pub struct AppState {
     /// Lives here rather than inside the running server so the log survives a
     /// server restart and the read commands work while the server is stopped.
     pub api_request_inspector: Arc<crate::core::server::request_inspector::RequestInspector>,
-    /// `Host` names the proxy accepts beyond the configured Trusted Hosts: the
-    /// live tunnel's public name. Shared with every proxy run, so a tunnel that
-    /// outlives a request is seen by the next one.
-    pub dynamic_trusted_hosts: crate::core::server::dynamic_hosts::DynamicTrustedHosts,
-    /// Cloudflare quick tunnel in front of the Local API Server (desktop only).
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub remote_access: Arc<crate::core::server::remote_access::RemoteAccessManager>,
+    /// The single place anything in the app asks where a model is being served.
+    ///
+    /// Installed during `setup()`, once the llama.cpp plugins exist — it holds a handle to each of
+    /// their session tables, and to the core's mirror when this build has one. Empty until then, so
+    /// callers check before using it.
+    pub session_resolver:
+        Arc<std::sync::OnceLock<Arc<crate::core::sessions::resolver::SessionResolver>>>,
     /// Handles to the dynamic rows in the system tray menu (desktop only).
     /// Populated by `setup::setup_tray` when the tray is installed, consumed by
     /// `tray_status::update_tray_status` to re-render server / model / RAM.

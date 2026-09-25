@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#* DMG после Tauri: подпись DMG → notarytool → staple → spctl (как у коллеги).
-#? Секреты только из окружения; не коммить пароли.
+#* DMG after Tauri: sign DMG → notarytool → staple → spctl (same flow a colleague uses).
+#? Secrets come only from the environment; do not commit passwords.
 set -euo pipefail
 
 DMG="${1:-}"
@@ -22,7 +22,7 @@ APPLE_ID="${APPLE_ID:-}"
 APPLE_PASSWORD="${APPLE_PASSWORD:-}"
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 
-echo "Signing DMG (timestamp only; не --deep и не runtime на сам DMG — как в чек-листе Apple для образов)..."
+echo "Signing DMG (timestamp only; no --deep and no runtime on the DMG itself — per Apple's checklist for disk images)..."
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 
 if [[ -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then

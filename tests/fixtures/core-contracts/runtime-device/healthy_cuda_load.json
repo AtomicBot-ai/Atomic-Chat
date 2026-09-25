@@ -1,0 +1,38 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": 4357871370,
+      "gpu_layers_offloaded": 33,
+      "loaded_backends": [
+        "CUDA",
+        "CPU"
+      ],
+      "primary_device": "CUDA0",
+      "total_layers": 33
+    }
+  },
+  "input": {
+    "lines": [
+      "load_backend: loaded CUDA backend from C:\\backends\\build\\bin\\ggml-cuda.dll",
+      "load_backend: loaded CPU backend from C:\\backends\\build\\bin\\ggml-cpu-haswell.dll",
+      "ggml_cuda_init: found 1 CUDA devices:",
+      "Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes",
+      "load_tensors: offloading 32 repeating layers to GPU",
+      "load_tensors: offloading output layer to GPU",
+      "load_tensors: offloaded 33/33 layers to GPU",
+      "load_tensors:        CUDA0 model buffer size =  4155.99 MiB",
+      "load_tensors:   CPU_Mapped model buffer size =   308.23 MiB"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "healthy_cuda_load",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

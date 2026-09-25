@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_ARCH_NOT_SUPPORTED",
+    "details": "unknown model architecture: 'x'\n",
+    "message": "The model's architecture or format is not supported by this version of the backend."
+  },
+  "input": {
+    "exit": {
+      "code": null,
+      "signal": 11
+    },
+    "stderr": "",
+    "stdout": "unknown model architecture: 'x'\n"
+  },
+  "name": "crash_sigsegv_then_stdout_classified",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -75,7 +75,7 @@ const preventDefaultFileDrop = () => {
   })
 }
 
-//* Запрет зума страницы: клавиатурные сочетания, Ctrl/Cmd+колесо, жесты трекпада/пальцев
+//* Disable page zoom: keyboard shortcuts, Ctrl/Cmd+wheel, trackpad/touch gestures
 const disablePageZoom = () => {
   const isZoomKey = (key: string) =>
     key === '+' ||

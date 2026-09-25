@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "LLAMA_CPP_PROCESS_ERROR",
+    "details": "main: server terminated for no obvious reason\n",
+    "message": "The model process encountered an unexpected error."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "main: server terminated for no obvious reason\n",
+    "stdout": ""
+  },
+  "name": "generic_unclassified_stderr",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

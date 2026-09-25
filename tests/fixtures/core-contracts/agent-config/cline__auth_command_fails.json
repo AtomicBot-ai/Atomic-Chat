@@ -1,0 +1,35 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "error": "`cline auth` failed: Error: provider openai-compatible rejected the credentials",
+    "files": {},
+    "ok": false,
+    "spawn": {
+      "args": [
+        "auth",
+        "--provider",
+        "openai-compatible",
+        "--apikey",
+        "sk-atomic-fixture-key",
+        "--modelid",
+        "AtomicChat/Qwen3.5-9B-GGUF",
+        "--baseurl",
+        "http://127.0.0.1:1337/v1"
+      ],
+      "program": "cline"
+    }
+  },
+  "input": {
+    "agent": "cline",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "cline__auth_command_fails",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

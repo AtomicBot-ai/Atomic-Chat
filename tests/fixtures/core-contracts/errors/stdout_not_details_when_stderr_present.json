@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "LLAMA_CPP_PROCESS_ERROR",
+    "details": "main: exiting\n",
+    "message": "The model process encountered an unexpected error."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "main: exiting\n",
+    "stdout": "0.00.121.737 I cmn common_param: verbosity = 3\n"
+  },
+  "name": "stdout_not_details_when_stderr_present",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

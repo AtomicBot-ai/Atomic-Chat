@@ -3,21 +3,28 @@ import { toast } from 'sonner'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { MODEL_LOAD_WATCHDOG_MS, withTimeout } from '@/lib/utils'
 import {
   hydrateActiveModelsForRunningServer,
   syncActiveModelsFromEngines,
 } from '@/utils/activeModelsSync'
-import { ensureModelForServer } from '@/utils/ensureModelForServer'
 import {
+  ensureModelForServer,
+  findProviderForModel,
+} from '@/utils/ensureModelForServer'
+import {
+  hasResidentMediaModel,
   setLocalApiServerRunning,
   stopLocalApiServer,
 } from '@/utils/localApiServerControl'
 
 type StartOptions = {
-  /** Load a model first when none is running. Defaults to `true`. */
+  /**
+   * Load a chat model first when none is running. Defaults to `true`; skipped
+   * while an image or video model is resident, which the server serves by
+   * itself and which a chat model could evict.
+   */
   ensureModel?: boolean
 }
 
@@ -58,13 +65,17 @@ export function useLocalApiServerControl() {
 
   const start = useCallback(
     async ({ ensureModel = true }: StartOptions = {}) => {
+      const requestedPort = serverPort
       toast.info('Starting server...', {
         description: `Attempting to start server on port ${serverPort}`,
       })
       setServerStatus('pending')
 
       try {
-        if (ensureModel) {
+        if (
+          ensureModel &&
+          !(await hasResidentMediaModel(serviceHub.diffusion()))
+        ) {
           // ATO-270: the model load has no timeout of its own; without this
           // watchdog a stuck backend leaves the button spinning forever.
           const result = await withTimeout(
@@ -83,11 +94,12 @@ export function useLocalApiServerControl() {
 
           const activeModels = await serviceHub.models().getActiveModels()
           if (activeModels && activeModels.length > 0) {
-            const allProviders = useModelProvider.getState().providers
+            // Both llama.cpp providers list the same models folder, so "the first
+            // provider that has this id" named TurboQuant — off on a fresh install,
+            // with no backend — for a model the default provider was running. An
+            // active provider is preferred, as it is when the model is loaded.
             const serverModels = activeModels.flatMap((id: string) => {
-              const provider = allProviders.find((p) =>
-                p?.models?.some((m: { id: string }) => m.id === id)
-              )
+              const provider = findProviderForModel(id)
               return provider ? [{ model: id, provider: provider.provider }] : []
             })
             if (serverModels.length > 0) setLastServerModels(serverModels)
@@ -96,6 +108,18 @@ export function useLocalApiServerControl() {
         }
 
         await setLocalApiServerRunning(true)
+
+        // The core falls back to a free port when the configured one is taken, and the store
+        // follows it. Until now that happened in silence: the user points Codex, OpenCode or a
+        // script at the port they set, gets a refused connection, and has nothing on screen that
+        // explains why. Say it, and say it long enough to be read.
+        const boundPort = useLocalApiServer.getState().serverPort
+        if (boundPort && boundPort !== requestedPort) {
+          toast.warning('Server started on a different port', {
+            description: `Port ${requestedPort} was already in use, so the server is listening on ${boundPort}. Point anything you configured for ${requestedPort} at the new port.`,
+            duration: 30000,
+          })
+        }
       } catch (error: unknown) {
         console.error('Error starting server or model:', error)
         setIsModelLoading(false)

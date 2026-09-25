@@ -23,8 +23,6 @@ import {
   events,
   AppEvent,
   DownloadEvent,
-  computeNextCtxLen,
-  DEFAULT_CTX_LEN,
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
@@ -34,18 +32,25 @@ import {
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
-import {
-  loadMlxModel,
-  unloadMlxModel,
-} from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 import { resolveDflashDraft, DraftResolution } from './dflashRegistry'
 import { resolveMtpDraft } from './mtpRegistry'
 import { resolveEagle3Draft } from './eagle3Registry'
 import { classifyMlxVisionCapability } from './visionCapability'
-import { asNumber, buildMlxConfig, selectMlxDraftSettings } from './buildMlxConfig'
+import {
+  asNumber,
+  buildMlxConfig,
+  selectMlxDraftSettings,
+} from './buildMlxConfig'
 import { mlxMainWeightFileName } from './weightFileName'
-import { planMlxShardRepair, repointLegacyWeightPath } from './shardRepair'
+import {
+  createCoreRuntime,
+  describeCoreError,
+} from '../../shared/atomicCoreRuntime'
+import type { Invoke } from '../../shared/atomicCoreRuntime'
+import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
+import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
 /// The three mutually-exclusive speculative-decoding families surfaced by
 /// the MLX extension. Maps 1:1 onto mlx-vlm's `--draft-kind` choices
@@ -69,12 +74,8 @@ const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
 /// window further). The web-app uses this to show a one-shot toast and
 /// stop driving further regeneration attempts.
 const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
-/// ATO-530: a load stopped by `cancelLoad`. Matches the Rust
-/// `ModelLoadCancelled` code and core's `MODEL_LOAD_CANCELLED_CODE`.
-const ERR_MODEL_LOAD_CANCELLED = 'MODEL_LOAD_CANCELLED'
-/// How soon `cancelLoad` asks the plugin again when the load it is chasing
-/// has been invoked but not registered there yet.
-const CANCEL_RETRY_INTERVAL_MS = 50
+/** Written when a CLI (or anyone else) changes core-owned settings. */
+const CORE_SETTINGS_CHANGED_EVENT = 'atomic-core://settings:changed'
 
 interface AutoIncreaseCtxRequest {
   request_id: string
@@ -107,14 +108,6 @@ export default class mlx_extension extends AIEngine {
   private config: any = {}
   private providerPath!: string
   private loadingModels = new Map<string, Promise<SessionInfo>>()
-  /// ATO-530: `load` calls still running per model.
-  private loadRequests = new Map<string, number>()
-  /// Models whose running load the user cancelled. Checked at each step of
-  /// `performLoad`, and cleared once no load of the model is left.
-  private cancelledLoads = new Set<string>()
-  /// Models with a `load_mlx_model` invoke outstanding: only while one is,
-  /// can the plugin's cancel command reach the load.
-  private pluginLoadsInFlight = new Set<string>()
 
   /// Tracks the `ctx_size` actually used for the currently loaded session
   /// per model. The UI-level setting / extension config may differ from the
@@ -156,6 +149,47 @@ export default class mlx_extension extends AIEngine {
   private static readonly BLOCK_RELOAD_DEBOUNCE_MS = 800
 
   private unlistenAutoIncreaseCtx?: () => void
+  private unlistenCoreSettingsChanged?: () => void
+
+  /// MLX in `atomic-chat-core` (PLAN.md §4). The core starts, stops and grows the mlx-server
+  /// processes; the model catalogue, downloads (drafters included) and settings UI stay here.
+  /// Sessions are asked of the core per call, never cached.
+  private readonly core = createCoreRuntime('mlx', ((command, args) =>
+    args === undefined ? invoke(command) : invoke(command, args)) as Invoke)
+  private isMirroringCoreSettings = false
+  /// ATO-530: loads in flight and the cancels aimed at them, on top of the core's load.
+  private readonly loadCancel = new LoadCancelTracker(this.core, (message) =>
+    logger.warn(message)
+  )
+  private readonly coreSettings = createCoreSettingsSync({
+    core: this.core,
+    readSettings: async () =>
+      (await this.getSettings()) as unknown as PersistedSetting[],
+    writeSettings: (settings) => this.updateSettings(settings as never),
+    setMirroring: (active) => {
+      this.isMirroringCoreSettings = active
+    },
+  })
+
+  /**
+   * Keep this extension's copy of the settings current when the core's copy changes elsewhere (a
+   * CLI); only this provider's values.
+   */
+  private async listenForCoreSettings(): Promise<void> {
+    this.unlistenCoreSettingsChanged = await listen(
+      CORE_SETTINGS_CHANGED_EVENT,
+      (event: { payload?: { provider?: string } }) => {
+        if (event.payload?.provider !== this.provider) return
+        void this.coreSettings
+          .mirror()
+          .catch((e) =>
+            logger.warn(
+              `[atomic-core] could not mirror changed settings: ${describeCoreError(e)}`
+            )
+          )
+      }
+    )
+  }
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -193,6 +227,7 @@ export default class mlx_extension extends AIEngine {
         void this.handleAutoIncreaseCtx(event.payload)
       }
     )
+    await this.listenForCoreSettings()
 
     this.getProviderPath()
   }
@@ -232,6 +267,8 @@ export default class mlx_extension extends AIEngine {
   }
 
   override async onUnload(): Promise<void> {
+    this.unlistenCoreSettingsChanged?.()
+    this.unlistenCoreSettingsChanged = undefined
     if (this.unlistenAutoIncreaseCtx) {
       this.unlistenAutoIncreaseCtx()
       this.unlistenAutoIncreaseCtx = undefined
@@ -241,11 +278,19 @@ export default class mlx_extension extends AIEngine {
       if (t) clearTimeout(t)
       delete this.blockReloadTimers[family]
     }
-    // Cleanup handled by Tauri plugin on app exit
+    // The mlx-server processes belong to the core; there is nothing to stop here.
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
+    if (this.isMirroringCoreSettings) {
+      // A mirror of the core's values only refreshes this copy; restarting a live session for a
+      // changed block size is the core's business, not this copy's.
+      if (key === 'timeout') this.timeout = asNumber(value) ?? 600
+      if (key === 'auto_unload')
+        this.autoUnload = value === true || value === 'true'
+      return
+    }
 
     if (key === 'timeout') {
       this.timeout = asNumber(value) ?? 600
@@ -395,7 +440,9 @@ export default class mlx_extension extends AIEngine {
       const modelConfigPath = await joinPath([currentDir, 'model.yml'])
       if (await fs.existsSync(modelConfigPath)) {
         // Normalize Windows '\' to '/' so the id matches the catalog
-        modelIds.push(currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/'))
+        modelIds.push(
+          currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+        )
         continue
       }
 
@@ -491,15 +538,6 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
-  private async getRandomPort(): Promise<number> {
-    try {
-      return await invoke<number>('plugin:mlx|get_mlx_random_port')
-    } catch {
-      logger.error('Unable to find a suitable port for MLX server')
-      throw new Error('Unable to find a suitable port for MLX model')
-    }
-  }
-
   override async load(
     modelId: string,
     overrideSettings?: any,
@@ -507,112 +545,18 @@ export default class mlx_extension extends AIEngine {
     bypassAutoUnload: boolean = false,
     options?: ModelLoadOptions
   ): Promise<SessionInfo> {
-    this.loadRequests.set(modelId, (this.loadRequests.get(modelId) ?? 0) + 1)
-    try {
-      return await this.startLoad(
-        modelId,
-        overrideSettings,
-        isEmbedding,
-        bypassAutoUnload,
-        options
-      )
-    } finally {
-      const remaining = (this.loadRequests.get(modelId) ?? 1) - 1
-      if (remaining > 0) {
-        this.loadRequests.set(modelId, remaining)
-      } else {
-        this.loadRequests.delete(modelId)
-        this.cancelledLoads.delete(modelId)
-      }
-    }
+    return this.loadCancel.track(modelId, () =>
+      this.startLoad(modelId, overrideSettings, isEmbedding, bypassAutoUnload, options)
+    )
   }
 
   /**
-   * ATO-530: stop a load of `modelId` that has not finished, including one
-   * still queued behind another MLX load. Resolves `true` when one was
-   * running; that load then rejects with MODEL_LOAD_CANCELLED and leaves no
-   * server behind.
+   * ATO-530: stop a load of `modelId` that has not finished. Resolves `true`
+   * when one was running; that load then rejects with MODEL_LOAD_CANCELLED
+   * and leaves no server behind.
    */
-  override async cancelLoad(modelId: string): Promise<boolean> {
-    if (!this.loadRequests.has(modelId)) return false
-    this.cancelledLoads.add(modelId)
-    // The invoke that starts the server may still be on its way to the
-    // plugin, so a miss is retried while it is outstanding; a load before that
-    // point stops at its next checkpoint. A command that fails outright will
-    // keep failing — the server is then taken down when its load returns.
-    while (this.pluginLoadsInFlight.has(modelId)) {
-      let reached: boolean
-      try {
-        reached = await invoke<boolean>('plugin:mlx|cancel_mlx_model_load', {
-          modelId,
-        })
-      } catch (error) {
-        logger.warn(`cancel_mlx_model_load failed for "${modelId}": ${error}`)
-        break
-      }
-      if (reached) break
-      await new Promise((resolve) =>
-        setTimeout(resolve, CANCEL_RETRY_INTERVAL_MS)
-      )
-    }
-    return true
-  }
-
-  private throwIfLoadCancelled(modelId: string): void {
-    if (this.cancelledLoads.has(modelId)) {
-      const cancelled = new Error('The model load was cancelled.') as Error & {
-        code: string
-      }
-      cancelled.code = ERR_MODEL_LOAD_CANCELLED
-      throw cancelled
-    }
-  }
-
-  /**
-   * Runs the `load_mlx_model` invoke so that `cancelLoad` can reach it:
-   * refuses to start after a cancel, marks the invoke as outstanding while it
-   * runs, and takes down a server that came up before the cancel got to it.
-   */
-  private async loadInPlugin(
-    modelId: string,
-    start: () => Promise<SessionInfo>
-  ): Promise<SessionInfo> {
-    this.throwIfLoadCancelled(modelId)
-    this.pluginLoadsInFlight.add(modelId)
-    let sInfo: SessionInfo
-    try {
-      sInfo = await start()
-    } finally {
-      this.pluginLoadsInFlight.delete(modelId)
-    }
-    if (this.cancelledLoads.has(modelId)) {
-      await unloadMlxModel(sInfo.pid).catch((error) => {
-        logger.warn(
-          `Failed to stop "${modelId}" after its load was cancelled: ${error}`
-        )
-      })
-      this.throwIfLoadCancelled(modelId)
-    }
-    return sInfo
-  }
-
-  /**
-   * How much of `paths` the OS already holds in its page cache (0–1), or
-   * `null` when that cannot be told. A directory counts the files inside it.
-   */
-  private async pageCacheFraction(
-    paths: (string | undefined)[]
-  ): Promise<number | null> {
-    try {
-      const fraction = await invoke<number | null>(
-        'get_page_cache_resident_fraction',
-        { paths: paths.filter((path): path is string => !!path) }
-      )
-      return typeof fraction === 'number' ? fraction : null
-    } catch (error) {
-      console.debug(`page cache probe failed: ${error}`)
-      return null
-    }
+  override cancelLoad(modelId: string): Promise<boolean> {
+    return this.loadCancel.cancelLoad(modelId)
   }
 
   private async startLoad(
@@ -631,6 +575,7 @@ export default class mlx_extension extends AIEngine {
       return this.loadingModels.get(modelId)!
     }
 
+    this.loadCancel.throwIfCancelled(modelId)
     const loadingPromise = this.performLoad(
       modelId,
       overrideSettings,
@@ -676,7 +621,7 @@ export default class mlx_extension extends AIEngine {
         await Promise.all(allLoadedModels.map((id) => this.unload(id)))
       }
     }
-    this.throwIfLoadCancelled(modelId)
+    this.loadCancel.throwIfCancelled(modelId)
 
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
 
@@ -690,14 +635,7 @@ export default class mlx_extension extends AIEngine {
     const modelConfig = await invoke<ModelConfig>('read_yaml', {
       path: modelConfigPath,
     })
-    await this.repairLegacyShardName(modelConfig, modelConfigPath)
-    const port = await this.getRandomPort()
-
-    // mlx-vlm has no auth layer; we bind the server to 127.0.0.1 in the
-    // tauri-plugin-mlx Rust shim instead. `envs` stays around so we can
-    // forward `HF_*` / `MLX_TRUST_REMOTE_CODE` style toggles in the future
-    // without re-plumbing the plugin contract.
-    const envs: Record<string, string> = {}
+    // The core repairs a mis-named legacy shard and picks the port itself.
 
     // Resolve model path - could be absolute or relative
     let modelPath: string
@@ -807,7 +745,7 @@ export default class mlx_extension extends AIEngine {
     )
 
     if (options?.onStage) {
-      this.throwIfLoadCancelled(modelId)
+      this.loadCancel.throwIfCancelled(modelId)
       // An MLX model is a folder of shards; a legacy entry points at its
       // first file instead.
       const modelDir = /\.safetensors$/i.test(modelPath)
@@ -815,95 +753,24 @@ export default class mlx_extension extends AIEngine {
         : modelPath
       options.onStage({
         kind: 'loadingWeights',
-        cachedFraction: await this.pageCacheFraction([
-          modelDir,
-          mlxConfig.draft_model_path || undefined,
-        ]),
+        cachedFraction: await this.pageCacheFraction(
+          [modelDir, draftPath].filter((path): path is string => !!path)
+        ),
       })
     }
 
     try {
-      const sInfo = await this.loadInPlugin(modelId, () =>
-        loadMlxModel(
-          modelId,
-          modelPath,
-          port,
-          mlxConfig,
-          envs,
-          isEmbedding,
-          Number(this.timeout)
-        )
+      const sInfo = await this.loadThroughCore(
+        modelId,
+        { ...cfg, draft_model_path: draftPath },
+        isEmbedding
       )
       this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
       this.lastActiveModelId = modelId
       return sInfo
     } catch (error) {
-      if ((error as { code?: string } | undefined)?.code !== ERR_MODEL_LOAD_CANCELLED) {
-        logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
-      }
+      logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
       throw error
-    }
-  }
-
-  /// Heal checkpoints downloaded before the shard-naming fix, which stored a
-  /// sharded model's first shard under a fixed `model.safetensors` and left
-  /// the name in `model.safetensors.index.json` unclaimed — the load then
-  /// fails with every shard-1 parameter reported missing. Renaming the file
-  /// and repointing `model.yml` spares those installs a re-download. Any
-  /// failure is logged and swallowed so the load still reports its own error.
-  private async repairLegacyShardName(
-    modelConfig: ModelConfig,
-    modelConfigPath: string
-  ): Promise<void> {
-    try {
-      const resolved = await this.resolveModelPath(modelConfig.model_path)
-      if (!resolved) return
-      const modelDir = resolved.endsWith('.safetensors')
-        ? resolved.substring(
-            0,
-            Math.max(resolved.lastIndexOf('/'), resolved.lastIndexOf('\\'))
-          )
-        : resolved
-      const indexPath = await joinPath([
-        modelDir,
-        'model.safetensors.index.json',
-      ])
-      if (!(await fs.existsSync(indexPath))) return
-
-      const index = JSON.parse(
-        await invoke<string>('read_file_sync', { args: [indexPath] })
-      )
-      /// `fs.readdirSync` from `@janhq/core` returns full absolute paths.
-      const entries = await fs.readdirSync(modelDir).catch(() => [] as string[])
-      const plan = planMlxShardRepair(
-        index?.weight_map,
-        entries.map((entry: string) => entry.split(/[/\\]/).pop() ?? '')
-      )
-      if (!plan) return
-
-      await fs.mv(
-        await joinPath([modelDir, plan.from]),
-        await joinPath([modelDir, plan.to])
-      )
-      modelConfig.model_path = repointLegacyWeightPath(
-        modelConfig.model_path,
-        plan.to
-      )
-      if (modelConfig.mmproj_path) {
-        modelConfig.mmproj_path = repointLegacyWeightPath(
-          modelConfig.mmproj_path,
-          plan.to
-        )
-      }
-      await invoke<void>('write_yaml', {
-        data: modelConfig,
-        savePath: modelConfigPath,
-      })
-      logger.info(
-        `Repaired mis-named MLX shard in ${modelDir}: ${plan.from} -> ${plan.to}`
-      )
-    } catch (e) {
-      logger.warn(`MLX shard-name repair failed: ${e}`)
     }
   }
 
@@ -980,10 +847,10 @@ export default class mlx_extension extends AIEngine {
   }
 
   /// Bridge from the Local API Server proxy (Rust) back to the MLX extension
-  /// when a forwarded request exhausts the model's context window. Mirrors
-  /// the llamacpp-extension implementation: unload + reload with a larger
-  /// `ctx_size`, acknowledge the proxy on a request-scoped channel, and emit
-  /// a jan-core event so the web-app UI can mirror the new value.
+  /// when a forwarded request exhausts the model's context window. The core
+  /// reloads the model one context step larger (or answers `at_max`); this
+  /// handler acknowledges the proxy on a request-scoped channel and emits the
+  /// `@janhq/core` event plus the Tauri broadcasts the web-app UI listens on.
   private async handleAutoIncreaseCtx(
     payload: AutoIncreaseCtxRequest
   ): Promise<void> {
@@ -1005,111 +872,105 @@ export default class mlx_extension extends AIEngine {
     }
 
     try {
-      const currentCtxLen =
-        this.modelCtxSize.get(model_id) ??
-        this.config?.ctx_size ??
-        DEFAULT_CTX_LEN
-      const maxCtxLen = this.modelMaxCtxTrain.get(model_id)
-      const newCtxLen = computeNextCtxLen(currentCtxLen, maxCtxLen)
-
-      if (newCtxLen <= currentCtxLen) {
-        await sendDone({ ok: false, reason: 'at_max' })
-        try {
+      // The core owns the process and the ladder, keeping the drafter and quantization it loaded
+      // with; it answers `at_max` itself.
+      const outcome = await this.core.increaseContext(model_id, trigger)
+      if (outcome.ok === false) {
+        await sendDone({ ok: false, reason: outcome.reason })
+        if (outcome.reason === 'at_max') {
           await tauriEmit(AUTO_INCREASE_CTX_AT_MAX, {
             provider: this.provider,
             modelId: model_id,
-            maxCtxLen: maxCtxLen ?? currentCtxLen,
-            currentCtxLen,
-          })
-        } catch (e) {
-          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+            maxCtxLen: outcome.max_ctx_len ?? outcome.current_ctx_len,
+            currentCtxLen: outcome.current_ctx_len,
+          }).catch((e) =>
+            logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_AT_MAX}: ${e}`)
+          )
         }
-        logger.info(
-          `auto_increase_ctx (mlx) at_max model=${model_id} currentCtxLen=${currentCtxLen} maxCtxLen=${maxCtxLen ?? 'unknown'}`
-        )
         return
       }
-
-      logger.info(
-        `auto_increase_ctx (mlx) model=${model_id} trigger=${trigger} ${currentCtxLen} -> ${newCtxLen} (max=${maxCtxLen ?? 'unknown'})`
-      )
-
-      try {
-        await this.unload(model_id)
-      } catch (e) {
-        logger.warn(
-          `auto_increase_ctx unload failed for ${model_id}, proceeding anyway: ${e}`
-        )
-      }
-
-      const sInfo = await this.load(
-        model_id,
-        { ctx_size: newCtxLen },
-        false,
-        true
-      )
-      this.modelCtxSize.set(model_id, newCtxLen)
-
+      this.modelCtxSize.set(model_id, outcome.new_ctx_len)
       const notifyPayload = {
         provider: this.provider,
         modelId: model_id,
-        newCtxLen,
+        newCtxLen: outcome.new_ctx_len,
       }
-
       if (events && typeof events.emit === 'function') {
         events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
       }
-
-      try {
-        await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
-      } catch (e) {
+      await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload).catch((e) =>
         logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
-      }
-
-      await sendDone({ ok: true, new_ctx_len: newCtxLen })
-      logger.info(
-        `auto_increase_ctx (mlx) reload complete model=${model_id} port=${sInfo?.port} newCtxLen=${newCtxLen}; notified UI via events + tauri`
       )
+      await sendDone({ ok: true, new_ctx_len: outcome.new_ctx_len })
     } catch (e) {
+      // A core failure is a `{ code, message }` object, which would print as `[object Object]`.
+      const reason = describeCoreError(e)
       logger.error(
-        `auto_increase_ctx handler failed for ${payload.model_id}: ${e}`
+        `auto_increase_ctx handler failed for ${payload.model_id}: ${reason}`
       )
-      await sendDone({ ok: false, reason: `exception: ${e}` })
+      await sendDone({ ok: false, reason: `exception: ${reason}` })
+    }
+  }
+
+  /**
+   * Hand the load to the core, with the settings this load resolved — including a drafter this
+   * extension just restored or downloaded — so the core starts the server this extension would have.
+   * The auto-unload already happened above, through the core.
+   */
+  private async loadThroughCore(
+    modelId: string,
+    settings: Record<string, unknown>,
+    isEmbedding: boolean
+  ): Promise<SessionInfo> {
+    try {
+      await this.coreSettings.ensureReady()
+      return (await this.loadCancel.loadInCore(modelId, () =>
+        this.core.load(modelId, {
+          settings,
+          isEmbedding,
+          bypassAutoUnload: true,
+        })
+      )) as SessionInfo
+    } catch (error) {
+      throw toLoadError(error)
+    }
+  }
+
+  /**
+   * How much of `paths` the OS already holds in its page cache (0–1), or
+   * `null` when that cannot be told. Only ever feeds the loading status, so a
+   * failure is not worth more than a debug line.
+   */
+  private async pageCacheFraction(paths: string[]): Promise<number | null> {
+    if (paths.length === 0) return null
+    try {
+      const fraction = await invoke<number | null>(
+        'get_page_cache_resident_fraction',
+        { paths }
+      )
+      return typeof fraction === 'number' ? fraction : null
+    } catch (error) {
+      console.debug(`page cache probe failed: ${error}`)
+      return null
     }
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {
-    const sInfo = await this.findSessionByModel(modelId)
-    if (!sInfo) {
+    if (!(await this.findSessionByModel(modelId)))
       throw new Error(`No active MLX session found for model: ${modelId}`)
-    }
-
     try {
-      const result = await unloadMlxModel(sInfo.pid)
-      if (result.success) {
-        logger.info(`Successfully unloaded MLX model with PID ${sInfo.pid}`)
-      } else {
-        logger.warn(`Failed to unload MLX model: ${result.error}`)
-      }
-      return result
+      return await this.core.unload(modelId)
     } catch (error) {
-      logger.error('Error unloading MLX model:', error)
       return {
         success: false,
-        error: `Failed to unload model: ${error}`,
+        error: `Failed to unload model: ${describeCoreError(error)}`,
       }
     }
   }
 
+  /** Where the core serves `modelId` right now, or `null` when it is not loaded. */
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
-    try {
-      return await invoke<SessionInfo>('plugin:mlx|find_mlx_session_by_model', {
-        modelId,
-      })
-    } catch (e) {
-      logger.error(e)
-      throw new Error(String(e))
-    }
+    return ((await this.core.findSession(modelId)) ?? null) as SessionInfo
   }
 
   override async chat(
@@ -1122,26 +983,19 @@ export default class mlx_extension extends AIEngine {
     }
     this.lastActiveModelId = opts.model
 
-    // Check if the process is alive
-    const isAlive = await invoke<boolean>('plugin:mlx|is_mlx_process_running', {
-      pid: sessionInfo.pid,
-    })
-
-    if (isAlive) {
-      try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.unload(sessionInfo.model_id)
-        throw new Error('MLX model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('MLX model has crashed! Please reload!')
+    // The core removes a dead process itself, so a session it still reports is alive as far as it
+    // knows; the health probe catches a server that stopped answering since.
+    try {
+      await fetch(`http://localhost:${sessionInfo.port}/health`)
+    } catch (e) {
+      this.unload(sessionInfo.model_id)
+      throw new Error('MLX model appears to have crashed! Please reload!')
     }
 
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
-    /// mlx-vlm runs without any auth layer; the server binds to 127.0.0.1
-    /// in the Rust plugin (`--host 127.0.0.1`), which is the only protection
+    /// mlx-vlm runs without any auth layer; the core starts the server bound
+    /// to 127.0.0.1 (`--host 127.0.0.1`), which is the only protection
     /// we rely on. `sessionInfo.api_key` is preserved on the type for ABI
     /// compatibility but is always empty for MLX sessions.
     const headers = {
@@ -1194,9 +1048,14 @@ export default class mlx_extension extends AIEngine {
     let streamError: Error | null = null
     let wakeUp: (() => void) | null = null
 
-    const channel = new Channel<{ data: string }>()
-    channel.onmessage = (event: { data: string }) => {
-      rawChunks.push(event.data)
+    const channel = new Channel<{ data: string; done?: boolean }>()
+    channel.onmessage = (event: { data: string; done?: boolean }) => {
+      if (event.data) rawChunks.push(event.data)
+      // The end of the stream travels on the channel, after the last chunk and in
+      // order with it. The command's return takes another route to the webview and
+      // can overtake chunks still on their way; taken for the end, it closed a short
+      // reply before any of it had arrived.
+      if (event.done) streamDone = true
       if (wakeUp) {
         wakeUp()
         wakeUp = null
@@ -1223,11 +1082,14 @@ export default class mlx_extension extends AIEngine {
     requestPromise
       .then((status) => {
         logger.info('[mlx-stream] invoke resolved, status:', status)
-        streamDone = true
-        if (wakeUp) {
-          wakeUp()
-          wakeUp = null
-        }
+        // Only a fallback, for a stream whose `done` message never comes.
+        setTimeout(() => {
+          streamDone = true
+          if (wakeUp) {
+            wakeUp()
+            wakeUp = null
+          }
+        }, 2_000)
       })
       .catch((e) => {
         logger.error('[mlx-stream] invoke rejected:', String(e))
@@ -1448,21 +1310,12 @@ export default class mlx_extension extends AIEngine {
         (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
-            // See the same guard in the llama.cpp extensions (#290): a failed
-            // preflight reports total=0, and 0/0 reached the progress bar.
-            percent: total > 0 ? transferred / total : 0,
+            percent: transferred / total,
             size: { transferred, total },
             downloadType: 'Model',
           })
         },
-        resumeDownload ?? false,
-        (stage: { kind: string; attempt: number; maxAttempts: number }) => {
-          events.emit(DownloadEvent.onFileDownloadUpdate, {
-            modelId,
-            downloadType: 'Model',
-            stage,
-          })
-        }
+        resumeDownload ?? false
       )
 
       // Emit download success event so DownloadManagement clears the download state
@@ -1634,12 +1487,7 @@ export default class mlx_extension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
-    try {
-      return await invoke<string[]>('plugin:mlx|get_mlx_loaded_models')
-    } catch (e) {
-      logger.error(e)
-      throw new Error(e)
-    }
+    return this.core.getLoadedModels()
   }
 
   async isVisionSupported(modelPath: string): Promise<boolean> {
@@ -1977,9 +1825,9 @@ export default class mlx_extension extends AIEngine {
   /// ──────────────────────────────────────────────────────────────────
   ///
   /// The provider-level toggles in the UI call into these methods. The
-  /// actual `--draft-model <path>` / `--draft-kind <kind>` flags are
-  /// plumbed through `performLoad` via `MlxConfig.draft_model_path` and
-  /// `MlxConfig.draft_kind` (see commands.rs).
+  /// drafter settings (`draft_model_path` and the `*_enabled` flags) reach
+  /// the core through `performLoad`'s load overrides; the core turns them
+  /// into the `--draft-model <path>` / `--draft-kind <kind>` flags.
   ///
   /// All three families share the same on-disk cache layout
   /// (`mlx/draft-models/<repo>/`); collisions are impossible because the
@@ -2541,7 +2389,9 @@ export default class mlx_extension extends AIEngine {
     local?: boolean
     localPath?: string
   }> {
-    logger.info(`checkEagle3Support: resolving EAGLE-3 speculator for ${modelId}`)
+    logger.info(
+      `checkEagle3Support: resolving EAGLE-3 speculator for ${modelId}`
+    )
     try {
       const resolution = resolveEagle3Draft(modelId)
       if (!resolution) {

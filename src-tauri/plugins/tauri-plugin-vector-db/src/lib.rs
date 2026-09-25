@@ -13,7 +13,16 @@ mod utils;
 pub use error::VectorDBError;
 pub use state::VectorDBState;
 
+/// The plugin with collections in the legacy, fixed place.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    init_in(|_| VectorDBState::legacy_dir())
+}
+
+/// The plugin with collections where `base_dir` says — for the app, a folder inside its data
+/// folder, resolved once the app handle exists.
+pub fn init_in<R: Runtime>(
+    base_dir: impl Fn(&tauri::AppHandle<R>) -> std::path::PathBuf + Send + Sync + 'static,
+) -> TauriPlugin<R> {
     Builder::new("vector-db")
         .invoke_handler(tauri::generate_handler![
             commands::create_collection,
@@ -28,8 +37,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::list_attachments,
             commands::get_chunks,
         ])
-        .setup(|app, _api| {
-            app.manage(state::VectorDBState::new());
+        .setup(move |app, _api| {
+            app.manage(state::VectorDBState::at(base_dir(app)));
             Ok(())
         })
         .build()

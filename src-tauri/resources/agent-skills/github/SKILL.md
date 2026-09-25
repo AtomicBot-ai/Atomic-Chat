@@ -38,7 +38,7 @@ dump install docs on the user.
 
 Reply (solo `reply` step):
 
-> «GitHub CLI (`gh`) не установлен. Могу поставить через Homebrew (`brew install gh`) — потребуется подтверждение. Поставить?»
+> "GitHub CLI (`gh`) is not installed. I can install it with Homebrew (`brew install gh`) — this will need your confirmation. Install it?"
 
 On yes:
 
@@ -56,7 +56,7 @@ On Windows, offer `winget install --id GitHub.cli -e` instead of Homebrew.
 `gh auth login` is interactive (opens a browser / device flow) and cannot run
 from a non-interactive tool shell. Reply:
 
-> «`gh` установлен, но не авторизован. Запустите в своём терминале `gh auth login`, пройдите device flow, потом скажите "готово" — я повторю проверку.»
+> "`gh` is installed but not authenticated. Run `gh auth login` in your terminal, complete the device flow, then say 'done' and I'll check again."
 
 Do NOT attempt `gh auth login` through `os.shell.run`; it will hang.
 

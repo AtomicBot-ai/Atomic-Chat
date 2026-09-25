@@ -509,7 +509,12 @@ function HubContent() {
           (model) => uncensoredFeed.details.get(model.model_name) ?? model
         )
       : []
-    const tailSource = filters.uncensored ? pagedUncensored : hfCandidates
+    // A search hit carries no file list, so the detail panel has nothing to
+    // offer for download until the card fetched for the selected row replaces
+    // it — the same swap the feed and the uncensored listing make.
+    const tailSource = filters.uncensored
+      ? pagedUncensored
+      : hfCandidates.map((model) => feed.details.get(model.model_name) ?? model)
     const tail = tailSource.filter((candidate) => {
       if (
         seen.has(candidate.model_name) ||

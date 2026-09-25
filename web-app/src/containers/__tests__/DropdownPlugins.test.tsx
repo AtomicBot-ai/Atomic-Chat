@@ -440,6 +440,9 @@ describe('DropdownPlugins', () => {
     await userEvent.click(screen.getByText('common:connectorsMenu.manage'))
 
     expect(navigate).toHaveBeenCalledWith({ to: '/connectors/' })
+    // One navigation, to the connectors page only: the route is what the
+    // footer hands the router, so it is the whole observable effect.
+    expect(navigate.mock.calls).toEqual([[{ to: '/connectors/' }]])
   })
 
   it('leaves out the skills section where skills do not exist', () => {
@@ -482,6 +485,8 @@ describe('DropdownPlugins', () => {
     await userEvent.click(screen.getByText('common:pluginsMenu.manageSkills'))
 
     expect(navigate).toHaveBeenCalledWith({ to: '/skills/' })
+    // Opening the section navigates nowhere; only the footer does, once.
+    expect(navigate.mock.calls).toEqual([[{ to: '/skills/' }]])
   })
 
   it('collapses the connectors section on demand', async () => {

@@ -1,0 +1,45 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion_tokens": 150,
+    "finish_reason": "length",
+    "predicted_per_second": 41.25,
+    "prompt_per_second": 812.5,
+    "prompt_tokens": 28,
+    "reply_chars": 1,
+    "reply_preview": "t",
+    "tokens_estimated": false,
+    "total_tokens": 178,
+    "ttft_ms": 7
+  },
+  "input": {
+    "frames": [
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "content": "t"
+              },
+              "finish_reason": "length"
+            }
+          ],
+          "timings": {
+            "predicted_n": 150,
+            "predicted_per_second": 41.25,
+            "prompt_n": 28,
+            "prompt_per_second": 812.5
+          }
+        },
+        "offset_ms": 7
+      }
+    ],
+    "kind": "stream_telemetry",
+    "whole_response": false
+  },
+  "name": "telemetry_llamacpp_timings",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

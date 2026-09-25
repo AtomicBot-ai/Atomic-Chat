@@ -1,11 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 import type { ServiceHub } from '@/services'
+import { captureHandledError } from '@/lib/sentry'
+import {
+  isRecoverableModelLoadCode,
+  shouldCaptureModelLoadSentry,
+} from '@/lib/telemetry'
+import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import {
   cancelModelLoad,
   describeModelLoadFailure,
   isExplicitSwitchPending,
   planOomRetry,
+  selectThreadModelIfNone,
   shouldAttemptAutoStart,
   splitModelLoadError,
   stopAllLocalModelsByUser,
@@ -55,6 +62,8 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
           settings: [] as unknown[],
         },
       ] as Array<Record<string, unknown>>,
+      selectedProvider: '',
+      selectedModel: null as { id: string } | null,
       selectModelProvider: vi.fn(),
       // Mirrors the store: a partial update replaces the listed fields.
       updateProvider: (name: string, data: Record<string, unknown>) => {
@@ -149,6 +158,44 @@ vi.mock('@/i18n/setup', () => ({
   default: { t: (key: string) => key },
 }))
 
+// In-memory stand-in for the local engines: which model ids each provider has
+// loaded. The stop/start methods mirror `DefaultModelsService` so a test can
+// assert which copies were unloaded and what is still loaded after a switch,
+// not just which method ran.
+const createLoadedEngines = (initial: Record<string, string[]>) => {
+  const engines = new Map(
+    Object.entries(initial).map(([provider, ids]) => [provider, [...ids]])
+  )
+  const unloaded: string[] = []
+  const keep = (provider: string, predicate: (id: string) => boolean) => {
+    const ids = engines.get(provider) ?? []
+    for (const id of ids) {
+      if (!predicate(id)) unloaded.push(`${provider}::${id}`)
+    }
+    engines.set(provider, ids.filter(predicate))
+  }
+  return {
+    unloaded,
+    getActiveModels: async (provider?: string) =>
+      provider === undefined
+        ? [...engines.values()].flat()
+        : [...(engines.get(provider) ?? [])],
+    stopAllModels: async () => {
+      for (const provider of engines.keys()) keep(provider, () => false)
+    },
+    stopAllModelsExcept: async (modelId: string, providerName: string) => {
+      for (const provider of engines.keys()) {
+        keep(provider, (id) => provider === providerName && id === modelId)
+      }
+    },
+    startModel: async (provider: { provider: string }, modelId: string) => {
+      const ids = engines.get(provider.provider) ?? []
+      if (!ids.includes(modelId)) engines.set(provider.provider, [...ids, modelId])
+    },
+    snapshot: () => Object.fromEntries(engines),
+  }
+}
+
 describe('switchToModel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -197,20 +244,71 @@ describe('switchToModel', () => {
     )
   })
 
+  it('leaves a local engine failure to the core and reports a cloud one', async () => {
+    vi.mocked(isRecoverableModelLoadCode).mockReturnValue(false)
+    vi.mocked(shouldCaptureModelLoadSentry).mockReturnValue(true)
+    const failingHub = () =>
+      ({
+        app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+        models: () => ({
+          getActiveModels: vi.fn().mockResolvedValue([]),
+          stopAllModels: vi.fn().mockResolvedValue(undefined),
+          stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+          startModel: vi.fn().mockRejectedValue(new Error('engine crashed')),
+        }),
+      }) as unknown as ServiceHub
+
+    await expect(
+      switchToModel({
+        modelId: 'local-model',
+        providerName: 'mlx',
+        serviceHub: failingHub(),
+      })
+    ).rejects.toThrow('engine crashed')
+    expect(captureHandledError).not.toHaveBeenCalled()
+
+    modelProviderState.providers.push({
+      provider: 'openai',
+      api_key: 'sk-test',
+      models: [{ id: 'cloud-model' }],
+    })
+    vi.mocked(registerRemoteProvider).mockRejectedValueOnce(
+      new Error('provider refused')
+    )
+    try {
+      await expect(
+        switchToModel({
+          modelId: 'cloud-model',
+          providerName: 'openai',
+          serviceHub: failingHub(),
+        })
+      ).rejects.toThrow('provider refused')
+    } finally {
+      modelProviderState.providers.pop()
+    }
+    expect(captureHandledError).toHaveBeenCalledOnce()
+    expect(vi.mocked(captureHandledError).mock.calls[0]?.[2]).toMatchObject({
+      feature: 'model_load',
+      backend: 'openai',
+    })
+    vi.mocked(isRecoverableModelLoadCode).mockReturnValue(true)
+    vi.mocked(shouldCaptureModelLoadSentry).mockReturnValue(false)
+  })
+
   it('keeps the target engine running and only unloads copies in other providers', async () => {
     // The same GGUF is loaded in both llama.cpp engines (post-download
     // auto-start landed in TurboQuant while the chat loaded upstream). A
     // switch to upstream must drop the TurboQuant copy only — never the
     // upstream server, which may be streaming an answer right now.
+    const loaded = createLoadedEngines({
+      'llamacpp': ['shared-model'],
+      'llamacpp-upstream': ['shared-model'],
+    })
     const models = {
-      getActiveModels: vi.fn(async (provider?: string) =>
-        provider === 'llamacpp' || provider === 'llamacpp-upstream'
-          ? ['shared-model']
-          : []
-      ),
-      stopAllModels: vi.fn().mockResolvedValue(undefined),
-      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
-      startModel: vi.fn().mockResolvedValue(undefined),
+      getActiveModels: vi.fn(loaded.getActiveModels),
+      stopAllModels: vi.fn(loaded.stopAllModels),
+      stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+      startModel: vi.fn(loaded.startModel),
     }
     const serviceHub = {
       app: () => ({
@@ -231,14 +329,24 @@ describe('switchToModel', () => {
     )
     expect(models.stopAllModels).not.toHaveBeenCalled()
     expect(appState.setActiveModels).toHaveBeenCalledWith(['shared-model'])
+    // Only the TurboQuant copy was unloaded; the upstream copy never went down.
+    expect(loaded.unloaded).toEqual(['llamacpp::shared-model'])
+    expect(loaded.snapshot()).toEqual({
+      'llamacpp': [],
+      'llamacpp-upstream': ['shared-model'],
+    })
   })
 
   it('still stops every local engine when switching to a cloud model', async () => {
+    const loaded = createLoadedEngines({
+      'llamacpp-upstream': ['shared-model'],
+      'mlx': ['broken-model'],
+    })
     const models = {
-      getActiveModels: vi.fn().mockResolvedValue([]),
-      stopAllModels: vi.fn().mockResolvedValue(undefined),
-      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
-      startModel: vi.fn().mockResolvedValue(undefined),
+      getActiveModels: vi.fn(loaded.getActiveModels),
+      stopAllModels: vi.fn(loaded.stopAllModels),
+      stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+      startModel: vi.fn(loaded.startModel),
     }
     const serviceHub = {
       app: () => ({
@@ -255,6 +363,11 @@ describe('switchToModel', () => {
 
     expect(models.stopAllModels).toHaveBeenCalledOnce()
     expect(models.stopAllModelsExcept).not.toHaveBeenCalled()
+    expect(loaded.unloaded).toEqual([
+      'llamacpp-upstream::shared-model',
+      'mlx::broken-model',
+    ])
+    expect(loaded.snapshot()).toEqual({ 'llamacpp-upstream': [], 'mlx': [] })
   })
 
   it('leaves a model the user stopped down until it is asked for again', async () => {
@@ -481,13 +594,28 @@ describe('load progress and cancel', () => {
 
   it('says it is unloading the model that was serving before loading the next', async () => {
     appState.activeModels = ['shared-model']
-    const serviceHub = hubWith({ startModel: vi.fn().mockResolvedValue(undefined) })
+    const stopAllModelsExcept = vi.fn().mockResolvedValue(undefined)
+    const startModel = vi.fn().mockResolvedValue(undefined)
+    const serviceHub = hubWith({ stopAllModelsExcept, startModel })
 
     await switchToModel({ modelId: 'broken-model', providerName: 'mlx', serviceHub })
 
     expect(appState.setLoadingModelProgress).toHaveBeenCalledWith({
       kind: 'unloadingPrevious',
     })
+    // The status reads as a restart of a serving engine, not a cold start.
+    expect(appState.updateLoadingModel.mock.calls[0]).toEqual([
+      true,
+      { modelId: 'broken-model', kind: 'restart' },
+    ])
+    // The unload is the only step this load reports, and the status shows it
+    // before the serving model goes down and before the next one loads.
+    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual([
+      { kind: 'unloadingPrevious' },
+    ])
+    const [shownAt] = appState.setLoadingModelProgress.mock.invocationCallOrder
+    expect(shownAt).toBeLessThan(stopAllModelsExcept.mock.invocationCallOrder[0])
+    expect(shownAt).toBeLessThan(startModel.mock.invocationCallOrder[0])
     appState.activeModels = []
   })
 
@@ -584,6 +712,162 @@ describe('load progress and cancel', () => {
     expect(stopModel).toHaveBeenCalledWith('ready-model', 'mlx')
     expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(false)
     appState.userStoppedModels = []
+  })
+
+  describe('the selection after a load that did not come up', () => {
+    const clearedSelection = () =>
+      modelProviderState.selectModelProvider.mock.calls.filter(
+        ([provider, model]) => provider === '' && model === ''
+      )
+
+    beforeEach(() => {
+      modelProviderState.selectedProvider = 'mlx'
+      modelProviderState.selectedModel = { id: 'ready-model' }
+    })
+
+    afterEach(() => {
+      modelProviderState.selectedProvider = ''
+      modelProviderState.selectedModel = null
+    })
+
+    it.each([false, true])(
+      'clears the model that failed (auto-start=%s)',
+      async (isAutoStart) => {
+        const serviceHub = hubWith({
+          startModel: vi.fn().mockRejectedValue(new Error('engine crashed')),
+        })
+
+        await expect(
+          switchToModel({
+            modelId: 'ready-model',
+            providerName: 'mlx',
+            serviceHub,
+            isAutoStart,
+          })
+        ).rejects.toThrow('engine crashed')
+
+        expect(clearedSelection()).toHaveLength(1)
+      }
+    )
+
+    it('keeps a selection that moved on while the load was failing', async () => {
+      modelProviderState.selectedModel = { id: 'other-model' }
+      const serviceHub = hubWith({
+        startModel: vi.fn().mockRejectedValue(new Error('engine crashed')),
+      })
+
+      await expect(
+        switchToModel({ modelId: 'ready-model', providerName: 'mlx', serviceHub })
+      ).rejects.toThrow('engine crashed')
+
+      expect(clearedSelection()).toHaveLength(0)
+    })
+
+    it('keeps the selection when the user cancelled the load', async () => {
+      let rejectLoad: (error: unknown) => void = () => {}
+      const startModel = vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            rejectLoad = reject
+          })
+      )
+      const serviceHub = hubWith({
+        startModel,
+        cancelModelLoad: vi.fn(async () => {
+          rejectLoad(cancelled())
+          return true
+        }),
+      })
+
+      const pending = switchToModel({
+        modelId: 'ready-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      const outcome = expect(pending).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+      })
+      await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
+      await cancelModelLoad(serviceHub)
+      await outcome
+
+      expect(clearedSelection()).toHaveLength(0)
+      appState.userStoppedModels = []
+    })
+
+    it('leaves the selection to a switch requested after the failing one', async () => {
+      let rejectLoad: (error: unknown) => void = () => {}
+      const startModel = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              rejectLoad = reject
+            })
+        )
+        .mockResolvedValueOnce(undefined)
+      const serviceHub = hubWith({ startModel })
+
+      const failing = switchToModel({
+        modelId: 'ready-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      const failed = expect(failing).rejects.toThrow('engine crashed')
+      await vi.waitFor(() => expect(startModel).toHaveBeenCalledOnce())
+      // The user asks for the same model again while the first load runs.
+      const retry = switchToModel({
+        modelId: 'ready-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      rejectLoad(new Error('engine crashed'))
+      await failed
+      await retry
+
+      expect(startModel).toHaveBeenCalledTimes(2)
+      expect(clearedSelection()).toHaveLength(0)
+    })
+  })
+})
+
+describe('selectThreadModelIfNone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    modelProviderState.selectedProvider = ''
+    modelProviderState.selectedModel = null
+    // Mirrors the store here: the selection is what these cases check.
+    modelProviderState.selectModelProvider.mockImplementation(
+      (provider: string, modelId: string) => {
+        modelProviderState.selectedProvider = provider
+        modelProviderState.selectedModel = { id: modelId }
+      }
+    )
+  })
+
+  afterEach(() => {
+    modelProviderState.selectModelProvider.mockReset()
+    modelProviderState.selectedProvider = ''
+    modelProviderState.selectedModel = null
+  })
+
+  it("points an empty composer back at the thread's model", () => {
+    selectThreadModelIfNone({ id: 'broken-model', provider: 'mlx' })
+
+    expect(modelProviderState.selectedProvider).toBe('mlx')
+    expect(modelProviderState.selectedModel).toEqual({ id: 'broken-model' })
+  })
+
+  it('leaves a model the user picked since, and a thread with no model', () => {
+    selectThreadModelIfNone(undefined)
+    expect(modelProviderState.selectedModel).toBeNull()
+
+    modelProviderState.selectedProvider = 'llamacpp-upstream'
+    modelProviderState.selectedModel = { id: 'shared-model' }
+    selectThreadModelIfNone({ id: 'broken-model', provider: 'mlx' })
+
+    expect(modelProviderState.selectedProvider).toBe('llamacpp-upstream')
+    expect(modelProviderState.selectedModel).toEqual({ id: 'shared-model' })
   })
 })
 

@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_ARCH_NOT_SUPPORTED",
+    "details": "0.00.319.245 E llama_model_load: error loading model: unknown model architecture: 'dflash'\n",
+    "message": "The model's architecture or format is not supported by this version of the backend."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "",
+    "stdout": "0.00.319.245 E llama_model_load: error loading model: unknown model architecture: 'dflash'\n"
+  },
+  "name": "stdout_classified_when_stderr_empty",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

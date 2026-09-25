@@ -18,9 +18,11 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { ensureProjectsLoaded } from '@/hooks/useThreadManagement'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { consumeSilentImport } from '@/utils/backgroundImports'
+import { isAnyChatBusy } from '@/stores/chat-session-store'
 import {
   isDev,
   SERVER_START_WATCHDOG_MS,
@@ -50,6 +52,115 @@ import {
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
+import { ModelFactory } from '@/lib/model-factory'
+
+export function applyAtomicCoreServerState(payload: { running: boolean; port: number | null }) {
+  if (payload.running && typeof payload.port === 'number' && payload.port > 0) {
+    useLocalApiServer.getState().setServerPort(payload.port)
+    useAppState.getState().setServerStatus('running')
+  } else if (!payload.running) {
+    useAppState.getState().setServerStatus('stopped')
+  }
+}
+
+/**
+ * A recovered listener needs its model back. The core's public server loads nothing by itself: it
+ * serves the sessions that exist, and answers 503 "No models are available" when there are none.
+ * When the core dies, its sessions die with it; the app has the new core listen again on the same
+ * address (`recover_public_server`), and without this an outside client would find the server up
+ * and unusable for as long as nobody touched the app. The model is the one the server was last
+ * started with, or the user's default for it — what "Start server" itself would have loaded.
+ */
+export async function restoreServerModelAfterRecovery(
+  modelsService: Parameters<typeof ensureModelForServer>[0]['modelsService']
+): Promise<void> {
+  const { lastServerModels, defaultModelLocalApiServer } =
+    useLocalApiServer.getState()
+  const wanted = lastServerModels[0] ?? defaultModelLocalApiServer
+  try {
+    const result = await ensureModelForServer({
+      modelsService,
+      modelOverride: wanted,
+    })
+    if (result.status === 'no_model_available') {
+      console.warn('[LocalAPI] recovered server has no model to load')
+    }
+  } catch (error) {
+    console.warn('[LocalAPI] could not reload the model for the recovered server:', error)
+  }
+}
+
+/** Providers whose session lookups `ModelFactory` caches (Foundation Models resolves every time). */
+const SESSION_CACHED_PROVIDERS = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+type SessionCachedProvider = (typeof SESSION_CACHED_PROVIDERS)[number]
+
+const isSessionCachedProvider = (
+  provider: string
+): provider is SessionCachedProvider =>
+  (SESSION_CACHED_PROVIDERS as readonly string[]).includes(provider)
+
+/** `atomic-core://session:died`: a loaded session's process exited without being unloaded. */
+export type CoreSessionDiedPayload = {
+  provider?: string
+  pid?: number
+  model_id?: string
+  exit_code?: number | null
+  signal?: string | null
+  message?: string
+}
+
+/**
+ * ATO-244: a local model's process died after it loaded (typically mid-generation). The core
+ * reports this for every local runtime it owns, and the recovery does not depend on which one:
+ * forget the cached port, mark the model inactive, and tell the user why generation stopped.
+ */
+export function handleCoreSessionDied(
+  payload: CoreSessionDiedPayload | undefined,
+  // What the message depends on besides the event, which carries neither: a
+  // reply being produced, and the platform. Parameters so both can be tested.
+  context: { generating: boolean; macos: boolean } = {
+    generating: isAnyChatBusy(),
+    macos: IS_MACOS,
+  }
+): void {
+  console.warn('[LocalAPI] atomic-core session:died:', payload)
+  const provider = payload?.provider ?? 'llamacpp-upstream'
+  const modelId = payload?.model_id
+  if (isSessionCachedProvider(provider)) {
+    ModelFactory.invalidateLocalSessionCache(provider, modelId)
+  }
+  // `useAppState.activeModels` (the store every "is this model running?" check in the UI reads
+  // from — ChatInput's auto-start effect, the status dot, etc.) still lists the model as active
+  // until something re-queries the engine. Without this, a "New chat" on the same model/provider
+  // never re-checks (its auto-start effect only reruns on model/provider change) and sends
+  // straight into the dead backend, surfacing a raw "Connection refused" instead of silently
+  // reloading. Dropping the model flips `isModelActive` to false, which re-triggers that effect
+  // and lets it restart the model on its own.
+  if (modelId) {
+    const { activeModels, setActiveModels } = useAppState.getState()
+    if (activeModels.includes(modelId)) {
+      setActiveModels(activeModels.filter((id) => id !== modelId))
+    }
+  }
+  // The core reports every exit of a loaded model, whether or not anything was
+  // being generated, so the title only says "during generation" when a reply
+  // was. The Vulkan advice is for llama.cpp where Vulkan backends exist; on
+  // macOS the backend is Metal and there is no CPU backend to switch to.
+  const vulkanAdvice =
+    (provider === 'llamacpp' || provider === 'llamacpp-upstream') &&
+    !context.macos
+  toast.error(
+    context.generating
+      ? 'Model crashed during generation'
+      : 'Model stopped unexpectedly',
+    {
+      id: `session-died-${modelId ?? 'unknown'}`,
+      description: vulkanAdvice
+        ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
+        : "The model's backend process exited unexpectedly. Try reloading the model.",
+    }
+  )
+}
 
 const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
   try {
@@ -405,8 +516,9 @@ export function DataProvider() {
 
       const model = provider.models[modelIndex]
       const currentValue =
-        (model.settings?.ctx_len?.controller_props?.value as number | undefined) ??
-        null
+        (model.settings?.ctx_len?.controller_props?.value as
+          | number
+          | undefined) ?? null
       if (currentValue === newCtxLen) {
         console.log(
           `[LocalAPI] OnAutoIncreasedCtxLen (${source}): ctx_len for ${providerName}/${modelId} already = ${newCtxLen}, no-op`
@@ -548,60 +660,68 @@ export function DataProvider() {
     }
   }, [])
 
-  // ATO-244: Listen for unexpected llama-server crashes that happen AFTER
-  // model load (i.e. during generation). The Rust post-load watcher emits
-  // `local_backend://llamacpp_upstream_session_died` when this occurs.
-  // Show an actionable toast so the user knows why generation stopped.
+  // Session lifecycle events relayed from atomic-chat-core. `session:died` is
+  // ATO-244's crash report (see `handleCoreSessionDied`); the others only
+  // invalidate the cached port so the next request resolves the session again.
   useEffect(() => {
     if (!IS_TAURI) return
 
-    let unlistenSessionDied: (() => void) | undefined
+    let unlistenCoreSessionEvents: Array<() => void> = []
+    let coreServerWasRunning = false
     let cancelled = false
     ;(async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event')
         if (cancelled) return
-        const unsub = await listen<{
-          model_id?: string
-          error_code?: string
-          message?: string
-        }>('local_backend://llamacpp_upstream_session_died', (event) => {
-          const { model_id } = event.payload ?? {}
-          console.warn(
-            '[LocalAPI] llamacpp_upstream_session_died:',
-            event.payload
-          )
-          // ATO-244: the backend process is gone, but `useAppState.activeModels`
-          // (the store every "is this model running?" check in the UI reads
-          // from — ChatInput's auto-start effect, the status dot, etc.) still
-          // lists it as active until something re-queries the engine. Without
-          // this, a "New chat" on the same model/provider never re-checks
-          // (its auto-start effect only reruns on model/provider change) and
-          // just sends straight into the dead backend, surfacing a raw
-          // "Connection refused" instead of silently reloading. Dropping the
-          // model here flips `isModelActive` to false, which re-triggers that
-          // effect and lets it restart the model on its own.
-          if (model_id) {
-            const { activeModels, setActiveModels } = useAppState.getState()
-            if (activeModels.includes(model_id)) {
-              setActiveModels(activeModels.filter((id) => id !== model_id))
-            }
+
+        const invalidateCoreSession = (event: {
+          payload?: { model_id?: string; provider?: string }
+        }) => {
+          const provider = event.payload?.provider ?? 'llamacpp-upstream'
+          if (isSessionCachedProvider(provider)) {
+            ModelFactory.invalidateLocalSessionCache(
+              provider,
+              event.payload?.model_id
+            )
           }
-          toast.error('Model crashed during generation', {
-            id: `session-died-${model_id ?? 'unknown'}`,
-            description:
-              "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers.",
-          })
-        })
-        const detachSessionDied = createSafeUnlisten(unsub)
+        }
+        const coreUnsubs = await Promise.all([
+          listen('atomic-core://session:started', invalidateCoreSession),
+          listen('atomic-core://session:unloaded', invalidateCoreSession),
+          listen<CoreSessionDiedPayload>('atomic-core://session:died', (event) =>
+            handleCoreSessionDied(event.payload)
+          ),
+          listen('atomic-core://detached', () => {
+            // Every local session lived in the core that just went away.
+            for (const provider of SESSION_CACHED_PROVIDERS) {
+              ModelFactory.invalidateLocalSessionCache(provider)
+            }
+            if (coreServerWasRunning) {
+              useAppState.getState().setServerStatus('stopped')
+              coreServerWasRunning = false
+            }
+          }),
+          listen<{ running: boolean; owner: string; port: number | null; generation: number | null }>(
+            'atomic-core://server-state-changed',
+            (event) => {
+              coreServerWasRunning = event.payload.owner === 'core' && event.payload.running
+              applyAtomicCoreServerState(event.payload)
+              // A generation comes only with a listener rebuilt on a new core.
+              if (coreServerWasRunning && event.payload.generation != null) {
+                void restoreServerModelAfterRecovery(serviceHub.models())
+              }
+            }
+          ),
+        ])
+        const safeCoreUnsubs = coreUnsubs.map(createSafeUnlisten)
         if (cancelled) {
-          void detachSessionDied()
+          safeCoreUnsubs.forEach((unsubscribe) => void unsubscribe())
           return
         }
-        unlistenSessionDied = detachSessionDied
+        unlistenCoreSessionEvents = safeCoreUnsubs
       } catch (e) {
         console.warn(
-          '[LocalAPI] Failed to subscribe to llamacpp_upstream_session_died:',
+          '[LocalAPI] Failed to subscribe to atomic-core session events:',
           e
         )
       }
@@ -609,9 +729,9 @@ export function DataProvider() {
 
     return () => {
       cancelled = true
-      if (unlistenSessionDied) void unlistenSessionDied()
+      unlistenCoreSessionEvents.forEach((unsubscribe) => void unsubscribe())
     }
-  }, [])
+  }, [serviceHub])
 
   // Auto-start Local API Server on app startup, but only re-attach to an
   // already-running server or raise the proxy for a model that is already
@@ -621,22 +741,34 @@ export function DataProvider() {
     const autoStartServer = async () => {
       try {
         const { enableOnStartup } = useLocalApiServer.getState()
-        if (!enableOnStartup) {
-          console.log(
-            '[LocalAPI:startup] Local API server auto-start disabled in settings; skipping auto-start'
-          )
-          return
-        }
-
         const isRunning = await serviceHub.app().getServerStatus()
         if (isRunning) {
           console.log('[LocalAPI:startup] Server already running')
+          // `startServer` is idempotent for an existing listener and returns
+          // the port it actually bound, including a fallback port.
+          const current = useLocalApiServer.getState()
+          const actualPort = await window.core?.api?.startServer({
+            host: current.serverHost,
+            port: current.serverPort,
+            prefix: current.apiPrefix,
+            apiKey: current.apiKey,
+            trustedHosts: current.trustedHosts,
+            isCorsEnabled: current.corsEnabled,
+            isVerboseEnabled: current.verboseLogs,
+            proxyTimeout: current.proxyTimeout,
+          })
+          if (actualPort && actualPort !== current.serverPort) current.setServerPort(actualPort)
           setServerStatus('running')
           // `activeModels` is in-memory only; without this the provider UI
           // would render "Start" for the cloud model the proxy is already
           // routing, until the user manually re-selects it. See issue where
           // navigating between tabs appears to "forget" the running model.
           await hydrateActiveModelsForRunningServer(serviceHub.models())
+          return
+        }
+
+        if (!enableOnStartup) {
+          console.log('[LocalAPI:startup] Local API server auto-start disabled in settings')
           return
         }
 

@@ -1,6 +1,11 @@
 import { render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DataProvider } from '../DataProvider'
+import {
+  DataProvider,
+  applyAtomicCoreServerState,
+  handleCoreSessionDied,
+} from '../DataProvider'
+import { ModelFactory } from '@/lib/model-factory'
 import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -14,9 +19,16 @@ const mocks = vi.hoisted(() => ({
   setProviders: vi.fn(),
   clearDeletedModel: vi.fn(),
   setServerStatus: vi.fn(),
+  setServerPort: vi.fn(),
+  setActiveModels: vi.fn(),
+  toastError: vi.fn(),
   setServers: vi.fn(),
   setSettings: vi.fn(),
   setThreads: vi.fn(),
+}))
+
+vi.mock('sonner', () => ({
+  toast: { error: mocks.toastError },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -80,9 +92,9 @@ vi.mock('@/hooks/useMCPServers', () => ({
 
 vi.mock('@/hooks/useAppState', () => {
   const state = {
-    activeModels: [],
+    activeModels: [] as string[],
     serverStatus: 'stopped',
-    setActiveModels: vi.fn(),
+    setActiveModels: mocks.setActiveModels,
     setServerStatus: mocks.setServerStatus,
   }
   const useAppState = (selector: (value: typeof state) => unknown) =>
@@ -103,7 +115,7 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
       corsEnabled: false,
       verboseLogs: false,
       proxyTimeout: 120,
-      setServerPort: vi.fn(),
+      setServerPort: mocks.setServerPort,
     }),
   },
 }))
@@ -234,6 +246,99 @@ describe('DataProvider', () => {
       expect(getActiveModels).toHaveBeenCalledOnce()
     })
     unmount()
+  })
+
+  it('uses the confirmed fallback port and listener state from the core', async () => {
+    applyAtomicCoreServerState({ running: true, port: 6768 })
+    expect(mocks.setServerPort).toHaveBeenCalledWith(6768)
+    expect(mocks.setServerStatus).toHaveBeenCalledWith('running')
+    applyAtomicCoreServerState({ running: false, port: null })
+    expect(mocks.setServerStatus).toHaveBeenCalledWith('stopped')
+  })
+
+  it('reconciles the real port when opening a window onto an existing listener', async () => {
+    getServerStatus.mockResolvedValue(true)
+    const startServer = vi.fn().mockResolvedValue(6768)
+    const previous = window.core?.api?.startServer
+    if (window.core?.api) window.core.api.startServer = startServer
+    const { unmount } = render(<DataProvider />)
+    await waitFor(() => expect(mocks.setServerPort).toHaveBeenCalledWith(6768))
+    if (window.core?.api) window.core.api.startServer = previous
+    unmount()
+  })
+
+  describe('atomic-core session:died', () => {
+    const toastOptions = () =>
+      mocks.toastError.mock.calls[0]?.[1] as
+        | { id?: string; description?: string }
+        | undefined
+
+    it('drops a crashed llama.cpp model from the active set and explains the Vulkan case', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().activeModels = ['crashed', 'other']
+      const invalidate = vi.spyOn(ModelFactory, 'invalidateLocalSessionCache')
+
+      handleCoreSessionDied(
+        {
+          provider: 'llamacpp-upstream',
+          pid: 42,
+          model_id: 'crashed',
+          exit_code: null,
+          signal: 'SIGSEGV',
+          message: 'llama-server exited',
+        },
+        { generating: true, macos: false }
+      )
+
+      expect(invalidate.mock.calls).toEqual([['llamacpp-upstream', 'crashed']])
+      expect(mocks.setActiveModels.mock.calls).toEqual([[['other']]])
+      expect(mocks.toastError.mock.calls[0]?.[0]).toBe(
+        'Model crashed during generation'
+      )
+      expect(toastOptions()?.id).toBe('session-died-crashed')
+      expect(toastOptions()?.description).toContain('Vulkan')
+      useAppState.getState().activeModels = []
+    })
+
+    it('does not blame a generation that was not running, nor Vulkan on macOS', () => {
+      handleCoreSessionDied(
+        { provider: 'llamacpp-upstream', pid: 42, model_id: 'idle' },
+        { generating: false, macos: true }
+      )
+
+      expect(mocks.toastError.mock.calls[0]?.[0]).toBe(
+        'Model stopped unexpectedly'
+      )
+      expect(toastOptions()?.description).not.toContain('Vulkan')
+      expect(toastOptions()?.description).not.toContain('CPU backend')
+    })
+
+    it('applies the same recovery to MLX without the llama.cpp backend advice', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().activeModels = ['mlx-model']
+      const invalidate = vi.spyOn(ModelFactory, 'invalidateLocalSessionCache')
+
+      handleCoreSessionDied({ provider: 'mlx', pid: 7, model_id: 'mlx-model' })
+
+      expect(invalidate.mock.calls).toEqual([['mlx', 'mlx-model']])
+      expect(mocks.setActiveModels.mock.calls).toEqual([[[]]])
+      expect(toastOptions()?.description).not.toContain('Vulkan')
+      useAppState.getState().activeModels = []
+    })
+
+    it('does not touch the session cache for Foundation Models, which it does not cache', () => {
+      const invalidate = vi.spyOn(ModelFactory, 'invalidateLocalSessionCache')
+
+      handleCoreSessionDied({
+        provider: 'foundation-models',
+        pid: 9,
+        model_id: 'apple/on-device',
+      })
+
+      expect(invalidate.mock.calls).toEqual([])
+      expect(mocks.setActiveModels.mock.calls).toEqual([])
+      expect(toastOptions()?.id).toBe('session-died-apple/on-device')
+    })
   })
 
   it('preserves saved settings when migrating the built-in assistant', async () => {

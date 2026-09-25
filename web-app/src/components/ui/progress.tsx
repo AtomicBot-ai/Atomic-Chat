@@ -4,7 +4,7 @@ import * as ProgressPrimitive from '@radix-ui/react-progress'
 import { cn } from '@/lib/utils'
 
 type ProgressProps = React.ComponentProps<typeof ProgressPrimitive.Root> & {
-  //* Класс индикатора (по умолчанию primary); для загрузок — полупрозрачный зелёный и т.п.
+  //* Indicator class (primary by default); for downloads — semi-transparent green, etc.
   indicatorClassName?: string
 }
 

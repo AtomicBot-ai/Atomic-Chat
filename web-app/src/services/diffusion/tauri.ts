@@ -1,10 +1,13 @@
 /**
  * Tauri Diffusion Service — desktop implementation.
  *
- * Thin wrapper over `tauri-plugin-atomic-diffusion`. Every method is one
- * `invoke` of the snake_case command with the interface's parameter names as
- * camelCase argument keys; the plugin is written against the same contract
- * (`./types.ts`), so nothing is renamed on the way across the bridge.
+ * A thin wrapper over the core's `/atomic/v1/diffusion/*` routes, reached
+ * through the Rust relay (`atomic_core_call`): every method is one call with
+ * the interface's parameter names as the camelCase JSON body, because the
+ * core is written against the same contract (`./types.ts`). Four routes wrap
+ * their answer so a `null` never stands alone as a body (`{backends}`,
+ * `{files}`, `{job}`, `{item}`); they are unwrapped here. Events arrive as the
+ * relayed `atomic-core://diffusion:*` events.
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -25,22 +28,60 @@ import type {
   GalleryImageItem,
   GalleryListOptions,
   GalleryPage,
+  GalleryVideoItem,
   ImageCapabilities,
   ImageGenerateRequest,
   ImageJob,
   LoadDiffusionModelRequest,
   LoadedDiffusionModel,
+  VideoCapabilities,
+  VideoGalleryPage,
+  VideoGenerateRequest,
+  VideoJob,
 } from './types'
 
-export const PLUGIN = 'plugin:atomic-diffusion'
+/** The core's control-route prefix for image generation. */
+export const DIFFUSION_PREFIX = '/diffusion'
 
-/** Event name → the discriminant we hand the UI. Tauri v2 rejects `.` in names. */
+/** Relayed core event → the discriminant we hand the UI. */
 export const EVENT_MAP = {
-  'atomic-diffusion://state': 'state',
-  'atomic-diffusion://progress': 'progress',
-  'atomic-diffusion://job': 'job',
-  'atomic-diffusion://error': 'error',
+  'atomic-core://diffusion:state': 'state',
+  'atomic-core://diffusion:progress': 'progress',
+  'atomic-core://diffusion:job': 'job',
+  'atomic-core://diffusion:error': 'error',
+  'atomic-core://diffusion:video-progress': 'video-progress',
+  'atomic-core://diffusion:video-job': 'video-job',
 } as const
+
+/**
+ * The relay's snapshot: a core generation attached. The configuration lives
+ * in the core's memory, so a new generation has to be told it again.
+ */
+export const RESET_EVENT = 'atomic-core://snapshot'
+
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+/**
+ * One relayed control call. A failure rejects with a plain
+ * `{code, message, details?}` object (the relay's `CoreError`, not an
+ * `Error`), passed through untouched. Its code is a diffusion code when the
+ * core's image service refused; the relay and the core's HTTP layer reject
+ * with their own (`CORE_UNREACHABLE`, `CORE_VERSION_MISMATCH`,
+ * `INVALID_ARGUMENT`, `HTTP_<status>`, `INTERNAL_ERROR`, ...), which
+ * `toDiffusionError` routes as `INTERNAL`, keeping the message and moving the
+ * code into the details.
+ */
+export function coreCall<T>(
+  method: Method,
+  path: string,
+  body: unknown = null
+): Promise<T> {
+  return invoke<T>('atomic_core_call', {
+    method,
+    path: `${DIFFUSION_PREFIX}${path}`,
+    body,
+  })
+}
 
 export class TauriDiffusionService extends DefaultDiffusionService {
   override isSupported(): boolean {
@@ -48,11 +89,11 @@ export class TauriDiffusionService extends DefaultDiffusionService {
   }
 
   override async configure(config: DiffusionConfig): Promise<DiffusionStatus> {
-    return invoke<DiffusionStatus>(`${PLUGIN}|configure`, { config })
+    return coreCall<DiffusionStatus>('PUT', '/config', config)
   }
 
   override async getStatus(): Promise<DiffusionStatus> {
-    return invoke<DiffusionStatus>(`${PLUGIN}|get_status`)
+    return coreCall<DiffusionStatus>('GET', '/status')
   }
 
   override async finalizeBackendInstall(args: {
@@ -63,102 +104,211 @@ export class TauriDiffusionService extends DefaultDiffusionService {
     engine: DiffusionEngineId
     sha256?: string
   }): Promise<DiffusionBackendInstallRecord> {
-    return invoke<DiffusionBackendInstallRecord>(
-      `${PLUGIN}|finalize_backend_install`,
-      { args }
+    return coreCall<DiffusionBackendInstallRecord>(
+      'POST',
+      '/backends/finalize',
+      args
     )
   }
 
   override async listInstalledBackends(): Promise<
     DiffusionBackendInstallRecord[]
   > {
-    return invoke<DiffusionBackendInstallRecord[]>(
-      `${PLUGIN}|list_installed_backends`
-    )
+    const { backends } = await coreCall<{
+      backends: DiffusionBackendInstallRecord[]
+    }>('GET', '/backends')
+    return backends
   }
 
   override async removeBackend(dir: string): Promise<void> {
-    await invoke(`${PLUGIN}|remove_backend`, { dir })
+    await coreCall('POST', '/backends/remove', { dir })
   }
 
   override async listModelFiles(): Promise<DiffusionModelFile[]> {
-    return invoke<DiffusionModelFile[]>(`${PLUGIN}|list_model_files`)
+    const { files } = await coreCall<{ files: DiffusionModelFile[] }>(
+      'GET',
+      '/model-files'
+    )
+    return files
   }
 
   override async deleteModelFile(path: string): Promise<void> {
-    await invoke(`${PLUGIN}|delete_model_file`, { path })
+    await coreCall('POST', '/model-files/delete', { path })
   }
 
   override async loadModel(
     request: LoadDiffusionModelRequest
   ): Promise<LoadedDiffusionModel> {
-    return invoke<LoadedDiffusionModel>(`${PLUGIN}|load_model`, { request })
+    return coreCall<LoadedDiffusionModel>('POST', '/model/load', request)
   }
 
   override async unloadModel(): Promise<void> {
-    await invoke(`${PLUGIN}|unload_model`)
+    await coreCall('POST', '/model/unload')
   }
 
   override async getCapabilities(): Promise<ImageCapabilities> {
-    return invoke<ImageCapabilities>(`${PLUGIN}|get_capabilities`)
+    return coreCall<ImageCapabilities>('GET', '/capabilities')
   }
 
   override async touchIdle(): Promise<void> {
-    await invoke(`${PLUGIN}|touch_idle`)
+    await coreCall('POST', '/idle/touch')
   }
 
   override async generate(
     request: ImageGenerateRequest
   ): Promise<{ jobId: string }> {
-    return invoke<{ jobId: string }>(`${PLUGIN}|generate`, { request })
+    return coreCall<{ jobId: string }>('POST', '/jobs', request)
   }
 
   override async getJob(jobId: string): Promise<ImageJob | null> {
-    return invoke<ImageJob | null>(`${PLUGIN}|get_job`, { jobId })
+    const { job } = await coreCall<{ job: ImageJob | null }>(
+      'GET',
+      `/jobs/${encodeURIComponent(jobId)}`
+    )
+    return job
   }
 
   override async cancelJob(
     jobId: string
   ): Promise<{ cancelled: boolean; serverStopped: boolean }> {
-    return invoke<{ cancelled: boolean; serverStopped: boolean }>(
-      `${PLUGIN}|cancel_job`,
-      { jobId }
+    return coreCall<{ cancelled: boolean; serverStopped: boolean }>(
+      'POST',
+      `/jobs/${encodeURIComponent(jobId)}/cancel`
     )
   }
 
   override async listGallery(options: GalleryListOptions): Promise<GalleryPage> {
-    return invoke<GalleryPage>(`${PLUGIN}|list_gallery`, { options })
+    const query = new URLSearchParams({
+      offset: String(options.offset),
+      limit: String(options.limit),
+    })
+    if (options.includeArchived !== undefined) {
+      query.set('includeArchived', String(options.includeArchived))
+    }
+    return coreCall<GalleryPage>('GET', `/gallery?${query.toString()}`)
   }
 
   override async getGalleryItem(id: string): Promise<GalleryImageItem | null> {
-    return invoke<GalleryImageItem | null>(`${PLUGIN}|get_gallery_item`, {
-      id,
-    })
+    const { item } = await coreCall<{ item: GalleryImageItem | null }>(
+      'GET',
+      `/gallery/${encodeURIComponent(id)}`
+    )
+    return item
   }
 
   override async deleteGalleryItems(ids: string[]): Promise<void> {
-    await invoke(`${PLUGIN}|delete_gallery_items`, { ids })
+    await coreCall('POST', '/gallery/delete', { ids })
   }
 
   override async setGalleryFlags(
     id: string,
     flags: GalleryFlags
   ): Promise<GalleryImageItem> {
-    return invoke<GalleryImageItem>(`${PLUGIN}|set_gallery_flags`, {
-      id,
-      flags,
-    })
+    return coreCall<GalleryImageItem>(
+      'PATCH',
+      `/gallery/${encodeURIComponent(id)}/flags`,
+      flags
+    )
   }
 
   override async exportGalleryItem(
     id: string,
     targetPath: string
   ): Promise<void> {
-    await invoke(`${PLUGIN}|export_gallery_item`, { id, targetPath })
+    await coreCall('POST', `/gallery/${encodeURIComponent(id)}/export`, {
+      targetPath,
+    })
   }
 
   override async setOutputDir(path: string): Promise<DiffusionStatus> {
-    return invoke<DiffusionStatus>(`${PLUGIN}|set_output_dir`, { path })
+    return coreCall<DiffusionStatus>('PUT', '/output-dir', { path })
+  }
+
+  // --- video ---------------------------------------------------------------
+
+  override async getVideoCapabilities(): Promise<VideoCapabilities> {
+    return coreCall<VideoCapabilities>('GET', '/video/capabilities')
+  }
+
+  override async generateVideo(
+    request: VideoGenerateRequest
+  ): Promise<{ jobId: string }> {
+    return coreCall<{ jobId: string }>('POST', '/video/jobs', request)
+  }
+
+  override async getVideoJob(jobId: string): Promise<VideoJob | null> {
+    const { job } = await coreCall<{ job: VideoJob | null }>(
+      'GET',
+      `/video/jobs/${encodeURIComponent(jobId)}`
+    )
+    return job
+  }
+
+  override async cancelVideoJob(
+    jobId: string
+  ): Promise<{ cancelled: boolean; serverStopped: boolean }> {
+    return coreCall<{ cancelled: boolean; serverStopped: boolean }>(
+      'POST',
+      `/video/jobs/${encodeURIComponent(jobId)}/cancel`
+    )
+  }
+
+  override async listVideoGallery(
+    options: GalleryListOptions
+  ): Promise<VideoGalleryPage> {
+    const query = new URLSearchParams({
+      offset: String(options.offset),
+      limit: String(options.limit),
+    })
+    if (options.includeArchived !== undefined) {
+      query.set('includeArchived', String(options.includeArchived))
+    }
+    return coreCall<VideoGalleryPage>('GET', `/video/gallery?${query.toString()}`)
+  }
+
+  override async getVideoGalleryItem(
+    id: string
+  ): Promise<GalleryVideoItem | null> {
+    const { item } = await coreCall<{ item: GalleryVideoItem | null }>(
+      'GET',
+      `/video/gallery/${encodeURIComponent(id)}`
+    )
+    return item
+  }
+
+  override async deleteVideoGalleryItems(ids: string[]): Promise<void> {
+    await coreCall('POST', '/video/gallery/delete', { ids })
+  }
+
+  override async setVideoGalleryFlags(
+    id: string,
+    flags: GalleryFlags
+  ): Promise<GalleryVideoItem> {
+    return coreCall<GalleryVideoItem>(
+      'PATCH',
+      `/video/gallery/${encodeURIComponent(id)}/flags`,
+      flags
+    )
+  }
+
+  override async exportVideoGalleryItem(
+    id: string,
+    targetPath: string
+  ): Promise<void> {
+    await coreCall('POST', `/video/gallery/${encodeURIComponent(id)}/export`, {
+      targetPath,
+    })
+  }
+
+  override async setVideoPoster(
+    id: string,
+    pngBase64: string
+  ): Promise<GalleryVideoItem> {
+    return coreCall<GalleryVideoItem>(
+      'PUT',
+      `/video/gallery/${encodeURIComponent(id)}/poster`,
+      { png: pngBase64 }
+    )
   }
 
   override subscribe(handler: (event: DiffusionEvent) => void): () => void {
@@ -171,6 +321,15 @@ export class TauriDiffusionService extends DefaultDiffusionService {
         })
       )
     }
+    pending.push(
+      listen<{ generation?: unknown }>(RESET_EVENT, (event) => {
+        const generation = event.payload?.generation
+        handler({
+          type: 'reset',
+          generation: typeof generation === 'number' ? generation : null,
+        })
+      })
+    )
 
     let detached = false
     return () => {

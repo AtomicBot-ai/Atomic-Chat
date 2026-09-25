@@ -69,4 +69,17 @@ mod tests {
 
         assert_eq!(config.autostart_preference, AutostartPreference::Unmanaged);
     }
+
+    #[test]
+    fn a_configuration_carrying_the_retired_core_flags_still_loads() {
+        // Stages 3–5 wrote `atomic_core` into settings.json. The core now owns every desktop runtime
+        // unconditionally; the old object is ignored rather than refused, so an upgraded install
+        // keeps its data folder and autostart preference.
+        let config: AppConfiguration = serde_json::from_str(
+            r#"{"data_folder":"./d","atomic_core":{"attach":true,"runtime":"all","server":"core"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.data_folder, "./d");
+    }
 }

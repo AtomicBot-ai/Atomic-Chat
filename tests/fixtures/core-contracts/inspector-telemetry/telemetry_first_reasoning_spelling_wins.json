@@ -1,0 +1,39 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion_tokens": 1,
+    "finish_reason": null,
+    "predicted_per_second": null,
+    "prompt_per_second": null,
+    "prompt_tokens": null,
+    "reply_chars": 1,
+    "reply_preview": "A",
+    "tokens_estimated": true,
+    "total_tokens": null,
+    "ttft_ms": 4
+  },
+  "input": {
+    "frames": [
+      {
+        "json": {
+          "choices": [
+            {
+              "delta": {
+                "reasoning": "B",
+                "reasoning_content": "A"
+              }
+            }
+          ]
+        },
+        "offset_ms": 4
+      }
+    ],
+    "kind": "stream_telemetry",
+    "whole_response": false
+  },
+  "name": "telemetry_first_reasoning_spelling_wins",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

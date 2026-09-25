@@ -17,6 +17,10 @@ import {
 } from '@/components/ui/sidebar'
 import { BlocksIcon } from '@/components/animated-icon/blocks'
 import {
+  ClapperboardIcon,
+  type ClapperboardIconHandle,
+} from '@/components/animated-icon/clapperboard'
+import {
   CloudIcon,
   type CloudIconHandle,
 } from '@/components/animated-icon/cloud'
@@ -67,6 +71,7 @@ export function NavMain() {
   const integrationsIconRef = useRef<PlugIconHandle>(null)
   const apiIconRef = useRef<RadioTowerIconHandle>(null)
   const imagesIconRef = useRef<ImageIconHandle>(null)
+  const videosIconRef = useRef<ClapperboardIconHandle>(null)
   const integrationsBadgeSeen = useGeneralSetting(
     (state) => state.integrationsBadgeSeen
   )
@@ -214,6 +219,28 @@ export function NavMain() {
               </CollapsibleContent>
             </SidebarMenuItem>
           </Collapsible>
+        )}
+        {/* Local video generation shares the engine with Images and sits
+            right under it: one row, no workflows to unfold. */}
+        {PlatformFeatures[PlatformFeature.MEDIA_GENERATION] && (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/videos')}
+              className="data-[active=true]:bg-sidebar-foreground/15"
+              onMouseEnter={() => videosIconRef.current?.startAnimation()}
+              onMouseLeave={() => videosIconRef.current?.stopAnimation()}
+            >
+              <Link to={route.videos.index} data-testid="videos-link">
+                <ClapperboardIcon
+                  ref={videosIconRef}
+                  className="text-foreground/70"
+                  size={16}
+                />
+                <span>{t('common:video')}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         )}
         {/* Cloud is offered in both modes: agent mode is what a user with no
             local engine is most likely to be blocked on, and connecting a

@@ -165,5 +165,11 @@ describe('DeferredFirstSendProvider', () => {
     expect(mocks.switchToModel).not.toHaveBeenCalled()
     expect(mocks.createThread).not.toHaveBeenCalled()
     expect(mocks.navigate).not.toHaveBeenCalled()
+    // Hands off entirely: the composer's selection and draft are untouched,
+    // and the queued send stays armed as the backup for leaving the route.
+    expect(useModelProvider.getState().selectedProvider).toBe('')
+    expect(useModelProvider.getState().selectedModel).toBeNull()
+    expect(usePrompt.getState().prompt).toBe('Queued prompt')
+    expect(useDeferredFirstSend.getState().queued?.id).toBe('queue-2')
   })
 })

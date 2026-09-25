@@ -39,6 +39,39 @@ const PREVIEW_UPDATE_INFO: UpdateInfo = {
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 
+/// How long an update waits for local models to unload before downloading
+/// anyway. A control call to the core can take up to ten minutes to time out.
+const STOP_MODELS_TIMEOUT_MS = 15_000
+
+/// Unload local models ahead of the install, best effort. When the core is
+/// down or wedged, every engine's `getLoadedModels` rejects or stalls, and
+/// that is exactly when the user needs the next release most — so neither
+/// may keep the update from starting.
+const stopModelsBeforeUpdate = async (): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<'timed-out'>((resolve) => {
+    timer = setTimeout(() => resolve('timed-out'), STOP_MODELS_TIMEOUT_MS)
+  })
+  try {
+    const outcome = await Promise.race([
+      getServiceHub().models().stopAllModels(),
+      timedOut,
+    ])
+    if (outcome === 'timed-out') {
+      console.warn(
+        `Local models did not stop within ${STOP_MODELS_TIMEOUT_MS} ms; updating anyway`
+      )
+    }
+  } catch (error) {
+    console.warn(
+      'Could not stop local models before the update; updating anyway:',
+      error
+    )
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /// Running app version, preferring what Tauri reports over the build-time
 /// define — a `yarn dev` web session has no Tauri API at all.
 const readCurrentVersion = async (): Promise<string> => {
@@ -281,7 +314,7 @@ export const useAppUpdater = () => {
 
       let downloaded = 0
       let contentLength = 0
-      await getServiceHub().models().stopAllModels()
+      await stopModelsBeforeUpdate()
       getServiceHub().events().emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 

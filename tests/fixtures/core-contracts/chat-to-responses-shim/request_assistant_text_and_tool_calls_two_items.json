@@ -1,0 +1,68 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "calling a tool",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_atomic_0",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        {
+          "arguments": "{\"q\":\"rust\"}",
+          "call_id": "call_1",
+          "name": "search",
+          "type": "function_call"
+        }
+      ],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "session-fixture",
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto"
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": "calling a tool",
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"q\":\"rust\"}",
+                "name": "search"
+              },
+              "id": "call_1",
+              "type": "function"
+            }
+          ]
+        }
+      ]
+    },
+    "kind": "request",
+    "prompt_cache_key": "session-fixture"
+  },
+  "name": "request_assistant_text_and_tool_calls_two_items",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

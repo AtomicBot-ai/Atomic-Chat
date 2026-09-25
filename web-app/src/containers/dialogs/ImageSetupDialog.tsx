@@ -4,12 +4,14 @@ import {
   IconCircleCheckFilled,
   IconLoader2,
   IconLock,
+  IconMovie,
   IconPhoto,
   IconSparkles,
   IconX,
 } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
+import { ClapperboardIcon } from '@/components/animated-icon/clapperboard'
 import { ImageIcon } from '@/components/animated-icon/image'
 import {
   Dialog,
@@ -31,7 +33,9 @@ import { useImageSetting } from '@/hooks/useImageSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatProgressPair } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
+import type { DiffusionModality } from '@/services/diffusion/types'
 import {
+  selectHasInstalledModel,
   useImageGenerationStore,
   type ImageSetupStep,
 } from '@/stores/image-generation-store'
@@ -62,22 +66,27 @@ function StepDots({ step }: { step: number }) {
 }
 
 const INTRO_BULLETS = [
-  { icon: IconLock, text: 'images:setup.intro.bulletLocal' },
-  { icon: IconAdjustmentsHorizontal, text: 'images:setup.intro.bulletRecipes' },
-  { icon: IconSparkles, text: 'images:setup.intro.bulletApi' },
+  { icon: IconLock, key: 'setup.intro.bulletLocal' },
+  { icon: IconAdjustmentsHorizontal, key: 'setup.intro.bulletRecipes' },
+  { icon: IconSparkles, key: 'setup.intro.bulletApi' },
 ] as const
 
-function IntroStep() {
+/** The locale namespace of the page that opened the wizard. */
+const namespaceOf = (modality: DiffusionModality) =>
+  modality === 'video' ? 'videos' : 'images'
+
+function IntroStep({ modality }: { modality: DiffusionModality }) {
   const { t } = useTranslation()
+  const ns = namespaceOf(modality)
   return (
     <div className="space-y-2 rounded-xl border bg-secondary/40 p-3">
-      {INTRO_BULLETS.map(({ icon: Icon, text }) => (
-        <div key={text} className="flex items-center gap-3">
+      {INTRO_BULLETS.map(({ icon: Icon, key }) => (
+        <div key={key} className="flex items-center gap-3">
           <VoiceSetupRowIcon size="sm">
             <Icon size={16} />
           </VoiceSetupRowIcon>
           <span className="text-sm leading-snug text-muted-foreground">
-            {t(text)}
+            {t(`${ns}:${key}`)}
           </span>
         </div>
       ))}
@@ -194,23 +203,42 @@ export const ImageEngineBlock = memo(function ImageEngineBlock() {
   )
 })
 
-const STEPS = [
-  {
-    title: 'images:setup.intro.title',
-    description: 'images:setup.intro.description',
-  },
-  {
-    title: 'images:setup.engine.title',
-    description: 'images:setup.engine.description',
-  },
-  {
-    title: 'images:setup.model.title',
-    description: 'images:setup.model.description',
-  },
-] as const
+/**
+ * The step copy. The engine step is the same for both pages (one engine);
+ * the intro and the model step speak for the page that opened the wizard.
+ */
+const stepsFor = (modality: DiffusionModality) => {
+  const ns = namespaceOf(modality)
+  return [
+    {
+      title: `${ns}:setup.intro.title`,
+      description: `${ns}:setup.intro.description`,
+    },
+    {
+      title: 'images:setup.engine.title',
+      description: 'images:setup.engine.description',
+    },
+    {
+      title: `${ns}:setup.model.title`,
+      description: `${ns}:setup.model.description`,
+    },
+  ] as const
+}
 
-function SetupHeaderIcon({ step }: { step: ImageSetupStep }) {
-  if (step === 0) return <ImageIcon size={32} aria-hidden />
+function SetupHeaderIcon({
+  step,
+  modality,
+}: {
+  step: ImageSetupStep
+  modality: DiffusionModality
+}) {
+  if (step === 0) {
+    return modality === 'video' ? (
+      <ClapperboardIcon size={32} aria-hidden />
+    ) : (
+      <ImageIcon size={32} aria-hidden />
+    )
+  }
   if (step === 1) {
     return (
       <img
@@ -221,7 +249,11 @@ function SetupHeaderIcon({ step }: { step: ImageSetupStep }) {
       />
     )
   }
-  return <IconPhoto size={28} aria-hidden />
+  return modality === 'video' ? (
+    <IconMovie size={28} aria-hidden />
+  ) : (
+    <IconPhoto size={28} aria-hidden />
+  )
 }
 
 /**
@@ -237,10 +269,11 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
   const { t } = useTranslation()
   const open = useImageGenerationStore((state) => state.setupOpen)
   const step = useImageGenerationStore((state) => state.setupStep)
+  const setupModality = useImageGenerationStore((state) => state.setupModality)
   const openSetup = useImageGenerationStore((state) => state.openSetup)
   const closeSetup = useImageGenerationStore((state) => state.closeSetup)
-  const hasModel = useImageGenerationStore((state) =>
-    state.installedArtifacts.some((artifact) => artifact.complete)
+  const hasModel = useImageGenerationStore(
+    selectHasInstalledModel(setupModality)
   )
   const modelRunning = useImageGenerationStore(
     (state) => state.status?.model.state === 'loaded'
@@ -250,8 +283,8 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
 
   const go = useCallback(
     (next: number) =>
-      openSetup(Math.min(2, Math.max(0, next)) as ImageSetupStep),
-    [openSetup]
+      openSetup(Math.min(2, Math.max(0, next)) as ImageSetupStep, setupModality),
+    [openSetup, setupModality]
   )
 
   const ready = engineInstalled && hasModel
@@ -269,15 +302,21 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
   // The model step says so once there is nothing left to get: a download that
   // lands must change what the wizard says, not only one row in a long list.
   const done = step === 2 && ready
-  const title = done ? 'images:setup.ready.title' : STEPS[step].title
+  const steps = stepsFor(setupModality)
+  const title = done ? 'images:setup.ready.title' : steps[step].title
   const description = !done
-    ? STEPS[step].description
+    ? steps[step].description
     : modelRunning
       ? 'images:setup.ready.descriptionRunning'
       : 'images:setup.ready.description'
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? openSetup(step) : dismiss())}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) =>
+        next ? openSetup(step, setupModality) : dismiss()
+      }
+    >
       <DialogContent className="sm:max-w-lg lg:max-w-lg xl:max-w-lg">
         <DialogHeader
           data-testid="image-setup-header"
@@ -291,7 +330,7 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
                 className="text-emerald-600 dark:text-emerald-400"
               />
             ) : (
-              <SetupHeaderIcon step={step} />
+              <SetupHeaderIcon step={step} modality={setupModality} />
             )}
           </div>
           <DialogTitle data-testid="image-setup-title">{t(title)}</DialogTitle>
@@ -316,13 +355,14 @@ const ImageSetupDialog = memo(function ImageSetupDialog() {
               : 'h-[156px]'
           )}
         >
-          {step === 0 && <IntroStep />}
+          {step === 0 && <IntroStep modality={setupModality} />}
           {step === 1 && (
             <ImageEngineBlock />
           )}
           {step === 2 && (
             <ImageModelSelector
               variant="dialog"
+              modality={setupModality}
               onDownloadStarted={closeSetup}
             />
           )}

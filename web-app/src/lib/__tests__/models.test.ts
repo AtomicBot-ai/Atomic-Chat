@@ -608,8 +608,8 @@ describe('findCatalogModelForRecommendedRepo', () => {
   })
 
   it('does NOT fall back to tail-only matching across orgs (regression)', () => {
-    //* Bug: «recommended unsloth/X» молча резолвился в lmstudio-community/X
-    //* потому что tail совпадал. После фикса — undefined.
+    //* Bug: "recommended unsloth/X" silently resolved to lmstudio-community/X
+    //* because the tail matched. After the fix — undefined.
     const sources = [
       make('lmstudio-community/gemma-4-E4B-it-GGUF'),
       make('ggml-org/gemma-4-E4B-it-GGUF'),

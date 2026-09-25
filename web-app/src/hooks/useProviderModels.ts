@@ -40,13 +40,18 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
     const cacheKey = `${provider.provider}-${provider.base_url}`
     const cached = modelsCache.get(cacheKey)
 
+    // Every call supersedes the one before it, a cache hit included: a request
+    // still in flight for an earlier address would otherwise pass the check
+    // below when it lands and replace the list just shown from the cache.
+    const currentRequestId = ++requestIdRef.current
+
     // Check cache first
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       setModels(cached.models)
+      setLoading(false)
       return
     }
 
-    const currentRequestId = ++requestIdRef.current
     setLoading(true)
     setError(null)
 

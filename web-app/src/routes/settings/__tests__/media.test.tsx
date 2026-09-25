@@ -59,6 +59,7 @@ vi.mock('@/services/diffusion/install', () => ({
 }))
 
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -87,6 +88,9 @@ describe('Media settings', () => {
     vi.clearAllMocks()
     localStorage.clear()
     await useImageSetting.persist.rehydrate()
+    await useVideoSetting.persist.rehydrate()
+    useImageSetting.setState({ outputDir: null })
+    useVideoSetting.setState({ outputDir: null })
     useAppState.setState({ serverStatus: 'stopped' })
     useLocalApiServer.setState({
       serverHost: '127.0.0.1',
@@ -253,7 +257,7 @@ describe('Media settings', () => {
     expect(screen.getByTestId('media-output-dir')).toHaveTextContent('/data/images')
 
     await act(async () => {
-      await userEvent.click(screen.getByText('settings:media.change'))
+      await userEvent.click(screen.getAllByText('settings:media.change')[0])
     })
 
     expect(open.mock.calls[0][0]).toMatchObject({ directory: true })
@@ -263,14 +267,139 @@ describe('Media settings', () => {
         '/Users/me/Pictures/Atomic'
       )
     )
+    // Kept by the app too: the core forgets it with its generation.
+    expect(useImageSetting.getState().outputDir).toBe('/Users/me/Pictures/Atomic')
+    expect(
+      JSON.parse(localStorage.getItem('setting-images') ?? '{}').state?.outputDir
+    ).toBe('/Users/me/Pictures/Atomic')
+  })
+
+  it('treats picking the default folder as the default, so it follows the data folder', async () => {
+    const { getDiffusionPaths } = await import('@/lib/diffusion/config')
+    vi.mocked(getDiffusionPaths).mockResolvedValueOnce({
+      imagesDir: '/Users/me/Pictures/Atomic/',
+    } as Awaited<ReturnType<typeof getDiffusionPaths>>)
+    useImageSetting.setState({ outputDir: '/Users/me/Pictures/Old' })
+    render(<Component />)
+    await act(async () => {
+      await userEvent.click(screen.getAllByText('settings:media.change')[0])
+    })
+    expect(fake.setOutputDir).toHaveBeenCalledWith('')
+    expect(useImageSetting.getState().outputDir).toBeNull()
+  })
+
+  it('keeps the previous folder when the core refuses the new one', async () => {
+    useImageSetting.setState({ outputDir: '/Users/me/Pictures/Old' })
+    fake.setOutputDir.mockRejectedValueOnce({
+      code: 'INTERNAL',
+      message: 'Could not create the output folder.',
+    })
+    render(<Component />)
+    await act(async () => {
+      await userEvent.click(screen.getAllByText('settings:media.change')[0])
+    })
+    expect(fake.setOutputDir).toHaveBeenCalledWith('/Users/me/Pictures/Atomic')
+    expect(useImageSetting.getState().outputDir).toBe('/Users/me/Pictures/Old')
+  })
+
+  it('rehydrates a stored setting from before the folder was kept with none', async () => {
+    localStorage.setItem(
+      'setting-images',
+      JSON.stringify({ state: { idleUnloadMinutes: 30 }, version: 1 })
+    )
+    await useImageSetting.persist.rehydrate()
+    expect(useImageSetting.getState()).toMatchObject({
+      idleUnloadMinutes: 30,
+      outputDir: null,
+    })
   })
 
   it('opens the output folder', async () => {
     render(<Component />)
     await act(async () => {
-      await userEvent.click(screen.getByText('settings:media.openFolder'))
+      await userEvent.click(screen.getAllByText('settings:media.openFolder')[0])
     })
     expect(openPath.mock.calls[0][0]).toBe('/data/images')
+  })
+
+  it('shows the video folder, opens it, and changes it through the folder picker and a configure', async () => {
+    const { configureDiffusion } = await import('@/lib/diffusion/config')
+    const configure = vi.mocked(configureDiffusion)
+    configure.mockImplementation(async (overrides) =>
+      makeStatus({
+        idleUnloadSecs: 0,
+        videoOutputDir: overrides?.videoOutputDir ?? '/data/videos',
+      })
+    )
+    render(<Component />)
+    expect(screen.getByTestId('media-video-output-dir')).toHaveTextContent('/data/videos')
+
+    await act(async () => {
+      await userEvent.click(
+        screen.getByRole('button', { name: 'settings:media.openVideoFolder' })
+      )
+    })
+    expect(openPath.mock.calls[0][0]).toBe('/data/videos')
+
+    open.mockResolvedValueOnce('/Users/me/Movies/Atomic')
+    await act(async () => {
+      await userEvent.click(
+        screen.getByRole('button', { name: 'settings:media.changeVideoFolder' })
+      )
+    })
+    expect(open.mock.calls[0][0]).toMatchObject({
+      directory: true,
+      defaultPath: '/data/videos',
+    })
+    // No route of its own: the choice rides on the next configure.
+    expect(configure.mock.calls.at(-1)?.[0]).toMatchObject({
+      videoOutputDir: '/Users/me/Movies/Atomic',
+    })
+    expect(fake.setOutputDir).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(screen.getByTestId('media-video-output-dir')).toHaveTextContent(
+        '/Users/me/Movies/Atomic'
+      )
+    )
+    expect(useVideoSetting.getState().outputDir).toBe('/Users/me/Movies/Atomic')
+    expect(useImageSetting.getState().outputDir).toBeNull()
+    expect(
+      JSON.parse(localStorage.getItem('setting-videos') ?? '{}').state?.outputDir
+    ).toBe('/Users/me/Movies/Atomic')
+  })
+
+  it('treats picking the default video folder as the default, and keeps the previous one when the core cannot use the new one', async () => {
+    const { configureDiffusion, getDiffusionPaths } = await import('@/lib/diffusion/config')
+    const configure = vi.mocked(configureDiffusion)
+    vi.mocked(getDiffusionPaths).mockResolvedValueOnce({
+      videosDir: '/Users/me/Movies/Atomic/',
+    } as Awaited<ReturnType<typeof getDiffusionPaths>>)
+    useVideoSetting.setState({ outputDir: '/Users/me/Movies/Old' })
+    render(<Component />)
+    open.mockResolvedValueOnce('/Users/me/Movies/Atomic')
+    await act(async () => {
+      await userEvent.click(
+        screen.getByRole('button', { name: 'settings:media.changeVideoFolder' })
+      )
+    })
+    expect(useVideoSetting.getState().outputDir).toBeNull()
+    expect(configure.mock.calls.at(-1)?.[0]).not.toHaveProperty('videoOutputDir')
+
+    // The core falls back to the default folder when it cannot create the
+    // chosen one; the page notices in the status and puts the old choice back.
+    useVideoSetting.setState({ outputDir: '/Users/me/Movies/Old' })
+    configure.mockImplementation(async () =>
+      makeStatus({ idleUnloadSecs: 0, videoOutputDir: '/data/videos' })
+    )
+    open.mockResolvedValueOnce('/Volumes/Gone/Atomic')
+    await act(async () => {
+      await userEvent.click(
+        screen.getByRole('button', { name: 'settings:media.changeVideoFolder' })
+      )
+    })
+    expect(useVideoSetting.getState().outputDir).toBe('/Users/me/Movies/Old')
+    const { toast } = await import('sonner')
+    expect(toast.error).toHaveBeenCalledWith('settings:media.changeFailed')
   })
 
   it('applies keep-loaded to the plugin idle timer and disables the idle picker', async () => {
@@ -289,12 +418,13 @@ describe('Media settings', () => {
     )
   })
 
-  it('resets the residency settings to their defaults', async () => {
+  it('resets the residency settings to their defaults and keeps the folder', async () => {
     useImageSetting.setState({
       keepModelLoaded: true,
       idleUnloadMinutes: 60,
       evictChatModel: 'always',
       engineOverride: 'sd-cpp',
+      outputDir: '/Users/me/Pictures/Atomic',
     })
     render(<Component />)
     await act(async () => {
@@ -305,6 +435,16 @@ describe('Media settings', () => {
       idleUnloadMinutes: 10,
       evictChatModel: 'whenNeeded',
       engineOverride: 'auto',
+      outputDir: '/Users/me/Pictures/Atomic',
     })
+    // The configure that applies the defaults sends the folder along, or the
+    // core would drop it.
+    const { configureDiffusion } = await import('@/lib/diffusion/config')
+    await waitFor(() =>
+      expect(vi.mocked(configureDiffusion).mock.calls.at(-1)?.[0]).toEqual({
+        idleUnloadSecs: 600,
+        outputDir: '/Users/me/Pictures/Atomic',
+      })
+    )
   })
 })

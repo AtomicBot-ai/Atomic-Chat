@@ -102,10 +102,10 @@ export function orderRowsByFit<T>(
   return out
 }
 
-//* Вариант загрузки: пин из манифеста, иначе приоритет квантов как в Hub.
-//! Пин обязателен для LFM2.5-VL-450M (нужен Q8_0): репозиторий отдаёт и Q4_K_M,
-//! который матчится DEFAULT_MODEL_QUANTIZATIONS — без пина скачается рабочий,
-//! но не тот файл, и ошибка не всплывёт нигде.
+//* Download variant: pin from the manifest, otherwise the quant priority used in Hub.
+//! The pin is required for LFM2.5-VL-450M (needs Q8_0): the repo also serves Q4_K_M,
+//! which matches DEFAULT_MODEL_QUANTIZATIONS — without the pin a working but wrong
+//! file gets downloaded, and the error never surfaces anywhere.
 export function pickPreferredVariant(
   model: CatalogModel,
   quantPin?: string
@@ -121,10 +121,10 @@ export function pickPreferredVariant(
   return preferred ?? model.quants?.[0] ?? null
 }
 
-//* Проектор для vision-моделей: пин из манифеста, иначе обычный выбор.
-//! getPreferredMmprojModel ищет буквальный id 'mmproj-f16'. У LiquidAI id —
-//! 'mmproj-LFM2_5-VL-450m-F16', совпадения нет, и он падает на mmproj_models[0]
-//! = BF16 (181 MB) вместо Q8_0 (98 MB).
+//* Projector for vision models: pin from the manifest, otherwise the regular selection.
+//! getPreferredMmprojModel looks for the literal id 'mmproj-f16'. LiquidAI's id is
+//! 'mmproj-LFM2_5-VL-450m-F16', so there is no match and it falls back to mmproj_models[0]
+//! = BF16 (181 MB) instead of Q8_0 (98 MB).
 export function pickMmprojModel(
   model: CatalogModel,
   quantPin?: string

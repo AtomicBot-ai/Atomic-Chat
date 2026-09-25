@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 80000,
+        "id": "CUDA0",
+        "mem": 81920,
+        "name": "NVIDIA A100"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "  Available devices:  \nCUDA0: NVIDIA A100 (81920 MiB, 80000 MiB free)\n"
+  },
+  "name": "header_with_surrounding_whitespace",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

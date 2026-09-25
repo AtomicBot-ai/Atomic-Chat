@@ -1,0 +1,46 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "bytes": 1507218,
+        "sha256": "dbf3b6deb546cd86fd699f2dab5b349f68a40fd0b31f2a9fe4d4be5495977032"
+      },
+      "headers": {
+        "content-type": "application/javascript"
+      },
+      "status": 200
+    },
+    "upstream_calls": []
+  },
+  "input": {
+    "request": {
+      "body": null,
+      "headers": [],
+      "method": "GET",
+      "path": "/docs/swagger-ui-bundle.js"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": []
+  },
+  "name": "docs_bundle_served",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

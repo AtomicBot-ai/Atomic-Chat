@@ -1,0 +1,61 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "created_at": 0,
+      "id": "resp_fixture",
+      "model": "m",
+      "object": "response",
+      "output": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "first",
+              "type": "output_text"
+            }
+          ],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "status": "completed",
+      "tool_choice": "auto",
+      "tools": [],
+      "usage": null
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "message": {
+            "content": "first",
+            "role": "assistant"
+          }
+        },
+        {
+          "message": {
+            "content": "second",
+            "role": "assistant"
+          }
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "response",
+    "model_fallback": "fallback-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "response_multiple_choices_only_first_used",
+  "placeholders": [
+    "<msg_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

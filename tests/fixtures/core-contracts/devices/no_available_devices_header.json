@@ -1,0 +1,19 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "error": {
+      "code": "DEVICE_LIST_PARSE_FAILED",
+      "details": "Some output without Available devices section\n",
+      "message": "Could not find 'Available devices:' section in the backend output."
+    }
+  },
+  "input": {
+    "stdout": "Some output without Available devices section\n"
+  },
+  "name": "no_available_devices_header",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": true,
+      "device_init_error": null,
+      "gpu_buffer_bytes": null,
+      "gpu_layers_offloaded": null,
+      "loaded_backends": [],
+      "primary_device": "",
+      "total_layers": null
+    }
+  },
+  "input": {
+    "lines": [],
+    "mark_cuda_runtime_missing": true
+  },
+  "name": "cuda_runtime_missing_marked_conclusive",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

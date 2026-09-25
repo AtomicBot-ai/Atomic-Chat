@@ -1,0 +1,25 @@
+{
+  "cases": [
+    "write_mark_running_defaults",
+    "write_mark_running_bind_all_with_key",
+    "write_mark_running_records_bound_port_not_requested_zero",
+    "write_mark_stopped_preserves_address_clears_pid",
+    "write_mark_stopped_when_file_missing_writes_defaults",
+    "write_mark_stopped_when_file_malformed_writes_defaults",
+    "read_missing_file_defaults",
+    "read_malformed_json_defaults",
+    "read_round_trip_running_state_bind_all_dials_loopback",
+    "read_missing_field_rejects_whole_file",
+    "read_unknown_fields_ignored_api_key_never_read",
+    "read_port_out_of_u16_range_defaults"
+  ],
+  "comparator": "state-file-schema",
+  "comparator_notes": {
+    "placeholders": "\"<pid>\" stands for std::process::id() of the app process; compare it as any u32 > 0.",
+    "state-file-schema": "The file lives at <data_folder>/local-api-server.json. input.op=mark_running: expected.file is the JSON the port must write (all six keys, nothing else — the API key is never written), expected.text is the exact bytes (serde_json pretty print: 2-space indent, `\"key\": value`, no trailing newline, key order running/host/port/prefix/requires_api_key/pid), with the live pid replaced by the placeholder \"<pid>\" in both. input.op=mark_stopped: read the existing file (input.existing_file, null = absent; unreadable/malformed/missing-field files read as the defaults), set running=false and pid=0, keep host/port/prefix/requires_api_key, write. input.op=read: expected.state is the struct read back plus the derived base_url/api_url; any parse failure (malformed JSON, a missing field, a port outside u16) yields the full default {running:false, host:'127.0.0.1', port:1337, prefix:'/v1', requires_api_key:false, pid:0}; unknown keys are ignored. base_url maps host 0.0.0.0 to 127.0.0.1 and never adds the prefix; api_url = base_url + prefix verbatim (prefix '' gives no trailing slash). Writes are best-effort: a failure to create the folder or write the file is logged and ignored, never propagated."
+  },
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

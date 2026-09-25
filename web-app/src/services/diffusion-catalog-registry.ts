@@ -69,6 +69,16 @@ export type DiffusionCatalogFile = {
   field?: DiffusionTextEncoderField
 }
 
+/** The video block of a video family: valid frame counts are `k * frame_step + frame_offset` inside `frame_range`. */
+export type DiffusionCatalogVideo = {
+  fps: number
+  frame_step: number
+  frame_offset: number
+  frames: number
+  frame_range: [number, number]
+  resolution_presets: [number, number][]
+}
+
 export type DiffusionCatalogQuant = {
   id: string
   label: string
@@ -93,6 +103,8 @@ export type DiffusionCatalogFamily = {
   }
   vae?: DiffusionCatalogFile
   vae_format?: 'flux2'
+  /** LTX-2: the audio VAE, a side file like the video VAE. */
+  audio_vae?: DiffusionCatalogFile
   text_encoders: DiffusionCatalogFile[]
   defaults: {
     steps: number
@@ -102,12 +114,16 @@ export type DiffusionCatalogFamily = {
     flow_shift?: number
     width: number
     height: number
+    /** A distilled model's fixed sigma schedule; the core sends it as `custom_sigmas` at exactly that step count. */
+    sigmas?: number[]
   }
   ranges: {
     steps: [number, number]
     dims: [number, number]
     dim_multiple: number
   }
+  /** Present on every video family: the rate, the frame lattice and the trained sizes. */
+  video?: DiffusionCatalogVideo
   capabilities: {
     negative_prompt: boolean
     guidance: boolean
@@ -154,6 +170,7 @@ const TEXT_ENCODER_FIELDS: readonly DiffusionTextEncoderField[] = [
   'qwen2vl',
   'clip_l',
   't5xxl',
+  'embeddings_connectors',
 ]
 const WORKFLOWS: readonly ImageWorkflowId[] = IMAGE_WORKFLOW_IDS
 
@@ -253,6 +270,16 @@ const sanitizeDefaults = (
     isFiniteNumber(raw.guidance) && raw.guidance >= 0 ? raw.guidance : undefined
   const samplingMethod = optionalString(raw.sampling_method)
   const flowShift = isFiniteNumber(raw.flow_shift) ? raw.flow_shift : undefined
+  let sigmas: number[] | undefined
+  if (raw.sigmas !== undefined) {
+    if (
+      !Array.isArray(raw.sigmas) ||
+      raw.sigmas.length === 0 ||
+      !raw.sigmas.every((s) => isFiniteNumber(s) && s > 0 && s <= 1)
+    )
+      return null
+    sigmas = raw.sigmas as number[]
+  }
   return {
     steps: raw.steps,
     cfg_scale: raw.cfg_scale,
@@ -261,6 +288,54 @@ const sanitizeDefaults = (
     ...(flowShift !== undefined ? { flow_shift: flowShift } : {}),
     width: raw.width,
     height: raw.height,
+    ...(sigmas ? { sigmas } : {}),
+  }
+}
+
+const isNonNegativeInt = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0
+
+/**
+ * The video block, held to what the Video page and the core assume: the
+ * default count on the lattice and inside the range, every preset inside the
+ * family's dims and on its grid, at least one preset.
+ */
+const sanitizeVideo = (
+  raw: unknown,
+  ranges: DiffusionCatalogFamily['ranges']
+): DiffusionCatalogVideo | null => {
+  if (!isRecord(raw)) return null
+  const { fps, frame_step: frameStep, frame_offset: frameOffset, frames } = raw
+  if (!isPositiveInt(fps) || !isPositiveInt(frameStep)) return null
+  if (!isNonNegativeInt(frameOffset) || !isPositiveInt(frames)) return null
+  const frameRange = sanitizeRange(raw.frame_range)
+  if (!frameRange) return null
+  if (frames < frameOffset || (frames - frameOffset) % frameStep !== 0)
+    return null
+  if (frames < frameRange[0] || frames > frameRange[1]) return null
+  if (
+    !Array.isArray(raw.resolution_presets) ||
+    raw.resolution_presets.length === 0
+  )
+    return null
+  const presets: [number, number][] = []
+  for (const preset of raw.resolution_presets) {
+    if (!Array.isArray(preset) || preset.length !== 2) return null
+    const [w, h] = preset
+    if (!isPositiveInt(w) || !isPositiveInt(h)) return null
+    for (const dim of [w, h]) {
+      if (dim < ranges.dims[0] || dim > ranges.dims[1]) return null
+      if (dim % ranges.dim_multiple !== 0) return null
+    }
+    presets.push([w, h])
+  }
+  return {
+    fps,
+    frame_step: frameStep,
+    frame_offset: frameOffset,
+    frames,
+    frame_range: frameRange,
+    resolution_presets: presets,
   }
 }
 
@@ -339,6 +414,12 @@ export const sanitizeDiffusionFamily = (
     vae = parsed
   }
   if (raw.vae_format !== undefined && raw.vae_format !== 'flux2') return null
+  let audioVae: DiffusionCatalogFile | undefined
+  if (raw.audio_vae !== undefined) {
+    const parsed = sanitizeFile(raw.audio_vae, false)
+    if (!parsed) return null
+    audioVae = parsed
+  }
 
   let textEncoders: DiffusionCatalogFile[] = []
   if (raw.text_encoders !== undefined) {
@@ -355,6 +436,14 @@ export const sanitizeDiffusionFamily = (
   const ranges = sanitizeRanges(raw.ranges)
   const capabilities = sanitizeCapabilities(raw.capabilities)
   if (!defaults || !ranges || !capabilities) return null
+  // A video family without a usable video block is dropped: the Video page would have no
+  // lattice to offer; an image family's block is ignored.
+  let video: DiffusionCatalogVideo | undefined
+  if (raw.modality === 'video') {
+    const parsed = sanitizeVideo(raw.video, ranges)
+    if (!parsed) return null
+    video = parsed
+  }
 
   const normalizedDefaults =
     raw.id === 'qwen-image-2.1'
@@ -381,9 +470,11 @@ export const sanitizeDiffusionFamily = (
     transformer: { repo, quants },
     ...(vae ? { vae } : {}),
     ...(raw.vae_format === 'flux2' ? { vae_format: 'flux2' as const } : {}),
+    ...(audioVae ? { audio_vae: audioVae } : {}),
     text_encoders: textEncoders,
     defaults: normalizedDefaults,
     ranges,
+    ...(video ? { video } : {}),
     capabilities,
   }
 }

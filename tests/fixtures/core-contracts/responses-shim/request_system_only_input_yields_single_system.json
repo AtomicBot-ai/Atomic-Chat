@@ -1,0 +1,38 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "one\n\ntwo",
+          "role": "system"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "content": "one",
+          "role": "system",
+          "type": "message"
+        },
+        {
+          "content": "two",
+          "role": "system",
+          "type": "message"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_system_only_input_yields_single_system",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

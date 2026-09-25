@@ -1,0 +1,130 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "content": [
+            {
+              "text": "hi",
+              "type": "text"
+            }
+          ],
+          "id": "chatcmpl-1",
+          "model": "local.model-7b",
+          "role": "assistant",
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "type": "message",
+          "usage": {
+            "completion_tokens": 1,
+            "prompt_tokens": 3,
+            "total_tokens": 4
+          }
+        }
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "x-upstream-trace": "stub"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "max_tokens": 16,
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b",
+          "system": "be terse"
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      {
+        "body": {
+          "messages": [
+            {
+              "content": "be terse",
+              "role": "system"
+            },
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b",
+          "stream": false
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"max_tokens\":16,\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}],\"model\":\"local.model-7b\",\"system\":\"be terse\"}",
+      "headers": [],
+      "method": "POST",
+      "path": "/v1/messages"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/messages",
+        "replies": [
+          {
+            "body": "not found",
+            "content_type": "text/plain",
+            "status": 404
+          }
+        ]
+      },
+      {
+        "path": "/v1/chat/completions",
+        "replies": [
+          {
+            "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"hi\",\"role\":\"assistant\"}}],\"created\":1,\"id\":\"chatcmpl-1\",\"model\":\"local.model-7b\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":1,\"prompt_tokens\":3,\"total_tokens\":4}}",
+            "content_type": "application/json",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "messages_local_fallback_to_chat_non_stream",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

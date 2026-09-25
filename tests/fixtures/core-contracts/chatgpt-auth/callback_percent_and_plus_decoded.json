@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "ok": {
+      "code": "a/b c",
+      "kind": "code",
+      "state": "s=1"
+    }
+  },
+  "input": {
+    "kind": "parse_callback_query",
+    "query": "code=a%2Fb+c&state=s%3D1"
+  },
+  "name": "callback_percent_and_plus_decoded",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

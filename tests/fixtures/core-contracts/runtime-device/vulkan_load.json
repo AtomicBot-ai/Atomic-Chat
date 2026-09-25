@@ -1,0 +1,34 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": 4006545981,
+      "gpu_layers_offloaded": 33,
+      "loaded_backends": [
+        "Vulkan"
+      ],
+      "primary_device": "Vulkan0",
+      "total_layers": 33
+    }
+  },
+  "input": {
+    "lines": [
+      "load_backend: loaded Vulkan backend from /usr/lib/libggml-vulkan.so",
+      "ggml_vulkan: Found 1 Vulkan devices:",
+      "ggml_vulkan: 0 = AMD Radeon RX 7900 XTX (RADV NAVI31)",
+      "load_tensors: offloaded 33/33 layers to GPU",
+      "load_tensors:      Vulkan0 model buffer size =  3820.94 MiB",
+      "load_tensors:          CPU model buffer size =   102.64 MiB"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "vulkan_load",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

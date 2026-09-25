@@ -1,0 +1,17 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_ARCH_NOT_SUPPORTED",
+    "details": "ModuleNotFoundError: No module named 'mlx_lm.models.qwen3_5_text'",
+    "message": "This model's architecture isn't supported by the current MLX backend yet."
+  },
+  "input": {
+    "stderr": "ModuleNotFoundError: No module named 'mlx_lm.models.qwen3_5_text'"
+  },
+  "name": "arch_missing_mlx_lm_module",
+  "source": {
+    "commit": "5881e0bf3a955fcc5e9803555940d1f038eadf14",
+    "file": "src-tauri/plugins/tauri-plugin-mlx/src/error.rs",
+    "provider": "mlx"
+  }
+}

@@ -203,3 +203,232 @@ mod tests {
         );
     }
 }
+
+// -- Contract fixtures
+//
+// Emits the JSON contract fixtures a TypeScript port replays. Run with
+// `cargo test --lib -- --ignored server::state_file::fixture_dump`.
+//
+// `write_state` / `mark_running` / `mark_stopped` resolve the real data folder
+// (no env override exists), so the write cases build the exact struct those
+// functions build and serialise it with the same `to_string_pretty` call,
+// rather than touching the user's data folder. Reads go through the real
+// path-parameterised `read_state_from`.
+#[cfg(test)]
+mod fixture_dump {
+    use super::*;
+    use serde_json::{json, Value};
+    use std::fs;
+
+    enum Op {
+        /// `mark_running(host, port, prefix, requires_api_key)`.
+        MarkRunning {
+            host: &'static str,
+            port: u16,
+            prefix: &'static str,
+            requires_api_key: bool,
+        },
+        /// `mark_stopped()` with the given file already on disk (None = absent).
+        MarkStopped { existing: Option<&'static str> },
+        /// `read_state_from(path)` with the given file on disk (None = absent).
+        Read { file: Option<&'static str> },
+    }
+
+    struct Case {
+        name: &'static str,
+        op: Op,
+    }
+
+    fn cases() -> Vec<Case> {
+        vec![
+            Case {
+                name: "write_mark_running_defaults",
+                op: Op::MarkRunning { host: "127.0.0.1", port: 1337, prefix: "/v1", requires_api_key: false },
+            },
+            Case {
+                name: "write_mark_running_bind_all_with_key",
+                op: Op::MarkRunning { host: "0.0.0.0", port: 8080, prefix: "/api", requires_api_key: true },
+            },
+            Case {
+                name: "write_mark_running_records_bound_port_not_requested_zero",
+                op: Op::MarkRunning { host: "127.0.0.1", port: 43121, prefix: "/v1", requires_api_key: false },
+            },
+            Case {
+                name: "write_mark_stopped_preserves_address_clears_pid",
+                op: Op::MarkStopped {
+                    existing: Some(
+                        "{\n  \"running\": true,\n  \"host\": \"0.0.0.0\",\n  \"port\": 8080,\n  \"prefix\": \"/api\",\n  \"requires_api_key\": true,\n  \"pid\": 4242\n}",
+                    ),
+                },
+            },
+            Case {
+                name: "write_mark_stopped_when_file_missing_writes_defaults",
+                op: Op::MarkStopped { existing: None },
+            },
+            Case {
+                name: "write_mark_stopped_when_file_malformed_writes_defaults",
+                op: Op::MarkStopped { existing: Some("{ not json") },
+            },
+            Case { name: "read_missing_file_defaults", op: Op::Read { file: None } },
+            Case { name: "read_malformed_json_defaults", op: Op::Read { file: Some("{ not json") } },
+            Case {
+                name: "read_round_trip_running_state_bind_all_dials_loopback",
+                op: Op::Read {
+                    file: Some(
+                        "{\"running\":true,\"host\":\"0.0.0.0\",\"port\":8080,\"prefix\":\"/api\",\"requires_api_key\":true,\"pid\":4242}",
+                    ),
+                },
+            },
+            Case {
+                name: "read_missing_field_rejects_whole_file",
+                op: Op::Read { file: Some("{\"running\":true,\"host\":\"10.0.0.2\",\"port\":9000,\"prefix\":\"/v1\",\"pid\":1}") },
+            },
+            Case {
+                name: "read_unknown_fields_ignored_api_key_never_read",
+                op: Op::Read {
+                    file: Some(
+                        "{\"running\":true,\"host\":\"localhost\",\"port\":1337,\"prefix\":\"\",\"requires_api_key\":true,\"pid\":7,\"api_key\":\"sk-secret\",\"extra\":[1,2]}",
+                    ),
+                },
+            },
+            Case {
+                name: "read_port_out_of_u16_range_defaults",
+                op: Op::Read {
+                    file: Some("{\"running\":true,\"host\":\"127.0.0.1\",\"port\":70000,\"prefix\":\"/v1\",\"requires_api_key\":false,\"pid\":1}"),
+                },
+            },
+        ]
+    }
+
+    /// What `write_state` puts on disk: pretty JSON, no trailing newline.
+    fn written_text(state: &LocalApiServerState) -> String {
+        serde_json::to_string_pretty(state).unwrap()
+    }
+
+    fn state_json(state: &LocalApiServerState) -> Value {
+        serde_json::to_value(state).unwrap()
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .canonicalize()
+            .unwrap()
+    }
+
+    fn git_head(root: &PathBuf) -> String {
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_fixtures() {
+        let root = repo_root();
+        let out = root.join("tests/fixtures/core-contracts/state-file");
+        fs::create_dir_all(&out).unwrap();
+        let commit = git_head(&root);
+        let source = "src-tauri/src/core/server/state_file.rs";
+
+        let scratch = std::env::temp_dir().join("atomic-state-file-fixtures");
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).unwrap();
+
+        let mut names = Vec::new();
+        for c in cases() {
+            let path = scratch.join(format!("{}.json", c.name));
+            let (input, expected) = match c.op {
+                Op::MarkRunning {
+                    host,
+                    port,
+                    prefix,
+                    requires_api_key,
+                } => {
+                    // Mirrors `mark_running`: the struct it builds, pid included.
+                    let state = LocalApiServerState {
+                        running: true,
+                        host: host.to_string(),
+                        port,
+                        prefix: prefix.to_string(),
+                        requires_api_key,
+                        pid: std::process::id(),
+                    };
+                    let text = written_text(&state)
+                        .replace(&format!("\"pid\": {}", state.pid), "\"pid\": \"<pid>\"");
+                    let mut tree = state_json(&state);
+                    tree["pid"] = json!("<pid>");
+                    (
+                        json!({"op": "mark_running", "host": host, "port": port,
+                               "prefix": prefix, "requires_api_key": requires_api_key}),
+                        json!({"file": tree, "text": text, "placeholders": ["<pid>"]}),
+                    )
+                }
+                Op::MarkStopped { existing } => {
+                    if let Some(text) = existing {
+                        fs::write(&path, text).unwrap();
+                    }
+                    // Mirrors `mark_stopped`: read (defaults on failure), then
+                    // clear `running` and `pid`, keep the address.
+                    let mut state = read_state_from(&path);
+                    state.running = false;
+                    state.pid = 0;
+                    (
+                        json!({"op": "mark_stopped", "existing_file": existing}),
+                        json!({"file": state_json(&state), "text": written_text(&state), "placeholders": []}),
+                    )
+                }
+                Op::Read { file } => {
+                    if let Some(text) = file {
+                        fs::write(&path, text).unwrap();
+                    }
+                    let state = read_state_from(&path);
+                    (
+                        json!({"op": "read", "file": file}),
+                        json!({"state": state_json(&state), "base_url": state.base_url(),
+                               "api_url": state.api_url(), "placeholders": []}),
+                    )
+                }
+            };
+            let doc = json!({
+                "name": c.name,
+                "source": { "file": source, "commit": commit },
+                "comparator": "state-file-schema",
+                "input": input,
+                "expected": expected,
+            });
+            fs::write(
+                out.join(format!("{}.json", c.name)),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+            names.push(c.name);
+        }
+        let _ = fs::remove_dir_all(&scratch);
+
+        let index = json!({
+            "source": { "file": source, "commit": commit },
+            "comparator": "state-file-schema",
+            "comparator_notes": {
+                "state-file-schema": "The file lives at <data_folder>/local-api-server.json. input.op=mark_running: expected.file is the JSON the port must write (all six keys, nothing else — the API key is never written), expected.text is the exact bytes (serde_json pretty print: 2-space indent, `\"key\": value`, no trailing newline, key order running/host/port/prefix/requires_api_key/pid), with the live pid replaced by the placeholder \"<pid>\" in both. input.op=mark_stopped: read the existing file (input.existing_file, null = absent; unreadable/malformed/missing-field files read as the defaults), set running=false and pid=0, keep host/port/prefix/requires_api_key, write. input.op=read: expected.state is the struct read back plus the derived base_url/api_url; any parse failure (malformed JSON, a missing field, a port outside u16) yields the full default {running:false, host:'127.0.0.1', port:1337, prefix:'/v1', requires_api_key:false, pid:0}; unknown keys are ignored. base_url maps host 0.0.0.0 to 127.0.0.1 and never adds the prefix; api_url = base_url + prefix verbatim (prefix '' gives no trailing slash). Writes are best-effort: a failure to create the folder or write the file is logged and ignored, never propagated.",
+                "placeholders": "\"<pid>\" stands for std::process::id() of the app process; compare it as any u32 > 0."
+            },
+            "cases": names,
+        });
+        fs::write(
+            out.join("index.json"),
+            serde_json::to_string_pretty(&index).unwrap() + "\n",
+        )
+        .unwrap();
+        eprintln!(
+            "wrote {} state-file fixtures to {}",
+            names.len(),
+            out.display()
+        );
+    }
+}

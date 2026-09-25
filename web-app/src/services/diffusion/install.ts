@@ -516,9 +516,14 @@ async function ensureDiskSpace(
   const required = archiveBytes * DISK_SPACE_FACTOR
   let free: number
   try {
-    free = await invoke<number>('plugin:llamacpp-upstream|available_disk_space', {
-      path: probePath,
-    })
+    // The core answers for paths inside the data folder only, and `null`
+    // where the platform cannot say; both mean "do not refuse the download".
+    const { bytes } = await invoke<{ bytes: number | null }>(
+      'atomic_core_call',
+      { method: 'POST', path: '/disk/available', body: { path: probePath } }
+    )
+    if (bytes === null) return
+    free = bytes
   } catch (error) {
     console.warn(
       '[diffusion-install] could not measure free disk space, continuing:',

@@ -1,4 +1,4 @@
-//! Попап согласия на аналитику временно отключён; рендер в __root.tsx тоже закомментирован.
+//! Analytics consent popup is temporarily disabled; its render in __root.tsx is commented out too.
 export function PromptAnalytic() {
   return null
 }

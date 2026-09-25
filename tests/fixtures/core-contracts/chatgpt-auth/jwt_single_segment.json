@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "claims": {
+      "account_id": null,
+      "email": null,
+      "plan_type": null
+    }
+  },
+  "input": {
+    "kind": "decode_jwt_claims",
+    "token": "onlyonepart"
+  },
+  "name": "jwt_single_segment",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

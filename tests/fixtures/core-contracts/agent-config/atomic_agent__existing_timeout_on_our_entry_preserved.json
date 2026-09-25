@@ -1,0 +1,24 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".atomic-agent/config.json": "{\n  \"llm\": {\n    \"activeEmbeddingProvider\": \"atomic-chat\",\n    \"activeTextProvider\": \"atomic-chat\",\n    \"providers\": [\n      {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n        \"defaultChatModel\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n        \"id\": \"atomic-chat\",\n        \"kind\": \"openai-compatible\",\n        \"requestTimeoutMs\": 900000,\n        \"supportsTools\": true\n      }\n    ]\n  }\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "atomic-agent",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".atomic-agent/config.json": "{\n  \"llm\": {\n    \"providers\": [ { \"id\": \"atomic-chat\", \"kind\": \"openai-compatible\", \"requestTimeoutMs\": 900000 } ],\n    \"activeEmbeddingProvider\": \"atomic-chat\"\n  }\n}\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "atomic_agent__existing_timeout_on_our_entry_preserved",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

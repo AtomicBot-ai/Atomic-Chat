@@ -112,6 +112,7 @@ async function seedImageStudio() {
       modelsRoot: MODELS_ROOT,
       backendsRoot: '/data/diffusion/backends',
       imagesDir: '/data/images',
+      videosDir: '/data/videos',
     },
   })
   seedServiceHub({ diffusion: makeFakeDiffusion() })

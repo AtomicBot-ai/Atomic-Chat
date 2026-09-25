@@ -1,0 +1,32 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": "ggml_cuda_init: failed to initialize CUDA: unknown error",
+      "gpu_buffer_bytes": null,
+      "gpu_layers_offloaded": 0,
+      "loaded_backends": [
+        "CPU"
+      ],
+      "primary_device": "CPU",
+      "total_layers": 33
+    }
+  },
+  "input": {
+    "lines": [
+      "ggml_cuda_init: failed to initialize CUDA: unknown error",
+      "load_backend: loaded CPU backend from a.so",
+      "load_tensors: offloaded 0/33 layers to GPU",
+      "load_tensors:   CPU_Mapped model buffer size =  4464.22 MiB"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "device_init_error_does_not_block_other_parsing",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

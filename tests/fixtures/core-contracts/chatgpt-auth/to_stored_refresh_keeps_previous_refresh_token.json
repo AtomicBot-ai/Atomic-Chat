@@ -1,0 +1,29 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "ok": {
+      "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJlbWFpbCI6ImFjY2Vzc0BleGFtcGxlLnRlc3QiLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9hY2Nlc3MiLCJjaGF0Z3B0X3BsYW5fdHlwZSI6InBsdXMifX0.sig",
+      "account_id": "acct_access",
+      "email": "access@example.test",
+      "expires_at": 1750003600,
+      "id_token": null,
+      "plan_type": "plus",
+      "refresh_token": "r-old",
+      "version": 1
+    }
+  },
+  "input": {
+    "kind": "to_stored",
+    "now_unix": 1750000000,
+    "previous_refresh": "r-old",
+    "response": {
+      "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJlbWFpbCI6ImFjY2Vzc0BleGFtcGxlLnRlc3QiLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9hY2Nlc3MiLCJjaGF0Z3B0X3BsYW5fdHlwZSI6InBsdXMifX0.sig",
+      "expires_in": 3600
+    }
+  },
+  "name": "to_stored_refresh_keeps_previous_refresh_token",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

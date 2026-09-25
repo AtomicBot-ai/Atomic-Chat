@@ -1,10 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import {
-  SessionInfo,
-  DeviceInfo,
-  UnloadResult,
   GgufMetadata,
-  LlamacppConfig,
   BackendVersion,
   BackendFeatures,
   SupportedFeatures,
@@ -13,143 +9,7 @@ import {
   UpdateCheckResult,
   SettingUpdateResult,
   BundledBackendResult,
-  RuntimeDeviceInfo,
 } from './types'
-
-// Helpers
-function asNumber(v: any, defaultValue = 0): number {
-  if (v === '' || v === null || v === undefined) return defaultValue
-  const n = Number(v)
-  return isFinite(n) ? n : defaultValue
-}
-
-function asBool(v: any): boolean {
-  if (v === '' || v === null || v === undefined) return false
-  return v === true || v === 'true' || v === 1 || v === '1'
-}
-
-function asString(v: any, defaultValue = ''): string {
-  if (v === '' || v === null || v === undefined) return defaultValue
-  return String(v)
-}
-
-export function normalizeLlamacppConfig(config: any): LlamacppConfig {
-  return {
-    version_backend: asString(config.version_backend),
-    auto_unload: asBool(config.auto_unload),
-    timeout: asNumber(config.timeout, 600),
-
-    llamacpp_env: asString(config.llamacpp_env),
-    fit: asBool(config.fit),
-    fit_target: asString(config.fit_target),
-    fit_ctx: asString(config.fit_ctx),
-    chat_template: asString(config.chat_template),
-
-    n_gpu_layers: asNumber(config.n_gpu_layers),
-    offload_mmproj: asBool(config.offload_mmproj),
-    cpu_moe: asBool(config.cpu_moe),
-    n_cpu_moe: asNumber(config.n_cpu_moe),
-
-    override_tensor_buffer_t: asString(config.override_tensor_buffer_t),
-
-    ctx_size: asNumber(config.ctx_size),
-    threads: asNumber(config.threads),
-    threads_batch: asNumber(config.threads_batch),
-    n_predict: asNumber(config.n_predict),
-    batch_size: asNumber(config.batch_size),
-    ubatch_size: asNumber(config.ubatch_size),
-
-    device: asString(config.device),
-    split_mode: asString(config.split_mode),
-    main_gpu: asNumber(config.main_gpu),
-
-    flash_attn: asString(config.flash_attn),
-    cont_batching: asBool(config.cont_batching),
-    mtp: asBool(config.mtp),
-    mtp_draft_path: asString(config.mtp_draft_path),
-    dflash: asBool(config.dflash),
-    dflash_spec_supported: asBool(config.dflash_spec_supported),
-    dflash_draft_path: asString(config.dflash_draft_path),
-    dflash_n_max: asNumber(config.dflash_n_max),
-
-    no_mmap: asBool(config.no_mmap),
-    mlock: asBool(config.mlock),
-    no_kv_offload: asBool(config.no_kv_offload),
-
-    cache_type_k: asString(config.cache_type_k),
-    cache_type_v: asString(config.cache_type_v),
-
-    defrag_thold: asNumber(config.defrag_thold, 0.0),
-
-    rope_scaling: asString(config.rope_scaling),
-    rope_scale: asNumber(config.rope_scale, 1.0),
-    rope_freq_base: asNumber(config.rope_freq_base, 0.0),
-    rope_freq_scale: asNumber(config.rope_freq_scale, 1.0),
-
-    ctx_shift: asBool(config.ctx_shift),
-    parallel: asNumber(config.parallel, 1),
-    concurrent_mode: asBool(config.concurrent_mode),
-    concurrent_slots: asNumber(config.concurrent_slots, 8),
-    expose_metrics: asBool(config.expose_metrics),
-    reasoning_preserve: asBool(config.reasoning_preserve),
-    extra_args: asString(config.extra_args),
-  }
-}
-
-// LlamaCpp server commands
-export async function loadLlamaModel(
-  backendPath: string,
-  modelId: string,
-  modelPath: string,
-  port: number,
-  cfg: LlamacppConfig,
-  envs: Record<string, string>,
-  mmprojPath?: string,
-  isEmbedding: boolean = false,
-  timeout: number = 600
-): Promise<SessionInfo> {
-  const config = normalizeLlamacppConfig(cfg)
-  return await invoke('plugin:llamacpp-upstream|load_llama_model', {
-    backendPath,
-    modelId,
-    modelPath,
-    port,
-    config,
-    envs,
-    mmprojPath,
-    isEmbedding,
-    timeout,
-  })
-}
-
-/**
- * Stop a load of `modelId` that has not reached readiness: its server is
- * killed and the pending `loadLlamaModel` rejects with MODEL_LOAD_CANCELLED.
- * Resolves `false` when no load of that model is in flight in the plugin.
- */
-export async function cancelLlamaModelLoad(modelId: string): Promise<boolean> {
-  return await invoke('plugin:llamacpp-upstream|cancel_llama_model_load', { modelId })
-}
-
-export async function unloadLlamaModel(pid: number): Promise<UnloadResult> {
-  return await invoke('plugin:llamacpp-upstream|unload_llama_model', { pid })
-}
-
-export async function getDevices(
-  backendPath: string,
-  libraryPath?: string
-): Promise<DeviceInfo[]> {
-  return await invoke('plugin:llamacpp-upstream|get_devices', {
-    backendPath,
-    libraryPath,
-  })
-}
-
-export async function getRuntimeDevice(
-  pid: number
-): Promise<RuntimeDeviceInfo | null> {
-  return await invoke('plugin:llamacpp-upstream|get_runtime_device', { pid })
-}
 
 export async function checkSpecTypeSupport(
   backendPath: string,
@@ -163,65 +23,9 @@ export async function checkSpecTypeSupport(
   })
 }
 
-export async function generateApiKey(
-  modelId: string,
-  apiSecret: string
-): Promise<string> {
-  return await invoke('plugin:llamacpp-upstream|generate_api_key', {
-    modelId,
-    apiSecret,
-  })
-}
-
-export async function isProcessRunning(pid: number): Promise<boolean> {
-  return await invoke('plugin:llamacpp-upstream|is_process_running', { pid })
-}
-
-export async function getRandomPort(): Promise<number> {
-  return await invoke('plugin:llamacpp-upstream|get_random_port')
-}
-
-export async function findSessionByModel(
-  modelId: string
-): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp-upstream|find_session_by_model', { modelId })
-}
-
-export async function getLoadedModels(): Promise<string[]> {
-  return await invoke('plugin:llamacpp-upstream|get_loaded_models')
-}
-
-export async function getAllSessions(): Promise<SessionInfo[]> {
-  return await invoke('plugin:llamacpp-upstream|get_all_sessions')
-}
-
-export async function getSessionByModel(
-  modelId: string
-): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp-upstream|get_session_by_model', { modelId })
-}
-
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
   return await invoke('plugin:llamacpp-upstream|read_gguf_metadata', { path })
-}
-
-export async function estimateKVCacheSize(
-  meta: Record<string, string>,
-  ctxSize?: number,
-  cacheTypeK?: string,
-  cacheTypeV?: string
-): Promise<{ size: number; per_token_size: number }> {
-  return await invoke('plugin:llamacpp-upstream|estimate_kv_cache_size', {
-    meta,
-    ctxSize,
-    cacheTypeK,
-    cacheTypeV,
-  })
-}
-
-export async function getModelSize(path: string): Promise<number> {
-  return await invoke('plugin:llamacpp-upstream|get_model_size', { path })
 }
 
 /**
@@ -241,11 +45,6 @@ export async function isModelSupported(
     cacheTypeK,
     cacheTypeV,
   })
-}
-
-// Cleanup commands
-export async function cleanupLlamaProcesses(): Promise<void> {
-  return await invoke('plugin:llamacpp-upstream|cleanup_llama_processes')
 }
 
 // backend functions
@@ -315,20 +114,6 @@ export async function getSupportedFeaturesFromRust(
   })
 }
 
-export async function isCudaInstalledFromRust(
-  backendDir: string,
-  version: string,
-  osType: string,
-  janDataFolderPath: string
-): Promise<boolean> {
-  return invoke<boolean>('plugin:llamacpp-upstream|is_cuda_installed', {
-    backendDir,
-    version,
-    osType,
-    janDataFolderPath,
-  })
-}
-
 export async function findLatestVersionForBackend(
   versionBackends: BackendVersion[],
   backendType: string
@@ -347,12 +132,6 @@ export async function prioritizeBackends(
     versionBackends,
     hasEnoughGpuMemory,
   })
-}
-
-export async function parseBackendVersion(
-  versionString: string
-): Promise<number> {
-  return invoke('plugin:llamacpp-upstream|parse_backend_version', { versionString })
 }
 
 export async function checkBackendForUpdates(
@@ -375,12 +154,6 @@ export async function removeOldBackendVersions(
     latestVersion,
     backendType,
   })
-}
-
-export async function validateBackendString(
-  backendString: string
-): Promise<[string, string]> {
-  return invoke('plugin:llamacpp-upstream|validate_backend_string', { backendString })
 }
 
 export async function shouldMigrateBackend(
@@ -412,21 +185,6 @@ export async function installBundledBackend(
 }
 
 /**
- * Make the binaries under `<backendDir>/build/bin/` executable and run
- * `llama-server --version`, resolving to whether the build it reports matches
- * `version`. Throws when there is no binary to run at all.
- */
-export async function verifyBackendBinary(
-  backendDir: string,
-  version: string
-): Promise<boolean> {
-  return invoke('plugin:llamacpp-upstream|verify_backend_binary', {
-    backendDir,
-    version,
-  })
-}
-
-/**
  * Fetch the backend-index manifest JSON over an HTTP/1.1-only reqwest
  * connection. Used as a fallback transport on Linux where reqwest's HTTP/2
  * negotiation against the Fastly CDN (raw.githubusercontent.com) stalls
@@ -438,14 +196,6 @@ export async function fetchManifestHttp1(
   timeoutMs: number
 ): Promise<string> {
   return invoke('plugin:llamacpp-upstream|fetch_manifest_http1', { url, timeoutMs })
-}
-
-/**
- * Free bytes on the filesystem holding `path`. `path` may not exist yet — the
- * deepest existing ancestor is measured instead.
- */
-export async function availableDiskSpace(path: string): Promise<number> {
-  return invoke('plugin:llamacpp-upstream|available_disk_space', { path })
 }
 
 export * from './types'

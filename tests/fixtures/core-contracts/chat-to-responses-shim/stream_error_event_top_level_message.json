@@ -1,0 +1,45 @@
+{
+  "comparator": "sse-sequence",
+  "error": "rate limited",
+  "expected": [
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop",
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    }
+  ],
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "error": {
+          "code": "429",
+          "message": "rate limited"
+        },
+        "type": "error"
+      }
+    ],
+    "kind": "stream",
+    "model": "gpt-5.4"
+  },
+  "name": "stream_error_event_top_level_message",
+  "placeholders": [
+    "<chatcmpl_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

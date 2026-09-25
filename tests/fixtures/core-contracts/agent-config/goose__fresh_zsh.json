@@ -1,0 +1,22 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".zshenv": "# Atomic Chat - Goose Config\nexport GOOSE_PROVIDER='openai'\nexport GOOSE_MODEL='AtomicChat/Qwen3.5-9B-GGUF'\nexport OPENAI_HOST='http://127.0.0.1:1337'\nexport OPENAI_BASE_PATH='v1/chat/completions'\nexport OPENAI_API_KEY='sk-atomic-fixture-key'\n\n# Atomic Chat - Goose Config\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "goose",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "goose__fresh_zsh",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

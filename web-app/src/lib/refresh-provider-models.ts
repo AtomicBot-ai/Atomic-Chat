@@ -45,13 +45,11 @@ export async function refreshProviderModels({
       )
     }
 
-    const state = useProviderRegistryStore.getState()
-    if (state.error) {
-      toast.error(t('providers:models'), {
-        description: state.error,
-      })
-      return
-    }
+    // An unreachable registry is not the end of a reload: it only curates the
+    // known cloud providers, while a custom or self-hosted endpoint lists its
+    // models itself, in the live pass below. Its error is kept for the summary
+    // (the store reports it as state — its refresh falls back, it does not throw).
+    const registryError = useProviderRegistryStore.getState().error
 
     // Count models that will newly appear on this provider after the
     // registry merge — for the success toast.
@@ -179,6 +177,12 @@ export async function refreshProviderModels({
               provider: provider.provider,
             }),
         }),
+      })
+    } else if (registryError) {
+      // Nothing new from the endpoint, and the registry could not be asked:
+      // "no new models" would claim more than was checked.
+      toast.warning(t('providers:models'), {
+        description: registryError,
       })
     } else {
       toast.success(t('providers:models'), {

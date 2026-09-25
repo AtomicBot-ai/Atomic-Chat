@@ -965,6 +965,18 @@ describe('ReplyModelGate', () => {
 
       expect(onOpenChange).toHaveBeenCalledWith(false)
       expect(onDismissed).not.toHaveBeenCalled()
+      // The wait goes on: the transfer is neither cancelled nor parked for a
+      // resume, it stays adopted by the queued message, and the in-flight
+      // download is the only outcome on record, not a dismissal.
+      const downloads = useDownloadStore.getState()
+      expect(downloads.downloads[inFlight]).toBeDefined()
+      expect(downloads.resumableDownloads.has(inFlight)).toBe(false)
+      expect(downloads.downloadRequestOriginByModelId[inFlight]).toBe(
+        'reply-gate'
+      )
+      expect(
+        capturedEvents('reply_model_gate_outcome').map((event) => event.outcome)
+      ).toEqual(['download_in_flight'])
     })
 
     it('says so before the first byte, and while paused', async () => {

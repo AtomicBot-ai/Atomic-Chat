@@ -1,0 +1,153 @@
+{
+  "page": {
+    "title": "Video",
+    "loading": "Getting things ready…"
+  },
+  "setup": {
+    "intro": {
+      "title": "Create videos locally",
+      "description": "Turn a prompt into a short clip without sending it anywhere.",
+      "bulletLocal": "Describe the scene and how it moves in your own words.",
+      "bulletRecipes": "Pick a size and a length, then refine or reuse any result.",
+      "bulletApi": "Your prompts and generated clips stay on this computer."
+    },
+    "model": {
+      "title": "Choose a video model",
+      "description": "We picked the best version of each model for this computer."
+    },
+    "card": {
+      "title": "Create your first video",
+      "description": "A private video studio that runs on your computer. Two downloads are all it needs.",
+      "engine": "Install the media engine",
+      "engineDescription": "The local renderer that creates images and videos.",
+      "model": "Choose a video model",
+      "modelDescription": "Pick the model that generates your clips.",
+      "button": "Start setup",
+      "downloadModel": "Download model"
+    }
+  },
+  "form": {
+    "title": "Create videos",
+    "hint": "Generate a short clip from a prompt",
+    "prompt": "Prompt",
+    "promptPlaceholder": "Describe the scene and how it moves…",
+    "negativePrompt": "Negative prompt",
+    "negativePlaceholder": "What to avoid…",
+    "negativeHint": "What to steer the clip away from. Only used when guidance is above 1.",
+    "resolution": "Resolution",
+    "resolutionHint": "The frame size. Each model offers the sizes it was trained at.",
+    "portraitSuffix": " (portrait)",
+    "duration": "Duration",
+    "durationHint": "How long the clip plays. Frame counts follow the model's own grid.",
+    "durationOption": "{{seconds}}s · {{frames}} frames",
+    "frameRate": "Frame rate",
+    "frameRateHint": "Fixed per model.",
+    "fps": "{{fps}} fps",
+    "steps": "Steps",
+    "stepsHint": "Denoising passes. More is slower and rarely helps past the model default.",
+    "guidance": "Guidance",
+    "guidanceHint": "How strictly the prompt is followed. Higher is stricter and slower to converge.",
+    "distilledGuidance": "Distilled guidance",
+    "distilledGuidanceHint": "Distilled guidance strength for models that expose it.",
+    "reset": "Reset",
+    "resetHint": "Put the settings back to the model defaults. The prompt stays.",
+    "advanced": "Advanced settings",
+    "disabled": {
+      "noEngine": "Install the media engine first.",
+      "noModel": "Download and load a video model first.",
+      "modelLoading": "The model is still loading.",
+      "emptyPrompt": "Write a prompt first.",
+      "busy": "A generation is already running."
+    }
+  },
+  "progress": {
+    "generatingVideo": "Generating video",
+    "finalizingVideo": "Encoding video…",
+    "step": "Step {{step}}/{{total}}",
+    "elapsed": "{{seconds}} s",
+    "phase": {
+      "queued": "Queued",
+      "encoding": "Encoding the prompt…",
+      "sampling": "Sampling…",
+      "decoding": "Decoding frames…",
+      "postprocessing": "Encoding video…",
+      "saving": "Saving to gallery…",
+      "generating": "Starting…",
+      "completed": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "gallery": {
+    "title": "Gallery",
+    "selectedCount": "{{count}} selected",
+    "loadMore": "Load more",
+    "tileLabel": "Video {{size}}, {{seconds}} s",
+    "empty": {
+      "title": "No videos yet",
+      "description": "Your clips appear here with their settings."
+    },
+    "emptyNoModel": "Select a video model to start."
+  },
+  "viewer": {
+    "empty": "Select a video to play it here.",
+    "recipe": "Details",
+    "saveAs": "Save as…",
+    "reveal": "Show in folder",
+    "delete": "Delete",
+    "deleteCount": "Delete {{count}}",
+    "previous": "Previous video",
+    "next": "Next video",
+    "restore": "Restore these settings",
+    "restoreAndLoad": "Restore settings and switch model",
+    "restored": "Settings restored to the form.",
+    "loadOffer": "This video used a different model. Load it now?",
+    "copyPrompt": "Copy prompt",
+    "promptCopied": "Prompt copied",
+    "saved": "Video saved.",
+    "saveFailed": "The video could not be saved",
+    "revealFailed": "The folder could not be opened",
+    "playbackUnsupported": "This clip cannot be played here.",
+    "openInPlayer": "Open in player",
+    "openFailed": "The video could not be opened",
+    "details": {
+      "model": "Model",
+      "size": "Size",
+      "frames": "Frames",
+      "framesValue": "{{frames}} @ {{fps}} fps",
+      "duration": "Duration",
+      "seconds": "{{seconds}} s",
+      "steps": "Steps",
+      "cfg": "CFG",
+      "guidance": "Guidance",
+      "seed": "Seed",
+      "sampler": "Sampler",
+      "engine": "Engine",
+      "took": "Took"
+    }
+  },
+  "delete": {
+    "title": "Delete {{count}} videos?",
+    "titleOne": "Delete this video?",
+    "description": "The files are removed from the video folder. This cannot be undone.",
+    "confirm": "Delete",
+    "failed": "The videos could not be deleted"
+  },
+  "errors": {
+    "actions": {
+      "reduceSize": "Try the smallest size"
+    },
+    "OUT_OF_MEMORY": {
+      "title": "Not enough memory for this clip",
+      "body": "{{frames}} frames at {{size}} ({{seconds}} s) did not fit in memory. A shorter duration or a smaller size usually fixes it."
+    },
+    "INTERNAL": {
+      "title": "The video engine failed",
+      "body": "The engine stopped without a clip. The details are in the app log."
+    }
+  },
+  "notifications": {
+    "readyTitle": "Video ready",
+    "readyBody": "Your clip is in the gallery."
+  }
+}

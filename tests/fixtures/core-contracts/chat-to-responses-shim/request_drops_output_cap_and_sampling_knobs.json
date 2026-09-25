@@ -1,0 +1,51 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "session-fixture",
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto"
+    }
+  },
+  "input": {
+    "body": {
+      "frequency_penalty": 0.2,
+      "max_completion_tokens": 512,
+      "max_tokens": 256,
+      "messages": [],
+      "metadata": {
+        "k": "v"
+      },
+      "n": 1,
+      "presence_penalty": 0.1,
+      "seed": 7,
+      "stop": [
+        "x"
+      ],
+      "stream_options": {
+        "include_usage": true
+      },
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "user": "u1"
+    },
+    "kind": "request",
+    "prompt_cache_key": "session-fixture"
+  },
+  "name": "request_drops_output_cap_and_sampling_knobs",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

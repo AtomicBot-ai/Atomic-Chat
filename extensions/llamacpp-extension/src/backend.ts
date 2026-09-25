@@ -26,8 +26,8 @@ import {
 // `turboquant-<id>-<sha>` releases are prereleases: they are never offered for
 // download, although an already-installed legacy build keeps working.
 //
-// The backend *archives* themselves are downloaded from the GitHub releases
-// CDN via LLAMACPP_DOWNLOAD_BASE.
+// The backend *archives* themselves are downloaded by `atomic-chat-core`, under
+// the asset names this index gives (`getIndexedAssetName`).
 export const TURBOQUANT_RELEASE_INDEX_URL =
   'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/latest/download/index.json'
 /** Redirects to `/releases/tag/<newest stable tag>`; used when index.json is absent. */
@@ -40,28 +40,12 @@ export const TURBOQUANT_LATEST_RELEASE_URL =
  */
 export const TURBOQUANT_LEGACY_MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
-const LLAMACPP_DOWNLOAD_BASE =
-  'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download'
-/** ggml-org companion archives — same source the upstream provider uses. */
-const GGML_ORG_CUDART_DOWNLOAD_BASE =
-  'https://github.com/ggml-org/llama.cpp/releases/download'
-/**
- * Pinned ggml-org tag that ships `cudart-llama-bin-win-cuda-{12.4,13.3}-x64.zip`.
- * A real pin, unlike the upstream extension's `BUNDLED_BASELINE_TAG`, which is
- * generated from the manifest: the cudart companions are not mirrored and this
- * driver has no manifest field to follow. Known debt, tracked in the mirroring
- * ADR.
- */
-export const GGML_ORG_CUDART_PINNED_TAG = 'b10205'
 const MANIFEST_FETCH_TIMEOUT_MS = 8_000
 
 /** Schema version of `index.json` this client understands. */
 export const TURBOQUANT_INDEX_SCHEMA_VERSION = 1
 const RELEASE_INDEX_TTL_MS = 60 * 60 * 1000
 const RELEASE_INDEX_CACHE_FILE = 'release-index.cache.json'
-
-/** Clean TurboQuant Windows CUDA ids, e.g. `windows-x64-cuda-13.3`. */
-const TQ_WINDOWS_CUDA_BACKEND_RE = /^windows-x64-cuda-(12\.\d+|13\.\d+)$/
 
 /** Unified fork release tag: `b<upstream-build>-<fork-semver>`. */
 const TQ_UNIFIED_TAG_RE = /^b\d+-\d+\.\d+\.\d+$/
@@ -227,82 +211,34 @@ export function mergeBackendOptions(
 }
 
 /**
- * Every backend build sitting in this provider's tree, with the absolute path
- * of each so the UI can reveal it in the file manager, and a flag marking the
- * one currently selected (which must not be deletable).
+ * Validates a backend build for removal and returns its cleaned ids. The
+ * selected build is refused rather than silently skipped: deleting it would
+ * leave `version_backend` pointing at a directory that no longer exists and the
+ * next model load would fail with a missing-binary error instead of anything
+ * actionable. Ids carrying path separators or made of dots are refused so a
+ * removal can never reach outside the pack's own directory.
  */
-export async function listInstalledBackendPacks(
-  providerId: string,
-  currentVersionBackend: string
-): Promise<InstalledBackendPack[]> {
-  const janDataFolderPath = await getJanDataFolderPath()
-  const backendsRoot = await joinPath([
-    janDataFolderPath,
-    providerId,
-    'backends',
-  ])
-  const current = clean(currentVersionBackend)
-  const installed = await getLocalInstalledBackends()
-
-  return Promise.all(
-    installed.map(async (entry) => {
-      const version = clean(entry.version)
-      const backend = clean(entry.backend)
-      return {
-        version,
-        backend,
-        path: await joinPath([backendsRoot, version, backend]),
-        active: `${version}/${backend}` === current,
-      }
-    })
-  )
-}
-
-/**
- * Removes one installed backend build. The selected build is refused rather
- * than silently skipped: deleting it would leave `version_backend` pointing at
- * a directory that no longer exists and the next model load would fail with a
- * missing-binary error instead of anything actionable.
- */
-export async function deleteBackendPack(
-  providerId: string,
+export function assertDeletableBackendPack(
   currentVersionBackend: string,
   version: string,
   backend: string
-): Promise<void> {
+): { version: string; backend: string } {
   const cleanVersion = clean(version)
   const cleanBackend = clean(backend)
-  if (!cleanVersion || !cleanBackend) {
-    throw new Error(`Invalid backend pack: '${version}/${backend}'`)
-  }
-  if (/[/\\]/.test(cleanVersion) || /[/\\]/.test(cleanBackend)) {
+  if (
+    !cleanVersion ||
+    !cleanBackend ||
+    /[/\\]/.test(cleanVersion) ||
+    /[/\\]/.test(cleanBackend) ||
+    /^\.+$/.test(cleanVersion) ||
+    /^\.+$/.test(cleanBackend)
+  ) {
     throw new Error(`Invalid backend pack: '${version}/${backend}'`)
   }
   if (`${cleanVersion}/${cleanBackend}` === clean(currentVersionBackend)) {
     throw new Error('Cannot remove the backend that is currently selected')
   }
-
-  const janDataFolderPath = await getJanDataFolderPath()
-  const versionDir = await joinPath([
-    janDataFolderPath,
-    providerId,
-    'backends',
-    cleanVersion,
-  ])
-  const backendDir = await joinPath([versionDir, cleanBackend])
-
-  if (await fs.existsSync(backendDir)) {
-    await fs.rm(backendDir)
-  }
-
-  // A version dir holding no builds is an empty husk that would keep showing
-  // up in the packs list.
-  const remaining: string[] = (await fs.existsSync(versionDir))
-    ? await fs.readdirSync(versionDir)
-    : []
-  if (remaining.length === 0 && (await fs.existsSync(versionDir))) {
-    await fs.rm(versionDir)
-  }
+  return { version: cleanVersion, backend: cleanBackend }
 }
 
 /**
@@ -880,30 +816,6 @@ export async function fetchRemoteBackends(
 }
 
 /**
- * Builds the download URL for a specific TurboQuant backend from the
- * AtomicBot-ai/atomic-llama-cpp-turboquant releases CDN.
- *
- * `version` is the release tag the backend was resolved at, so legacy installs
- * pinned to a per-variant tag keep resolving. `assetName` comes from the
- * release index when available; without it the fork's stable naming
- * (`llama-turboquant-<id>.{zip,tar.gz}`) is reconstructed. CUDA zips *should*
- * bundle cudart/cublas inline; when they do not, `ensureCudartReady` repairs
- * by copying from an installed upstream CUDA bin or downloading the ggml-org
- * companion archive.
- */
-export function getBackendDownloadUrl(
-  version: string,
-  backend: string,
-  assetName?: string
-): string {
-  version = version.replace(/\uFEFF/g, '').trim()
-  backend = backend.replace(/\uFEFF/g, '').trim()
-  const asset =
-    assetName?.replace(/\uFEFF/g, '').trim() || defaultAssetName(backend)
-  return `${LLAMACPP_DOWNLOAD_BASE}/${version}/${asset}`
-}
-
-/**
  * The published asset name for `tag/backend`, read from the cached release
  * index. Returns `undefined` when the index has not been fetched or does not
  * describe this pair, leaving the caller on the naming convention.
@@ -938,90 +850,6 @@ export async function getIndexedVariantSize(
     .find((r) => r.tag === tag)
     ?.variants.find((v) => v.id === id)?.size
   return typeof size === 'number' && size > 0 ? size : undefined
-}
-
-/**
- * CUDA toolkit minor (`12.4`, `13.3`, …) for a TurboQuant Windows CUDA backend
- * id, or `null` for non-CUDA / non-Windows ids.
- */
-export function getCudaToolkitVersion(backend: string): string | null {
-  const match = TQ_WINDOWS_CUDA_BACKEND_RE.exec(
-    backend.replace(/\uFEFF/g, '').trim()
-  )
-  return match ? match[1] : null
-}
-
-/** Upstream provider id for the same CUDA minor: `win-cuda-13.3-x64`. */
-export function upstreamCudaBackendId(toolkitVersion: string): string {
-  return `win-cuda-${toolkitVersion}-x64`
-}
-
-export function getCudartArchiveName(backend: string): string | null {
-  const toolkitVersion = getCudaToolkitVersion(backend)
-  if (!toolkitVersion) return null
-  return `cudart-llama-bin-win-cuda-${toolkitVersion}-x64.zip`
-}
-
-/**
- * ggml-org companion URL for a TurboQuant Windows CUDA backend. Uses the
- * pinned upstream tag (not the turboquant release tag — those zips live on a
- * different CDN and do not host cudart companions).
- */
-export function getCudartDownloadUrl(
-  backend: string,
-  ggmlOrgTag: string = GGML_ORG_CUDART_PINNED_TAG
-): string | null {
-  const filename = getCudartArchiveName(backend)
-  if (!filename) return null
-  const tag = ggmlOrgTag.replace(/\uFEFF/g, '').trim()
-  if (!tag) return null
-  return `${GGML_ORG_CUDART_DOWNLOAD_BASE}/${tag}/${filename}`
-}
-
-/**
- * Walk llamacpp-upstream/backends/<tag>/win-cuda-{minor}-x64/build/bin and
- * return the first bin directory that contains the expected cudart DLL.
- */
-export async function findUpstreamCudaBinWithCudart(
-  janDataFolderPath: string,
-  toolkitVersion: string
-): Promise<string | null> {
-  const major = toolkitVersion.split('.')[0] ?? ''
-  const cudartName =
-    major === '12'
-      ? 'cudart64_12.dll'
-      : major === '13'
-        ? 'cudart64_13.dll'
-        : major === '11'
-          ? 'cudart64_110.dll'
-          : null
-  if (!cudartName) return null
-
-  const upstreamRoot = await joinPath([
-    janDataFolderPath,
-    'llamacpp-upstream',
-    'backends',
-  ])
-  if (!(await fs.existsSync(upstreamRoot))) return null
-
-  const upstreamBackendId = upstreamCudaBackendId(toolkitVersion)
-  const versionEntries = (await fs.readdirSync(upstreamRoot)) as string[]
-  // Prefer newer install folders first (lexicographic on full path is fine —
-  // ggml-org tags like b9937 > b9691).
-  const sorted = [...versionEntries].sort().reverse()
-  for (const versionPath of sorted) {
-    const binDir = await joinPath([
-      versionPath,
-      upstreamBackendId,
-      'build',
-      'bin',
-    ])
-    const cudartPath = await joinPath([binDir, cudartName])
-    if (await fs.existsSync(cudartPath)) {
-      return binDir
-    }
-  }
-  return null
 }
 
 export async function listSupportedBackends(
@@ -1129,8 +957,8 @@ export async function getBackendExePath(
  * ([LLAMA_CPP_PROCESS_ERROR]). Detect that shape generically — without
  * hardcoding DLL names, which vary per backend variant (CPU/CUDA/Vulkan) —
  * by requiring at least one `.dll` sibling next to the exe. Missing CUDA
- * *runtime* DLLs (cudart/cublas) are repaired separately by
- * `ensureCudartReady` and are not required for this presence check.
+ * *runtime* DLLs (cudart/cublas) are repaired separately by the core and are
+ * not required for this presence check.
  */
 async function windowsBackendHasDlls(exePath: string): Promise<boolean> {
   const lastSlash = Math.max(

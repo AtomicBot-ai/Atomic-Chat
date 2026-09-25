@@ -1,0 +1,91 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "completion": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": "the answer",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{}",
+                  "name": "search"
+                },
+                "id": "call_1",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1700000000,
+      "id": "<chatcmpl_id_0>",
+      "model": "gpt-5.4-served",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 2,
+        "prompt_tokens": 1,
+        "total_tokens": 3
+      }
+    },
+    "error": null
+  },
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "response": {
+          "model": "gpt-5.4-served"
+        },
+        "type": "response.created"
+      },
+      {
+        "delta": "the ",
+        "type": "response.output_text.delta"
+      },
+      {
+        "delta": "answer",
+        "type": "response.output_text.delta"
+      },
+      {
+        "item": {
+          "call_id": "call_1",
+          "id": "fc_1",
+          "name": "search",
+          "type": "function_call"
+        },
+        "type": "response.output_item.added"
+      },
+      {
+        "delta": "{}",
+        "item_id": "fc_1",
+        "type": "response.function_call_arguments.delta"
+      },
+      {
+        "response": {
+          "usage": {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3
+          }
+        },
+        "type": "response.completed"
+      }
+    ],
+    "kind": "aggregate",
+    "model": "gpt-5.4"
+  },
+  "name": "aggregate_text_and_tool_calls_with_usage",
+  "placeholders": [
+    "<chatcmpl_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

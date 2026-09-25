@@ -168,6 +168,11 @@ defaults on conflict.
 8. **Record non-trivial decisions** as a new file in `docs/decisions/`
    (architecture, backend selection, perf trade-off, security default, schema
    or migration). Same session, before you finish. See §7.
+9. **Everything written in the repo is English** — code, comments, commit
+   messages, docs, ADRs, plans, scripts and their output. Only two exceptions:
+   UI translations under `web-app/src/locales/` (and each language's own name
+   in the language switcher), and non-English test data that a test exists to
+   exercise.
 
 ---
 

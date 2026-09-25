@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_ARCH_NOT_SUPPORTED",
+    "details": "unknown model architecture: 'gemma4'\n",
+    "message": "The model's architecture or format is not supported by this version of the backend."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "unknown model architecture: 'gemma4'\n",
+    "stdout": ""
+  },
+  "name": "arch_unknown_architecture",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

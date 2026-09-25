@@ -1,0 +1,15 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": []
+  },
+  "input": {
+    "stdout": "\nSome header text\nAvailable devices:\n\nSome footer text\n"
+  },
+  "name": "empty_section",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

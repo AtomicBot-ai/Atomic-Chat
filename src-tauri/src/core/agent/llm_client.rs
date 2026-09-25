@@ -14,12 +14,11 @@ use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tauri_plugin_llamacpp::state::LlamacppState;
-use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::server::context_expansion::is_context_limit_error;
+use crate::core::sessions::resolver::{ResolvedSession, SessionResolver};
 
 use super::model_profile::{detect_model_profile, AgentModelProfile};
 use super::token_budget::COMPLETION_MAX_TOKENS;
@@ -990,75 +989,43 @@ fn vision_request_payload(model_id: &str, prompt: &str, images: &[(String, Strin
     })
 }
 
+/// Where the agent should send its requests for `model_id`.
+///
+/// Goes through the app's one resolver rather than locking a plugin's session map, so a model the
+/// core owns and a model the app's own plugin owns are found the same way — and so a session that
+/// moved (an auto-increase-ctx reload gives it a new port) is never answered from a stale copy.
 pub async fn find_session_by_model_id(
     model_id: &str,
-    llamacpp: &LlamacppState,
-    upstream: &LlamacppUpstreamState,
+    resolver: &SessionResolver,
 ) -> Result<LlamaSessionTarget, LlmClientError> {
-    {
-        let sessions = llamacpp.llama_server_process.lock().await;
-        if let Some(session) = sessions
-            .values()
-            .find(|session| model_ids_match(&session.info.model_id, model_id))
-        {
-            return Ok(LlamaSessionTarget {
-                port: session.info.port,
-                api_key: session.info.api_key.clone(),
-                model_id: session.info.model_id.clone(),
-                has_vision: session.info.mmproj_path.is_some(),
-                backend: LlamaBackend::Llamacpp,
-            });
+    for backend in [LlamaBackend::Llamacpp, LlamaBackend::LlamacppUpstream] {
+        if let Some(session) = resolver.find_in(backend.as_str(), model_id).await {
+            return Ok(target_from(session, backend));
         }
     }
-    let sessions = upstream.llama_server_process.lock().await;
-    sessions
-        .values()
-        .find(|session| model_ids_match(&session.info.model_id, model_id))
-        .map(|session| LlamaSessionTarget {
-            port: session.info.port,
-            api_key: session.info.api_key.clone(),
-            model_id: session.info.model_id.clone(),
-            has_vision: session.info.mmproj_path.is_some(),
-            backend: LlamaBackend::LlamacppUpstream,
-        })
-        .ok_or_else(|| LlmClientError::SessionNotFound(model_id.to_owned()))
+    Err(LlmClientError::SessionNotFound(model_id.to_owned()))
 }
 
 pub async fn find_session_by_model_and_backend(
     model_id: &str,
     backend: LlamaBackend,
-    llamacpp: &LlamacppState,
-    upstream: &LlamacppUpstreamState,
+    resolver: &SessionResolver,
 ) -> Result<LlamaSessionTarget, LlmClientError> {
-    match backend {
-        LlamaBackend::Llamacpp => {
-            let sessions = llamacpp.llama_server_process.lock().await;
-            sessions
-                .values()
-                .find(|session| model_ids_match(&session.info.model_id, model_id))
-                .map(|session| LlamaSessionTarget {
-                    port: session.info.port,
-                    api_key: session.info.api_key.clone(),
-                    model_id: session.info.model_id.clone(),
-                    has_vision: session.info.mmproj_path.is_some(),
-                    backend,
-                })
-        }
-        LlamaBackend::LlamacppUpstream => {
-            let sessions = upstream.llama_server_process.lock().await;
-            sessions
-                .values()
-                .find(|session| model_ids_match(&session.info.model_id, model_id))
-                .map(|session| LlamaSessionTarget {
-                    port: session.info.port,
-                    api_key: session.info.api_key.clone(),
-                    model_id: session.info.model_id.clone(),
-                    has_vision: session.info.mmproj_path.is_some(),
-                    backend,
-                })
-        }
+    resolver
+        .find_in(backend.as_str(), model_id)
+        .await
+        .map(|session| target_from(session, backend))
+        .ok_or_else(|| LlmClientError::SessionNotFound(model_id.to_owned()))
+}
+
+fn target_from(session: ResolvedSession, backend: LlamaBackend) -> LlamaSessionTarget {
+    LlamaSessionTarget {
+        port: session.port,
+        api_key: session.api_key,
+        model_id: session.model_id,
+        has_vision: session.mmproj_path.is_some(),
+        backend,
     }
-    .ok_or_else(|| LlmClientError::SessionNotFound(model_id.to_owned()))
 }
 
 fn read_context_window(props: &Value) -> Option<usize> {

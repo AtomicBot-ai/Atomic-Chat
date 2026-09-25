@@ -1,0 +1,87 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "anthropic": {
+      "content": [
+        {
+          "text": "calling",
+          "type": "text"
+        },
+        {
+          "id": "call_1",
+          "input": {
+            "a": 2,
+            "b": 1
+          },
+          "name": "get",
+          "type": "tool_use"
+        },
+        {
+          "id": "call_2",
+          "input": {},
+          "name": "bad",
+          "type": "tool_use"
+        },
+        {
+          "id": "",
+          "input": {},
+          "name": "",
+          "type": "tool_use"
+        }
+      ],
+      "id": "c",
+      "model": "m",
+      "role": "assistant",
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      }
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "message": {
+            "content": "calling",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"b\":1,\"a\":2}",
+                  "name": "get"
+                },
+                "id": "call_1",
+                "type": "function"
+              },
+              {
+                "function": {
+                  "arguments": "not json",
+                  "name": "bad"
+                },
+                "id": "call_2",
+                "type": "function"
+              },
+              {
+                "function": {},
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "id": "c",
+      "model": "m"
+    },
+    "kind": "response"
+  },
+  "name": "response_tool_calls_with_text",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

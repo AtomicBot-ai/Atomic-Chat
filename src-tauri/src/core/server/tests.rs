@@ -184,18 +184,8 @@ mod tests {
         assert_eq!(allowed, Some(&["POST"][..]));
     }
 
-    #[test]
-    fn test_images_generations_route_is_post_only_with_its_own_label() {
-        let allowed = proxy::allowed_methods_for_path("/images/generations");
-        assert_eq!(allowed, Some(&["POST"][..]));
-        assert_eq!(
-            proxy::endpoint_from_path("/images/generations"),
-            "images/generations"
-        );
-        // Sibling OpenAI image routes are not served, so they stay unlabeled.
-        assert_eq!(proxy::allowed_methods_for_path("/images/edits"), None);
-        assert_eq!(proxy::endpoint_from_path("/images/edits"), "other");
-    }
+    // `/v1/images/generations` is served by the core on desktop (`src/server/public/images.ts`
+    // there); this mobile-only proxy does not route it, so no method or label test for it here.
 
     #[test]
     fn test_model_ids_match_exact() {

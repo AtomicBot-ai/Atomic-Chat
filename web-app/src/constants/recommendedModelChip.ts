@@ -6,7 +6,7 @@ export type RecommendedModelChipVariant =
   | 'yellow'
   | 'orange'
 
-//* Вариант чипа по i18n-ключу подписи
+//* Chip variant by the label's i18n key
 const VARIANT_BY_DESCRIPTION_KEY: Record<string, RecommendedModelChipVariant> = {
   'hub:recEverydayUse': 'green',
   'hub:recVisionKnowledge': 'purple',

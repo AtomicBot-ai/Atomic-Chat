@@ -1,0 +1,15 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": []
+  },
+  "input": {
+    "stdout": "Available devices:\nCUDA0: NVIDIA (8128 MiB, free)\n"
+  },
+  "name": "missing_second_number_rejected",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

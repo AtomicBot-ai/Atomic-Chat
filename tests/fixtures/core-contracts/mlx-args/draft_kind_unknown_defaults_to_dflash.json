@@ -1,0 +1,37 @@
+{
+  "comparator": "argv-exact",
+  "expected": {
+    "argv": [
+      "--model",
+      "/models/qwen",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "3123",
+      "--draft-model",
+      "/drafts/x",
+      "--draft-kind",
+      "dflash",
+      "--draft-block-size",
+      "8"
+    ]
+  },
+  "input": {
+    "config": {
+      "block_size": 8,
+      "ctx_size": 0,
+      "draft_kind": "medusa",
+      "draft_model_path": "/drafts/x",
+      "kv_bits": 0.0,
+      "kv_quant_scheme": ""
+    },
+    "model_path": "/models/qwen",
+    "port": 3123
+  },
+  "name": "draft_kind_unknown_defaults_to_dflash",
+  "source": {
+    "commit": "5881e0bf3a955fcc5e9803555940d1f038eadf14",
+    "file": "src-tauri/plugins/tauri-plugin-mlx/src/commands.rs",
+    "provider": "mlx"
+  }
+}

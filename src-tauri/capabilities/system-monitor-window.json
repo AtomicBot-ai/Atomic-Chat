@@ -18,7 +18,6 @@
     "llamacpp:default",
     "llamacpp-upstream:default",
     "mlx:default",
-    "foundation-models:default",
     "store:default",
     "vector-db:default",
     "rag:default",

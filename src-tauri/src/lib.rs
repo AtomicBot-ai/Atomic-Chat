@@ -3,7 +3,6 @@ pub mod core;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-#[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
@@ -11,23 +10,22 @@ use core::{
     setup::{self, setup_mcp},
     state::AppState,
 };
-#[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
-#[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
-#[cfg(not(feature = "cli"))]
 use tauri::{path::BaseDirectory, Emitter, Manager, RunEvent};
-#[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
-#[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
-#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
 )]
 pub fn run() {
+    // Before anything resolves a path: an end-to-end build without a root of
+    // its own would land in the developer's real profile.
+    #[cfg(feature = "e2e")]
+    core::e2e::require_root();
+
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
@@ -68,7 +66,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_llamacpp::init())
         .plugin(tauri_plugin_llamacpp_upstream::init())
-        .plugin(tauri_plugin_vector_db::init())
+        // Document indexes belong to the data folder: they move with it and are reset with it.
+        .plugin(tauri_plugin_vector_db::init_in(|app| {
+            core::app::commands::get_jan_data_folder_path(app.clone()).join("db")
+        }))
         .plugin(tauri_plugin_rag::init());
 
     #[cfg(feature = "deep-link")]
@@ -79,11 +80,6 @@ pub fn run() {
     #[cfg(feature = "mlx")]
     {
         app_builder = app_builder.plugin(tauri_plugin_mlx::init());
-    }
-
-    #[cfg(feature = "foundation-models")]
-    {
-        app_builder = app_builder.plugin(tauri_plugin_foundation_models::init());
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -98,11 +94,13 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_atomic_audio::init());
     }
 
-    // Local image generation. Desktop only: it supervises a native
-    // stable-diffusion.cpp server process.
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    // Desktop UI end-to-end builds only: a WebDriver server inside the app, on
+    // 127.0.0.1:$TAURI_WEBDRIVER_PORT. It can drive the whole UI, so it exists
+    // only behind the `e2e` feature, which no release build enables.
+    #[cfg(feature = "e2e")]
     {
-        app_builder = app_builder.plugin(tauri_plugin_atomic_diffusion::init());
+        app_builder = app_builder.plugin(tauri_plugin_wdio_webdriver::init());
+        app_builder = app_builder.plugin(core::e2e::seed_plugin());
     }
 
     // Desktop: include updater commands
@@ -195,14 +193,6 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
-        // Remote & LAN access. Desktop only: the tunnel is a bundled sidecar,
-        // and `PlatformFeature.LOCAL_API_SERVER` gates the settings page.
-        core::server::remote_access::commands::get_remote_access_status,
-        core::server::remote_access::commands::start_remote_access,
-        core::server::remote_access::commands::stop_remote_access,
-        core::server::remote_access::commands::get_lan_addresses,
         // ChatGPT subscription sign-in
         core::auth::commands::chatgpt_status,
         core::auth::commands::chatgpt_login,
@@ -277,6 +267,15 @@ pub fn run() {
         core::telemetry::commands::set_telemetry_consent,
         core::telemetry::commands::set_telemetry_context,
         core::telemetry::commands::set_telemetry_user,
+        // Where a model is served. One answer for the webview, whoever owns the session.
+        core::sessions::resolve_local_session,
+        core::sessions::list_local_sessions,
+        // atomic-chat-core: one call for the whole control API, its status and
+        // its snapshot. Desktop only — the core is a native
+        // process the mobile targets do not ship.
+        core::atomic_core::commands::atomic_core_call,
+        core::atomic_core::commands::atomic_core_status,
+        core::atomic_core::commands::atomic_core_snapshot,
     ]);
 
     // Mobile: no updater commands
@@ -369,9 +368,6 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
-        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::get_mcp_server_statuses,
@@ -439,6 +435,16 @@ pub fn run() {
         core::tray_status::update_tray_status,
     ]);
 
+    #[cfg(not(feature = "e2e"))]
+    let context = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    let context = {
+        let mut context = tauri::generate_context!();
+        core::e2e::take_over_windows(&mut context);
+        core::e2e::namespace_identifier(&mut context);
+        context
+    };
+
     let app = app_builder
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -465,13 +471,19 @@ pub fn run() {
             mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             api_request_inspector: Arc::new(Default::default()),
-            dynamic_trusted_hosts: Default::default(),
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            remote_access: Arc::new(Default::default()),
+            session_resolver: Arc::new(std::sync::OnceLock::new()),
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(|app| {
+            // The same windows from the same config, built here so that each
+            // can be given this run's own WebKit data store.
+            #[cfg(feature = "e2e")]
+            {
+                core::e2e::require_inside_root(&get_jan_data_folder_path(app.handle().clone()));
+                core::e2e::create_windows(app)?;
+            }
+
             let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
             // The plugin's defaults are 40 KB per file with
             // `RotationStrategy::KeepOne`, and `KeepOne` does not archive
@@ -529,6 +541,12 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             crate::core::process_reaper::reap_orphan_backends(app.handle());
 
+            // Start or attach to `atomic-chat-core`, which owns every local
+            // runtime and the public API on desktop. Placed after the reaper so
+            // the reaper has already decided which processes a live core owns.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            crate::core::atomic_core::commands::init(app.handle());
+
             // Same rationale for the agent's own children, which the backend
             // reaper cannot recognise: they are arbitrary user commands, so
             // they are identified by a journal of pids instead of by name.
@@ -538,17 +556,6 @@ pub fn run() {
                 app.state::<AppState>()
                     .agent_pty_sessions
                     .set_journal_path(&data_folder);
-
-                // And for the remote-access tunnel, journalled the same way: a
-                // cloudflared left running keeps a public URL pointed at a
-                // port that whatever starts next may bind.
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                {
-                    crate::core::server::remote_access::reap_orphan(&data_folder);
-                    app.state::<AppState>()
-                        .remote_access
-                        .set_journal_path(&data_folder);
-                }
             }
 
             #[cfg(target_os = "windows")]
@@ -647,7 +654,10 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(desktop)]
+            // Not in an end-to-end build: a clean profile always counts as a
+            // version change, so every run would copy the CLI onto the
+            // operator's real PATH — outside the isolated test root.
+            #[cfg(all(desktop, not(feature = "e2e")))]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
 
@@ -666,7 +676,7 @@ pub fn run() {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application");
     // Handle app lifecycle events
     app.run(|app, event| {
@@ -709,6 +719,18 @@ pub fn run() {
                     }
                 }
 
+                // Full exit stops only this app's isolated core and its models;
+                // hiding the window in the tray does not reach RunEvent::Exit.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    let handle = app_handle.clone();
+                    tokio::task::block_in_place(|| {
+                        tauri::async_runtime::block_on(async move {
+                            crate::core::atomic_core::commands::shutdown(&handle).await;
+                        })
+                    });
+                }
+
                 let state = app_handle.state::<AppState>();
 
                 // Agent-started processes are ours to end: nothing else will, and
@@ -717,12 +739,6 @@ pub fn run() {
                 if killed > 0 {
                     log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
                 }
-
-                // The tunnel too, and here rather than in the async block
-                // below: that block is skipped when a cleanup is already
-                // running, and a public URL must never outlive the app.
-                #[cfg(not(any(target_os = "ios", target_os = "android")))]
-                state.remote_access.kill_now(&state.dynamic_trusted_hosts);
 
                 // Check if cleanup already ran.
                 // block_on is safe here: RunEvent callbacks run on the main
@@ -746,6 +762,9 @@ pub fn run() {
 
                         let state = app_handle.state::<AppState>();
 
+                        // Desktop's public API runs in the core, which stopped above; only mobile
+                        // runs the app's own proxy.
+                        #[cfg(mobile)]
                         if let Err(e) =
                             crate::core::server::proxy::stop_server(state.server_handle.clone())
                                 .await
@@ -763,43 +782,6 @@ pub fn run() {
                         {
                             Ok(_) => log::info!("MCP cleanup completed successfully"),
                             Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
-                        }
-
-                        // Both llama.cpp providers keep their own process map, so clean
-                        // up each one to avoid orphaned llama-server processes on quit.
-                        if let Err(e) =
-                            tauri_plugin_llamacpp::cleanup_llama_processes(app_handle.clone()).await
-                        {
-                            log::warn!("Failed to cleanup llamacpp processes: {}", e);
-                        } else {
-                            log::info!("llamacpp processes cleaned up successfully");
-                        }
-
-                        if let Err(e) = tauri_plugin_llamacpp_upstream::cleanup_llama_processes(
-                            app_handle.clone(),
-                        )
-                        .await
-                        {
-                            log::warn!("Failed to cleanup llamacpp-upstream processes: {}", e);
-                        } else {
-                            log::info!("llamacpp-upstream processes cleaned up successfully");
-                        }
-
-                        #[cfg(feature = "mlx")]
-                        {
-                            use tauri_plugin_mlx::cleanup_mlx_processes;
-                            if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
-                                log::warn!("Failed to cleanup MLX processes: {}", e);
-                            } else {
-                                log::info!("MLX processes cleaned up successfully");
-                            }
-                        }
-
-                        #[cfg(feature = "foundation-models")]
-                        {
-                            use tauri_plugin_foundation_models::cleanup_processes;
-                            cleanup_processes(&app_handle).await;
-                            log::info!("Foundation Models processes cleaned up successfully");
                         }
 
                         log::info!("App cleanup completed");

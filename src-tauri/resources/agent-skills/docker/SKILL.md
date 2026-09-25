@@ -39,7 +39,7 @@ OFFER help; do not dump docs on the user.
 
 Reply (solo `reply` step):
 
-> «Docker не установлен. На macOS поставьте Docker Desktop (https://docker.com/products/docker-desktop) или `brew install --cask docker`, затем запустите приложение. Скажите "готово" — повторю проверку.»
+> "Docker is not installed. On macOS, install Docker Desktop (https://docker.com/products/docker-desktop) or run `brew install --cask docker`, then launch the app. Say 'done' and I'll check again."
 
 Do NOT attempt to install Docker Desktop silently — it needs a GUI launch and
 privileged setup.
@@ -49,7 +49,7 @@ https://docker.com/products/docker-desktop. Do not attempt a silent install.
 
 ### daemon not running
 
-> «Docker установлен, но демон не запущен. Откройте Docker Desktop (macOS/Windows) или запустите службу Docker в Linux и скажите "готово".»
+> "Docker is installed, but the daemon is not running. Open Docker Desktop (macOS/Windows) or start the Docker service on Linux, then say 'done'."
 
 Do not try to start the daemon via `os.shell.run` on macOS — it requires the
 Desktop app.

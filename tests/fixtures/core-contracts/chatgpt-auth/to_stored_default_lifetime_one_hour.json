@@ -1,0 +1,29 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "ok": {
+      "access_token": "opaque",
+      "account_id": null,
+      "email": null,
+      "expires_at": 1750003600,
+      "id_token": null,
+      "plan_type": null,
+      "refresh_token": "r",
+      "version": 1
+    }
+  },
+  "input": {
+    "kind": "to_stored",
+    "now_unix": 1750000000,
+    "previous_refresh": null,
+    "response": {
+      "access_token": "opaque",
+      "refresh_token": "r"
+    }
+  },
+  "name": "to_stored_default_lifetime_one_hour",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

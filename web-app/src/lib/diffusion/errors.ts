@@ -87,32 +87,40 @@ export const DIFFUSION_ERROR_CODES = Object.keys(
   ROUTES
 ) as NativeDiffusionErrorCode[]
 
+const isRoutedCode = (code: string): code is NativeDiffusionErrorCode =>
+  Object.prototype.hasOwnProperty.call(ROUTES, code)
+
 /**
- * Narrow an unknown rejection to the plugin's `{code, message}` shape, or
- * wrap it as `INTERNAL` so the banner always has a code to route on.
+ * Narrow an unknown rejection to the diffusion `{code, message, details}`
+ * shape, or wrap it as `INTERNAL` so the banner always has a code to route on.
+ *
+ * Not every rejection carries a diffusion code: the relay and the core's HTTP
+ * layer reject with their own (`CORE_UNREACHABLE`, `CORE_VERSION_MISMATCH`,
+ * `INVALID_ARGUMENT`, `HTTP_502`, `INTERNAL_ERROR`, ...). Such an object keeps
+ * its message, and its code goes into the details, the way the core's own
+ * `errorBody` does it.
  */
 export function toDiffusionError(error: unknown): {
   code: NativeDiffusionErrorCode
   message: string
   details?: string
 } {
-  if (error && typeof error === 'object' && 'code' in error) {
-    const candidate = error as {
-      code?: unknown
-      message?: unknown
-      details?: unknown
-    }
-    if (typeof candidate.code === 'string' && candidate.code in ROUTES) {
-      return {
-        code: candidate.code as NativeDiffusionErrorCode,
-        message: typeof candidate.message === 'string' ? candidate.message : '',
-        details:
-          typeof candidate.details === 'string' ? candidate.details : undefined,
-      }
-    }
+  if (!error || typeof error !== 'object') {
+    return { code: 'INTERNAL', message: String(error ?? '') }
   }
-  return {
-    code: 'INTERNAL',
-    message: error instanceof Error ? error.message : String(error ?? ''),
+  const candidate = error as { code?: unknown; message?: unknown; details?: unknown }
+  const message = typeof candidate.message === 'string' ? candidate.message : ''
+  const details =
+    typeof candidate.details === 'string' ? candidate.details : undefined
+  if (typeof candidate.code === 'string' && isRoutedCode(candidate.code)) {
+    return { code: candidate.code, message, details }
   }
+  // A code the banner cannot route on goes into the details, ahead of them.
+  let carried = details
+  if (typeof candidate.code === 'string' && candidate.code !== '') {
+    carried = details ? `${candidate.code}: ${details}` : candidate.code
+  }
+  return carried === undefined
+    ? { code: 'INTERNAL', message }
+    : { code: 'INTERNAL', message, details: carried }
 }

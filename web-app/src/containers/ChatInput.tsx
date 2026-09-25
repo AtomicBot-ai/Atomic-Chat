@@ -612,7 +612,7 @@ const ChatInput = memo(function ChatInput({
 
   // Jan Browser Extension hook
   const {
-    //! при возврате кнопки Browse: hasConfig: hasJanBrowserMCPConfig, isLoading: isJanBrowserMCPLoading,
+    //! when bringing back the Browse button: hasConfig: hasJanBrowserMCPConfig, isLoading: isJanBrowserMCPLoading,
     isActive: janBrowserMCPActive,
     dialogOpen: extensionDialogOpen,
     dialogState: extensionDialogState,
@@ -1069,7 +1069,7 @@ const ChatInput = memo(function ChatInput({
       // createThread + navigation + ThreadDetail mount. By the time
       // `CustomChatTransport.sendMessages` calls `ModelFactory.createModel`,
       // the session-cache entry is already populated and the IPC round-trips
-      // (`startModel` + `find_session_by_model`) are skipped, shaving
+      // (`startModel` + `resolve_local_session`) are skipped, shaving
       // ~150–220ms off the critical path. Fire-and-forget — failures fall
       // back to the regular discovery path inside `createModel`.
       if (selectedModel?.id) {
@@ -1341,10 +1341,17 @@ const ChatInput = memo(function ChatInput({
 
   // A model that failed to come up will never satisfy the queued send. Drop
   // the promise rather than leave "starting…" on screen forever; the load
-  // error toast says what happened, and the text is still in the field.
+  // error toast says what happened, and the text is still in the field. The
+  // failure clears the selection (`switchToModel`), so losing it is the
+  // signal: the error itself outlives the failure, and would also drop a send
+  // that starts the same model again. A send armed on a download has no
+  // selection yet, so only the change counts.
+  const hadSelectionRef = useRef(!!selectedModel)
   useEffect(() => {
-    if (queuedSend && selectedModelLoadFailed) setQueuedSend(null)
-  }, [queuedSend, selectedModelLoadFailed])
+    const lostSelection = hadSelectionRef.current && !selectedModel
+    hadSelectionRef.current = !!selectedModel
+    if (queuedSend && lostSelection) setQueuedSend(null)
+  }, [queuedSend, selectedModel])
 
   // Nor will a model the user stops while the send waits — a Cancel on its
   // load, or a Stop (ATO-530). Only the change counts: a send made *to* a
@@ -3264,7 +3271,7 @@ const ChatInput = memo(function ChatInput({
                       'chat:agentApprovals.skipConfirmAccept'
                     )}
                   />
-                  {/* //! Кнопка Browse (Chrome) — временно скрыта
+                  {/* //! Browse (Chrome) button — temporarily hidden
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>

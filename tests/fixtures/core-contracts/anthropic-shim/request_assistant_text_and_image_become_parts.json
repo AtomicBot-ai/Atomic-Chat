@@ -1,0 +1,51 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "a",
+              "type": "text"
+            },
+            {
+              "text": "b",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "a",
+              "type": "text"
+            },
+            {
+              "text": "b",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_assistant_text_and_image_become_parts",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

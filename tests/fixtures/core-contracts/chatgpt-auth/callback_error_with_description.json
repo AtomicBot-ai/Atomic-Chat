@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "ok": {
+      "description": "User declined",
+      "error": "access_denied",
+      "kind": "error"
+    }
+  },
+  "input": {
+    "kind": "parse_callback_query",
+    "query": "error=access_denied&error_description=User+declined&code=abc&state=xyz"
+  },
+  "name": "callback_error_with_description",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

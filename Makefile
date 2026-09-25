@@ -81,14 +81,14 @@ dev-fast: install-and-build
 	make build-cli-dev
 	yarn dev
 
-# Запуск глазами НОВОГО пользователя (как dev-fast по скорости). FRESH_INSTALL
-# очищает localStorage webview на каждом старте приложения: срабатывает вся
-# fresh-install ветка — онбординг с нуля, turboquant выключен по умолчанию,
-# дефолтный движок llamacpp-upstream. Настоящий dev-профиль (провайдеры,
-# API-ключи, флаги) бэкапится и автоматически восстанавливается при следующем
-# обычном `make dev` / `make dev-fast`; всё, что сделано во fresh-запусках,
-# отбрасывается. Модели на диске не удаляются (общий каталог data), поэтому
-# после онбординга они снова видны в списке.
+# Run the app as a NEW user sees it (as fast as dev-fast). FRESH_INSTALL
+# clears the webview localStorage on every app start, so the whole
+# fresh-install branch runs: onboarding from scratch, turboquant off by default,
+# llamacpp-upstream as the default engine. The real dev profile (providers,
+# API keys, flags) is backed up and automatically restored on the next regular
+# `make dev` / `make dev-fast`; everything done during fresh runs is
+# discarded. Models on disk are not deleted (shared data directory), so
+# they show up in the list again after onboarding.
 dev-fresh: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend-if-exists
@@ -98,8 +98,8 @@ dev-fresh: install-and-build
 	make build-cli-dev
 	FRESH_INSTALL=true FORCE_ONBOARDING=true yarn dev
 
-# Dev-режим с форсированным SetupScreen (онбординг) без удаления моделей.
-# Флаг FORCE_ONBOARDING прокидывается в vite как compile-time константа.
+# Dev mode with a forced SetupScreen (onboarding), without deleting models.
+# The FORCE_ONBOARDING flag is passed to vite as a compile-time constant.
 dev-onboarding: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -109,27 +109,27 @@ dev-onboarding: install-and-build
 	make build-cli-dev
 	FORCE_ONBOARDING=true yarn dev
 
-# Путь к соседнему чекауту atomic-chat-conf. Переопределяется:
+# Path to the sibling atomic-chat-conf checkout. Override with:
 #   make dev-onboarding-low-spec ATOMIC_CHAT_CONF=~/work/atomic-chat-conf
 ATOMIC_CHAT_CONF ?= ../atomic-chat-conf
 
-# Ступень лестницы, под которую смотрим онбординг. Переопределяется:
+# Ladder tier to preview onboarding for. Override with:
 #   make dev-onboarding-low-spec FORCE_HARDWARE_TIER=unified_8
 FORCE_HARDWARE_TIER ?= vram_2
 
-# Онбординг глазами пользователя со слабой машиной: FORCE_HARDWARE_TIER
-# минует определение железа, и первый экран показывает рекомендацию заданной
-# ступени лестницы на любом компьютере.
+# Onboarding as seen by a user on a low-spec machine: FORCE_HARDWARE_TIER
+# bypasses hardware detection, and the first screen shows the recommendation
+# for the given ladder tier on any computer.
 #
-# Значение — любой id из `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
+# Value: any id from `HardwareTier` (`web-app/src/lib/hardware-tier.ts`):
 # cpu_only, vram_2, vram_4, vram_8, vram_12, vram_16, vram_24, vram_32,
 # vram_48, vram_64, vram_64_plus, unified_8, unified_16, unified_24,
-# unified_32, unified_48, unified_64, unified_64_plus. Прежние `low` и
-# `standard` тоже принимаются и мапятся на ближайшую ступень.
+# unified_32, unified_48, unified_64, unified_64_plus. The legacy `low` and
+# `standard` are also accepted and mapped to the nearest tier.
 #
-# Манифест берём из локального чекаута conf, если он есть: ключа `tiers` в
-# удалённом может ещё не быть, но это не мешает — без него клиент штатно
-# берёт встроенную лестницу, которая и есть нужная рекомендация.
+# The manifest is taken from the local conf checkout when present: the remote
+# one may not have the `tiers` key yet, but that is fine — without it the client
+# falls back to the built-in ladder, which is exactly the recommendation needed.
 dev-onboarding-low-spec: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend
@@ -139,11 +139,11 @@ dev-onboarding-low-spec: install-and-build
 	make build-cli-dev
 	@if [ -f "$(ATOMIC_CHAT_CONF)/models/recommended.json" ]; then \
 		cp "$(ATOMIC_CHAT_CONF)/models/recommended.json" web-app/public/dev-recommended.json; \
-		echo "[dev] манифест: $(ATOMIC_CHAT_CONF)/models/recommended.json"; \
+		echo "[dev] manifest: $(ATOMIC_CHAT_CONF)/models/recommended.json"; \
 		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=$(FORCE_HARDWARE_TIER) \
 			VITE_RECOMMENDED_MODELS_REGISTRY_URL=/dev-recommended.json yarn dev; \
 	else \
-		echo "[dev] $(ATOMIC_CHAT_CONF) не найден — манифест из сети (задайте ATOMIC_CHAT_CONF=...)"; \
+		echo "[dev] $(ATOMIC_CHAT_CONF) not found — using the manifest from the network (set ATOMIC_CHAT_CONF=...)"; \
 		FORCE_ONBOARDING=true FORCE_HARDWARE_TIER=$(FORCE_HARDWARE_TIER) yarn dev; \
 	fi
 
@@ -340,7 +340,8 @@ lint: install-and-build
 .PHONY: test test-all test-local test-web test-layout test-extensions test-rust stub-resources \
 	typecheck verify-fast verify test-quality test-hardening-contracts \
 	test-telemetry-props test-coverage-critical capture-capabilities capture-hw-profile \
-	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants
+	sync-upstream-baseline gen-amd-rocm-pci-ids test-live test-live-cloud mutants \
+	build-app-e2e test-app-e2e test-app-e2e-live
 
 test-web:
 	yarn test
@@ -371,6 +372,8 @@ ifeq ($(OS),Windows_NT)
 			'src-tauri/resources/LICENSE', \
 			'src-tauri/resources/pre-install/test-placeholder', \
 			'src-tauri/resources/bin/jan-cli.exe', \
+			'src-tauri/resources/bin/atomic-chat-core.exe', \
+			'src-tauri/resources/bin/atomic-chat-app-core.exe', \
 			'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/bin/uv-x86_64-pc-windows-msvc.exe', \
 			'src-tauri/resources/bin/cloudflared-x86_64-pc-windows-msvc.exe', \
@@ -387,6 +390,8 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/atomic-chat-core ] || touch src-tauri/resources/bin/atomic-chat-core
+	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
 	@[ -e src-tauri/resources/bin/mlx-server-version.txt ] || touch src-tauri/resources/bin/mlx-server-version.txt
 	@[ -e src-tauri/resources/bin/mlx-server-backend.txt ] || touch src-tauri/resources/bin/mlx-server-backend.txt
@@ -402,6 +407,7 @@ else
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
 	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/sqlite-vec.so ] || touch src-tauri/resources/bin/sqlite-vec.so
 	@[ -e src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu
 	@[ -e src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu ] || touch src-tauri/resources/bin/cloudflared-x86_64-unknown-linux-gnu
@@ -413,10 +419,10 @@ test-rust: export TAURI_CONFIG := {"bundle":{"icon":["icons/icon.png"]}}
 test-rust: stub-resources
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-atomic-audio/Cargo.toml
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-atomic-diffusion/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-vector-db/Cargo.toml
 ifeq ($(shell uname -s),Darwin)
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-mlx/Cargo.toml
 endif
@@ -426,17 +432,22 @@ endif
 # Rust crate supported on the current platform.
 test-local: test-web test-extensions test-rust
 
-# Deterministic local gate for agent-authored changes. Coverage replaces the
-# ordinary Vitest runs here, so the suites execute once while also producing
-# the critical-flow summaries consumed by check-coverage-floor.mjs.
+# Reject false-confidence test patterns before running the suites.
 test-quality:
 	node scripts/check-test-quality.mjs
 
 test-hardening-contracts:
 	node --test tests/capabilities.test.mjs \
+		tests/extension-surface.test.mjs \
+		tests/pre-install-tarballs.test.mjs \
 		tests/registry-contracts.test.mjs \
 		tests/hardware-profiles.test.mjs \
-		tests/upstream-backend-resolver.test.mjs
+		tests/upstream-backend-resolver.test.mjs \
+		tests/core-contracts.test.mjs \
+		tests/core-settings-schema.test.mjs \
+		tests/desktop-legacy-path.test.mjs \
+		tests/extension-bundles.test.mjs \
+		tests/cli-launch-catalog.test.mjs
 
 test-coverage-critical:
 	yarn test:coverage
@@ -494,12 +505,114 @@ gen-amd-rocm-pci-ids:
 # mandatory. These targets are intentionally excluded from verify/verify-fast.
 test-live:
 	python3 scripts/test-local-sidecars.py $(if $(filter 1,$(REQUIRE)),--require,)
-	python3 scripts/test-local-diffusion.py $(if $(filter 1,$(REQUIRE)),--require,)
 	ATOMIC_TEST_LIVE_REGISTRIES=1 yarn workspace @janhq/web-app vitest --run \
 		src/services/__tests__/external-contracts.test.ts
 
 test-live-cloud:
 	python3 scripts/record-cloud-live.py $(if $(filter 1,$(REQUIRE)),--require,)
+
+# The core supervisor against a real `atomic-chat-core` binary, which is the
+# only way to check that the app and the core agree about the lock file, the
+# control token and what a dead owner looks like. The fake core in the unit
+# tests proves the app's half only. Point ATOMIC_CORE_BIN at a built core
+# (`npm run build:bin` in atomic-chat-core writes one to dist/bin/), or at the
+# one this app bundles after `make download-core`.
+ATOMIC_CORE_BIN ?= $(CURDIR)/src-tauri/resources/bin/atomic-chat-app-core
+test-core-live:
+	ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" ATOMIC_CORE_SENTRY_ENVIRONMENT=development cargo test --manifest-path src-tauri/Cargo.toml \
+		-p Atomic-Chat --features test-tauri --lib core::atomic_core::live_tests -- --test-threads=1
+
+# Desktop UI end-to-end tests: the real app binary, the real core and a fake
+# llama-server, driven through a WebDriver server that exists only in a build
+# with `--features e2e`. See tests/e2e/ and the ADR on desktop e2e.
+#
+# The build gets its own target directory. At startup the app reaps orphaned
+# backends under its resource dir, which for an unbundled binary is the cargo
+# output dir — sharing `target/debug` would let a test run kill the backends of
+# a `yarn dev` session. The path must keep `target` as its third-last component
+# or Tauri stops treating the binary's directory as the resource dir.
+#
+# No analytics or crash-reporting key reaches the binary, the registries point
+# at a closed port so the bundled seeds are used, and the web build calls the
+# local tsc/vite directly so the target does not depend on which yarn is on PATH.
+E2E_TARGET_DIR := $(CURDIR)/src-tauri/target/e2e
+E2E_APP_BIN := $(E2E_TARGET_DIR)/debug/Atomic-Chat
+E2E_DEAD_URL := http://127.0.0.1:9
+# The Hub's catalog and landing picks are baked into the build as URLs, so a
+# scenario that wants to serve them has to know the port at build time. Nothing
+# listens there in the other scenarios, which then see the same fast refusal as
+# from the dead address and fall back to what is bundled. The image catalog and
+# the sd.cpp release manifest point at the dead address outright: every launch
+# fetches both, and a scenario seeds what it needs into the webview's cache.
+E2E_FIXTURE_PORT ?= 47391
+E2E_FIXTURE_URL := http://127.0.0.1:$(E2E_FIXTURE_PORT)
+build-app-e2e:
+	@test -z "$$(ls src-tauri/.env web-app/.env* 2>/dev/null)" || \
+		(echo "build-app-e2e: remove src-tauri/.env and web-app/.env* first; their keys would be baked into the test build" && exit 1)
+	@oldest=$$(ls -tr src-tauri/resources/pre-install/*.tgz | head -1); \
+	stale=$$(find extensions/*/src extensions/shared -type f -newer "$$oldest" 2>/dev/null | head -5); \
+	if [ -n "$$stale" ] && [ "$(ALLOW_STALE_EXTENSIONS)" != "1" ]; then \
+		echo "build-app-e2e: extension sources are newer than the packed extensions the app installs:"; \
+		echo "$$stale"; \
+		echo "The app unpacks src-tauri/resources/pre-install/*.tgz without a version check, so the tests would"; \
+		echo "run old extension code. Run \`yarn build:extensions && yarn copy:assets:tauri\`, or pass"; \
+		echo "ALLOW_STALE_EXTENSIONS=1 for a scenario that does not depend on them."; \
+		exit 1; \
+	fi
+	@for packed in src-tauri/resources/pre-install/*.tgz; do \
+		if tar -xzOf "$$packed" package/dist/index.js 2>/dev/null | grep -q '@janhq/tauri-plugin-[a-z-]*-api'; then \
+			echo "build-app-e2e: $$packed imports a Tauri plugin API it did not bundle, so the webview cannot load it."; \
+			echo "The plugin JS was not built when the extensions were: run \`yarn build:tauri:plugin:api\` first,"; \
+			echo "then \`yarn build:extensions && yarn copy:assets:tauri\`."; \
+			exit 1; \
+		fi; \
+	done
+	env -u CI CARGO_TARGET_DIR="$(E2E_TARGET_DIR)" \
+		POSTHOG_KEY= POSTHOG_HOST= GA_MEASUREMENT_ID= SENTRY_DSN= SENTRY_DSN_DESKTOP= \
+		SENTRY_AUTH_TOKEN= SENTRY_ORG= SENTRY_PROJECT_FRONTEND= AUTO_UPDATER_DISABLED=true \
+		VITE_MODEL_CATALOG_URL=$(E2E_FIXTURE_URL)/catalog.json \
+		VITE_MODEL_CATALOG_INDEX_URL=$(E2E_DEAD_URL)/index.json \
+		VITE_PROVIDER_REGISTRY_URL=$(E2E_DEAD_URL)/providers.json \
+		VITE_RECOMMENDED_MODELS_REGISTRY_URL=$(E2E_DEAD_URL)/recommended.json \
+		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_FIXTURE_URL)/staff-picks.json \
+		VITE_DIFFUSION_CATALOG_URL=$(E2E_DEAD_URL)/diffusion.json \
+		VITE_SDCPP_MANIFEST_URL=$(E2E_DEAD_URL)/sdcpp-manifest.json \
+		./node_modules/.bin/tauri build --debug --no-bundle --features e2e \
+		--config src-tauri/tauri.e2e.conf.json
+
+# Refuses a binary older than what it was built from: a stale one may predate an
+# isolation fix and write into the developer's own profile.
+# How many scenario files run side by side. Each one is a real app with a window,
+# a core and its backends, so this is bounded by the machine, not by the suite.
+# `E2E_WORKERS=1` is the old one-at-a-time run, for a small machine or for
+# telling a real failure from one that only load produces.
+E2E_WORKERS ?= 4
+test-app-e2e:
+	@test -x "$(E2E_APP_BIN)" || (echo "test-app-e2e: no e2e build; run \`make build-app-e2e\`" && exit 2)
+	@test -x "$(ATOMIC_CORE_BIN)" || (echo "test-app-e2e: no core at ATOMIC_CORE_BIN=$(ATOMIC_CORE_BIN)" && exit 2)
+	@stale=$$(find src-tauri/src src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/tauri.macos.conf.json \
+		src-tauri/tauri.e2e.conf.json web-app/src -newer "$(E2E_APP_BIN)" -type f 2>/dev/null | head -5); \
+	if [ -n "$$stale" ]; then \
+		echo "test-app-e2e: the e2e build is older than its sources; run \`make build-app-e2e\`:"; echo "$$stale"; exit 2; \
+	fi
+	@test -d tests/e2e/node_modules || (cd tests/e2e && npm install --no-audit --no-fund)
+	cd tests/e2e && ATOMIC_E2E_APP_BIN="$(abspath $(E2E_APP_BIN))" ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" \
+		ATOMIC_E2E_FIXTURE_PORT="$(E2E_FIXTURE_PORT)" E2E_WORKERS="$(E2E_WORKERS)" ./node_modules/.bin/vitest run
+
+# The one scenario that uses a real llama-server and a real model instead of
+# the scripted backend. Opt-in: point the two variables at a backend directory
+# (the one holding `build/`) and a GGUF file. Both are only read — the backend
+# is copied into the test profile, the model is referenced where it lies.
+ATOMIC_E2E_LLAMA_BACKEND_DIR ?=
+ATOMIC_E2E_MODEL_GGUF ?=
+test-app-e2e-live:
+	@test -x "$(E2E_APP_BIN)" || (echo "test-app-e2e-live: no e2e build; run \`make build-app-e2e\`" && exit 2)
+	@test -x "$(ATOMIC_CORE_BIN)" || (echo "test-app-e2e-live: no core at ATOMIC_CORE_BIN=$(ATOMIC_CORE_BIN)" && exit 2)
+	@test -d "$(ATOMIC_E2E_LLAMA_BACKEND_DIR)/build" || (echo "test-app-e2e-live: ATOMIC_E2E_LLAMA_BACKEND_DIR must hold a llama.cpp backend's build/ directory" && exit 2)
+	@test -f "$(ATOMIC_E2E_MODEL_GGUF)" || (echo "test-app-e2e-live: ATOMIC_E2E_MODEL_GGUF must be a GGUF file" && exit 2)
+	cd tests/e2e && ATOMIC_E2E_APP_BIN="$(E2E_APP_BIN)" ATOMIC_CORE_BIN="$(ATOMIC_CORE_BIN)" \
+		ATOMIC_E2E_LLAMA_BACKEND_DIR="$(ATOMIC_E2E_LLAMA_BACKEND_DIR)" ATOMIC_E2E_MODEL_GGUF="$(ATOMIC_E2E_MODEL_GGUF)" \
+		./node_modules/.bin/vitest run desktop/live-model.spec.ts
 
 mutants:
 	bash scripts/test-cargo-mutants.sh
@@ -1200,66 +1313,64 @@ else
 	@echo "Skipping llamacpp backend (unsupported platform)"
 endif
 
-# Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
-build-cli:
+# The bundled `jan-cli` is the compiled atomic-chat-core (the legacy Rust CLI was removed in stage 6).
+
+# Fetch the pinned core release (or use ATOMIC_CORE_LOCAL) into resources/bin.
+download-core:
+	node ./scripts/download-core.mjs
+
+# Copy the core into place as `jan-cli` and sign it. The file name is the contract the installer,
+# the Settings → Install CLI action and every doc already use; only its contents change.
+build-cli-core: download-core
+	@node ./scripts/download-core.mjs --verify-only
 ifeq ($(shell uname -s),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
-	lipo -create \
-		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
-		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
-		-output src-tauri/resources/bin/jan-cli
+	cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
 	chmod +x src-tauri/resources/bin/jan-cli
 	mkdir -p src-tauri/target/universal-apple-darwin/release
-
-	echo "Checking for code signing identity..."; \
+	@echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing jan-cli with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
-		echo "Code signing completed successfully"; \
+		for binary in jan-cli atomic-chat-core atomic-chat-app-core; do \
+			echo "Signing $$binary with identity: $$SIGNING_IDENTITY"; \
+			codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.sidecar.plist --sign "$$SIGNING_IDENTITY" "src-tauri/resources/bin/$$binary" || exit 1; \
+			codesign --verify --strict --verbose=2 "src-tauri/resources/bin/$$binary" || exit 1; \
+		done; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
 	fi
-
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(OS),Windows_NT)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/release/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
+	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/resources/bin/atomic-chat-core.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
+	cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
+	chmod +x src-tauri/resources/bin/jan-cli
 endif
+
+build-cli:
+	"$(MAKE)" build-cli-core
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
-ifeq ($(OS),Windows_NT)
-	cd src-tauri && cargo build --features cli --bin jan-cli
-	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/target/debug/jan-cli.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
-else
-	mkdir -p src-tauri/resources/bin
-	cd src-tauri && cargo build --features cli --bin jan-cli
-	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
-endif
+	"$(MAKE)" build-cli-core
 
 # Build
 build: install-and-build install-rust-targets
 	yarn build
 
 # ──────────────────────────────────────────────────────────────
-# macOS release build: universal .app + .dmg с версией в VOLNAME
+# macOS release build: universal .app + .dmg with the version in VOLNAME
 # ──────────────────────────────────────────────────────────────
-# Шаги:
-#   1. yarn tauri build (universal-apple-darwin, macos-конфиг)
-#      — Tauri подписывает и нотаризует .app, создаёт и подписывает .dmg
+# Steps:
+#   1. yarn tauri build (universal-apple-darwin, macOS config)
+#      — Tauri signs and notarizes the .app, creates and signs the .dmg
 #   2. scripts/rename-dmg-volume.sh
-#      — переименовывает том DMG в "Atomic Chat v<version>"
-#      — ломает только подпись DMG-контейнера; .app внутри остаётся нотаризованным
+#      — renames the DMG volume to "Atomic Chat v<version>"
+#      — breaks only the DMG container signature; the .app inside stays notarized
 #   3. scripts/notarize-dmg-macos.sh
-#      — восстанавливает подпись DMG + нотаризует + стейплит (если заданы APPLE_ID/PASSWORD/TEAM_ID)
+#      — restores the DMG signature + notarizes + staples (if APPLE_ID/PASSWORD/TEAM_ID are set)
 #
-# Для локальной сборки достаточно `make build-mac`; нотаризация автоматически
-# пропустится при отсутствии Apple credentials в окружении.
+# For a local build `make build-mac` is enough; notarization is skipped
+# automatically when Apple credentials are absent from the environment.
 build-mac:
 ifeq ($(shell uname -s),Darwin)
 	yarn tauri build --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json

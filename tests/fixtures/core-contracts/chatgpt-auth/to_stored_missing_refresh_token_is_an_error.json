@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "err": "sign-in returned no refresh token"
+  },
+  "input": {
+    "kind": "to_stored",
+    "now_unix": 1750000000,
+    "previous_refresh": null,
+    "response": {
+      "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJlbWFpbCI6ImFjY2Vzc0BleGFtcGxlLnRlc3QiLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjdF9hY2Nlc3MiLCJjaGF0Z3B0X3BsYW5fdHlwZSI6InBsdXMifX0.sig"
+    }
+  },
+  "name": "to_stored_missing_refresh_token_is_an_error",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

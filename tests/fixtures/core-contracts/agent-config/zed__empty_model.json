@@ -1,0 +1,22 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".config/zed/settings.json": "{\n  \"language_models\": {\n    \"openai_compatible\": {\n      \"Atomic Chat\": {\n        \"api_url\": \"http://127.0.0.1:1337/v1\",\n        \"available_models\": []\n      }\n    }\n  }\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "zed",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "zed__empty_model",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

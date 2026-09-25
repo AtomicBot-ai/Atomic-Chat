@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageJobProgress } from '@/services/diffusion/types'
@@ -17,6 +17,12 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
       if (key === 'images:progress.phase.postprocessing')
         return 'Preparing final image…'
       if (key === 'images:progress.phase.saving') return 'Saving to gallery…'
+      if (key === 'videos:progress.generatingVideo') return 'Generating video'
+      if (key === 'videos:progress.finalizingVideo') return 'Encoding video…'
+      if (key === 'videos:progress.step') {
+        return `Frame step ${values?.step}/${values?.total}`
+      }
+      if (key === 'videos:progress.elapsed') return `${values?.seconds} s`
       return key
     },
   }),
@@ -175,6 +181,51 @@ describe('ImageGenerationPlaceholder', () => {
     expect(tile.querySelectorAll('span')).toHaveLength(1)
     expect(within(tile).queryByText('Step 7/20')).not.toBeInTheDocument()
     expect(tile).not.toHaveTextContent('12 s')
+  })
+
+  it('speaks of a video, with its own phase words, when told the job is a clip', () => {
+    render(
+      <ImageGenerationPlaceholder
+        variant="tile"
+        kind="video"
+        width={768}
+        height={512}
+        progress={{ phase: 'sampling', step: 4, totalSteps: 8, elapsedMs: 3_000 }}
+        startedAtMs={0}
+      />
+    )
+    expect(
+      screen.getByTestId('image-generation-progress-announcement')
+    ).toHaveTextContent('Generating video. Frame step 4/8.')
+
+    cleanup()
+    render(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        kind="video"
+        width={768}
+        height={512}
+        progress={{ phase: 'sampling', step: 8, totalSteps: 8, elapsedMs: 3_000 }}
+        startedAtMs={0}
+      />
+    )
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      'Encoding video…'
+    )
+    cleanup()
+    render(
+      <ImageGenerationPlaceholder
+        variant="viewer"
+        kind="video"
+        width={768}
+        height={512}
+        progress={{ phase: 'decoding', step: 8, totalSteps: 8, elapsedMs: 3_000 }}
+        startedAtMs={0}
+      />
+    )
+    expect(screen.getByTestId('image-generation-preview')).toHaveTextContent(
+      'videos:progress.phase.decoding'
+    )
   })
 
   it('stops presenting a completed sampling count as completed work', () => {

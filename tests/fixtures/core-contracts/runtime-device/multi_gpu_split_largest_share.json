@@ -1,0 +1,32 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": false,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": 3221225472,
+      "gpu_layers_offloaded": 33,
+      "loaded_backends": [
+        "CUDA"
+      ],
+      "primary_device": "CUDA1",
+      "total_layers": 33
+    }
+  },
+  "input": {
+    "lines": [
+      "load_backend: loaded CUDA backend from /usr/lib/libggml-cuda.so",
+      "load_tensors: offloaded 33/33 layers to GPU",
+      "load_tensors:        CUDA0 model buffer size =  1024.00 MiB",
+      "load_tensors:        CUDA1 model buffer size =  3072.00 MiB"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "multi_gpu_split_largest_share",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

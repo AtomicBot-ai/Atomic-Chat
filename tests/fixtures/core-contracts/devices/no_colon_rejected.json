@@ -1,0 +1,15 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": []
+  },
+  "input": {
+    "stdout": "Available devices:\nVulkan0 Intel Graphics (8128 MiB, 8128 MiB free)\n"
+  },
+  "name": "no_colon_rejected",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "expired": true
+  },
+  "input": {
+    "expires_at": 1000,
+    "kind": "is_expired_at",
+    "margin_secs": 120,
+    "now_unix": 881
+  },
+  "name": "expiry_inside_margin",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/store.rs"
+  }
+}

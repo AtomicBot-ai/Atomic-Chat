@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "LLAMA_CPP_PROCESS_ERROR",
+    "details": "dyld[123]: Library not loaded\n",
+    "message": "The model process encountered an unexpected error."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "dyld[123]: Library not loaded\n",
+    "stdout": ""
+  },
+  "name": "os_version_dyld_alone_not_enough",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

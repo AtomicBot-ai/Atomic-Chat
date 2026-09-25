@@ -200,6 +200,31 @@ describe('BaseExtension', () => {
     localStorage.clear()
   })
 
+  it('uses the registered default when a stale backend value is absent from the options', async () => {
+    localStorage.clear()
+    localStorage.setItem(
+      'TestExtension',
+      JSON.stringify([{ key: 'version_backend', controllerProps: { value: 'none' } }])
+    )
+
+    await baseExtension.registerSettings([
+      {
+        key: 'version_backend',
+        controllerProps: {
+          value: 'b99999/macos-arm64',
+          options: [
+            { value: 'latest/macos-arm64', name: 'Latest' },
+            { value: 'b99999/macos-arm64', name: 'Installed' },
+          ],
+        },
+      } as any,
+    ])
+
+    const stored = JSON.parse(localStorage.getItem('TestExtension') ?? '[]')
+    expect(stored[0].controllerProps.value).toBe('b99999/macos-arm64')
+    localStorage.clear()
+  })
+
   it('takes the freshly registered recommendation over the stored one', async () => {
     localStorage.clear()
     localStorage.setItem(

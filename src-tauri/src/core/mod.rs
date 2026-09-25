@@ -1,10 +1,12 @@
 pub mod agent;
 pub mod app;
 pub mod artifact;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod atomic_core;
 pub mod auth;
-#[cfg(feature = "cli")]
-pub mod cli;
 pub mod downloads;
+#[cfg(feature = "e2e")]
+pub mod e2e;
 pub mod extensions;
 pub mod filesystem;
 pub mod http;
@@ -15,6 +17,7 @@ pub(crate) mod process_env;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod process_reaper;
 pub mod server;
+pub mod sessions;
 pub mod setup;
 pub mod state;
 pub mod system;

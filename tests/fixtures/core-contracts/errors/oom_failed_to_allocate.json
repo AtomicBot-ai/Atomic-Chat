@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "OUT_OF_MEMORY",
+    "details": "ggml_gallocr_reserve_n: failed to allocate CUDA0 buffer of size 4096\n",
+    "message": "Out of memory. The model requires more RAM or VRAM than available."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "ggml_gallocr_reserve_n: failed to allocate CUDA0 buffer of size 4096\n",
+    "stdout": ""
+  },
+  "name": "oom_failed_to_allocate",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

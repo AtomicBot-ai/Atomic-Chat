@@ -1,0 +1,34 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {},
+    "ok": true,
+    "spawn": {
+      "args": [
+        "auth",
+        "--provider",
+        "openai-compatible",
+        "--apikey",
+        "local",
+        "--modelid",
+        "AtomicChat/Qwen3.5-9B-GGUF",
+        "--baseurl",
+        "http://127.0.0.1:1337/v1"
+      ],
+      "program": "cline"
+    }
+  },
+  "input": {
+    "agent": "cline",
+    "api_key": "",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "cline__auth_success_empty_key",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

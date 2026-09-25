@@ -1,0 +1,52 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "anthropic": {
+      "content": [
+        {
+          "text": "hello",
+          "type": "text"
+        }
+      ],
+      "id": "chatcmpl-1",
+      "model": "m",
+      "role": "assistant",
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 3,
+        "total_tokens": 4
+      }
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "hello",
+            "role": "assistant"
+          }
+        }
+      ],
+      "id": "chatcmpl-1",
+      "model": "m",
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 3,
+        "total_tokens": 4
+      }
+    },
+    "kind": "response"
+  },
+  "name": "response_text_stop",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

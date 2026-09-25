@@ -557,8 +557,8 @@ type AdvancedSelectProps<T extends string | number> = {
   onChange: (value: T) => void
 }
 
-/** One Advanced row: a muted label on the left, a pill menu on the right. */
-function AdvancedSelect<T extends string | number>({
+/** One Advanced row: a muted label on the left, a pill menu on the right. Shared with the Video form. */
+export function AdvancedSelect<T extends string | number>({
   label,
   hint,
   value,

@@ -1,0 +1,24 @@
+{
+  "comparator": "state-file-schema",
+  "expected": {
+    "file": {
+      "host": "127.0.0.1",
+      "pid": 0,
+      "port": 1337,
+      "prefix": "/v1",
+      "requires_api_key": false,
+      "running": false
+    },
+    "placeholders": [],
+    "text": "{\n  \"running\": false,\n  \"host\": \"127.0.0.1\",\n  \"port\": 1337,\n  \"prefix\": \"/v1\",\n  \"requires_api_key\": false,\n  \"pid\": 0\n}"
+  },
+  "input": {
+    "existing_file": null,
+    "op": "mark_stopped"
+  },
+  "name": "write_mark_stopped_when_file_missing_writes_defaults",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

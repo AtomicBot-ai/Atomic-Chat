@@ -1,0 +1,18 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": null
+  },
+  "input": {
+    "body": {
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_missing_messages_is_none",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

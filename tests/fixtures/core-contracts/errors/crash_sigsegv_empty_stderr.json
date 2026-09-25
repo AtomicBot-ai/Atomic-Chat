@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "LLAMA_CPP_PROCESS_ERROR",
+    "details": "",
+    "message": "The model process crashed unexpectedly (access violation / segfault). This usually means the model is incompatible with this backend, or its speculative-decoding (MTP) configuration is unsupported here."
+  },
+  "input": {
+    "exit": {
+      "code": null,
+      "signal": 11
+    },
+    "stderr": "",
+    "stdout": ""
+  },
+  "name": "crash_sigsegv_empty_stderr",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -1,7 +1,7 @@
 import type { RecommendedModelChipVariant } from '@/constants/recommendedModelChip'
 import { cn } from '@/lib/utils'
 
-//* Чип метки рекомендации (Untitled UI Label)
+//* Recommendation label chip (Untitled UI Label)
 const variantClassName: Record<RecommendedModelChipVariant, string> = {
   gray:
     'border-gray-200 bg-gray-50 text-gray-700 dark:border-zinc-600 dark:bg-zinc-800/70 dark:text-zinc-200',

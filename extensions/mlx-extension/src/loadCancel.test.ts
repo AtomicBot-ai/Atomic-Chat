@@ -1,13 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// ATO-530: the stage an MLX load reports while the user waits, and a Cancel
-// that leaves no server behind. Mocks mirror `autoIncreaseCtx.test.ts`.
+// ATO-530: the stage an MLX load reports while the user waits, and a Cancel that leaves no
+// server behind. The load itself runs in `atomic-chat-core`, so the cancel is a control call
+// too; the shared protocol lives in `extensions/shared/loadCancel.ts` and is exercised here
+// through the extension's own `load`/`cancelLoad`. Mocks mirror `coreOwned.test.ts`.
 
-const { invokeMock, loadMlxModelMock, unloadMlxModelMock } = vi.hoisted(() => ({
-  invokeMock: vi.fn(),
-  loadMlxModelMock: vi.fn(),
-  unloadMlxModelMock: vi.fn(),
-}))
+const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 
 vi.mock('@tauri-apps/api/event', () => ({
   emit: vi.fn().mockResolvedValue(undefined),
@@ -23,11 +21,6 @@ vi.mock('@tauri-apps/plugin-log', () => ({
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: invokeMock,
   Channel: vi.fn(),
-}))
-
-vi.mock('@janhq/tauri-plugin-mlx-api', () => ({
-  loadMlxModel: loadMlxModelMock,
-  unloadMlxModel: unloadMlxModelMock,
 }))
 
 vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
@@ -64,48 +57,86 @@ vi.mock('@janhq/core', () => ({
 }))
 
 import mlx_extension from './index'
+import { LoadCancelTracker } from '../../shared/loadCancel'
 
-const session = { pid: 42, port: 7777, api_key: '', model_id: 'm' }
+const session = {
+  pid: 42,
+  port: 7777,
+  model_id: 'm',
+  model_path: '/tmp/jan/mlx/models/m',
+  is_embedding: false,
+  api_key: '',
+}
+
+type Route = (body: unknown) => unknown
 
 describe('mlx_extension load stages and cancel', () => {
   let ext: mlx_extension
-  let cancelReplies: Array<() => boolean>
+  let routes: Record<string, Route>
+  let calls: string[]
 
   beforeEach(() => {
     vi.clearAllMocks()
-    cancelReplies = []
+    calls = []
+    routes = {
+      'GET /sessions': () => ({ sessions: [] }),
+      'POST /settings/mlx/import': () => ({
+        status: 'imported',
+        applied: [],
+        conflicts: [],
+        revision: 1,
+      }),
+      'GET /settings/mlx': () => ({ provider: 'mlx', revision: 2, values: {} }),
+      'POST /settings/mlx/acknowledge': () => ({}),
+      'POST /models/mlx/m/load/cancel': () => ({ cancelled: false }),
+      'POST /models/mlx/m/unload': () => ({ success: true }),
+    }
     ext = new mlx_extension()
     ;(ext as unknown as { config: Record<string, unknown> }).config = {
       ctx_size: 4096,
     }
     ;(ext as unknown as { providerPath: string }).providerPath = '/tmp/jan/mlx'
-    invokeMock.mockImplementation(async (command: string) => {
-      switch (command) {
-        case 'plugin:mlx|find_mlx_session_by_model':
-          return null
-        case 'plugin:mlx|get_mlx_loaded_models':
-          return []
-        case 'plugin:mlx|get_mlx_random_port':
-          return 7777
-        case 'read_yaml':
-          // A legacy entry that points at the first weight file.
-          return { model_path: 'mlx/models/m/model.safetensors' }
-        case 'get_page_cache_resident_fraction':
-          return 0.4
-        case 'plugin:mlx|cancel_mlx_model_load':
-          return cancelReplies.shift()?.() ?? false
-        default:
-          return undefined
+    ;(
+      ext as unknown as { resolveModelMaxCtxTrain: () => Promise<number> }
+    ).resolveModelMaxCtxTrain = async () => 32768
+    // No wait between cancel retries: the test controls when the load answers.
+    ;(ext as unknown as { loadCancel: LoadCancelTracker }).loadCancel =
+      new LoadCancelTracker(
+        (ext as unknown as { core: ConstructorParameters<typeof LoadCancelTracker>[0] })
+          .core,
+        () => {},
+        0
+      )
+    invokeMock.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        switch (command) {
+          case 'atomic_core_status':
+            return { running: true, attached: { instance_id: 'i', generation: 1 } }
+          case 'read_yaml':
+            // A legacy entry that points at the first weight file.
+            return { model_path: 'mlx/models/m/model.safetensors' }
+          case 'get_page_cache_resident_fraction':
+            return 0.4
+          case 'atomic_core_call': {
+            const key = `${String(args?.['method'])} ${String(args?.['path'])}`
+            calls.push(key)
+            const route = routes[key]
+            if (!route) throw new Error(`unrouted ${key}`)
+            return route(args?.['body'])
+          }
+          default:
+            throw new Error(`plugin reached: ${command}`)
+        }
       }
-    })
+    )
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('reports the weights stage for the model folder', async () => {
-    loadMlxModelMock.mockResolvedValue(session)
+  it('reports the weights stage for the model folder before asking the core', async () => {
+    routes['POST /models/mlx/m/load'] = () => ({ session, created: true })
     const onStage = vi.fn()
 
     await expect(
@@ -119,64 +150,110 @@ describe('mlx_extension load stages and cancel', () => {
       ([command]) => command === 'get_page_cache_resident_fraction'
     )
     expect(probed?.[1]).toEqual({ paths: ['/tmp/jan/mlx/models/m'] })
+    const invoked = invokeMock.mock.calls.map(([command, args]) =>
+      command === 'atomic_core_call'
+        ? `${String(args?.['method'])} ${String(args?.['path'])}`
+        : command
+    )
+    expect(invoked.indexOf('get_page_cache_resident_fraction')).toBeLessThan(
+      invoked.indexOf('POST /models/mlx/m/load')
+    )
+    expect(calls.at(-1)).toBe('POST /models/mlx/m/load')
   })
 
-  it('cancels a load inside the plugin, retrying until the plugin has it', async () => {
+  it('loads without a stage when the caller asks for none', async () => {
+    routes['POST /models/mlx/m/load'] = () => ({ session, created: true })
+    await expect(ext.load('m')).resolves.toEqual(session)
+    expect(
+      invokeMock.mock.calls.some(([c]) => c === 'get_page_cache_resident_fraction')
+    ).toBe(false)
+  })
+
+  it('cancels a load inside the core, retrying until the core has it', async () => {
     let rejectLoad: (error: unknown) => void = () => {}
-    loadMlxModelMock.mockImplementation(
-      () =>
-        new Promise((_, reject) => {
-          rejectLoad = reject
-        })
-    )
-    cancelReplies = [
+    routes['POST /models/mlx/m/load'] = () =>
+      new Promise((_, reject) => {
+        rejectLoad = reject
+      })
+    const cancelReplies = [
       () => false,
       () => {
-        rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'cancelled' })
+        rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'The model load was cancelled.' })
         return true
       },
     ]
+    routes['POST /models/mlx/m/load/cancel'] = () => ({
+      cancelled: cancelReplies.shift()?.() ?? false,
+    })
 
     const load = ext.load('m')
     const outcome = expect(load).rejects.toMatchObject({
       code: 'MODEL_LOAD_CANCELLED',
+      message: 'The model load was cancelled. [MODEL_LOAD_CANCELLED]',
     })
-    await vi.waitFor(() => expect(loadMlxModelMock).toHaveBeenCalled())
+    await vi.waitFor(() =>
+      expect(calls).toContain('POST /models/mlx/m/load')
+    )
 
     await expect(ext.cancelLoad('m')).resolves.toBe(true)
     await outcome
-    expect(
-      invokeMock.mock.calls.filter(
-        ([command]) => command === 'plugin:mlx|cancel_mlx_model_load'
-      )
-    ).toHaveLength(2)
+    expect(calls.filter((c) => c === 'POST /models/mlx/m/load/cancel')).toHaveLength(2)
+    expect(calls).not.toContain('POST /models/mlx/m/unload')
   })
 
-  it('takes down a server that came up before the cancel reached it', async () => {
+  it('takes down a session that came up before the cancel reached the core', async () => {
     let resolveLoad: (value: unknown) => void = () => {}
-    loadMlxModelMock.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveLoad = resolve
-        })
-    )
-    unloadMlxModelMock.mockResolvedValue({ success: true })
-    cancelReplies = [
-      () => {
-        resolveLoad(session)
-        return false
-      },
-    ]
+    routes['POST /models/mlx/m/load'] = () =>
+      new Promise((resolve) => {
+        resolveLoad = resolve
+      })
+    routes['POST /models/mlx/m/load/cancel'] = () => {
+      resolveLoad({ session, created: true })
+      return { cancelled: false }
+    }
 
     const load = ext.load('m')
     const outcome = expect(load).rejects.toMatchObject({
       code: 'MODEL_LOAD_CANCELLED',
     })
-    await vi.waitFor(() => expect(loadMlxModelMock).toHaveBeenCalled())
-    await ext.cancelLoad('m')
+    await vi.waitFor(() =>
+      expect(calls).toContain('POST /models/mlx/m/load')
+    )
+    await expect(ext.cancelLoad('m')).resolves.toBe(true)
 
     await outcome
-    expect(unloadMlxModelMock).toHaveBeenCalledWith(42)
+    expect(calls.at(-1)).toBe('POST /models/mlx/m/unload')
+    expect(await ext.getLoadedModels()).toEqual([])
+  })
+
+  it('stops a load cancelled before it reached the core, without asking the core', async () => {
+    routes['POST /models/mlx/m/load'] = () => ({ session, created: true })
+    // The settings handover is the last step before the core load: cancel while it is running.
+    let cancelled: Promise<boolean> | undefined
+    routes['GET /settings/mlx'] = () => {
+      cancelled = ext.cancelLoad('m')
+      return { provider: 'mlx', revision: 2, values: {} }
+    }
+
+    await expect(ext.load('m')).rejects.toMatchObject({
+      code: 'MODEL_LOAD_CANCELLED',
+    })
+    await expect(cancelled).resolves.toBe(true)
+    expect(calls).not.toContain('POST /models/mlx/m/load')
+    expect(calls).not.toContain('POST /models/mlx/m/load/cancel')
+  })
+
+  it('keeps the code of a load the core refused', async () => {
+    routes['POST /models/mlx/m/load'] = () =>
+      Promise.reject({
+        code: 'MODEL_FILE_NOT_FOUND',
+        message: 'Model file not found.',
+        details: '/tmp/jan/mlx/models/m',
+      })
+    await expect(ext.load('m')).rejects.toMatchObject({
+      code: 'MODEL_FILE_NOT_FOUND',
+      message: 'Model file not found. (/tmp/jan/mlx/models/m) [MODEL_FILE_NOT_FOUND]',
+    })
   })
 
   it('has nothing to cancel when no load of the model is running', async () => {

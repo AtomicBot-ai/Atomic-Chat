@@ -1,0 +1,63 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{}",
+                "name": ""
+              },
+              "id": "fc_abc",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{}",
+                "name": "x"
+              },
+              "id": "call_2",
+              "type": "function"
+            }
+          ]
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "id": "fc_abc",
+          "type": "function_call"
+        },
+        {
+          "arguments": "{}",
+          "call_id": "call_2",
+          "id": "fc_2",
+          "name": "x",
+          "type": "function_call"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_function_call_falls_back_to_id_and_defaults",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

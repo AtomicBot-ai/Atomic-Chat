@@ -19,11 +19,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "Atomic-Chat"
 path = "src/main.rs"
 
-[[bin]]
-name = "jan-cli"
-path = "src/bin/jan-cli.rs"
-required-features = ["cli"]
-
 [[example]]
 name = "gaia-eval"
 path = "examples/gaia-eval.rs"
@@ -44,12 +39,10 @@ default = [
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
 mlx = ["dep:tauri-plugin-mlx"]
-foundation-models = ["dep:tauri-plugin-foundation-models"]
 desktop = [
     "deep-link",
     "hardware",
-    "mlx",
-    "foundation-models"
+    "mlx"
 ]
 mobile = [
     "tauri/protocol-asset",
@@ -66,8 +59,10 @@ test-tauri = [
     "tauri/test",
     "desktop",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 gaia-eval = ["dep:env_logger", "dep:indicatif", "dep:parquet"]
+# Desktop UI end-to-end builds only: embeds a WebDriver server in the app. Never
+# part of `default` or `desktop`, so a release build does not contain it.
+e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:objc2"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -115,17 +110,20 @@ tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = t
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
 tauri-plugin-llamacpp-upstream = { path = "./plugins/tauri-plugin-llamacpp-upstream" }
 tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
-tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-models", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
 tauri-plugin-atomic-audio = { path = "./plugins/tauri-plugin-atomic-audio" }
-tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
+# `dangerous-settings`: the proxy settings offer "Ignore SSL certificates", and the extensions pass
+# it on to this plugin for requests sent through that proxy. Without the feature the plugin refuses
+# such a request before it leaves the machine, so the setting broke the path it was set for.
+tauri-plugin-http = { version = "2", features = ["unsafe-headers", "dangerous-settings"] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2.2.7"
 tauri-plugin-os = "2.2.1"
 tauri-plugin-shell = "2.2.0"
 tauri-plugin-store = "2"
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
@@ -145,10 +143,8 @@ hostname = "0.4"
 base64 = "0.22"
 glob = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
-dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
-console = { version = "0.15", optional = true }
 ignore = "=0.4.30"
 regex = "1.13.1"
 diffy = "0.4.2"
@@ -173,6 +169,11 @@ tempfile = "3.20.0"
 nix = { version = "=0.30.1", features = ["signal", "process", "resource"] }
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# e2e only: keeps an unseen e2e window rendering (`core::e2e`). Already in the
+# lockfile through wry.
+objc2 = { version = "0.6", optional = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 notify-rust = "4"
@@ -184,9 +185,6 @@ winreg = "0.52"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls-vendored"] }
-# Local image generation (sd-server supervisor). Desktop only, like the audio
-# plugin; the API server's `/v1/images/generations` route reads its state.
-tauri-plugin-atomic-diffusion = { path = "./plugins/tauri-plugin-atomic-diffusion" }
 tauri-plugin-updater = "2"
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

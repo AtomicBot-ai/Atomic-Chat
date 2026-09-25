@@ -1,0 +1,29 @@
+{
+  "comparator": "state-file-schema",
+  "expected": {
+    "file": {
+      "host": "0.0.0.0",
+      "pid": "<pid>",
+      "port": 8080,
+      "prefix": "/api",
+      "requires_api_key": true,
+      "running": true
+    },
+    "placeholders": [
+      "<pid>"
+    ],
+    "text": "{\n  \"running\": true,\n  \"host\": \"0.0.0.0\",\n  \"port\": 8080,\n  \"prefix\": \"/api\",\n  \"requires_api_key\": true,\n  \"pid\": \"<pid>\"\n}"
+  },
+  "input": {
+    "host": "0.0.0.0",
+    "op": "mark_running",
+    "port": 8080,
+    "prefix": "/api",
+    "requires_api_key": true
+  },
+  "name": "write_mark_running_bind_all_with_key",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

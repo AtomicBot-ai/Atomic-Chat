@@ -157,7 +157,10 @@ export const useDownloadStore = create<DownloadState>((set) => ({
           ...state.downloads,
           [id]: {
             ...previous,
-            name: previous?.name ?? '',
+            // A stage can come first (the preflight ladder runs before any
+            // byte): name the row after its id, as `updateProgress` callers
+            // do, so the panel labels it and routes its Cancel by that id.
+            name: previous?.name ?? id,
             progress: previous?.progress ?? 0,
             current: previous?.current ?? 0,
             total: previous?.total ?? 0,

@@ -1,0 +1,117 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "sse": [
+          {
+            "data": {
+              "choices": [
+                {
+                  "delta": {
+                    "content": "hi",
+                    "role": "assistant"
+                  },
+                  "finish_reason": null,
+                  "index": 0
+                }
+              ],
+              "id": "c",
+              "model": "local.model-7b",
+              "object": "chat.completion.chunk"
+            },
+            "event": null
+          },
+          {
+            "data": {
+              "choices": [
+                {
+                  "delta": {},
+                  "finish_reason": "stop",
+                  "index": 0
+                }
+              ],
+              "id": "c",
+              "model": "local.model-7b",
+              "object": "chat.completion.chunk"
+            },
+            "event": null
+          },
+          {
+            "data": "[DONE]",
+            "event": null
+          }
+        ]
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "text/event-stream",
+        "vary": "Origin",
+        "x-upstream-trace": "stub"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b",
+          "stream": true
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}],\"model\":\"local.model-7b\",\"stream\":true}",
+      "headers": [],
+      "method": "POST",
+      "path": "/v1/chat/completions"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/chat/completions",
+        "replies": [
+          {
+            "body": "data: {\"choices\":[{\"delta\":{\"content\":\"hi\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"c\",\"model\":\"local.model-7b\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"c\",\"model\":\"local.model-7b\",\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n",
+            "content_type": "text/event-stream",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "chat_local_stream_passthrough",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

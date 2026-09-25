@@ -195,7 +195,28 @@ describe('NavMain', () => {
     render(<NavMain />)
 
     expect(screen.queryByText('common:images')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('videos-link')).not.toBeInTheDocument()
     expect(screen.getByText('common:modelHub')).toBeInTheDocument()
+  })
+
+  it('puts Video right after Images as one row, and highlights it on its route', () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: '/videos/' } as never)
+    render(<NavMain />)
+
+    const labels = screen
+      .getAllByRole('listitem')
+      .map((item) => item.textContent?.trim())
+    const images = labels.indexOf('common:images')
+    expect(labels[images + 1]).toBe('common:video')
+    const link = screen.getByTestId('videos-link')
+    expect(link).toHaveAttribute('href', '/videos/')
+    expect(link.parentElement).toHaveAttribute('data-active', 'true')
+    // No workflows to unfold: the row is a plain link, not a disclosure.
+    expect(link.closest('li')?.querySelector('[aria-expanded]')).toBeNull()
+    expect(screen.getByTestId('images-disclosure')).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
   })
 
   it('keeps the workflow list folded off the images page until the chevron is clicked', async () => {
@@ -307,6 +328,7 @@ describe('NavMain', () => {
       'common:newChat',
       'common:modelHub',
       'common:images',
+      'common:video',
       'common:cloud',
       'common:plugins',
       'common:launch',

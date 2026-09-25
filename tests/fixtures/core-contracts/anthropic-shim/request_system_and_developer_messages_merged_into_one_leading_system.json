@@ -1,0 +1,51 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "sys\n\ndev\n\nlate",
+          "role": "system"
+        },
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "stream": false
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "dev",
+              "type": "text"
+            }
+          ],
+          "role": "developer"
+        },
+        {
+          "content": "late",
+          "role": "system"
+        }
+      ],
+      "model": "m",
+      "system": "sys"
+    },
+    "kind": "request"
+  },
+  "name": "request_system_and_developer_messages_merged_into_one_leading_system",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

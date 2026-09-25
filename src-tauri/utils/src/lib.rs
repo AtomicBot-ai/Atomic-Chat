@@ -3,7 +3,6 @@ pub mod config;
 pub mod crypto;
 pub mod fs;
 pub mod http;
-pub mod load_cancel;
 pub mod math;
 pub mod network;
 pub mod page_cache;

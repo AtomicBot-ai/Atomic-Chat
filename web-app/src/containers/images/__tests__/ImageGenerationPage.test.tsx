@@ -89,8 +89,14 @@ describe('ImageGenerationPage', () => {
       lastError: { code: 'ENGINE_UPDATE_REQUIRED', message: 'Update required' },
     })
     render(<ImageGenerationPage workflow="create" search={{}} />)
+    expect(screen.getByTestId('image-error-banner')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'images:errors.actions.updateEngine' }))
     expect(update).toHaveBeenCalledTimes(1)
+    // The banner steps aside while the update runs, and the fix is the
+    // in-place update, not the install wizard.
+    expect(useImageGenerationStore.getState().lastError).toBeNull()
+    expect(screen.queryByTestId('image-error-banner')).not.toBeInTheDocument()
+    expect(useImageGenerationStore.getState().setupOpen).toBe(false)
     update.mockRestore()
   })
 

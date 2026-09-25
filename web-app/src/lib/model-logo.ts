@@ -38,7 +38,8 @@ const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   // Krea has no mark of its own here; Krea 2 is drawn like FLUX.1 Krea, as its
   // family id's icon key (`bfl`) already has it.
   [/\bkrea[- ]?2\b/i, '/svg/bfl.svg'],
-  [/\bwan-?\d/i, '/svg/qwen-color.svg'],
+  // `Wan2.2-TI2V-5B` on the Hub, `Wan 2.2 TI2V 5B` in the catalog.
+  [/\bwan[- ]?\d/i, '/svg/qwen-color.svg'],
   [/\bltx-?(video|\d)/i, '/svg/lightricks.svg'],
 ]
 

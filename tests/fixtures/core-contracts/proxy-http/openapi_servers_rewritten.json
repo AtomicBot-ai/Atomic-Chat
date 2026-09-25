@@ -1,0 +1,1875 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "json": {
+          "components": {
+            "responses": {
+              "ImageApiError": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/ImageApiErrorResponseDto"
+                    }
+                  }
+                },
+                "description": "OpenAI-shaped image generation error"
+              },
+              "VideoApiError": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/ImageApiErrorResponseDto"
+                    }
+                  }
+                },
+                "description": "OpenAI-shaped video generation error"
+              }
+            },
+            "schemas": {
+              "AnthropicMessage": {
+                "description": "A single message in the Anthropic Messages API format.",
+                "properties": {
+                  "content": {
+                    "description": "The content of the message.",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "description": "Array of content blocks (text, images, etc.).",
+                        "items": {
+                          "$ref": "#/components/schemas/ContentBlock"
+                        },
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "role": {
+                    "description": "The role of the message sender.",
+                    "enum": [
+                      "user",
+                      "assistant",
+                      "system"
+                    ],
+                    "type": "string"
+                  },
+                  "stop_reason": {
+                    "description": "The reason the generation stopped (e.g., `stop`, `max_tokens`, `tool_use`).",
+                    "type": "string"
+                  },
+                  "stop_sequence": {
+                    "description": "The specific stop sequence that was encountered.",
+                    "type": "string"
+                  },
+                  "tool_use": {
+                    "$ref": "#/components/schemas/ToolUse"
+                  },
+                  "usage": {
+                    "$ref": "#/components/schemas/MessageUsage"
+                  }
+                },
+                "required": [
+                  "role",
+                  "content"
+                ],
+                "type": "object"
+              },
+              "ChatChoiceLogprobs": {
+                "properties": {
+                  "bytes": {
+                    "description": "The most likely token represented as a list of bytes.",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "description": "The token ID.",
+                    "type": "integer"
+                  },
+                  "logprob": {
+                    "description": "The log probability of the most likely token.",
+                    "type": "number"
+                  },
+                  "prob": {
+                    "description": "The probability of the most likely token (if post_sampling_probs is true).",
+                    "type": "number"
+                  },
+                  "token": {
+                    "description": "The most likely token.",
+                    "type": "string"
+                  },
+                  "top_logprobs": {
+                    "description": "List of the most likely tokens and their log probs.",
+                    "items": {
+                      "$ref": "#/components/schemas/LogprobContent"
+                    },
+                    "type": "array"
+                  },
+                  "top_probs": {
+                    "description": "List of the most likely tokens and their probs (if post_sampling_probs is true).",
+                    "items": {
+                      "$ref": "#/components/schemas/LogprobContent"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "ChatCompletionMessage": {
+                "description": "A single turn in a chat conversation.",
+                "properties": {
+                  "content": {
+                    "description": "The textual content of the message.",
+                    "type": "string"
+                  },
+                  "role": {
+                    "description": "Who sent the message.",
+                    "enum": [
+                      "system",
+                      "assistant",
+                      "user"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role",
+                  "content"
+                ],
+                "type": "object"
+              },
+              "ChatCompletionResponseDto": {
+                "description": "Response from `POST /v1/chat/completion`.",
+                "properties": {
+                  "choices": {
+                    "description": "List of generated choices.",
+                    "items": {
+                      "$ref": "#/components/schemas/ChoiceDto"
+                    },
+                    "type": "array"
+                  },
+                  "created": {
+                    "description": "Unix timestamp of creation.",
+                    "type": "integer"
+                  },
+                  "generation_settings": {
+                    "description": "The generation settings used for the completion.",
+                    "type": "object"
+                  },
+                  "id": {
+                    "description": "Unique identifier for the completion.",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "Model used for the completion.",
+                    "type": "string"
+                  },
+                  "object": {
+                    "enum": [
+                      "chat.completion"
+                    ],
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "The processed prompt.",
+                    "type": "string"
+                  },
+                  "system_fingerprint": {
+                    "description": "Fingerprint of the system configuration used.",
+                    "type": "string"
+                  },
+                  "tokens_cached": {
+                    "description": "Number of tokens from the prompt which were reused from a cache.",
+                    "type": "integer"
+                  },
+                  "tokens_evaluated": {
+                    "description": "Number of tokens evaluated in total from the prompt.",
+                    "type": "integer"
+                  },
+                  "truncated": {
+                    "description": "True if the context size was exceeded.",
+                    "type": "boolean"
+                  },
+                  "usage": {
+                    "$ref": "#/components/schemas/UsageDto"
+                  }
+                },
+                "required": [
+                  "id",
+                  "object",
+                  "created",
+                  "model",
+                  "choices",
+                  "usage"
+                ],
+                "type": "object"
+              },
+              "ChoiceDto": {
+                "properties": {
+                  "finish_reason": {
+                    "description": "Why the generation stopped (e.g., `stop`, `length`, `model`).",
+                    "type": "string"
+                  },
+                  "index": {
+                    "type": "integer"
+                  },
+                  "logprobs": {
+                    "description": "Log probability information for the choice, if requested.",
+                    "items": {
+                      "$ref": "#/components/schemas/ChatChoiceLogprobs"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "message": {
+                    "$ref": "#/components/schemas/ChatCompletionMessage"
+                  }
+                },
+                "required": [
+                  "index",
+                  "message",
+                  "finish_reason"
+                ],
+                "type": "object"
+              },
+              "ContentBlock": {
+                "description": "A content block in the Anthropic Messages API format.",
+                "properties": {
+                  "source": {
+                    "description": "Image source data (for type 'image').",
+                    "properties": {
+                      "data": {
+                        "description": "Base64-encoded image data.",
+                        "type": "string"
+                      },
+                      "media_type": {
+                        "description": "The media type of the image (e.g., 'image/jpeg').",
+                        "type": "string"
+                      },
+                      "type": {
+                        "enum": [
+                          "base64"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "media_type",
+                      "data"
+                    ],
+                    "type": "object"
+                  },
+                  "text": {
+                    "description": "Text content (for type 'text').",
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "The type of content block.",
+                    "enum": [
+                      "text",
+                      "image"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              "CreateChatCompletionDto": {
+                "description": "Request body for `POST /v1/chat/completion`. All fields follow the OpenAI naming; fields marked *optional* are not required.",
+                "properties": {
+                  "cache_prompt": {
+                    "default": true,
+                    "description": "Reuse KV cache from previous requests when possible.",
+                    "type": "boolean"
+                  },
+                  "dry_allowed_length": {
+                    "default": 2,
+                    "description": "Length after which DRY penalty grows exponentially.",
+                    "type": "integer"
+                  },
+                  "dry_base": {
+                    "default": 1.75,
+                    "description": "DRY base value.",
+                    "type": "number"
+                  },
+                  "dry_multiplier": {
+                    "default": 0,
+                    "description": "DRY (Don’t Repeat Yourself) multiplier (0.0 = disabled).",
+                    "type": "number"
+                  },
+                  "dry_penalty_last_n": {
+                    "default": -1,
+                    "description": "How many tokens to scan for DRY repetitions (0 = disabled, -1 = context size).",
+                    "type": "integer"
+                  },
+                  "dry_sequence_breakers": {
+                    "default": [
+                      "\\n",
+                      ":",
+                      "\"",
+                      "*"
+                    ],
+                    "description": "Sequence breakers for DRY sampling.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "dynatemp_exponent": {
+                    "default": 1,
+                    "description": "Exponent for dynamic‑temperature scaling.",
+                    "type": "number"
+                  },
+                  "dynatemp_range": {
+                    "default": 0,
+                    "description": "Dynamic‑temperature range – final temperature is sampled from `[temperature‑range, temperature+range]`.",
+                    "type": "number"
+                  },
+                  "frequency_penalty": {
+                    "default": 0,
+                    "description": "Frequency penalty (0.0 = disabled).",
+                    "type": "number"
+                  },
+                  "grammar": {
+                    "description": "Grammar for grammar‑based sampling.",
+                    "type": "string"
+                  },
+                  "id_slot": {
+                    "default": -1,
+                    "description": "Assign the request to a specific inference slot (-1 = auto).",
+                    "type": "integer"
+                  },
+                  "ignore_eos": {
+                    "default": false,
+                    "description": "Continue generating after EOS token.",
+                    "type": "boolean"
+                  },
+                  "json_schema": {
+                    "description": "JSON schema for grammar‑based sampling.",
+                    "type": "object"
+                  },
+                  "logit_bias": {
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    "default": {},
+                    "description": "Modify the likelihood of a token appearing. Accepts a JSON object mapping token IDs to a bias value from -100 to 100, or `false` to ban a token.",
+                    "type": "object"
+                  },
+                  "lora": {
+                    "description": "LoRA adapters to apply for this request.",
+                    "items": {
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "scale": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "scale"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "max_tokens": {
+                    "description": "Maximum number of tokens to generate.",
+                    "type": "integer"
+                  },
+                  "messages": {
+                    "description": "Array of chat messages that form the prompt.",
+                    "items": {
+                      "$ref": "#/components/schemas/ChatCompletionMessage"
+                    },
+                    "type": "array"
+                  },
+                  "min_keep": {
+                    "default": 0,
+                    "description": "Force samplers to return at least N tokens.",
+                    "type": "integer"
+                  },
+                  "min_p": {
+                    "default": 0.05,
+                    "description": "Minimum probability for a token to be considered relative to the most likely token.",
+                    "type": "number"
+                  },
+                  "mirostat": {
+                    "default": 0,
+                    "description": "Enable Mirostat sampling (0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0).",
+                    "type": "integer"
+                  },
+                  "mirostat_eta": {
+                    "default": 0.1,
+                    "description": "Learning rate for Mirostat.",
+                    "type": "number"
+                  },
+                  "mirostat_tau": {
+                    "default": 5,
+                    "description": "Target entropy for Mirostat.",
+                    "type": "number"
+                  },
+                  "model": {
+                    "description": "The unique identifier of the model to use.",
+                    "type": "string"
+                  },
+                  "multimodal_data": {
+                    "description": "Base64‑encoded multimodal data (images, audio, …). Must match the number of `<__media__>` markers in the prompt.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "n_indent": {
+                    "default": 0,
+                    "description": "Minimum line indentation for generated code.",
+                    "type": "integer"
+                  },
+                  "n_keep": {
+                    "default": 0,
+                    "description": "Tokens from the prompt to retain when context is exceeded. 0 = none, -1 = all.",
+                    "type": "integer"
+                  },
+                  "n_predict": {
+                    "default": -1,
+                    "description": "Maximum number of tokens to predict; -1 = unlimited, 0 = evaluate prompt only.",
+                    "type": "integer"
+                  },
+                  "n_probs": {
+                    "default": 0,
+                    "description": "If > 0, top-N token probabilities are returned.",
+                    "type": "integer"
+                  },
+                  "post_sampling_probs": {
+                    "default": false,
+                    "description": "Return top‑N probabilities *after* sampling.",
+                    "type": "boolean"
+                  },
+                  "presence_penalty": {
+                    "default": 0,
+                    "description": "Presence penalty (0.0 = disabled).",
+                    "type": "number"
+                  },
+                  "repeat_last_n": {
+                    "default": 64,
+                    "description": "How many last tokens to consider for repeat penalty (0 = disabled, -1 = context size).",
+                    "type": "integer"
+                  },
+                  "repeat_penalty": {
+                    "default": 1.1,
+                    "description": "Repetition penalty for token sequences.",
+                    "type": "number"
+                  },
+                  "response_fields": {
+                    "description": "Select which fields to include in the response.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "return_progress": {
+                    "default": false,
+                    "description": "Include prompt‑processing progress when streaming.",
+                    "type": "boolean"
+                  },
+                  "return_tokens": {
+                    "default": false,
+                    "description": "Include raw token IDs in the response.",
+                    "type": "boolean"
+                  },
+                  "samplers": {
+                    "default": [
+                      "dry",
+                      "top_k",
+                      "typ_p",
+                      "top_p",
+                      "min_p",
+                      "xtc",
+                      "temperature"
+                    ],
+                    "description": "Ordered list of samplers to apply.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "seed": {
+                    "default": -1,
+                    "description": "RNG seed; -1 = random.",
+                    "type": "integer"
+                  },
+                  "stop": {
+                    "default": [],
+                    "description": "Stop sequences – generation stops before emitting any of these strings.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "stream": {
+                    "default": false,
+                    "description": "If true, the server streams tokens as they are generated.",
+                    "type": "boolean"
+                  },
+                  "t_max_predict_ms": {
+                    "default": 0,
+                    "description": "Maximum generation time in milliseconds (0 = disabled).",
+                    "type": "integer"
+                  },
+                  "temperature": {
+                    "default": 0.8,
+                    "description": "Adjusts randomness of the output.",
+                    "type": "number"
+                  },
+                  "timings_per_token": {
+                    "default": false,
+                    "description": "Include timing information per token.",
+                    "type": "boolean"
+                  },
+                  "top_k": {
+                    "default": 40,
+                    "description": "Restricts sampling to the K most probable tokens.",
+                    "type": "integer"
+                  },
+                  "top_p": {
+                    "default": 0.95,
+                    "description": "Nucleus sampling cutoff (cumulative probability).",
+                    "type": "number"
+                  },
+                  "typical_p": {
+                    "default": 1.0,
+                    "description": "Enable locally typical sampling with parameter p.",
+                    "type": "number"
+                  },
+                  "xtc_probability": {
+                    "default": 0,
+                    "description": "Probability for token removal via XTC sampler (0.0 = disabled).",
+                    "type": "number"
+                  },
+                  "xtc_threshold": {
+                    "default": 0.1,
+                    "description": "Minimum probability threshold for XTC.",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "model",
+                  "messages"
+                ],
+                "type": "object"
+              },
+              "CreateImageGenerationDto": {
+                "properties": {
+                  "model": {
+                    "description": "Optional id or display name of the loaded image model. A different model returns 503.",
+                    "type": "string"
+                  },
+                  "n": {
+                    "default": 1,
+                    "description": "Number of images to generate in this request.",
+                    "maximum": 4,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "negative_prompt": {
+                    "description": "Optional text describing what to avoid.",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "Text description of the image to generate.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "response_format": {
+                    "default": "b64_json",
+                    "description": "Only base64 JSON responses are supported.",
+                    "enum": [
+                      "b64_json"
+                    ],
+                    "type": "string"
+                  },
+                  "seed": {
+                    "description": "Optional deterministic seed.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "size": {
+                    "default": "auto",
+                    "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT. Each dimension must be 256–2048 and a multiple of 16.",
+                    "example": "1024x1024",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prompt"
+                ],
+                "type": "object"
+              },
+              "CreateMessageDto": {
+                "description": "Request body for `POST /v1/messages`. Follows Anthropic Messages API specification.",
+                "properties": {
+                  "anthropic_version": {
+                    "default": "bedrock-2023-05-31",
+                    "description": "The version of the Anthropic API to use.",
+                    "type": "string"
+                  },
+                  "max_tokens": {
+                    "default": 1024,
+                    "description": "The maximum number of tokens to generate in the completion.",
+                    "type": "integer"
+                  },
+                  "messages": {
+                    "description": "Array of messages that form the conversation.",
+                    "items": {
+                      "$ref": "#/components/schemas/AnthropicMessage"
+                    },
+                    "type": "array"
+                  },
+                  "metadata": {
+                    "description": "Optional metadata to include in the response.",
+                    "properties": {
+                      "tags": {
+                        "description": "Tags to apply to the message.",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "user_id": {
+                        "description": "A unique identifier for the end-user.",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "model": {
+                    "description": "The unique identifier of the Claude model to use (e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229).",
+                    "type": "string"
+                  },
+                  "stop_sequences": {
+                    "default": [],
+                    "description": "Stop sequences – generation stops before emitting any of these strings.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "stream": {
+                    "default": false,
+                    "description": "If true, the server streams tokens as they are generated.",
+                    "type": "boolean"
+                  },
+                  "system": {
+                    "description": "Optional system instructions that guide the model's behavior.",
+                    "type": "string"
+                  },
+                  "temperature": {
+                    "default": 1.0,
+                    "description": "Adjusts randomness of the output (0.0 - 1.0).",
+                    "type": "number"
+                  },
+                  "tool_choice": {
+                    "description": "Controls which tool is called.",
+                    "properties": {
+                      "name": {
+                        "description": "The name of the tool to use.",
+                        "type": "string"
+                      },
+                      "type": {
+                        "description": "How the model chooses which tool to call.",
+                        "enum": [
+                          "auto",
+                          "any",
+                          "tool"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "tools": {
+                    "description": "List of tools the model may call.",
+                    "items": {
+                      "$ref": "#/components/schemas/Tool"
+                    },
+                    "type": "array"
+                  },
+                  "top_k": {
+                    "default": 0,
+                    "description": "Restricts sampling to the K most probable tokens.",
+                    "type": "integer"
+                  },
+                  "top_p": {
+                    "default": 1.0,
+                    "description": "Nucleus sampling cutoff (0.0 - 1.0).",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "model",
+                  "messages"
+                ],
+                "type": "object"
+              },
+              "CreateVideoDto": {
+                "properties": {
+                  "model": {
+                    "description": "Optional id or display name of the loaded video model. A different model returns 503.",
+                    "type": "string"
+                  },
+                  "negative_prompt": {
+                    "description": "Optional text describing what to avoid; refused by models that do not take one.",
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "description": "Text description of the clip to generate.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "seconds": {
+                    "description": "Clip length in seconds, 0 < seconds <= 600. Snapped to the nearest frame count the loaded model accepts (its frame lattice) and clamped to its range; omitted, the model's default length is used.",
+                    "example": "4",
+                    "oneOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "seed": {
+                    "description": "Optional deterministic seed.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "size": {
+                    "default": "auto",
+                    "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT from the model's resolution presets.",
+                    "example": "768x512",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prompt"
+                ],
+                "type": "object"
+              },
+              "DeleteVideoResponseDto": {
+                "properties": {
+                  "deleted": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "object": {
+                    "enum": [
+                      "video"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "object",
+                  "deleted"
+                ],
+                "type": "object"
+              },
+              "ImageApiErrorDetailDto": {
+                "properties": {
+                  "code": {
+                    "example": "model_not_loaded",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "param": {
+                    "example": "size",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "type": {
+                    "example": "invalid_request_error",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message",
+                  "type",
+                  "param",
+                  "code"
+                ],
+                "type": "object"
+              },
+              "ImageApiErrorResponseDto": {
+                "properties": {
+                  "error": {
+                    "$ref": "#/components/schemas/ImageApiErrorDetailDto"
+                  }
+                },
+                "required": [
+                  "error"
+                ],
+                "type": "object"
+              },
+              "ImageGenerationAtomicDto": {
+                "properties": {
+                  "job_id": {
+                    "description": "Atomic Chat diffusion job id.",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "description": "Local paths of the PNGs saved to the Atomic Chat gallery.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "seed": {
+                    "description": "Seed used by the first generated image.",
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "paths"
+                ],
+                "type": "object"
+              },
+              "ImageGenerationDataDto": {
+                "properties": {
+                  "b64_json": {
+                    "description": "Base64-encoded PNG bytes.",
+                    "format": "byte",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "b64_json"
+                ],
+                "type": "object"
+              },
+              "ImageGenerationResponseDto": {
+                "properties": {
+                  "atomic": {
+                    "$ref": "#/components/schemas/ImageGenerationAtomicDto"
+                  },
+                  "created": {
+                    "description": "Unix timestamp in seconds.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/ImageGenerationDataDto"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "created",
+                  "data",
+                  "atomic"
+                ],
+                "type": "object"
+              },
+              "ListModelsResponseDto": {
+                "description": "Response for `GET /v1/models` – a list that always contains a single model entry.",
+                "properties": {
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/ModelDto"
+                    },
+                    "type": "array"
+                  },
+                  "object": {
+                    "enum": [
+                      "list"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "object",
+                  "data"
+                ],
+                "type": "object"
+              },
+              "LogprobContent": {
+                "properties": {
+                  "bytes": {
+                    "description": "The token represented as a list of bytes.",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "description": "The token ID.",
+                    "type": "integer"
+                  },
+                  "logprob": {
+                    "description": "The log probability of this token.",
+                    "type": "number"
+                  },
+                  "prob": {
+                    "description": "The probability of this token (if post_sampling_probs is true).",
+                    "type": "number"
+                  },
+                  "token": {
+                    "description": "The token string.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "MessageResponseDto": {
+                "description": "Response from `POST /v1/messages` following Anthropic Messages API format.",
+                "properties": {
+                  "billing": {
+                    "description": "Optional billing information.",
+                    "type": "object"
+                  },
+                  "cache_control": {
+                    "description": "Optional cache control information.",
+                    "type": "object"
+                  },
+                  "content": {
+                    "description": "Array of content blocks in the response.",
+                    "items": {
+                      "$ref": "#/components/schemas/ContentBlock"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "description": "A unique identifier for the message.",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "The model used for generation.",
+                    "type": "string"
+                  },
+                  "role": {
+                    "description": "The role of the assistant.",
+                    "enum": [
+                      "assistant"
+                    ],
+                    "type": "string"
+                  },
+                  "stop_reason": {
+                    "description": "The reason the generation stopped.",
+                    "type": "string"
+                  },
+                  "stop_sequence": {
+                    "description": "The specific stop sequence that was encountered.",
+                    "type": "string"
+                  },
+                  "type": {
+                    "description": "The type of the response.",
+                    "enum": [
+                      "message"
+                    ],
+                    "type": "string"
+                  },
+                  "usage": {
+                    "$ref": "#/components/schemas/MessageUsage"
+                  }
+                },
+                "required": [
+                  "id",
+                  "type",
+                  "role",
+                  "content",
+                  "stop_reason",
+                  "usage",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "MessageUsage": {
+                "description": "Token usage statistics for the message.",
+                "properties": {
+                  "input_tokens": {
+                    "description": "Number of tokens in the input.",
+                    "type": "integer"
+                  },
+                  "output_tokens": {
+                    "description": "Number of tokens in the output.",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "input_tokens",
+                  "output_tokens"
+                ],
+                "type": "object"
+              },
+              "ModelDto": {
+                "description": "Model metadata as returned by `/v1/models`.",
+                "properties": {
+                  "author": {
+                    "type": "string"
+                  },
+                  "cover": {
+                    "type": "string"
+                  },
+                  "ctx_len": {
+                    "description": "Context length the model was trained with.",
+                    "type": "integer"
+                  },
+                  "description": {
+                    "description": "Long description of the model.",
+                    "type": "string"
+                  },
+                  "engine": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "description": "File format (e.g., gguf).",
+                    "type": "string"
+                  },
+                  "frequency_penalty": {
+                    "description": "Default frequency penalty.",
+                    "type": "number"
+                  },
+                  "id": {
+                    "description": "Unique identifier for the model (normally the file path).",
+                    "type": "string"
+                  },
+                  "max_tokens": {
+                    "description": "Maximum tokens the model can generate.",
+                    "type": "integer"
+                  },
+                  "name": {
+                    "description": "Human‑readable name of the model.",
+                    "type": "string"
+                  },
+                  "object": {
+                    "enum": [
+                      "model"
+                    ],
+                    "type": "string"
+                  },
+                  "presence_penalty": {
+                    "description": "Default presence penalty.",
+                    "type": "number"
+                  },
+                  "prompt_template": {
+                    "description": "Template used to build prompts.",
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "integer"
+                  },
+                  "source_url": {
+                    "description": "URL to the source of the model.",
+                    "type": "string"
+                  },
+                  "stop": {
+                    "description": "Default stop sequences.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "stream": {
+                    "description": "Whether streaming is enabled by default.",
+                    "type": "boolean"
+                  },
+                  "tags": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "temperature": {
+                    "description": "Default temperature for generation.",
+                    "type": "number"
+                  },
+                  "top_p": {
+                    "description": "Default nucleus‑sampling probability.",
+                    "type": "number"
+                  },
+                  "version": {
+                    "default": "1.0",
+                    "description": "Version string of the model.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source_url",
+                  "id",
+                  "object",
+                  "name",
+                  "version",
+                  "description",
+                  "format",
+                  "ctx_len",
+                  "prompt_template",
+                  "temperature",
+                  "top_p",
+                  "stream",
+                  "max_tokens",
+                  "stop",
+                  "frequency_penalty",
+                  "presence_penalty",
+                  "author",
+                  "tags",
+                  "size",
+                  "cover",
+                  "engine"
+                ],
+                "type": "object"
+              },
+              "Tool": {
+                "description": "A tool definition for function calling.",
+                "properties": {
+                  "description": {
+                    "description": "A description of what the tool does.",
+                    "type": "string"
+                  },
+                  "input_schema": {
+                    "description": "JSON schema defining the tool's input parameters.",
+                    "type": "object"
+                  },
+                  "name": {
+                    "description": "The name of the tool.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "input_schema"
+                ],
+                "type": "object"
+              },
+              "ToolUse": {
+                "description": "Information about a tool use request from the model.",
+                "properties": {
+                  "id": {
+                    "description": "A unique identifier for this tool use.",
+                    "type": "string"
+                  },
+                  "input": {
+                    "description": "The arguments for the tool.",
+                    "type": "object"
+                  },
+                  "name": {
+                    "description": "The name of the tool being called.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input"
+                ],
+                "type": "object"
+              },
+              "UsageDto": {
+                "description": "Token usage statistics.",
+                "properties": {
+                  "completion_tokens": {
+                    "type": "integer"
+                  },
+                  "prompt_tokens": {
+                    "type": "integer"
+                  },
+                  "total_tokens": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "prompt_tokens",
+                  "completion_tokens",
+                  "total_tokens"
+                ],
+                "type": "object"
+              },
+              "VideoAtomicDto": {
+                "properties": {
+                  "job_id": {
+                    "description": "Atomic Chat diffusion job id; the same as the video id.",
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "Local path of the WebM saved to the Atomic Chat gallery, once completed.",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "poster_path": {
+                    "description": "Local path of the PNG poster the app rendered for the clip, when it has one.",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "seed": {
+                    "description": "Seed used by the clip, once it is completed.",
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "seed",
+                  "path",
+                  "poster_path"
+                ],
+                "type": "object"
+              },
+              "VideoDto": {
+                "properties": {
+                  "atomic": {
+                    "$ref": "#/components/schemas/VideoAtomicDto"
+                  },
+                  "completed_at": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "created_at": {
+                    "description": "Unix timestamp in seconds.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "error": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/VideoErrorDto"
+                      }
+                    ],
+                    "nullable": true
+                  },
+                  "expires_at": {
+                    "description": "Always null: clips stay in the local gallery until deleted.",
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "Id of the video model the clip was made with.",
+                    "type": "string"
+                  },
+                  "object": {
+                    "enum": [
+                      "video"
+                    ],
+                    "type": "string"
+                  },
+                  "progress": {
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "remixed_from_video_id": {
+                    "description": "Always null: remixing is not supported.",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "seconds": {
+                    "description": "The clip length, frames over the frame rate.",
+                    "example": "2.04",
+                    "type": "string"
+                  },
+                  "size": {
+                    "example": "768x512",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "A cancelled job reports failed with error code cancelled.",
+                    "enum": [
+                      "queued",
+                      "in_progress",
+                      "completed",
+                      "failed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "object",
+                  "model",
+                  "status",
+                  "progress",
+                  "created_at",
+                  "completed_at",
+                  "expires_at",
+                  "seconds",
+                  "size",
+                  "prompt",
+                  "remixed_from_video_id",
+                  "error",
+                  "atomic"
+                ],
+                "type": "object"
+              },
+              "VideoErrorDto": {
+                "properties": {
+                  "code": {
+                    "example": "out_of_memory",
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "VideoListResponseDto": {
+                "properties": {
+                  "data": {
+                    "description": "Running jobs first, then the gallery, newest first.",
+                    "items": {
+                      "$ref": "#/components/schemas/VideoDto"
+                    },
+                    "type": "array"
+                  },
+                  "has_more": {
+                    "type": "boolean"
+                  },
+                  "object": {
+                    "enum": [
+                      "list"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "object",
+                  "data",
+                  "has_more"
+                ],
+                "type": "object"
+              }
+            },
+            "securitySchemes": {
+              "bearerAuth": {
+                "bearerFormat": "API-Key",
+                "description": "API key required for all endpoints.",
+                "scheme": "bearer",
+                "type": "http"
+              }
+            }
+          },
+          "info": {
+            "description": "Atomic Chat API server provides a REST API interface for seamless interaction with large language models (LLMs) for third party apps. Compatible with the OpenAI API spec, it enables straightforward API access of models available in Atomic Chat.",
+            "title": "Atomic Chat API Server Endpoints",
+            "version": "1.0"
+          },
+          "openapi": "3.0.0",
+          "paths": {
+            "/chat/completions": {
+              "post": {
+                "description": "Generates a completion for the supplied prompt. Streaming mode is supported. All extra options described in the documentation are optional and follow the OpenAI‑compatible naming.",
+                "operationId": "createChatCompletion",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "example": {
+                        "messages": [
+                          {
+                            "content": "Hello!",
+                            "role": "user"
+                          }
+                        ],
+                        "model": "janhq/Jan-v3-4b-base-instruct-Q4_K_XL"
+                      },
+                      "schema": {
+                        "$ref": "#/components/schemas/CreateChatCompletionDto"
+                      }
+                    }
+                  },
+                  "required": true
+                },
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/ChatCompletionResponseDto"
+                        }
+                      }
+                    },
+                    "description": "Completion result"
+                  }
+                },
+                "summary": "Create chat completion",
+                "tags": [
+                  "Inference"
+                ]
+              }
+            },
+            "/images/generations": {
+              "post": {
+                "description": "Generates PNG images with the image model already loaded in Atomic Chat. The Local API Server and an image model must both be running. Images are returned as base64 and are also saved to the local gallery; URL responses and automatic model loading are not supported.",
+                "operationId": "createImageGeneration",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "example": {
+                        "n": 1,
+                        "prompt": "A paper boat on a moonlit lake",
+                        "response_format": "b64_json",
+                        "size": "1024x1024"
+                      },
+                      "schema": {
+                        "$ref": "#/components/schemas/CreateImageGenerationDto"
+                      }
+                    }
+                  },
+                  "required": true
+                },
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/ImageGenerationResponseDto"
+                        }
+                      }
+                    },
+                    "description": "Generated PNG images encoded as base64, with Atomic Chat job and gallery metadata"
+                  },
+                  "400": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  },
+                  "429": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "500": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "503": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  },
+                  "504": {
+                    "$ref": "#/components/responses/ImageApiError"
+                  }
+                },
+                "summary": "Generate local images",
+                "tags": [
+                  "Images"
+                ]
+              }
+            },
+            "/messages": {
+              "post": {
+                "description": "Generates a response based on input messages. Streaming mode is supported. This endpoint follows the Anthropic Messages API specification and is compatible with Claude models.",
+                "operationId": "createMessage",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "example": {
+                        "messages": [
+                          {
+                            "content": "Hello!",
+                            "role": "user"
+                          }
+                        ],
+                        "model": "janhq/Jan-v3-4b-base-instruct-Q4_K_XL"
+                      },
+                      "schema": {
+                        "$ref": "#/components/schemas/CreateMessageDto"
+                      }
+                    }
+                  },
+                  "required": true
+                },
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/MessageResponseDto"
+                        }
+                      }
+                    },
+                    "description": "Message creation result"
+                  }
+                },
+                "summary": "Create a message",
+                "tags": [
+                  "Inference"
+                ]
+              }
+            },
+            "/models": {
+              "get": {
+                "description": "Returns information about the loaded model(s). The list always contains a single element describing the current model. See the OpenAI *Models* API documentation for details.",
+                "operationId": "listModels",
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/ListModelsResponseDto"
+                        }
+                      }
+                    },
+                    "description": "A list containing a single model object"
+                  }
+                },
+                "summary": "List loaded models",
+                "tags": [
+                  "Models"
+                ]
+              }
+            },
+            "/videos": {
+              "get": {
+                "description": "Lists running video jobs and the clips in the local gallery, newest first.",
+                "operationId": "listVideos",
+                "parameters": [
+                  {
+                    "in": "query",
+                    "name": "limit",
+                    "required": false,
+                    "schema": {
+                      "default": 20,
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  {
+                    "description": "The id of the last video of the previous page.",
+                    "in": "query",
+                    "name": "after",
+                    "required": false,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/VideoListResponseDto"
+                        }
+                      }
+                    },
+                    "description": "A page of video objects"
+                  },
+                  "400": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  }
+                },
+                "summary": "List local videos",
+                "tags": [
+                  "Videos"
+                ]
+              },
+              "post": {
+                "description": "Starts a video job with the video model already loaded in Atomic Chat and returns the queued video object at once. The Local API Server and a video model must both be running; poll GET /videos/{video_id} until the status is completed, then fetch the WebM from /videos/{video_id}/content. Clips are also saved to the local gallery. Image-to-video and automatic model loading are not supported.",
+                "operationId": "createVideo",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "example": {
+                        "prompt": "A paper boat drifting across a moonlit lake",
+                        "seconds": "2",
+                        "size": "768x512"
+                      },
+                      "schema": {
+                        "$ref": "#/components/schemas/CreateVideoDto"
+                      }
+                    }
+                  },
+                  "required": true
+                },
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/VideoDto"
+                        }
+                      }
+                    },
+                    "description": "The queued video object"
+                  },
+                  "400": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  },
+                  "429": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  },
+                  "500": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  },
+                  "503": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  }
+                },
+                "summary": "Generate a local video",
+                "tags": [
+                  "Videos"
+                ]
+              }
+            },
+            "/videos/{video_id}": {
+              "delete": {
+                "description": "Cancels a running job, or removes a finished clip (its recipe and poster included) from the local gallery.",
+                "operationId": "deleteVideo",
+                "parameters": [
+                  {
+                    "in": "path",
+                    "name": "video_id",
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/DeleteVideoResponseDto"
+                        }
+                      }
+                    },
+                    "description": "The deletion receipt"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  },
+                  "404": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  }
+                },
+                "summary": "Delete a local video",
+                "tags": [
+                  "Videos"
+                ]
+              },
+              "get": {
+                "description": "The video object of a running job or of a clip in the local gallery.",
+                "operationId": "retrieveVideo",
+                "parameters": [
+                  {
+                    "in": "path",
+                    "name": "video_id",
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "$ref": "#/components/schemas/VideoDto"
+                        }
+                      }
+                    },
+                    "description": "The video object"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  },
+                  "404": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  }
+                },
+                "summary": "Retrieve a local video",
+                "tags": [
+                  "Videos"
+                ]
+              }
+            },
+            "/videos/{video_id}/content": {
+              "get": {
+                "description": "Streams the WebM of a completed clip. A clip still being made answers 404.",
+                "operationId": "downloadVideoContent",
+                "parameters": [
+                  {
+                    "in": "path",
+                    "name": "video_id",
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "description": "thumbnail streams the PNG poster the app rendered, when the clip has one.",
+                    "in": "query",
+                    "name": "variant",
+                    "required": false,
+                    "schema": {
+                      "default": "video",
+                      "enum": [
+                        "video",
+                        "thumbnail"
+                      ],
+                      "type": "string"
+                    }
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "content": {
+                      "image/png": {
+                        "schema": {
+                          "format": "binary",
+                          "type": "string"
+                        }
+                      },
+                      "video/webm": {
+                        "schema": {
+                          "format": "binary",
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "description": "The clip"
+                  },
+                  "401": {
+                    "description": "The Local API Server key is missing or invalid"
+                  },
+                  "403": {
+                    "description": "The request Host is not allowed by Trusted Hosts"
+                  },
+                  "404": {
+                    "$ref": "#/components/responses/VideoApiError"
+                  }
+                },
+                "summary": "Download a local video",
+                "tags": [
+                  "Videos"
+                ]
+              }
+            }
+          },
+          "security": [
+            {
+              "bearerAuth": []
+            }
+          ],
+          "servers": [
+            {
+              "description": "Atomic Chat API server",
+              "url": "http://127.0.0.1:<proxy_port>/v1"
+            }
+          ],
+          "tags": [
+            {
+              "description": "Endpoints for model discovery and management",
+              "name": "Models"
+            },
+            {
+              "description": "Endpoint for generating completions (chat or text) from a model",
+              "name": "Inference"
+            },
+            {
+              "description": "OpenAI-compatible local image generation using the image model already loaded in Atomic Chat",
+              "name": "Images"
+            },
+            {
+              "description": "OpenAI Videos-shaped local video generation using the video model already loaded in Atomic Chat",
+              "name": "Videos"
+            }
+          ]
+        }
+      },
+      "headers": {
+        "content-type": "application/json"
+      },
+      "status": 200
+    },
+    "upstream_calls": []
+  },
+  "input": {
+    "request": {
+      "body": null,
+      "headers": [],
+      "method": "GET",
+      "path": "/openapi.json"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": []
+  },
+  "name": "openapi_servers_rewritten",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "0a2dd95dd15ab81f3a45ec2489f934d64580b372",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

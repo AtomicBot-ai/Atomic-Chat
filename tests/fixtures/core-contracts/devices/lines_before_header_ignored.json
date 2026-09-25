@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 2,
+        "id": "CUDA0",
+        "mem": 2,
+        "name": "Real"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "CUDA9: Ghost (1 MiB, 1 MiB free)\nAvailable devices:\nCUDA0: Real (2 MiB, 2 MiB free)\n"
+  },
+  "name": "lines_before_header_ignored",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

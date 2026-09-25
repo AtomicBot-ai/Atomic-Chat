@@ -1,0 +1,24 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".config/zed/settings.json": "{\n  \"agent\": {\n    \"default_model\": {\n      \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n      \"provider\": \"Atomic Chat\"\n    },\n    \"version\": \"2\"\n  },\n  \"language_models\": {\n    \"ollama\": {\n      \"api_url\": \"http://localhost:11434\"\n    },\n    \"openai_compatible\": {\n      \"Atomic Chat\": {\n        \"api_url\": \"http://127.0.0.1:1337/v1\",\n        \"available_models\": [\n          {\n            \"capabilities\": {\n              \"images\": true,\n              \"parallel_tool_calls\": false,\n              \"prompt_cache_key\": false,\n              \"tools\": true\n            },\n            \"display_name\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n            \"max_output_tokens\": 8192,\n            \"max_tokens\": 32768,\n            \"name\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n          }\n        ]\n      },\n      \"Groq\": {\n        \"api_url\": \"https://api.groq.com/openai/v1\",\n        \"available_models\": []\n      }\n    }\n  },\n  \"theme\": \"One Dark\"\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "zed",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".config/zed/settings.json": "{\n  // Zed settings\n  \"theme\": \"One Dark\",\n  \"language_models\": {\n    \"ollama\": { \"api_url\": \"http://localhost:11434\" },\n    \"openai_compatible\": {\n      \"Groq\": { \"api_url\": \"https://api.groq.com/openai/v1\", \"available_models\": [] }\n    }\n  },\n  \"agent\": { \"version\": \"2\", \"default_model\": { \"provider\": \"ollama\", \"model\": \"llama3.2\" } }\n}\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "zed__existing_settings_preserved",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

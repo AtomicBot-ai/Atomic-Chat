@@ -11,6 +11,7 @@ import { generateLocalApiKey } from '@/lib/localApiKey'
 import {
   REMOTE_ACCESS_TONE,
   buildRemoteApiUrl,
+  isCoreFailure,
   isRemoteAccessActionAllowed,
   parseRemoteAccessRejection,
   remoteAccessAction,
@@ -20,7 +21,10 @@ import {
 } from '@/lib/remoteLan'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import type { ServiceHub } from '@/services'
-import type { RemoteAccessStatus } from '@/types/remoteAccess'
+import type {
+  RemoteAccessState,
+  RemoteAccessStatus,
+} from '@/types/remoteAccess'
 
 export type LocalApiServerControl = ReturnType<typeof useLocalApiServerControl>
 
@@ -33,7 +37,13 @@ export type RemoteAccessTrigger = 'manual' | 'auto' | 'restore'
 type RemoteAccessStore = {
   /** `null` until the first status arrives. */
   status: RemoteAccessStatus | null
-  /** The status command is missing or broken: older backend, no tunnel. */
+  /**
+   * The status read was answered with something that is not a status
+   * (`malformed_status`): a contract break, reported rather than guessed
+   * around. The relay's `{code, message}` rejections — the core down, not
+   * answering, or refusing the request — never set this; see
+   * `refreshRemoteAccessStatus`.
+   */
   unavailable: boolean
   /** A start/stop command is in flight. */
   busy: 'start' | 'stop' | null
@@ -61,9 +71,9 @@ const INITIAL = {
 } satisfies Partial<RemoteAccessStore>
 
 /**
- * The tunnel as the app last heard of it. In memory on purpose: Rust owns the
- * process, and the URL is new on every start, so nothing here may outlive the
- * session.
+ * The tunnel as the app last heard of it. In memory on purpose: the core owns
+ * the process, and the URL is new on every start, so nothing here may outlive
+ * the session.
  */
 export const useRemoteAccessStore = create<RemoteAccessStore>()((set, get) => ({
   ...INITIAL,
@@ -110,7 +120,24 @@ export const useRemoteAccessStore = create<RemoteAccessStore>()((set, get) => ({
   reset: () => set(INITIAL),
 }))
 
-/** Re-reads the tunnel status. Never throws: a failure is a state of the card. */
+/** The states that claim a tunnel process, up or on its way up or down. */
+const LIVE_TUNNEL_STATES: ReadonlySet<RemoteAccessState> = new Set([
+  'starting',
+  'online',
+  'stopping',
+])
+
+/**
+ * Re-reads the tunnel status. Never throws: a failure is a state of the card.
+ *
+ * The read crosses into the core, and a rejection shaped like the relay's
+ * `{code, message}` is that call failing this time — the core restarting, not
+ * answering, not starting, or refusing the request — not the feature missing.
+ * It keeps the last status (or none, before the first) while that can still
+ * be true, and the next read, snapshot or server transition catches up. Any
+ * other rejection — in practice `malformed_status`, a reply that is not a
+ * status — marks the card unavailable.
+ */
 export async function refreshRemoteAccessStatus(hub: ServiceHub): Promise<void> {
   const requestedAt = useRemoteAccessStore.getState().revision
   try {
@@ -118,18 +145,33 @@ export async function refreshRemoteAccessStatus(hub: ServiceHub): Promise<void> 
     useRemoteAccessStore.getState().applyStatus(status, 'fetch', requestedAt)
   } catch (error) {
     console.warn('Remote access status unavailable:', error)
-    // An event that arrived meanwhile proves the backend is there.
-    if (useRemoteAccessStore.getState().revision === requestedAt) {
+    const { status, revision } = useRemoteAccessStore.getState()
+    // An event that arrived meanwhile is newer than anything this failure
+    // could say, and proves the core is there.
+    if (revision !== requestedAt) return
+    if (!isCoreFailure(error)) {
       useRemoteAccessStore.setState({ unavailable: true })
+      return
+    }
+    // The core drops the tunnel with the server, so once the server is known
+    // to be gone a kept live state is a dead URL and a Stop that cannot work.
+    // `null` shows Off with nothing offered until a read gets through again.
+    if (
+      status !== null &&
+      LIVE_TUNNEL_STATES.has(status.state) &&
+      useAppState.getState().serverStatus !== 'running'
+    ) {
+      useRemoteAccessStore.setState({ status: null, startedAt: null })
     }
   }
 }
 
 /**
- * Asks Rust for a tunnel. Resolves `true` once one is on its way — including
- * when it already was, since the button, the auto-start and the restore after
- * a server restart can all land here for the same server start and the tunnel
- * must be started once. The outcome itself arrives on the status event.
+ * Asks the core for a tunnel. Resolves `true` once one is on its way —
+ * including when it already was, since the button, the auto-start and the
+ * restore after a server restart can all land here for the same server start
+ * and the tunnel must be started once. The outcome itself arrives on the
+ * status event.
  */
 export async function startRemoteAccess(
   hub: ServiceHub,
@@ -179,7 +221,10 @@ export async function startRemoteAccess(
   }
 }
 
-/** Stops the tunnel. Rust may need ~10 s when the process has to be killed. */
+/**
+ * Stops the tunnel. The core may need ~10 s when the process has to be
+ * killed.
+ */
 export async function stopRemoteAccess(hub: ServiceHub): Promise<boolean> {
   const store = useRemoteAccessStore
   const { busy, revision } = store.getState()
@@ -235,7 +280,7 @@ export async function startLocalApiServerAndSettle(
  * Restarts the Local API Server so it picks up a new host or key: `start` is a
  * no-op while the proxy is up, so every such change goes stop → start.
  *
- * Rust drops the tunnel together with the server. With auto-start on,
+ * The core drops the tunnel together with the server. With auto-start on,
  * `useRemoteAccessSync` brings it back when the server returns; otherwise this
  * does, so applying a key does not silently take remote access offline.
  * Resolves whether the server came back.

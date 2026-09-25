@@ -1,0 +1,32 @@
+{
+  "cases": [
+    "three_known_line_shapes",
+    "no_available_devices_header",
+    "empty_section",
+    "empty_output",
+    "mixed_valid_and_invalid_lines",
+    "header_with_surrounding_whitespace",
+    "header_case_sensitive",
+    "lines_before_header_ignored",
+    "name_with_nested_parentheses",
+    "last_memory_pattern_wins",
+    "unit_mb_rejected",
+    "missing_comma_rejected",
+    "used_instead_of_free_rejected",
+    "missing_second_number_rejected",
+    "no_colon_rejected",
+    "zero_memory_accepted",
+    "colon_inside_name",
+    "free_larger_than_total_kept_verbatim",
+    "extra_spaces_inside_pattern",
+    "multiple_gpus_order_preserved",
+    "crlf_line_endings",
+    "second_header_does_not_reset"
+  ],
+  "comparator": "devices-exact",
+  "note": "input.stdout is the raw `llama-server --list-devices` stdout. expected is either {devices:[{id,name,mem,free}]} (ordered, MiB as i32) or {error:{code,message,details?}} (serialised ServerError, e.g. DEVICE_LIST_PARSE_FAILED with the full output in details). Compare exactly.",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs"
+  }
+}

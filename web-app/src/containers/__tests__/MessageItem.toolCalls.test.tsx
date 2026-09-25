@@ -162,9 +162,10 @@ describe('MessageItem tool calls', () => {
     const path = '/Users/atomic/Desktop/report.pdf'
     const href = `https://atomic.local/open-file?path=${encodeURIComponent(path)}`
     const openPath = vi.fn().mockResolvedValue(undefined)
+    const open = vi.fn().mockResolvedValue(undefined)
     seedServiceHub({
       opener: {
-        open: vi.fn().mockResolvedValue(undefined),
+        open,
         openPath,
         revealItemInDir: vi.fn().mockResolvedValue(undefined),
       },
@@ -184,8 +185,24 @@ describe('MessageItem tool calls', () => {
         'ready'
       )
 
-      await userEvent.click(screen.getByRole('link', { name: 'report.pdf' }))
+      // Still the local-file link, not an ordinary external one.
+      const link = screen.getByRole('link', { name: 'report.pdf' })
+      expect(link).toHaveAttribute('href', href)
+      expect(link).not.toHaveAttribute('target')
+
+      let followed: boolean | undefined
+      window.addEventListener(
+        'click',
+        (event) => {
+          followed = !event.defaultPrevented
+        },
+        { once: true }
+      )
+      await userEvent.click(link)
       expect(openPath).not.toHaveBeenCalled()
+      expect(open).not.toHaveBeenCalled()
+      // The browser is not sent to the pseudo URL either.
+      expect(followed).toBe(false)
     } finally {
       ;(
         window as unknown as Record<string, unknown>

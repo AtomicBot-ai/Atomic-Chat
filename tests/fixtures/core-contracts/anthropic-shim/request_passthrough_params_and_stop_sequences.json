@@ -1,0 +1,43 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "frequency_penalty": 0.1,
+      "messages": [],
+      "model": "m",
+      "presence_penalty": 0.3,
+      "stop": [
+        "END"
+      ],
+      "stream": false,
+      "temperature": 0.2,
+      "top_k": 40,
+      "top_p": 0.9
+    }
+  },
+  "input": {
+    "body": {
+      "frequency_penalty": 0.1,
+      "max_tokens": 1024,
+      "messages": [],
+      "metadata": {
+        "user_id": "u"
+      },
+      "model": "m",
+      "presence_penalty": 0.3,
+      "stop_sequences": [
+        "END"
+      ],
+      "temperature": 0.2,
+      "top_k": 40,
+      "top_p": 0.9
+    },
+    "kind": "request"
+  },
+  "name": "request_passthrough_params_and_stop_sequences",
+  "placeholders": [],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

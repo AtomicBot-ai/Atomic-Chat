@@ -78,6 +78,12 @@ function fire(event: VoiceEvent) {
   emit.handler?.(event)
 }
 
+/** Options of the last `startSession` call — the payload sent to the native side. */
+function sessionOptions() {
+  const call = startSession.mock.lastCall as unknown[] | undefined
+  return call?.[0] as Record<string, unknown> | undefined
+}
+
 describe('useVoiceInput', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -118,6 +124,16 @@ describe('useVoiceInput', () => {
     expect(startSession).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'lang:en' })
     )
+    // The directive rides in `prompt` only: a `language` field would make
+    // llama.cpp append prose the model can echo back as the transcript.
+    expect(sessionOptions()).toEqual({
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      apiKey: 'k',
+      model: 'voxtral',
+      prompt: 'lang:en',
+      deviceId: null,
+    })
+    expect(useVoiceInput.getState().phase).toBe('listening')
   })
 
   it('falls back to the app language when the hint is auto', async () => {
@@ -129,6 +145,15 @@ describe('useVoiceInput', () => {
     expect(startSession).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'lang:de' })
     )
+    // The region suffix is dropped and no separate `language` field is sent.
+    expect(sessionOptions()).toEqual({
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      apiKey: 'k',
+      model: 'voxtral',
+      prompt: 'lang:de',
+      deviceId: null,
+    })
+    expect(useVoiceInput.getState().phase).toBe('listening')
   })
 
   it('opens the setup dialog on the model step when the model is absent', async () => {

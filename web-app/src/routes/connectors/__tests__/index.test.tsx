@@ -238,8 +238,22 @@ describe('ConnectorsPage', () => {
     )
 
     await waitFor(() => expect(mcpOauthLogin).toHaveBeenCalled())
+    // The card drops its in-progress state and offers sign-in again.
+    await waitFor(() => {
+      expect(
+        within(linearCard as HTMLElement).queryByRole('button', {
+          name: 'mcp-connectors:oauth.cancel',
+        })
+      ).not.toBeInTheDocument()
+      expect(
+        within(linearCard as HTMLElement).getByRole('button', {
+          name: 'mcp-connectors:oauth.signIn',
+        })
+      ).toBeEnabled()
+    })
     expect(toastError).not.toHaveBeenCalled()
     expect(activateMCPServer).not.toHaveBeenCalled()
+    expect(useMCPServers.getState().mcpServers.linear).toBeUndefined()
   })
 
   it('installs a keyless connector in one click', async () => {

@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MULTIMODAL_PROJECTOR_LOAD_FAILED",
+    "details": "clip_init: unknown projector type: gemma4a\n",
+    "message": "This model's multimodal projector isn't supported by the current llama.cpp backend. Vision/audio is unavailable for this model on this backend."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "clip_init: unknown projector type: gemma4a\n",
+    "stdout": ""
+  },
+  "name": "projector_unknown_type",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chars": 2,
+    "has_non_text_parts": true,
+    "message_count": 1,
+    "text": "hi"
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "hi",
+              "type": "text"
+            },
+            {
+              "content": "r",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ]
+    },
+    "kind": "prompt_preview"
+  },
+  "name": "preview_anthropic_blocks",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

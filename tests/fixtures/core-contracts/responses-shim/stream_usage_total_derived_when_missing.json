@@ -1,0 +1,189 @@
+{
+  "comparator": "sse-sequence",
+  "expected": [
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [],
+          "parallel_tool_calls": true,
+          "status": "in_progress",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 0,
+        "type": "response.created"
+      },
+      "event": "response.created"
+    },
+    {
+      "data": {
+        "item": {
+          "content": [],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "in_progress",
+          "type": "message"
+        },
+        "output_index": 0,
+        "sequence_number": 1,
+        "type": "response.output_item.added"
+      },
+      "event": "response.output_item.added"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "item_id": "<msg_id_0>",
+        "output_index": 0,
+        "part": {
+          "annotations": [],
+          "text": "",
+          "type": "output_text"
+        },
+        "sequence_number": 2,
+        "type": "response.content_part.added"
+      },
+      "event": "response.content_part.added"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "delta": "a",
+        "item_id": "<msg_id_0>",
+        "output_index": 0,
+        "sequence_number": 3,
+        "type": "response.output_text.delta"
+      },
+      "event": "response.output_text.delta"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "item_id": "<msg_id_0>",
+        "output_index": 0,
+        "sequence_number": 4,
+        "text": "a",
+        "type": "response.output_text.done"
+      },
+      "event": "response.output_text.done"
+    },
+    {
+      "data": {
+        "content_index": 0,
+        "item_id": "<msg_id_0>",
+        "output_index": 0,
+        "part": {
+          "annotations": [],
+          "text": "a",
+          "type": "output_text"
+        },
+        "sequence_number": 5,
+        "type": "response.content_part.done"
+      },
+      "event": "response.content_part.done"
+    },
+    {
+      "data": {
+        "item": {
+          "content": [
+            {
+              "annotations": [],
+              "text": "a",
+              "type": "output_text"
+            }
+          ],
+          "id": "<msg_id_0>",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        },
+        "output_index": 0,
+        "sequence_number": 6,
+        "type": "response.output_item.done"
+      },
+      "event": "response.output_item.done"
+    },
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [
+            {
+              "content": [
+                {
+                  "annotations": [],
+                  "text": "a",
+                  "type": "output_text"
+                }
+              ],
+              "id": "<msg_id_0>",
+              "role": "assistant",
+              "status": "completed",
+              "type": "message"
+            }
+          ],
+          "parallel_tool_calls": true,
+          "status": "completed",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": {
+            "input_tokens": 10,
+            "input_tokens_details": {
+              "cached_tokens": 0
+            },
+            "output_tokens": 20,
+            "output_tokens_details": {
+              "reasoning_tokens": 0
+            },
+            "total_tokens": 30
+          }
+        },
+        "sequence_number": 7,
+        "type": "response.completed"
+      },
+      "event": "response.completed"
+    }
+  ],
+  "input": {
+    "chunks": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "content": "a"
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "completion_tokens": 20,
+          "prompt_tokens": 10
+        }
+      }
+    ],
+    "kind": "stream",
+    "model": "fixture-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "stream_usage_total_derived_when_missing",
+  "placeholders": [
+    "<msg_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

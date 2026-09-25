@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 0,
+        "id": "CPU0",
+        "mem": 0,
+        "name": "Host"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "Available devices:\nCPU0: Host (0 MiB, 0 MiB free)\n"
+  },
+  "name": "zero_memory_accepted",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "comparator": "state-file-schema",
+  "expected": {
+    "api_url": "http://127.0.0.1:1337/v1",
+    "base_url": "http://127.0.0.1:1337",
+    "placeholders": [],
+    "state": {
+      "host": "127.0.0.1",
+      "pid": 0,
+      "port": 1337,
+      "prefix": "/v1",
+      "requires_api_key": false,
+      "running": false
+    }
+  },
+  "input": {
+    "file": "{ not json",
+    "op": "read"
+  },
+  "name": "read_malformed_json_defaults",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

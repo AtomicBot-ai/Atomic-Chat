@@ -1,0 +1,24 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".codex/config.toml": "# >>> Atomic Chat (managed) >>>\nmodel = \"AtomicChat/Qwen3.5-9B-GGUF\"\nmodel_provider = \"atomic\"\n# <<< Atomic Chat (managed) <<<\n\n\n\nsandbox_mode = \"workspace-write\"\n# >>> Atomic Chat (managed) >>>\n[model_providers.atomic]\nname = \"Atomic Chat\"\nbase_url = \"http://127.0.0.1:1337/v1\"\nenv_key = \"ATOMIC_CHAT_API_KEY\"\n# <<< Atomic Chat (managed) <<<\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "codex",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".codex/config.toml": "# >>> Atomic Chat (managed) >>>\nmodel = \"stale\"\nmodel_provider = \"atomic\"\n# <<< Atomic Chat (managed) <<<\n\nsandbox_mode = \"workspace-write\"\n\n# >>> Atomic Chat (managed) >>>\n[model_providers.atomic]\nname = \"Atomic Chat\"\nbase_url = \"http://127.0.0.1:9999/v1\"\n# <<< Atomic Chat (managed) <<<\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "codex__existing_managed_block_replaced",
+  "source": {
+    "commit": "ccf542733",
+    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+  }
+}

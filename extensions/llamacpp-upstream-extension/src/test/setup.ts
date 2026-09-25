@@ -45,6 +45,8 @@ vi.mock('@tauri-apps/api/core', () => ({
   Channel: vi.fn(),
 }))
 
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(vi.fn()) }))
+
 vi.mock('@tauri-apps/plugin-log', () => ({
   info: vi.fn().mockResolvedValue(undefined),
   warn: vi.fn().mockResolvedValue(undefined),

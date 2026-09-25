@@ -260,7 +260,13 @@ describe('abandoned onboarding', () => {
 
   it('stays quiet when onboarding finished', () => {
     markOnboardingInFlight('model', Date.now())
+    expect(
+      localStorage.getItem(localStorageKey.onboardingInFlight)
+    ).not.toBeNull()
     captureOnboardingCompleted({ exitPath: 'imported' })
+    // Completing the run is what removes the record the next launch reads.
+    expect(lastCall()[0]).toBe('onboarding_completed')
+    expect(localStorage.getItem(localStorageKey.onboardingInFlight)).toBeNull()
     vi.mocked(posthog.capture).mockClear()
 
     reportAbandonedOnboarding()
@@ -446,6 +452,11 @@ describe('restart intent', () => {
   it('reports it once, not on every subsequent launch', () => {
     markBackendRestartIntent(intent)
     reportBackendRestartIntent()
+    // The first launch did report, and consumed the record doing so.
+    expect(lastCall()[0]).toBe('backend_step_resolved')
+    expect(
+      localStorage.getItem(localStorageKey.backendStepRestartIntent)
+    ).toBeNull()
     vi.mocked(posthog.capture).mockClear()
 
     reportBackendRestartIntent()
@@ -457,7 +468,13 @@ describe('restart intent', () => {
     // The IPC threw, so the component reports the resolve itself and this
     // record must not duplicate it next launch.
     markBackendRestartIntent(intent)
+    expect(
+      localStorage.getItem(localStorageKey.backendStepRestartIntent)
+    ).not.toBeNull()
     clearBackendRestartIntent()
+    expect(
+      localStorage.getItem(localStorageKey.backendStepRestartIntent)
+    ).toBeNull()
 
     reportBackendRestartIntent()
 

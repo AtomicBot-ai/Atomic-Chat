@@ -1,0 +1,20 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chars": null,
+    "has_non_text_parts": false,
+    "message_count": null,
+    "text": null
+  },
+  "input": {
+    "body": {
+      "model": "x"
+    },
+    "kind": "prompt_preview"
+  },
+  "name": "preview_no_messages",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

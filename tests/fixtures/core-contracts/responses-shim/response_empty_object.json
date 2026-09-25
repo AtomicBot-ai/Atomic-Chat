@@ -1,0 +1,29 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "created_at": 0,
+      "id": "resp_fixture",
+      "model": "fallback-model",
+      "object": "response",
+      "output": [],
+      "parallel_tool_calls": true,
+      "status": "completed",
+      "tool_choice": "auto",
+      "tools": [],
+      "usage": null
+    }
+  },
+  "input": {
+    "chat": {},
+    "kind": "response",
+    "model_fallback": "fallback-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "response_empty_object",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::core::state::{AppState, ProviderConfig};
 
@@ -22,10 +22,28 @@ pub struct RegisterProviderRequest {
 
 /// Register a remote provider configuration
 #[tauri::command]
-pub async fn register_provider_config(
+pub async fn register_provider_config<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     request: RegisterProviderRequest,
 ) -> Result<(), String> {
+    // On desktop the core serves the public API, so its registry is the one that routes; the app
+    // keeps its own copy to hand the core again after a restart. Mobile has no core: the app's
+    // proxy routes from this copy alone.
+    #[cfg(desktop)]
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    // Recovery reads provider_configs under this gate. Keep it until the local copy has caught up
+    // with the core write, otherwise a new generation can recover from the old copy.
+    #[cfg(desktop)]
+    let _gate = match owner.as_ref() {
+        Some(owner) => Some(owner.owner_gate().await),
+        None => None,
+    };
+    #[cfg(desktop)]
+    crate::core::atomic_core::cloud::mirror_provider(&app, &request).await?;
+    #[cfg(mobile)]
+    let _ = &app;
+
     let provider_configs = state.provider_configs.clone();
     let mut configs = provider_configs.lock().await;
 
@@ -52,10 +70,23 @@ pub async fn register_provider_config(
 
 /// Unregister a provider configuration
 #[tauri::command]
-pub async fn unregister_provider_config(
+pub async fn unregister_provider_config<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     provider: String,
 ) -> Result<(), String> {
+    #[cfg(desktop)]
+    let owner = app.try_state::<crate::core::atomic_core::commands::AtomicCoreClient>();
+    #[cfg(desktop)]
+    let _gate = match owner.as_ref() {
+        Some(owner) => Some(owner.owner_gate().await),
+        None => None,
+    };
+    #[cfg(desktop)]
+    crate::core::atomic_core::cloud::unmirror_provider(&app, &provider).await?;
+    #[cfg(mobile)]
+    let _ = &app;
+
     let provider_configs = state.provider_configs.clone();
     let mut configs = provider_configs.lock().await;
 
@@ -65,27 +96,4 @@ pub async fn unregister_provider_config(
     } else {
         Ok(())
     }
-}
-
-/// Get provider configuration by name
-#[tauri::command]
-pub async fn get_provider_config(
-    state: State<'_, AppState>,
-    provider: String,
-) -> Result<Option<ProviderConfig>, String> {
-    let provider_configs = state.provider_configs.clone();
-    let configs = provider_configs.lock().await;
-
-    Ok(configs.get(&provider).cloned())
-}
-
-/// List all registered provider configurations (without sensitive keys)
-#[tauri::command]
-pub async fn list_provider_configs(
-    state: State<'_, AppState>,
-) -> Result<Vec<ProviderConfig>, String> {
-    let provider_configs = state.provider_configs.clone();
-    let configs = provider_configs.lock().await;
-
-    Ok(configs.values().cloned().collect())
 }

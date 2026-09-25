@@ -1,0 +1,46 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "kept",
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "encrypted_content": "zzz",
+          "summary": [],
+          "type": "reasoning"
+        },
+        {
+          "id": "ws_1",
+          "type": "web_search_call"
+        },
+        {
+          "id": "msg_1",
+          "type": "item_reference"
+        },
+        {
+          "content": "kept",
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_reasoning_and_unknown_items_dropped",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

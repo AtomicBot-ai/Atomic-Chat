@@ -13,8 +13,6 @@
 //! from the model id and substitutes its own key and headers.
 
 use tauri::{AppHandle, Manager, Runtime, State};
-use tauri_plugin_llamacpp::state::LlamacppState;
-use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 
 use crate::core::state::{AppState, LocalServerEndpoint};
 
@@ -60,30 +58,27 @@ pub async fn resolve_agent_target<R: Runtime>(
     state: &AppState,
     request: &AgentTurnRequest,
 ) -> Result<AgentTarget, String> {
-    let llama_state: State<LlamacppState> = app_handle.state();
-    let upstream_state: State<LlamacppUpstreamState> = app_handle.state();
+    // One resolver for every provider: the same call answers whether the session belongs to a
+    // plugin the app drives or to a core that owns the runtime.
+    let resolver = crate::core::sessions::resolver_for(app_handle, state);
 
     match request.provider.as_deref() {
         // A caller that predates the `provider` field gets exactly the old
         // behaviour: scan both llama.cpp plugin states.
-        None => find_session_by_model_id(&request.model_id, &llama_state, &upstream_state)
+        None => find_session_by_model_id(&request.model_id, &resolver)
             .await
             .map(AgentTarget::Llama)
             .map_err(|error| error.to_string()),
-        Some("llamacpp") => find_session_by_model_and_backend(
-            &request.model_id,
-            LlamaBackend::Llamacpp,
-            &llama_state,
-            &upstream_state,
-        )
-        .await
-        .map(AgentTarget::Llama)
-        .map_err(|error| error.to_string()),
+        Some("llamacpp") => {
+            find_session_by_model_and_backend(&request.model_id, LlamaBackend::Llamacpp, &resolver)
+                .await
+                .map(AgentTarget::Llama)
+                .map_err(|error| error.to_string())
+        }
         Some("llamacpp-upstream") => find_session_by_model_and_backend(
             &request.model_id,
             LlamaBackend::LlamacppUpstream,
-            &llama_state,
-            &upstream_state,
+            &resolver,
         )
         .await
         .map(AgentTarget::Llama)
@@ -101,20 +96,19 @@ pub async fn resolve_agent_target<R: Runtime>(
     }
 }
 
-#[cfg(feature = "mlx")]
+/// An MLX session as the agent talks to it. Resolved through the core's mirror like every other
+/// local session: the MLX plugin no longer runs models, so its own table is always empty.
 pub(crate) async fn resolve_mlx_target<R: Runtime>(
     app_handle: &AppHandle<R>,
     request: &AgentTurnRequest,
 ) -> Result<OpenAiTarget, String> {
-    use super::llm_client::model_ids_match;
-    use tauri_plugin_mlx::state::MlxState;
-
-    let mlx_state: State<MlxState> = app_handle.state();
-    let sessions = mlx_state.mlx_server_process.lock().await;
-    let info = sessions
-        .values()
-        .map(|session| &session.info)
-        .find(|info| model_ids_match(&info.model_id, &request.model_id) && !info.is_embedding)
+    let state: State<AppState> = app_handle.state();
+    let resolver = crate::core::sessions::resolver_for(app_handle, &state);
+    let info = resolver
+        .list_in(crate::core::sessions::resolver::PROVIDER_MLX)
+        .await
+        .into_iter()
+        .find(|info| super::llm_client::model_ids_match(&info.model_id, &request.model_id) && !info.is_embedding)
         .ok_or_else(|| format!("no active session for model '{}'", request.model_id))?;
 
     Ok(OpenAiTarget {
@@ -128,14 +122,6 @@ pub(crate) async fn resolve_mlx_target<R: Runtime>(
         // an array-root schema.
         json_schema: true,
     })
-}
-
-#[cfg(not(feature = "mlx"))]
-pub(crate) async fn resolve_mlx_target<R: Runtime>(
-    _app_handle: &AppHandle<R>,
-    _request: &AgentTurnRequest,
-) -> Result<OpenAiTarget, String> {
-    Err(AGENT_PROVIDER_UNSUPPORTED.to_string())
 }
 
 /// Pure so it can be tested without a Tauri runtime.

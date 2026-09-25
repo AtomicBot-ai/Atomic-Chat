@@ -35,9 +35,13 @@ describe('ensureEmbeddingsReady', () => {
     const embed = vi.fn().mockResolvedValue({ data: [] })
     installEngine(embed)
 
-    await ensureEmbeddingsReady()
-    await ensureEmbeddingsReady()
+    const first = ensureEmbeddingsReady()
+    await first
+    const second = ensureEmbeddingsReady()
+    await expect(second).resolves.toBeUndefined()
 
+    // Memoized: a later send gets the settled warm-up, not a new attempt.
+    expect(second).toBe(first)
     expect(embed).toHaveBeenCalledTimes(1)
     expect(embed).toHaveBeenCalledWith(['warmup'])
   })
@@ -55,8 +59,13 @@ describe('ensureEmbeddingsReady', () => {
     const first = ensureEmbeddingsReady()
     const second = ensureEmbeddingsReady()
     release?.()
-    await Promise.all([first, second])
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      undefined,
+      undefined,
+    ])
 
+    // Both sends wait on the very same warm-up.
+    expect(second).toBe(first)
     expect(embed).toHaveBeenCalledTimes(1)
   })
 

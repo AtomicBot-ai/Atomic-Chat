@@ -104,10 +104,10 @@ import {
   isDownloadCancellationError,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
-//* Формат прогресса общий с панелью закачек (ATO-462), чтобы не разъезжался
+//* Progress format is shared with the downloads panel (ATO-462) so the two don't drift apart
 import { formatProgressPair } from '@/lib/downloadFormat'
 
-//* Размер найденной на диске модели (байты → "4.50 GB" / "850 MB")
+//* Size of a model found on disk (bytes → "4.50 GB" / "850 MB")
 export function formatDetectedSize(bytes?: number): string | null {
   if (!bytes || bytes <= 0) return null
   const gb = bytes / 1024 ** 3
@@ -115,7 +115,7 @@ export function formatDetectedSize(bytes?: number): string | null {
   return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`
 }
 
-//* Числовой размер в ГБ из строки каталога ("4.5 GB" / "850 MB") для аналитики.
+//* Numeric size in GB from a catalog string ("4.5 GB" / "850 MB") for analytics.
 export function sizeStringToGb(size?: string): number | undefined {
   if (!size) return undefined
 
@@ -129,7 +129,7 @@ export function sizeStringToGb(size?: string): number | undefined {
   return Math.round(gb * 100) / 100
 }
 
-//* Иконка бренда по id репозитория HF (см. modelFamilyLogoSrc)
+//* Brand icon by HF repository id (see modelFamilyLogoSrc)
 const recommendedSetupModelIconSrc = modelFamilyLogoSrc
 
 // Auto-start picks the smallest runnable candidate: it loads fastest, so the
@@ -421,9 +421,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [llamaProvider]
   )
 
-  //* MLX: id в реестре провайдера. ВАЖНО: MLX-движок использует свой sanitizer
-  //* (сохраняет точки, пробелы → '-'), отличный от @/lib/utils.sanitizeModelId
-  //* (который бы схлопнул '.' → '_'). Дублируем логику MlxModelDownloadAction.
+  //* MLX: id in the provider registry. IMPORTANT: the MLX engine uses its own sanitizer
+  //* (keeps dots, spaces → '-'), different from @/lib/utils.sanitizeModelId
+  //* (which would collapse '.' → '_'). Duplicates the MlxModelDownloadAction logic.
   const getMlxModelId = useCallback((catalog: CatalogModel) => {
     const raw = catalog.model_name.split('/').pop() ?? catalog.model_name
     return raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
@@ -442,8 +442,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [mlxProvider, getMlxModelId]
   )
 
-  //* Уже установленные рекомендованные модели переезжают в секцию «На вашем
-  //* устройстве» с живой кнопкой запуска; остальные остаются в рекомендациях.
+  //* Recommended models that are already installed move to the "On your
+  //* device" section with a live launch button; the rest stay in recommendations.
   const { installedRecommended, pendingRecommended } = useMemo(() => {
     const installed: Array<{
       rec: (typeof recommendedItems)[number]['rec']
@@ -623,8 +623,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // the offer at 0, the picks after it. Clicks report the same index.
   const pickPositionOffset = heroRecommendation ? 1 : 0
 
-  //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
-  //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
+  //* P0 onboarding analytics: record the model-picker screen view once,
+  //* after the recommendations list has resolved (otherwise recommended_count = 0).
   const setupShownFiredRef = useRef(false)
   // State, not only the ref: the impressions effect below has to run once the
   // screen has been reported, whatever its own inputs did in that render.
@@ -740,7 +740,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ]
   )
 
-  //* MLX-скачивание (полная репликация логики MlxModelDownloadAction)
+  //* MLX download (full replication of the MlxModelDownloadAction logic)
   const startMlxDownload = useCallback(
     async (catalog: CatalogModel) => {
       const mlxId = getMlxModelId(catalog)
@@ -899,7 +899,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       )
     }
 
-    //* MLX не всегда шлёт AppEvent.onModelImported — слушаем прямое событие загрузки
+    //* MLX doesn't always emit AppEvent.onModelImported — listen to the download event directly
     const onMlxDownloadSuccess = (state: { modelId: string }) => {
       const tracked = trackedImportIdsRef.current.get(state.modelId)
       if (tracked?.provider !== 'mlx') return
@@ -1344,17 +1344,17 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     const isMlx = !!model?.is_mlx
     const variant =
       model && !isMlx ? pickPreferredVariant(model, rec.quant) : null
-    //* Тот же проектор, что уйдёт в загрузку, — иначе строка покажет размер
-    //* одного файла, а скачается другой.
+    //* The same projector that will be downloaded — otherwise the row would show the size
+    //* of one file while a different one gets downloaded.
     const mmproj =
       model && !isMlx ? pickMmprojModel(model, rec.mmprojQuant) : undefined
-    //* MLX: суммируем все safetensors-шарды; GGUF: quant + mmproj
+    //* MLX: sum all safetensors shards; GGUF: quant + mmproj
     const downloadSize = isMlx
       ? getMlxTotalFileSize(model!)
       : model && variant
         ? getTotalDownloadFileSize(model, variant, mmproj)
         : variant?.file_size
-    //* id, по которому опрашиваем downloadStore (GGUF → quant.id, MLX → mlxId)
+    //* id used to poll downloadStore (GGUF → quant.id, MLX → mlxId)
     const rowTrackId = isMlx
       ? model
         ? getMlxModelId(model)
@@ -1453,9 +1453,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
     const disabled = !model || (!isMlx && !variant) || rowDownloaded
 
-    //* Метка «влезет ли» у каждой строки: тот же размер, что показан рядом с
-    //* именем, против бюджета памяти этой машины. Нет размера или профиля —
-    //* нет метки: «не знаем» не рисуем как предупреждение.
+    //* The "will it fit" mark on every row: the same size shown next to the
+    //* name, against this machine's memory budget. No size or no profile —
+    //* no mark: "we don't know" is not drawn as a warning.
     const rowSizeBytes = parseFileSizeToBytes(downloadSize ?? undefined)
     const rowFitLevel = fitLevel(judgeMemoryFit(rowSizeBytes, hardwareProfile))
     const rowFitCopy = rowFitLevel

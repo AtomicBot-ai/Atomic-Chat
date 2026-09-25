@@ -11,6 +11,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   LAN_ACCESS_TONE,
   buildLanAccessUrls,
+  isCoreFailure,
   lanAccessMessage,
   lanAccessState,
 } from '@/lib/remoteLan'
@@ -56,6 +57,9 @@ export function useLanAccess({
         next = await serviceHub.app().getLanAddresses()
       } catch (error) {
         console.warn('LAN addresses unavailable:', error)
+        // A core that did not answer this time says nothing about the
+        // network: keep what is shown rather than claim there is no address.
+        if (isCoreFailure(error)) return
         next = []
       }
       if (!cancelled) setAddresses(next)

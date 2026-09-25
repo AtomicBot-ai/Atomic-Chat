@@ -1,0 +1,64 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "created_at": 0,
+      "id": "resp_fixture",
+      "model": "m",
+      "object": "response",
+      "output": [
+        {
+          "arguments": "",
+          "call_id": "",
+          "id": "<fc_id_0>",
+          "name": "",
+          "status": "completed",
+          "type": "function_call"
+        },
+        {
+          "arguments": "",
+          "call_id": "call_1",
+          "id": "<fc_id_1>",
+          "name": "",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "status": "completed",
+      "tool_choice": "auto",
+      "tools": [],
+      "usage": null
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "message": {
+            "content": null,
+            "tool_calls": [
+              {},
+              {
+                "id": "call_1"
+              }
+            ]
+          }
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "response",
+    "model_fallback": "fallback-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "response_tool_call_missing_fields_default_empty",
+  "placeholders": [
+    "<fc_id_0>",
+    "<fc_id_1>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

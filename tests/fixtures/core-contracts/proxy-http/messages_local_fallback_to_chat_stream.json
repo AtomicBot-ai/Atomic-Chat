@@ -1,0 +1,176 @@
+{
+  "comparator": "http-exchange",
+  "expected": {
+    "response": {
+      "body": {
+        "sse": [
+          {
+            "data": {
+              "message": {
+                "content": [],
+                "id": "c",
+                "model": "local.model-7b",
+                "role": "assistant",
+                "stop_reason": null,
+                "stop_sequence": null,
+                "type": "message",
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              },
+              "type": "message_start"
+            },
+            "event": "message_start"
+          },
+          {
+            "data": {
+              "content_block": {
+                "text": "",
+                "type": "text"
+              },
+              "index": 0,
+              "type": "content_block_start"
+            },
+            "event": "content_block_start"
+          },
+          {
+            "data": {
+              "delta": {
+                "text": "hi",
+                "type": "text_delta"
+              },
+              "index": 0,
+              "type": "content_block_delta"
+            },
+            "event": "content_block_delta"
+          },
+          {
+            "data": {
+              "index": 0,
+              "type": "content_block_stop"
+            },
+            "event": "content_block_stop"
+          },
+          {
+            "data": {
+              "delta": {
+                "stop_reason": "end_turn",
+                "stop_sequence": null
+              },
+              "type": "message_delta",
+              "usage": {
+                "output_tokens": 1
+              }
+            },
+            "event": "message_delta"
+          },
+          {
+            "data": {
+              "type": "message_stop"
+            },
+            "event": "message_stop"
+          }
+        ]
+      },
+      "headers": {
+        "access-control-allow-headers": "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+        "content-type": "text/event-stream",
+        "vary": "Origin",
+        "x-upstream-trace": "stub"
+      },
+      "status": 200
+    },
+    "upstream_calls": [
+      {
+        "body": {
+          "max_tokens": 16,
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b",
+          "stream": true
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/messages"
+      },
+      {
+        "body": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "model": "local.model-7b",
+          "stream": true
+        },
+        "headers": {
+          "authorization": "Bearer session-key",
+          "content-type": "application/json"
+        },
+        "method": "POST",
+        "path": "/v1/chat/completions"
+      }
+    ]
+  },
+  "input": {
+    "request": {
+      "body": "{\"max_tokens\":16,\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}],\"model\":\"local.model-7b\",\"stream\":true}",
+      "headers": [],
+      "method": "POST",
+      "path": "/v1/messages"
+    },
+    "setup": {
+      "api_key": "",
+      "ctx_responder": null,
+      "prefix": "/v1",
+      "remote_provider": true,
+      "sessions": "loaded",
+      "trusted_hosts": []
+    },
+    "upstream": [
+      {
+        "path": "/v1/messages",
+        "replies": [
+          {
+            "body": "not found",
+            "content_type": "text/plain",
+            "status": 404
+          }
+        ]
+      },
+      {
+        "path": "/v1/chat/completions",
+        "replies": [
+          {
+            "body": "data: {\"choices\":[{\"delta\":{\"content\":\"hi\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"c\",\"model\":\"local.model-7b\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"c\",\"model\":\"local.model-7b\",\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n",
+            "content_type": "text/event-stream",
+            "status": 200
+          }
+        ]
+      }
+    ]
+  },
+  "name": "messages_local_fallback_to_chat_stream",
+  "placeholders": [
+    "<upstream_port>",
+    "<session_port>",
+    "<proxy_port>",
+    "<resp_id>",
+    "<msg_id>",
+    "<fc_id>"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

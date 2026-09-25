@@ -12,7 +12,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useRemoteAccessStore } from '@/hooks/useRemoteAccess'
+import {
+  refreshRemoteAccessStatus,
+  useRemoteAccessStore,
+} from '@/hooks/useRemoteAccess'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { seedServiceHub } from '@/test/service-hub'
 import type { RemoteAccessStatus } from '@/types/remoteAccess'
 
@@ -106,6 +110,12 @@ const ONLINE: RemoteAccessStatus = {
 }
 
 const KEY = 'sk-atomic-0123456789abcdefghijklmnopqrstuv'
+
+/** What the relay rejects with when the core did not answer. */
+const CORE_UNREACHABLE = {
+  code: 'CORE_UNREACHABLE',
+  message: 'The Atomic Chat core did not answer.',
+}
 
 const app = {
   getRemoteAccessStatus: vi.fn(),
@@ -215,9 +225,9 @@ describe('Settings → Remote & LAN', () => {
   })
 
   it('reports a backend without the tunnel instead of offering a dead button', async () => {
-    app.getRemoteAccessStatus.mockRejectedValue(
-      'Command get_remote_access_status not found'
-    )
+    // What `services/app/tauri.ts` rejects with for a reply that is not a
+    // status.
+    app.getRemoteAccessStatus.mockRejectedValue(new Error('malformed_status'))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     render(<RemoteLanPage />)
@@ -230,6 +240,30 @@ describe('Settings → Remote & LAN', () => {
       'settings:remoteLan.state.unavailable'
     )
     expect(button(remote, 'settings:remoteLan.start')).toBeDisabled()
+    warn.mockRestore()
+  })
+
+  it('does not blame the build for a core that is down', async () => {
+    app.getRemoteAccessStatus.mockRejectedValue(CORE_UNREACHABLE)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    render(<RemoteLanPage />)
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'Remote access status unavailable:',
+        CORE_UNREACHABLE
+      )
+    )
+    const remote = remoteCard()
+    expect(
+      within(remote).queryByText('settings:remoteLan.remote.unavailable')
+    ).not.toBeInTheDocument()
+    // Nothing is known yet, so nothing is offered, and nothing is claimed.
+    expect(within(remote).getByRole('status')).toHaveTextContent(
+      'settings:remoteLan.state.off'
+    )
+    expect(tunnel().unavailable).toBe(false)
     warn.mockRestore()
   })
 
@@ -446,6 +480,37 @@ describe('Settings → Remote & LAN', () => {
       )
       expect(button(remoteCard(), 'settings:remoteLan.start')).toBeEnabled()
     })
+
+    it('shows the code of a start the core did not answer, and stays usable', async () => {
+      useAppState.setState({ serverStatus: 'running' })
+      useLocalApiServer.setState({ apiKey: KEY })
+      await renderPage({ ...OFF, serverHasApiKey: true })
+      // The core went away: the start and the re-read after it both fail.
+      app.startRemoteAccess.mockRejectedValue(CORE_UNREACHABLE)
+      app.getRemoteAccessStatus.mockRejectedValue(CORE_UNREACHABLE)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+
+      const line = await within(remoteCard()).findByRole('alert')
+      expect(line).toHaveTextContent('settings:remoteLan.remote.error.unknown')
+      expect(tunnel().lastError).toEqual({
+        kind: 'failed',
+        code: 'core_unreachable',
+      })
+      expect(within(remoteCard()).getByRole('status')).toHaveTextContent(
+        'settings:remoteLan.state.off'
+      )
+      expect(button(remoteCard(), 'settings:remoteLan.start')).toBeEnabled()
+      expect(eventsNamed('remote_access_start')).toEqual([
+        {
+          trigger_source: 'manual',
+          start_result: 'failed',
+          failure_code: 'core_unreachable',
+        },
+      ])
+      warn.mockRestore()
+    })
   })
 
   describe('while remote access is online', () => {
@@ -553,12 +618,39 @@ describe('Settings → Remote & LAN', () => {
       ).not.toBeInTheDocument()
     })
 
+    it('stops offering a dead URL once the core went down with the server', async () => {
+      await renderPage({ ...ONLINE, serverHasApiKey: true })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      // The core crashed and will not be started again: the server is gone,
+      // and the re-read `useRemoteAccessSync` asks for is refused.
+      app.getRemoteAccessStatus.mockRejectedValue({
+        code: 'CORE_START_FAILED',
+        message: 'The Atomic Chat core keeps stopping.',
+      })
+      act(() => useAppState.getState().setServerStatus('stopped'))
+      await act(() => refreshRemoteAccessStatus(getServiceHub()))
+
+      const remote = remoteCard()
+      expect(within(remote).getByRole('status')).toHaveTextContent(
+        'settings:remoteLan.state.off'
+      )
+      expect(
+        screen.queryByText('https://quiet-river.trycloudflare.com/v1')
+      ).not.toBeInTheDocument()
+      expect(button(remote, 'settings:remoteLan.start')).toBeDisabled()
+      expect(
+        within(remote).queryByText('settings:remoteLan.remote.unavailable')
+      ).not.toBeInTheDocument()
+      warn.mockRestore()
+    })
+
     it('offers the restart that applies a key, and brings the tunnel back after it', async () => {
       // The server was started without a key; one was saved since.
       await renderPage(ONLINE)
       control.stop.mockImplementation(async () => {
         useAppState.getState().setServerStatus('stopped')
-        // Rust drops the tunnel together with the server.
+        // The core drops the tunnel together with the server.
         tunnel().applyStatus(SERVER_STOPPED, 'event')
       })
       app.getRemoteAccessStatus.mockResolvedValue({
@@ -849,6 +941,62 @@ describe('Settings → Remote & LAN', () => {
         'settings:remoteLan.state.online'
       )
       expect(within(lanCard()).queryByRole('group')).not.toBeInTheDocument()
+    })
+
+    it('keeps the addresses it has when the core does not answer a re-read', async () => {
+      useAppState.setState({ serverStatus: 'running' })
+      useLocalApiServer.setState({ apiKey: KEY, serverHost: '0.0.0.0' })
+      await renderPage({ ...OFF, serverHasApiKey: true })
+      expect(
+        await within(lanCard()).findByText('http://192.168.1.20:1337/v1')
+      ).toBeInTheDocument()
+      const reads = app.getLanAddresses.mock.calls.length
+      app.getLanAddresses.mockRejectedValue(CORE_UNREACHABLE)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      act(() => {
+        window.dispatchEvent(new Event('focus'))
+      })
+      await waitFor(() =>
+        expect(app.getLanAddresses.mock.calls.length).toBeGreaterThan(reads)
+      )
+      await act(async () => {})
+
+      expect(
+        within(lanCard()).getByText('http://192.168.1.20:1337/v1')
+      ).toBeInTheDocument()
+      expect(
+        within(lanCard()).queryByText(
+          'settings:remoteLan.lan.block.noAddresses'
+        )
+      ).not.toBeInTheDocument()
+      warn.mockRestore()
+    })
+
+    it('does not claim there is no address when the first lookup got no answer', async () => {
+      useAppState.setState({ serverStatus: 'running' })
+      useLocalApiServer.setState({ apiKey: KEY, serverHost: '0.0.0.0' })
+      app.getLanAddresses.mockRejectedValue(CORE_UNREACHABLE)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await renderPage({ ...OFF, serverHasApiKey: true })
+      await waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(
+          'LAN addresses unavailable:',
+          CORE_UNREACHABLE
+        )
+      )
+      await act(async () => {})
+
+      expect(within(lanCard()).getByRole('status')).toHaveTextContent(
+        'settings:remoteLan.state.online'
+      )
+      expect(
+        within(lanCard()).queryByText(
+          'settings:remoteLan.lan.block.noAddresses'
+        )
+      ).not.toBeInTheDocument()
+      warn.mockRestore()
     })
 
     it('warns in amber, without a dialog, when LAN access is up with no key', async () => {

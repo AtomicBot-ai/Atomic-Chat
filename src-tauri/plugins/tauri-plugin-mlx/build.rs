@@ -1,15 +1,4 @@
-const COMMANDS: &[&str] = &[
-    "cleanup_mlx_processes",
-    "load_mlx_model",
-    "cancel_mlx_model_load",
-    "unload_mlx_model",
-    "is_mlx_process_running",
-    "get_mlx_random_port",
-    "find_mlx_session_by_model",
-    "get_mlx_loaded_models",
-    "get_mlx_all_sessions",
-    "get_mlx_server_version",
-];
+const COMMANDS: &[&str] = &["get_mlx_server_version"];
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS).build();

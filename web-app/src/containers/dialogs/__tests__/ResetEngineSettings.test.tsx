@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -44,6 +44,18 @@ describe('ResetEngineSettings', () => {
       })
     )
     expect(onReset).not.toHaveBeenCalled()
+    // The confirmation closes and the page is back where it was: the reset
+    // button is still there to press.
+    await waitFor(() =>
+      expect(
+        screen.queryByText('providers:resetEngineSettings.confirmTitle')
+      ).not.toBeInTheDocument()
+    )
+    expect(
+      screen.getByRole('button', {
+        name: 'providers:resetEngineSettings.reset',
+      })
+    ).toBeEnabled()
   })
 
   it('cannot be opened while nothing is off its default', () => {

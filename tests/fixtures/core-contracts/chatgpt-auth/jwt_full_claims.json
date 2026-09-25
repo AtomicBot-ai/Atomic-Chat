@@ -1,0 +1,19 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "claims": {
+      "account_id": "acct_1",
+      "email": "user@example.test",
+      "plan_type": "plus"
+    }
+  },
+  "input": {
+    "kind": "decode_jwt_claims",
+    "token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJlbWFpbCI6InVzZXJAZXhhbXBsZS50ZXN0IiwiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjp7ImNoYXRncHRfYWNjb3VudF9pZCI6ImFjY3RfMSIsImNoYXRncHRfcGxhbl90eXBlIjoicGx1cyJ9fQ.sig"
+  },
+  "name": "jwt_full_claims",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/chatgpt.rs"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "comparator": "sse-sequence",
+  "error": null,
+  "expected": [
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "stop",
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    }
+  ],
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "delta": "{}",
+        "item_id": "fc_1",
+        "type": "response.function_call_arguments.delta"
+      },
+      {
+        "response": {},
+        "type": "response.completed"
+      }
+    ],
+    "kind": "stream",
+    "model": "gpt-5.4"
+  },
+  "name": "stream_args_delta_before_any_call_ignored",
+  "placeholders": [
+    "<chatcmpl_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

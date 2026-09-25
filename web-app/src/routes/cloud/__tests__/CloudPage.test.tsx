@@ -299,7 +299,9 @@ describe('CloudPage', () => {
       ...providers.filter((p) => p.provider !== 'openai'),
       { ...openai, api_key: 'sk-live' },
     ])
-    render(<CloudPage />)
+    const { rerender } = render(<CloudPage />)
+    // It opens on the connected key, not on a provider still to set up.
+    expect(screen.getByText('cloud:connection.disconnect')).toBeInTheDocument()
 
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({
@@ -308,6 +310,20 @@ describe('CloudPage', () => {
         replace: true,
       })
     )
+
+    // Follow the router to the pinned URL, then take the key away: the page
+    // stays on OpenAI, now offering to connect it, instead of jumping to
+    // whichever provider comes first once nothing is connected.
+    searchState.current = navigate.mock.calls[0][0].search
+    mockStore(providers)
+    rerender(<CloudPage />)
+    expect(
+      screen.getByText('cloud:connection.notConnected')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByDisplayValue('https://api.openai.com/v1')
+    ).toBeInTheDocument()
+    expect(screen.getByText('providers:models')).toBeInTheDocument()
   })
 
   it('opens on OpenRouter when nothing is connected and the URL names none', () => {

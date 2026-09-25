@@ -88,7 +88,7 @@ orchestrator plan (1 request)
         ▼
 asyncio.gather of N agents ──► httpx.AsyncClient ──► :1337/v1/chat/completions
                                                              │
-                           ┌────────── proxy.rs ─────────────┘
+                           ┌──── atomic-chat-core ───────────┘
                            ▼
                      llama-server (--parallel N --cont-batching --metrics)
                            ▲
@@ -107,11 +107,10 @@ HTML gallery (scripts/concurrent-demo/website_build/index.html)
   demo runs as a single process that renders in whatever terminal you
   invoke it from.
 - No direct `localhost:8080` connection — all traffic goes through
-  Atomic-Chat's proxy (`/v1/chat/completions`) so the app owns the
-  `llama-server` lifecycle.
-- Prometheus metrics come from `/v1/metrics?model=<id>`, which the proxy
-  forwards to the correct `llama-server` session (see
-  `src-tauri/src/core/server/proxy.rs`).
+  Atomic-Chat's public API (`/v1/chat/completions`), served by
+  `atomic-chat-core`, which owns the `llama-server` lifecycle.
+- Prometheus metrics come from `/v1/metrics?model=<id>`, which the core
+  forwards to the correct `llama-server` session.
 
 ## Troubleshooting
 

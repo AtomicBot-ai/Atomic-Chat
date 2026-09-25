@@ -295,78 +295,6 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the cancel_mlx_model_load command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-cancel-mlx-model-load",
-          "markdownDescription": "Enables the cancel_mlx_model_load command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the cancel_mlx_model_load command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-cancel-mlx-model-load",
-          "markdownDescription": "Denies the cancel_mlx_model_load command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the cleanup_mlx_processes command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-cleanup-mlx-processes",
-          "markdownDescription": "Enables the cleanup_mlx_processes command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the cleanup_mlx_processes command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-cleanup-mlx-processes",
-          "markdownDescription": "Denies the cleanup_mlx_processes command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the find_mlx_session_by_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-find-mlx-session-by-model",
-          "markdownDescription": "Enables the find_mlx_session_by_model command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the find_mlx_session_by_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-find-mlx-session-by-model",
-          "markdownDescription": "Denies the find_mlx_session_by_model command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the get_mlx_all_sessions command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-mlx-all-sessions",
-          "markdownDescription": "Enables the get_mlx_all_sessions command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the get_mlx_all_sessions command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-mlx-all-sessions",
-          "markdownDescription": "Denies the get_mlx_all_sessions command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the get_mlx_loaded_models command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-mlx-loaded-models",
-          "markdownDescription": "Enables the get_mlx_loaded_models command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the get_mlx_loaded_models command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-mlx-loaded-models",
-          "markdownDescription": "Denies the get_mlx_loaded_models command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the get_mlx_random_port command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-mlx-random-port",
-          "markdownDescription": "Enables the get_mlx_random_port command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the get_mlx_random_port command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-mlx-random-port",
-          "markdownDescription": "Denies the get_mlx_random_port command without any pre-configured scope."
-        },
-        {
           "description": "Enables the get_mlx_server_version command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-mlx-server-version",
@@ -379,46 +307,10 @@
           "markdownDescription": "Denies the get_mlx_server_version command without any pre-configured scope."
         },
         {
-          "description": "Enables the is_mlx_process_running command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-is-mlx-process-running",
-          "markdownDescription": "Enables the is_mlx_process_running command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the is_mlx_process_running command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-is-mlx-process-running",
-          "markdownDescription": "Denies the is_mlx_process_running command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the load_mlx_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-load-mlx-model",
-          "markdownDescription": "Enables the load_mlx_model command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the load_mlx_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-load-mlx-model",
-          "markdownDescription": "Denies the load_mlx_model command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the unload_mlx_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-unload-mlx-model",
-          "markdownDescription": "Enables the unload_mlx_model command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the unload_mlx_model command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-unload-mlx-model",
-          "markdownDescription": "Denies the unload_mlx_model command without any pre-configured scope."
-        },
-        {
-          "description": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-cleanup-mlx-processes`\n- `allow-load-mlx-model`\n- `allow-cancel-mlx-model-load`\n- `allow-unload-mlx-model`\n- `allow-is-mlx-process-running`\n- `allow-get-mlx-random-port`\n- `allow-find-mlx-session-by-model`\n- `allow-get-mlx-loaded-models`\n- `allow-get-mlx-all-sessions`\n- `allow-get-mlx-server-version`",
+          "description": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-get-mlx-server-version`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-cleanup-mlx-processes`\n- `allow-load-mlx-model`\n- `allow-cancel-mlx-model-load`\n- `allow-unload-mlx-model`\n- `allow-is-mlx-process-running`\n- `allow-get-mlx-random-port`\n- `allow-find-mlx-session-by-model`\n- `allow-get-mlx-loaded-models`\n- `allow-get-mlx-all-sessions`\n- `allow-get-mlx-server-version`"
+          "markdownDescription": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-get-mlx-server-version`"
         }
       ]
     }

@@ -120,6 +120,12 @@ describe('saveProviderApiKey', () => {
       'openai',
       expect.objectContaining({ active: true, api_key: 'sk-test' })
     )
+    // The stored provider is enabled and carries the key in both places.
+    const [name, patch] = updateProvider.mock.calls[0]
+    expect(name).toBe('openai')
+    expect(patch.active).toBe(true)
+    expect(patch.api_key).toBe('sk-test')
+    expect(patch.settings[0].controller_props.value).toBe('sk-test')
   })
 
   it('still persists when the extension settings write rejects', () => {

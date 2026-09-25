@@ -1,0 +1,47 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chars": 12,
+    "has_non_text_parts": true,
+    "message_count": 1,
+    "text": "what\nis\nthis"
+  },
+  "input": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "what",
+              "type": "text"
+            },
+            {
+              "image_url": {
+                "url": "x"
+              },
+              "type": "image_url"
+            },
+            {
+              "text": "is",
+              "type": "input_text"
+            },
+            {
+              "text": "this",
+              "type": "output_text"
+            },
+            {
+              "text": "untyped"
+            }
+          ],
+          "role": "user"
+        }
+      ]
+    },
+    "kind": "prompt_preview"
+  },
+  "name": "preview_parts_join_and_flag_images",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

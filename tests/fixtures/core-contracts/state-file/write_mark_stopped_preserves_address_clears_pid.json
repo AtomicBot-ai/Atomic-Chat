@@ -1,0 +1,24 @@
+{
+  "comparator": "state-file-schema",
+  "expected": {
+    "file": {
+      "host": "0.0.0.0",
+      "pid": 0,
+      "port": 8080,
+      "prefix": "/api",
+      "requires_api_key": true,
+      "running": false
+    },
+    "placeholders": [],
+    "text": "{\n  \"running\": false,\n  \"host\": \"0.0.0.0\",\n  \"port\": 8080,\n  \"prefix\": \"/api\",\n  \"requires_api_key\": true,\n  \"pid\": 0\n}"
+  },
+  "input": {
+    "existing_file": "{\n  \"running\": true,\n  \"host\": \"0.0.0.0\",\n  \"port\": 8080,\n  \"prefix\": \"/api\",\n  \"requires_api_key\": true,\n  \"pid\": 4242\n}",
+    "op": "mark_stopped"
+  },
+  "name": "write_mark_stopped_preserves_address_clears_pid",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/state_file.rs"
+  }
+}

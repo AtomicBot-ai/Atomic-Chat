@@ -1,0 +1,24 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "tokens": {
+      "access_token": "a",
+      "account_id": null,
+      "email": null,
+      "expires_at": 10,
+      "id_token": null,
+      "plan_type": null,
+      "refresh_token": "r",
+      "version": 1
+    }
+  },
+  "input": {
+    "file": "{\"version\":1,\"access_token\":\"a\",\"refresh_token\":\"r\",\"expires_at\":10,\"future\":{\"x\":1}}",
+    "kind": "load"
+  },
+  "name": "store_load_unknown_fields_ignored",
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/auth/store.rs"
+  }
+}

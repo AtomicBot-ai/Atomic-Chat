@@ -8,7 +8,7 @@ import type { DiffusionCatalog } from './diffusion-catalog-registry'
 
 export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
   "schema_version": 1,
-  "updated_at": "2026-09-20T23:02:27Z",
+  "updated_at": "2026-09-23T12:00:00Z",
   "families": [
     {
       "id": "z-image",
@@ -630,7 +630,7 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       "name": "Krea 2 Turbo",
       "developer": "Krea",
       "modality": "image",
-      "description": "Distilled 12B text-to-image model tuned for high-quality generation in 8 steps. KREA 2 COMMUNITY LICENSE: commercial use is limited to organizations under USD $1M annual revenue; larger organizations require an Enterprise License. Use is subject to Krea's Acceptable Use Policy.",
+      "description": "Fast 12B text-to-image model distilled for 8-step generation. Q3_K_M is the low-memory option, Q4_K_M is recommended, and Q5_K_S is the high-quality option. GATED COMMUNITY LICENSE: commercial use is subject to the Krea 2 Community License, including its revenue threshold and acceptable-use requirements; it is not unrestricted. Official model: https://huggingface.co/krea/Krea-2-Turbo. License: https://cdn.jsdelivr.net/gh/krea-ai/krea-2@db3984fbc6e13b34c0064990fc2d95ac64d00058/assets/hf_samples/LICENSE.pdf.",
       "license": "krea-2-community-license",
       "gated": true,
       "engines": [
@@ -868,6 +868,255 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
           "create",
           "reference",
           "edit"
+        ]
+      }
+    },
+    {
+      "id": "ltx-2",
+      "name": "LTX-2.3 Distilled",
+      "developer": "Lightricks",
+      "modality": "video",
+      "description": "Text-to-video with synchronised audio: the 22B LTX-2.3 distilled checkpoint, 8 steps at guidance 1 on its fixed sigma schedule, 24 fps, clips of 8k+1 frames up to about 10 s. Needs the Gemma-3 12B text encoder (7.4 GB) beside the transformer; about 26 GB of files at Q4_K_M. GGUF packaging by Unsloth.",
+      "license": "ltx-2-open-weights",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "unsloth/LTX-2.3-GGUF",
+        "quants": [
+          {
+            "id": "ud_q3_k_m",
+            "label": "UD_Q3_K_M",
+            "filename": "distilled/ltx-2.3-22b-distilled-UD-Q3_K_M.gguf",
+            "bytes": 13169238048,
+            "sha256": "789a9f3737aed51775224d6d567c725d2512d7aa32839b3bbdaba8230af07d77"
+          },
+          {
+            "id": "q4_k_m",
+            "label": "Q4_K_M",
+            "filename": "distilled/ltx-2.3-22b-distilled-Q4_K_M.gguf",
+            "bytes": 14326856736,
+            "sha256": "4e4459bee04199bf93187ba385729f6b7d8e874d754b72d26e751fe2066f4358",
+            "recommended": true
+          },
+          {
+            "id": "ud_q4_k_m",
+            "label": "UD_Q4_K_M",
+            "filename": "distilled/ltx-2.3-22b-distilled-UD-Q4_K_M.gguf",
+            "bytes": 16305131552,
+            "sha256": "451ef931569f084c69743d1917096b149eb489517ec0e1de76eaadeb4dbbc9bf"
+          },
+          {
+            "id": "q6_k",
+            "label": "Q6_K",
+            "filename": "distilled/ltx-2.3-22b-distilled-Q6_K.gguf",
+            "bytes": 17774906400,
+            "sha256": "f32d8ba8295831815445c42289b9f4deeeede7aab05173b7c51d877b1c2af3d7"
+          },
+          {
+            "id": "q8_0",
+            "label": "Q8_0",
+            "filename": "distilled/ltx-2.3-22b-distilled-Q8_0.gguf",
+            "bytes": 22755540000,
+            "sha256": "ed3be27373771404ed59239e8c2686fb6f8d3cd6a1db7f257d811c8d1a381ef8"
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/LTX-2.3-GGUF",
+        "filename": "vae/ltx-2.3-22b-distilled_video_vae.safetensors",
+        "bytes": 1452256522,
+        "sha256": "e68d6d8f8a42942ac9b862cc315beb3bc30805a8876c7ad63ba5bf7a2b8e168a"
+      },
+      "audio_vae": {
+        "repo": "unsloth/LTX-2.3-GGUF",
+        "filename": "vae/ltx-2.3-22b-distilled_audio_vae.safetensors",
+        "bytes": 364853140,
+        "sha256": "3cd6a6eb8cb28f5ecc12f1f3126952b2a3d2b0b42ad3270e63cefafafe0d9b57"
+      },
+      "text_encoders": [
+        {
+          "repo": "unsloth/gemma-3-12b-it-qat-GGUF",
+          "filename": "gemma-3-12b-it-qat-UD-Q4_K_XL.gguf",
+          "bytes": 7432229248,
+          "sha256": "da98f81c86916ed1c76b3eeda56b25cb7b8352b01093e2edb8028110fe2cb53b",
+          "field": "llm"
+        },
+        {
+          "repo": "unsloth/LTX-2.3-GGUF",
+          "filename": "text_encoders/ltx-2.3-22b-distilled_embeddings_connectors.safetensors",
+          "bytes": 2312144712,
+          "sha256": "c61cbb396e2a8175d8b2da51f0fdac885a4ccd22c9f64dafa5aa2c455dc8a507",
+          "field": "embeddings_connectors"
+        }
+      ],
+      "defaults": {
+        "steps": 8,
+        "cfg_scale": 1,
+        "sampling_method": "euler",
+        "width": 768,
+        "height": 512,
+        "sigmas": [
+          1,
+          0.99375,
+          0.9875,
+          0.98125,
+          0.975,
+          0.909375,
+          0.725,
+          0.421875
+        ]
+      },
+      "ranges": {
+        "steps": [
+          1,
+          50
+        ],
+        "dims": [
+          256,
+          1216
+        ],
+        "dim_multiple": 32
+      },
+      "video": {
+        "fps": 24,
+        "frame_step": 8,
+        "frame_offset": 1,
+        "frames": 121,
+        "frame_range": [
+          9,
+          257
+        ],
+        "resolution_presets": [
+          [
+            768,
+            512
+          ],
+          [
+            1216,
+            704
+          ],
+          [
+            704,
+            1216
+          ],
+          [
+            512,
+            768
+          ]
+        ]
+      },
+      "capabilities": {
+        "negative_prompt": false,
+        "guidance": false,
+        "workflows": [
+          "create"
+        ]
+      }
+    },
+    {
+      "id": "wan2.2-ti2v-5b",
+      "name": "Wan 2.2 TI2V 5B",
+      "developer": "Wan-AI",
+      "modality": "video",
+      "description": "The small Wan 2.2 text-to-video model: 5B parameters, 24 fps, clips of 4k+1 frames, 720p; a negative prompt and classifier-free guidance apply. Needs the UMT5-XXL text encoder (3.7 GB at Q4_K_M) and the Wan 2.2 VAE beside the transformer; about 8.5 GB of files at Q4_K_M. GGUF packaging by Unsloth; the text encoder by city96.",
+      "license": "apache-2.0",
+      "engines": [
+        "sdcpp"
+      ],
+      "transformer": {
+        "repo": "unsloth/Wan2.2-TI2V-5B-GGUF",
+        "quants": [
+          {
+            "id": "q4_k_m",
+            "label": "Q4_K_M",
+            "filename": "Wan2.2-TI2V-5B-Q4_K_M.gguf",
+            "bytes": 3433116000,
+            "sha256": "95b19697b7f98e65b0a543640e9ca7b4dfec32e2a6e3731e8e10708be52655e2",
+            "recommended": true
+          },
+          {
+            "id": "q5_k_m",
+            "label": "Q5_K_M",
+            "filename": "Wan2.2-TI2V-5B-Q5_K_M.gguf",
+            "bytes": 3810603360,
+            "sha256": "4424633a876511b9be58a41119f7c9d762ea92b3cb74649cdb43cac850e42dba"
+          },
+          {
+            "id": "q6_k",
+            "label": "Q6_K",
+            "filename": "Wan2.2-TI2V-5B-Q6_K.gguf",
+            "bytes": 4211683680,
+            "sha256": "355f6bee35c4c6cbd0f275112619fe8ac6f7b9b067b885723667b3bde29497c3"
+          },
+          {
+            "id": "q8_0",
+            "label": "Q8_0",
+            "filename": "Wan2.2-TI2V-5B-Q8_0.gguf",
+            "bytes": 5400179040,
+            "sha256": "57bece983817ab2f957546683bb670f13be7d99022d45674840cd999a050ea8f"
+          }
+        ]
+      },
+      "vae": {
+        "repo": "unsloth/Wan2.2-TI2V-5B-GGUF",
+        "filename": "VAE/Wan2.2_VAE.safetensors",
+        "bytes": 1409400960,
+        "sha256": "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156"
+      },
+      "text_encoders": [
+        {
+          "repo": "city96/umt5-xxl-encoder-gguf",
+          "filename": "umt5-xxl-encoder-Q4_K_M.gguf",
+          "bytes": 3655145312,
+          "sha256": "17cf97a5bbbc60a646d6105b832b6f657ce904a8a1ad970e4b59df0c67584a40",
+          "field": "t5xxl"
+        }
+      ],
+      "defaults": {
+        "steps": 30,
+        "cfg_scale": 5,
+        "sampling_method": "euler",
+        "flow_shift": 5,
+        "width": 1280,
+        "height": 704
+      },
+      "ranges": {
+        "steps": [
+          1,
+          100
+        ],
+        "dims": [
+          256,
+          1280
+        ],
+        "dim_multiple": 16
+      },
+      "video": {
+        "fps": 24,
+        "frame_step": 4,
+        "frame_offset": 1,
+        "frames": 121,
+        "frame_range": [
+          5,
+          241
+        ],
+        "resolution_presets": [
+          [
+            1280,
+            704
+          ],
+          [
+            704,
+            1280
+          ]
+        ]
+      },
+      "capabilities": {
+        "negative_prompt": true,
+        "guidance": false,
+        "workflows": [
+          "create"
         ]
       }
     }

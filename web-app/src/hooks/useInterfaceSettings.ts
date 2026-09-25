@@ -5,7 +5,7 @@ import { useTheme } from './useTheme'
 
 export type FontSize = '14px' | '15px' | '16px' | '18px' | '20px'
 
-//* Единственный пресет: нейтральный сайдбар без фиолетового/брендового акцента (--primary из index.css)
+//* Single preset: neutral sidebar without the purple/brand accent (--primary from index.css)
 const ACCENT_THUMB = '#737373'
 export const ACCENT_COLORS = [
   {
@@ -116,7 +116,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             state.fontSize = '16px'
           }
 
-          // Migrate accent: если сохранённый пресет больше не существует — применить единственный
+          // Migrate accent: if the saved preset no longer exists — apply the only one
           const colorExists = ACCENT_COLORS.some((c) => c.value === state.accentColor)
           if (!colorExists) {
             state.accentColor = DEFAULT_ACCENT_COLOR

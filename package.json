@@ -22,7 +22,7 @@
     "test:coverage": "vitest run --coverage",
     "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
     "dev:web": "yarn workspace @janhq/web-app dev",
-    "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
+    "dev:tauri": "yarn download:core && yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
     "dev:ios": "yarn copy:assets:mobile && RUSTC_WRAPPER= cross-env IS_IOS=true yarn tauri ios dev --features mobile",
     "dev:android": "yarn copy:assets:mobile && cross-env IS_ANDROID=true yarn tauri android dev --features mobile",
     "build:android": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_CLEAN=true yarn tauri android build -- --no-default-features --features mobile",
@@ -32,16 +32,17 @@
     "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
+    "download:core": "node ./scripts/download-core.mjs",
     "download:cloudflared": "node ./scripts/download-bin.mjs --only=cloudflared",
     "build:mlx-server": "make build-mlx-server",
     "build:foundation-models-server": "make build-foundation-models-server",
     "build:cli": "make build-cli",
-    "build:jan-cli:debug": "cd src-tauri && cargo build --features cli --bin jan-cli",
-    "build:tauri:darwin:debug": "yarn download:bin && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:jan-cli:debug && yarn build:web && yarn build:icon && yarn copy:assets:tauri && yarn tauri build --debug",
-    "build:tauri:win32": "yarn download:bin && yarn build:cli && yarn tauri build",
-    "build:tauri:linux": "yarn download:bin && yarn build:cli && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
-    "build:tauri:darwin": "yarn download:bin && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:cli && yarn tauri build --target universal-apple-darwin",
-    "build:tauri:darwin:native": "yarn download:bin && yarn build:mlx-server && yarn build:foundation-models-server && cd src-tauri && cargo build --release --features cli --bin jan-cli && cp target/release/jan-cli resources/bin/jan-cli && chmod +x resources/bin/jan-cli && cd .. && yarn tauri build",
+    "build:jan-cli:debug": "yarn build:cli",
+    "build:tauri:darwin:debug": "yarn download:bin && yarn download:core && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:cli && yarn build:web && yarn build:icon && yarn copy:assets:tauri && yarn tauri build --debug",
+    "build:tauri:win32": "yarn download:bin && yarn download:core && yarn build:cli && yarn tauri build",
+    "build:tauri:linux": "yarn download:bin && yarn download:core && yarn build:cli && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
+    "build:tauri:darwin": "yarn download:bin && yarn download:core && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:cli && yarn tauri build --target universal-apple-darwin",
+    "build:tauri:darwin:native": "yarn download:bin && yarn download:core && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:cli && yarn tauri build",
     "build:tauri": "yarn build:icon && yarn copy:assets:tauri && run-script-os",
     "build:tauri:plugin:api": "cd src-tauri/plugins && yarn install && yarn workspaces foreach -Apt run build",
     "build:icon": "run-script-os",
@@ -70,6 +71,10 @@
     "vitest": "^3.1.3"
   },
   "version": "0.0.0",
+  "atomicCore": {
+    "version": "0.5.1",
+    "repo": "AtomicBot-ai/atomic-chat-core"
+  },
   "installConfig": {
     "hoistingLimits": "workspaces"
   },

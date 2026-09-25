@@ -69,7 +69,7 @@ function Index() {
     })
   }, [serviceHub])
 
-  //* После авто-выхода без перемонтирования роутера — поднимаем флаг, иначе ре-рендер не гарантирован
+  //* After auto-logout without remounting the router — raise the flag, otherwise a re-render is not guaranteed
   const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false)
   const forceOnboarding =
     typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING

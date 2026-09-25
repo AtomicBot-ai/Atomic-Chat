@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#* 1024×1024 для `tauri icon`: logo-app.png с полями, чтобы в Dock совпадала с системными иконками.
+#* 1024×1024 for `tauri icon`: logo-app.png with padding so it matches system icons in the Dock.
 from __future__ import annotations
 
 import sys
@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOGO_APP_PATH = ROOT / "web-app" / "public" / "images" / "logo-app.png"
 OUT_PATH = ROOT / "src-tauri" / "icons" / "icon.png"
 SIZE = 1024
-#? Доля кадра под арт (остальное — прозрачный inset, как у типичных macOS-иконок в сетке Dock)
+#? Fraction of the frame used by the art (the rest is a transparent inset, like typical macOS icons in the Dock grid)
 DOCK_ART_FRAC = 0.82
 
 
@@ -21,7 +21,7 @@ def main() -> None:
         sys.exit(1)
 
     im = Image.open(LOGO_APP_PATH)
-    #? P / RGB — приводим к RGBA для единообразного PNG
+    #? P / RGB — convert to RGBA for a uniform PNG
     im = im.convert("RGBA")
 
     side = max(1, int(round(SIZE * DOCK_ART_FRAC)))

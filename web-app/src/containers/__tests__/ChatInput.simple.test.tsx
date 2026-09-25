@@ -12,6 +12,7 @@ import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useAgentRun } from '@/hooks/useAgentRun'
@@ -209,6 +210,7 @@ describe('ChatInput', () => {
       resumeParams: {},
     })
     useDeferredFirstSend.setState({ queued: null })
+    useModelLoad.getState().setModelLoadError(undefined)
 
     const model = {
       id: 'test-model',
@@ -493,6 +495,15 @@ describe('ChatInput', () => {
       )
     )
     expect(onSubmit).not.toHaveBeenCalled()
+    // The imported model is now the composer's selection, and the draft waits
+    // in the field while it loads instead of going out to nothing.
+    expect(useModelProvider.getState().selectedProvider).toBe(
+      'llamacpp-upstream'
+    )
+    expect(useModelProvider.getState().selectedModel?.id).toBe(modelId)
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Send this after the download'
+    )
 
     act(() => useAppState.setState({ activeModels: [modelId] }))
     await waitFor(() =>
@@ -502,6 +513,9 @@ describe('ChatInput', () => {
         undefined
       )
     )
+    // The queued send is spent: the widget is gone and the field is clear.
+    expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    expect(screen.getByTestId('chat-input')).toHaveValue('')
     unmount()
   })
 
@@ -805,6 +819,118 @@ describe('ChatInput', () => {
       ).not.toBeInTheDocument()
     )
     expect(onSubmit).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('drops a waiting send when the load it waits for fails', async () => {
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+
+    // The failure as `switchToModel` leaves it, in one step: the error is
+    // recorded and the selection is gone.
+    act(() => {
+      useModelLoad
+        .getState()
+        .setModelLoadError('unsupported architecture', model.id)
+      useModelProvider.getState().selectModelProvider('', '')
+    })
+    // A model picked and loaded later must not carry the old message out.
+    act(() => {
+      useModelProvider
+        .getState()
+        .selectModelProvider('llamacpp-upstream', model.id)
+      useModelLoad.getState().setModelLoadError(undefined)
+      useAppState.setState({ activeModels: [model.id] })
+    })
+
+    await act(async () => {})
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Invoke the machine spirit'
+    )
+    unmount()
+  })
+
+  it('sends once a model that failed before comes up on the next Send', async () => {
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    // The previous load failed and cleared the selection; its error stays
+    // recorded until a load succeeds.
+    useModelLoad.getState().setModelLoadError('unsupported architecture', model.id)
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+    expect(useModelProvider.getState().selectedModel?.id).toBe(model.id)
+
+    act(() => useAppState.setState({ loadingModel: true }))
+    act(() => {
+      useModelLoad.getState().setModelLoadError(undefined)
+      useAppState.setState({ activeModels: [model.id], loadingModel: false })
+    })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'Invoke the machine spirit',
+        undefined,
+        undefined
+      )
+    )
     unmount()
   })
 
@@ -1244,6 +1370,7 @@ describe('ChatInput local model auto-start', () => {
       'llamacpp-upstream': ['shared-model'],
       'llamacpp': ['shared-model'],
     })
+    useAppState.setState({ activeModels: [] })
     const { unmount } = render(<ChatInput />)
 
     await waitFor(() => {
@@ -1253,11 +1380,17 @@ describe('ChatInput local model auto-start', () => {
       )
     })
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // The serving engine keeps the model, so the composer shows it as running.
+    await waitFor(() => {
+      expect(useAppState.getState().activeModels).toEqual(['shared-model'])
+    })
     unmount()
   })
 
   it('auto-starts when the selected engine does not serve the model', async () => {
     seedModels({})
+    // A stale mark from an engine that is gone (e.g. a crashed backend).
+    useAppState.setState({ activeModels: ['shared-model'] })
     const { unmount } = render(<ChatInput />)
 
     await waitFor(() => {
@@ -1269,6 +1402,8 @@ describe('ChatInput local model auto-start', () => {
         })
       )
     })
+    // Until the start lands, the composer no longer claims the model runs.
+    expect(useAppState.getState().activeModels).toEqual([])
     unmount()
   })
 
@@ -1277,23 +1412,29 @@ describe('ChatInput local model auto-start', () => {
       'llamacpp-upstream': ['shared-model'],
       'llamacpp': ['shared-model'],
     })
+    useAppState.setState({ activeModels: [] })
     const { unmount } = render(<ChatInput chatStatus="streaming" />)
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(getActiveModels).not.toHaveBeenCalled()
     expect(stopAllModelsExcept).not.toHaveBeenCalled()
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // No probe ran, so the engines' report never reached the app state.
+    expect(useAppState.getState().activeModels).toEqual([])
     unmount()
   })
 
   it('never touches the engines while another chat is busy', async () => {
     mocks.chatBusy = true
     const { getActiveModels } = seedModels({})
+    useAppState.setState({ activeModels: ['shared-model'] })
     const { unmount } = render(<ChatInput />)
 
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(getActiveModels).not.toHaveBeenCalled()
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // The empty engine report was never synced over the running model.
+    expect(useAppState.getState().activeModels).toEqual(['shared-model'])
     unmount()
   })
 })

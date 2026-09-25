@@ -1,0 +1,63 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "base policy\n\nproject rules\n\nlate system",
+          "role": "system"
+        },
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "project rules",
+              "type": "input_text"
+            }
+          ],
+          "role": "developer",
+          "type": "message"
+        },
+        {
+          "content": [
+            {
+              "text": "hi",
+              "type": "input_text"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        },
+        {
+          "content": [
+            {
+              "text": "late system",
+              "type": "input_text"
+            }
+          ],
+          "role": "system",
+          "type": "message"
+        }
+      ],
+      "instructions": "base policy",
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_merges_system_and_developer_into_leading_system",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

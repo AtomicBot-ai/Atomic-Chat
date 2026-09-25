@@ -320,27 +320,6 @@ fn ensure_executable_bits(_build_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Launch gate for a freshly downloaded backend: make the binaries
-/// executable, then run `llama-server --version` and report whether the build
-/// it prints is the one that was asked for.
-///
-/// A downloaded build has never been executed by anyone when this runs, and
-/// the caller is about to unload the running model to swap onto it. Finding
-/// out that it cannot start belongs here, while the previous build is still
-/// in place, rather than at the next model load.
-#[tauri::command]
-pub async fn verify_backend_binary(backend_dir: String, version: String) -> Result<bool, String> {
-    let backend_path = PathBuf::from(&backend_dir);
-
-    ensure_executable_bits(&backend_path.join("build"))?;
-
-    if !is_backend_installed(&backend_path) {
-        return Err(format!("No llama-server binary under {}", backend_dir));
-    }
-
-    Ok(backend_binary_matches_version(&backend_path, &version))
-}
-
 fn backend_binary_matches_version(backend_dir: &PathBuf, expected_version: &str) -> bool {
     let expected = parse_backend_version(expected_version.to_string());
     if expected == 0 {
@@ -834,72 +813,6 @@ fn compare_versions(v1: &str, v2: &str) -> i32 {
     0
 }
 
-#[tauri::command]
-pub async fn is_cuda_installed(
-    backend_dir: String,
-    version: String,
-    os_type: String,
-    jan_data_folder_path: String,
-) -> Result<bool, String> {
-    // Resolve runtime library name by CUDA major, not a hardcoded minor.
-    // This keeps future CUDA-13.x asset bumps from breaking the probe.
-    let major = version
-        .split('.')
-        .next()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(0);
-    let libname = match (os_type.as_str(), major) {
-        ("windows", 11) => "cudart64_110.dll",
-        ("windows", 12) => "cudart64_12.dll",
-        ("windows", 13) => "cudart64_13.dll",
-        ("linux", 11) => "libcudart.so.11.0",
-        ("linux", 12) => "libcudart.so.12",
-        ("linux", 13) => "libcudart.so.13",
-        _ => return Ok(false),
-    };
-
-    // Expected new location: backend_dir/build/bin/libname
-    let new_path = std::path::PathBuf::from(&backend_dir)
-        .join("build")
-        .join("bin")
-        .join(libname);
-
-    if new_path.exists() {
-        return Ok(true);
-    }
-
-    // Old location (used by older builds): jan_data_folder_path/llamacpp/lib/libname
-    let old_path = std::path::PathBuf::from(&jan_data_folder_path)
-        .join("llamacpp")
-        .join("lib")
-        .join(libname);
-
-    if old_path.exists() {
-        // Ensure target directory exists
-        let target_dir = PathBuf::from(&backend_dir).join("build").join("bin");
-
-        if !target_dir.exists() {
-            fs::create_dir_all(&target_dir)
-                .map_err(|e| format!("Failed to create target directory: {}", e))?;
-        }
-
-        // Move old lib to the correct new location
-        match fs::rename(&old_path, &new_path) {
-            Ok(_) => {
-                log::info!("[CUDA] Migrated {} from old path to new location.", libname);
-                return Ok(true);
-            }
-            Err(err) => {
-                log::warn!("[CUDA] Failed to move old library: {}", err);
-                // Return false since the migration failed
-                return Ok(false);
-            }
-        }
-    }
-
-    Ok(false)
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BestBackendResult {
     pub backend_string: String,
@@ -1104,7 +1017,6 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     None
 }
 
-#[tauri::command]
 pub fn parse_backend_version(version_string: String) -> u32 {
     // Remove any leading non-digit characters
     let numeric = version_string.trim_start_matches(|c: char| !c.is_ascii_digit());
@@ -1230,23 +1142,6 @@ pub async fn remove_old_backend_versions(
     }
 
     Ok(removed_paths)
-}
-
-#[tauri::command]
-pub fn validate_backend_string(backend_string: String) -> Result<(String, String), String> {
-    let parts: Vec<&str> = backend_string.split('/').collect();
-    if parts.len() != 2 {
-        return Err(format!("Invalid backend format: {}", backend_string));
-    }
-
-    let version = parts[0].trim();
-    let backend = parts[1].trim();
-
-    if version.is_empty() || backend.is_empty() {
-        return Err(format!("Invalid backend format: {}", backend_string));
-    }
-
-    Ok((version.to_string(), backend.to_string()))
 }
 
 #[tauri::command]
@@ -1639,37 +1534,6 @@ pub async fn fetch_manifest_http1(url: String, _timeout_ms: u64) -> Result<Strin
     ))
 }
 
-/// Free bytes on the filesystem holding `path`, for the backend-download
-/// precondition. The Windows HIP archive unpacks to roughly 980 MB (a single
-/// `ggml-hip.dll` is 924 MB of it), so an out-of-space failure would otherwise
-/// only surface after a ~196 MB download and a long extraction.
-///
-/// `path` need not exist yet: the deepest existing ancestor is used, which is
-/// the staging directory's parent on a first-ever download.
-#[tauri::command]
-pub fn available_disk_space(path: String) -> Result<u64, String> {
-    let mut probe = PathBuf::from(&path);
-    while !probe.exists() {
-        if !probe.pop() {
-            return Err(format!("no existing ancestor for path {path}"));
-        }
-    }
-    let probe = probe
-        .canonicalize()
-        .map_err(|e| format!("canonicalize {}: {}", probe.display(), e))?;
-
-    let disks = sysinfo::Disks::new_with_refreshed_list();
-    let best = disks
-        .list()
-        .iter()
-        .filter(|disk| probe.starts_with(disk.mount_point()))
-        // Nested mounts both match; the longest mount point is the real one.
-        .max_by_key(|disk| disk.mount_point().as_os_str().len())
-        .ok_or_else(|| format!("no mounted filesystem contains {}", probe.display()))?;
-
-    Ok(best.available_space())
-}
-
 // ---------------------------- Tests ------------------------------------------
 
 #[cfg(test)]
@@ -1677,7 +1541,6 @@ mod tests {
     use super::*;
     use filetime;
     use std::fs::File;
-    use std::io::Write;
 
     // --- Tests for map_old_backend_to_new ---
 
@@ -2663,71 +2526,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_is_cuda_installed_migration() {
-        let backend_dir = tempfile::tempdir().unwrap();
-        let jan_data_dir = tempfile::tempdir().unwrap();
-
-        let version = "12.0";
-        let os_type = "linux"; // Maps to libcudart.so.12
-
-        // Setup Old Path: jan_data/llamacpp/lib/libcudart.so.12
-        let old_lib_dir = jan_data_dir.path().join("llamacpp").join("lib");
-        fs::create_dir_all(&old_lib_dir).unwrap();
-        let lib_name = "libcudart.so.12";
-        let old_file_path = old_lib_dir.join(lib_name);
-        {
-            let mut f = File::create(&old_file_path).unwrap();
-            f.write_all(b"dummy content").unwrap();
-        }
-
-        // Run Check (should trigger migration)
-        let installed = is_cuda_installed(
-            backend_dir.path().to_string_lossy().to_string(),
-            version.to_string(),
-            os_type.to_string(),
-            jan_data_dir.path().to_string_lossy().to_string(),
-        )
-        .await
-        .unwrap();
-
-        assert!(installed, "Should return true after migration");
-
-        // Verify Migration
-        let new_path = backend_dir.path().join("build").join("bin").join(lib_name);
-        assert!(new_path.exists(), "File should exist in new location");
-        assert!(
-            !old_file_path.exists(),
-            "File should be removed from old location"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_is_cuda_installed_already_exists() {
-        let backend_dir = tempfile::tempdir().unwrap();
-        let jan_data_dir = tempfile::tempdir().unwrap(); // Empty
-
-        let version = "11.7";
-        let os_type = "windows"; // Maps to cudart64_110.dll
-        let lib_name = "cudart64_110.dll";
-
-        // Setup New Path directly
-        let target_dir = backend_dir.path().join("build").join("bin");
-        fs::create_dir_all(&target_dir).unwrap();
-        File::create(target_dir.join(lib_name)).unwrap();
-
-        let installed = is_cuda_installed(
-            backend_dir.path().to_string_lossy().to_string(),
-            version.to_string(),
-            os_type.to_string(),
-            jan_data_dir.path().to_string_lossy().to_string(),
-        )
-        .await
-        .unwrap();
-
-        assert!(installed);
-    }
-
     // --- Tests for find_latest_version_for_backend ---
 
     #[test]
@@ -2969,20 +2767,6 @@ mod tests {
         );
     }
 
-    // --- Tests for validate_backend_string ---
-
-    #[test]
-    fn test_validate_backend_string_valid() {
-        let result = validate_backend_string("b7524/linux-common_cpus-x64".to_string()).unwrap();
-        assert_eq!(result.0, "b7524");
-        assert_eq!(result.1, "linux-common_cpus-x64");
-    }
-
-    #[test]
-    fn test_validate_backend_string_invalid() {
-        let result = validate_backend_string("invalid-format".to_string());
-        assert!(result.is_err());
-    }
 
     // --- Tests for should_migrate_backend ---
 

@@ -96,6 +96,13 @@ export const localStorageKey = {
   // counts. Unsent positive/negative prompt text is deliberately excluded.
   // The seed is kept as text so an empty field stays empty.
   imageForm: 'image-form',
+  // Local video generation preferences: the selected video checkpoint, the
+  // Advanced fold and the video output folder. The engine and the residency
+  // policies are shared with `settingImages`: one engine, one resident model.
+  settingVideos: 'setting-videos',
+  // Durable Video form choices: resolution, frame count, steps, cfg, guidance
+  // and the seed as typed. Unsent prompt text is deliberately excluded.
+  videoForm: 'video-form',
 }
 
 /**

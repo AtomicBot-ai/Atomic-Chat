@@ -24,7 +24,7 @@ export type ResolvedStaffPick = {
   model: CatalogModel | null
 }
 
-//* Не теряем разрешённые карточки при размонтировании Hub между переходами.
+//* Don't lose resolved cards when Hub unmounts between navigations.
 const resolvedModels: Record<string, CatalogModel> = {
   ...RECOMMENDED_MODEL_FALLBACKS,
 }
@@ -108,7 +108,7 @@ export function useStaffPicks(
             })),
             is_mlx: catalog.is_mlx ?? catalog.library_name === 'mlx',
           }
-          //! Как в useModelSources: MLX только на macOS
+          //! Same as in useModelSources: MLX only on macOS
           if (!IS_MACOS && processed.is_mlx) return null
           resolvedModels[pick.model_name] = processed
           return processed

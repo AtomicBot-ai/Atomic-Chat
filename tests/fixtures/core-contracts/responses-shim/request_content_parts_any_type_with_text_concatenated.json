@@ -1,0 +1,53 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "abc",
+          "role": "user"
+        }
+      ],
+      "model": "m"
+    }
+  },
+  "input": {
+    "body": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "a",
+              "type": "input_text"
+            },
+            {
+              "text": "b",
+              "type": "output_text"
+            },
+            {
+              "filename": "x.pdf",
+              "type": "input_file"
+            },
+            {
+              "text": "c"
+            },
+            {
+              "text": 7,
+              "type": "input_text"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "model": "m"
+    },
+    "kind": "request"
+  },
+  "name": "request_content_parts_any_type_with_text_concatenated",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

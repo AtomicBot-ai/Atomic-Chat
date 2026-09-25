@@ -1,0 +1,242 @@
+{
+  "comparator": "sse-sequence",
+  "error": null,
+  "expected": [
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "",
+                    "name": "search"
+                  },
+                  "id": "call_1",
+                  "index": 0,
+                  "type": "function"
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"q\":"
+                  },
+                  "index": 0
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "",
+                    "name": "fetch"
+                  },
+                  "id": "call_2",
+                  "index": 1,
+                  "type": "function"
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{}"
+                  },
+                  "index": 1
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "\"rust\"}"
+                  },
+                  "index": 0
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls",
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk",
+        "usage": {
+          "completion_tokens": 3,
+          "prompt_tokens": 7,
+          "total_tokens": 10
+        }
+      },
+      "event": "message"
+    }
+  ],
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "item": {
+          "call_id": "call_1",
+          "id": "fc_1",
+          "name": "search",
+          "type": "function_call"
+        },
+        "type": "response.output_item.added"
+      },
+      {
+        "delta": "{\"q\":",
+        "item_id": "fc_1",
+        "type": "response.function_call_arguments.delta"
+      },
+      {
+        "item": {
+          "call_id": "call_2",
+          "id": "fc_2",
+          "name": "fetch",
+          "type": "function_call"
+        },
+        "type": "response.output_item.added"
+      },
+      {
+        "delta": "{}",
+        "item_id": "fc_2",
+        "type": "response.function_call_arguments.delta"
+      },
+      {
+        "delta": "\"rust\"}",
+        "item_id": "fc_1",
+        "type": "response.function_call_arguments.delta"
+      },
+      {
+        "arguments": "{\"q\":\"rust\"}",
+        "item_id": "fc_1",
+        "type": "response.function_call_arguments.done"
+      },
+      {
+        "item": {
+          "arguments": "{\"q\":\"rust\"}",
+          "call_id": "call_1",
+          "id": "fc_1",
+          "name": "search",
+          "type": "function_call"
+        },
+        "type": "response.output_item.done"
+      },
+      {
+        "item": {
+          "arguments": "{}",
+          "call_id": "call_2",
+          "id": "fc_2",
+          "name": "fetch",
+          "type": "function_call"
+        },
+        "type": "response.output_item.done"
+      },
+      {
+        "response": {
+          "usage": {
+            "input_tokens": 7,
+            "output_tokens": 3
+          }
+        },
+        "type": "response.completed"
+      }
+    ],
+    "kind": "stream",
+    "model": "gpt-5.4"
+  },
+  "name": "stream_two_function_calls_added_args_done",
+  "placeholders": [
+    "<chatcmpl_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

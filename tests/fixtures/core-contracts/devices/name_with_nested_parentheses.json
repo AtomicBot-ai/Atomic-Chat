@@ -1,0 +1,22 @@
+{
+  "comparator": "devices-exact",
+  "expected": {
+    "devices": [
+      {
+        "free": 4096,
+        "id": "Vulkan0",
+        "mem": 8128,
+        "name": "Intel(R) Arc(tm) A750 Graphics (DG2)"
+      }
+    ]
+  },
+  "input": {
+    "stdout": "Available devices:\nVulkan0: Intel(R) Arc(tm) A750 Graphics (DG2) (8128 MiB, 4096 MiB free)\n"
+  },
+  "name": "name_with_nested_parentheses",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

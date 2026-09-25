@@ -68,6 +68,9 @@ export function CloudProviderSelect({
         <Button
           variant="outline"
           size="sm"
+          // The desktop suite has to reach this from a page that now opens on a provider already
+          // chosen, so the trigger's label is whichever one that is.
+          data-test-id="cloud-provider-select"
           className="w-full min-w-0 justify-between sm:w-80"
         >
           <span className="flex min-w-0 items-center gap-2">

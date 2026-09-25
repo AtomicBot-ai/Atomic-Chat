@@ -4,10 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // primitives locally so the handler logic can be exercised without the
 // heavy existing setup that runs the whole extension. It focuses on the
 // `handleAutoIncreaseCtx` contract:
-//   1. computeNextCtxLen is applied to the tracked live ctx_size
-//   2. unload + load are called with the new ctx_size
-//   3. a Tauri `auto_increase_ctx_done/{request_id}` event is emitted
+//   1. the core, which owns the process and the ladder, is asked to act —
+//      the extension never unloads or reloads the model itself
+//   2. a Tauri `auto_increase_ctx_done/{request_id}` event answers the proxy
 //      with the outcome
+//   3. the UI is told about a grown window, or that the model is at its max
 
 const { emitMock, listenMock, eventsEmitMock } = vi.hoisted(() => ({
   emitMock: vi.fn().mockResolvedValue(undefined),
@@ -35,26 +36,26 @@ vi.mock('@tauri-apps/api/path', () => ({
   basename: vi.fn(),
 }))
 
-vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
+vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),
   getSystemUsage: vi.fn(),
 }))
 
-vi.mock('@janhq/tauri-plugin-llamacpp-upstream-api', () => ({
-  loadLlamaModel: vi.fn(),
-  readGgufMetadata: vi.fn(),
-  getModelSize: vi.fn(),
-  isModelSupported: vi.fn(),
-  unloadLlamaModel: vi.fn(),
-  mapOldBackendToNew: vi.fn(),
-  findLatestVersionForBackend: vi.fn(),
-  prioritizeBackends: vi.fn(),
-  removeOldBackendVersions: vi.fn(),
-  shouldMigrateBackend: vi.fn(),
-  handleSettingUpdate: vi.fn(),
-  installBundledBackend: vi.fn(),
-  checkBackendForUpdates: vi.fn(),
-}))
+vi.mock(
+  '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index',
+  () => ({
+    readGgufMetadata: vi.fn(),
+    isModelSupported: vi.fn(),
+    mapOldBackendToNew: vi.fn(),
+    findLatestVersionForBackend: vi.fn(),
+    prioritizeBackends: vi.fn(),
+    removeOldBackendVersions: vi.fn(),
+    shouldMigrateBackend: vi.fn(),
+    handleSettingUpdate: vi.fn(),
+    installBundledBackend: vi.fn(),
+    checkBackendForUpdates: vi.fn(),
+  })
+)
 
 vi.mock('../backend', () => ({
   listSupportedBackends: vi.fn(),
@@ -99,37 +100,39 @@ vi.mock('@janhq/core', () => ({
   ModelEvent: {
     OnAutoIncreasedCtxLen: 'OnAutoIncreasedCtxLen',
   },
-  // Read at module load by `buildMlxConfig` / the ctx fallbacks, so a
-  // factory mock without it throws before any test runs.
-  DEFAULT_CTX_LEN: 16384,
-  computeNextCtxLen: (current: number, max?: number) => {
-    let next: number
-    if (current < 8192) next = 8192
-    else if (current < 32768) next = 32768
-    else next = Math.round(current * 1.5)
-    if (typeof max === 'number' && max > 0) next = Math.min(next, max)
-    return next
-  },
 }))
 
 import llamacpp_extension from '../index'
+import { invoke } from '@tauri-apps/api/core'
 
 type AutoIncreaseRequest = {
   request_id: string
   backend: 'llamacpp' | 'llamacpp-upstream' | 'mlx'
   model_id: string
-  trigger: 'error' | 'finish_length'
+  trigger: 'error' | 'finish_length' | 'compute_error_recovery'
 }
 
 describe('llamacpp_extension auto_increase_ctx handler', () => {
   let ext: llamacpp_extension
 
+  /** Answer the core's ctx route with `outcome`; every other call resolves empty. */
+  const coreAnswers = (outcome: unknown) =>
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command !== 'atomic_core_call') return undefined
+      const path = (args as { path: string }).path
+      if (path.endsWith('/ctx/increase') || path.endsWith('/recreate')) {
+        if (outcome instanceof Error) throw outcome
+        return outcome
+      }
+      return undefined
+    })
+
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(invoke).mockResolvedValue(undefined)
     ext = new llamacpp_extension()
     // Bypass the settings machinery that depends on AIEngine internals;
-    // the handler only cares about `config.ctx_size`, `provider`, and the
-    // `unload` / `load` methods on `this`.
+    // the handler only cares about `config.fit`, `provider`, and the core.
     ;(ext as unknown as { config: Record<string, unknown> }).config = {
       ctx_size: 8192,
     }
@@ -158,7 +161,6 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
       ctx_size: 8192,
       fit: true,
     }
-    ;(ext as any).modelCtxSize.set('m', 8192)
 
     await invokeHandler({
       request_id: 'req-fit',
@@ -169,139 +171,96 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
 
     expect(unloadSpy).not.toHaveBeenCalled()
     expect(loadSpy).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalledWith('atomic_core_call', expect.anything())
     expect(emitMock).toHaveBeenCalledWith(
       'local_backend://auto_increase_ctx_done/req-fit',
       { ok: false, reason: 'fit' }
     )
   })
 
-  it('grows 8192 → 32768 and emits done(ok:true) with new_ctx_len', async () => {
-    const unloadSpy = vi
-      .spyOn(ext, 'unload')
-      .mockResolvedValue({ success: true })
-    const loadSpy = vi
-      .spyOn(ext, 'load')
-      .mockResolvedValue({ pid: 1, port: 9999, api_key: 'k', model_id: 'm' } as any)
+  it('asks the core to restart a poisoned engine instead of reloading it here', async () => {
+    const unloadSpy = vi.spyOn(ext, 'unload')
+    const loadSpy = vi.spyOn(ext, 'load')
+    coreAnswers({ ok: true })
 
-    ;(ext as any).modelCtxSize.set('m', 8192)
+    await invokeHandler({
+      request_id: 'req-compute',
+      backend: 'llamacpp-upstream',
+      model_id: 'm',
+      trigger: 'compute_error_recovery',
+    })
+
+    expect(unloadSpy).not.toHaveBeenCalled()
+    expect(loadSpy).not.toHaveBeenCalled()
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('atomic_core_call', {
+      method: 'POST',
+      path: '/models/llamacpp-upstream/m/recreate',
+      body: null,
+    })
+    expect(emitMock).toHaveBeenCalledWith('local_backend://auto_increase_ctx_done/req-compute', { ok: true })
+    // A recreate keeps the context, so the UI has nothing to mirror.
+    expect(eventsEmitMock).not.toHaveBeenCalled()
+  })
+
+  it('passes the core refusal to recreate through to the proxy', async () => {
+    coreAnswers({ ok: false, reason: 'not-loaded' })
+
+    await invokeHandler({
+      request_id: 'req-compute-gone',
+      backend: 'llamacpp-upstream',
+      model_id: 'm',
+      trigger: 'compute_error_recovery',
+    })
+
+    expect(emitMock).toHaveBeenCalledWith(
+      'local_backend://auto_increase_ctx_done/req-compute-gone',
+      { ok: false, reason: 'not-loaded' }
+    )
+  })
+
+  it('has the core grow the window and tells the proxy and the UI the new size', async () => {
+    const unloadSpy = vi.spyOn(ext, 'unload')
+    const loadSpy = vi.spyOn(ext, 'load')
+    coreAnswers({ ok: true, new_ctx_len: 32768 })
 
     await invokeHandler({
       request_id: 'req-1',
-      backend: 'llamacpp',
+      backend: 'llamacpp-upstream',
       model_id: 'm',
       trigger: 'error',
     })
 
-    expect(unloadSpy).toHaveBeenCalledWith('m')
-    expect(loadSpy).toHaveBeenCalledWith('m', { ctx_size: 32768 }, false, true)
-
+    // The reload is the core's: this extension does not own the process.
+    expect(unloadSpy).not.toHaveBeenCalled()
+    expect(loadSpy).not.toHaveBeenCalled()
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('atomic_core_call', {
+      method: 'POST',
+      path: '/models/llamacpp-upstream/m/ctx/increase',
+      body: { reason: 'error' },
+    })
     expect(emitMock).toHaveBeenCalledWith(
       'local_backend://auto_increase_ctx_done/req-1',
       { ok: true, new_ctx_len: 32768 }
     )
-    expect(eventsEmitMock).toHaveBeenCalledWith('OnAutoIncreasedCtxLen', {
+    const notify = {
       provider: 'llamacpp-upstream',
       modelId: 'm',
       newCtxLen: 32768,
-    })
-    expect((ext as any).modelCtxSize.get('m')).toBe(32768)
-  })
-
-  it('grows 32768 → 49152 (×1.5 step)', async () => {
-    vi.spyOn(ext, 'unload').mockResolvedValue({ success: true })
-    const loadSpy = vi
-      .spyOn(ext, 'load')
-      .mockResolvedValue({ pid: 1, port: 1, api_key: '', model_id: 'm' } as any)
-
-    ;(ext as any).modelCtxSize.set('m', 32768)
-
-    await invokeHandler({
-      request_id: 'req-2',
-      backend: 'llamacpp',
-      model_id: 'm',
-      trigger: 'finish_length',
-    })
-
-    expect(loadSpy).toHaveBeenCalledWith('m', { ctx_size: 49152 }, false, true)
+    }
+    expect(eventsEmitMock).toHaveBeenCalledWith('OnAutoIncreasedCtxLen', notify)
     expect(emitMock).toHaveBeenCalledWith(
-      'local_backend://auto_increase_ctx_done/req-2',
-      { ok: true, new_ctx_len: 49152 }
+      'local_backend://auto_increase_ctx_notify',
+      notify
     )
   })
 
-  it('falls back to config.ctx_size when modelCtxSize has no entry', async () => {
-    vi.spyOn(ext, 'unload').mockResolvedValue({ success: true })
-    const loadSpy = vi
-      .spyOn(ext, 'load')
-      .mockResolvedValue({ pid: 1, port: 1, api_key: '', model_id: 'm' } as any)
-
-    ;(ext as any).config = { ctx_size: 4096 }
-
-    await invokeHandler({
-      request_id: 'req-3',
-      backend: 'llamacpp',
-      model_id: 'm',
-      trigger: 'error',
+  it('stops at the model max ctx_train and emits the at_max event', async () => {
+    coreAnswers({
+      ok: false,
+      reason: 'at_max',
+      current_ctx_len: 32768,
+      max_ctx_len: 32768,
     })
-
-    // 4096 is < 8192 so next step is 8192.
-    expect(loadSpy).toHaveBeenCalledWith('m', { ctx_size: 8192 }, false, true)
-  })
-
-  it('emits done(ok:false, reason:exception:...) when load throws', async () => {
-    vi.spyOn(ext, 'unload').mockResolvedValue({ success: true })
-    vi.spyOn(ext, 'load').mockRejectedValue(new Error('OOM'))
-
-    ;(ext as any).modelCtxSize.set('m', 8192)
-
-    await invokeHandler({
-      request_id: 'req-4',
-      backend: 'llamacpp',
-      model_id: 'm',
-      trigger: 'error',
-    })
-
-    expect(emitMock).toHaveBeenCalledTimes(1)
-    const [channel, body] = emitMock.mock.calls[0]
-    expect(channel).toBe('local_backend://auto_increase_ctx_done/req-4')
-    expect(body).toMatchObject({ ok: false })
-    expect(String((body as any).reason)).toContain('OOM')
-  })
-
-  it('still proceeds with load when unload throws (stale session)', async () => {
-    vi.spyOn(ext, 'unload').mockRejectedValue(
-      new Error('No session')
-    )
-    const loadSpy = vi
-      .spyOn(ext, 'load')
-      .mockResolvedValue({ pid: 1, port: 1, api_key: '', model_id: 'm' } as any)
-
-    ;(ext as any).modelCtxSize.set('m', 8192)
-
-    await invokeHandler({
-      request_id: 'req-5',
-      backend: 'llamacpp',
-      model_id: 'm',
-      trigger: 'error',
-    })
-
-    expect(loadSpy).toHaveBeenCalledWith('m', { ctx_size: 32768 }, false, true)
-    expect(emitMock).toHaveBeenCalledWith(
-      'local_backend://auto_increase_ctx_done/req-5',
-      { ok: true, new_ctx_len: 32768 }
-    )
-  })
-
-  it('stops at the model max ctx_train and emits at_max event', async () => {
-    const unloadSpy = vi.spyOn(ext, 'unload').mockResolvedValue({
-      success: true,
-    })
-    const loadSpy = vi
-      .spyOn(ext, 'load')
-      .mockResolvedValue({ pid: 1, port: 1, api_key: '', model_id: 'm' } as any)
-
-    ;(ext as any).modelCtxSize.set('m', 32768)
-    ;(ext as any).modelMaxCtxTrain.set('m', 32768)
 
     await invokeHandler({
       request_id: 'req-max',
@@ -309,13 +268,6 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
       model_id: 'm',
       trigger: 'error',
     })
-
-    expect(unloadSpy).not.toHaveBeenCalled()
-    expect(loadSpy).not.toHaveBeenCalled()
-
-    const channels = emitMock.mock.calls.map(([ch]) => ch)
-    expect(channels).toContain('local_backend://auto_increase_ctx_done/req-max')
-    expect(channels).toContain('local_backend://auto_increase_ctx_at_max')
 
     const doneCall = emitMock.mock.calls.find(
       ([ch]) => ch === 'local_backend://auto_increase_ctx_done/req-max'
@@ -325,11 +277,62 @@ describe('llamacpp_extension auto_increase_ctx handler', () => {
     const atMaxCall = emitMock.mock.calls.find(
       ([ch]) => ch === 'local_backend://auto_increase_ctx_at_max'
     )
-    expect(atMaxCall?.[1]).toMatchObject({
+    expect(atMaxCall?.[1]).toEqual({
       provider: 'llamacpp-upstream',
       modelId: 'm',
       maxCtxLen: 32768,
       currentCtxLen: 32768,
     })
+    expect(eventsEmitMock).not.toHaveBeenCalled()
+  })
+
+  it('reports the current size as the max when the model does not declare one', async () => {
+    coreAnswers({ ok: false, reason: 'at_max', current_ctx_len: 49152 })
+
+    await invokeHandler({
+      request_id: 'req-max-unknown',
+      backend: 'llamacpp-upstream',
+      model_id: 'm',
+      trigger: 'finish_length',
+    })
+
+    const atMaxCall = emitMock.mock.calls.find(
+      ([ch]) => ch === 'local_backend://auto_increase_ctx_at_max'
+    )
+    expect(atMaxCall?.[1]).toMatchObject({ maxCtxLen: 49152, currentCtxLen: 49152 })
+  })
+
+  it('declines without the at_max toast when the model is not loaded', async () => {
+    coreAnswers({ ok: false, reason: 'not-loaded' })
+
+    await invokeHandler({
+      request_id: 'req-gone',
+      backend: 'llamacpp-upstream',
+      model_id: 'm',
+      trigger: 'error',
+    })
+
+    expect(emitMock).toHaveBeenCalledTimes(1)
+    expect(emitMock).toHaveBeenCalledWith(
+      'local_backend://auto_increase_ctx_done/req-gone',
+      { ok: false, reason: 'not-loaded' }
+    )
+  })
+
+  it('emits done(ok:false, reason:exception:...) when the core call fails', async () => {
+    coreAnswers(new Error('OOM'))
+
+    await invokeHandler({
+      request_id: 'req-4',
+      backend: 'llamacpp-upstream',
+      model_id: 'm',
+      trigger: 'error',
+    })
+
+    expect(emitMock).toHaveBeenCalledTimes(1)
+    const [channel, body] = emitMock.mock.calls[0]
+    expect(channel).toBe('local_backend://auto_increase_ctx_done/req-4')
+    expect(body).toMatchObject({ ok: false })
+    expect(String((body as any).reason)).toContain('OOM')
   })
 })

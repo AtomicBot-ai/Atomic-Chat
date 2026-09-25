@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
@@ -12,13 +13,25 @@ const open = vi.fn()
 
 let updateState: UpdateState
 
+// Like the real hook, `remindMeLater` is component state: setting it
+// re-renders the banner, so the tests can watch the banner actually go away
+// (and give the corner back) instead of only watching the setter get called.
 vi.mock('@/hooks/useAppUpdater', () => ({
-  useAppUpdater: () => ({
-    updateState,
-    downloadAndInstallUpdate,
-    setRemindMeLater,
-  }),
+  useAppUpdater: () => {
+    const [remindMeLater, setRemind] = useState(updateState.remindMeLater)
+    return {
+      updateState: { ...updateState, remindMeLater },
+      downloadAndInstallUpdate,
+      setRemindMeLater: (remind: boolean) => {
+        setRemindMeLater(remind)
+        setRemind(remind)
+      },
+    }
+  },
 }))
+
+const banner = () => screen.queryByTestId('app-update-banner')
+const appClaimsCorner = () => useUpdateBannerSlots.getState().claimed.app
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ opener: () => ({ open }) }),
@@ -110,24 +123,36 @@ describe('DialogAppUpdater', () => {
     expect(screen.queryByText('2.0.37')).not.toBeInTheDocument()
   })
 
-  it('installs on "Update"', async () => {
+  it('installs on "Update" and keeps the banner up for the download', async () => {
     const user = userEvent.setup()
     render(<DialogAppUpdater />)
+    expect(appClaimsCorner()).toBe(true)
 
     await user.click(screen.getByRole('button', { name: 'updater:update' }))
 
     expect(downloadAndInstallUpdate).toHaveBeenCalledTimes(1)
     expect(setRemindMeLater).not.toHaveBeenCalled()
+    expect(banner()).toBeInTheDocument()
+    expect(appClaimsCorner()).toBe(true)
   })
 
   it('puts the banner away on "Remind me later" and on the ×', async () => {
     const user = userEvent.setup()
-    render(<DialogAppUpdater />)
+    const first = render(<DialogAppUpdater />)
 
     await user.click(
       screen.getByRole('button', { name: 'updater:remindMeLater' })
     )
+    expect(banner()).not.toBeInTheDocument()
+    expect(appClaimsCorner()).toBe(false)
+
+    first.unmount()
+    render(<DialogAppUpdater />)
+    expect(appClaimsCorner()).toBe(true)
+
     await user.click(screen.getByRole('button', { name: 'updater:dismiss' }))
+    expect(banner()).not.toBeInTheDocument()
+    expect(appClaimsCorner()).toBe(false)
 
     expect(setRemindMeLater).toHaveBeenCalledTimes(2)
     expect(setRemindMeLater).toHaveBeenNthCalledWith(1, true)
@@ -254,6 +279,10 @@ describe('DialogAppUpdater', () => {
     expect(
       screen.queryByRole('button', { name: 'updater:openRelease' })
     ).not.toBeInTheDocument()
+    // Reading the notes is not an answer to the offer.
+    expect(banner()).toBeInTheDocument()
+    expect(appClaimsCorner()).toBe(true)
+    expect(setRemindMeLater).not.toHaveBeenCalled()
   })
 
   it('disables "Update" while the download runs', () => {

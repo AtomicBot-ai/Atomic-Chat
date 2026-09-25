@@ -1,0 +1,264 @@
+{
+  "comparator": "sse-sequence",
+  "expected": [
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [],
+          "parallel_tool_calls": true,
+          "status": "in_progress",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 0,
+        "type": "response.created"
+      },
+      "event": "response.created"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "",
+          "call_id": "call_a",
+          "id": "<fc_id_0>",
+          "name": "a",
+          "status": "in_progress",
+          "type": "function_call"
+        },
+        "output_index": 0,
+        "sequence_number": 1,
+        "type": "response.output_item.added"
+      },
+      "event": "response.output_item.added"
+    },
+    {
+      "data": {
+        "delta": "{\"x\":",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 2,
+        "type": "response.function_call_arguments.delta"
+      },
+      "event": "response.function_call_arguments.delta"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "",
+          "call_id": "call_b",
+          "id": "<fc_id_1>",
+          "name": "b",
+          "status": "in_progress",
+          "type": "function_call"
+        },
+        "output_index": 1,
+        "sequence_number": 3,
+        "type": "response.output_item.added"
+      },
+      "event": "response.output_item.added"
+    },
+    {
+      "data": {
+        "delta": "{\"y\":",
+        "item_id": "<fc_id_1>",
+        "output_index": 1,
+        "sequence_number": 4,
+        "type": "response.function_call_arguments.delta"
+      },
+      "event": "response.function_call_arguments.delta"
+    },
+    {
+      "data": {
+        "delta": "2}",
+        "item_id": "<fc_id_1>",
+        "output_index": 1,
+        "sequence_number": 5,
+        "type": "response.function_call_arguments.delta"
+      },
+      "event": "response.function_call_arguments.delta"
+    },
+    {
+      "data": {
+        "delta": "1}",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 6,
+        "type": "response.function_call_arguments.delta"
+      },
+      "event": "response.function_call_arguments.delta"
+    },
+    {
+      "data": {
+        "arguments": "{\"x\":1}",
+        "item_id": "<fc_id_0>",
+        "output_index": 0,
+        "sequence_number": 7,
+        "type": "response.function_call_arguments.done"
+      },
+      "event": "response.function_call_arguments.done"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "{\"x\":1}",
+          "call_id": "call_a",
+          "id": "<fc_id_0>",
+          "name": "a",
+          "status": "completed",
+          "type": "function_call"
+        },
+        "output_index": 0,
+        "sequence_number": 8,
+        "type": "response.output_item.done"
+      },
+      "event": "response.output_item.done"
+    },
+    {
+      "data": {
+        "arguments": "{\"y\":2}",
+        "item_id": "<fc_id_1>",
+        "output_index": 1,
+        "sequence_number": 9,
+        "type": "response.function_call_arguments.done"
+      },
+      "event": "response.function_call_arguments.done"
+    },
+    {
+      "data": {
+        "item": {
+          "arguments": "{\"y\":2}",
+          "call_id": "call_b",
+          "id": "<fc_id_1>",
+          "name": "b",
+          "status": "completed",
+          "type": "function_call"
+        },
+        "output_index": 1,
+        "sequence_number": 10,
+        "type": "response.output_item.done"
+      },
+      "event": "response.output_item.done"
+    },
+    {
+      "data": {
+        "response": {
+          "id": "resp_fixture",
+          "model": "fixture-model",
+          "object": "response",
+          "output": [
+            {
+              "arguments": "{\"x\":1}",
+              "call_id": "call_a",
+              "id": "<fc_id_0>",
+              "name": "a",
+              "status": "completed",
+              "type": "function_call"
+            },
+            {
+              "arguments": "{\"y\":2}",
+              "call_id": "call_b",
+              "id": "<fc_id_1>",
+              "name": "b",
+              "status": "completed",
+              "type": "function_call"
+            }
+          ],
+          "parallel_tool_calls": true,
+          "status": "completed",
+          "tool_choice": "auto",
+          "tools": [],
+          "usage": null
+        },
+        "sequence_number": 11,
+        "type": "response.completed"
+      },
+      "event": "response.completed"
+    }
+  ],
+  "input": {
+    "chunks": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "{\"x\":",
+                    "name": "a"
+                  },
+                  "id": "call_a",
+                  "index": 0
+                },
+                {
+                  "function": {
+                    "arguments": "{\"y\":",
+                    "name": "b"
+                  },
+                  "id": "call_b",
+                  "index": 1
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "2}"
+                  },
+                  "index": 1
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "1}"
+                  },
+                  "index": 0
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ]
+      }
+    ],
+    "kind": "stream",
+    "model": "fixture-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "stream_two_tool_calls_interleaved_args",
+  "placeholders": [
+    "<fc_id_0>",
+    "<fc_id_1>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
+import { useLaunchStore } from '@/stores/launch-store'
 import { Route as LaunchRoute } from '../index'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -157,5 +158,22 @@ describe('Launch page: ZCode', () => {
     expect(invoke).toHaveBeenCalledWith('launch_zcode', { path: APP_PATH })
     expect(toast.info).not.toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
+
+    // The card reads the app as present, and the Run ends back at an idle
+    // button rather than in an install phase or a terminal hand-off.
+    const card = screen
+      .getAllByTestId('card')
+      .find((c) => within(c).queryByText('ZCode'))!
+    expect(within(card).getByText('launch:installed')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        within(card).getByRole('button', { name: 'launch:enable' })
+      ).toBeEnabled()
+    )
+    expect(useLaunchStore.getState().binPath.zcode).toBe(APP_PATH)
+    expect(useLaunchStore.getState().phase.zcode).toBeUndefined()
+    const commands = vi.mocked(invoke).mock.calls.map(([cmd]) => cmd)
+    expect(commands).not.toContain('install_agent')
+    expect(commands).not.toContain('open_agent_terminal')
   })
 })

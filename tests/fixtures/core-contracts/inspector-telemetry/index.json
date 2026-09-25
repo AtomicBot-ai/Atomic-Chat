@@ -1,0 +1,64 @@
+{
+  "cases": [
+    "preview_last_user_message",
+    "preview_parts_join_and_flag_images",
+    "preview_responses_string_input",
+    "preview_responses_array_input",
+    "preview_truncated_on_char_boundary",
+    "preview_no_messages",
+    "preview_empty_messages",
+    "preview_system_only_falls_back_to_last",
+    "preview_non_text_only",
+    "preview_content_null",
+    "preview_messages_not_array_uses_input",
+    "preview_anthropic_blocks",
+    "preview_empty_string_content",
+    "telemetry_openai_deltas_estimate_tokens",
+    "telemetry_usage_trailer_is_authoritative",
+    "telemetry_null_usage_on_every_chunk_ignored",
+    "telemetry_llamacpp_timings",
+    "telemetry_usage_counts_win_timings_rates_win",
+    "telemetry_total_summed_only_when_exact",
+    "telemetry_reasoning_only_previews_reasoning",
+    "telemetry_reply_wins_over_reasoning",
+    "telemetry_first_reasoning_spelling_wins",
+    "telemetry_non_streaming_message",
+    "telemetry_anthropic_events",
+    "telemetry_preview_capped_across_deltas",
+    "telemetry_empty_content_is_not_a_token",
+    "telemetry_nothing_seen",
+    "telemetry_non_choice_json_ignored",
+    "inject_usage_when_not_asked",
+    "inject_usage_into_existing_options",
+    "inject_usage_client_choice_wins",
+    "inject_usage_not_streaming",
+    "inject_usage_stream_absent",
+    "inject_usage_stream_truthy_string",
+    "inject_usage_options_not_object",
+    "inject_usage_options_null",
+    "inject_usage_root_array",
+    "inject_usage_invalid_json",
+    "usage_only_trailer",
+    "usage_only_null_usage",
+    "usage_only_normal_delta",
+    "usage_only_no_choices_field"
+  ],
+  "comparator_notes": {
+    "constants": {
+      "log_capacity": 200,
+      "preview_max_chars": 1000,
+      "progress_inflight_ceiling": 64,
+      "progress_interval_ms": 1000
+    },
+    "json-exact": "Call the function named by input.kind and compare with expected as a JSON tree.",
+    "privacy": "prompt_preview and reply_preview are user content: in the app they travel only on api-inspector:// channels and live only in memory (ATO-113).",
+    "stream_telemetry": "Feed each frame's json at start + offset_ms, in order; with whole_response the first-content time is cleared afterwards (a non-streamed reply has no time to first token); expected is the finish fields the telemetry folds into."
+  },
+  "comparators": [
+    "json-exact"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/request_inspector.rs"
+  }
+}

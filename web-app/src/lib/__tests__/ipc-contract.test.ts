@@ -14,6 +14,11 @@ const TAURI_ROOT = join(REPO_ROOT, 'src-tauri')
 const PLUGINS_ROOT = join(TAURI_ROOT, 'plugins')
 
 const EXPECTED_DESKTOP_ONLY = new Set([
+  // atomic-chat-core is a native sidecar. Mobile builds neither bundle it nor
+  // expose its process lifecycle and control commands.
+  'atomic_core_call',
+  'atomic_core_snapshot',
+  'atomic_core_status',
   // ChatGPT subscription sign-in. Desktop only on purpose: the OAuth callback
   // needs a loopback listener on a fixed port, and the refresh token needs a
   // mode-0600 file. `PlatformFeature.CHATGPT_SUBSCRIPTION` gates the UI to
@@ -24,6 +29,10 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'chatgpt_models',
   'chatgpt_status',
   'check_for_app_updates',
+  // The session resolver answers from the app's mirror of atomic-chat-core's session table, and
+  // no core runs on the mobile targets.
+  'list_local_sessions',
+  'resolve_local_session',
   'is_update_available',
   // Best-effort crash-reporting scope sync. Every call site in
   // `lib/sentry.ts` swallows a rejection, and `PlatformFeature.ANALYTICS` is
@@ -31,16 +40,8 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',
-  // Settings → Remote & LAN. Desktop only on purpose: the Cloudflare tunnel is
-  // a bundled `cloudflared` sidecar, and both cards expose the Local API
-  // Server, which mobile does not have.
-  // `PlatformFeature.LOCAL_API_SERVER` gates the UI to match.
-  'get_lan_addresses',
-  'get_remote_access_status',
-  'start_remote_access',
-  'stop_remote_access',
 ])
-const EXPECTED_MOBILE_ONLY = new Set(['abort_remote_stream'])
+const EXPECTED_MOBILE_ONLY = new Set<string>()
 
 /**
  * Commands that shared (non-platform-gated) frontend code invokes, and that
@@ -61,8 +62,6 @@ const MOBILE_REQUIRED = [
 ]
 const EXPECTED_PLUGIN_IDS = [
   'atomic-audio',
-  'atomic-diffusion',
-  'foundation-models',
   'hardware',
   'llamacpp',
   'llamacpp-upstream',

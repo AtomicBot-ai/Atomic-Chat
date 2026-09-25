@@ -31,7 +31,7 @@
   }
 }
 
-/* Вращение логотипа (без «помахивания»); инверсия только на img внутри */
+/* Logo rotation (without "wobbling"); inversion only on the img inside */
 #initial-loader .loader-logo-spin {
   width: 5rem;
   height: 5rem;

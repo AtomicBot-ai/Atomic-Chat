@@ -1,0 +1,60 @@
+{
+  "cases": [
+    "request_minimal_string_content",
+    "request_missing_model_is_none",
+    "request_missing_messages_is_none",
+    "request_message_without_role_is_none",
+    "request_content_neither_string_nor_array_is_none",
+    "request_unknown_role_string_content_skipped",
+    "request_stream_true_passed_through",
+    "request_system_string",
+    "request_system_blocks_joined_with_newline",
+    "request_system_blocks_all_empty_dropped",
+    "request_system_and_developer_messages_merged_into_one_leading_system",
+    "request_user_single_text_block_becomes_string",
+    "request_user_text_and_image_become_parts",
+    "request_user_image_media_type_on_block_fallback",
+    "request_user_image_without_data_dropped",
+    "request_user_unknown_block_with_text_kept",
+    "request_user_tool_results_come_before_user_text",
+    "request_user_tool_result_content_object_and_missing",
+    "request_user_only_tool_results_emits_no_user_message",
+    "request_user_empty_array_emits_nothing",
+    "request_assistant_text_only",
+    "request_assistant_tool_use_without_text_has_null_content",
+    "request_assistant_text_and_two_tool_uses",
+    "request_assistant_tool_use_missing_input_skipped",
+    "request_assistant_empty_array_content_is_empty_string",
+    "request_assistant_text_and_image_become_parts",
+    "request_tools_mapped_and_nameless_dropped",
+    "request_tools_all_invalid_omits_field",
+    "request_passthrough_params_and_stop_sequences",
+    "response_text_stop",
+    "response_tool_calls_with_text",
+    "response_length_maps_to_max_tokens_and_empty_text_dropped",
+    "response_null_content_and_unknown_finish_reason_passed_through",
+    "response_no_choices",
+    "stream_text_then_done",
+    "stream_text_with_finish_reason_stops_before_done",
+    "stream_text_then_tool_call_closes_text_block",
+    "stream_two_parallel_tool_calls_then_done",
+    "stream_several_events_in_one_network_chunk",
+    "stream_ignores_comments_invalid_json_and_chunks_without_delta",
+    "stream_ends_without_done_or_finish_emits_no_closing_events",
+    "stream_done_only",
+    "stream_data_line_split_across_network_chunks"
+  ],
+  "comparator_notes": {
+    "json-exact": "input.kind=request: expected.chat = transform_anthropic_to_openai(input.body), null when the Rust returns None (missing model/messages, a message without role, content that is neither string nor array). input.kind=response: expected.anthropic = transform_openai_response_to_anthropic(input.chat). tool_use `input` objects are serialised into `arguments` with serde_json's compact writer, whose object keys are sorted. Compare the whole tree exactly.",
+    "known_divergence": "stream_data_line_split_across_network_chunks records a Rust defect: each network read is split into lines on its own, so a `data:` line cut across two reads is parsed as two invalid halves and silently dropped. The port buffers lines across reads and delivers the text; that single case is expected to differ and is listed as such by the replay harness.",
+    "sse-sequence": "input.kind=stream: transform_and_forward_stream fed input.chunks as consecutive network reads. expected = ordered {event, data} pairs; the proxy writes `event: <data.type>\\ndata: <json>\\n\\n`. output_tokens in message_delta is the whitespace-separated word count of the streamed text, not a token count."
+  },
+  "comparators": [
+    "json-exact",
+    "sse-sequence"
+  ],
+  "source": {
+    "commit": "6ee6e471782c8f32b0c63824f8174fef9c1990d6",
+    "file": "src-tauri/src/core/server/proxy.rs"
+  }
+}

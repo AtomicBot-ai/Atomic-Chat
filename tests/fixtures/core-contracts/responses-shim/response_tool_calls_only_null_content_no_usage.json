@@ -1,0 +1,60 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "created_at": 0,
+      "id": "resp_fixture",
+      "model": "fallback-model",
+      "object": "response",
+      "output": [
+        {
+          "arguments": "{\"cmd\":\"ls\"}",
+          "call_id": "call_9",
+          "id": "<fc_id_0>",
+          "name": "shell",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "status": "completed",
+      "tool_choice": "auto",
+      "tools": [],
+      "usage": null
+    }
+  },
+  "input": {
+    "chat": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "message": {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"cmd\":\"ls\"}",
+                  "name": "shell"
+                },
+                "id": "call_9",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "kind": "response",
+    "model_fallback": "fallback-model",
+    "response_id": "resp_fixture"
+  },
+  "name": "response_tool_calls_only_null_content_no_usage",
+  "placeholders": [
+    "<fc_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

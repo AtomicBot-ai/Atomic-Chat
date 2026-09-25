@@ -37,7 +37,7 @@ type ImageSettingState = {
   advancedOpen: boolean
   setAdvancedOpen: (value: boolean) => void
 
-  /** Force an engine instead of letting the plugin pick. */
+  /** Force an engine instead of letting the core pick. */
   engineOverride: ImageEngineOverride
   setEngineOverride: (value: ImageEngineOverride) => void
 
@@ -52,7 +52,7 @@ type ImageSettingState = {
   keepModelLoaded: boolean
   setKeepModelLoaded: (value: boolean) => void
 
-  /** Minutes without a job before the plugin unloads the model; 0 = never. */
+  /** Minutes without a job before the core unloads the model; 0 = never. */
   idleUnloadMinutes: number
   setIdleUnloadMinutes: (value: number) => void
 
@@ -62,6 +62,15 @@ type ImageSettingState = {
    */
   evictChatModel: ImageEvictPolicy
   setEvictChatModel: (value: ImageEvictPolicy) => void
+
+  /**
+   * The gallery folder the user chose, or null for `<data>/images`. The core
+   * keeps its configuration only in memory and replaces all of it on every
+   * configure, so the app holds the choice and sends it each time. A blank
+   * value is stored as null.
+   */
+  outputDir: string | null
+  setOutputDir: (value: string | null) => void
 }
 
 const ENGINE_OVERRIDES: readonly ImageEngineOverride[] = [
@@ -97,10 +106,18 @@ export const useImageSetting = create<ImageSettingState>()(
 
       evictChatModel: 'whenNeeded',
       setEvictChatModel: (value) => set({ evictChatModel: value }),
+
+      outputDir: null,
+      setOutputDir: (value) => {
+        const trimmed = value?.trim() ?? ''
+        set({ outputDir: trimmed === '' ? null : trimmed })
+      },
     }),
     {
       name: localStorageKey.settingImages,
       storage: createJSONStorage(() => localStorage),
+      // `outputDir` came without a version bump: a stored state that lacks it
+      // merges over the default, null, which is what it meant.
       version: 1,
       /**
        * An engine we no longer offer, or a policy value from a build that
@@ -136,6 +153,12 @@ export const useImageSetting = create<ImageSettingState>()(
           next.idleUnloadMinutes < 0
         ) {
           next.idleUnloadMinutes = DEFAULT_IMAGE_IDLE_UNLOAD_MINUTES
+        }
+        if (
+          typeof next.outputDir !== 'string' ||
+          next.outputDir.trim() === ''
+        ) {
+          next.outputDir = null
         }
         return next
       },

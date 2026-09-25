@@ -1,0 +1,22 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_FILE_CORRUPT",
+    "details": "llama_model_load: failed to read tensor data\n",
+    "message": "The model file appears to be incomplete or corrupted. Try deleting and re-downloading the model."
+  },
+  "input": {
+    "exit": {
+      "code": 1,
+      "signal": null
+    },
+    "stderr": "llama_model_load: failed to read tensor data\n",
+    "stdout": ""
+  },
+  "name": "corrupt_failed_to_read_tensor",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/error.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

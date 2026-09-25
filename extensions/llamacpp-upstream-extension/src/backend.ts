@@ -51,12 +51,6 @@ export interface UpstreamManifest {
   assets: UpstreamManifestAsset[]
 }
 
-/** Where a backend archive is fetched from, and what it must hash to. */
-export interface BackendArchiveSource {
-  url: string
-  sha256?: string
-  size?: number
-}
 // Tag of the bundled offline baseline. It is NOT a pin: a live manifest
 // carrying a newer tag is followed as-is, which is what lets an upstream
 // engine update reach users without an app release. Derived from the generated
@@ -632,50 +626,11 @@ async function fetchLiveManifest(): Promise<UpstreamManifest | null> {
 }
 
 /**
- * Resolves where a backend archive should be downloaded from and what it must
- * hash to.
- *
- * The manifest's `download_base` (our signed mirror) is used only when the
- * manifest describes *this exact tag* and lists *this exact asset* with a
- * hash. Anything else — an older tag the user is reinstalling, a tag we never
- * mirrored, an unreachable manifest — resolves to the ggml-org CDN without a
- * hash, which is what the client did before the mirror existed.
- */
-export async function resolveBackendArchiveSource(
-  version: string,
-  backend: string
-): Promise<BackendArchiveSource> {
-  const cleanVersion = version.replace(/\uFEFF/g, '').trim()
-  const archiveName = getBackendArchiveName(cleanVersion, backend)
-  const fallback = {
-    url: `${GGML_ORG_DOWNLOAD_BASE}/${cleanVersion}/${archiveName}`,
-  }
-
-  const manifest = _cachedManifest ?? (await fetchLiveManifest())
-  if (!manifest || manifest.tag_name !== cleanVersion) return fallback
-  if (!manifest.download_base) return fallback
-
-  const asset = (manifest.assets ?? []).find((a) => a.name === archiveName)
-  if (!asset?.sha256 || !asset.size) {
-    console.info(
-      `[resolveBackendArchiveSource] ${archiveName} is not mirrored for ${cleanVersion}; using the upstream CDN`
-    )
-    return fallback
-  }
-
-  return {
-    url: `${manifest.download_base}/${cleanVersion}/${archiveName}`,
-    sha256: asset.sha256,
-    size: asset.size,
-  }
-}
-
-/**
  * Builds the download URL for a specific backend version on the ggml-org CDN.
  *
- * This is the un-mirrored fallback shape. Download paths should call
- * `resolveBackendArchiveSource`, which prefers our signed mirror and returns
- * the hash to verify; this function stays for callers that only need a URL.
+ * This is the un-mirrored fallback shape. The core resolves the real download
+ * source (our signed mirror when the manifest lists the asset); this function
+ * stays for callers that only need a URL.
  *
  * Asset naming differs by platform:
  *   - macOS: `llama-{tag}-bin-macos-{arm64,x64}.tar.gz`
@@ -776,76 +731,6 @@ export function requiredDiskSpaceForBackend(
       ? archiveBytes
       : WIN_ROCM_ARCHIVE_BYTES_FALLBACK
   return archive + WIN_ROCM_UNPACKED_BYTES + BACKEND_INSTALL_HEADROOM_BYTES
-}
-
-/**
- * Maps a Windows CUDA backend variant id (e.g. `win-cuda-13.4-x64`) to
- * the matching cudart asset on the same ggml-org/llama.cpp release.
- *
- * The main `llama-{tag}-bin-win-cuda-{12.4,13.x}-x64.zip` archives ship
- * only the llama-server executable and its direct deps; the CUDA Toolkit
- * runtime DLLs (cudart64_*.dll, cublas64_*.dll, cublasLt64_*.dll, …)
- * live in a sibling `cudart-llama-bin-win-cuda-{12.4,13.x}-x64.zip`.
- * Without those DLLs, `llama-server.exe --list-devices` returns an empty
- * device list on machines that don't have the CUDA Toolkit installed
- * system-wide (GitHub issue AtomicBot-ai/Atomic-Chat#14).
- *
- * ggml-org dropped CUDA 11 release artifacts — the lowest CUDA tier
- * shipped is CUDA 12.4. Hosts whose driver only supports CUDA 11 fall
- * back to the CPU build via runtime driver-version gating.
- *
- * These companions are deliberately NOT mirrored: the DLLs inside are
- * NVIDIA's own and already signed by NVIDIA, and at ~391 MB each they would
- * triple the size of every mirrored tag. They keep resolving to the ggml-org
- * CDN even when the backend archive itself comes from our mirror.
- */
-const WINDOWS_CUDA_BACKEND_RE = /^win-cuda-(12\.\d+|13\.\d+)-x64$/
-
-function matchWindowsCudaBackend(backend: string): string | null {
-  const match = WINDOWS_CUDA_BACKEND_RE.exec(
-    backend.replace(/\uFEFF/g, '').trim()
-  )
-  if (!match) return null
-  return match[1]
-}
-
-function buildWindowsCudartArchiveName(cudaToolkitVersion: string): string {
-  return `cudart-llama-bin-win-cuda-${cudaToolkitVersion}-x64.zip`
-}
-
-/**
- * Returns the download URL for the cudart companion archive that must be
- * merged into `<backendDir>/build/bin/` for a Windows CUDA backend, or
- * `null` if `backend` is not one of the Windows CUDA variants.
- */
-export function getCudartDownloadUrl(
-  version: string,
-  backend: string
-): string | null {
-  const toolkitVersion = matchWindowsCudaBackend(backend)
-  if (!toolkitVersion) return null
-  const filename = buildWindowsCudartArchiveName(toolkitVersion)
-  const cleanVersion = version.replace(/\uFEFF/g, '').trim()
-  return `${GGML_ORG_DOWNLOAD_BASE}/${cleanVersion}/${filename}`
-}
-
-/**
- * Returns the cudart filename (without URL) for a Windows CUDA backend,
- * or `null` if the backend is not a Windows CUDA variant.
- */
-export function getCudartArchiveName(backend: string): string | null {
-  const toolkitVersion = matchWindowsCudaBackend(backend)
-  if (!toolkitVersion) return null
-  return buildWindowsCudartArchiveName(toolkitVersion)
-}
-
-/**
- * Returns the CUDA Toolkit version string (e.g. `13.3`) that the Rust
- * `is_cuda_installed` command expects for a given Windows CUDA backend.
- * `null` for non-CUDA backends.
- */
-export function getCudaToolkitVersion(backend: string): string | null {
-  return matchWindowsCudaBackend(backend)
 }
 
 /**
@@ -1077,67 +962,6 @@ export async function isBackendInstalled(
 }
 
 /**
- * Compute the set of backend type strings that are equivalent to `backendType`
- * for the purpose of compatibility checking (ATO-233). In particular, ggml-org
- * Linux tarballs carry `ubuntu-*` asset names (e.g. `ubuntu-vulkan-x64`), but
- * the extension stores backends under `linux-*` internal ids
- * (`linux-vulkan-x64`). Backends installed via "Install Backend from File"
- * with an unpatched version of the app may therefore be on disk under the
- * ubuntu name. This helper returns ALL names that should be treated as the
- * same type so `findCompatibleInstalledBackend` can find them.
- */
-function backendTypeEquivalents(backendType: string): Set<string> {
-  const ids = new Set<string>()
-  const bt = backendType.replace(/\uFEFF/g, '').trim()
-  ids.add(bt)
-  // linux-vulkan-x64 ↔ ubuntu-vulkan-x64
-  if (bt === 'linux-vulkan-x64') ids.add('ubuntu-vulkan-x64')
-  if (bt === 'linux-vulkan-arm64') ids.add('ubuntu-vulkan-arm64')
-  if (bt === 'linux-cpu-x64') ids.add('ubuntu-x64')
-  if (bt === 'linux-cpu-arm64') ids.add('ubuntu-arm64')
-  // Reverse mappings: when the on-disk name is the ubuntu variant
-  if (bt === 'ubuntu-vulkan-x64') ids.add('linux-vulkan-x64')
-  if (bt === 'ubuntu-vulkan-arm64') ids.add('linux-vulkan-arm64')
-  if (bt === 'ubuntu-x64') ids.add('linux-cpu-x64')
-  if (bt === 'ubuntu-arm64') ids.add('linux-cpu-arm64')
-  return ids
-}
-
-/**
- * Find a working, already-installed backend of the SAME type as `backendType`
- * (e.g. `macos-arm64`), regardless of its release tag. Used as a fallback
- * (ATO-179, AC2) when the model's pinned `version_backend` can't be obtained
- * (download failed / the tag was pruned upstream) but a compatible build is
- * already on disk — so the load degrades to a working backend instead of
- * failing with `BINARY_NOT_FOUND`.
- *
- * "Compatible" is deliberately limited to the identical backend type: every
- * release tag of the same type targets the same platform / GPU variant and is
- * interchangeable. We do NOT cross types here (e.g. cuda → cpu) — that is a
- * feature/perf trade-off that must stay an explicit user choice.
- *
- * ATO-233: also recognises `ubuntu-*` ↔ `linux-*` name equivalents so that
- * backends installed via "Install Backend from File" with ggml-org upstream
- * tarball names are found even if the on-disk directory still uses the old
- * ubuntu name.
- *
- * Returns the newest (by on-disk mtime, via `order`) matching backend, or
- * `null` when none is installed.
- */
-export async function findCompatibleInstalledBackend(
-  backendType: string
-): Promise<BackendVersion | null> {
-  const equivalents = backendTypeEquivalents(backendType)
-  const installed = await getLocalInstalledBackends()
-  const sameType = installed.filter((b) =>
-    equivalents.has(b.backend.replace(/\uFEFF/g, '').trim())
-  )
-  if (sameType.length === 0) return null
-  sameType.sort((a, b) => (b.order ?? 0) - (a.order ?? 0))
-  return sameType[0]
-}
-
-/**
  * Remove orphan / incomplete backend directories from this provider's
  * backends tree (ATO-179, AC3). An "incomplete" directory is one that exists
  * on disk but carries no `llama-server` executable — e.g. an empty stub left
@@ -1172,6 +996,9 @@ export async function cleanupIncompleteBackends(): Promise<string[]> {
     }
 
     for (const backendType of backendTypes) {
+      // `<backend>.incoming-<ts>` is atomic-chat-core staging an install it is running right now
+      // (possibly for the CLI); it renames the folder into place when the archive is unpacked.
+      if (backendType.includes('.incoming-')) continue
       if (await isBackendInstalled(backendType, version)) continue
       const dir = await getBackendDir(backendType, version)
       await fs.rm(dir)

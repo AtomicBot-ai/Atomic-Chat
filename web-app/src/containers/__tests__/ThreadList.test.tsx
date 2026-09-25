@@ -289,5 +289,13 @@ describe('ThreadList right-click menu', () => {
         label: 'thread-thread-1',
       })
     )
+    // Exactly one window, for the row that was clicked, titled after the
+    // thread so the user can tell the windows apart.
+    expect(openWindow.mock.calls).toHaveLength(1)
+    expect(openWindow.mock.calls[0][0]).toMatchObject({
+      url: '/threads/thread-1',
+      label: 'thread-thread-1',
+      title: 'First chat',
+    })
   })
 })

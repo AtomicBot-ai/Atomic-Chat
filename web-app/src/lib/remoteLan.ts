@@ -1,11 +1,12 @@
 /**
  * Pure helpers behind Settings → Remote & LAN.
  *
- * This is the single boundary between the Rust tunnel manager's wire shape and
- * the app's domain types (tolerant of snake_case and camelCase, so a serde
- * rename cannot blank the page), plus the state → label/tone/message rules the
- * two cards share. No React and no stores, so every rule is testable on its
- * own.
+ * This is the single boundary between the wire shape of the core's tunnel
+ * manager (`/atomic/v1/remote-access*`, and `remote-access:status` relayed as
+ * `atomic-core://remote-access:status`) and the app's domain types (tolerant of
+ * snake_case and camelCase, so a renamed field cannot blank the page), plus
+ * the state → label/tone/message rules the two cards share. No React and no
+ * stores, so every rule is testable on its own.
  */
 
 import type { StatusTone } from '@/containers/api/ApiStatusIndicators'
@@ -205,7 +206,8 @@ export type RemoteAccessRejection =
   | { kind: 'failed'; code: string }
 
 /**
- * Keeps a value only if it is shaped like one of Rust's machine codes, and
+ * Keeps a value only if it is shaped like a machine code (the tunnel's
+ * `not_reachable`, a core code lowercased to `core_unreachable`), and
  * collapses everything else to `unknown`. Codes end up in telemetry, and
  * free-form error text can carry a hostname or an address.
  */
@@ -214,14 +216,43 @@ export function toFailureCode(value: string | null | undefined): string {
   return /^[a-z][a-z0-9_]{0,63}$/.test(text) ? text : 'unknown'
 }
 
+/**
+ * Whether a rejected call is the relay's `{code, message, details?}`: the core
+ * is not running, did not answer, or answered with an error
+ * (`CORE_UNREACHABLE`, `CORE_START_FAILED`, `HTTP_502`, …). That is the call
+ * failing this time, and none of it is read as the feature missing — not even
+ * a core without the route, which refuses it with `INVALID_ARGUMENT` like any
+ * other request it will not serve. What is not this shape is not the relay's:
+ * in practice the `malformed_status` Error thrown for a reply that is not a
+ * status.
+ */
+export function isCoreFailure(error: unknown): boolean {
+  const record = asRecord(error)
+  return (
+    record !== null &&
+    typeof record.code === 'string' &&
+    typeof record.message === 'string'
+  )
+}
+
 function rejectionText(error: unknown): string {
   if (typeof error === 'string') return error
   const record = asRecord(error)
-  if (record && typeof record.message === 'string') return record.message
+  if (!record) return ''
+  // A core failure is read by its code (`CORE_UNREACHABLE` → a machine code);
+  // its message is English for people and is not read at all.
+  if (typeof record.code === 'string') return record.code.toLowerCase()
+  if (typeof record.message === 'string') return record.message
   return ''
 }
 
-/** Rust rejects `start`/`stop` with a bare code string. */
+/**
+ * Reads what a `start`/`stop` call was rejected with. The core refuses with
+ * `{code: 'REMOTE_ACCESS_*', message, details: <reason>}`, and `coreCall` in
+ * `services/app/tauri.ts` rethrows that reason bare (`server_stopped`, …); the
+ * bare string is what this expects, so that rethrow must stay. Every other
+ * core failure arrives as the object itself and is reported by its code.
+ */
 export function parseRemoteAccessRejection(
   error: unknown
 ): RemoteAccessRejection {
@@ -257,8 +288,9 @@ function remoteErrorMessage(code: string): AccessMessage {
 
 /**
  * The one line under the Remote access header. Highest priority first: the
- * backend cannot do this at all → what the last click ran into → what the
- * tunnel itself reports → why Start would not work yet → the standing warning.
+ * backend's answer is not a status at all → what the last click ran into →
+ * what the tunnel itself reports → why Start would not work yet → the standing
+ * warning.
  */
 export function remoteAccessMessage({
   unavailable,

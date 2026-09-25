@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }))
 
+import { LTX_2, WAN_22 } from '@/lib/diffusion/__tests__/video-fixtures'
 import {
   clearDiffusionCatalogCache,
   fetchDiffusionCatalog,
@@ -410,6 +411,8 @@ describe('baseline and lookups', () => {
       'krea-2-turbo',
       'qwen-image',
       'qwen-image-2.1',
+      'ltx-2',
+      'wan2.2-ti2v-5b',
     ])
   })
 
@@ -493,7 +496,7 @@ describe('baseline and lookups', () => {
       name: 'Krea 2 Turbo',
       license: 'krea-2-community-license',
       gated: true,
-      description: expect.stringContaining('USD $1M annual revenue'),
+      description: expect.stringContaining('Krea 2 Community License'),
       defaults: {
         steps: 8,
         cfg_scale: 1,
@@ -559,5 +562,74 @@ describe('baseline and lookups', () => {
         },
       ],
     })
+  })
+})
+
+describe('video families', () => {
+  const raw = (family: unknown) => JSON.parse(JSON.stringify(family)) as Record<string, unknown>
+
+  it('keeps LTX-2.3 and Wan 2.2 verbatim: the audio VAE, the connectors, the sigma schedule and the video block', () => {
+    expect(sanitizeDiffusionFamily(raw(LTX_2))).toEqual(LTX_2)
+    expect(sanitizeDiffusionFamily(raw(WAN_22))).toEqual(WAN_22)
+    const ltx = sanitizeDiffusionFamily(raw(LTX_2))!
+    expect(ltx.text_encoders.map((t) => t.field)).toEqual(['llm', 'embeddings_connectors'])
+    expect(ltx.audio_vae?.filename).toBe('vae/ltx-2.3-22b-distilled_audio_vae.safetensors')
+    expect(ltx.defaults.sigmas).toHaveLength(8)
+    expect(ltx.video?.frame_range).toEqual([9, 257])
+  })
+
+  it('drops a video family whose video block is missing or off its own lattice, grid or range', () => {
+    const withVideo = (video: unknown) => ({ ...raw(LTX_2), video })
+    expect(sanitizeDiffusionFamily({ ...raw(LTX_2), video: undefined })).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo('x'))).toBeNull()
+    const video = LTX_2.video!
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, frames: 120 }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, frames: 265 }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, fps: 0 }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, frame_step: 0 }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, frame_offset: -1 }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, frame_range: [9] }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, resolution_presets: [] }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, resolution_presets: [[770, 512]] }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, resolution_presets: [[2048, 512]] }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, resolution_presets: [[768]] }))).toBeNull()
+    expect(sanitizeDiffusionFamily(withVideo({ ...video, resolution_presets: 'x' }))).toBeNull()
+  })
+
+  it('ignores a video block on an image family, and refuses a bad audio VAE or sigma schedule', () => {
+    const image = sanitizeDiffusionFamily({ ...family(), video: LTX_2.video })
+    expect(image).not.toBeNull()
+    expect(image).not.toHaveProperty('video')
+    expect(sanitizeDiffusionFamily({ ...raw(LTX_2), audio_vae: { repo: 'x' } })).toBeNull()
+    expect(
+      sanitizeDiffusionFamily({ ...raw(LTX_2), defaults: { ...LTX_2.defaults, sigmas: [1, 0] } })
+    ).toBeNull()
+    expect(
+      sanitizeDiffusionFamily({ ...raw(LTX_2), defaults: { ...LTX_2.defaults, sigmas: [] } })
+    ).toBeNull()
+    expect(
+      sanitizeDiffusionFamily({ ...raw(LTX_2), defaults: { ...LTX_2.defaults, sigmas: 'x' } })
+    ).toBeNull()
+    // A text encoder with a field the client does not know is refused, as before.
+    expect(
+      sanitizeDiffusionFamily({
+        ...raw(LTX_2),
+        text_encoders: [{ ...LTX_2.text_encoders[0], field: 'gemma' }],
+      })
+    ).toBeNull()
+  })
+
+  it('bundles the two video families with their video blocks', () => {
+    const baseline = getBaselineDiffusionCatalog()
+    const ltx = findFamily(baseline, 'ltx-2')
+    const wan = findFamily(baseline, 'wan2.2-ti2v-5b')
+    expect(ltx?.modality).toBe('video')
+    expect(ltx?.video).toMatchObject({ fps: 24, frame_step: 8, frame_offset: 1, frames: 121 })
+    expect(ltx?.audio_vae?.repo).toBe('unsloth/LTX-2.3-GGUF')
+    expect(ltx?.text_encoders.map((t) => t.field)).toEqual(['llm', 'embeddings_connectors'])
+    expect(ltx?.defaults.sigmas).toEqual([1, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875])
+    expect(wan?.video).toMatchObject({ fps: 24, frame_step: 4, frame_offset: 1, frames: 121 })
+    expect(wan?.capabilities.negative_prompt).toBe(true)
+    expect(findQuant(ltx!, 'q4_k_m')?.recommended).toBe(true)
   })
 })

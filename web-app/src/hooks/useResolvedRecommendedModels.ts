@@ -20,7 +20,7 @@ import {
 import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-registry-store'
 import type { CatalogModel } from '@/services/models/types'
 
-//* Стабильная ссылка: иначе селектор возвращал бы новый {} на каждый рендер.
+//* Stable reference: otherwise the selector would return a new {} on every render.
 const EMPTY_TIERS: Partial<Record<HardwareTier, Recommendation[]>> = {}
 
 const currentOs: RecommendationPlatform = IS_MACOS
@@ -29,7 +29,7 @@ const currentOs: RecommendationPlatform = IS_MACOS
     ? 'windows'
     : 'linux'
 
-//* Сохраняем camelCase-форму, на которую завязаны Hub и SetupScreen.
+//* Keep the camelCase shape that Hub and SetupScreen depend on.
 type LegacyRecommendation = {
   modelName: string
   descriptionKey: string
@@ -46,7 +46,7 @@ const toLegacy = (rec: Recommendation): LegacyRecommendation => ({
   ...(rec.mmproj_quant ? { mmprojQuant: rec.mmproj_quant } : {}),
 })
 
-//* Не теряем разрешённые карточки при размонтировании Hub между переходами.
+//* Don't lose resolved cards when Hub unmounts between navigations.
 const resolvedModels: Record<string, CatalogModel> = {
   ...RECOMMENDED_MODEL_FALLBACKS,
 }
@@ -81,7 +81,7 @@ export function useResolvedRecommendedModels(
   const remoteRecommendations = useRecommendedModelsRegistryStore(
     (s) => s.recommendations
   )
-  //* `?? {}` — персистнутый/замоканный стор может быть без нового поля.
+  //* `?? {}` — a persisted/mocked store may lack the new field.
   const tiers = useRecommendedModelsRegistryStore((s) => s.tiers ?? EMPTY_TIERS)
 
   const [fetched, setFetched] = useState<Record<string, CatalogModel>>(() => ({
@@ -164,7 +164,7 @@ export function useResolvedRecommendedModels(
             })),
             is_mlx: catalog.is_mlx ?? catalog.library_name === 'mlx',
           }
-          //! Как в useModelSources: MLX только на macOS
+          //! Same as in useModelSources: MLX only on macOS
           if (!IS_MACOS && processed.is_mlx) return null
           resolvedModels[rec.modelName] = processed
           return processed

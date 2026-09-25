@@ -1,0 +1,17 @@
+{
+  "comparator": "error-exact",
+  "expected": {
+    "code": "MODEL_ARCH_NOT_SUPPORTED",
+    "details": "KeyError: 'model.layers.0.feed_forward.switch_mlp.gate_proj.weight'",
+    "message": "This model's architecture isn't supported by the current MLX backend yet."
+  },
+  "input": {
+    "stderr": "KeyError: 'model.layers.0.feed_forward.switch_mlp.gate_proj.weight'"
+  },
+  "name": "arch_switch_mlp_key",
+  "source": {
+    "commit": "5881e0bf3a955fcc5e9803555940d1f038eadf14",
+    "file": "src-tauri/plugins/tauri-plugin-mlx/src/error.rs",
+    "provider": "mlx"
+  }
+}

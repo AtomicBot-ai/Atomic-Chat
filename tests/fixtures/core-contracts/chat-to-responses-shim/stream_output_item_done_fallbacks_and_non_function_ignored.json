@@ -1,0 +1,137 @@
+{
+  "comparator": "sse-sequence",
+  "error": null,
+  "expected": [
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "",
+                    "name": "n"
+                  },
+                  "id": "fc_only",
+                  "index": 0,
+                  "type": "function"
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "function": {
+                    "arguments": "",
+                    "name": "gen"
+                  },
+                  "id": "<call_id_0>",
+                  "index": 1,
+                  "type": "function"
+                }
+              ]
+            },
+            "finish_reason": null,
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    },
+    {
+      "data": {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls",
+            "index": 0
+          }
+        ],
+        "created": 1700000000,
+        "id": "<chatcmpl_id_0>",
+        "model": "gpt-5.4",
+        "object": "chat.completion.chunk"
+      },
+      "event": "message"
+    }
+  ],
+  "input": {
+    "call_finish": false,
+    "created": 1700000000,
+    "events": [
+      {
+        "item": {
+          "content": [
+            {
+              "text": "ignored",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_1",
+          "role": "assistant",
+          "type": "message"
+        },
+        "type": "response.output_item.done"
+      },
+      {
+        "item": {
+          "id": "fc_only",
+          "name": "n",
+          "type": "function_call"
+        },
+        "type": "response.output_item.done"
+      },
+      {
+        "item": {
+          "call_id": "call_x",
+          "id": "fc_noname",
+          "type": "function_call"
+        },
+        "type": "response.output_item.done"
+      },
+      {
+        "item": {
+          "name": "gen",
+          "type": "function_call"
+        },
+        "type": "response.output_item.done"
+      },
+      {
+        "response": {},
+        "type": "response.completed"
+      }
+    ],
+    "kind": "stream",
+    "model": "gpt-5.4"
+  },
+  "name": "stream_output_item_done_fallbacks_and_non_function_ignored",
+  "placeholders": [
+    "<chatcmpl_id_0>",
+    "<call_id_0>"
+  ],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

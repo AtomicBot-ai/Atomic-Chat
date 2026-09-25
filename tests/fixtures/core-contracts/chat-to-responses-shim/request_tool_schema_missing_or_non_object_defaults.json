@@ -1,0 +1,102 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "responses": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [],
+      "instructions": "You are operating inside Atomic Chat. Follow the user's instructions, use only tools supplied in this request, and return concise, accurate results.",
+      "parallel_tool_calls": true,
+      "prompt_cache_key": "session-fixture",
+      "store": false,
+      "stream": true,
+      "text": {
+        "verbosity": "low"
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "name": "none",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "name": "bool",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "name": "scalar",
+          "parameters": {
+            "type": "string"
+          },
+          "type": "function"
+        },
+        {
+          "name": "untyped",
+          "parameters": {
+            "properties": {
+              "a": {}
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "input": {
+    "body": {
+      "messages": [],
+      "tools": [
+        {
+          "function": {
+            "name": "none"
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "name": "bool",
+            "parameters": true
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "name": "scalar",
+            "parameters": {
+              "type": "string"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "name": "untyped",
+            "parameters": {
+              "properties": {
+                "a": {}
+              }
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "kind": "request",
+    "prompt_cache_key": "session-fixture"
+  },
+  "name": "request_tool_schema_missing_or_non_object_defaults",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/chat_to_responses_shim.rs"
+  }
+}

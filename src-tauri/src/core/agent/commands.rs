@@ -7,8 +7,6 @@ use std::time::UNIX_EPOCH;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Channel, AppHandle, Manager, Runtime, State};
-use tauri_plugin_llamacpp::state::LlamacppState;
-use tauri_plugin_llamacpp_upstream::state::LlamacppState as LlamacppUpstreamState;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -152,16 +150,13 @@ impl<R: Runtime> ContextExpansionHook for AgentContextExpansion<R> {
                 outcome.reason.as_deref().unwrap_or("unknown")
             ));
         }
-        let llama_state: State<LlamacppState> = self.app_handle.state();
-        let upstream_state: State<LlamacppUpstreamState> = self.app_handle.state();
-        find_session_by_model_and_backend(
-            &target.model_id,
-            target.backend,
-            &llama_state,
-            &upstream_state,
-        )
-        .await
-        .map_err(|error| error.to_string())
+        // Re-resolve after the reload: the model is running in a new process on a new port, and
+        // the target the caller handed us describes the one that just went away.
+        let app_state: State<AppState> = self.app_handle.state();
+        let resolver = crate::core::sessions::resolver_for(&self.app_handle, &app_state);
+        find_session_by_model_and_backend(&target.model_id, target.backend, &resolver)
+            .await
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -584,14 +579,11 @@ pub async fn agent_run_turn<R: Runtime>(
     // embedding session is TS-owned and merely looked up per call.
     let docs_bridge: Option<LiveDocsBridge> = request.rag.as_ref().map(|rag| {
         let vector_db = app_handle.state::<tauri_plugin_vector_db::VectorDBState>();
-        let llamacpp = app_handle.state::<LlamacppState>();
-        let upstream = app_handle.state::<LlamacppUpstreamState>();
         LiveDocsBridge::new(
             vector_db.base_dir.clone(),
             rag.thread_collection.clone(),
             rag.project_collection.clone(),
-            llamacpp.llama_server_process.clone(),
-            upstream.llama_server_process.clone(),
+            crate::core::sessions::resolver_for(&app_handle, &state),
         )
     });
     let docs: Option<&dyn DocsBridge> =

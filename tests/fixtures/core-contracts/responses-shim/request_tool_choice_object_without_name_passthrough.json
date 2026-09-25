@@ -1,0 +1,37 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "chat": {
+      "messages": [
+        {
+          "content": "x",
+          "role": "user"
+        }
+      ],
+      "model": "m",
+      "tool_choice": {
+        "mode": "auto",
+        "tools": [],
+        "type": "allowed_tools"
+      }
+    }
+  },
+  "input": {
+    "body": {
+      "input": "x",
+      "model": "m",
+      "tool_choice": {
+        "mode": "auto",
+        "tools": [],
+        "type": "allowed_tools"
+      }
+    },
+    "kind": "request"
+  },
+  "name": "request_tool_choice_object_without_name_passthrough",
+  "placeholders": [],
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/src/core/server/responses_shim.rs"
+  }
+}

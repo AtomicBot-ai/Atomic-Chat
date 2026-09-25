@@ -1,0 +1,29 @@
+{
+  "comparator": "runtime-device-exact",
+  "expected": {
+    "is_inconclusive": true,
+    "snapshot": {
+      "cuda_runtime_missing": false,
+      "device_init_error": null,
+      "gpu_buffer_bytes": null,
+      "gpu_layers_offloaded": null,
+      "loaded_backends": [],
+      "primary_device": "",
+      "total_layers": null
+    }
+  },
+  "input": {
+    "lines": [
+      "main: server is listening on http://127.0.0.1:8080",
+      "srv    load_model: loading model",
+      "print_info: file size = 4.36 GiB (4.83 BPW)"
+    ],
+    "mark_cuda_runtime_missing": false
+  },
+  "name": "unrelated_lines_ignored",
+  "source": {
+    "commit": "ccf5427336d989578234220a7993580aed51ea21",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

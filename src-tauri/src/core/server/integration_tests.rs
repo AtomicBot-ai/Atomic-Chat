@@ -17,11 +17,12 @@ use hyper::{Body, Request, Response, Server};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
-use crate::core::server::dynamic_hosts::DynamicTrustedHosts;
 use crate::core::server::proxy;
 use crate::core::server::request_inspector::{
     RequestInspector, API_INSPECTOR_FINISHED, API_INSPECTOR_STARTED,
 };
+use crate::core::sessions::mirror::CoreSessions;
+use crate::core::sessions::resolver::SessionResolver;
 use crate::core::state::{AutoIncreaseState, ServerHandle};
 
 type Captured = Arc<StdMutex<Vec<(&'static str, Value)>>>;
@@ -92,29 +93,22 @@ async fn spawn_stub_upstream(seen: SeenBody) -> u16 {
 
 /// A llamacpp session entry pointing at the stub. The `Child` is a real but
 /// inert process; the proxy only ever reads `info`.
-async fn session_map_with_stub(
-    model_id: &str,
-    port: u16,
-) -> Arc<Mutex<HashMap<i32, tauri_plugin_llamacpp::LLamaBackendSession>>> {
-    let child = tokio::process::Command::new("sleep")
-        .arg("120")
-        .spawn()
-        .expect("spawn placeholder child");
-    let session = tauri_plugin_llamacpp::LLamaBackendSession {
-        child,
-        info: tauri_plugin_llamacpp::state::SessionInfo {
-            pid: 1,
-            port: port as i32,
-            model_id: model_id.to_string(),
-            model_path: "/tmp/model.gguf".to_string(),
-            is_embedding: false,
-            api_key: "session-key".to_string(),
-            mmproj_path: None,
-            runtime_device: None,
-        },
-        runtime_device: tauri_plugin_llamacpp::runtime_device::new_shared(),
-    };
-    Arc::new(Mutex::new(HashMap::from([(1, session)])))
+async fn session_map_with_stub(model_id: &str, port: u16) -> Arc<CoreSessions> {
+    let mirror = Arc::new(CoreSessions::new());
+    mirror.apply_snapshot(
+        1,
+        "test",
+        &serde_json::json!({ "sessions": [{
+            "pid": 1,
+            "port": port,
+            "model_id": model_id,
+            "model_path": "/tmp/model.gguf",
+            "is_embedding": false,
+            "api_key": "session-key",
+            "provider": "llamacpp",
+        }] }),
+    );
+    mirror
 }
 
 struct Harness {
@@ -122,7 +116,6 @@ struct Harness {
     captured: Captured,
     seen_upstream_body: SeenBody,
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
-    dynamic_hosts: DynamicTrustedHosts,
 }
 
 impl Harness {
@@ -141,14 +134,11 @@ impl Harness {
         let upstream_port = spawn_stub_upstream(seen_upstream_body.clone()).await;
         let sessions = session_map_with_stub(model_id, upstream_port).await;
         let server_handle = Arc::new(Mutex::new(None));
-        let dynamic_hosts = DynamicTrustedHosts::default();
 
         let proxy_port = proxy::start_server(
             tauri::test::mock_app().handle().clone(),
             server_handle.clone(),
-            sessions,
-            Arc::new(Mutex::new(HashMap::new())),
-            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(SessionResolver::new(sessions)),
             "127.0.0.1".to_string(),
             0,
             "/v1".to_string(),
@@ -158,7 +148,6 @@ impl Harness {
             Arc::new(Mutex::new(HashMap::new())),
             Arc::new(AutoIncreaseState::default()),
             inspector,
-            dynamic_hosts.clone(),
         )
         .await
         .expect("proxy should bind")
@@ -169,32 +158,7 @@ impl Harness {
             captured,
             seen_upstream_body,
             server_handle,
-            dynamic_hosts,
         }
-    }
-
-    /// `GET /v1/models` presenting `host_header` (and an `Origin`, when given),
-    /// the way a request relayed by a tunnel arrives: over loopback, but
-    /// carrying the public name. Returns the status and the reflected CORS
-    /// origin.
-    async fn get_models_as(
-        &self,
-        host_header: &str,
-        origin: Option<&str>,
-    ) -> (u16, Option<String>) {
-        let mut request = reqwest::Client::new()
-            .get(format!("http://127.0.0.1:{}/v1/models", self.proxy_port))
-            .header("host", host_header);
-        if let Some(origin) = origin {
-            request = request.header("origin", origin);
-        }
-        let response = request.send().await.expect("proxy should respond");
-        let allowed_origin = response
-            .headers()
-            .get("access-control-allow-origin")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        (response.status().as_u16(), allowed_origin)
     }
 
     async fn post_chat(&self, body: Value) -> String {
@@ -257,9 +221,7 @@ async fn a_second_start_reuses_the_running_server() {
     let second = proxy::start_server(
         tauri::test::mock_app().handle().clone(),
         harness.server_handle.clone(),
-        Arc::new(Mutex::new(HashMap::new())),
-        Arc::new(Mutex::new(HashMap::new())),
-        Arc::new(Mutex::new(HashMap::new())),
+        Arc::new(SessionResolver::new(Arc::new(CoreSessions::new()))),
         "127.0.0.1".to_string(),
         0,
         "/v1".to_string(),
@@ -269,7 +231,6 @@ async fn a_second_start_reuses_the_running_server() {
         Arc::new(Mutex::new(HashMap::new())),
         Arc::new(AutoIncreaseState::default()),
         Arc::new(RequestInspector::new()),
-        DynamicTrustedHosts::default(),
     )
     .await
     .expect("a start behind a running server must not fail");
@@ -478,49 +439,6 @@ async fn polling_endpoints_stay_out_of_the_dashboard() {
         harness.channels()
     );
     assert_eq!(harness.captured.lock().unwrap().len(), 0);
-
-    harness.stop().await;
-}
-
-/// A Cloudflare quick tunnel relays requests over loopback but with its public
-/// `<words>.trycloudflare.com` name in `Host`. That name is only known once
-/// cloudflared prints it, so nobody could have typed it into Trusted Hosts: the
-/// running proxy has to pick it up from the shared dynamic set, and drop it
-/// again the moment the tunnel goes away.
-#[tokio::test(flavor = "multi_thread")]
-async fn the_tunnel_name_is_trusted_only_while_the_tunnel_is_up() {
-    let harness = Harness::start("test-model", false).await;
-    let tunnel = "calm-river-demo.trycloudflare.com";
-    let tunnel_origin = "https://calm-river-demo.trycloudflare.com";
-
-    let (status, _) = harness.get_models_as(tunnel, None).await;
-    assert_eq!(status, 403, "an unknown public name must be rejected");
-
-    harness.dynamic_hosts.set_tunnel_host(tunnel);
-    let (status, _) = harness.get_models_as(tunnel, None).await;
-    assert_eq!(
-        status, 200,
-        "the live tunnel's name must pass Host validation"
-    );
-
-    // A browser client on the tunnel origin also needs its Origin reflected,
-    // which goes through the same trusted-hosts groups.
-    let (status, allowed_origin) = harness.get_models_as(tunnel, Some(tunnel_origin)).await;
-    assert_eq!(status, 200);
-    assert_eq!(allowed_origin.as_deref(), Some(tunnel_origin));
-
-    // Any other quick-tunnel name is still a stranger.
-    let (status, _) = harness
-        .get_models_as("someone-else.trycloudflare.com", None)
-        .await;
-    assert_eq!(status, 403);
-
-    harness.dynamic_hosts.clear_tunnel_host();
-    let (status, _) = harness.get_models_as(tunnel, None).await;
-    assert_eq!(
-        status, 403,
-        "a stopped tunnel's name must stop being trusted"
-    );
 
     harness.stop().await;
 }

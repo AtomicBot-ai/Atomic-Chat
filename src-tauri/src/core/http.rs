@@ -68,6 +68,38 @@ fn shared_post_client(timeout_secs: u64) -> reqwest::Client {
 #[derive(serde::Serialize, Clone)]
 pub struct HttpStreamChunk {
     pub data: String,
+    /// Set on the one message sent after the last chunk. The end of the stream has to travel on
+    /// the channel itself: the command's own return reaches the webview by another route and can
+    /// overtake chunks still on their way, and a reader that took the return for the end closed a
+    /// short reply — a tool call is two chunks — before any of it had arrived.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub done: bool,
+}
+
+/// The longest prefix of `pending` that is whole UTF-8, as text; what is left in `pending` is the
+/// start of a character whose remaining bytes are in the next network chunk. Decoding each chunk
+/// by itself turned every character cut by a chunk boundary into two replacement characters —
+/// routine for Cyrillic, CJK or emoji in a streamed reply. Bytes that are not UTF-8 at all still
+/// become replacement characters.
+fn take_complete_utf8(pending: &mut Vec<u8>) -> String {
+    match std::str::from_utf8(pending) {
+        Ok(text) => {
+            let text = text.to_owned();
+            pending.clear();
+            text
+        }
+        Err(error) if error.error_len().is_none() => {
+            let rest = pending.split_off(error.valid_up_to());
+            let text = String::from_utf8_lossy(pending).into_owned();
+            *pending = rest;
+            text
+        }
+        Err(_) => {
+            let text = String::from_utf8_lossy(pending).into_owned();
+            pending.clear();
+            text
+        }
+    }
 }
 
 /// Simple non-streaming HTTP POST that returns the full response body as text.
@@ -225,6 +257,7 @@ pub async fn stream_local_http(
     }
 
     let mut stream = response.bytes_stream();
+    let mut pending: Vec<u8> = Vec::new();
     loop {
         let next = match tokio::time::timeout(idle_timeout, stream.next()).await {
             Ok(next) => next,
@@ -237,8 +270,12 @@ pub async fn stream_local_http(
         let Some(chunk_result) = next else { break };
         match chunk_result {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes).to_string();
-                if let Err(e) = on_chunk.send(HttpStreamChunk { data: text }) {
+                pending.extend_from_slice(&bytes);
+                let text = take_complete_utf8(&mut pending);
+                if text.is_empty() {
+                    continue;
+                }
+                if let Err(e) = on_chunk.send(HttpStreamChunk { data: text, done: false }) {
                     log::debug!("Channel closed by receiver: {e}");
                     break;
                 }
@@ -249,7 +286,38 @@ pub async fn stream_local_http(
         }
     }
 
+    // Whatever is left is a character the server never finished.
+    let tail = String::from_utf8_lossy(&pending).into_owned();
+    if let Err(e) = on_chunk.send(HttpStreamChunk { data: tail, done: true }) {
+        log::debug!("Channel closed by receiver: {e}");
+    }
+
     Ok(status)
+}
+
+#[cfg(test)]
+mod utf8_tests {
+    use super::take_complete_utf8;
+
+    #[test]
+    fn a_character_cut_by_a_chunk_boundary_is_held_until_it_is_whole() {
+        let bytes = "привет 🙂".as_bytes();
+        for cut in 1..bytes.len() {
+            let mut pending = bytes[..cut].to_vec();
+            let mut text = take_complete_utf8(&mut pending);
+            pending.extend_from_slice(&bytes[cut..]);
+            text.push_str(&take_complete_utf8(&mut pending));
+            assert_eq!(text, "привет 🙂", "cut at byte {cut}");
+            assert!(pending.is_empty());
+        }
+    }
+
+    #[test]
+    fn bytes_that_are_not_utf8_do_not_stall_the_stream() {
+        let mut pending = vec![b'a', 0xff, b'b'];
+        assert_eq!(take_complete_utf8(&mut pending), "a\u{fffd}b");
+        assert!(pending.is_empty());
+    }
 }
 
 #[cfg(test)]
