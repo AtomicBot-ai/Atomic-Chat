@@ -24,10 +24,12 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   create-draft-release:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -44,7 +46,7 @@ jobs:
 
       - name: Create Draft Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 #@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
           name: "Radium v${{ steps.get_version.outputs.version }}"
@@ -59,17 +61,19 @@ jobs:
   # On failure: warning only — default GitHub-generated notes remain.
   # ──────────────────────────────────────────────────────────────
   enrich-release-notes:
+    permissions:
+      contents: write
     needs: create-draft-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 #@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 #@v5
         with:
           python-version: "3.12"
 
@@ -139,6 +143,8 @@ jobs:
   # macOS  (universal binary — arm64 + x86_64)
   # ──────────────────────────────────────────────────────────────
   build-macos:
+    permissions:
+      contents: write
     if: github.event_name == 'push' || inputs.build_macos
     runs-on: macos-latest-xlarge
     timeout-minutes: 75
@@ -150,20 +156,20 @@ jobs:
       zip_name: ${{ steps.metadata.outputs.zip_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 #@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 #@v4
         with:
           node-version: "20"
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 #@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Cache Yarn
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #@v4
         with:
           path: .yarn/cache
           key: yarn-macos-${{ hashFiles('yarn.lock') }}
@@ -202,7 +208,7 @@ jobs:
           ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
 
       - name: Import code signing certificate
-        uses: apple-actions/import-codesign-certs@v2
+        uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 #@v2
         continue-on-error: true
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
@@ -340,7 +346,7 @@ jobs:
           echo "dmg_name=${DMG_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload .zip to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -350,7 +356,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload .dmg to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -360,7 +366,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload .tar.gz (for updater) to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -373,6 +379,8 @@ jobs:
   # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
   # ──────────────────────────────────────────────────────────────
   build-windows:
+    permissions:
+      contents: write
     if: github.event_name == 'push' || inputs.build_windows
     # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
     runs-on: windows-2022
@@ -386,15 +394,15 @@ jobs:
       msi_name: ${{ steps.metadata.outputs.msi_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 #@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 #@v4
         with:
           node-version: "20"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 #@v5
         with:
           python-version: "3.12"
 
@@ -402,10 +410,10 @@ jobs:
         run: pip install Pillow
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 #@stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 #@v2
         with:
           workspaces: src-tauri
           # Releases are tag pushes, and an Actions cache written under
@@ -416,14 +424,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache Yarn
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #@v4
         with:
           path: .yarn/cache
           key: yarn-windows-${{ hashFiles('yarn.lock') }}
           restore-keys: yarn-windows-
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe #@v2.0.1
 
       - name: Update version in project files
         shell: bash
@@ -537,7 +545,7 @@ jobs:
         run: yarn download:bin
 
       - name: Restore verified Windows backend archive cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #@v4
         with:
           path: ${{ runner.temp }}\atomic-backend-cache
           key: windows-backend-bundle-${{ hashFiles('scripts/windows-backend-bundle.json') }}
@@ -703,7 +711,7 @@ jobs:
           echo "msi_name=${MSI_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload NSIS installer to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -713,7 +721,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload MSI installer to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -724,7 +732,7 @@ jobs:
 
       - name: Upload NSIS updater signature to release
         if: steps.metadata.outputs.win_sig != ''
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -737,6 +745,8 @@ jobs:
   # Linux  (x86_64 — AppImage, upstream ggml-org/llama.cpp, CPU-only bundled)
   # ──────────────────────────────────────────────────────────────
   build-linux-x64:
+    permissions:
+      contents: write
     if: github.event_name == 'push' || inputs.build_linux
     # Pinned to ubuntu-22.04 (glibc 2.35) so the produced AppImage stays
     # compatible with Ubuntu 22.04 / 24.04 / Debian 12 / Fedora 40 /
@@ -750,18 +760,18 @@ jobs:
       appimage_name: ${{ steps.metadata.outputs.appimage_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 #@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 #@v4
         with:
           node-version: "20"
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 #@stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 #@v2
         with:
           workspaces: src-tauri
           # Releases are tag pushes, and an Actions cache written under
@@ -772,14 +782,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache Yarn
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #@v4
         with:
           path: .yarn/cache
           key: yarn-linux-${{ hashFiles('yarn.lock') }}
           restore-keys: yarn-linux-
 
       - name: Install jq
-        uses: dcarbone/install-jq-action@v2.0.1
+        uses: dcarbone/install-jq-action@c1548c666da8422e8207a67fae0df364cf9ee7fe #@v2.0.1
 
       - name: Install Linux system dependencies
         # WebKitGTK 4.1 stack + Tauri AppImage build deps. Ubuntu 22.04
@@ -1009,7 +1019,7 @@ jobs:
           echo "linux_sig=${LINUX_SIG}" >> "$GITHUB_OUTPUT"
 
       - name: Upload .AppImage to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -1020,7 +1030,7 @@ jobs:
 
       - name: Upload .AppImage updater signature to release
         if: steps.metadata.outputs.linux_sig != ''
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -1033,6 +1043,8 @@ jobs:
   # Tauri updater manifest  (macOS + Windows + Linux; tolerant of any being skipped)
   # ──────────────────────────────────────────────────────────────
   publish-latest-json:
+    permissions:
+      contents: write
     if: |
       always() && needs.create-draft-release.result == 'success' &&
       (needs.build-macos.result == 'success' || needs.build-windows.result == 'success' || needs.build-linux-x64.result == 'success')
@@ -1040,7 +1052,7 @@ jobs:
     needs: [create-draft-release, build-macos, build-windows, build-linux-x64]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 #@v4
 
       - name: Generate latest.json for Tauri updater
         env:
@@ -1102,7 +1114,7 @@ jobs:
           cat latest.json
 
       - name: Upload latest.json to release
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 #@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

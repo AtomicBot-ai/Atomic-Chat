@@ -1,0 +1,295 @@
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  # npm — every directory that holds a package.json manifest or lockfile.
+  # Yarn workspaces are listed at their root (where the lockfile lives) and
+  # also per-member so no manifest is left unmonitored.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/core"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/web-app"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/assistant-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/conversational-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/download-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/foundation-models-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/llamacpp-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/llamacpp-upstream-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/mlx-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/rag-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/extensions/vector-db-extension"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-foundation-models"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-hardware"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-llamacpp"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-llamacpp-upstream"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-mlx"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-rag"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "npm"
+    directory: "/src-tauri/plugins/tauri-plugin-vector-db"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  # ---------------------------------------------------------------------------
+  # cargo — Rust backend and plugins
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  # ---------------------------------------------------------------------------
+  # github-actions — CI/CD workflows
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  # ---------------------------------------------------------------------------
+  # pip — Python tooling and demo scripts
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "pip"
+    directory: "/autoqa"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "pip"
+    directory: "/scripts/concurrent-demo"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "pip"
+    directory: "/src-tauri/resources/agent-skills/uupm-ui-styling/scripts"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]
+
+  - package-ecosystem: "pip"
+    directory: "/src-tauri/resources/agent-skills/uupm-ui-styling/scripts/tests"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
+      security:
+        update-types: ["security"]

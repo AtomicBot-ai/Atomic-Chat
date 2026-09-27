@@ -38,10 +38,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 #@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 #@v5
         with:
           node-version: '20'
           # v5 would otherwise cache Yarn from package.json's packageManager
@@ -65,20 +65,20 @@ jobs:
           echo "Building Radium $version"
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 #@v6
         with:
           python-version: '3.12'
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 #@stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 #@v2
         with:
           workspaces: src-tauri
 
       - name: Cache Yarn
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 #@v5
         with:
           path: .yarn/cache
           key: yarn-windows-test-${{ hashFiles('yarn.lock') }}
@@ -182,7 +182,7 @@ jobs:
       # and sha256s, so a test installer offers the same offline backends a real
       # one does rather than a second set nobody checks.
       - name: Restore verified Windows backend archive cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 #@v5
         with:
           path: ${{ runner.temp }}\atomic-backend-cache
           key: windows-backend-bundle-${{ hashFiles('scripts/windows-backend-bundle.json') }}
@@ -226,7 +226,7 @@ jobs:
           }
 
       - name: Upload Windows installer artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f #@v6
         with:
           name: radium-windows-test-${{ steps.version.outputs.version }}-${{ github.sha }}
           # NSIS only. Both installers embed the whole ~1.26GB offline backend
