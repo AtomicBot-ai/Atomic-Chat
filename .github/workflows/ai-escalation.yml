@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout at the failed head
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 #@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 2
@@ -73,7 +73,7 @@ jobs:
         id: jules
         if: steps.guard.outputs.skip == 'false' && steps.pr.outputs.found == 'true'
         continue-on-error: true
-        uses: google-labs-code/jules-invoke@v1
+        uses: google-labs-code/jules-invoke@bff7875eaa123cac6742b7cfc51005b95ba4d566 #@v1.0.0
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
           starting_branch: ${{ github.event.workflow_run.head_branch }}
