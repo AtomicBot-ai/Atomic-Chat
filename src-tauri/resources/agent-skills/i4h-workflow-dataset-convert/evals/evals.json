@@ -1,0 +1,43 @@
+[
+  {
+    "id": "i4h-workflow-dataset-convert-table-scissor",
+    "question": "Convert my scissor pick-and-place recording into a LeRobot dataset.",
+    "expected_skill": "i4h-workflow-dataset-convert",
+    "ground_truth": "This README skill-table prompt routes to HDF5 to LeRobot conversion for a scissor_pick_and_place recording.",
+    "expected_behavior": [
+      "routes to i4h-workflow-dataset-convert",
+      "maps scissor pick-and-place to scissor_pick_and_place",
+      "uses the source workflow's scene and embodiment manifests",
+      "creates LeRobot parquet, aggregate stats metadata, and H.264 videos",
+      "reports the LeRobot dataset path"
+    ]
+  },
+  {
+    "id": "i4h-workflow-dataset-convert-latest-training",
+    "question": "Prepare my latest HDF5 recording for training by converting it to a LeRobot dataset.",
+    "expected_skill": "i4h-workflow-dataset-convert",
+    "ground_truth": "This conversion prompt routes to HDF5 to LeRobot conversion for the latest recorded dataset.",
+    "expected_behavior": [
+      "routes to i4h-workflow-dataset-convert",
+      "resolves the latest HDF5 recording",
+      "converts it into LeRobot parquet, aggregate stats metadata, and H.264 videos",
+      "automatically writes and verifies modality metadata for a native G1 state=43 action=50 recording",
+      "uses the explicit G1 WBC mapping only when a 23D G1 recording must train a 50D policy",
+      "reports the converted dataset path for training"
+    ]
+  },
+  {
+    "id": "i4h-workflow-dataset-convert-readme-convert-and-visualize",
+    "question": "Convert and visualize the recorded data.",
+    "expected_skill": "i4h-workflow-dataset-convert",
+    "ground_truth": "This README continuation converts the recording produced by the preceding my_workflow rollout and then hands the compatible LeRobot output to the browser visualizer.",
+    "expected_behavior": [
+      "routes first to i4h-workflow-dataset-convert",
+      "resolves the preceding my_workflow HDF5 recording",
+      "converts all successful episodes to a compatible LeRobot dataset and verifies its metadata and videos",
+      "routes the completed LeRobot dataset to i4h-lerobot-viz",
+      "opens the viewer and reports its local URL",
+      "does not try to visualize the raw HDF5 recording as LeRobot data"
+    ]
+  }
+]

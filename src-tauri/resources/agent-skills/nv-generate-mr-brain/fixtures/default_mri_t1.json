@@ -1,0 +1,16 @@
+{
+  "_comment": "MR-Brain v1 default: axial whole-brain T1w, approximately 240 x 240 x 174 mm FOV, 30 rectified-flow steps.",
+  "modality": "mri_t1",
+  "dim": [
+    256,
+    256,
+    128
+  ],
+  "spacing": [
+    0.94,
+    0.94,
+    1.36
+  ],
+  "num_inference_steps": 30,
+  "cfg_guidance_scale": 2
+}

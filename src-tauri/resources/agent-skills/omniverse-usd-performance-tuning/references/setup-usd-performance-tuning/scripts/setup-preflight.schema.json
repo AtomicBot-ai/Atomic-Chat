@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "setup-preflight.schema.json",
+  "title": "Setup Preflight Configuration",
+  "description": "Runtime contract for setup-preflight.json. Strict on usdOptimize and assetValidator — downstream agents cross-check operationsAvailable against planned operations. A wrong field name means the operation check fails silently.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runtime_route",
+    "usdOptimize",
+    "assetValidator",
+    "runtime_context",
+    "probed_at"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "runtime_route": {
+      "type": "string",
+      "enum": ["kit", "standalone"],
+      "description": "The optimization+validation runtime. This is 'standalone' for all optimization and validation work; Kit is no longer an optimization runtime. The 'kit' value is retained only for legacy/back-compat records — a Kit install used for the opt-in render-profiling adjunct is recorded under the top-level 'kit' object, not by setting runtime_route to 'kit'."
+    },
+    "kit": {
+      "type": "object",
+      "description": "Optional opt-in Kit→omniperf render-profiling root (user-supplied or discovered). Retained for the profiling adjunct only; it is never the SO/AV optimization runtime. Kit application metadata.",
+      "additionalProperties": true,
+      "properties": {
+        "application": { "type": "string" },
+        "version": { "type": "string" },
+        "path": { "type": "string" },
+        "build": { "type": "string" }
+      }
+    },
+    "cuda_available": {
+      "type": ["boolean", "null"],
+      "description": "Independent CUDA availability signal consumed by the Phase-4 batch scheduler (usd-optimize-run-operations/scripts/run_batch.py). Read from this preflight / runtime_context, NEVER from Usd Optimize's own hasNvidiaGpu(). false means gpu_bound operations must not silently fall back to slow CPU execution; null/missing means unknown and the scheduler fails closed (treats the host as CPU-only)."
+    },
+    "usdOptimize": {
+      "type": "object",
+      "description": "Usd Optimize runtime identity. Strict: operationsAvailable is the cross-check contract consumed by EXECUTION.md and usd-optimize-run-operations.",
+      "required": ["extension", "version", "operationsAvailable", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "extension": {
+          "type": "string",
+          "description": "Extension or package name"
+        },
+        "version": {
+          "type": "string"
+        },
+        "operationsAvailable": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Sorted list of operation keys registered in the live runtime"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["standalone-package"]
+        }
+      }
+    },
+    "assetValidator": {
+      "type": "object",
+      "description": "usd-validation-nvidia runtime identity. Strict: source enum determines validation command patterns.",
+      "required": ["package", "version", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["pip", "standalone"]
+        }
+      }
+    },
+    "runtime_context": {
+      "type": "object",
+      "description": "Canonical runtime context block that downstream skills (optimization-report, the runtime-context-header) consume. The probe writes the chosen runtime here and the header prints from it; the source kit/usdOptimize/assetValidator fields above are the raw probe data. Inner shape matches the optimization-report schema's runtime_context definition exactly so the block can be copied verbatim into the report.",
+      "required": ["usdOptimize", "assetValidator"],
+      "properties": {
+        "kit": {
+          "type": "object",
+          "required": ["application", "version", "path"],
+          "description": "Kit application context. OPTIONAL: omitted on a standalone-only runtime (Kit is an opt-in render-profiling adjunct). When present, application/version/path are required.",
+          "properties": {
+            "application": {
+              "type": "string",
+              "description": "Friendly name of the Kit application, e.g. 'USD Composer', 'Isaac Sim', 'Kit SDK'."
+            },
+            "version": {
+              "type": "string",
+              "description": "Release version, e.g. '110.1.0'."
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the Kit root."
+            },
+            "build": {
+              "type": ["string", "null"],
+              "description": "Full build identifier when present (e.g. '110.1.0+main.10181....release'); null when the install path does not encode one."
+            }
+          }
+        },
+        "usdOptimize": {
+          "type": "object",
+          "required": ["extension", "version"],
+          "properties": {
+            "extension": {
+              "type": "string",
+              "description": "Extension name, typically 'omni.scene.optimizer.core'."
+            },
+            "version": {
+              "type": "string",
+              "description": "Extension version, e.g. '110.0.4'."
+            }
+          }
+        },
+        "assetValidator": {
+          "type": "object",
+          "required": ["package", "version", "source"],
+          "properties": {
+            "package": {
+              "type": "string",
+              "description": "Package or extension name, e.g. 'usd-validation-nvidia' (pip distribution) or 'omni.asset_validator' (module)."
+            },
+            "version": {
+              "type": "string",
+              "description": "Package version."
+            },
+            "source": {
+              "type": "string",
+              "enum": ["pip", "standalone"],
+              "description": "Where usd-validation-nvidia was loaded from."
+            }
+          }
+        },
+        "cuda_available": {
+          "type": ["boolean", "null"],
+          "description": "Optional copy of the top-level CUDA availability signal for downstream consumers that read only runtime_context (the scheduler's --preflight path reads it here)."
+        }
+      }
+    },
+    "probed_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp of when the probe ran"
+    }
+  }
+}

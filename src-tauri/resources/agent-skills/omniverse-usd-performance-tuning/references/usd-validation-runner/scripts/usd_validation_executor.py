@@ -1,0 +1,878 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+"""Canonical validation reference executor for the USD performance-tuning skill.
+
+This is the ONE supported way to run validators inside the skill. Agents call
+this API with **canonical concept names** (e.g. ``primvar_indexability``); they
+never enumerate rules, guess class names, or shell out to a CLI.
+
+Why this exists
+---------------
+Bare rule names are not unique. ``IndexedPrimvarChecker`` is registered by both
+Usd Optimize (0.3 s triage) and the usd-validation-nvidia (376 s full audit). A
+name-only lookup picks one by registry order, so the same scope note produces
+different work and wildly different runtimes on different hosts. That is the
+root cause of "every run finds a different solution and it takes forever."
+
+Contract (no ambiguity, no fallbacks)
+-------------------------------------
+1. Identity is ``(package family of module, class_name)``, sourced from
+   ``validator-concepts.json``. Concept -> implementation -> rule class is
+   resolved by identity, never by bare name. The family is the stable part:
+   ``usd_validation_nvidia`` and ``omni.asset_validator`` are one provider
+   family, ``usd_optimize`` and ``omni.scene.optimizer`` are the other, so an
+   upstream module rename inside a family still resolves. That is what keeps
+   the two ``IndexedPrimvarChecker`` classes apart while tolerating drift.
+2. Resolution is fail-closed: zero matches raises, more than one *distinct*
+   class matches raises. The executor never "best-guesses" a rule.
+3. The Python validation runtime is required. If it cannot be imported, the
+   executor raises ``ValidationRuntimeUnavailable`` and the caller records
+   ``blocked_validation_runtime`` in the coverage ledger. There is no CLI path.
+4. Scoping is mandatory for non-whole-stage policies: callers pass ``paths`` /
+   ``mask_paths`` and the stage is opened with ``Usd.Stage.OpenMasked()``.
+
+The validator runtime packages (``omni.asset_validator`` / ``pxr``) only import
+inside a Kit/AV environment, so every runtime import is deferred into the
+function that needs it. Importing this module is always safe (and unit-testable)
+without those packages present.
+"""
+from __future__ import annotations
+
+import importlib
+import json
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Iterable
+
+#: Every ledger disposition is an explicit "resolved" outcome. The completion
+#: gate is satisfied only when every planned (target, concept) has one of these.
+RESOLVED_STATUSES = frozenset(
+    {
+        "probed_with_findings",
+        "probed_clean",
+        "user_declined",
+        "timeout_recorded",
+        "blocked_validation_runtime",
+    }
+)
+
+#: The subset of ``RESOLVED_STATUSES`` where a validator actually ran against the
+#: stage. The other three -- ``user_declined``, ``timeout_recorded`` and
+#: ``blocked_validation_runtime`` -- are resolved in the sense that we know what
+#: happened, and they all mean the same thing about the asset: nothing was
+#: checked. Keeping the two sets apart is what stops "we know we did not look"
+#: from being reported as "we looked and it was fine".
+VALIDATED_STATUSES = frozenset({"probed_with_findings", "probed_clean"})
+
+DEFAULT_REGISTRY_PATH = (
+    Path(__file__).resolve().parent.parent / "references" / "validator-concepts.json"
+)
+
+
+class ConceptResolutionError(RuntimeError):
+    """A concept name or its identity could not be resolved unambiguously."""
+
+
+class ScopeNoteContractError(RuntimeError):
+    """A scope note is internally inconsistent, so it cannot be executed as written."""
+
+
+class ValidationRuntimeUnavailable(RuntimeError):
+    """The Python validation runtime is not importable. No CLI fallback exists."""
+
+
+#: Single message for every "runtime missing" condition. Callers record
+#: ``blocked_validation_runtime`` in the coverage ledger; there is no CLI path.
+_RUNTIME_UNAVAILABLE = (
+    "No USD validation runtime (omni.asset_validator[.core]) is importable. "
+    "Record 'blocked_validation_runtime'; there is no CLI fallback."
+)
+
+
+#: Package families. Both the current and the pre-rename package roots of a
+#: provider map to the same family key, which is the part of rule identity that
+#: has survived every upstream rename so far (``omni.asset_validator.*`` ->
+#: ``usd_validation_nvidia.rules.*``, ``omni.scene.optimizer.validators.*`` ->
+#: ``usd_optimize.validators.*``). Matching on (family, class_name) is therefore
+#: version-tolerant while still telling the two providers apart — which is the
+#: whole point, because ``IndexedPrimvarChecker`` is registered by both.
+#: Longest prefix wins, so a new root can be added without reordering.
+_MODULE_FAMILIES: dict[str, str] = {
+    "usd_validation_nvidia": "oav",
+    "omni.asset_validator": "oav",
+    "usd_optimize": "so",
+    "omni.scene": "so",
+}
+
+
+def module_family(module: str) -> str | None:
+    """Return the provider family (``oav`` / ``so``) owning ``module``.
+
+    ``None`` for a module outside every known family; callers then fall back to
+    exact-module matching rather than widening the match.
+    """
+    best: tuple[int, str | None] = (0, None)
+    for prefix, family in _MODULE_FAMILIES.items():
+        if (module == prefix or module.startswith(prefix + ".")) and len(prefix) > best[0]:
+            best = (len(prefix), family)
+    return best[1]
+
+
+@dataclass(frozen=True)
+class ResolvedImplementation:
+    """A concept resolved to a single runtime rule identity."""
+
+    canonical_name: str
+    provider: str
+    module: str
+    class_name: str
+    tier: int
+    scope_policy: str
+    backing_op: str | None
+    gpu_bound: bool
+    #: Pre-rename module paths for the same class, accepted as equal identities
+    #: so an older runtime still resolves. Never used to widen across families.
+    module_aliases: tuple[str, ...] = field(default=())
+
+
+# --------------------------------------------------------------------------- #
+# Registry                                                                     #
+# --------------------------------------------------------------------------- #
+def load_registry(path: str | Path | None = None) -> dict[str, Any]:
+    """Load and index the canonical validator-concept registry.
+
+    Returns a dict with the raw ``concepts`` list plus a ``by_name`` index.
+    Raises ``ConceptResolutionError`` if a canonical name is duplicated.
+    """
+    registry_path = Path(path) if path is not None else DEFAULT_REGISTRY_PATH
+    data = json.loads(Path(registry_path).read_text(encoding="utf-8"))
+    by_name: dict[str, dict[str, Any]] = {}
+    for concept in data["concepts"]:
+        name = concept["canonical_name"]
+        if name in by_name:
+            raise ConceptResolutionError(f"Duplicate canonical_name in registry: {name}")
+        by_name[name] = concept
+    data["by_name"] = by_name
+    return data
+
+
+def resolve_implementation(
+    registry: dict[str, Any],
+    canonical_name: str,
+    *,
+    provider: str | None = None,
+) -> ResolvedImplementation:
+    """Resolve a canonical concept name to a single ``(module, class_name)``.
+
+    ``provider`` defaults to the concept's ``preferred_provider`` (``so`` for
+    performance tuning). Fail-closed: an unknown concept or a provider with no
+    implementation raises ``ConceptResolutionError``.
+    """
+    concept = registry.get("by_name", {}).get(canonical_name)
+    if concept is None:
+        raise ConceptResolutionError(
+            f"Unknown concept '{canonical_name}'. Concepts must come from "
+            f"validator-concepts.json; do not synthesize names."
+        )
+    chosen_provider = provider or concept["preferred_provider"]
+    impls = [im for im in concept["implementations"] if im["provider"] == chosen_provider]
+    if not impls:
+        raise ConceptResolutionError(
+            f"Concept '{canonical_name}' has no '{chosen_provider}' implementation."
+        )
+    if len(impls) > 1:
+        raise ConceptResolutionError(
+            f"Concept '{canonical_name}' has ambiguous '{chosen_provider}' implementations."
+        )
+    impl = impls[0]
+    return ResolvedImplementation(
+        canonical_name=canonical_name,
+        provider=impl["provider"],
+        module=impl["module"],
+        class_name=impl["class_name"],
+        tier=int(impl.get("tier", concept["tier"])),
+        scope_policy=concept["scope_policy"],
+        backing_op=concept["backing_op"],
+        gpu_bound=bool(concept["gpu_bound"]),
+        module_aliases=tuple(impl.get("module_aliases", ())),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Runtime                                                                      #
+# --------------------------------------------------------------------------- #
+def get_rule_registry() -> Any:
+    """Return the validator runtime's rule registry, or fail closed.
+
+    Tries the Kit core package first, then the standalone package. Raises
+    ``ValidationRuntimeUnavailable`` if neither imports — there is no CLI path.
+    """
+    try:
+        from omni.asset_validator.core import ValidationRulesRegistry  # type: ignore
+
+        return ValidationRulesRegistry
+    except ImportError:
+        pass
+    try:
+        from omni.asset_validator import CategoryRuleRegistry  # type: ignore
+
+        return CategoryRuleRegistry()
+    except ImportError as exc:  # pragma: no cover - environment dependent
+        raise ValidationRuntimeUnavailable(_RUNTIME_UNAVAILABLE) from exc
+
+
+def get_validation_engine_cls() -> Any:
+    """Return the ``ValidationEngine`` class, or fail closed.
+
+    Kit exposes it at ``omni.asset_validator.core``; the standalone package
+    exposes it at ``omni.asset_validator`` (no ``.core``). Try both so the same
+    executor works in either runtime.
+    """
+    try:
+        from omni.asset_validator.core import ValidationEngine  # type: ignore
+
+        return ValidationEngine
+    except ImportError:
+        pass
+    try:
+        from omni.asset_validator import ValidationEngine  # type: ignore
+
+        return ValidationEngine
+    except ImportError as exc:  # pragma: no cover - environment dependent
+        raise ValidationRuntimeUnavailable(_RUNTIME_UNAVAILABLE) from exc
+
+
+def _shape_registered_rules(reg: Any) -> Any:
+    """Kit core ``ValidationRulesRegistry`` shape (iterable or callable)."""
+    try:
+        registered = reg.registered_rules
+    except AttributeError:
+        return None
+    return registered() if callable(registered) else registered
+
+
+def _shape_rules_by_name(reg: Any) -> Any:
+    """Older ``name -> rule`` map shape; yields the map's values."""
+    try:
+        mapping = reg.rules_by_name
+    except AttributeError:
+        return None
+    return mapping.values() if isinstance(mapping, dict) else None
+
+
+def _shape_rules(reg: Any) -> Any:
+    """OAV 1.18.0 ``CategoryRuleRegistry.rules`` shape (iterable/dict/callable)."""
+    try:
+        direct = reg.rules
+    except AttributeError:
+        return None
+    if callable(direct):
+        direct = direct()
+    if isinstance(direct, dict):
+        direct = direct.values()
+    return direct
+
+
+#: Allowlist of the only registry entry points the enumerator may consult, each
+#: mapped to an accessor that normalizes that runtime's shape to an iterable of
+#: rule objects. Using an explicit static mapping (instead of dynamic
+#: ``getattr``) guarantees no externally-influenced name can select an
+#: attribute — only these three known, hand-vetted registry shapes are ever
+#: read, and each accessor uses direct attribute access. This is a runtime
+#: adapter, not a correctness fallback: extend it only with a new entry point
+#: that yields rule classes carrying real ``__module__`` / ``__name__`` identity.
+_REGISTRY_SHAPE_ACCESSORS: dict[str, Callable[[Any], Any]] = {
+    "registered_rules": _shape_registered_rules,
+    "rules_by_name": _shape_rules_by_name,
+    "rules": _shape_rules,
+}
+
+
+#: Module names to try when registering the Usd Optimize rule set, current path
+#: first. Both names resolve to the same module object on 1.0.4.
+_USD_OPTIMIZE_VALIDATOR_MODULES = ("usd_optimize.validators", "omni.scene.optimizer.validators")
+
+
+def _register_usd_optimize_rules() -> str | None:
+    """Register the Usd Optimize rules into the shared rule registry.
+
+    Importing the package does **not** register anything: the ``@register_rule``
+    decorators are applied inside ``register_all()`` (verified on usd-optimize
+    1.0.4 — the module body is plain re-exports plus a ``_RULE_CATEGORIES``
+    tuple). Without this call the registry holds only the 40 usd-validation-nvidia
+    rules and every Usd Optimize concept fails to resolve.
+
+    Entry points do not cover this deployment. usd-validation-nvidia does ship a
+    plugin system (``usd_validation_nvidia/_plugins.py``, entry-point group
+    ``usd_validation_nvidia``, objects with ``on_startup()``/``on_shutdown()``),
+    but it discovers plugins through ``importlib.metadata``, which reads
+    *installed distribution* metadata. The skill consumes Usd Optimize as an
+    extracted release zip on ``PYTHONPATH`` with no dist-info, egg-info, or
+    entry_points.txt, so it is structurally invisible to that discovery no matter
+    what upstream declares. Explicit registration is the only mechanism
+    available in this deployment shape.
+
+    ``register_all()`` is idempotent (it skips rules that already have a
+    category), so calling it on every enumeration is safe. Returns the module
+    name that registered, or ``None`` when Usd Optimize is not installed.
+    """
+    for module_name in _USD_OPTIMIZE_VALIDATOR_MODULES:
+        try:
+            importlib.import_module(module_name).register_all()
+            return module_name
+        except (ImportError, AttributeError):
+            continue
+    return None
+
+
+def iter_registered_rules(rule_registry: Any) -> Iterable[type]:
+    """Yield every registered rule *class* (collision-aware enumeration).
+
+    Identity lives on the class as ``__module__`` and ``__name__``. This adapts
+    to the differing registry shapes across runtimes but never collapses rules
+    to bare names. Fail-closed: if no enumeration entry point is found, raises.
+    """
+    _register_usd_optimize_rules()
+
+    # Probe the known registry shapes in order via the explicit allowlist above;
+    # the first accessor to yield a non-None result wins. Matching stays
+    # identity-based below (never collapsed to bare names).
+    rules = None
+    for accessor in _REGISTRY_SHAPE_ACCESSORS.values():
+        rules = accessor(rule_registry)
+        if rules is not None:
+            break
+    if rules is None:
+        raise ValidationRuntimeUnavailable(
+            "Could not enumerate registered rules from the runtime registry; the "
+            "registry API shape is unrecognized. Record the gap rather than guessing."
+        )
+
+    for rule in rules:
+        try:
+            rule_cls = rule.rule  # unwrap registration wrappers
+        except AttributeError:
+            rule_cls = rule
+        if isinstance(rule_cls, type):
+            yield rule_cls
+
+
+def resolve_rule_class(
+    rule_registry: Any,
+    module: str,
+    class_name: str,
+    *,
+    module_aliases: Iterable[str] = (),
+) -> type:
+    """Resolve ``(module, class_name)`` to exactly one registered rule class.
+
+    This is the collision-safe core. ``IndexedPrimvarChecker`` exists twice by
+    bare name; it is disambiguated here by the *provider family* of ``module``,
+    never by bare name.
+
+    Matching is deliberately version-tolerant. An exact ``__module__`` hit wins.
+    Failing that, any registered class of the same name whose module belongs to
+    the same provider family as the requested one is accepted — so a submodule
+    reshuffle or a package rename inside a family (``omni.asset_validator._base_rules``
+    -> ``usd_validation_nvidia.rules._basic``) resolves without a registry edit,
+    while a *cross-family* class of the same name never does. A module outside
+    every known family falls back to exact matching only.
+
+    Fail-closed: zero matches raises, and more than one distinct class raises.
+    """
+    accepted_modules = {module, *module_aliases}
+    accepted_families = {f for f in map(module_family, accepted_modules) if f}
+
+    same_name = [
+        rule_cls
+        for rule_cls in iter_registered_rules(rule_registry)
+        if rule_cls.__name__ == class_name
+    ]
+    matches: list[type] = []
+    for rule_cls in same_name:
+        if rule_cls.__module__ in accepted_modules or (
+            accepted_families and module_family(rule_cls.__module__) in accepted_families
+        ):
+            if not any(rule_cls is seen for seen in matches):
+                matches.append(rule_cls)
+
+    if not matches:
+        near = sorted(f"{c.__module__}.{c.__name__}" for c in same_name)
+        raise ConceptResolutionError(
+            f"Rule not registered in this runtime: {module}.{class_name}. "
+            f"Registered classes named '{class_name}': {near or 'none'}. "
+            f"If the list is empty the providing package was never imported "
+            f"(Usd Optimize rules need register_all(), not a bare import); if it "
+            f"is non-empty the registry's module identity has drifted out of the "
+            f"'{module_family(module) or 'unknown'}' provider family — update "
+            f"validator-concepts.json 'module' and keep the old path in "
+            f"'module_aliases'."
+        )
+    if len(matches) > 1:
+        found = sorted(f"{c.__module__}.{c.__name__}" for c in matches)
+        raise ConceptResolutionError(
+            f"Ambiguous rule identity: {module}.{class_name} matched "
+            f"{len(matches)} registered classes: {found}."
+        )
+    return matches[0]
+
+
+# --------------------------------------------------------------------------- #
+# Scoped stage open                                                            #
+# --------------------------------------------------------------------------- #
+def open_scoped_stage(stage_path: str, mask_paths: list[str] | None = None) -> Any:
+    """Open a stage, optionally masked to ``mask_paths`` (+ the default prim).
+
+    ``Usd.Stage.OpenMasked()`` is the only reliable scoping mechanism for the
+    usd-validation-nvidia (it discards caller ``StageLoadRules`` but preserves the
+    population mask). Rejects an empty masked sample so the caller never reports
+    a misleading "0 findings".
+    """
+    from pxr import Sdf, Usd, UsdGeom  # deferred runtime import
+
+    if not mask_paths:
+        return Usd.Stage.Open(stage_path)
+
+    root_layer = Sdf.Layer.FindOrOpen(stage_path)
+    mask = Usd.StagePopulationMask()
+    default_prim_path = f"/{root_layer.defaultPrim}" if root_layer.defaultPrim else None
+    for path in [*mask_paths, default_prim_path]:
+        if path:
+            mask.Add(path)
+
+    stage = Usd.Stage.OpenMasked(root_layer, mask)
+    assert stage.GetDefaultPrim().IsValid(), "masked stage excluded default prim"
+
+    mesh_count = sum(
+        1
+        for prim in Usd.PrimRange.Stage(
+            stage, Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)
+        )
+        if prim.IsA(UsdGeom.Mesh)
+    )
+    if mesh_count == 0:
+        raise RuntimeError("masked validation sample contains no meshes")
+    return stage
+
+
+# --------------------------------------------------------------------------- #
+# Selected validation                                                          #
+# --------------------------------------------------------------------------- #
+def validate_concepts(
+    stage_path: str,
+    concepts: list[str],
+    *,
+    registry: dict[str, Any] | None = None,
+    mask_paths: list[str] | None = None,
+    provider: str | None = None,
+) -> list[Any]:
+    """Run the named canonical concepts on a (optionally masked) stage.
+
+    Enables exactly the resolved rule classes — never ``init_rules=True`` — so
+    only the selected concepts execute. Intended to be invoked once per Tier 1
+    batch, and from a bounded ``subprocess`` per target for Tier 2 / Tier 3 so
+    a slow C++ rule can be killed by the parent (see the runner README).
+
+    Returns the list of issues. Resolution failures fail closed; a missing
+    runtime raises ``ValidationRuntimeUnavailable``.
+    """
+    reg = registry if registry is not None else load_registry()
+    rule_registry = get_rule_registry()
+    engine_cls = get_validation_engine_cls()
+
+    engine = engine_cls(init_rules=False)
+    for canonical_name in concepts:
+        impl = resolve_implementation(reg, canonical_name, provider=provider)
+        rule_cls = resolve_rule_class(
+            rule_registry,
+            impl.module,
+            impl.class_name,
+            module_aliases=impl.module_aliases,
+        )
+        engine.enable_rule(rule_cls)
+
+    stage = open_scoped_stage(stage_path, mask_paths)
+    return list(engine.validate(stage).issues())
+
+
+# --------------------------------------------------------------------------- #
+# Coverage ledger + completion gate                                           #
+# --------------------------------------------------------------------------- #
+def coverage_complete(
+    planned_targets: list[dict[str, Any]],
+    ledger_entries: list[dict[str, Any]],
+) -> bool:
+    """The completion gate.
+
+    Returns True only when every planned ``(target, concept)`` has a ledger
+    entry with a resolved status. This is what prevents an agent from declaring
+    victory while a flagged Tier 3 probe was silently skipped: an unresolved
+    target has no entry, so the gate stays closed and the report's
+    ``coverage_ledger.complete`` is False.
+    """
+    planned = {
+        (t["target"], t["concept"])
+        for tgt in planned_targets
+        for t in _expand_target(tgt)
+    }
+    covered = {
+        (e["target"], e["concept"])
+        for e in ledger_entries
+        if e["status"] in RESOLVED_STATUSES
+    }
+    return planned.issubset(covered)
+
+
+def _iter_execution_units(
+    target: dict[str, Any],
+) -> Iterable[tuple[dict[str, str], list[str]]]:
+    """Yield ``(ledger_unit, mask_paths)`` for each concrete path/pair in a target.
+
+    The mask is built **per unit** so every probe is scoped to exactly its own
+    geometry — and, critically, a ``pairs`` entry contributes *both* prim paths
+    to the mask. (The earlier code derived the mask from ``paths``/``mask_paths``
+    only, so a pairs-only spatial target produced an empty mask and silently ran
+    the approval-gated full stage while the ledger logged it as a scoped probe.)
+
+    A target with no concrete paths/pairs yields a single whole-stage unit with
+    an empty mask; ``run_scope_note`` permits that only for ``whole_stage``
+    concepts and otherwise fails closed.
+    """
+    concept = target["concept"]
+    singles = list(target.get("paths", [])) + list(target.get("mask_paths", []))
+    pairs = [list(p) for p in target.get("pairs", [])]
+    produced = False
+    for path in singles:
+        produced = True
+        yield {"target": path, "concept": concept}, [path]
+    for pair in pairs:
+        produced = True
+        yield {"target": "::".join(pair), "concept": concept}, list(pair)
+    if not produced:
+        yield {"target": "<whole_stage>", "concept": concept}, []
+
+
+def assert_targets_cover_concepts(scope_note: dict[str, Any]) -> None:
+    """Fail closed when a selected concept has no ``targets[]`` entry to execute it.
+
+    ``concepts[]`` is what Deterministic Selection produced; ``targets[]`` is the
+    only list the executor iterates. Nothing else ties them together, so a scope
+    note that lists all 15 whole-stage safety gates under ``concepts[]`` and
+    writes one target used to execute one gate and still report
+    ``coverage_ledger.complete: true`` / ``summary.status: PASS`` — silently, with
+    14 correctness preconditions never run. The completion gate only counts what
+    was planned as a target, so it cannot see the gap; this check can.
+
+    Raises ``ScopeNoteContractError`` naming every unexecuted concept.
+    """
+    selected = list(scope_note.get("concepts", []))
+    targeted = {t["concept"] for t in scope_note.get("targets", [])}
+    missing = sorted(set(selected) - targeted)
+    if missing:
+        raise ScopeNoteContractError(
+            f"Scope note selects {len(selected)} concept(s) but "
+            f"{len(missing)} of them have no targets[] entry, so they would "
+            f"never execute while the coverage ledger still reported complete: "
+            f"{', '.join(missing)}. Add one targets[] entry per selected concept "
+            f"(whole-stage concepts need only {{'concept': '<name>'}}), or drop "
+            f"the concept from concepts[] with the reason in selection_reason."
+        )
+
+
+def _expand_target(target: dict[str, Any]) -> Iterable[dict[str, str]]:
+    """Yield one ``{target, concept}`` per concrete path/pair (ledger identity).
+
+    Shares its expansion with execution via ``_iter_execution_units`` so the
+    completion gate and the executor can never disagree about what was planned.
+    """
+    for unit, _mask in _iter_execution_units(target):
+        yield unit
+
+
+def run_scope_note(
+    stage_path: str,
+    scope_note: dict[str, Any],
+    *,
+    registry: dict[str, Any] | None = None,
+    concept_runner: Callable[..., list[Any]] | None = None,
+    phase: str = "baseline",
+    provider: str | None = None,
+) -> dict[str, Any]:
+    """Execute a scope note tier-by-tier and build a schema-valid report.
+
+    ``concept_runner(stage_path, concept, mask_paths=...) -> issues`` is
+    injectable so Tier 2/3 work can be wrapped in a killable subprocess (see the
+    runner README's driver section). The default runs in-process via
+    ``validate_concepts``; for Tier 2/3 the caller should pass a subprocess
+    driver so one slow C++ rule cannot hang the batch.
+
+    Each target's disposition is recorded in the coverage ledger:
+      - issues found        -> ``probed_with_findings``
+      - clean               -> ``probed_clean``
+      - subprocess timeout  -> ``timeout_recorded`` (retry masked/standalone)
+      - runtime unavailable -> ``blocked_validation_runtime``
+    Resolution failures (unknown/ambiguous concept) are NOT swallowed — they
+    raise, because they indicate a malformed plan, not a runtime condition. So
+    does a scope note whose ``concepts[]`` selection is not fully covered by
+    ``targets[]`` (see ``assert_targets_cover_concepts``); that check runs before
+    any validator, so a note that would under-execute never produces a report.
+    """
+    assert_targets_cover_concepts(scope_note)
+    reg = registry if registry is not None else load_registry()
+    run = concept_runner if concept_runner is not None else validate_concepts
+
+    validators: list[dict[str, Any]] = []
+    ledger: list[dict[str, Any]] = []
+    error_count = 0
+
+    for target in scope_note.get("targets", []):
+        concept = target["concept"]
+        impl = resolve_implementation(reg, concept, provider=provider)  # fail-closed
+        base_entry = {
+            "name": concept,
+            "kind": "rule",
+            "canonical_name": concept,
+            "module": impl.module,
+            "class_name": impl.class_name,
+        }
+        for unit, mask_paths in _iter_execution_units(target):
+            if impl.scope_policy != "whole_stage" and not mask_paths:
+                raise ConceptResolutionError(
+                    f"Concept '{concept}' has scope_policy '{impl.scope_policy}' but its "
+                    f"target supplied no paths or pairs to scope to. A scoped concept "
+                    f"must never fall back to an implicit full-stage run; fix the scope "
+                    f"note (provide paths/pairs, or use the approved full-sweep path)."
+                )
+            try:
+                issues = run(stage_path, [concept], registry=reg, mask_paths=mask_paths)
+            except subprocess.TimeoutExpired:
+                validators.append({**base_entry, "status": "TIMEOUT"})
+                ledger.append({**unit, "tier": impl.tier, "status": "timeout_recorded"})
+                continue
+            except ValidationRuntimeUnavailable as exc:
+                validators.append({**base_entry, "status": "BLOCKED", "notes": str(exc)})
+                ledger.append({**unit, "tier": impl.tier, "status": "blocked_validation_runtime"})
+                continue
+            count = len(issues)
+            error_count += count
+            validators.append({**base_entry, "status": "FAIL" if count else "PASS", "issues": count})
+            ledger.append({
+                **unit,
+                "tier": impl.tier,
+                "status": "probed_with_findings" if count else "probed_clean",
+            })
+
+    complete = coverage_complete(scope_note.get("targets", []), ledger)
+    # A planned unit that never ran cannot contribute a finding, so error_count
+    # stays 0 and every clean-looking aggregate would read PASS. Gate on what was
+    # actually validated, not merely on what was dispositioned.
+    all_validated = bool(ledger) and all(e["status"] in VALIDATED_STATUSES for e in ledger)
+    return {
+        "schemaVersion": "1.0.0",
+        "phase": phase,
+        "stage": {"identifier": stage_path},
+        "validators": validators,
+        "summary": {
+            "status": (
+                "BLOCKED"
+                if not complete or not all_validated
+                else ("FAIL" if error_count else "PASS")
+            ),
+            "errorCount": error_count,
+            "warningCount": 0,
+        },
+        "coverage_ledger": {"complete": complete, "entries": ledger},
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Subprocess runner (killable Tier 2 / Tier 3)                                 #
+# --------------------------------------------------------------------------- #
+def subprocess_concept_runner(
+    *,
+    timeout_seconds: int = 120,
+    python_executable: str | None = None,
+    registry_path: str | Path | None = None,
+) -> Callable[..., list[Any]]:
+    """Build a ``concept_runner`` that runs each concept in a child process.
+
+    Tier 2 / Tier 3 rules are C++-heavy and can hang; Python ``signal``/threads
+    cannot interrupt them. Running each concept in a child process means the
+    parent can kill it on timeout. Pass the returned callable as
+    ``run_scope_note(..., concept_runner=subprocess_concept_runner())``.
+
+    The child is invoked as ``python <this file>`` with a JSON job on stdin and
+    a JSON result on stdout — an internal worker protocol, not a CLI: there are
+    no rule-selection flags. On timeout, ``subprocess.TimeoutExpired`` propagates
+    (``run_scope_note`` records ``timeout_recorded``). A child that reports the
+    runtime missing raises ``ValidationRuntimeUnavailable``.
+    """
+    import os
+    import sys
+
+    # Pin the child command so neither the interpreter nor the script can be
+    # redirected by external (job) input. The interpreter defaults to the
+    # current ``sys.executable``; the worker is *always* this executor module's
+    # own resolved path — it never derives from the job payload. Validate both
+    # up front so ``[executable, worker]`` passed to ``subprocess.run`` is a
+    # fixed, vetted command.
+    executable = python_executable or sys.executable
+    if not isinstance(executable, str) or not executable:
+        raise ValueError("python_executable must be a non-empty path string")
+    # The worker is always this executor module's own resolved path; it is never
+    # job-derived, so the command stays fixed regardless of stdin input.
+    worker_path = Path(__file__).resolve()
+    if not worker_path.is_file():  # pragma: no cover - defensive
+        raise RuntimeError(f"validation worker path does not resolve to a file: {worker_path}")
+    worker = str(worker_path)
+
+    def _runner(stage_path, concepts, *, registry=None, mask_paths=None):
+        request_payload = json.dumps(
+            {
+                "stage_path": stage_path,
+                "concept": concepts[0],
+                "mask_paths": mask_paths or [],
+                "registry_path": str(registry_path) if registry_path else None,
+            }
+        )
+        # Build the child environment from an explicit allowlist rather than
+        # copying os.environ wholesale. Bulk environment copies sweep up every
+        # unrelated credential in the parent process, and the NVSkills Tier 1
+        # scan blocks on them (E2, "Env Variable Harvesting") -- correctly, since
+        # this worker has no need for anything outside the names below.
+        #
+        # Each entry is here because something downstream reads it: USD_OPTIMIZE_ROOT
+        # resolves the extracted release package, LD_LIBRARY_PATH and PYTHONHOME
+        # keep a relocated interpreter able to find its own runtime, PATH and the
+        # temp-dir trio are needed by USD's plugin discovery and scratch writes,
+        # and PYTHONPATH is rewritten below regardless. Add names deliberately;
+        # do not reinstate a blanket copy.
+        #
+        # The Windows block is not optional padding. CPython initialises Winsock
+        # while importing ``asyncio``, and without SYSTEMROOT the provider cannot
+        # be located: the child dies in ``asyncio/_overlapped`` with WinError
+        # 10106 before it reads its job, every concept is recorded as
+        # ``blocked_validation_runtime``, and no validator runs at all. The first
+        # version of this allowlist carried only the POSIX names above and did
+        # exactly that on every Windows host.
+        env = {
+            name: os.environ[name]
+            for name in (
+                "PATH",
+                "HOME",
+                "TMPDIR",
+                "TEMP",
+                "TMP",
+                "LD_LIBRARY_PATH",
+                "PYTHONHOME",
+                "PYTHONPATH",
+                "USD_OPTIMIZE_ROOT",
+                # Windows: required for interpreter start-up and Winsock init.
+                "SYSTEMROOT",
+                "SYSTEMDRIVE",
+                "WINDIR",
+                "COMSPEC",
+                "PATHEXT",
+                "PROCESSOR_ARCHITECTURE",
+                "NUMBER_OF_PROCESSORS",
+            )
+            if name in os.environ
+        }
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(Path(worker).parent), env.get("PYTHONPATH", "")]
+        )
+        completed = subprocess.run(
+            [executable, worker],
+            input=request_payload,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            env=env,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"validation worker failed (rc={completed.returncode}): "
+                f"{completed.stderr.strip()[:500]}"
+            )
+        result = json.loads(completed.stdout.strip().splitlines()[-1])
+        if result.get("status") == "blocked_validation_runtime":
+            raise ValidationRuntimeUnavailable(result.get("detail", "runtime unavailable"))
+        return list(result.get("issues", []))
+
+    return _runner
+
+
+#: The exact set of fields the internal worker job may carry. The stdin payload
+#: is an internal protocol, but the input is still untrusted, so ``_validate_job``
+#: rejects anything outside this schema before any value is used.
+_JOB_ALLOWED_KEYS = frozenset({"stage_path", "concept", "mask_paths", "registry_path"})
+
+
+def _validate_job(job: Any) -> dict[str, Any]:
+    """Validate/normalize the untrusted stdin job against the worker schema.
+
+    Fail-closed on shape, unexpected/missing fields, and wrong types. Returns a
+    normalized dict with exactly the four known keys so the caller can index it
+    directly. This is the trust boundary for the child process (the job arrives
+    as JSON on stdin from ``subprocess_concept_runner``).
+    """
+    if not isinstance(job, dict):
+        raise ValueError(f"job must be a JSON object, got {type(job).__name__}")
+    unexpected = set(job) - _JOB_ALLOWED_KEYS
+    if unexpected:
+        raise ValueError(f"job has unexpected field(s): {sorted(unexpected)}")
+
+    stage_path = job.get("stage_path")
+    if not isinstance(stage_path, str) or not stage_path:
+        raise ValueError("job['stage_path'] must be a non-empty string")
+
+    concept = job.get("concept")
+    if not isinstance(concept, str) or not concept:
+        raise ValueError("job['concept'] must be a non-empty string")
+
+    mask_paths = job.get("mask_paths", [])
+    if mask_paths is None:
+        mask_paths = []
+    if not isinstance(mask_paths, list) or not all(
+        isinstance(p, str) and p for p in mask_paths
+    ):
+        raise ValueError("job['mask_paths'] must be a list of non-empty strings")
+
+    registry_path = job.get("registry_path")
+    if registry_path is not None and (not isinstance(registry_path, str) or not registry_path):
+        raise ValueError("job['registry_path'] must be a non-empty string or null")
+
+    return {
+        "stage_path": stage_path,
+        "concept": concept,
+        "mask_paths": mask_paths,
+        "registry_path": registry_path,
+    }
+
+
+def _worker_main() -> int:
+    """Child entrypoint: read one JSON job from stdin, print a JSON result.
+
+    Internal protocol used by ``subprocess_concept_runner`` — not a user CLI.
+    """
+    import sys
+
+    job = _validate_job(json.loads(sys.stdin.read()))
+    registry = load_registry(job["registry_path"])
+    try:
+        issues = validate_concepts(
+            job["stage_path"],
+            [job["concept"]],
+            registry=registry,
+            mask_paths=job["mask_paths"] or None,
+        )
+    except ValidationRuntimeUnavailable as exc:
+        print(json.dumps({"status": "blocked_validation_runtime", "detail": str(exc)}))
+        return 0
+    print(json.dumps({"status": "ok", "issues": [str(i) for i in issues]}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_worker_main())

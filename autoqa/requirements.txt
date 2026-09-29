@@ -16,3 +16,6 @@ psutil~=7.0.0
 
 # Server component
 cua-computer-server~=0.1.19
+
+# Strands Agents tools
+strands-agents-tools
