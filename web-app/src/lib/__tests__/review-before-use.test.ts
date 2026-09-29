@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -42,10 +42,11 @@ const ids = (items: { id: string }[]) => items.map((item) => item.id)
 describe('describeSkillPermissions', () => {
   it('puts every tool the bundled skills ask for into plain words', () => {
     for (const skill of readdirSync(bundledSkillsDir)) {
-      const skillMd = readFileSync(
-        path.join(bundledSkillsDir, skill, 'SKILL.md'),
-        'utf8'
-      )
+      const skillMdPath = path.join(bundledSkillsDir, skill, 'SKILL.md')
+      // The skills folder may also hold non-skill files (e.g. README.md);
+      // only entries with a SKILL.md are skills, matching the Rust seeder.
+      if (!existsSync(skillMdPath)) continue
+      const skillMd = readFileSync(skillMdPath, 'utf8')
       const permissions = describeSkillPermissions({
         requiresTools: frontmatterList(skillMd, 'requires_tools'),
         requiresScripts: frontmatterList(skillMd, 'requires_scripts'),
