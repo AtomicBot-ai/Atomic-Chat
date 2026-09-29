@@ -59,6 +59,12 @@ struct RawSkillManifest {
     requires_scripts: Option<serde_yaml::Value>,
     dangerous: Option<serde_yaml::Value>,
     platforms: Option<serde_yaml::Value>,
+    /// Accepted but not surfaced in `SkillManifest`; present in third-party
+    /// skill frontmatter (e.g. NVIDIA skills declare `license` and `metadata`).
+    #[allow(dead_code)]
+    license: Option<serde_yaml::Value>,
+    #[allow(dead_code)]
+    metadata: Option<serde_yaml::Value>,
 }
 
 pub fn parse_skill_file(content: &str) -> Result<ParsedSkillFile, String> {
