@@ -48,7 +48,8 @@ fn compute_system_info() -> SystemInfo {
     }
 }
 
-#[tauri::command]
+/// Blocking, cached hardware probe for Rust callers. The webview reaches it
+/// through `ipc::get_system_info`, which keeps it off the UI thread.
 pub fn get_system_info() -> SystemInfo {
     // Fast path: use cache if present
     {
@@ -77,7 +78,8 @@ pub fn refresh_system_info() {
     *guard = None;
 }
 
-#[tauri::command]
+/// Blocking usage probe (sleeps `MINIMUM_CPU_UPDATE_INTERVAL` between the two
+/// CPU refreshes). The webview reaches it through `ipc::get_system_usage`.
 pub fn get_system_usage() -> SystemUsage {
     let mut system = System::new();
     system.refresh_memory();
@@ -100,5 +102,32 @@ pub fn get_system_usage() -> SystemUsage {
             .iter()
             .map(|gpu| gpu.get_usage())
             .collect(),
+    }
+}
+
+/// Webview entry points for the probes above.
+///
+/// A synchronous `#[tauri::command]` runs on the main (UI) thread. On Windows,
+/// `refresh_cpu_all` builds a PDH query, which loads every registered
+/// performance-counter provider. Some providers (e.g. BITS's `bitsperf.dll`)
+/// make an outgoing COM call, and COM pumps window messages on the UI thread
+/// while it waits. A message re-entering the event loop there deadlocked the
+/// whole app ("Not Responding"). Running the probes on the blocking pool keeps
+/// PDH, COM and the CPU-sampling sleep off the UI thread.
+pub(crate) mod ipc {
+    use crate::types::{SystemInfo, SystemUsage};
+
+    #[tauri::command]
+    pub async fn get_system_info() -> Result<SystemInfo, String> {
+        tauri::async_runtime::spawn_blocking(super::get_system_info)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn get_system_usage() -> Result<SystemUsage, String> {
+        tauri::async_runtime::spawn_blocking(super::get_system_usage)
+            .await
+            .map_err(|e| e.to_string())
     }
 }

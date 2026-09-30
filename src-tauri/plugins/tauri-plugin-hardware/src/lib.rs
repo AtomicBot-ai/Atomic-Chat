@@ -21,8 +21,8 @@ pub use commands::get_system_info;
 pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("hardware")
         .invoke_handler(tauri::generate_handler![
-            commands::get_system_info,
-            commands::get_system_usage,
+            commands::ipc::get_system_info,
+            commands::ipc::get_system_usage,
             commands::refresh_system_info
         ])
         .build()

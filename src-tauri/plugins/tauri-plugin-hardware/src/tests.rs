@@ -14,6 +14,18 @@ fn test_system_usage() {
     println!("System Usage Info: {:?}", usage);
 }
 
+#[test]
+fn test_ipc_commands_return_the_blocking_probe_results() {
+    let info = tauri::async_runtime::block_on(ipc::get_system_info())
+        .expect("ipc::get_system_info failed");
+    assert_eq!(info.os_type, get_system_info().os_type);
+    assert_eq!(info.total_memory, get_system_info().total_memory);
+
+    let usage = tauri::async_runtime::block_on(ipc::get_system_usage())
+        .expect("ipc::get_system_usage failed");
+    assert!(usage.total_memory > 0);
+}
+
 #[cfg(test)]
 mod cpu_tests {
     use super::*;
