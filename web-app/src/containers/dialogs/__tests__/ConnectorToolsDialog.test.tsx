@@ -31,12 +31,13 @@ class MockResizeObserver {
 const renderDialog = (
   scope: React.ComponentProps<typeof ConnectorToolsDialog>['scope'] = {
     kind: 'default',
-  }
+  },
+  onOpenChange: (open: boolean) => void = () => {}
 ) =>
   render(
     <ConnectorToolsDialog
       open
-      onOpenChange={() => {}}
+      onOpenChange={onOpenChange}
       serverKey="linear"
       scope={scope}
     />
@@ -188,5 +189,19 @@ describe('ConnectorToolsDialog', () => {
       screen.getByText('common:connectorTools.noTools')
     ).toBeInTheDocument()
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('closes when the user clicks outside the popup', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    const { container } = renderDialog({ kind: 'default' }, onOpenChange)
+
+    const overlay = container.ownerDocument.querySelector(
+      '[data-slot="dialog-overlay"]'
+    )
+    expect(overlay).not.toBeNull()
+    await user.click(overlay as HTMLElement)
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })

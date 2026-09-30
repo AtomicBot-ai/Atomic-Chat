@@ -64,12 +64,18 @@ describe('useAgentSkills', () => {
     saveDialog.mockReset()
   })
 
-  it('selects the first skill alphabetically after loading', async () => {
-    const alpha = { ...skill, name: 'alpha' }
-    const zulu = { ...skill, name: 'zulu' }
-    vi.mocked(listAgentSkills).mockResolvedValue([zulu, alpha])
+  it('puts newest custom skills above the alphabetical bundled list', async () => {
+    const older = { ...skill, name: 'alpha', modifiedAtMs: 100 }
+    const newest = { ...skill, name: 'zulu', modifiedAtMs: 200 }
+    const bundled = {
+      ...skill,
+      name: 'bundled-pdf',
+      reserved: true,
+      modifiedAtMs: 300,
+    }
+    vi.mocked(listAgentSkills).mockResolvedValue([bundled, older, newest])
     vi.mocked(getAgentSkill).mockImplementation(async (name) => ({
-      ...(name === 'alpha' ? alpha : zulu),
+      ...(name === newest.name ? newest : name === older.name ? older : bundled),
       body: '# Body',
     }))
 
@@ -77,10 +83,11 @@ describe('useAgentSkills', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.skills.map(({ name }) => name)).toEqual([
-      'alpha',
       'zulu',
+      'alpha',
+      'bundled-pdf',
     ])
-    expect(result.current.selected?.name).toBe('alpha')
+    expect(result.current.selected?.name).toBe('zulu')
   })
 
   it('creates and imports a skill, then selects it', async () => {

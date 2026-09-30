@@ -4,6 +4,14 @@ import type { UIMessage } from 'ai'
 import { MessageItem } from '../MessageItem'
 import { seedServiceHub } from '@/test/service-hub'
 
+const mocks = vi.hoisted(() => ({
+  copyToClipboard: vi.fn(async () => true),
+}))
+
+vi.mock('@/lib/clipboard', () => ({
+  copyToClipboard: mocks.copyToClipboard,
+}))
+
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
@@ -59,10 +67,31 @@ const renderMessage = (message: UIMessage = userMessage) =>
 
 beforeEach(() => {
   onEdit.mockClear()
+  mocks.copyToClipboard.mockClear()
   seedServiceHub()
 })
 
 describe('MessageItem inline editing', () => {
+  it('renders a persisted skill invocation in its original inline position', () => {
+    renderMessage({
+      id: 'skill-message',
+      role: 'user',
+      parts: [{ type: 'text', text: 'prefix /pdf suffix' }],
+      metadata: { agent_skill_name: 'pdf' },
+    })
+
+    expect(screen.getByText('prefix /pdf suffix')).toBeVisible()
+    expect(screen.queryByText('/pdf', { exact: true })).toBeNull()
+
+    fireEvent.click(screen.getAllByRole('button')[0])
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith('prefix /pdf suffix')
+
+    fireEvent.click(editButton())
+    expect(screen.getByTestId('inline-message-editor')).toHaveValue(
+      'prefix /pdf suffix'
+    )
+  })
+
   it('replaces the message text in place instead of opening a dialog', () => {
     renderMessage()
     expect(screen.getByText('original text')).toBeInTheDocument()

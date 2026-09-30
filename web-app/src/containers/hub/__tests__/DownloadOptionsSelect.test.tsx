@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   afterAll,
@@ -149,9 +149,8 @@ describe('DownloadOptionsSelect', () => {
     )
 
     expect(screen.getByText('download Bonsai-27B-Q1_0')).toBeInTheDocument()
-    expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
-    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
-    expect(screen.queryByText('Too large')).not.toBeInTheDocument()
+    expect(screen.getByText('Good fit')).toBeInTheDocument()
+    expect(screen.queryByText('Won’t fit')).not.toBeInTheDocument()
   })
 
   it('steps down from a default the device cannot hold', () => {
@@ -176,12 +175,18 @@ describe('DownloadOptionsSelect', () => {
     // Sizes are re-derived from bytes, so they come back normalized.
     expect(screen.getByText('1.2 GB')).toBeInTheDocument()
     expect(screen.getByText('400.0 GB')).toBeInTheDocument()
-    expect(
-      screen
-        .getAllByRole('button')
-        .filter((button) => button.closest('li'))
-        .map((button) => button.textContent)
-    ).toEqual(['Q2_K1.2 GB', 'Q4_K_M2.5 GB', 'Q8_0400.0 GB'])
+    const rows = screen
+      .getAllByRole('button')
+      .filter((button) => button.closest('li'))
+    expect(rows).toHaveLength(3)
+    ;[
+      ['Q2_K', '1.2 GB'],
+      ['Q4_K_M', '2.5 GB'],
+      ['Q8_0', '400.0 GB'],
+    ].forEach(([quant, size], index) => {
+      expect(within(rows[index]).getByText(quant)).toBeInTheDocument()
+      expect(within(rows[index]).getByText(size)).toBeInTheDocument()
+    })
   })
 
   it('switches the download action to the quant the user picks', async () => {
@@ -197,6 +202,34 @@ describe('DownloadOptionsSelect', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('returns smoothly to Download Options after picking a quant deep in the list', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false }) as MediaQueryList)
+    )
+    render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
+
+    await user.click(screen.getByRole('button', { expanded: false }))
+    await user.click(screen.getByText('Q8_0'))
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'start',
+    })
+    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()
+    expect(screen.getByText('download Qwen3.5-4B-Q8_0')).toBeInTheDocument()
+  })
+
   it('warns about, rather than refuses, a quant that cannot fit the device', async () => {
     const user = userEvent.setup()
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={8 * GB} />)
@@ -209,34 +242,32 @@ describe('DownloadOptionsSelect', () => {
     const download = screen.getByText('download Qwen3.5-4B-Q8_0')
     expect(download).toBeEnabled()
     expect(download).toHaveAttribute('data-warn-too-large', 'true')
-    expect(screen.getByLabelText('Too large')).toBeInTheDocument()
+    expect(screen.getByText('Won’t fit')).toBeInTheDocument()
   })
 
-  it('shows only the fit dot for a comfortably small quant', () => {
+  it('shows the fit badge for a comfortably small quant', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={16 * GB} />)
 
-    expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
-    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+    expect(screen.getByText('Good fit')).toBeInTheDocument()
     expect(screen.getByText('download Qwen3.5-4B-Q4_K_M')).toHaveAttribute(
       'data-warn-too-large',
       'false'
     )
   })
 
-  it('shows only the fit dot for a quant that should run', () => {
+  it('shows the fit badge for a quant that should run', () => {
     // 2.50 GB against a 3 GB budget is past the 70% comfort threshold.
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={3 * GB} />)
 
-    expect(screen.getByLabelText('Should run')).toBeInTheDocument()
-    expect(screen.queryByText('Should run')).not.toBeInTheDocument()
+    expect(screen.getByText('Might fit')).toBeInTheDocument()
   })
 
   it('hides the fit verdict while the memory budget is unknown', () => {
     render(<DownloadOptionsSelect model={ggufModel()} budgetBytes={0} />)
 
-    expect(screen.queryByLabelText('Good fit')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Should run')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Too large')).not.toBeInTheDocument()
+    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+    expect(screen.queryByText('Might fit')).not.toBeInTheDocument()
+    expect(screen.queryByText('Won’t fit')).not.toBeInTheDocument()
   })
 
   it('sends an MLX repo straight to the MLX download action', () => {
@@ -246,8 +277,7 @@ describe('DownloadOptionsSelect', () => {
     expect(screen.getByText('MLX')).toBeInTheDocument()
     // Sharded safetensors are summed, not reported one shard at a time.
     expect(screen.getByText('5.0 GB')).toBeInTheDocument()
-    expect(screen.getByLabelText('Good fit')).toBeInTheDocument()
-    expect(screen.queryByText('Good fit')).not.toBeInTheDocument()
+    expect(screen.getByText('Good fit')).toBeInTheDocument()
     expect(screen.getByText('download mlx')).toHaveAttribute(
       'data-warn-too-large',
       'false'
@@ -258,7 +288,7 @@ describe('DownloadOptionsSelect', () => {
     // 5 GB of safetensors against a 4 GB budget.
     render(<DownloadOptionsSelect model={mlxModel()} budgetBytes={4 * GB} />)
 
-    expect(screen.getByLabelText('Too large')).toBeInTheDocument()
+    expect(screen.getByText('Won’t fit')).toBeInTheDocument()
     expect(screen.getByText('download mlx')).toHaveAttribute(
       'data-warn-too-large',
       'true'

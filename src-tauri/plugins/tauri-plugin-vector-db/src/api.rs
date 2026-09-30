@@ -149,6 +149,17 @@ mod tests {
     }
 
     #[test]
+    fn existing_empty_database_returns_an_empty_attachment_list() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = db::collection_path(&temp.path().to_path_buf(), "project_new");
+        let _conn = db::open_or_init_conn(&path).expect("empty database");
+
+        assert!(list_attachments(temp.path(), "project_new", None)
+            .expect("list empty project")
+            .is_empty());
+    }
+
+    #[test]
     fn linear_search_orders_by_cosine_similarity() {
         let temp = tempfile::tempdir().expect("tempdir");
         seeded_collection(temp.path(), "attachments_t1");

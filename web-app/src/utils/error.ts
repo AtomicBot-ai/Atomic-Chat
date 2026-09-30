@@ -5,6 +5,10 @@ export const MODEL_ACCESS_DENIED_TITLE = 'Model not available for your API key'
 export const MODEL_ACCESS_DENIED_MESSAGE =
   "This model needs to be enabled in your provider's key settings. Add it to the allowed models list and try again."
 
+export const AUTHENTICATION_FAILED_TITLE = 'Authentication failed'
+export const AUTHENTICATION_FAILED_MESSAGE =
+  "We couldn't authenticate with this provider. Check that the API key is correct and active, then try again."
+
 export const CONTEXT_OVERFLOW_TITLE = 'Context window full'
 export const CONTEXT_OVERFLOW_MESSAGE =
   'This message — including search results and tool output — is longer than the model can process at once. Increase the context size, or reduce the amount of attached / retrieved content (e.g. fewer web-search results) and try again.'
@@ -12,6 +16,49 @@ export const CONTEXT_OVERFLOW_MESSAGE =
 export const OUT_OF_MEMORY_TITLE = 'Ran out of memory'
 export const OUT_OF_MEMORY_MESSAGE =
   'The model ran out of memory while processing this request. Try a smaller or lighter model, reduce the context size, or remove attached images. On Apple Silicon, memory is shared with the system, so closing other memory-heavy apps can free up headroom.'
+
+/**
+ * Produces searchable text from the error shapes used by browser fetch,
+ * provider SDKs and Tauri commands. HTTP status codes are often attached to
+ * `status`, `response.status` or `cause` instead of included in `message`.
+ */
+function getSearchableErrorText(
+  error: unknown,
+  seen = new WeakSet<object>()
+): string {
+  if (!error) return ''
+  if (typeof error === 'string' || typeof error === 'number') {
+    return String(error)
+  }
+  if (typeof error !== 'object') return ''
+  if (seen.has(error)) return ''
+  seen.add(error)
+
+  const parts: string[] = []
+  if (error instanceof Error) {
+    parts.push(error.name, error.message)
+    if (error.cause) parts.push(getSearchableErrorText(error.cause, seen))
+  }
+
+  const record = error as Record<string, unknown>
+  for (const key of [
+    'message',
+    'status',
+    'statusCode',
+    'code',
+    'type',
+    'error',
+    'response',
+    'cause',
+  ]) {
+    const value = record[key]
+    if (value !== undefined && value !== error) {
+      parts.push(getSearchableErrorText(value, seen))
+    }
+  }
+
+  return parts.filter(Boolean).join(' ')
+}
 
 /**
  * Detects errors raised when a request exceeds the model's context window.
@@ -148,4 +195,34 @@ export function isModelAccessError(error: unknown): boolean {
   }
 
   return false
+}
+
+/**
+ * Detects provider authentication failures separately from model-level access
+ * errors. Keep `isModelAccessError` ahead of this matcher at the call site: a
+ * provider may return 403 when a valid key lacks access to one model.
+ */
+export function isAuthenticationError(error: unknown): boolean {
+  const raw = getSearchableErrorText(error)
+  if (!raw) return false
+  const msg = raw.toLowerCase()
+
+  return (
+    /\b(?:401|403)\b/.test(msg) ||
+    msg.includes('unauthorized') ||
+    msg.includes('unauthenticated') ||
+    msg.includes('authentication failed') ||
+    msg.includes('authentication error') ||
+    msg.includes('authentication_error') ||
+    msg.includes('invalid api key') ||
+    msg.includes('incorrect api key') ||
+    msg.includes('api key is invalid') ||
+    msg.includes('api key is incorrect') ||
+    msg.includes('missing api key') ||
+    msg.includes('no api key') ||
+    msg.includes('invalid bearer') ||
+    msg.includes('invalid auth token') ||
+    msg.includes('invalid credentials') ||
+    msg.includes('bad credentials')
+  )
 }

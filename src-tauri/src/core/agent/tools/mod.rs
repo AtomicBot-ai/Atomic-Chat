@@ -16,7 +16,7 @@ mod skill_run_script;
 mod skill_view;
 pub(super) mod tool_view;
 mod vision;
-mod web;
+pub(crate) mod web;
 mod web_exa;
 mod web_extract;
 mod web_search;

@@ -88,9 +88,6 @@ export default function AddEditCustomCliDialog({
       <DialogContent
         className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
         showCloseButton={false}
-        onInteractOutside={(e) => {
-          e.preventDefault()
-        }}
       >
         <DialogHeader>
           <DialogTitle>Environment Variables</DialogTitle>

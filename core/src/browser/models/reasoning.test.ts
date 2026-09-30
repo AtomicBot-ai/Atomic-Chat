@@ -100,6 +100,7 @@ describe('detectReasoningControls', () => {
     expect(controls.effortKwarg).toBe('reasoning_effort')
     expect(controls.effortValues).toEqual(['low', 'high'])
     expect(controls.offValue).toBe('no_think')
+    expect(controls.canDisable).toBe(true)
   })
 
   it('takes the legal value set from an enumerated error message', () => {
@@ -115,6 +116,7 @@ describe('detectReasoningControls', () => {
       'max',
     ])
     expect(controls.offValue).toBe('none')
+    expect(controls.canDisable).toBe(true)
   })
 
   it('falls back to the canonical levels when the template does not validate', () => {
@@ -123,6 +125,7 @@ describe('detectReasoningControls', () => {
     expect(controls.effortKwarg).toBe('reasoning_effort')
     expect(controls.effortValues).toEqual(['low', 'medium', 'high'])
     expect(controls.offValue).toBeUndefined()
+    expect(controls.canDisable).toBe(false)
   })
 
   it('ignores a positive "in [...]" check, which only special-cases a subset', () => {
@@ -133,12 +136,16 @@ describe('detectReasoningControls', () => {
   })
 
   it('detects an on/off-only thinking model without an effort knob', () => {
-    expect(detectReasoningControls(QWEN3)).toEqual({ supportsThinking: true })
+    expect(detectReasoningControls(QWEN3)).toEqual({
+      supportsThinking: true,
+      canDisable: true,
+    })
   })
 
   it('detects a template-native thinking budget', () => {
     expect(detectReasoningControls(SEED_OSS)).toEqual({
       supportsThinking: true,
+      canDisable: false,
       effortKwarg: 'thinking_budget',
     })
   })
@@ -146,9 +153,9 @@ describe('detectReasoningControls', () => {
   it('detects thinking from paired tags alone', () => {
     expect(
       detectReasoningControls('{{ "<think>" }} ... {{ "</think>" }}')
-    ).toEqual({ supportsThinking: true })
+    ).toEqual({ supportsThinking: true, canDisable: false })
     expect(
       detectReasoningControls('{{ "<|START_THINKING|><|END_THINKING|>" }}')
-    ).toEqual({ supportsThinking: true })
+    ).toEqual({ supportsThinking: true, canDisable: false })
   })
 })

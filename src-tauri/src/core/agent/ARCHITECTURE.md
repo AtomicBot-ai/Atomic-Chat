@@ -74,8 +74,11 @@ browser automation, window control, and filesystem watchers are deferred.
   the array: the profile's native channel where it has one, a generic
   `<think>...</think>` pair otherwise. The same tags arm llama.cpp's
   reasoning-budget sampler and are sent as `preserved_tokens`, so the three must
-  stay identical. The repair completion drops the generic prelude — its budget is
-  a tenth of a step's — but keeps a native channel, which is turn framing.
+  stay identical. The repair completion drops the generic prelude — it inherits the
+  step's budget less the repair block it appends, or 1,024 tokens after a
+  timed-out step — but keeps a native channel, which is turn framing. A repair
+  whose output was stopped by the server fails by cause: `context` when the
+  prompt was truncated, `budget` when the output limit ran out.
 - On OpenAI-compatible transports there is no GBNF. `tool_schema.rs` renders the
   same catalog as a JSON Schema for `response_format`, pinning the array shape
   and the tool-name enum but leaving `args` open — the prompt and

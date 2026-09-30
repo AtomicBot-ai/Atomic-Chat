@@ -71,9 +71,6 @@ export default function EditJsonMCPserver({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-2xl lg:max-w-2xl xl:max-w-2xl"
-        onInteractOutside={(e) => {
-          e.preventDefault()
-        }}
       >
         <DialogHeader>
           <DialogTitle>

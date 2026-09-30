@@ -1022,6 +1022,7 @@ async fn handle_serve(args: ServeArgs) {
         mmproj.map(|p| p.to_string_lossy().into_owned()),
         args.embedding,
         args.timeout,
+        None,
     )
     .await
     {
@@ -1361,6 +1362,7 @@ async fn start_model_server(
         mmproj.map(|p| p.to_string_lossy().into_owned()),
         false,
         120,
+        None,
     )
     .await
     {

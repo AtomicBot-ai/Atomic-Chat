@@ -44,7 +44,7 @@ const ShimmerComponent = ({
         {
           "--spread": `${dynamicSpread}px`,
           backgroundImage:
-            "linear-gradient(90deg, rgba(128, 128, 128, 0.4) calc(50% - var(--spread)), rgba(255, 255, 255, 1) 50%, rgba(128, 128, 128, 0.4) calc(50% + var(--spread)))",
+            "linear-gradient(90deg, rgba(128, 128, 128, 0.62) calc(50% - var(--spread)), rgba(255, 255, 255, 1) 50%, rgba(128, 128, 128, 0.62) calc(50% + var(--spread)))",
           backgroundSize: "250% 100%",
           backgroundRepeat: "no-repeat",
           backgroundClip: "text",

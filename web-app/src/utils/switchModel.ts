@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import { MODEL_LOAD_CANCELLED_CODE } from '@janhq/core'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -10,6 +11,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
+import type { ModelLoadProgress } from '@/lib/inference-status'
 import {
   isKeylessRemoteProvider,
   isSubscriptionProvider,
@@ -410,6 +412,121 @@ export async function stopAllLocalModelsByUser(
   const { userStoppedModels, setUserStoppedModels } = useAppState.getState()
   setUserStoppedModels([...new Set([...userStoppedModels, ...loaded.flat()])])
   await serviceHub.models().stopAllModels()
+  const { selectedProvider, selectedModel } = useModelProvider.getState()
+  if (
+    selectedModel &&
+    loaded.flat().includes(modelStopKey(selectedProvider, selectedModel.id))
+  ) {
+    // Some engines return a failed UnloadResult instead of throwing, which
+    // stopAllModels does not propagate. Confirm this provider actually stopped.
+    const remaining = await serviceHub
+      .models()
+      .getActiveModels(selectedProvider)
+      .catch(() => null)
+    if (remaining && !remaining.includes(selectedModel.id)) {
+      clearUnloadedSelection(selectedProvider, selectedModel.id)
+    }
+  }
+}
+
+function clearUnloadedSelection(providerName: string, modelId: string): void {
+  const state = useModelProvider.getState()
+  // An unload may finish after the user has already picked another model,
+  // including the same id on another engine, or begun loading this one again.
+  if (
+    state.selectedProvider === providerName &&
+    state.selectedModel?.id === modelId &&
+    !isExplicitSwitchPending(providerName, modelId)
+  ) {
+    state.selectModelProvider('', '')
+  }
+}
+
+function recordUserStop(providerName: string, modelId: string): void {
+  const { userStoppedModels, setUserStoppedModels } = useAppState.getState()
+  const key = modelStopKey(providerName, modelId)
+  if (!userStoppedModels.includes(key)) {
+    setUserStoppedModels([...userStoppedModels, key])
+  }
+}
+
+/**
+ * Unload one local model because the user asked to — the status dot in the
+ * composer pill (ATO-530). Recorded like a Stop, so the auto-start leaves it
+ * down until the user picks it again. Clear only the runtime selection after
+ * a successful unload; the provider and its downloaded models stay registered.
+ */
+export async function unloadModelByUser(params: {
+  modelId: string
+  providerName: string
+  serviceHub: ServiceHub
+}): Promise<void> {
+  const { modelId, providerName, serviceHub } = params
+  recordUserStop(providerName, modelId)
+  try {
+    const result = await serviceHub.models().stopModel(modelId, providerName)
+    if (result && !result.success) {
+      throw new Error(result.error || `Failed to stop model '${modelId}'`)
+    }
+    clearUnloadedSelection(providerName, modelId)
+  } finally {
+    const active = await serviceHub
+      .models()
+      .getActiveModels()
+      .catch(() => null)
+    if (active) syncActiveModelsFromEngines(active)
+  }
+}
+
+/**
+ * The local load `doSwitchToModel` is running, so a Cancel can reach it.
+ * Cloud switches load nothing and never set it.
+ */
+let currentLocalLoad: {
+  modelId: string
+  providerName: string
+  cancelRequested: boolean
+} | null = null
+
+function cancelledLoadError(): Error & { code: string } {
+  const error = new Error('The model load was cancelled.') as Error & {
+    code: string
+  }
+  error.code = MODEL_LOAD_CANCELLED_CODE
+  return error
+}
+
+/** Whether a switch ended because the user cancelled its load. */
+export function isModelLoadCancelled(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const { code } = error as { code?: unknown }
+  return typeof code === 'string' && code === MODEL_LOAD_CANCELLED_CODE
+}
+
+function throwIfLoadCancelled(): void {
+  if (currentLocalLoad?.cancelRequested) throw cancelledLoadError()
+}
+
+/**
+ * Stop the local model load in flight (ATO-530). The model stays selected
+ * but not loaded, recorded as a user stop so the composer's auto-start does
+ * not load it straight back. The switch ends with a cancelled error, which
+ * raises no failure anywhere.
+ */
+export async function cancelModelLoad(serviceHub: ServiceHub): Promise<void> {
+  const load = currentLocalLoad
+  if (!load || load.cancelRequested) return
+  load.cancelRequested = true
+  useAppState.getState().setLoadingModelCancelling(true)
+  recordUserStop(load.providerName, load.modelId)
+  // An engine that cannot stop its load finishes it; the switch then unloads
+  // the model at its next step instead.
+  await serviceHub
+    .models()
+    .cancelModelLoad(load.providerName, load.modelId)
+    .catch((error) => {
+      console.warn('[switchToModel] engine could not cancel the load:', error)
+    })
 }
 
 /**
@@ -677,7 +794,31 @@ async function doSwitchToModel(params: {
   }
 
   setServerStatus(shouldStartServer ? 'pending' : 'stopped')
-  updateLoadingModel(true)
+  // ATO-535: a switch that has to tear a *running local engine* down first is
+  // a restart, not a cold start — a different wait, and the status surface says
+  // which of the two the user is looking at. `activeModels` also carries cloud
+  // model ids (step 6 writes them), and those hold no engine, so the id is
+  // matched back to its provider rather than merely counted.
+  const localEngineWasServing = useAppState
+    .getState()
+    .activeModels.some(
+      (active) =>
+        active !== modelId &&
+        useModelProvider
+          .getState()
+          .providers.some(
+            (candidate) =>
+              isLocalEngineProvider(candidate.provider) &&
+              candidate.models?.some((model) => model.id === active)
+          )
+    )
+  updateLoadingModel(true, {
+    modelId,
+    kind: localEngineWasServing ? 'restart' : 'start',
+  })
+  const { setLoadingModelProgress } = useAppState.getState()
+  const load = isLocal ? { modelId, providerName, cancelRequested: false } : null
+  currentLocalLoad = load
   console.log(
     '[switchToModel] Switching to model:',
     modelId,
@@ -693,6 +834,9 @@ async function doSwitchToModel(params: {
     //    model, so a switch whose only job is to drop a stray copy in another
     //    provider never kills a server that may be streaming right now.
     if (isLocal) {
+      if (localEngineWasServing) {
+        setLoadingModelProgress({ kind: 'unloadingPrevious' })
+      }
       await serviceHub.models().stopAllModelsExcept(modelId, providerName)
       const stillActive = await serviceHub
         .models()
@@ -713,6 +857,7 @@ async function doSwitchToModel(params: {
     } catch {
       // Server may not have been running — that's fine
     }
+    throwIfLoadCancelled()
 
     // 3. Resolve the provider definition.
     const allProviders = useModelProvider.getState().providers
@@ -733,7 +878,18 @@ async function doSwitchToModel(params: {
         serviceHub,
         providerName,
         modelId,
+        onProgress: setLoadingModelProgress,
       })
+      // The load came back before a Cancel could stop it — an engine that
+      // cannot cancel, or one that became ready first. The user still asked
+      // for the model to be gone.
+      if (load?.cancelRequested) {
+        await serviceHub
+          .models()
+          .stopModel(modelId, providerName)
+          .catch(() => undefined)
+        throw cancelledLoadError()
+      }
       // Awaited rather than fired-and-forgotten: the event has to carry it,
       // and the read is a single IPC against an already-running process.
       const runtimeDevice = await readRuntimeDevice(modelId)
@@ -791,6 +947,7 @@ async function doSwitchToModel(params: {
     //    they start it regardless of the toggle (see `shouldStartServer`
     //    computed up front).
     if (shouldStartServer) {
+      if (isLocal) setLoadingModelProgress({ kind: 'startingServer' })
       await startLocalApiServer()
     } else {
       // Local model + auto-start disabled + server wasn't running: keep the
@@ -823,7 +980,12 @@ async function doSwitchToModel(params: {
     clearModelLoadError()
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
-    console.error('[switchToModel] Failed to switch model:', error)
+    const cancelled = isModelLoadCancelled(error)
+    if (cancelled) {
+      console.log('[switchToModel] Load cancelled by the user:', modelId)
+    } else {
+      console.error('[switchToModel] Failed to switch model:', error)
+    }
     if (wasServerRunning) {
       try {
         await startLocalApiServer()
@@ -839,6 +1001,17 @@ async function doSwitchToModel(params: {
       }
     } else {
       useAppState.getState().setServerStatus('stopped')
+    }
+    if (cancelled) {
+      // The user's choice, not a failure: no auto-start backoff, telemetry,
+      // crash report or toast. The stop record set by `cancelModelLoad` is
+      // what keeps the model down.
+      const active = await serviceHub
+        .models()
+        .getActiveModels()
+        .catch(() => null)
+      if (active) syncActiveModelsFromEngines(active)
+      throw error
     }
     // WS2: record the failure so the auto-start effect doesn't re-loop on it —
     // terminal codes (missing model/binary) are never auto-retried; others back
@@ -892,6 +1065,7 @@ async function doSwitchToModel(params: {
     reportModelLoadError(error, providerName, isAutoStart, modelId)
     throw error
   } finally {
+    if (currentLocalLoad === load) currentLocalLoad = null
     useAppState.getState().updateLoadingModel(false)
   }
 }
@@ -1046,8 +1220,9 @@ async function loadLocalModelWithOomRetry(args: {
   serviceHub: ServiceHub
   providerName: string
   modelId: string
+  onProgress?: (progress: ModelLoadProgress) => void
 }): Promise<LoadableModel | undefined> {
-  const { serviceHub, providerName, modelId } = args
+  const { serviceHub, providerName, modelId, onProgress } = args
   let lastStep: OomRetryStep | null = null
   for (let attempt = 0; attempt < OOM_RETRY_MAX_ATTEMPTS; attempt++) {
     const provider = useModelProvider
@@ -1055,9 +1230,12 @@ async function loadLocalModelWithOomRetry(args: {
       .providers.find((p) => p.provider === providerName)
     if (!provider) throw new Error(`Provider '${providerName}' not found`)
     const fitEnabled = readProviderFit(provider)
+    const retry = lastStep?.kind
     try {
       await taggedWithTimeout(
-        serviceHub.models().startModel(provider, modelId, true),
+        serviceHub.models().startModel(provider, modelId, true, {
+          onStage: (stage) => onProgress?.({ ...stage, retry }),
+        }),
         MODEL_LOAD_WATCHDOG_MS,
         `Timed out waiting for model "${modelId}" to finish loading.`
       )
@@ -1086,7 +1264,9 @@ async function loadLocalModelWithOomRetry(args: {
         | LoadableModel
         | undefined
     } catch (error) {
+      if (isModelLoadCancelled(error)) throw error
       if (!isOutOfMemoryError(toErrorObject(error))) throw error
+      throwIfLoadCancelled()
       const step =
         attempt < OOM_RETRY_MAX_ATTEMPTS - 1
           ? planOomRetry(provider, modelId, attempt)
@@ -1108,6 +1288,9 @@ async function loadLocalModelWithOomRetry(args: {
         `[switchToModel] ${modelId} ran out of memory; retrying with ${step.kind} ${step.from} → ${step.to}`
       )
       applyOomRetryStep(serviceHub, provider, modelId, step)
+      // Said at once: the next attempt reports its own steps only once the
+      // engine reaches them.
+      onProgress?.({ kind: 'loadingWeights', cachedFraction: null, retry: step.kind })
       emitModelLoadRetry({
         modelId,
         providerName,
@@ -1246,129 +1429,123 @@ function unsupportedDescription(
 }
 
 /**
- * Surface a user-visible banner when a model fails to load.
- * OOM errors get a persistent toast so the user cannot miss them.
+ * What to tell the user about a failed model load: one sentence saying what
+ * went wrong, and where the copy has one, the next thing to try. `details`
+ * carries the raw engine output for the "Show details" toggle.
+ *
+ * Pure, and separate from the toast, because the compact picker status and the
+ * standard failure toast must classify the same engine error the same way.
  */
-function reportModelLoadError(
-  rawError: unknown,
-  providerName?: string,
-  isAutoStart?: boolean,
-  modelId?: string
-): void {
-  const err = toErrorObject(rawError)
-  useModelLoad.getState().setModelLoadError(err, modelId)
+export type ModelLoadFailure = {
+  title: string
+  description: string
+  details?: string
+  /** The user has to act before this can succeed, so the toast never expires. */
+  persistent: boolean
+}
 
+export function describeModelLoadFailure(
+  rawError: unknown,
+  providerName?: string
+): ModelLoadFailure {
+  const err = toErrorObject(rawError)
   const t = i18n.t.bind(i18n)
 
-  // ATO-270: a startup watchdog timeout must surface even on auto-start —
-  // the alternative is an infinite "Starting Server" spinner with zero
-  // feedback and no way for the user to know anything went wrong, let alone
-  // retry. This is the one exception to the "auto-start fails silently"
-  // policy below.
+  const simple = (
+    key: string,
+    persistent = false
+  ): ModelLoadFailure => ({
+    title: t(`model-errors:${key}Title`),
+    description: t(`model-errors:${key}Description`),
+    persistent,
+  })
+
   if (err.code === LOCAL_API_SERVER_START_TIMEOUT_CODE) {
-    toast.error(t('model-errors:startupTimedOutTitle'), {
-      id: 'model-load-error',
-      description: t('model-errors:startupTimedOutDescription'),
-      duration: 10000,
-      closeButton: true,
-    })
-    return
+    return simple('startupTimedOut')
   }
-
-  // Only user-initiated loads surface a toast for every other failure.
-  // Automatic/background loads (startup auto-start, ChatInput auto-start,
-  // onboarding launches, post-import auto-switch) pass `isAutoStart` and
-  // fail silently — the error is still stored above for any inline UI that
-  // wants to read it.
-  if (isAutoStart) return
-
   if (isOutOfMemoryError(err)) {
-    toast.error(t('model-errors:outOfMemoryTitle'), {
-      id: 'model-load-error',
-      description: t('model-errors:outOfMemoryDescription'),
-      duration: Infinity,
-      closeButton: true,
-    })
-    return
+    return simple('outOfMemory', true)
   }
-
   // ATO-121: map well-classified engine errors to an actionable message + hint
   // instead of the opaque generic "unexpected error". The codes come from the
   // Rust plugins' `LlamacppError` (from_stderr / from_exit_status).
   if (err.code === 'MULTIMODAL_PROJECTOR_LOAD_FAILED') {
-    toast.error(t('model-errors:multimodalUnsupportedTitle'), {
-      id: 'model-load-error',
-      description: unsupportedDescription(t, 'multimodalUnsupported', providerName),
-      duration: 10000,
-      closeButton: true,
-    })
-    return
+    return {
+      title: t('model-errors:multimodalUnsupportedTitle'),
+      description: unsupportedDescription(
+        t,
+        'multimodalUnsupported',
+        providerName
+      ),
+      persistent: false,
+    }
   }
   if (err.code === 'MODEL_ARCH_NOT_SUPPORTED') {
     // The backend names the architecture it choked on, which is the one thing
     // a bug report needs. Keep it one click away instead of dropping it.
-    showModelLoadErrorToast({
+    return {
       title: t('model-errors:archNotSupportedTitle'),
       description: unsupportedDescription(t, 'archNotSupported', providerName),
       details: splitModelLoadError(err).details,
-      duration: 10000,
-    })
-    return
+      persistent: false,
+    }
   }
   if (err.code === 'MODEL_FILE_NOT_FOUND') {
-    toast.error(t('model-errors:modelFileMissingTitle'), {
-      id: 'model-load-error',
-      description: t('model-errors:modelFileMissingDescription'),
-      duration: 10000,
-      closeButton: true,
-    })
-    return
+    return simple('modelFileMissing')
   }
   // A shard set missing members is an incomplete download by another name, and
   // the remedy the corrupt-file copy already gives — delete and download again —
   // is exactly right for it.
-  if (err.code === 'MODEL_FILE_CORRUPT' || err.code === 'MODEL_SHARDS_INCOMPLETE') {
-    toast.error(t('model-errors:modelFileCorruptTitle'), {
-      id: 'model-load-error',
-      description: t('model-errors:modelFileCorruptDescription'),
-      duration: 10000,
-      closeButton: true,
-    })
-    return
+  if (
+    err.code === 'MODEL_FILE_CORRUPT' ||
+    err.code === 'MODEL_SHARDS_INCOMPLETE'
+  ) {
+    return simple('modelFileCorrupt')
   }
   // ATO-190: the bundled macOS engine links a Metal symbol absent on older
   // macOS (e.g. Catalina), so the binary fails to load. Tell the user their
   // OS is too old instead of showing a generic crash.
   if (err.code === 'OS_VERSION_UNSUPPORTED') {
-    toast.error(t('model-errors:osVersionUnsupportedTitle'), {
-      id: 'model-load-error',
-      description: t('model-errors:osVersionUnsupportedDescription'),
-      duration: Infinity,
-      closeButton: true,
-    })
-    return
+    return simple('osVersionUnsupported', true)
   }
   // ATO-185: the host CPU lacks the AVX instruction set the bundled engine
   // requires; loading would otherwise crash with a silent SIGILL surfaced as
   // the opaque LLAMA_CPP_PROCESS_ERROR. Tell the user plainly that their CPU
   // is unsupported instead.
   if (err.code === 'CPU_NO_AVX') {
-    toast.error(t('model-errors:cpuNoAvxTitle'), {
-      id: 'model-load-error',
-      description: t('model-errors:cpuNoAvxDescription'),
-      duration: 10000,
-      closeButton: true,
-    })
-    return
+    return simple('cpuNoAvx')
   }
 
   const { summary, details } = splitModelLoadError(err)
-  showModelLoadErrorToast({
+  return {
     title: t('model-errors:modelLoadFailedTitle'),
     description: t('model-errors:modelLoadFailedDescription', {
       message: summary,
     }).trim(),
     details,
-    duration: 10000,
+    persistent: false,
+  }
+}
+
+/**
+ * Surface a user-visible banner when a model fails to load.
+ * OOM errors get a persistent toast so the user cannot miss them.
+ */
+function reportModelLoadError(
+  rawError: unknown,
+  providerName?: string,
+  _isAutoStart?: boolean,
+  modelId?: string
+): void {
+  const err = toErrorObject(rawError)
+  useModelLoad.getState().setModelLoadError(err, modelId)
+
+  const failure = describeModelLoadFailure(err, providerName)
+
+  showModelLoadErrorToast({
+    title: failure.title,
+    description: failure.description,
+    details: failure.details,
+    duration: failure.persistent ? Infinity : 10000,
   })
 }

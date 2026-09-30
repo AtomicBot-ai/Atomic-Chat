@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,8 +12,11 @@ import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { createDocumentAttachment, type Attachment } from '@/types/attachment'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { formatAttachmentError } from '@/lib/attachmentProcessing'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
 
 type ProjectFilesProps = {
@@ -135,6 +138,14 @@ const SUPPORTED_EXTENSIONS = [
   'patch',
 ]
 
+const PROJECT_FILE_LOAD_RETRY_DELAYS_MS = [0, 120, 300] as const
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+
+const isUninitializedProjectDatabase = (error: unknown) =>
+  /no such table:\s*files/i.test(formatAttachmentError(error))
+
 async function getFilesFromPaths(paths: string[]): Promise<string[]> {
   const files: string[] = []
   const { fs } = await import('@janhq/core')
@@ -191,27 +202,74 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  // ATO — #289: ingesting a file downloads the embedding model on first use,
+  // which takes a while. Two ingests of the same file derive the same download
+  // task id, so the second one *supersedes* (cancels) the first — and with an
+  // unreachable host in the way the pair never converged, which is what the
+  // report describes as an endless spinner. `files` only lists what is already
+  // indexed, so it cannot deduplicate an upload still in flight; this can.
+  const inFlightPaths = useRef<Set<string>>(new Set())
+  // The first upload in an install downloads the embedding model before any
+  // file is indexed. That download reports through the global download store
+  // under the model id, so the Files section can say what it is waiting on
+  // instead of spinning silently for minutes.
+  const indexModelDownload = useDownloadStore(
+    (s) => s.downloads[EMBEDDING_MODEL_ID]
+  )
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
+    if (!attachmentsEnabled) {
+      setFiles([])
+      setLoadError(null)
+      setLoading(false)
+      return
+    }
+
     try {
       const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
         ExtensionTypeEnum.VectorDB
       )
       if (ext?.listAttachmentsForProject) {
-        const projectFiles = await ext.listAttachmentsForProject(projectId)
-        setFiles(projectFiles)
+        let lastError: unknown
+        for (const delay of PROJECT_FILE_LOAD_RETRY_DELAYS_MS) {
+          if (delay) await wait(delay)
+          try {
+            const projectFiles = await ext.listAttachmentsForProject(projectId)
+            setFiles(projectFiles)
+            lastError = undefined
+            break
+          } catch (error) {
+            lastError = error
+          }
+        }
+        if (lastError) throw lastError
       } else {
         setFiles([])
       }
-    } catch {
+      setLoadError(null)
+    } catch (error) {
+      // Compatibility guard for an older packaged vector extension: its first
+      // read creates an empty SQLite file but reports the absent pre-ingest
+      // table as an error. The native plugin and current extension both return
+      // [] now; keep this boundary tolerant so stale extension caches do too.
+      if (isUninitializedProjectDatabase(error)) {
+        setFiles([])
+        setLoadError(null)
+        return
+      }
+      // A listing that fails must not look like a project with no files:
+      // the upload the user just made may well be in there.
+      console.error('Failed to load project files:', error)
       setFiles([])
+      setLoadError(formatAttachmentError(error))
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [attachmentsEnabled, projectId])
 
   useEffect(() => {
     loadProjectFiles()
@@ -274,13 +332,16 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         )
       }
 
-      // Filter duplicates
+      // Filter duplicates: already indexed, or currently being ingested.
       const existingPaths = new Set(
         files.filter((f) => f.path).map((f) => f.path)
       )
       const duplicates: string[] = []
       const newAttachments = preparedAttachments.filter((att) => {
-        if (existingPaths.has(att.path)) {
+        if (
+          existingPaths.has(att.path) ||
+          (att.path && inFlightPaths.current.has(att.path))
+        ) {
           duplicates.push(att.name)
           return false
         }
@@ -298,6 +359,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
+      for (const att of newAttachments) {
+        if (att.path) inFlightPaths.current.add(att.path)
+      }
       setUploading(true)
       try {
         for (const att of newAttachments) {
@@ -317,11 +381,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         toast.error(
           t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
           {
-            description:
-              error instanceof Error ? error.message : JSON.stringify(error),
+            description: formatAttachmentError(error),
+            duration: 30000,
           }
         )
       } finally {
+        for (const att of newAttachments) {
+          if (att.path) inFlightPaths.current.delete(att.path)
+        }
         setUploading(false)
       }
     },
@@ -329,6 +396,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   )
 
   const handleUpload = async () => {
+    // Only the Upload button used to be gated by `uploading`; the two dropzone
+    // click targets below were not, so a second click during an ingest started
+    // a concurrent one (#289).
+    if (uploading) return
+
     if (!attachmentsEnabled) {
       toast.info(
         t('common:toast.attachmentsDisabledInfo.title') ??
@@ -357,12 +429,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       await processFilePaths(paths)
     } catch (error) {
       console.error('Failed to open file dialog:', error)
-      const desc =
-        error instanceof Error ? error.message : JSON.stringify(error)
       toast.error(
         t('common:toast.uploadFailed.title') ?? 'Failed to upload file',
         {
-          description: desc,
+          description: formatAttachmentError(error),
         }
       )
     }
@@ -384,6 +454,8 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
+
+    if (uploading) return
 
     if (!attachmentsEnabled) {
       toast.info(
@@ -441,14 +513,28 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       toast.error(
         t('common:toast.deleteFailed.title') ?? 'Failed to delete file',
         {
-          description:
-            error instanceof Error ? error.message : JSON.stringify(error),
+          description: formatAttachmentError(error),
         }
       )
     }
   }
 
-  const isEmpty = !loading && files.length === 0
+  const isEmpty = !loading && !loadError && files.length === 0
+  // Progress is a 0..1 ratio like every other download consumer renders it.
+  // A download without a content-length reports a non-finite ratio, and no
+  // percentage beats a wrong one.
+  const indexModelPercent =
+    indexModelDownload && Number.isFinite(indexModelDownload.progress)
+      ? Math.round(Math.min(100, indexModelDownload.progress * 100))
+      : null
+  // The download reports through the global store under the model id; the
+  // "Indexing…" button and the dropzone hint cover the rest of the wait.
+  const uploadStatus =
+    uploading && indexModelDownload
+      ? indexModelPercent !== null
+        ? `${t('common:projects.preparingIndexModel')} ${indexModelPercent}%`
+        : t('common:projects.preparingIndexModel')
+      : ''
 
   return (
     <div className="p-4">
@@ -465,22 +551,51 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ) : (
             <UploadIcon className="size-4" />
           )}
-          <span>Upload</span>
+          {/* The first upload in a fresh install also downloads the embedding
+              model, which is by far the longest part; a bare spinner labelled
+              "Upload" gave no hint that anything was happening (#289). */}
+          <span>{uploading ? t('common:projects.uploading') : 'Upload'}</span>
         </Button>
       </div>
+
+      {/* Always mounted: a live region announces changes to an element that
+          is already in the tree, not one inserted with its text. */}
+      <p
+        role="status"
+        className={cn('text-xs text-muted-foreground', uploading && 'mb-3')}
+      >
+        {uploadStatus}
+      </p>
 
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="flex flex-col items-center justify-center gap-2 py-6 px-4 rounded-lg border border-dashed border-destructive/40 bg-destructive/5"
+        >
+          <p className="text-sm text-muted-foreground text-center">
+            {t('common:projects.filesLoadFailed')}: {loadError}
+          </p>
+          <Button variant="outline" size="sm" onClick={loadProjectFiles}>
+            {t('common:retry')}
+          </Button>
+        </div>
       ) : isEmpty ? (
         <div
           className={cn(
-            'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
+            'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed transition-colors',
+            uploading
+              ? 'cursor-default opacity-60 bg-secondary/30 border-border'
+              : 'cursor-pointer',
+            !uploading &&
+              (isDragging
+                ? 'bg-primary/10 border-primary'
+                : 'bg-secondary/30 border-border hover:bg-secondary/50')
           )}
+          aria-disabled={uploading}
           onClick={handleUpload}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -488,7 +603,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         >
           <FileText className="size-8 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground text-center">
-            {t('common:projects.filesDescription')}
+            {uploading
+              ? t('common:projects.uploadingHint')
+              : t('common:projects.filesDescription')}
           </p>
         </div>
       ) : (
@@ -540,22 +657,27 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ))}
 
           <div
-          className={cn(
-            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
-          )}
-          onClick={handleUpload}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <FileText className="size-8 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground text-center">
-            {t('common:projects.filesDescription')}
-          </p>
-        </div>
+            className={cn(
+              'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed transition-colors',
+              uploading
+                ? 'cursor-default opacity-60 bg-secondary/30 border-border'
+                : 'cursor-pointer',
+              !uploading &&
+                (isDragging
+                  ? 'bg-primary/10 border-primary'
+                  : 'bg-secondary/30 border-border hover:bg-secondary/50')
+            )}
+            aria-disabled={uploading}
+            onClick={handleUpload}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <FileText className="size-8 text-muted-foreground/50 mb-3" />
+            <p className="text-sm text-muted-foreground text-center">
+              {t('common:projects.filesDescription')}
+            </p>
+          </div>
         </div>
       )}
     </div>

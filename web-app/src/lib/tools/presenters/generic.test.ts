@@ -28,6 +28,16 @@ describe('presentGenericTool', () => {
     })
   })
 
+  it('falls back to the first text argument for freely named MCP params', () => {
+    expect(
+      presentGenericTool({
+        toolName: 'linear_list_issues',
+        input: { limit: 20, team: 'Atomic Chat', label: 'bug' },
+        state: 'output-available',
+      }).subtitle
+    ).toBe('Atomic Chat')
+  })
+
   it('humanizes unknown MCP tool names', () => {
     expect(
       presentGenericTool({
@@ -35,5 +45,18 @@ describe('presentGenericTool', () => {
         state: 'output-available',
       }).title
     ).toBe('Called Search Documents')
+  })
+
+  it('preserves the reason for an automatic tool veto', () => {
+    expect(
+      presentGenericTool({
+        toolName: 'os.fs.mkdir',
+        state: 'output-denied',
+        output: {
+          status: 'denied',
+          details: { deniedReason: 'tool-loop' },
+        },
+      }).deniedReason
+    ).toBe('tool-loop')
   })
 })

@@ -159,7 +159,7 @@ describe('useAssistant', () => {
       '/images/transparent-logo.png'
     )
     expect(result.current.currentAssistant.instructions).toBe(
-      'Current date: {{current_date}}'
+      'You are Atomic Chat, a helpful AI assistant.\n\nCurrent date: {{current_date}}'
     )
     expect(typeof result.current.currentAssistant.created_at).toBe('number')
     expect(typeof result.current.currentAssistant.parameters).toBe('object')

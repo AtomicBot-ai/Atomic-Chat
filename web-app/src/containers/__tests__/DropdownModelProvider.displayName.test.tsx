@@ -192,6 +192,32 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     cleanup()
   })
 
+  it.each(['llamacpp', 'llamacpp-upstream'])(
+    'gives %s an accessible settings button with transparent rest and a separated status slot',
+    (provider) => {
+      const configured = { ...mockProviders[0], provider }
+      mockModelProvider({
+        providers: [configured],
+        selectedProvider: provider,
+        selectedModel: mockSelectedModel,
+        getProviderByName: () => configured,
+        selectModelProvider: vi.fn(),
+        getModelBy: vi.fn(),
+        updateProvider: vi.fn(),
+      })
+      renderPicker()
+      const gear = screen.getByRole('button', {
+        name: 'common:modelPicker.providerSettings',
+      })
+      expect(gear).toHaveClass(
+        'bg-transparent',
+        'hover:bg-secondary-foreground/8',
+        'focus-visible:bg-secondary-foreground/8'
+      )
+      expect(gear.parentElement).toHaveClass('gap-3')
+    }
+  )
+
   it('should display custom model name in the trigger button', () => {
     renderPicker()
 
@@ -201,7 +227,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.queryByDisplayValue('model1.gguf')).not.toBeInTheDocument()
   })
 
-  it('should fall back to model ID when no displayName is set', () => {
+  it('uses a compact label and keeps the full ID in the tooltip when no displayName is set', () => {
     mockModelProvider({
       providers: mockProviders,
       selectedProvider: 'llamacpp',
@@ -218,7 +244,8 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
     renderPicker()
 
-    expect(screen.getAllByText('model3.gguf')).toHaveLength(2) // Trigger and dropdown
+    expect(screen.getAllByText('Model3')).toHaveLength(2) // Trigger and dropdown
+    expect(screen.getAllByTitle('model3.gguf').length).toBeGreaterThanOrEqual(2)
   })
 
   it('should show display names in the model list items', () => {
@@ -227,7 +254,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     // Check if the display names are shown in the options
     expect(screen.getAllByText('Custom Model 1')).toHaveLength(2) // Selected: Trigger + dropdown
     expect(screen.getByText('Short Name')).toBeInTheDocument() // Only in dropdown
-    expect(screen.getByText('model3.gguf')).toBeInTheDocument() // Only in dropdown
+    expect(screen.getByText('Model3')).toBeInTheDocument() // Only in dropdown
   })
 
   it('deduplicates favorites by model id and prefers the nicknamed copy', () => {
@@ -278,8 +305,11 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
     renderPicker()
 
-    expect(screen.getAllByText('Shared Model')).toHaveLength(1)
-    expect(screen.getAllByText('shared-model.gguf')).toHaveLength(1)
+    // One favorite and one provider row remain, but both now use the same
+    // compact human label instead of exposing the raw filename.
+    expect(screen.getAllByText('Shared Model')).toHaveLength(2)
+    expect(screen.queryByText('shared-model.gguf')).toBeNull()
+    expect(screen.getAllByTitle('shared-model.gguf')).toHaveLength(2)
   })
 
   it('should use getModelDisplayName utility correctly', () => {
@@ -363,5 +393,47 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.getAllByText('Custom Model 1').length).toBeGreaterThanOrEqual(
       1
     )
+  })
+
+  it('keeps a long provider title on one line and leaves the gear after it', () => {
+    // A future in-process engine can carry a long display name; it must not
+    // wrap and push the status dot or settings control.
+    const chatgptProviders: ModelProvider[] = [
+      {
+        provider: 'a-very-long-local-inference-engine-name',
+        active: true,
+        models: [{ id: 'gpt-5-codex', capabilities: ['completion'] }],
+        settings: [],
+        persist: true,
+      },
+    ] as ModelProvider[]
+    mockModelProvider({
+      providers: chatgptProviders,
+      selectedProvider: 'a-very-long-local-inference-engine-name',
+      selectedModel: chatgptProviders[0].models[0],
+      getProviderByName: vi.fn((name: string) =>
+        chatgptProviders.find((p) => p.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    renderPicker()
+
+    const title = screen.getByText('A-very-long-local-inference-engine-name')
+    expect(title).toHaveClass('truncate')
+    expect(title).toHaveAttribute(
+      'title',
+      'A-very-long-local-inference-engine-name'
+    )
+
+    const header = title.parentElement?.parentElement
+    expect(header).not.toBeNull()
+    const gear = header!.querySelector('svg.tabler-icon-settings')
+    expect(gear).not.toBeNull()
+    expect(
+      title.compareDocumentPosition(gear!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
   })
 })

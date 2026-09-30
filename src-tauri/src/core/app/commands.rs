@@ -1,6 +1,8 @@
 use std::{
+    env,
+    ffi::OsString,
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 
@@ -8,6 +10,8 @@ use super::{
     constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive, models::AppConfiguration,
 };
 use crate::core::state::AppState;
+
+const PROFILE_DIR_ENV: &str = "ATOMIC_CHAT_PROFILE_DIR";
 
 #[cfg(test)]
 thread_local! {
@@ -42,6 +46,38 @@ fn build_default_data_folder(data_dir: &Path, app_name: &str) -> PathBuf {
     data_dir.join(app_name).join("data")
 }
 
+fn isolated_profile_root_from(value: Option<OsString>) -> Option<PathBuf> {
+    let root = PathBuf::from(value?);
+    if root.as_os_str().is_empty()
+        || !root.is_absolute()
+        || root
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(root)
+}
+
+fn isolated_profile_root() -> Option<PathBuf> {
+    let value = env::var_os(PROFILE_DIR_ENV);
+    let root = isolated_profile_root_from(value.clone());
+    if value.is_some() && root.is_none() {
+        log::warn!(
+            "Ignoring invalid {PROFILE_DIR_ENV}; expected an absolute path without parent traversal"
+        );
+    }
+    root
+}
+
+fn isolated_profile_config_path(root: &Path) -> PathBuf {
+    root.join(CONFIGURATION_FILE_NAME)
+}
+
+fn isolated_profile_data_path(root: &Path) -> PathBuf {
+    root.join("data")
+}
+
 fn resolve_data_folder_from_config(config_file: &Path, default_folder: &Path) -> PathBuf {
     fs::read_to_string(config_file)
         .ok()
@@ -53,6 +89,10 @@ fn resolve_data_folder_from_config(config_file: &Path, default_folder: &Path) ->
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
 /// Mirrors the logic in get_configuration_file_path() using the dirs crate.
 pub fn resolve_config_file_path() -> PathBuf {
+    if let Some(root) = isolated_profile_root() {
+        return isolated_profile_config_path(&root);
+    }
+
     let package_name = env!("CARGO_PKG_NAME");
 
     // On Linux, prefer the XDG config dir first (matches Tauri behaviour)
@@ -83,6 +123,10 @@ pub fn resolve_config_file_path() -> PathBuf {
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
 /// Reads AppConfiguration from the config file; falls back to the default location.
 pub fn resolve_jan_data_folder() -> PathBuf {
+    if let Some(root) = isolated_profile_root() {
+        return isolated_profile_data_path(&root);
+    }
+
     let config_file = resolve_config_file_path();
     let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Atomic Chat".to_string());
     let data_dir = dirs::data_dir().unwrap_or_else(|| {
@@ -190,6 +234,10 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
+    if let Some(root) = isolated_profile_root() {
+        return isolated_profile_config_path(&root);
+    }
+
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
         log::error!("Failed to get app data directory: {err}. Using home directory instead.");
 
@@ -228,6 +276,12 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
+    if let Some(root) = isolated_profile_root() {
+        return isolated_profile_data_path(&root)
+            .to_string_lossy()
+            .into_owned();
+    }
+
     let mut path = app_handle.path().data_dir().unwrap_or_else(|err| {
         log::error!("Failed to get data directory: {err}. Falling back to home directory.");
         let home = std::env::var(if cfg!(target_os = "windows") {
@@ -308,6 +362,7 @@ pub fn app_token(state: State<'_, AppState>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use tempfile::tempdir;
 
     #[test]
@@ -402,5 +457,81 @@ mod tests {
             resolve_data_folder_from_config(&config_file, &default),
             default
         );
+    }
+
+    #[test]
+    fn isolated_profile_ignores_legacy_directories() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("qa-profile");
+        let legacy = root.path().join("Atomic-Chat");
+        let current = root.path().join("chat.atomic.app");
+        fs::create_dir_all(&legacy).unwrap();
+
+        let override_root = isolated_profile_root_from(Some(profile.clone().into_os_string()))
+            .expect("absolute profile path should be accepted");
+
+        assert_eq!(
+            isolated_profile_config_path(&override_root),
+            profile.join(CONFIGURATION_FILE_NAME)
+        );
+        assert_ne!(
+            isolated_profile_config_path(&override_root),
+            select_configuration_file_path(&current, &legacy)
+        );
+    }
+
+    #[test]
+    fn isolated_profile_paths_stay_under_the_override() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("clean-flow");
+        let override_root = isolated_profile_root_from(Some(profile.clone().into_os_string()))
+            .expect("absolute profile path should be accepted");
+        let config = isolated_profile_config_path(&override_root);
+        let data = isolated_profile_data_path(&override_root);
+
+        assert!(config.starts_with(&profile));
+        assert!(data.starts_with(&profile));
+        assert_eq!(config, profile.join(CONFIGURATION_FILE_NAME));
+        assert_eq!(data, profile.join("data"));
+    }
+
+    #[test]
+    fn unset_or_invalid_profile_override_preserves_existing_resolution() {
+        assert_eq!(isolated_profile_root_from(None), None);
+        assert_eq!(
+            isolated_profile_root_from(Some(OsString::from("relative/profile"))),
+            None
+        );
+        assert_eq!(isolated_profile_root_from(Some(OsString::from(""))), None);
+
+        let root = tempdir().unwrap();
+        let current = root.path().join("chat.atomic.app");
+        let legacy = root.path().join("Atomic-Chat");
+        fs::create_dir_all(&legacy).unwrap();
+        assert_eq!(
+            select_configuration_file_path(&current, &legacy),
+            legacy.join(CONFIGURATION_FILE_NAME)
+        );
+        assert_eq!(
+            build_default_data_folder(root.path(), "Atomic Chat"),
+            root.path().join("Atomic Chat").join("data")
+        );
+    }
+
+    #[test]
+    fn isolated_profiles_are_disjoint() {
+        let root = tempdir().unwrap();
+        let first = root.path().join("profile-a");
+        let second = root.path().join("profile-b");
+
+        let first_config = isolated_profile_config_path(&first);
+        let first_data = isolated_profile_data_path(&first);
+        let second_config = isolated_profile_config_path(&second);
+        let second_data = isolated_profile_data_path(&second);
+
+        assert!(!first_config.starts_with(&second));
+        assert!(!first_data.starts_with(&second));
+        assert!(!second_config.starts_with(&first));
+        assert!(!second_data.starts_with(&first));
     }
 }

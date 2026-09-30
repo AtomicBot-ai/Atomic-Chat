@@ -42,7 +42,7 @@ use crate::core::server::request_inspector::extract_reasoning;
 use super::llm_client::{
     drain_sse_events, extract_error_detail, model_ids_match, parse_sse_event,
     AgentClientCapabilities, AgentLlmClient, AgentPrompt, AuthErrorSource, CompletionReasoning,
-    CompletionRequest, CompletionResult, CompletionTiming, LlmClientError, StreamChunk,
+    CompletionRequest, CompletionResult, CompletionTiming, LlmClientError, StopReason, StreamChunk,
 };
 use super::model_profile::AgentModelProfile;
 
@@ -504,10 +504,9 @@ impl OpenAiCompatibleClient {
 /// Turns the resolved intent into request fields.
 ///
 /// mlx-vlm reads a top-level `reasoning_effort` / `thinking_budget` and hands
-/// them to the chat template. Cloud targets get nothing when thinking is on —
-/// they think by default and we have no template to tell us which values are
-/// legal — and only a suppression hint when it is off, which is what the chat
-/// transport does for the same providers.
+/// them to the chat template. A proxied cloud model gets a top-level effort
+/// only when its catalogue declared one; the proxy then translates it for the
+/// provider (including the ChatGPT subscription Responses shim).
 fn insert_reasoning_fields(
     body: &mut Map<String, Value>,
     target: &OpenAiTarget,
@@ -530,14 +529,17 @@ fn insert_reasoning_fields(
             effort_value,
             ..
         } => {
+            if let Some(effort) = effort_value {
+                body.insert("reasoning_effort".into(), json!(effort));
+            }
             if !is_mlx {
                 return;
             }
             body.insert("enable_thinking".into(), json!(true));
-            if let Some(effort) = effort_value {
-                body.insert("reasoning_effort".into(), json!(effort));
-            } else if let Some(tokens) = budget_tokens {
-                body.insert("thinking_budget".into(), json!(tokens));
+            if effort_value.is_none() {
+                if let Some(tokens) = budget_tokens {
+                    body.insert("thinking_budget".into(), json!(tokens));
+                }
             }
         }
     }
@@ -989,7 +991,8 @@ pub(crate) fn parse_chat_response(value: &Value) -> Result<CompletionResult, Llm
         content,
         reasoning_content,
         stop: finish_reason == "stop",
-        truncated: finish_reason == "length",
+        stop_reason: StopReason::from_chat_finish_reason(finish_reason),
+        prompt_truncated: false,
         timing: CompletionTiming {
             // Chat completions report token counts but no wall-clock split.
             prompt_ms: 0.0,
@@ -1315,34 +1318,47 @@ mod tests {
     }
 
     #[test]
-    fn cloud_targets_get_no_reasoning_fields() {
+    fn cloud_targets_get_only_a_catalogue_declared_effort() {
         let client =
             OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalApiServer, false)).unwrap();
-        for reasoning in [
-            CompletionReasoning::Off,
-            CompletionReasoning::On {
+        let off = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::Off),
+            false,
+        );
+        assert!(off.get("reasoning_effort").is_none());
+
+        let declared = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
                 tags: ReasoningTags {
                     open: "<think>",
                     close: "</think>",
                 },
                 budget_tokens: Some(1_024),
                 effort_value: Some("high".into()),
-            },
-        ] {
-            let payload =
-                client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
-
-            // We have no chat template for a cloud model, so any value we could
-            // send would be a guess — and strict schemas 400 on a wrong one.
-            for field in [
-                "reasoning_effort",
-                "thinking_budget",
-                "enable_thinking",
-                "chat_template_kwargs",
-            ] {
-                assert!(payload.get(field).is_none(), "unexpected {field}");
-            }
+            }),
+            false,
+        );
+        assert_eq!(declared["reasoning_effort"], json!("high"));
+        for field in ["thinking_budget", "enable_thinking", "chat_template_kwargs"] {
+            assert!(declared.get(field).is_none(), "unexpected {field}");
         }
+
+        let budget_only = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(1_024),
+                effort_value: None,
+            }),
+            false,
+        );
+        assert!(budget_only.get("reasoning_effort").is_none());
+        assert!(budget_only.get("thinking_budget").is_none());
     }
 
     #[test]
@@ -1580,7 +1596,7 @@ mod tests {
 
         assert_eq!(result.content, "[{\"tool\":\"reply\",\"args\":{}}]");
         assert!(result.stop);
-        assert!(!result.truncated);
+        assert_ne!(result.stop_reason, StopReason::Limit);
         // Normalized to llama.cpp semantics: `prompt_tokens` excludes the
         // cached subset so the two may be summed.
         assert_eq!(result.timing.prompt_tokens, 56.0);
@@ -1615,7 +1631,7 @@ mod tests {
             "choices": [{"message": {"content": "partial"}, "finish_reason": "length"}]
         });
         let result = parse_chat_response(&value).unwrap();
-        assert!(result.truncated);
+        assert_eq!(result.stop_reason, StopReason::Limit);
         assert!(!result.stop);
     }
 
@@ -1825,7 +1841,7 @@ mod tests {
         let result = accumulator.into_result().expect("stream result");
         assert_eq!(result.content, "hello");
         assert!(result.stop);
-        assert!(!result.truncated);
+        assert_ne!(result.stop_reason, StopReason::Limit);
         // Cached-token normalization flows through `parse_chat_response`.
         assert_eq!(result.timing.prompt_tokens, 40.0);
         assert_eq!(result.cache_hit_tokens, 60.0);
@@ -1866,7 +1882,7 @@ mod tests {
             }))
             .is_none());
         let result = accumulator.into_result().expect("stream result");
-        assert!(result.truncated);
+        assert_eq!(result.stop_reason, StopReason::Limit);
         assert_eq!(result.timing.prompt_ms, 12.5);
         // 40 tokens at 80 tok/s = 500ms, recovered for tps parity.
         assert_eq!(result.timing.predicted_ms, 500.0);

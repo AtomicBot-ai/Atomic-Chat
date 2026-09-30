@@ -5,6 +5,7 @@ import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 import {
   describeProviderState,
+  hasPriorAppUse,
   hasValidProviders,
   isOnboardingPending,
   resetForcedOnboardingRun,
@@ -22,6 +23,12 @@ describe('onboarding provider gate', () => {
 
   it('treats an upstream provider with a model as usable', () => {
     expect(hasValidProviders([upstreamProvider])).toBe(true)
+  })
+
+  it('treats either an existing chat or usable provider as prior app use', () => {
+    expect(hasPriorAppUse([], true)).toBe(true)
+    expect(hasPriorAppUse([upstreamProvider], false)).toBe(true)
+    expect(hasPriorAppUse([], false)).toBe(false)
   })
 
   it('counts an MLX model on disk as usable', () => {

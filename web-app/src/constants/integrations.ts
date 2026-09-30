@@ -167,6 +167,23 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: true,
   },
   {
+    id: 'zcode',
+    name: 'ZCode',
+    description: "Z.ai's desktop AI coding workspace.",
+    kind: 'coding',
+    detectBin: 'zcode',
+    docsUrl: 'https://zcode.z.ai/en/docs/configuration',
+    // ZCode ships as a desktop app from zcode.z.ai (its CLI is not published),
+    // so there is nothing for `install_agent` to run. Enabling only writes its
+    // provider file, which ZCode reads whenever it runs — installed or not yet.
+    installable: false,
+    configurable: true,
+    requiresModel: true,
+    // Stored as an `openai-chat-completions` provider, whose `baseUrl` is the
+    // OpenAI API root ZCode appends `/chat/completions` to.
+    endpointWithPrefix: true,
+  },
+  {
     id: 'mimo',
     name: 'MiMo Code',
     description: "Xiaomi's open-source agentic coding tool for your terminal.",

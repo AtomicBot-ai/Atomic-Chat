@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the cancel_mlx_model_load command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-mlx-model-load",
+          "markdownDescription": "Enables the cancel_mlx_model_load command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_mlx_model_load command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-mlx-model-load",
+          "markdownDescription": "Denies the cancel_mlx_model_load command without any pre-configured scope."
+        },
+        {
           "description": "Enables the cleanup_mlx_processes command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cleanup-mlx-processes",
@@ -403,10 +415,10 @@
           "markdownDescription": "Denies the unload_mlx_model command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-cleanup-mlx-processes`\n- `allow-load-mlx-model`\n- `allow-unload-mlx-model`\n- `allow-is-mlx-process-running`\n- `allow-get-mlx-random-port`\n- `allow-find-mlx-session-by-model`\n- `allow-get-mlx-loaded-models`\n- `allow-get-mlx-all-sessions`\n- `allow-get-mlx-server-version`",
+          "description": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-cleanup-mlx-processes`\n- `allow-load-mlx-model`\n- `allow-cancel-mlx-model-load`\n- `allow-unload-mlx-model`\n- `allow-is-mlx-process-running`\n- `allow-get-mlx-random-port`\n- `allow-find-mlx-session-by-model`\n- `allow-get-mlx-loaded-models`\n- `allow-get-mlx-all-sessions`\n- `allow-get-mlx-server-version`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-cleanup-mlx-processes`\n- `allow-load-mlx-model`\n- `allow-unload-mlx-model`\n- `allow-is-mlx-process-running`\n- `allow-get-mlx-random-port`\n- `allow-find-mlx-session-by-model`\n- `allow-get-mlx-loaded-models`\n- `allow-get-mlx-all-sessions`\n- `allow-get-mlx-server-version`"
+          "markdownDescription": "Default permissions for the MLX plugin\n#### This default permission set includes:\n\n- `allow-cleanup-mlx-processes`\n- `allow-load-mlx-model`\n- `allow-cancel-mlx-model-load`\n- `allow-unload-mlx-model`\n- `allow-is-mlx-process-running`\n- `allow-get-mlx-random-port`\n- `allow-find-mlx-session-by-model`\n- `allow-get-mlx-loaded-models`\n- `allow-get-mlx-all-sessions`\n- `allow-get-mlx-server-version`"
         }
       ]
     }

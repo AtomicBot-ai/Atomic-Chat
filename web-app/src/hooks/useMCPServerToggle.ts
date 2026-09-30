@@ -37,25 +37,57 @@ export function useMCPServerToggle(
     async (key: string, config: MCPServerConfig, next: boolean) => {
       if (pendingServers[key]) return
       setPendingServers((prev) => ({ ...prev, [key]: true }))
+      const toastId = `connector-toggle-${key}`
+      toast.loading(
+        t(
+          next
+            ? 'common:connectorsMenu.starting'
+            : 'common:connectorsMenu.stopping',
+          { server: key }
+        ),
+        {
+          id: toastId,
+          description: t(
+            next
+              ? 'common:connectorsMenu.connecting'
+              : 'common:connectorsMenu.disconnecting'
+          ),
+          duration: Infinity,
+        }
+      )
+      // Keep the switch itself stable and immediate. The snackbar owns the
+      // asynchronous progress; failure below rolls this optimistic state back.
+      editServer(key, { ...config, active: next })
       try {
         if (next) {
           await serviceHub
             .mcp()
             .activateMCPServer(key, { ...config, active: true })
-          editServer(key, { ...config, active: true })
           await syncServers()
         } else {
-          editServer(key, { ...config, active: false })
           await syncServers()
           await serviceHub.mcp().deactivateMCPServer(key)
         }
+        toast.success(
+          t(
+            next
+              ? 'common:connectorsMenu.ready'
+              : 'common:connectorsMenu.stopped',
+            { server: key }
+          ),
+          { id: toastId }
+        )
       } catch (error) {
-        // The activation failed, so leave the stored config off to match reality.
-        editServer(key, { ...config, active: false })
+        editServer(key, { ...config, active: !next })
         await syncServers()
-        toast.error(t('common:connectorsMenu.toggleFailed', { server: key }), {
-          description: error instanceof Error ? error.message : String(error),
-        })
+        toast.error(
+          t('common:connectorsMenu.toggleFailed', { server: key }),
+          {
+            id: toastId,
+            description:
+              error instanceof Error ? error.message : String(error),
+          }
+        )
       } finally {
         setPendingServers((prev) => ({ ...prev, [key]: false }))
       }

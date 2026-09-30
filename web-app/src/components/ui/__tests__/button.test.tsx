@@ -34,6 +34,19 @@ describe('Button', () => {
     )
   })
 
+  it('renders secondary actions as outlined buttons in both themes', () => {
+    render(<Button variant="secondary">Secondary Button</Button>)
+
+    const button = screen.getByRole('button')
+    expect(button).toHaveClass(
+      'border',
+      'bg-background',
+      'dark:border-input',
+      'dark:bg-input/30'
+    )
+    expect(button).not.toHaveClass('bg-neutral-200', 'dark:bg-secondary')
+  })
+
   it('applies link variant classes', () => {
     render(<Button variant="link">Link Button</Button>)
 

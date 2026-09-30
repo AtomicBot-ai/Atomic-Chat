@@ -4,7 +4,11 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
-import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import {
+  isDownloadCancellationError,
+  markDownloadCancellationRequested,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 import { extractModelName } from '@/lib/models'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel, ModelQuant } from '@/services/models/types'
@@ -183,6 +187,12 @@ export function DownloadButtonPlaceholder({
       removeLocalDownloadingModel(modelId)
       clearDownloadOrigin(modelId)
       markResumableDownload(modelId)
+      if (
+        wasDownloadCancellationRequested(modelId) ||
+        isDownloadCancellationError(error)
+      ) {
+        return
+      }
       toast.error(t('hub:downloadFailed'), {
         description: error instanceof Error ? error.message : String(error),
       })

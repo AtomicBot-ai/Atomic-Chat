@@ -1,3 +1,4 @@
+import type { ModelLoadProgress } from '@/lib/inference-status'
 import type { ToolCostReport } from '@/lib/tool-cost'
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
@@ -22,6 +23,21 @@ type AppState = {
   toolCostReports: Record<string, ToolCostReport>
   setToolCostReport: (threadId: string, report: ToolCostReport) => void
   loadingModel?: boolean
+  /**
+   * The model the load in flight is for, and whether it is a cold start or a
+   * swap of an engine that was already serving (switching backend, or picking
+   * a different local model). Both are cleared with `loadingModel`; they exist
+   * so the status surface can say which of the two is happening rather than
+   * showing one undifferentiated spinner. See `deriveInferenceStatus`.
+   */
+  loadingModelId?: string
+  loadingModelKind?: 'start' | 'restart'
+  /**
+   * The step the load in flight is on (ATO-530), and whether the user has
+   * asked for it to stop. Reset with every `updateLoadingModel`.
+   */
+  loadingModelProgress?: ModelLoadProgress
+  loadingModelCancelling?: boolean
   tools: MCPTool[]
   ragToolNames: Set<string>
   mcpToolNames: Set<string>
@@ -41,7 +57,12 @@ type AppState = {
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
-  updateLoadingModel: (loading: boolean) => void
+  updateLoadingModel: (
+    loading: boolean,
+    load?: { modelId?: string; kind?: 'start' | 'restart' }
+  ) => void
+  setLoadingModelProgress: (progress: ModelLoadProgress) => void
+  setLoadingModelCancelling: (cancelling: boolean) => void
   updateTools: (tools: MCPTool[]) => void
   updateRagToolNames: (names: string[]) => void
   updateMcpToolNames: (names: string[]) => void
@@ -74,6 +95,10 @@ export const useAppState = create<AppState>()((set) => ({
       toolCostReports: { ...state.toolCostReports, [threadId]: report },
     })),
   loadingModel: false,
+  loadingModelId: undefined,
+  loadingModelKind: undefined,
+  loadingModelProgress: undefined,
+  loadingModelCancelling: false,
   tools: [],
   ragToolNames: new Set<string>(),
   mcpToolNames: new Set<string>(),
@@ -95,9 +120,21 @@ export const useAppState = create<AppState>()((set) => ({
         : undefined,
     }))
   },
-  updateLoadingModel: (loading) => {
-    set({ loadingModel: loading })
+  updateLoadingModel: (loading, load) => {
+    set({
+      loadingModel: loading,
+      loadingModelId: loading ? load?.modelId : undefined,
+      loadingModelKind: loading ? load?.kind : undefined,
+      loadingModelProgress: loading ? { kind: 'preparing' } : undefined,
+      loadingModelCancelling: false,
+    })
   },
+  setLoadingModelProgress: (progress) =>
+    set((state) =>
+      state.loadingModel ? { loadingModelProgress: progress } : {}
+    ),
+  setLoadingModelCancelling: (cancelling) =>
+    set({ loadingModelCancelling: cancelling }),
   updateTools: (tools) => {
     set({ tools })
   },

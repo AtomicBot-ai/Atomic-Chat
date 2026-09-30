@@ -4,7 +4,24 @@
   "nightlyBuild": "Ночная сборка",
   "showReleaseNotes": "Примечания к выпуску",
   "hideReleaseNotes": "Скрыть примечания",
-  "remindMeLater": "Отложить",
+  "remindMeLater": "Напомнить позже",
   "downloading": "Загрузка…",
-  "updateNow": "Обновить"
+  "updateNow": "Обновить",
+  "update": "Обновить",
+  "starting": "Запуск…",
+  "dismiss": "Закрыть",
+  "relaunchingWindows": "Обновление установлено. Приложение перезапустится автоматически.",
+  "app": {
+    "title": "Новая версия Atomic Chat",
+    "subtitle": "Доступно обновление приложения",
+    "moreHighlights": "ещё {{count}}"
+  },
+  "engine": {
+    "title": "Обновление {{engine}}",
+    "downloadSize": "загрузка {{size}}",
+    "noRestartNeeded": "Перезапуск не потребуется",
+    "restartRequired": "После обновления нужен перезапуск",
+    "showWhatsNew": "Что нового",
+    "updateFailed": "Не удалось начать обновление движка. Попробуйте ещё раз."
+  }
 }

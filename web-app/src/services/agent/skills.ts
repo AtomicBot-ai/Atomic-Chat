@@ -16,6 +16,7 @@ export interface AgentSkill {
   reserved: boolean
   unavailableReasons: string[]
   error: string | null
+  modifiedAtMs?: number | null
 }
 
 export interface AgentSkillDetail extends AgentSkill {

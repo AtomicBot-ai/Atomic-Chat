@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { prettyModelName } from './model-display-name'
+import {
+  compactModelDisplayName,
+  prettyModelName,
+  qualifiedModelDisplayName,
+} from './model-display-name'
 
 describe('prettyModelName', () => {
   it('drops the author, the format, the quantization and the tuning suffix', () => {
@@ -53,5 +57,46 @@ describe('prettyModelName', () => {
     expect(prettyModelName('someone/GGUF')).toBe('GGUF')
     expect(prettyModelName('')).toBe('')
     expect(prettyModelName(undefined)).toBe('')
+  })
+})
+
+describe('compactModelDisplayName', () => {
+  const technical = 'mradermacher/Huihui-Ornith-1_5-9B-abliterated_i1-IQ4_XS'
+
+  it('removes the repository owner and quantization from local model ids', () => {
+    expect(compactModelDisplayName({ id: technical } as Model)).toBe(
+      'Huihui Ornith 1.5 9B Abliterated'
+    )
+  })
+
+  it('keeps an explicit user display name', () => {
+    expect(
+      compactModelDisplayName({
+        id: technical,
+        displayName: 'My Ornith',
+      } as Model)
+    ).toBe('My Ornith')
+  })
+})
+
+describe('qualifiedModelDisplayName', () => {
+  it('keeps the author namespace while cleaning the packaged filename', () => {
+    expect(
+      qualifiedModelDisplayName({
+        id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',
+      } as Model)
+    ).toBe('LiquidAI/LFM2.5 2.6B')
+  })
+
+  it('uses a nickname after the namespace and leaves unqualified ids alone', () => {
+    expect(
+      qualifiedModelDisplayName({
+        id: 'author/model-Q4_K_M.gguf',
+        displayName: 'My Model',
+      } as Model)
+    ).toBe('author/My Model')
+    expect(
+      qualifiedModelDisplayName({ id: 'model-Q4_K_M.gguf' } as Model)
+    ).toBe('Model')
   })
 })

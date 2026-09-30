@@ -45,8 +45,17 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --animate-hue-rotate: hue-rotate 4s infinite;
-  --font-studio: "StudioFeixenSans";
-  --font-sans: "Inter", sans-serif;
+  /* The text font leads each stack and `AtomicEmoji` follows it. WebKit (the
+     Tauri webview) takes the strut metrics of every line box from the first
+     family's face even when that face's `unicode-range` excludes U+0020, so an
+     emoji face in front drops every label by 1 px (its content area is 23 px at
+     14 px, Inter's is 17 px) and button text sits low. The emoji face still
+     wins the BMP symbols the text fonts carry — U+2764 in Inter, U+263A in
+     StudioFeixenSans — because the text faces carve the emoji range out with a
+     `unicode-range` of their own (styles/font.css); a ZWJ sequence built on one
+     of those therefore stays in a single font. */
+  --font-studio: "StudioFeixenSans", "AtomicEmoji";
+  --font-sans: "Inter", "AtomicEmoji", sans-serif;
 
   /* Font scale based on --font-size-base */
   --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */

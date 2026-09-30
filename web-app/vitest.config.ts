@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
@@ -9,6 +9,9 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     css: true,
+    // Real-browser layout tests measure rendered boxes; jsdom has none.
+    // They run under `vitest.layout.config.ts` (`yarn test:layout`).
+    exclude: [...configDefaults.exclude, 'src/**/*.layout.test.tsx'],
     coverage: {
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],

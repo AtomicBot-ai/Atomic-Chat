@@ -74,10 +74,9 @@ vi.mock('@/containers/FavoriteModelAction', () => ({
 }))
 
 vi.mock('@/lib/provider-api-key', async () => {
-  const actual =
-    await vi.importActual<typeof import('@/lib/provider-api-key')>(
-      '@/lib/provider-api-key'
-    )
+  const actual = await vi.importActual<typeof import('@/lib/provider-api-key')>(
+    '@/lib/provider-api-key'
+  )
   return { ...actual, saveProviderApiKey }
 })
 
@@ -107,7 +106,12 @@ vi.mock('@/lib/platform/const', () => ({
 vi.mock('@/stores/provider-registry-store', () => ({
   useProviderRegistryStore: Object.assign(
     (selector?: (s: unknown) => unknown) => {
-      const state = { status: 'idle', fetchedAt: null, refresh: vi.fn(), error: null }
+      const state = {
+        status: 'idle',
+        fetchedAt: null,
+        refresh: vi.fn(),
+        error: null,
+      }
       return selector ? selector(state) : state
     },
     { getState: () => ({ error: null }) }
@@ -144,7 +148,13 @@ const baseUrlSetting: ProviderSetting = {
 }
 
 const providers: ProviderObject[] = [
-  { provider: 'llamacpp-upstream', active: true, models: [], settings: [], persist: true },
+  {
+    provider: 'llamacpp-upstream',
+    active: true,
+    models: [],
+    settings: [],
+    persist: true,
+  },
   {
     // Signed in with a ChatGPT account: no key, no settings, models arrive on
     // sign-in. Its card only renders while it is the selected provider.
@@ -243,9 +253,7 @@ describe('CloudPage', () => {
     expect(
       await screen.findByText('user@example.test (Plus)')
     ).toBeInTheDocument()
-    expect(
-      screen.getByText('cloud:connection.disconnect')
-    ).toBeInTheDocument()
+    expect(screen.getByText('cloud:connection.disconnect')).toBeInTheDocument()
   })
 
   it('surfaces the backend message when sign-in fails', async () => {
@@ -267,15 +275,6 @@ describe('CloudPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows no models card while nothing is connected', () => {
-    // Nothing here has a key, and the keyless Ollama has never answered.
-    mockStore()
-    render(<CloudPage />)
-
-    expect(screen.getByText('cloud:connection.placeholder')).toBeInTheDocument()
-    expect(screen.queryByText('providers:models')).not.toBeInTheDocument()
-  })
-
   it('opens on an already-connected provider when the URL names none', () => {
     // `ollama` needs no key, but only a served model list proves the daemon is
     // actually there — an empty one is not a connection to open on.
@@ -292,6 +291,63 @@ describe('CloudPage', () => {
     expect(
       screen.queryByText('cloud:connection.placeholder')
     ).not.toBeInTheDocument()
+  })
+
+  it('pins the implicit connected provider in the URL before it can disconnect', async () => {
+    const openai = providers.find((p) => p.provider === 'openai')!
+    mockStore([
+      ...providers.filter((p) => p.provider !== 'openai'),
+      { ...openai, api_key: 'sk-live' },
+    ])
+    render(<CloudPage />)
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: '/cloud/',
+        search: { provider: 'openai' },
+        replace: true,
+      })
+    )
+  })
+
+  it('opens on OpenRouter when nothing is connected and the URL names none', () => {
+    // A blank picker on arrival is a dead page. With no connection to open
+    // on, the page still lands on a provider the user can set up right away.
+    mockStore([
+      ...providers,
+      {
+        provider: 'openrouter',
+        active: true,
+        models: [],
+        settings: [apiKeySetting, baseUrlSetting],
+        api_key: '',
+        base_url: 'https://openrouter.ai/api/v1',
+      },
+    ])
+    render(<CloudPage />)
+
+    expect(
+      screen.queryByText('cloud:connection.placeholder')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('cloud:connection.notConnected')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByDisplayValue('https://openrouter.ai/api/v1')
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to the first cloud provider when OpenRouter is not in the catalog', () => {
+    // Nothing here has a key, and the keyless Ollama has never answered.
+    mockStore()
+    render(<CloudPage />)
+
+    expect(
+      screen.queryByText('cloud:connection.placeholder')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('cloud:connection.notConnected')
+    ).toBeInTheDocument()
   })
 
   it('opens on the provider named in the URL', () => {
@@ -320,10 +376,9 @@ describe('CloudPage', () => {
     searchState.current = { provider: 'openai' }
     render(<CloudPage />)
 
-    fireEvent.change(
-      screen.getByDisplayValue('https://api.openai.com/v1'),
-      { target: { value: ' https://proxy.test/v1 ' } }
-    )
+    fireEvent.change(screen.getByDisplayValue('https://api.openai.com/v1'), {
+      target: { value: ' https://proxy.test/v1 ' },
+    })
 
     const [name, patch] = updateProvider.mock.calls[0]
     expect(name).toBe('openai')
@@ -381,5 +436,72 @@ describe('CloudPage', () => {
     )
 
     expect(screen.getByText('cloud:models.noResults')).toBeInTheDocument()
+  })
+
+  /**
+   * The horizontal geometry of the page for one selected provider, as
+   * rendered class strings: the scroll container, the centred column and
+   * every card in it. jsdom does no layout, so the classes are the closest
+   * thing to "where the content sits" a component test can pin down.
+   */
+  const renderedGeometry = (providerName: string) => {
+    searchState.current = { provider: providerName }
+    const { unmount } = render(<CloudPage />)
+    const column = screen
+      .getByText('cloud:connection.title')
+      .closest('.max-w-3xl') as HTMLElement
+    const scroller = column.parentElement as HTMLElement
+    const geometry = {
+      scroller: scroller.className,
+      column: column.className,
+      cards: Array.from(column.children, (card) => card.className),
+    }
+    unmount()
+    return geometry
+  }
+
+  it('reserves the scrollbar gutter so the column stays put when the list overflows', () => {
+    // A long model list scrolls and a short one does not, so every switch
+    // between two such providers grew or shrank the scroll container by one
+    // scrollbar and re-centred the column a few pixels sideways.
+    const { scroller } = renderedGeometry('openai')
+
+    expect(scroller).toContain('overflow-y-auto')
+    expect(scroller).toContain('[scrollbar-gutter:stable]')
+  })
+
+  it('renders every provider kind in one column with identical card geometry', () => {
+    mockStore([
+      ...providers,
+      ...['openrouter', 'anthropic', 'gemini'].map((provider) => ({
+        provider,
+        active: true,
+        models: [],
+        settings: [apiKeySetting, baseUrlSetting],
+        api_key: '',
+        base_url: `https://${provider}.test/v1`,
+      })),
+    ])
+    const kinds = [
+      'openrouter',
+      'anthropic',
+      'openai',
+      'gemini',
+      'ollama',
+      'chatgpt',
+    ]
+    const [reference, ...others] = kinds.map(renderedGeometry)
+
+    expect(reference.column).toContain('mx-auto')
+    expect(reference.column).toContain('max-w-3xl')
+    // Every card is the same full-width Card — nothing is `w-fit`, nothing
+    // carries a per-provider margin — so only heights may differ.
+    expect(new Set(reference.cards).size).toBe(1)
+    expect(reference.cards[0]).toContain('w-full')
+    for (const geometry of others) {
+      expect(geometry.scroller).toBe(reference.scroller)
+      expect(geometry.column).toBe(reference.column)
+      expect(new Set(geometry.cards)).toEqual(new Set(reference.cards))
+    }
   })
 })

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use tokio::process::Child;
 use tokio::sync::Mutex;
 
+use jan_utils::load_cancel::LoadCancelRegistry;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub pid: i32,
@@ -23,6 +25,9 @@ pub struct MlxBackendSession {
 pub struct MlxState {
     pub mlx_server_process: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     pub load_operation: Arc<Mutex<()>>,
+    /// Loads that have not reached readiness yet — including ones still
+    /// queued on `load_operation` — so a cancel can reach them.
+    pub load_cancels: LoadCancelRegistry,
 }
 
 impl Default for MlxState {
@@ -30,6 +35,7 @@ impl Default for MlxState {
         Self {
             mlx_server_process: Arc::new(Mutex::new(HashMap::new())),
             load_operation: Arc::new(Mutex::new(())),
+            load_cancels: LoadCancelRegistry::new(),
         }
     }
 }

@@ -4,6 +4,7 @@ import {
   advanceSpeedSample,
   bytesUnit,
   formatBytes,
+  formatDownloadReadout,
   formatEta,
   formatProgressPair,
   formatSpeed,
@@ -13,6 +14,54 @@ import {
 
 const MB = 1024 * 1024
 const GB = MB * 1024
+
+// Echo the key plus its interpolations, so an assertion proves which branch
+// ran and with what numbers, without depending on the English wording.
+const t = (key: string, vars?: Record<string, unknown>) =>
+  vars && Object.keys(vars).length > 0
+    ? `${key}(${Object.entries(vars)
+        .map(([k, v]) => `${k}=${String(v)}`)
+        .join(',')})`
+    : key
+
+describe('formatDownloadReadout', () => {
+  const transfer = {
+    progress: 0.42,
+    current: 4.2 * GB,
+    total: 12.4 * GB,
+    // 8.2 GB left at 18.4 MB/s is 456 s: 7m 36s.
+    bytesPerSecond: 18.4 * MB,
+  }
+
+  it('joins percent, size and time left, most important first', () => {
+    expect(formatDownloadReadout(t, transfer)).toBe(
+      '42% · 4.20 / 12.40 GB · common:downloadPanel.left(eta=7m 36s)'
+    )
+  })
+
+  it('says Paused with the size and no estimate', () => {
+    expect(formatDownloadReadout(t, { ...transfer, paused: true })).toBe(
+      'common:downloadPanel.paused · 4.20 / 12.40 GB'
+    )
+  })
+
+  it('leaves the estimate out until there is a rate', () => {
+    expect(formatDownloadReadout(t, { ...transfer, bytesPerSecond: 0 })).toBe(
+      '42% · 4.20 / 12.40 GB'
+    )
+  })
+
+  it('is only the stage before the first byte', () => {
+    expect(
+      formatDownloadReadout(t, {
+        progress: 0,
+        current: 0,
+        total: 0,
+        stage: { kind: 'retrying', attempt: 2, maxAttempts: 5 },
+      })
+    ).toBe('common:downloadPanel.retrying(attempt=2,maxAttempts=5)')
+  })
+})
 
 describe('formatProgressPair', () => {
   it('picks the unit from the total so the pair stays comparable', () => {

@@ -1,10 +1,13 @@
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
-import {
-  IconLayoutSidebar,
-} from '@tabler/icons-react'
+import { IconLayoutSidebar } from '@tabler/icons-react'
 import { ReactNode, memo } from 'react'
-import { Button } from "@/components/ui/button"
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 type HeaderPageProps = {
   children?: ReactNode
@@ -21,8 +24,8 @@ const HeaderPage = memo(function HeaderPage({
   return (
     <div
       className={cn(
-        'h-15 flex items-center shrink-0',
-        (IS_MACOS && !open) ? 'pl-24' : ' pl-4',
+        'relative h-15 flex shrink-0 items-center pr-4',
+        !open && !hideControls && IS_MACOS ? 'pl-20' : 'pl-4',
         children === undefined && 'border-none'
       )}
       // On macOS the element-based drag region approach is used: this div sits
@@ -34,33 +37,24 @@ const HeaderPage = memo(function HeaderPage({
       // to stop mousedown propagation itself.
       {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
     >
-      <div
-        className={cn(
-          'flex items-center w-full gap-1',
-        )}
-      >
+      <div className="flex w-full min-w-0 items-center gap-2">
         {!open && !hideControls && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className='rounded-full relative z-50'
-              onClick={() => setLeftPanel(!open)}
-              aria-label="Toggle sidebar"
-            >
-              <IconLayoutSidebar
-                className="text-muted-foreground relative size-4.5"
-              />
-            </Button>
-          </>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="relative z-50 shrink-0 rounded-full"
+                onClick={() => setLeftPanel(!open)}
+                aria-label="Toggle sidebar"
+              >
+                <IconLayoutSidebar className="relative size-4.5 text-muted-foreground" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Toggle sidebar</TooltipContent>
+          </Tooltip>
         )}
-        <div
-          className={cn(
-            'flex-1 min-w-0'
-          )}
-        >
-          {children}
-        </div>
+        <div className="min-w-0 flex-1">{children}</div>
       </div>
     </div>
   )

@@ -19,6 +19,10 @@
     {
       "name": "Inference",
       "description": "Endpoint for generating completions (chat or text) from a model"
+    },
+    {
+      "name": "Images",
+      "description": "OpenAI-compatible local image generation using the image model already loaded in Atomic Chat"
     }
   ],
   "paths": {
@@ -78,6 +82,63 @@
         }
       }
     },
+    "/images/generations": {
+      "post": {
+        "summary": "Generate local images",
+        "description": "Generates PNG images with the image model already loaded in Atomic Chat. The Local API Server and an image model must both be running. Images are returned as base64 and are also saved to the local gallery; URL responses and automatic model loading are not supported.",
+        "operationId": "createImageGeneration",
+        "tags": ["Images"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateImageGenerationDto"
+              },
+              "example": {
+                "prompt": "A paper boat on a moonlit lake",
+                "n": 1,
+                "size": "1024x1024",
+                "response_format": "b64_json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated PNG images encoded as base64, with Atomic Chat job and gallery metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageGenerationResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "429": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "504": {
+            "$ref": "#/components/responses/ImageApiError"
+          }
+        }
+      }
+    },
     "/messages": {
       "post": {
         "summary": "Create a message",
@@ -116,6 +177,18 @@
     }
   },
   "components": {
+    "responses": {
+      "ImageApiError": {
+        "description": "OpenAI-shaped image generation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ImageApiErrorResponseDto"
+            }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
@@ -125,6 +198,135 @@
       }
     },
     "schemas": {
+      "CreateImageGenerationDto": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Optional id or display name of the loaded image model. A different model returns 503."
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Text description of the image to generate."
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "default": 1,
+            "description": "Number of images to generate in this request."
+          },
+          "size": {
+            "type": "string",
+            "default": "auto",
+            "example": "1024x1024",
+            "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT. Each dimension must be 256–2048 and a multiple of 16."
+          },
+          "response_format": {
+            "type": "string",
+            "enum": ["b64_json"],
+            "default": "b64_json",
+            "description": "Only base64 JSON responses are supported."
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional deterministic seed."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "description": "Optional text describing what to avoid."
+          }
+        }
+      },
+      "ImageGenerationDataDto": {
+        "type": "object",
+        "required": ["b64_json"],
+        "properties": {
+          "b64_json": {
+            "type": "string",
+            "format": "byte",
+            "description": "Base64-encoded PNG bytes."
+          }
+        }
+      },
+      "ImageGenerationAtomicDto": {
+        "type": "object",
+        "required": ["job_id", "paths"],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Atomic Chat diffusion job id."
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Seed used by the first generated image."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Local paths of the PNGs saved to the Atomic Chat gallery."
+          }
+        }
+      },
+      "ImageGenerationResponseDto": {
+        "type": "object",
+        "required": ["created", "data", "atomic"],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp in seconds."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageGenerationDataDto"
+            }
+          },
+          "atomic": {
+            "$ref": "#/components/schemas/ImageGenerationAtomicDto"
+          }
+        }
+      },
+      "ImageApiErrorDetailDto": {
+        "type": "object",
+        "required": ["message", "type", "param", "code"],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "example": "invalid_request_error"
+          },
+          "param": {
+            "type": "string",
+            "nullable": true,
+            "example": "size"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true,
+            "example": "model_not_loaded"
+          }
+        }
+      },
+      "ImageApiErrorResponseDto": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ImageApiErrorDetailDto"
+          }
+        }
+      },
       "ModelDto": {
         "type": "object",
         "description": "Model metadata as returned by `/v1/models`.",

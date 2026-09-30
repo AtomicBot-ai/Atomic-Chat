@@ -506,4 +506,48 @@ describe('classifyDownloadFailure', () => {
     )
     expect(classifyDownloadFailure('Error: [weird_tag] xyz')).toBe('unknown')
   })
+
+  it('calls a Windows connection refusal network, not a disk fault (#290)', () => {
+    // Verbatim from the app.log on
+    // https://github.com/AtomicBot-ai/Atomic-Chat/issues/290 — a proxy at a
+    // dead address. The `os error` token used to match the disk heuristic
+    // first, so a pure transport failure was reported as `disk_io`, which also
+    // cost the user the actionable toast. The message is Portuguese: the
+    // classification has to come off the WinSock code, not the wording.
+    const windowsRefused =
+      "error sending request for url (https://huggingface.co/x.gguf): " +
+      'error trying to connect: tcp connect error: Nenhuma ligação pôde ser ' +
+      'feita porque o computador de destino as recusou ativamente. (os error 10061)'
+    expect(classifyDownloadFailure(windowsRefused)).toBe('network')
+
+    // Other WinSock connect codes land in the same bucket.
+    expect(classifyDownloadFailure('tcp connect error: (os error 10060)')).toBe(
+      'network'
+    )
+    expect(
+      classifyDownloadFailure('failed to lookup address (os error 11001)')
+    ).toBe('network')
+  })
+
+  it('separates a proxy failure from being offline', () => {
+    expect(
+      classifyDownloadFailure(
+        'error sending request: proxy connect error: tcp connect error (os error 10061)'
+      )
+    ).toBe('proxy')
+  })
+
+  it('still classifies genuine filesystem errors as disk faults', () => {
+    // The transport branch runs first now, so guard against it swallowing the
+    // disk heuristics it was inserted above.
+    expect(classifyDownloadFailure('Error: os error 5 while writing')).toBe(
+      'disk_io'
+    )
+    expect(classifyDownloadFailure('permission denied (os error 13)')).toBe(
+      'disk_io'
+    )
+    expect(
+      classifyDownloadFailure('No space left on device (os error 28)')
+    ).toBe('disk_io')
+  })
 })

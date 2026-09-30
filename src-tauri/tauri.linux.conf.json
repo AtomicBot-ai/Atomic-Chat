@@ -36,9 +36,10 @@
       "resources/bin/jan-cli",
       "resources/bin/sqlite-vec.so",
       "resources/llamacpp-backend-upstream/**/*",
-      "resources/llamacpp-backend/**/*"
+      "resources/llamacpp-backend/**/*",
+      "licenses/cloudflared-LICENSE.txt"
     ],
-    "externalBin": ["resources/bin/uv"],
+    "externalBin": ["resources/bin/uv", "resources/bin/cloudflared"],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,

@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
 import {
+  cancelLlamaModelLoad,
   getSupportedFeaturesFromRust,
   normalizeLlamacppConfig,
+  unloadLlamaModel,
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 import { listSupportedBackends } from '../backend'
 import { getSystemInfo } from '../hardware'
@@ -34,6 +36,10 @@ vi.mock('../backend', async () => {
       releases: [],
       source: 'none' as const,
     })),
+    // Explicitly mocked rather than left to the real implementation: it
+    // resolves the release index itself, so the actual function would reach
+    // the network from a unit test.
+    getIndexedVariantSize: vi.fn(),
     invalidateStableIndexCache: vi.fn(),
   }
 })
@@ -54,6 +60,7 @@ vi.mock(
       removeOldBackendVersions: vi.fn(),
       readGgufMetadata: vi.fn(),
       unloadLlamaModel: vi.fn(),
+      cancelLlamaModelLoad: vi.fn(),
     }
   }
 )
@@ -780,8 +787,86 @@ describe('llamacpp_extension', () => {
         'test-model',
         undefined,
         false,
-        false
+        false,
+        undefined
       )
+    })
+  })
+
+  // ATO-530. `performLoad` is stood in for by one plugin invoke the test
+  // controls, so what is exercised is the cancel bookkeeping around it.
+  describe('cancelLoad', () => {
+    const session = {
+      model_id: 'test-model',
+      pid: 123,
+      port: 3000,
+      api_key: 'test-api-key',
+    }
+
+    const loadThroughPlugin = (invoke: () => Promise<unknown>) => {
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
+      extension['syncLoadedCtxSize'] = vi.fn()
+      extension['reportBackendMismatch'] = vi.fn()
+      extension['performLoad'] = vi.fn((modelId: string) =>
+        extension['loadInPlugin'](modelId, invoke)
+      )
+      return extension.load('test-model')
+    }
+
+    it('has nothing to cancel when no load of the model is running', async () => {
+      await expect(extension.cancelLoad('test-model')).resolves.toBe(false)
+    })
+
+    it('retries until the plugin has the load, which then ends cancelled', async () => {
+      let rejectLoad: (error: unknown) => void = () => {}
+      const load = loadThroughPlugin(
+        () =>
+          new Promise((_, reject) => {
+            rejectLoad = reject
+          })
+      )
+      const outcome = expect(load).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+      })
+      vi.mocked(cancelLlamaModelLoad)
+        .mockResolvedValueOnce(false)
+        .mockImplementationOnce(async () => {
+          rejectLoad({ code: 'MODEL_LOAD_CANCELLED', message: 'cancelled' })
+          return true
+        })
+      await vi.waitFor(() =>
+        expect(extension['pluginLoadsInFlight'].has('test-model')).toBe(true)
+      )
+
+      await expect(extension.cancelLoad('test-model')).resolves.toBe(true)
+      await outcome
+      expect(cancelLlamaModelLoad).toHaveBeenCalledTimes(2)
+    })
+
+    it('takes down a server that came up before the cancel reached it', async () => {
+      let resolveLoad: (value: unknown) => void = () => {}
+      const load = loadThroughPlugin(
+        () =>
+          new Promise((resolve) => {
+            resolveLoad = resolve
+          })
+      )
+      const outcome = expect(load).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+      })
+      vi.mocked(unloadLlamaModel).mockResolvedValue({ success: true } as any)
+      vi.mocked(cancelLlamaModelLoad).mockImplementation(async () => {
+        resolveLoad(session)
+        return false
+      })
+      await vi.waitFor(() =>
+        expect(extension['pluginLoadsInFlight'].has('test-model')).toBe(true)
+      )
+
+      await extension.cancelLoad('test-model')
+
+      await outcome
+      expect(unloadLlamaModel).toHaveBeenCalledWith(123)
     })
   })
 
@@ -1847,6 +1932,21 @@ describe('llamacpp_extension', () => {
         '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
       )
       vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
+      const { getIndexedVariantSize } = await import('../backend')
+      vi.mocked(getIndexedVariantSize).mockResolvedValue(11 * 1024 * 1024)
+      vi.mocked(localStorage.setItem).mockReset()
+      ;(window as any).dispatchEvent = vi.fn()
+    }
+
+    /// Offer published by the last `reconcileBackendReleaseTag()` run, read off
+    /// the persisted mirror the banner boots from (ATO-528).
+    const publishedOffer = () => {
+      const call = vi
+        .mocked(localStorage.setItem)
+        .mock.calls.find(
+          ([key]) => key === 'atomic_engine_update_offer_llamacpp'
+        )
+      return call ? JSON.parse(call[1] as string) : null
     }
 
     beforeEach(async () => {
@@ -1855,7 +1955,7 @@ describe('llamacpp_extension', () => {
       await stubReconcileDeps()
     })
 
-    it('pulls a runtime-downloaded GPU tier onto the new release tag', async () => {
+    it('offers a runtime-downloaded GPU tier the new release tag', async () => {
       extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
         updateNeeded: true,
         newVersion: 'b10018-1.3.0',
@@ -1864,9 +1964,51 @@ describe('llamacpp_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
-        TARGET
-      )
+      // ATO-528: the tag bump is offered, not taken — a launch no longer
+      // starts a several hundred megabyte transfer on its own.
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(publishedOffer()).toMatchObject({
+        provider: 'llamacpp',
+        currentBackend: CURRENT,
+        targetBackend: TARGET,
+        currentVersion: 'b9937-1.2.0',
+        targetVersion: 'b10018-1.3.0',
+        downloadSizeBytes: 11 * 1024 * 1024,
+        restartRequired: false,
+        releaseNotesUrl:
+          'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/tag/b10018-1.3.0',
+      })
+    })
+
+    it('announces the offer so a mounted banner picks it up', async () => {
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: TARGET,
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      const event = vi.mocked((window as any).dispatchEvent).mock
+        .calls[0]?.[0] as CustomEvent
+      expect(event?.type).toBe('app:engine-update-available')
+      expect(event?.detail).toMatchObject({ targetBackend: TARGET })
+    })
+
+    it('still offers when the release index has no size for the build', async () => {
+      const { getIndexedVariantSize } = await import('../backend')
+      vi.mocked(getIndexedVariantSize).mockResolvedValue(undefined)
+      extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+        updateNeeded: true,
+        newVersion: 'b10018-1.3.0',
+        targetBackend: TARGET,
+      })
+
+      await extension['reconcileBackendReleaseTag']()
+
+      const offer = publishedOffer()
+      expect(offer).toMatchObject({ targetBackend: TARGET })
+      expect(offer.downloadSizeBytes).toBeUndefined()
     })
 
     it('leaves a user who already runs the newest tag alone', async () => {
@@ -1877,9 +2019,10 @@ describe('llamacpp_extension', () => {
       await extension['reconcileBackendReleaseTag']()
 
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(publishedOffer()).toBeNull()
     })
 
-    it('updates the engine on macOS too, without an app release', async () => {
+    it('offers an engine update on macOS too, without an app release', async () => {
       vi.stubGlobal('IS_MAC', true)
       extension['config'] = {
         version_backend: 'b9937-1.2.0/macos-arm64',
@@ -1892,9 +2035,11 @@ describe('llamacpp_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
-        'b10018-1.3.0/macos-arm64'
-      )
+      expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(publishedOffer()).toMatchObject({
+        currentBackend: 'b9937-1.2.0/macos-arm64',
+        targetBackend: 'b10018-1.3.0/macos-arm64',
+      })
     })
 
     it('refuses to move onto a legacy prerelease found on disk', async () => {
@@ -1910,6 +2055,7 @@ describe('llamacpp_extension', () => {
       await extension['reconcileBackendReleaseTag']()
 
       expect(extension['downloadRecommendedBackend']).not.toHaveBeenCalled()
+      expect(publishedOffer()).toBeNull()
     })
 
     it('skips while no concrete backend is configured yet', async () => {
@@ -1947,20 +2093,21 @@ describe('llamacpp_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
-      expect(extension['downloadRecommendedBackend']).toHaveBeenCalledWith(
-        'b10018-1.3.0/linux-x64-vulkan'
-      )
+      expect(publishedOffer()).toMatchObject({
+        targetBackend: 'b10018-1.3.0/linux-x64-vulkan',
+      })
     })
 
-    it('keeps the working backend when the download fails', async () => {
+    it('keeps the working backend when the offer cannot be built', async () => {
       extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
         updateNeeded: true,
         newVersion: 'b10018-1.3.0',
         targetBackend: TARGET,
       })
-      extension['downloadRecommendedBackend'] = vi
-        .fn()
-        .mockRejectedValue(new Error('network down'))
+      const { getIndexedVariantSize } = await import('../backend')
+      vi.mocked(getIndexedVariantSize).mockRejectedValue(
+        new Error('network down')
+      )
 
       await expect(
         extension['reconcileBackendReleaseTag']()

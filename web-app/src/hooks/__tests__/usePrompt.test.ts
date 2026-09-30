@@ -5,6 +5,9 @@ import { usePrompt } from '../usePrompt'
 describe('usePrompt', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
+    usePrompt.setState({ prompt: '' })
   })
 
   it('should initialize with empty prompt', () => {
@@ -97,5 +100,33 @@ describe('usePrompt', () => {
     
     expect(result.current.prompt).toBe(longText)
     expect(result.current.prompt.length).toBe(10000)
+  })
+
+  it('keeps a draft when the composer remounts in the same app session', () => {
+    const firstMount = renderHook(() => usePrompt((state) => state.prompt))
+
+    act(() => {
+      usePrompt.getState().setPrompt('Keep this while I change routes')
+    })
+    firstMount.unmount()
+
+    const secondMount = renderHook(() => usePrompt((state) => state.prompt))
+    expect(secondMount.result.current).toBe(
+      'Keep this while I change routes'
+    )
+  })
+
+  it('starts empty in a fresh app session instead of rehydrating draft text', async () => {
+    usePrompt.getState().setPrompt('Old in-memory draft')
+    localStorage.setItem(
+      'prompt',
+      JSON.stringify({ state: { prompt: 'Old local draft' }, version: 1 })
+    )
+    sessionStorage.setItem('prompt', 'Old session draft')
+
+    vi.resetModules()
+    const { usePrompt: freshSessionPrompt } = await import('../usePrompt')
+
+    expect(freshSessionPrompt.getState().prompt).toBe('')
   })
 })

@@ -34,6 +34,7 @@ import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServerStatuses } from '@/hooks/useMCPServerStatuses'
+import { effectiveMcpStatus } from '@/lib/mcp-effective-status'
 import { useMCPServerToggle } from '@/hooks/useMCPServerToggle'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { useThreads } from '@/hooks/useThreads'
@@ -298,15 +299,11 @@ export default memo(function DropdownPlugins({
     if (!entry.config) {
       return <Switch checked disabled aria-label={label} />
     }
-    if (isServerPending(entry.key)) {
-      return (
-        <IconLoader2 size={16} className="animate-spin text-muted-foreground" />
-      )
-    }
     return (
       <Switch
         aria-label={label}
         checked={entry.active}
+        disabled={isServerPending(entry.key)}
         onCheckedChange={(checked) => {
           void toggleServer(entry.key, entry.config as MCPServerConfig, checked)
         }}
@@ -337,13 +334,19 @@ export default memo(function DropdownPlugins({
   const renderTrigger = () => children(isOpen, sentConnectors, activeConnectors)
 
   /**
-   * "N tools · ≈X tokens" for a connector, with the heavy flag as a tooltip.
-   * Reads "k of N tools" once single tools are off, so the number of tools
-   * the connector has and the number riding this chat are both there.
+   * The line under a connector's name. A catalog connector says what it does
+   * ("Web search"), on or off; a server the catalog does not know reads
+   * "N tools · ≈X tokens" as before. The count line moves to the tooltip when
+   * a tagline takes its place — the amber tools button already marks a
+   * half-off connector, so "k of N tools" only has to be a hover away.
    */
   const renderCost = (entry: ConnectorEntry, muted: boolean) => {
-    if (!entry.active || entry.tools.length === 0) return null
-    const cost = costByServer.get(entry.key)
+    const tagline = entry.connector?.taglineKey
+      ? t(entry.connector.taglineKey)
+      : undefined
+    const measured = entry.active && entry.tools.length > 0
+    if (!tagline && !measured) return null
+    const cost = measured ? costByServer.get(entry.key) : undefined
     const share =
       cost?.ctxShare !== undefined ? Math.round(cost.ctxShare * 100) : undefined
     const total = entry.tools.length
@@ -351,55 +354,66 @@ export default memo(function DropdownPlugins({
       (tool) => !disabledTools.has(createToolKey(entry.key, tool.name))
     ).length
     const partial = enabled < total
-    const label = cost
-      ? share !== undefined
-        ? t(
-            partial
-              ? 'common:connectorsMenu.costSharePartial'
-              : 'common:connectorsMenu.costShare',
-            {
+    const countLabel = !measured
+      ? undefined
+      : cost
+        ? share !== undefined
+          ? t(
+              partial
+                ? 'common:connectorsMenu.costSharePartial'
+                : 'common:connectorsMenu.costShare',
+              {
+                enabled,
+                count: partial ? total : cost.toolCount,
+                tokens: formatTokenCount(cost.tokens),
+                share,
+              }
+            )
+          : t(
+              partial
+                ? 'common:connectorsMenu.costPartial'
+                : 'common:connectorsMenu.cost',
+              {
+                enabled,
+                count: partial ? total : cost.toolCount,
+                tokens: formatTokenCount(cost.tokens),
+              }
+            )
+        : partial
+          ? t('common:connectorsMenu.toolCountPartial', {
               enabled,
-              count: partial ? total : cost.toolCount,
-              tokens: formatTokenCount(cost.tokens),
-              share,
-            }
-          )
-        : t(
-            partial
-              ? 'common:connectorsMenu.costPartial'
-              : 'common:connectorsMenu.cost',
-            {
-              enabled,
-              count: partial ? total : cost.toolCount,
-              tokens: formatTokenCount(cost.tokens),
-            }
-          )
-      : partial
-        ? t('common:connectorsMenu.toolCountPartial', {
-            enabled,
-            count: total,
-          })
-        : t('common:connectorsMenu.toolCount', { count: total })
+              count: total,
+            })
+          : t('common:connectorsMenu.toolCount', { count: total })
     const heavy = Boolean(cost?.heavy) && !muted
+    const heavyLabel =
+      heavy && share !== undefined && toolCost?.ctxLen
+        ? t('common:connectorsMenu.heavy', {
+            share,
+            ctx: formatTokenCount(toolCost.ctxLen),
+          })
+        : undefined
+    // "Off for this chat" is state and outranks both; it only applies while
+    // there is something on the wire to switch off.
+    const label =
+      muted && measured
+        ? t('common:connectorsMenu.mutedForChat')
+        : (tagline ?? countLabel)
+    const title = [tagline ? countLabel : undefined, heavyLabel]
+      .filter(Boolean)
+      .join('\n')
     return (
       <span
         className={cn(
-          'truncate text-[11px] text-muted-foreground',
+          'mt-0.5 block truncate text-xs text-muted-foreground',
           heavy && 'text-amber-600 dark:text-amber-400',
-          muted && 'line-through opacity-70'
+          muted && measured && 'line-through opacity-70'
         )}
-        title={
-          heavy && share !== undefined && toolCost?.ctxLen
-            ? t('common:connectorsMenu.heavy', {
-                share,
-                ctx: formatTokenCount(toolCost.ctxLen),
-              })
-            : undefined
-        }
+        title={title || undefined}
         data-testid={`connector-cost-${entry.key}`}
         data-heavy={heavy ? 'true' : undefined}
       >
-        {muted ? t('common:connectorsMenu.mutedForChat') : label}
+        {label}
       </span>
     )
   }
@@ -447,7 +461,7 @@ export default memo(function DropdownPlugins({
         <DropDrawerContent
           side="top"
           align="start"
-          className="overflow-hidden! min-w-64"
+          className="w-72 min-w-72 overflow-hidden!"
           onClick={(e) => e.stopPropagation()}
           // Closing to open the tools dialog must not hand focus back to the
           // trigger: its tooltip opens on focus and would sit over the dialog.
@@ -462,7 +476,7 @@ export default memo(function DropdownPlugins({
           <DropDrawerSeparator />
           {/* Vertical only: WebKit lets a scrollable list be dragged sideways
             on a horizontal swipe even with nothing to scroll to. */}
-          <div className="max-h-72 overflow-y-auto overflow-x-hidden overscroll-x-none">
+          <div className="max-h-72 overflow-y-auto overflow-x-hidden overscroll-x-none [scrollbar-gutter:stable]">
             <Collapsible open={connectorsOpen} onOpenChange={setConnectorsOpen}>
               <SectionHeader
                 label={t('common:connectors')}
@@ -480,7 +494,11 @@ export default memo(function DropdownPlugins({
                     </DropDrawerItem>
                   )}
                   {entries.map((entry) => {
-                    const status = statusByName.get(entry.key)
+                    const status = effectiveMcpStatus(
+                      entry.key,
+                      statusByName.get(entry.key),
+                      tools
+                    )
                     const isError = entry.active && status?.status === 'error'
                     const name = entry.connector?.name ?? entry.key
                     const muted = mutedServers.includes(entry.key)
@@ -491,33 +509,52 @@ export default memo(function DropdownPlugins({
                         onSelect={(e) => e.preventDefault()}
                         onClick={(e) => e.preventDefault()}
                         icon={
-                          <div className="flex shrink-0 items-center gap-1">
+                          <div
+                            className="flex w-16 shrink-0 items-center justify-end gap-1"
+                            data-testid={`connector-actions-${entry.key}`}
+                          >
                             {renderToolsButton(entry, muted)}
                             {renderServerSwitch(entry)}
                           </div>
                         }
                       >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <ServerIcon
-                            connector={entry.connector}
-                            name={name}
-                            className="size-5 rounded-sm [&>span]:text-[10px]"
-                          />
-                          <div className="flex min-w-0 flex-col">
-                            <span
-                              className={cn(
-                                'truncate text-sm',
-                                muted && 'text-muted-foreground'
+                        {/* The model rows' anatomy (`RouteRow`): a 32 px brand
+                          mark, then title over tagline, both cut to one line
+                          and centred on the mark. `min-h-9` keeps a row with
+                          no second line as tall as its neighbours; the action
+                          slot above is a fixed width so the switches line up. */}
+                        <div className="flex min-h-9 min-w-0 flex-1 items-center gap-3 pr-2">
+                          <span
+                            aria-hidden="true"
+                            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-secondary"
+                            data-testid={`connector-mark-${entry.key}`}
+                          >
+                            {/* A catalog brand tile fills the square; a
+                              hand-added server shows its initial on it. */}
+                            <ServerIcon
+                              connector={entry.connector}
+                              name={name}
+                              className="size-full bg-transparent"
+                            />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span
+                                className={cn(
+                                  'block min-w-0 truncate text-sm font-medium leading-tight',
+                                  muted && 'text-muted-foreground'
+                                )}
+                                title={isError ? status?.error : undefined}
+                                data-testid={`connector-name-${entry.key}`}
+                              >
+                                {name}
+                              </span>
+                              {isError && (
+                                <span className="size-1.5 shrink-0 rounded-full bg-red-500" />
                               )}
-                              title={isError ? status?.error : undefined}
-                            >
-                              {name}
                             </span>
                             {renderCost(entry, muted)}
                           </div>
-                          {isError && (
-                            <span className="size-1.5 shrink-0 rounded-full bg-red-500" />
-                          )}
                         </div>
                       </DropDrawerItem>
                     )

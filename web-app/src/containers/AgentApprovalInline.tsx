@@ -3,6 +3,7 @@ import { IconShieldQuestion, IconFolderQuestion } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { useAgentApprovalActions } from '@/hooks/useAgentApprovalActions'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { agentApprovalSummary } from '@/lib/agent-approval-copy'
 
 const PREVIEW_LIMIT = 4_000
 const RESOURCE_VALUE_LIMIT = 512
@@ -46,6 +47,10 @@ export default function AgentApprovalInline({
     () => (approval ? boundedJson(approval.preview) : ''),
     [approval]
   )
+  const approvalCopy = useMemo(
+    () => (approval ? agentApprovalSummary(approval, t) : ''),
+    [approval, t]
+  )
 
   // Keyboard affordance while the card is up, wherever focus sits (usually
   // the composer textarea): Mod+Enter approves. Deliberately no Escape
@@ -60,7 +65,7 @@ export default function AgentApprovalInline({
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         if (hasApproval) void resolveApproval('allow_once')
-        else void resolveFolderAccess(true)
+        else void resolveFolderAccess('allow_once')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -80,8 +85,9 @@ export default function AgentApprovalInline({
     <div
       role="group"
       aria-live="polite"
-      className="relative z-10 -mb-3 rounded-t-2xl border border-b-0 border-input bg-secondary/60 px-4 pt-3 pb-6 backdrop-blur-sm"
+      className="absolute inset-x-0 bottom-full z-10 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-3xl border border-b-0 border-input bg-muted px-4 py-3"
       data-testid="agent-approval-inline"
+      data-slot="composer-approval"
     >
       {approval ? (
         <div className="flex flex-col gap-2">
@@ -90,12 +96,10 @@ export default function AgentApprovalInline({
               size={16}
               className="mt-0.5 shrink-0 text-amber-500"
             />
-            <div className="min-w-0 flex-1 text-sm">
+            <div className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
               <span className="font-medium">{t('agentApproval.title')}</span>
               <span className="text-muted-foreground">
-                {' '}
-                · <code className="text-xs">{approval.tool}</code> —{' '}
-                {approval.reason}
+                {' '}— {approvalCopy}
               </span>
             </div>
           </div>
@@ -111,6 +115,20 @@ export default function AgentApprovalInline({
             </button>
             {detailsOpen && (
               <div className="mt-2 space-y-2">
+                <div className="rounded-md border bg-secondary px-2 py-1.5 text-xs">
+                  <div>
+                    <span className="font-medium">
+                      {t('agentApproval.tool')}:
+                    </span>{' '}
+                    <code>{approval.tool}</code>
+                  </div>
+                  <div className="mt-1 text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {t('agentApproval.reason')}:
+                    </span>{' '}
+                    {approval.reason}
+                  </div>
+                </div>
                 {preview && (
                   <pre className="max-h-40 overflow-auto rounded-md border bg-secondary p-2 text-xs whitespace-pre-wrap break-all">
                     {preview}
@@ -121,7 +139,7 @@ export default function AgentApprovalInline({
                     {approval.affected_resources.map((resource, index) => (
                       <div
                         key={`${resource.kind}-${resource.operation}-${index}`}
-                        className="rounded-md border px-2 py-1 text-xs"
+                        className="rounded-md border px-2 py-1 text-xs break-all"
                       >
                         <span className="font-medium">
                           {resource.operation}
@@ -143,7 +161,7 @@ export default function AgentApprovalInline({
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               disabled={approvalResolving}
@@ -179,15 +197,9 @@ export default function AgentApprovalInline({
               size={16}
               className="mt-0.5 shrink-0 text-amber-500"
             />
-            <div className="min-w-0 flex-1 text-sm">
+            <div className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
               <span className="font-medium">
                 {t('agentFolderAccess.title')}
-              </span>
-              <span className="text-muted-foreground">
-                {' '}
-                · {t('agentFolderAccess.description', {
-                  tool: folderAccess.tool,
-                })}
               </span>
             </div>
           </div>
@@ -197,20 +209,28 @@ export default function AgentApprovalInline({
           <p className="text-xs text-muted-foreground">
             {t('agentFolderAccess.canEditNotice')}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               disabled={folderAccessResolving}
-              onClick={() => void resolveFolderAccess(true)}
+              onClick={() => void resolveFolderAccess('allow_once')}
               autoFocus
             >
               {t('agentFolderAccess.allow')}
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              disabled={folderAccessResolving}
+              onClick={() => void resolveFolderAccess('always_allow')}
+            >
+              {t('agentFolderAccess.alwaysAllow')}
+            </Button>
+            <Button
               variant="ghost"
               size="sm"
               disabled={folderAccessResolving}
-              onClick={() => void resolveFolderAccess(false)}
+              onClick={() => void resolveFolderAccess('deny')}
             >
               {t('agentFolderAccess.deny')}
             </Button>

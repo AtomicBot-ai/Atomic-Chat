@@ -28,6 +28,7 @@ import {
   detectReasoningControls,
   ReasoningControls,
   ModelEvent,
+  type ModelLoadOptions,
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
@@ -68,6 +69,12 @@ const AUTO_INCREASE_CTX_NOTIFY = 'local_backend://auto_increase_ctx_notify'
 /// window further). The web-app uses this to show a one-shot toast and
 /// stop driving further regeneration attempts.
 const AUTO_INCREASE_CTX_AT_MAX = 'local_backend://auto_increase_ctx_at_max'
+/// ATO-530: a load stopped by `cancelLoad`. Matches the Rust
+/// `ModelLoadCancelled` code and core's `MODEL_LOAD_CANCELLED_CODE`.
+const ERR_MODEL_LOAD_CANCELLED = 'MODEL_LOAD_CANCELLED'
+/// How soon `cancelLoad` asks the plugin again when the load it is chasing
+/// has been invoked but not registered there yet.
+const CANCEL_RETRY_INTERVAL_MS = 50
 
 interface AutoIncreaseCtxRequest {
   request_id: string
@@ -100,6 +107,14 @@ export default class mlx_extension extends AIEngine {
   private config: any = {}
   private providerPath!: string
   private loadingModels = new Map<string, Promise<SessionInfo>>()
+  /// ATO-530: `load` calls still running per model.
+  private loadRequests = new Map<string, number>()
+  /// Models whose running load the user cancelled. Checked at each step of
+  /// `performLoad`, and cleared once no load of the model is left.
+  private cancelledLoads = new Set<string>()
+  /// Models with a `load_mlx_model` invoke outstanding: only while one is,
+  /// can the plugin's cancel command reach the load.
+  private pluginLoadsInFlight = new Set<string>()
 
   /// Tracks the `ctx_size` actually used for the currently loaded session
   /// per model. The UI-level setting / extension config may differ from the
@@ -489,7 +504,123 @@ export default class mlx_extension extends AIEngine {
     modelId: string,
     overrideSettings?: any,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
+  ): Promise<SessionInfo> {
+    this.loadRequests.set(modelId, (this.loadRequests.get(modelId) ?? 0) + 1)
+    try {
+      return await this.startLoad(
+        modelId,
+        overrideSettings,
+        isEmbedding,
+        bypassAutoUnload,
+        options
+      )
+    } finally {
+      const remaining = (this.loadRequests.get(modelId) ?? 1) - 1
+      if (remaining > 0) {
+        this.loadRequests.set(modelId, remaining)
+      } else {
+        this.loadRequests.delete(modelId)
+        this.cancelledLoads.delete(modelId)
+      }
+    }
+  }
+
+  /**
+   * ATO-530: stop a load of `modelId` that has not finished, including one
+   * still queued behind another MLX load. Resolves `true` when one was
+   * running; that load then rejects with MODEL_LOAD_CANCELLED and leaves no
+   * server behind.
+   */
+  override async cancelLoad(modelId: string): Promise<boolean> {
+    if (!this.loadRequests.has(modelId)) return false
+    this.cancelledLoads.add(modelId)
+    // The invoke that starts the server may still be on its way to the
+    // plugin, so a miss is retried while it is outstanding; a load before that
+    // point stops at its next checkpoint. A command that fails outright will
+    // keep failing — the server is then taken down when its load returns.
+    while (this.pluginLoadsInFlight.has(modelId)) {
+      let reached: boolean
+      try {
+        reached = await invoke<boolean>('plugin:mlx|cancel_mlx_model_load', {
+          modelId,
+        })
+      } catch (error) {
+        logger.warn(`cancel_mlx_model_load failed for "${modelId}": ${error}`)
+        break
+      }
+      if (reached) break
+      await new Promise((resolve) =>
+        setTimeout(resolve, CANCEL_RETRY_INTERVAL_MS)
+      )
+    }
+    return true
+  }
+
+  private throwIfLoadCancelled(modelId: string): void {
+    if (this.cancelledLoads.has(modelId)) {
+      const cancelled = new Error('The model load was cancelled.') as Error & {
+        code: string
+      }
+      cancelled.code = ERR_MODEL_LOAD_CANCELLED
+      throw cancelled
+    }
+  }
+
+  /**
+   * Runs the `load_mlx_model` invoke so that `cancelLoad` can reach it:
+   * refuses to start after a cancel, marks the invoke as outstanding while it
+   * runs, and takes down a server that came up before the cancel got to it.
+   */
+  private async loadInPlugin(
+    modelId: string,
+    start: () => Promise<SessionInfo>
+  ): Promise<SessionInfo> {
+    this.throwIfLoadCancelled(modelId)
+    this.pluginLoadsInFlight.add(modelId)
+    let sInfo: SessionInfo
+    try {
+      sInfo = await start()
+    } finally {
+      this.pluginLoadsInFlight.delete(modelId)
+    }
+    if (this.cancelledLoads.has(modelId)) {
+      await unloadMlxModel(sInfo.pid).catch((error) => {
+        logger.warn(
+          `Failed to stop "${modelId}" after its load was cancelled: ${error}`
+        )
+      })
+      this.throwIfLoadCancelled(modelId)
+    }
+    return sInfo
+  }
+
+  /**
+   * How much of `paths` the OS already holds in its page cache (0–1), or
+   * `null` when that cannot be told. A directory counts the files inside it.
+   */
+  private async pageCacheFraction(
+    paths: (string | undefined)[]
+  ): Promise<number | null> {
+    try {
+      const fraction = await invoke<number | null>(
+        'get_page_cache_resident_fraction',
+        { paths: paths.filter((path): path is string => !!path) }
+      )
+      return typeof fraction === 'number' ? fraction : null
+    } catch (error) {
+      console.debug(`page cache probe failed: ${error}`)
+      return null
+    }
+  }
+
+  private async startLoad(
+    modelId: string,
+    overrideSettings: any,
+    isEmbedding: boolean,
+    bypassAutoUnload: boolean,
+    options: ModelLoadOptions | undefined
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -504,7 +635,8 @@ export default class mlx_extension extends AIEngine {
       modelId,
       overrideSettings,
       isEmbedding,
-      bypassAutoUnload
+      bypassAutoUnload,
+      options
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -519,7 +651,8 @@ export default class mlx_extension extends AIEngine {
     modelId: string,
     overrideSettings?: any,
     isEmbedding: boolean = false,
-    bypassAutoUnload: boolean = false
+    bypassAutoUnload: boolean = false,
+    options?: ModelLoadOptions
   ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
@@ -543,6 +676,7 @@ export default class mlx_extension extends AIEngine {
         await Promise.all(allLoadedModels.map((id) => this.unload(id)))
       }
     }
+    this.throwIfLoadCancelled(modelId)
 
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
 
@@ -672,21 +806,41 @@ export default class mlx_extension extends AIEngine {
       JSON.stringify(mlxConfig)
     )
 
+    if (options?.onStage) {
+      this.throwIfLoadCancelled(modelId)
+      // An MLX model is a folder of shards; a legacy entry points at its
+      // first file instead.
+      const modelDir = /\.safetensors$/i.test(modelPath)
+        ? modelPath.slice(0, modelPath.lastIndexOf('/'))
+        : modelPath
+      options.onStage({
+        kind: 'loadingWeights',
+        cachedFraction: await this.pageCacheFraction([
+          modelDir,
+          mlxConfig.draft_model_path || undefined,
+        ]),
+      })
+    }
+
     try {
-      const sInfo = await loadMlxModel(
-        modelId,
-        modelPath,
-        port,
-        mlxConfig,
-        envs,
-        isEmbedding,
-        Number(this.timeout)
+      const sInfo = await this.loadInPlugin(modelId, () =>
+        loadMlxModel(
+          modelId,
+          modelPath,
+          port,
+          mlxConfig,
+          envs,
+          isEmbedding,
+          Number(this.timeout)
+        )
       )
       this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
       this.lastActiveModelId = modelId
       return sInfo
     } catch (error) {
-      logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
+      if ((error as { code?: string } | undefined)?.code !== ERR_MODEL_LOAD_CANCELLED) {
+        logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
+      }
       throw error
     }
   }
@@ -1294,12 +1448,21 @@ export default class mlx_extension extends AIEngine {
         (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
-            percent: transferred / total,
+            // See the same guard in the llama.cpp extensions (#290): a failed
+            // preflight reports total=0, and 0/0 reached the progress bar.
+            percent: total > 0 ? transferred / total : 0,
             size: { transferred, total },
             downloadType: 'Model',
           })
         },
-        resumeDownload ?? false
+        resumeDownload ?? false,
+        (stage: { kind: string; attempt: number; maxAttempts: number }) => {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            modelId,
+            downloadType: 'Model',
+            stage,
+          })
+        }
       )
 
       // Emit download success event so DownloadManagement clears the download state

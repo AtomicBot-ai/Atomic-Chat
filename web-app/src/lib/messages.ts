@@ -5,6 +5,49 @@ import type { UIMessage } from '@ai-sdk/react'
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
+const PERSISTED_TOOL_ERROR_KEY = '__atomicToolError'
+const AGGREGATED_WEB_TOOLS = new Set(['web_search_exa', 'web_fetch_exa'])
+
+function isAggregatedWebTool(toolName: unknown): toolName is string {
+  return typeof toolName === 'string' && AGGREGATED_WEB_TOOLS.has(toolName)
+}
+
+type PersistedToolError = {
+  [PERSISTED_TOOL_ERROR_KEY]: string
+  repeatCount?: number
+}
+
+function persistedToolError(
+  errorText: string,
+  repeatCount = 1
+): PersistedToolError {
+  return {
+    [PERSISTED_TOOL_ERROR_KEY]: errorText,
+    ...(repeatCount > 1 ? { repeatCount } : {}),
+  }
+}
+
+function readPersistedToolError(output: unknown):
+  | { errorText: string; repeatCount: number }
+  | undefined {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return undefined
+  }
+  const record = output as Record<string, unknown>
+  const errorText = record[PERSISTED_TOOL_ERROR_KEY]
+  if (typeof errorText !== 'string' || !errorText.trim()) return undefined
+  const repeatCount =
+    typeof record.repeatCount === 'number' && record.repeatCount > 1
+      ? Math.floor(record.repeatCount)
+      : 1
+  return { errorText, repeatCount }
+}
+
+function aggregatedToolErrorText(errorText: string, repeatCount: number) {
+  if (repeatCount <= 1) return errorText
+  return `${errorText}\n\n${repeatCount} equivalent failures were grouped.`
+}
+
 /**
  * Derive an image media type from a (possibly data:) URL. Falls back to JPEG so
  * older messages without an explicit type keep working.
@@ -191,6 +234,24 @@ export function convertThreadMessageToUIMessage(
   threadMessage: ThreadMessage
 ): UIMessage {
   const parts: any[] = []
+  const completedMessage = Boolean(threadMessage.completed_at)
+  const missingWebResults = new Map<string, number>()
+  const emittedMissingWebResults = new Set<string>()
+
+  if (completedMessage) {
+    for (const content of threadMessage.content || []) {
+      if (
+        content.type === 'tool_call' &&
+        content.output == null &&
+        isAggregatedWebTool(content.tool_name)
+      ) {
+        missingWebResults.set(
+          content.tool_name,
+          (missingWebResults.get(content.tool_name) ?? 0) + 1
+        )
+      }
+    }
+  }
 
   // Process content array - preserve original order (including tool calls)
   for (const content of threadMessage.content || []) {
@@ -254,13 +315,45 @@ export function convertThreadMessageToUIMessage(
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
       // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
-      if (content.output != null) {
+      const storedError = readPersistedToolError(content.output)
+      if (storedError) {
+        parts.push({
+          type: `tool-${content.tool_name}`,
+          toolCallId: content.tool_call_id,
+          input: content.input,
+          state: 'output-error',
+          errorText: aggregatedToolErrorText(
+            storedError.errorText,
+            storedError.repeatCount
+          ),
+        })
+      } else if (content.output != null) {
         parts.push({
           type: `tool-${content.tool_name}`,
           toolCallId: content.tool_call_id,
           input: content.input,
           state: 'output-available',
           output: content.output,
+        })
+      } else if (
+        completedMessage &&
+        isAggregatedWebTool(content.tool_name)
+      ) {
+        // Older transcripts discarded `output-error.errorText`, leaving a
+        // completed message full of calls that reload forever as "running".
+        // They cannot be resumed after reload, so show one honest aggregate.
+        if (emittedMissingWebResults.has(content.tool_name)) continue
+        emittedMissingWebResults.add(content.tool_name)
+        const repeatCount = missingWebResults.get(content.tool_name) ?? 1
+        parts.push({
+          type: `tool-${content.tool_name}`,
+          toolCallId: content.tool_call_id,
+          input: content.input,
+          state: 'output-error',
+          errorText: aggregatedToolErrorText(
+            'Tool result was not recorded.',
+            repeatCount
+          ),
         })
       } else {
         parts.push({
@@ -398,6 +491,7 @@ export function extractContentPartsFromUIMessage(
 ): ThreadContent[] {
   const content: ThreadContent[] = []
   const parts = (message.parts ?? []) as any[]
+  const webFailureIndexes = new Map<string, number>()
 
   for (const part of parts) {
     if (part.type === 'reasoning') {
@@ -442,7 +536,30 @@ export function extractContentPartsFromUIMessage(
       const toolName = (part.type as string).replace('tool-', '')
       const toolCallId = part.toolCallId || part.toolInvocationId
       const input = part.input || part.args
-      const output = part.output || part.result
+      const errorText =
+        part.state === 'output-error'
+          ? String(part.errorText ?? part.error ?? 'Tool execution failed')
+          : undefined
+      const output = errorText
+        ? persistedToolError(errorText)
+        : part.output ?? part.result
+
+      if (errorText && isAggregatedWebTool(toolName)) {
+        const failureKey = `${toolName}\u0000${errorText.trim().replace(/\s+/g, ' ')}`
+        const existingIndex = webFailureIndexes.get(failureKey)
+        if (existingIndex !== undefined) {
+          const existing = content[existingIndex] as ThreadContent & {
+            output?: unknown
+          }
+          const stored = readPersistedToolError(existing.output)
+          existing.output = persistedToolError(
+            stored?.errorText ?? errorText,
+            (stored?.repeatCount ?? 1) + 1
+          )
+          continue
+        }
+        webFailureIndexes.set(failureKey, content.length)
+      }
 
       const toolCallContent = {
         type: 'tool_call' as ContentType.ToolCall,

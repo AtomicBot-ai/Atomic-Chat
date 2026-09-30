@@ -42,16 +42,40 @@ vi.mock('react-resizable-panels', () => ({
     children,
     id,
     defaultSize,
+    minSize,
+    onCollapse,
   }: {
     children: ReactNode
     id: string
     defaultSize: number
+    minSize?: number
+    onCollapse?: () => void
   }) => (
-    <div data-testid={`panel-${id}`} data-default-size={defaultSize}>
+    <div
+      data-testid={`panel-${id}`}
+      data-default-size={defaultSize}
+      data-min-size={minSize}
+    >
       {children}
+      {onCollapse && (
+        <button type="button" onClick={onCollapse}>
+          Collapse {id}
+        </button>
+      )}
     </div>
   ),
-  PanelResizeHandle: () => <div />,
+  PanelResizeHandle: ({
+    onDragging,
+  }: {
+    onDragging?: (dragging: boolean) => void
+  }) =>
+    onDragging ? (
+      <button type="button" onClick={() => onDragging(false)}>
+        Finish right resize
+      </button>
+    ) : (
+      <div />
+    ),
 }))
 
 vi.mock('./AgentWorkspaceFiles', () => ({
@@ -282,6 +306,35 @@ describe('AgentWorkspaceLayout', () => {
     })
   })
 
+  it('turns a drag-collapse into the closed state and restores the corner toggle', async () => {
+    render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open files sidebar' }))
+    expect(await screen.findByText('Files')).toBeInTheDocument()
+    expect(screen.getByTestId('panel-agent-sidebar')).toHaveAttribute(
+      'data-min-size',
+      '16'
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Collapse agent-sidebar' })
+    )
+
+    await waitFor(() => expect(screen.queryByText('Files')).toBeNull())
+    expect(
+      screen.getByRole('button', { name: 'Open files sidebar' })
+    ).toBeInTheDocument()
+  })
+
   it('keeps the files sidebar closed when the workspace gains an entry', async () => {
     const { rerender } = render(
       <AgentWorkspaceLayout
@@ -499,6 +552,35 @@ describe('AgentWorkspaceLayout', () => {
     await waitFor(() => {
       expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
     })
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
+  })
+
+  it('snaps the right panel closed when a drag ends at its minimum width', async () => {
+    render(
+      <AgentWorkspaceLayout
+        threadId="thread"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Chat</div>
+      </AgentWorkspaceLayout>
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+    panelLayouts.values.push([80, 0, 20])
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Finish right resize' })
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+    )
     expect(
       screen.getByRole('button', { name: 'chat:runSettings.open' })
     ).toBeInTheDocument()

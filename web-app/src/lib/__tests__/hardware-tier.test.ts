@@ -67,7 +67,7 @@ describe('describeHardware', () => {
       })
 
       expect(profile).toMatchObject({
-        tier: 'unified_64_plus',
+        tier: 'unified_128',
         memoryKind: 'unified',
         budgetMib: 128 * GIB,
         hardCeiling: true,
@@ -84,7 +84,8 @@ describe('describeHardware', () => {
       expect(mac(48)).toBe('unified_48')
       expect(mac(64)).toBe('unified_64')
       expect(mac(96)).toBe('unified_64_plus')
-      expect(mac(128)).toBe('unified_64_plus')
+      expect(mac(128)).toBe('unified_128')
+      expect(mac(192)).toBe('unified_128_plus')
     })
 
     it('keeps a machine that under-reports its badge in the bucket its owner would name', () => {

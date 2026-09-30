@@ -3,6 +3,9 @@ import {
   OUT_OF_CONTEXT_SIZE,
   MODEL_ACCESS_DENIED_TITLE,
   MODEL_ACCESS_DENIED_MESSAGE,
+  AUTHENTICATION_FAILED_TITLE,
+  AUTHENTICATION_FAILED_MESSAGE,
+  isAuthenticationError,
   isModelAccessError,
   isOutOfMemoryError,
 } from '../error'
@@ -27,6 +30,53 @@ describe('error utilities', () => {
         'enabled in your provider'
       )
       expect(MODEL_ACCESS_DENIED_MESSAGE).toContain('allowed models list')
+    })
+  })
+
+  describe('AUTHENTICATION_FAILED constants', () => {
+    it('exposes clear API-key guidance', () => {
+      expect(AUTHENTICATION_FAILED_TITLE).toBe('Authentication failed')
+      expect(AUTHENTICATION_FAILED_MESSAGE).toContain(
+        'API key is correct and active'
+      )
+    })
+  })
+
+  describe('isAuthenticationError', () => {
+    const positives: Array<[string, unknown]> = [
+      ['401 message', 'Request failed with status code 401'],
+      ['403 response field', { response: { status: 403 } }],
+      ['top-level numeric status', { status: 401, message: 'Request failed' }],
+      ['NVIDIA invalid key', 'Unauthorized: invalid API key'],
+      ['OpenAI incorrect key', 'Incorrect API key provided'],
+      ['Anthropic auth envelope', { type: 'authentication_error' }],
+      ['nested cause', { cause: { code: 401 } }],
+      ['invalid bearer token', 'Invalid bearer token'],
+      ['bad credentials', 'Bad credentials'],
+    ]
+
+    it.each(positives)('detects %s', (_label, error) => {
+      expect(isAuthenticationError(error)).toBe(true)
+    })
+
+    const negatives: Array<[string, unknown]> = [
+      ['empty string', ''],
+      ['network failure', new Error('fetch failed: ECONNREFUSED')],
+      ['rate limit', { status: 429, message: 'Rate limit exceeded' }],
+      ['server failure', { response: { status: 500 } }],
+      ['context size', OUT_OF_CONTEXT_SIZE],
+      ['missing object fields', {}],
+      ['null', null],
+    ]
+
+    it.each(negatives)('does not match %s', (_label, error) => {
+      expect(isAuthenticationError(error)).toBe(false)
+    })
+
+    it('handles circular provider error objects safely', () => {
+      const error: Record<string, unknown> = { status: 401 }
+      error.response = error
+      expect(isAuthenticationError(error)).toBe(true)
     })
   })
 

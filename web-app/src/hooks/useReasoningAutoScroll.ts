@@ -1,12 +1,20 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type RefObject,
   type UIEventHandler,
 } from 'react'
 
 const REASONING_AUTO_SCROLL_THRESHOLD_PX = 24
+
+function updateOverflowEdges(container: HTMLDivElement) {
+  container.dataset.overflowTop = String(container.scrollTop > 1)
+  container.dataset.overflowBottom = String(
+    container.scrollHeight - container.clientHeight - container.scrollTop > 1
+  )
+}
 
 type ReasoningAutoScroll = {
   containerRef: RefObject<HTMLDivElement | null>
@@ -26,6 +34,10 @@ export function useReasoningAutoScroll(
   const shouldFollowRef = useRef(true)
   const frameRef = useRef<number | null>(null)
   const programmaticTopRef = useRef<number | null>(null)
+  const observedRef = useRef<{
+    container: HTMLDivElement
+    observer?: ResizeObserver
+  } | null>(null)
 
   const cancelPendingFrame = useCallback(() => {
     if (frameRef.current === null) return
@@ -35,6 +47,7 @@ export function useReasoningAutoScroll(
 
   const onScroll = useCallback<UIEventHandler<HTMLDivElement>>((event) => {
     const container = event.currentTarget
+    updateOverflowEdges(container)
     // The tail scroll below emits a `scroll` event too, and the browser
     // delivers it during the *next* frame's scroll steps — after React has
     // already committed another token batch and grown `scrollHeight`. The
@@ -54,23 +67,16 @@ export function useReasoningAutoScroll(
       distanceFromBottom <= REASONING_AUTO_SCROLL_THRESHOLD_PX
   }, [])
 
-  useEffect(() => {
-    if (!isStreaming) {
-      shouldFollowRef.current = true
-      programmaticTopRef.current = null
-      cancelPendingFrame()
-      return
-    }
-
-    const container = containerRef.current
-    if (!container || !shouldFollowRef.current || frameRef.current !== null) {
-      return
-    }
-
+  const scheduleScroll = useCallback(() => {
+    if (frameRef.current !== null) return
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = null
       const currentContainer = containerRef.current
-      if (!currentContainer || !shouldFollowRef.current) return
+      if (!currentContainer) return
+      if (!shouldFollowRef.current) {
+        updateOverflowEdges(currentContainer)
+        return
+      }
 
       const previousTop = currentContainer.scrollTop
       currentContainer.scrollTop = currentContainer.scrollHeight
@@ -81,10 +87,43 @@ export function useReasoningAutoScroll(
         currentContainer.scrollTop === previousTop
           ? null
           : currentContainer.scrollTop
+      updateOverflowEdges(currentContainer)
     })
-  }, [cancelPendingFrame, isStreaming, streamRevision])
+  }, [])
 
-  useEffect(() => cancelPendingFrame, [cancelPendingFrame])
+  const disconnect = useCallback(() => {
+    observedRef.current?.observer?.disconnect()
+    observedRef.current = null
+    cancelPendingFrame()
+  }, [cancelPendingFrame])
+
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    if (!isStreaming || !container) {
+      shouldFollowRef.current = true
+      programmaticTopRef.current = null
+      disconnect()
+      return
+    }
+    if (observedRef.current?.container !== container) {
+      disconnect()
+      shouldFollowRef.current = true
+      programmaticTopRef.current = null
+      const observer =
+        typeof ResizeObserver === 'undefined'
+          ? undefined
+          : new ResizeObserver(scheduleScroll)
+      observedRef.current = { container, observer }
+      observer?.observe(container)
+      // Font/width changes can rewrap the text without a token revision.
+      for (const child of container.children) observer?.observe(child)
+    }
+    // Fade content that has grown past the edge before the next tail write.
+    updateOverflowEdges(container)
+    scheduleScroll()
+  }, [disconnect, isStreaming, scheduleScroll, streamRevision])
+
+  useEffect(() => disconnect, [disconnect])
 
   return { containerRef, onScroll }
 }

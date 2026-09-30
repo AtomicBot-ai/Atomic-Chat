@@ -33,6 +33,7 @@
     "llamacpp:default",
     "llamacpp-upstream:default",
     "atomic-audio:default",
+    "atomic-diffusion:default",
     "mlx:default",
     "foundation-models:default",
     "updater:default",

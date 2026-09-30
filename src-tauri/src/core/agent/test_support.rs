@@ -236,6 +236,30 @@ impl ScriptedResponse {
         }
     }
 
+    /// A llama-server completion that stopped because `n_predict` ran out
+    /// (`stop_type: "limit"`), so `content` is whatever fit in the budget.
+    pub(crate) fn completion_cut_by_limit(content: impl Into<String>) -> Self {
+        let mut response = Self::completion(content);
+        response.body["stop_type"] = serde_json::json!("limit");
+        response
+    }
+
+    /// A llama-server completion that stopped because the context window
+    /// filled up: the same `stop_type: "limit"`, plus `truncated: true`.
+    pub(crate) fn completion_cut_by_context(content: impl Into<String>) -> Self {
+        let mut response = Self::completion_cut_by_limit(content);
+        response.body["truncated"] = serde_json::json!(true);
+        response
+    }
+
+    /// OpenAI chat-completions envelope whose generation hit `max_tokens`
+    /// (`finish_reason: "length"`).
+    pub(crate) fn chat_completion_cut_by_limit(content: impl Into<String>) -> Self {
+        let mut response = Self::chat_completion(content);
+        response.body["choices"][0]["finish_reason"] = serde_json::json!("length");
+        response
+    }
+
     /// OpenAI chat-completions envelope.
     pub(crate) fn chat_completion(content: impl Into<String>) -> Self {
         Self::chat_envelope(content, None)

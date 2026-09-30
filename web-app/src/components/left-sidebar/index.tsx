@@ -11,6 +11,11 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import { useRef } from 'react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 import {
   Sidebar,
@@ -59,7 +64,12 @@ export function LeftSidebar() {
               </span>
             )}
             <div className="flex items-center">
-              <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
+                </TooltipTrigger>
+                <TooltipContent side="right">Toggle sidebar</TooltipContent>
+              </Tooltip>
             </div>
           </div>
           <div

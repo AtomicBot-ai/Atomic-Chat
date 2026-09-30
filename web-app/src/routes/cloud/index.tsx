@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { IconRefresh } from '@tabler/icons-react'
 import cloneDeep from 'lodash/cloneDeep'
@@ -45,6 +45,9 @@ export const Route = createFileRoute(route.cloud.index as any)({
  * gear in the model picker and any future onboarding link all land on the right
  * connection.
  */
+/// Opened by default when no provider is connected and the URL names none.
+const DEFAULT_CLOUD_PROVIDER = 'openrouter'
+
 export function CloudPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -60,7 +63,9 @@ export function CloudPage() {
 
   // The provider catalog is a cloud concern, so its refresh moved here from
   // Settings along with the providers it describes.
-  const registryLoading = useProviderRegistryStore((s) => s.status === 'loading')
+  const registryLoading = useProviderRegistryStore(
+    (s) => s.status === 'loading'
+  )
   const registryFetchedAt = useProviderRegistryStore((s) => s.fetchedAt)
   const refreshRegistry = useProviderRegistryStore((s) => s.refresh)
 
@@ -74,8 +79,15 @@ export function CloudPage() {
       return cloudProviders.find((p) => p.provider === search.provider)
     }
     // No explicit selection: open on something the user already set up, so the
-    // page is useful on arrival rather than an empty picker.
-    return cloudProviders.find(isProviderConnected)
+    // page is useful on arrival rather than an empty picker. With nothing
+    // connected yet, land on OpenRouter — one key there unlocks most of the
+    // catalog — and failing that on whatever comes first, so the page never
+    // opens blank.
+    return (
+      cloudProviders.find(isProviderConnected) ??
+      cloudProviders.find((p) => p.provider === DEFAULT_CLOUD_PROVIDER) ??
+      cloudProviders[0]
+    )
   }, [cloudProviders, search.provider])
 
   const selectProvider = useCallback(
@@ -92,6 +104,13 @@ export function CloudPage() {
   const clearSelection = useCallback(() => {
     navigate({ to: route.cloud.index, search: {}, replace: true })
   }, [navigate])
+
+  // Canonicalise the implicit “first connected provider” choice into the URL.
+  // Otherwise disconnecting it changes `isProviderConnected`, recomputes the
+  // fallback and unexpectedly jumps the page to OpenRouter.
+  useEffect(() => {
+    if (!search.provider && selected) selectProvider(selected.provider)
+  }, [search.provider, selectProvider, selected])
 
   const createProvider = useCallback(
     (name: string) => {
@@ -198,7 +217,13 @@ export function CloudPage() {
           </div>
         </div>
       </HeaderPage>
-      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
+      {/* Classic (non-overlay) scrollbars — macOS with a mouse connected or
+          "Show scroll bars: Always", Windows, Linux — take layout width, so
+          a provider whose model list scrolls and one whose list does not
+          gave the centred column two different widths: every switch between
+          them nudged the whole block sideways. Reserving the gutter keeps
+          the geometry constant; same rule the onboarding picker applies. */}
+      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0 [scrollbar-gutter:stable]">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
           <CloudConnectionCard
             providers={providers}
@@ -219,7 +244,7 @@ export function CloudPage() {
               onConnectBrowser={() => void subscription.connect()}
               onCancel={() => void subscription.cancel()}
               onDisconnect={() => void subscription.disconnect()}
-    surface="settings"
+              surface="settings"
             />
           )}
 

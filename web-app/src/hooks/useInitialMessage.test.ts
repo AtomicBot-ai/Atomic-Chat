@@ -8,12 +8,12 @@ describe('useInitialMessage', () => {
 
   it('preserves the selected agent skill until the message is consumed', () => {
     useInitialMessage.getState().set('thread-1', {
-      text: 'Summarize this document',
+      text: 'Summarize /pdf this document',
       agentSkillName: 'pdf',
     })
 
     expect(useInitialMessage.getState().consume('thread-1')).toEqual({
-      text: 'Summarize this document',
+      text: 'Summarize /pdf this document',
       agentSkillName: 'pdf',
     })
     expect(useInitialMessage.getState().consume('thread-1')).toBeUndefined()

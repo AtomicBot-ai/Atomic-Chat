@@ -7,7 +7,11 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
-import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import {
+  isDownloadCancellationError,
+  markDownloadCancellationRequested,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 import {
   findInstalledLocalModel,
   LLAMACPP_PROVIDERS,
@@ -165,6 +169,12 @@ export const ModelDownloadAction = ({
       removeLocalDownloadingModel(variant.model_id)
       clearDownloadOrigin(variant.model_id)
       markResumableDownload(variant.model_id)
+      if (
+        wasDownloadCancellationRequested(variant.model_id) ||
+        isDownloadCancellationError(error)
+      ) {
+        return
+      }
       toast.error(t('hub:downloadFailed'), {
         description: error instanceof Error ? error.message : String(error),
       })

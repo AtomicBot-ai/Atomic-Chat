@@ -182,7 +182,13 @@ function readSubtitle(input: unknown): string | undefined {
     values.pattern ??
     values.name ??
     values.cmd
-  return typeof value === 'string' && value.trim() ? value : undefined
+  if (typeof value === 'string' && value.trim()) return value
+  // MCP tools name their parameters freely; the first text argument is
+  // still a better hint at what the call did than nothing at all.
+  return Object.values(values).find(
+    (candidate): candidate is string =>
+      typeof candidate === 'string' && candidate.trim().length > 0
+  )
 }
 
 export function presentGenericTool(args: {
@@ -198,6 +204,16 @@ export function presentGenericTool(args: {
     args.state === 'output-error' || args.state === 'output-denied'
   const action = ACTION_LABELS[args.toolName]
   const fallbackName = humanizeToolName(args.toolName)
+  const output =
+    args.output && typeof args.output === 'object'
+      ? (args.output as Record<string, unknown>)
+      : undefined
+  const details =
+    output?.details && typeof output.details === 'object'
+      ? (output.details as Record<string, unknown>)
+      : undefined
+  const deniedReason =
+    typeof details?.deniedReason === 'string' ? details.deniedReason : undefined
 
   return {
     kind: 'generic',
@@ -216,5 +232,6 @@ export function presentGenericTool(args: {
     input: args.input,
     output: args.output,
     errorText: args.errorText,
+    deniedReason,
   }
 }

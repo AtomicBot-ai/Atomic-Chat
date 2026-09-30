@@ -142,6 +142,9 @@ export function prettyModelName(name?: string): string {
   const withoutExt = withoutAuthor
     .replace(/\.(gguf|safetensors|bin|mlx)$/i, '')
     .replace(QUANT_SEGMENT, '')
+    // Sanitized local ids turn decimal versions into underscores (`1_5`).
+    // Restore that punctuation before tokenizing the rest of the slug.
+    .replace(/(\d)_(\d)/g, '$1.$2')
 
   const tokens = withoutExt
     .split(/[-_\s]+/)
@@ -161,4 +164,27 @@ export function prettyModelName(name?: string): string {
 
   const pretty = deduped.join(' ').trim()
   return pretty || withoutExt || name
+}
+
+/**
+ * Compact label for the composer and its model picker. A user nickname wins;
+ * otherwise strip the repository owner, file format and quantization. The
+ * full technical id remains available in the element's title attribute.
+ */
+export function compactModelDisplayName(model: Model): string {
+  const custom = model.displayName?.trim()
+  return custom || prettyModelName(model.id) || model.id
+}
+
+/**
+ * Readable model name with its repository owner. The compact composer pill
+ * deliberately omits this namespace, while the model details and full picker
+ * need it to distinguish otherwise identical rows from different authors.
+ */
+export function qualifiedModelDisplayName(model: Model): string {
+  const compact = compactModelDisplayName(model)
+  const normalizedId = model.id.replace(/\\/g, '/')
+  const separator = normalizedId.lastIndexOf('/')
+  if (separator <= 0) return compact
+  return `${normalizedId.slice(0, separator)}/${compact}`
 }

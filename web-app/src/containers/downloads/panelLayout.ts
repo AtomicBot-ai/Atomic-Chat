@@ -54,7 +54,11 @@ export function panelLayout(
 
   const width = Math.min(PANEL_WIDTH, viewport.width - 2 * EDGE)
   const left = viewport.width - EDGE - width
-  const sideBySide = anchorRect.right <= left || anchorRect.left >= left + width
+  // A tiny visual overlap at the rounded composer edge does not cover any
+  // control. Treat up to one normal gap as side-by-side; otherwise a five-pixel
+  // touch makes the whole panel jump above the composer on wide windows.
+  const sideBySide =
+    anchorRect.right <= left + GAP || anchorRect.left >= left + width - GAP
   if (sideBySide) return corner
 
   const spaceBelow = viewport.height - EDGE - (anchorRect.bottom + GAP)

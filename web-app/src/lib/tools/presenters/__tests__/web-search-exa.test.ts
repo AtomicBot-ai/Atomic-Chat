@@ -71,4 +71,36 @@ describe('presentWebSearchExa', () => {
     expect(presentation.results).toHaveLength(0)
     expect(presentation.subtitle).toBeUndefined()
   })
+
+  it('reads result cards from the keyless fallback JSON envelope', () => {
+    const presentation = presentWebSearchExa({
+      input: { query: 'latest news' },
+      output: [
+        {
+          text: JSON.stringify({
+            status: 'ok',
+            details: {
+              provider: 'duckduckgo',
+              results: [
+                {
+                  title: 'Example headline',
+                  url: 'https://news.example.com/story',
+                  snippet: 'A concise summary.',
+                },
+              ],
+            },
+          }),
+        },
+      ],
+    })
+
+    expect(presentation.results).toEqual([
+      {
+        title: 'Example headline',
+        url: 'https://news.example.com/story',
+        domain: 'news.example.com',
+        highlights: ['A concise summary.'],
+      },
+    ])
+  })
 })

@@ -83,4 +83,8 @@ describe('AIEngine', () => {
 
     expect(result).toEqual([])
   })
+
+  it('reports nothing cancelled for an engine that cannot cancel a load', async () => {
+    await expect(engine.cancelLoad('model1')).resolves.toBe(false)
+  })
 })

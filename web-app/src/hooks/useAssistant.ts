@@ -67,7 +67,8 @@ export const defaultAssistant: Assistant = {
   avatar: '/images/transparent-logo.png',
   description:
     "Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
-  instructions: 'Current date: {{current_date}}',
+  instructions:
+    'You are Atomic Chat, a helpful AI assistant.\n\nCurrent date: {{current_date}}',
 }
 
 const getDefaultAssistantIdFromStorage = (): string => {
@@ -182,9 +183,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       pendingAssistant:
         state.pendingAssistant?.id === id ? updated : state.pendingAssistant,
     })
-    schedulePersistParams(id, () =>
-      get().assistants.find((a) => a.id === id)
-    )
+    schedulePersistParams(id, () => get().assistants.find((a) => a.id === id))
   },
   updateAssistantInstructions: (id, instructions) => {
     const state = get()
@@ -199,9 +198,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       pendingAssistant:
         state.pendingAssistant?.id === id ? updated : state.pendingAssistant,
     })
-    schedulePersistParams(id, () =>
-      get().assistants.find((a) => a.id === id)
-    )
+    schedulePersistParams(id, () => get().assistants.find((a) => a.id === id))
   },
   deleteAssistant: (id) => {
     const state = get()

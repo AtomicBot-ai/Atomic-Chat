@@ -1,0 +1,24 @@
+# Every sd-server flag tauri-plugin-atomic-diffusion emits (src/args.rs).
+# scripts/test-local-diffusion.py checks the pinned binary's --help against
+# this list so a flag renamed upstream fails loudly before it ships.
+--diffusion-model
+--vae
+--vae-format
+--clip_l
+--t5xxl
+--llm
+--qwen2vl
+--clip-on-cpu
+--vae-on-cpu
+--vae-tiling
+--offload-to-cpu
+--diffusion-fa
+--diffusion-conv-direct
+--listen-ip
+--listen-port
+--lora-model-dir
+--hires-upscalers-dir
+--embd-dir
+--threads
+--backend
+--verbose

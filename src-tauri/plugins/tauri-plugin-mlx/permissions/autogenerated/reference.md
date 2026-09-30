@@ -6,6 +6,7 @@ Default permissions for the MLX plugin
 
 - `allow-cleanup-mlx-processes`
 - `allow-load-mlx-model`
+- `allow-cancel-mlx-model-load`
 - `allow-unload-mlx-model`
 - `allow-is-mlx-process-running`
 - `allow-get-mlx-random-port`
@@ -22,6 +23,32 @@ Default permissions for the MLX plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`mlx:allow-cancel-mlx-model-load`
+
+</td>
+<td>
+
+Enables the cancel_mlx_model_load command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mlx:deny-cancel-mlx-model-load`
+
+</td>
+<td>
+
+Denies the cancel_mlx_model_load command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

@@ -45,4 +45,31 @@ describe('useGeneralSetting — persisted state migration', () => {
     expect(useGeneralSetting.getState().reasoningBudget).toBe('max')
     expect(useGeneralSetting.getState().disableReasoning).toBe(true)
   })
+
+  it('drops the retired Plugins-button pin from a v3 install and keeps the rest', async () => {
+    // v3 → v4: the composer's Plugins button no longer hides behind a "+"
+    // menu pin. An install that had it unpinned comes up with the button
+    // and every other choice intact — the pin never held any connector's
+    // own on/off state, those live in the MCP config and the tool store.
+    persisted(
+      {
+        connectorsPinned: false,
+        agentModeEnabled: true,
+        reasoningBudget: 'low',
+        disableReasoning: false,
+      },
+      3
+    )
+
+    await useGeneralSetting.persist.rehydrate()
+
+    const state = useGeneralSetting.getState()
+    expect('connectorsPinned' in state).toBe(false)
+    expect(state.agentModeEnabled).toBe(true)
+    expect(state.reasoningBudget).toBe('low')
+    expect(state.disableReasoning).toBe(false)
+    expect(
+      JSON.parse(localStorage.getItem(localStorageKey.settingGeneral)!)
+    ).toMatchObject({ version: 4 })
+  })
 })

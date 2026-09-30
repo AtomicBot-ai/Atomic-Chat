@@ -125,7 +125,10 @@ pub fn chat_request_to_responses(body: &Value, prompt_cache_key: &str) -> Value 
     {
         out.insert(
             "reasoning".into(),
-            json!({"effort": effort, "summary": "auto"}),
+            // Subscription responses expose summaries, not plaintext hidden
+            // reasoning. Ask for the richest supported summary so the UI does
+            // not collapse a long reasoning pass into one or two labels.
+            json!({"effort": effort, "summary": "detailed"}),
         );
     }
 

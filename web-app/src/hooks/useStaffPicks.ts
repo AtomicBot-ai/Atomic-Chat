@@ -48,20 +48,26 @@ export const __resetStaffPickResolutionCache = () => {
  * `format` narrows the manifest before any of that work happens: the curated
  * list carries a GGUF and an MLX entry for most models, and resolving both
  * would double the Hugging Face round-trips to populate rows the Hub is not
- * going to show.
+ * going to show. `only` narrows it further for a caller that wants one slice
+ * of the list (the composer's vision offer) without resolving the rest.
  */
 export function useStaffPicks(
   sources: CatalogModel[],
-  format: StaffPickFormat = 'gguf'
+  format: StaffPickFormat = 'gguf',
+  only?: (pick: StaffPick) => boolean
 ): ResolvedStaffPick[] {
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((s) => s.huggingfaceToken)
   const remotePicks = useStaffPicksStore((s) => s.picks)
 
-  const picks = useMemo(
-    () => filterStaffPicksForPlatform(remotePicks, currentOs, format),
-    [remotePicks, format]
-  )
+  const picks = useMemo(() => {
+    const forPlatform = filterStaffPicksForPlatform(
+      remotePicks,
+      currentOs,
+      format
+    )
+    return only ? forPlatform.filter(only) : forPlatform
+  }, [remotePicks, format, only])
 
   const [fetched, setFetched] = useState<Record<string, CatalogModel>>(() => ({
     ...resolvedModels,

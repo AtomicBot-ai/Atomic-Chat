@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,19 @@ pub struct SkillListEntry {
     pub reserved: bool,
     pub unavailable_reasons: Vec<String>,
     pub error: Option<String>,
+    pub modified_at_ms: Option<u64>,
+}
+
+fn skill_modified_at_ms(root: &Path) -> Option<u64> {
+    fs::metadata(root.join("SKILL.md"))
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .try_into()
+        .ok()
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +290,7 @@ impl SkillRegistry {
                 reserved: record.reserved,
                 unavailable_reasons: record.unavailable_reasons.clone(),
                 error: None,
+                modified_at_ms: skill_modified_at_ms(&record.root),
             })
             .collect::<Vec<_>>();
         entries.extend(self.diagnostics.iter().map(|diagnostic| SkillListEntry {
@@ -291,6 +306,7 @@ impl SkillRegistry {
             reserved: diagnostic.reserved,
             unavailable_reasons: Vec::new(),
             error: Some(diagnostic.error.clone()),
+            modified_at_ms: None,
         }));
         entries.sort_by(|left, right| left.name.cmp(&right.name));
         entries

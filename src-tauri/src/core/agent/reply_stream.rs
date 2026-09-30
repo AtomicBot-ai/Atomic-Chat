@@ -106,6 +106,12 @@ impl ReplyStreamScanner {
             State::Done => {}
             State::PreludeOpen { matched } => {
                 let open = self.prelude.expect("prelude state requires tags").0;
+                // The parser trims leading whitespace before recognizing the
+                // reasoning prelude; the live scanner must accept the same
+                // shape or the entire trace appears only after generation.
+                if matched == 0 && ch.is_whitespace() {
+                    return;
+                }
                 let expected = open[matched..].chars().next();
                 if expected == Some(ch) {
                     let matched = matched + ch.len_utf8();
@@ -335,6 +341,20 @@ mod tests {
             ],
         );
         assert_eq!(output.reasoning, "let me </ think about it");
+        assert_eq!(output.reply, "ok");
+    }
+
+    #[test]
+    fn streams_a_reasoning_prelude_after_leading_whitespace() {
+        let mut scanner = ReplyStreamScanner::new(Some(("<think>", "</think>")));
+        let output = feed_all(
+            &mut scanner,
+            &[
+                " \n\t<think>planning",
+                r#" the file</think>[{"tool":"reply","args":{"text":"ok"}}]"#,
+            ],
+        );
+        assert_eq!(output.reasoning, "planning the file");
         assert_eq!(output.reply, "ok");
     }
 

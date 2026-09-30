@@ -26,7 +26,7 @@ export default function AttachmentIngestionDialog() {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && cancel()}>
-      <DialogContent onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {t('common:attachmentsIngestion.title')}

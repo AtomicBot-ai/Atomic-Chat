@@ -2,6 +2,7 @@ import { agentPathBasename, isAbsoluteAgentPath } from './agent-path'
 
 const FILE_LINK_OR_CODE = /(```[\s\S]*?```|`[^`\n]+`|\[[^\]]*\]\([^)]+\))/g
 const FILE_LINK_PREFIX = 'https://atomic.local/open-file?path='
+const MARKDOWN_LINK = /\[([^\]]*)\]\((https:\/\/atomic\.local\/open-file\?[^)\s]+)\)/g
 
 export type AgentFileReference = {
   path: string
@@ -13,6 +14,11 @@ function referenceNames(reference: AgentFileReference): string[] {
   return reference.name && reference.name !== pathBasename
     ? [pathBasename, reference.name]
     : [pathBasename]
+}
+
+function homeRelativePath(path: string): string | null {
+  const match = path.match(/^\/(?:Users|home)\/[^/]+(\/.*)$/)
+  return match ? `~${match[1]}` : null
 }
 
 function escapeRegExp(value: string): string {
@@ -83,19 +89,68 @@ export function extractAgentAttachmentReferences(
 }
 
 export function agentFilePathFromHref(href: string): string | null {
-  if (!href.startsWith(FILE_LINK_PREFIX)) return null
-
   try {
-    return decodeURIComponent(href.slice(FILE_LINK_PREFIX.length))
+    const url = new URL(href)
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'atomic.local' ||
+      url.port !== '' ||
+      url.username !== '' ||
+      url.password !== '' ||
+      url.pathname !== '/open-file' ||
+      url.hash !== '' ||
+      url.searchParams.size !== 1 ||
+      url.searchParams.getAll('path').length !== 1
+    ) {
+      return null
+    }
+
+    // Decode explicitly instead of trusting URLSearchParams' forgiving
+    // decoder. Invalid UTF-8/percent escapes must not become a native path.
+    const rawPath = url.search.match(/^\?path=([^&]*)$/)?.[1]
+    if (rawPath === undefined) return null
+    const path = decodeURIComponent(rawPath.replace(/\+/g, '%20'))
+    if (
+      path.length === 0 ||
+      path.includes('\0') ||
+      !isAbsoluteAgentPath(path)
+    ) {
+      return null
+    }
+
+    return path
   } catch {
     return null
   }
+}
+
+export function normalizeAgentFileLinkLabels(content: string): string {
+  return content
+    .split(/(```[\s\S]*?```|`[^`\n]+`)/g)
+    .map((segment, index) => {
+      if (index % 2 === 1) return segment
+      return segment.replace(MARKDOWN_LINK, (link, label, href) => {
+        const path = agentFilePathFromHref(href)
+        if (!path) return link
+        const displayLabel = label.trim()
+        if (displayLabel && !agentFilePathFromHref(displayLabel)) return link
+        return `[${agentPathBasename(path)}](${href})`
+      })
+    })
+    .join('')
+}
+
+export function containsAgentFileLink(content: string): boolean {
+  return [...content.matchAll(MARKDOWN_LINK)].some((match) =>
+    Boolean(agentFilePathFromHref(match[2]))
+  )
 }
 
 export function linkAgentFileReferences(
   content: string,
   fileReferences: readonly (string | AgentFileReference)[]
 ): string {
+  const normalizedContent = normalizeAgentFileLinkLabels(content)
   const uniqueReferences = new Map<string, AgentFileReference>()
   for (const reference of fileReferences) {
     const normalized =
@@ -106,10 +161,11 @@ export function linkAgentFileReferences(
       uniqueReferences.set(normalized.path, normalized)
     }
   }
-  if (uniqueReferences.size === 0) return content
+  if (uniqueReferences.size === 0) return normalizedContent
 
   const displayNamesByPath = new Map<string, string>()
   const nameCounts = new Map<string, number>()
+  const homeRelativeCounts = new Map<string, number>()
   for (const reference of uniqueReferences.values()) {
     displayNamesByPath.set(
       reference.path,
@@ -118,11 +174,25 @@ export function linkAgentFileReferences(
     for (const name of referenceNames(reference)) {
       nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1)
     }
+    const homeRelative = homeRelativePath(reference.path)
+    if (homeRelative) {
+      homeRelativeCounts.set(
+        homeRelative,
+        (homeRelativeCounts.get(homeRelative) ?? 0) + 1
+      )
+    }
   }
 
   const references = new Map<string, string>()
+  const cleanPathLabels = new Set<string>()
   for (const reference of uniqueReferences.values()) {
     references.set(reference.path, reference.path)
+    cleanPathLabels.add(reference.path)
+    const homeRelative = homeRelativePath(reference.path)
+    if (homeRelative && homeRelativeCounts.get(homeRelative) === 1) {
+      references.set(homeRelative, reference.path)
+      cleanPathLabels.add(homeRelative)
+    }
     for (const name of referenceNames(reference)) {
       if (nameCounts.get(name) === 1) references.set(name, reference.path)
     }
@@ -136,7 +206,7 @@ export function linkAgentFileReferences(
     'g'
   )
 
-  return content
+  return normalizedContent
     .split(FILE_LINK_OR_CODE)
     .map((segment, index) => {
       if (index % 2 === 1) return segment
@@ -144,7 +214,7 @@ export function linkAgentFileReferences(
         const path = references.get(label)
         if (!path) return label
         const displayLabel =
-          label === path
+          cleanPathLabels.has(label)
             ? (displayNamesByPath.get(path) ?? agentPathBasename(path))
             : label
         return `[${displayLabel}](${FILE_LINK_PREFIX}${encodeURIComponent(path)})`

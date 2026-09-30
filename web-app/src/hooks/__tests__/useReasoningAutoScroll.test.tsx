@@ -164,4 +164,87 @@ describe('useReasoningAutoScroll', () => {
     act(flushFrames)
     expect(metrics.scrollTop).toBe(20)
   })
+  it('marks only edges with more content, including growth while paused', () => {
+    const { rerender } = render(<Harness isStreaming revision={1} />)
+    const container = screen.getByTestId('reasoning')
+    const metrics = installScrollMetrics(container)
+    act(flushFrames)
+    expect(container).toHaveAttribute('data-overflow-top', 'false')
+    expect(container).toHaveAttribute('data-overflow-bottom', 'false')
+
+    metrics.scrollHeight = 400
+    rerender(<Harness isStreaming revision={2} />)
+    act(flushFrames)
+    expect(metrics.scrollTop).toBe(272)
+    expect(container).toHaveAttribute('data-overflow-top', 'true')
+    expect(container).toHaveAttribute('data-overflow-bottom', 'false')
+
+    metrics.scrollTop = 80
+    fireEvent.scroll(container)
+    expect(container).toHaveAttribute('data-overflow-bottom', 'true')
+    metrics.scrollHeight = 700
+    rerender(<Harness isStreaming revision={3} />)
+    act(flushFrames)
+    expect(metrics.scrollTop).toBe(80)
+    expect(container).toHaveAttribute('data-overflow-bottom', 'true')
+
+    metrics.scrollTop = 0
+    fireEvent.scroll(container)
+    expect(container).toHaveAttribute('data-overflow-top', 'false')
+  })
+
+  it('cancels pending scrolling on finish and follows a new stream', () => {
+    const { rerender, unmount } = render(<Harness isStreaming revision={1} />)
+    const container = screen.getByTestId('reasoning')
+    const metrics = installScrollMetrics(container)
+    metrics.scrollHeight = 400
+    rerender(<Harness isStreaming={false} revision={2} />)
+    act(flushFrames)
+    expect(metrics.scrollTop).toBe(0)
+    rerender(<Harness isStreaming revision={3} />)
+    act(flushFrames)
+    expect(metrics.scrollTop).toBe(272)
+    metrics.scrollHeight = 600
+    rerender(<Harness isStreaming revision={4} />)
+    unmount()
+    act(flushFrames)
+    expect(metrics.scrollTop).toBe(272)
+  })
+
+  it('follows a reflow without new tokens but preserves a reader scroll', () => {
+    let resize: () => void = () => {}
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resize = callback
+        }
+        observe() {}
+        disconnect() {}
+      }
+    )
+    render(<Harness isStreaming revision={1} />)
+    const container = screen.getByTestId('reasoning')
+    const metrics = installScrollMetrics(container)
+    metrics.scrollHeight = 400
+    act(flushFrames)
+    fireEvent.scroll(container)
+    metrics.scrollHeight = 600
+    act(() => {
+      resize()
+      flushFrames()
+    })
+    expect(metrics.scrollTop).toBe(472)
+    expect(container).toHaveAttribute('data-overflow-bottom', 'false')
+
+    metrics.scrollTop = 100
+    fireEvent.scroll(container)
+    metrics.scrollHeight = 800
+    act(() => {
+      resize()
+      flushFrames()
+    })
+    expect(metrics.scrollTop).toBe(100)
+    expect(container).toHaveAttribute('data-overflow-bottom', 'true')
+  })
 })

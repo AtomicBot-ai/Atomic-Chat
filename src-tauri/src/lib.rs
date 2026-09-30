@@ -98,6 +98,13 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_atomic_audio::init());
     }
 
+    // Local image generation. Desktop only: it supervises a native
+    // stable-diffusion.cpp server process.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_atomic_diffusion::init());
+    }
+
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app_builder = app_builder.invoke_handler(tauri::generate_handler![
@@ -136,6 +143,7 @@ pub fn run() {
         core::extensions::commands::get_active_extensions,
         // System commands
         core::system::commands::relaunch,
+        core::system::page_cache::get_page_cache_resident_fraction,
         core::system::commands::open_app_directory,
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
@@ -161,6 +169,8 @@ pub fn run() {
         core::system::commands::configure_mimo,
         core::system::commands::configure_zed,
         core::system::commands::launch_zed,
+        core::system::commands::configure_zcode,
+        core::system::commands::launch_zcode,
         core::system::commands::configure_openclaw,
         core::system::commands::launch_openclaw_app,
         core::system::commands::configure_claude_code,
@@ -187,6 +197,12 @@ pub fn run() {
         core::server::remote_provider_commands::unregister_provider_config,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
+        // Remote & LAN access. Desktop only: the tunnel is a bundled sidecar,
+        // and `PlatformFeature.LOCAL_API_SERVER` gates the settings page.
+        core::server::remote_access::commands::get_remote_access_status,
+        core::server::remote_access::commands::start_remote_access,
+        core::server::remote_access::commands::stop_remote_access,
+        core::server::remote_access::commands::get_lan_addresses,
         // ChatGPT subscription sign-in
         core::auth::commands::chatgpt_status,
         core::auth::commands::chatgpt_login,
@@ -243,6 +259,8 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::commands::test_proxy_connection,
+        core::downloads::commands::get_download_free_space,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -299,6 +317,7 @@ pub fn run() {
         core::extensions::commands::get_active_extensions,
         // System commands
         core::system::commands::relaunch,
+        core::system::page_cache::get_page_cache_resident_fraction,
         core::system::commands::open_app_directory,
         core::system::commands::open_file_explorer,
         core::system::commands::factory_reset,
@@ -324,6 +343,8 @@ pub fn run() {
         core::system::commands::configure_mimo,
         core::system::commands::configure_zed,
         core::system::commands::launch_zed,
+        core::system::commands::configure_zcode,
+        core::system::commands::launch_zcode,
         core::system::commands::configure_openclaw,
         core::system::commands::launch_openclaw_app,
         core::system::commands::configure_claude_code,
@@ -401,6 +422,16 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::commands::test_proxy_connection,
+        core::downloads::commands::get_download_free_space,
+        // HTTP (bypasses tauri_plugin_http fetch interception).
+        // Registered on mobile too: `providers/tauri.ts` routes EVERY provider's
+        // model listing through `get_local_http`, with no platform branch, so
+        // leaving these desktop-only made custom cloud providers list nothing at
+        // all on iOS/Android (#293).
+        core::http::post_local_http,
+        core::http::get_local_http,
+        core::http::stream_local_http,
         // HTML artifact preview (served via the artifact:// protocol)
         core::artifact::set_artifact_html,
         core::artifact::clear_artifact_html,
@@ -434,6 +465,9 @@ pub fn run() {
             mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),
             api_request_inspector: Arc::new(Default::default()),
+            dynamic_trusted_hosts: Default::default(),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            remote_access: Arc::new(Default::default()),
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
@@ -504,6 +538,17 @@ pub fn run() {
                 app.state::<AppState>()
                     .agent_pty_sessions
                     .set_journal_path(&data_folder);
+
+                // And for the remote-access tunnel, journalled the same way: a
+                // cloudflared left running keeps a public URL pointed at a
+                // port that whatever starts next may bind.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                {
+                    crate::core::server::remote_access::reap_orphan(&data_folder);
+                    app.state::<AppState>()
+                        .remote_access
+                        .set_journal_path(&data_folder);
+                }
             }
 
             #[cfg(target_os = "windows")]
@@ -672,6 +717,12 @@ pub fn run() {
                 if killed > 0 {
                     log::info!("[agent-pty] terminated {killed} agent process(es) on exit");
                 }
+
+                // The tunnel too, and here rather than in the async block
+                // below: that block is skipped when a cleanup is already
+                // running, and a public URL must never outlive the app.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                state.remote_access.kill_now(&state.dynamic_trusted_hosts);
 
                 // Check if cleanup already ran.
                 // block_on is safe here: RunEvent callbacks run on the main

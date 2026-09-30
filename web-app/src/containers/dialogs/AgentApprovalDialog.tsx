@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +17,7 @@ import {
   resolveAgentApproval,
 } from '@/services/agent/tauri'
 import type { AgentApprovalResolution } from '@/types/agent'
+import { agentApprovalSummary } from '@/lib/agent-approval-copy'
 
 const PREVIEW_LIMIT = 4_000
 const RESOURCE_VALUE_LIMIT = 512
@@ -35,6 +36,7 @@ function boundedJson(value: unknown): string {
 
 export default function AgentApprovalDialog() {
   const { t } = useTranslation('chat')
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const resolvingApprovalIdRef = useRef<string | undefined>(undefined)
   const threadId = useAgentRun((state) =>
     Object.keys(state.runs).find(
@@ -49,6 +51,10 @@ export default function AgentApprovalDialog() {
   const preview = useMemo(
     () => (approval ? boundedJson(approval.preview) : ''),
     [approval]
+  )
+  const approvalCopy = useMemo(
+    () => (approval ? agentApprovalSummary(approval, t) : ''),
+    [approval, t]
   )
 
   if (!threadId || !run || !approval) {
@@ -103,50 +109,74 @@ export default function AgentApprovalDialog() {
       >
         <DialogHeader>
           <DialogTitle>{t('agentApproval.title')}</DialogTitle>
-          <DialogDescription>
-            {t('agentApproval.description', { tool: approval.tool })}
-          </DialogDescription>
+          <DialogDescription>{approvalCopy}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div>
-            <div className="mb-1 text-xs font-medium">
-              {t('agentApproval.reason')}
-            </div>
-            <p className="text-sm text-muted-foreground">{approval.reason}</p>
-          </div>
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => setDetailsOpen((open) => !open)}
+          >
+            {detailsOpen
+              ? t('agentApproval.hideDetails')
+              : t('agentApproval.showDetails')}
+          </button>
 
-          {preview && (
-            <div>
-              <div className="mb-1 text-xs font-medium">
-                {t('agentApproval.preview')}
+          {detailsOpen && (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-secondary px-2 py-1.5 text-xs">
+                <div>
+                  <span className="font-medium">
+                    {t('agentApproval.tool')}:
+                  </span>{' '}
+                  <code>{approval.tool}</code>
+                </div>
+                <div className="mt-1 text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {t('agentApproval.reason')}:
+                  </span>{' '}
+                  {approval.reason}
+                </div>
               </div>
-              <pre className="max-h-48 overflow-auto rounded-md border bg-secondary p-2 text-xs whitespace-pre-wrap break-all">
-                {preview}
-              </pre>
-            </div>
-          )}
 
-          {approval.affected_resources.length > 0 && (
-            <div>
-              <div className="mb-1 text-xs font-medium">
-                {t('agentApproval.resources')}
-              </div>
-              <div className="space-y-1">
-                {approval.affected_resources.map((resource, index) => (
-                  <div
-                    key={`${resource.kind}-${resource.operation}-${index}`}
-                    className="rounded-md border px-2 py-1.5 text-xs"
-                  >
-                    <span className="font-medium">{resource.operation}</span>{' '}
-                    <span className="text-muted-foreground">
-                      {resource.kind}:{' '}
-                      {resource.value.slice(0, RESOURCE_VALUE_LIMIT)}
-                      {resource.value.length > RESOURCE_VALUE_LIMIT ? '…' : ''}
-                    </span>
+              {preview && (
+                <div>
+                  <div className="mb-1 text-xs font-medium">
+                    {t('agentApproval.preview')}
                   </div>
-                ))}
-              </div>
+                  <pre className="max-h-48 overflow-auto rounded-md border bg-secondary p-2 text-xs whitespace-pre-wrap break-all">
+                    {preview}
+                  </pre>
+                </div>
+              )}
+
+              {approval.affected_resources.length > 0 && (
+                <div>
+                  <div className="mb-1 text-xs font-medium">
+                    {t('agentApproval.resources')}
+                  </div>
+                  <div className="space-y-1">
+                    {approval.affected_resources.map((resource, index) => (
+                      <div
+                        key={`${resource.kind}-${resource.operation}-${index}`}
+                        className="rounded-md border px-2 py-1.5 text-xs"
+                      >
+                        <span className="font-medium">
+                          {resource.operation}
+                        </span>{' '}
+                        <span className="text-muted-foreground">
+                          {resource.kind}:{' '}
+                          {resource.value.slice(0, RESOURCE_VALUE_LIMIT)}
+                          {resource.value.length > RESOURCE_VALUE_LIMIT
+                            ? '…'
+                            : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

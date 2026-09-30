@@ -1,4 +1,3 @@
-import { isChatCompatibleSkill } from '@/containers/agentSkillSlash'
 import { readAgentSkillName } from '@/lib/agent-skill-selection'
 import type { AgentSkillDetail } from '@/services/agent/skills'
 
@@ -57,7 +56,7 @@ export function renderChatSkillsBlock(
 ): string | undefined {
   if (skills.length === 0) return undefined
   const header =
-    '## Invoked skills\nThe user invoked the following skills. Follow their instructions where relevant.'
+    '## Invoked skills\nThe user invoked the following skills. Follow their instructions where relevant. Never call a tool that is not in your tool list; if a skill needs one, tell the user.'
   const sections = skills.map(
     (skill) =>
       `# skill: ${skill.name} (v${skill.version})\n${truncateChars(
@@ -84,23 +83,21 @@ export function composeSystemMessage(
  * Load skill bodies by name, memoized in `cache` (null = the skill could not
  * be fetched at all — deleted, or a failed IPC).
  *
- * Skips — never throws — on IPC errors, disabled skills and skills the chat
- * pipeline can't serve (scripts / unavailable tools): a skill deleted or
- * disabled after it was invoked must not brick a regenerate. Softer than the
- * agent, which fails the turn on a broken selected skill.
+ * Skips — never throws — on IPC errors, disabled and broken skills: a skill
+ * deleted or disabled after it was invoked must not brick a regenerate.
+ * Softer than the agent, which fails the turn on a broken selected skill.
  *
- * Only the *fetch* is memoized; usability is re-decided on every call. It
- * depends on `availableToolNames`, which `useTools` fills in asynchronously
- * after boot — baking the verdict into the cache meant a skill invoked before
- * the MCP servers finished connecting was written off as unusable and stayed
- * that way for the life of the transport, i.e. the session. Whoever owns the
- * cache is responsible for clearing it when a skill is edited; see
- * `agentSkillRevision`.
+ * Required tools and scripts are not checked: the user picked the skill
+ * explicitly, so a bundled one written for the agent's `os.*` tools still
+ * reaches the chat prompt.
+ *
+ * Only the *fetch* is memoized; usability is re-decided on every call.
+ * Whoever owns the cache is responsible for clearing it when a skill is
+ * edited; see `agentSkillRevision`.
  */
 export async function loadChatSkillDetails(
   names: string[],
-  cache: Map<string, AgentSkillDetail | null>,
-  availableToolNames: ReadonlySet<string>
+  cache: Map<string, AgentSkillDetail | null>
 ): Promise<AgentSkillDetail[]> {
   if (!IS_TAURI || names.length === 0) return []
   const details: AgentSkillDetail[] = []
@@ -118,11 +115,7 @@ export async function loadChatSkillDetails(
     }
     const cached = cache.get(name)
     if (!cached) continue
-    const usable =
-      cached.enabled &&
-      !cached.error &&
-      isChatCompatibleSkill(cached, availableToolNames)
-    if (usable) details.push(cached)
+    if (cached.enabled && !cached.error) details.push(cached)
   }
   return details
 }

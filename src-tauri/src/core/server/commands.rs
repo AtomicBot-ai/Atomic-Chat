@@ -50,6 +50,10 @@ pub async fn start_server<R: Runtime>(
     // `AppState` is built before `.setup()`, so this is the first point where
     // the inspector and an `AppHandle` exist together. Idempotent.
     state.api_request_inspector.attach(app_handle.clone());
+    // Same for the tunnel's status events: `stop_server` has no `AppHandle`,
+    // yet has to report the tunnel it takes down.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    state.remote_access.attach(app_handle.clone());
 
     let started = proxy::start_server(
         app_handle.clone(),
@@ -66,15 +70,25 @@ pub async fn start_server<R: Runtime>(
         state.provider_configs.clone(),
         state.auto_increase_ctx.clone(),
         state.api_request_inspector.clone(),
+        state.dynamic_trusted_hosts.clone(),
     )
     .await
     .map_err(|e| e.to_string())?;
     let actual_port = match started {
         // The endpoint and the status file already describe the server that is
-        // up; this caller's config did not take effect, so leave them be.
+        // up; this caller's config did not take effect, so leave them be. A
+        // tunnel pointing at that server stays as it is, too.
         ServerStart::AlreadyRunning(port) => return Ok(port),
         ServerStart::Started(port) => port,
     };
+    // A tunnel can only have survived to this point if the previous server
+    // ended without `stop_server` (it died on its own). It points at that
+    // server's port, which this run need not have.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    state
+        .remote_access
+        .stop(&state.local_server_endpoint, &state.dynamic_trusted_hosts)
+        .await;
     // Publish the effective endpoint so in-process callers (the agent's cloud
     // path) can reach the proxy. `actual_port` matters: a requested port of 0
     // is auto-assigned.
@@ -87,6 +101,13 @@ pub async fn start_server<R: Runtime>(
 
     state_file::mark_running(&mirror_host, actual_port, &mirror_prefix, requires_api_key);
 
+    // `blockReason` and `canStart` follow the server, not only the tunnel.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    state
+        .remote_access
+        .announce(&state.local_server_endpoint)
+        .await;
+
     Ok(actual_port)
 }
 
@@ -94,12 +115,26 @@ pub async fn start_server<R: Runtime>(
 pub async fn stop_server(state: State<'_, AppState>) -> Result<(), String> {
     let server_handle = state.server_handle.clone();
 
+    // The tunnel goes first. Left up, its public URL would point at a dead
+    // port — or at whatever binds that port next.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    state
+        .remote_access
+        .stop(&state.local_server_endpoint, &state.dynamic_trusted_hosts)
+        .await;
+
     proxy::stop_server(server_handle)
         .await
         .map_err(|e| e.to_string())?;
     state.local_server_endpoint.lock().await.take();
 
     state_file::mark_stopped();
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    state
+        .remote_access
+        .announce(&state.local_server_endpoint)
+        .await;
 
     Ok(())
 }

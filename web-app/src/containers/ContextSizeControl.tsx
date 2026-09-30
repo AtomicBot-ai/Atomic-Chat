@@ -169,12 +169,17 @@ export function ContextSizeControl({
           </span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 space-y-3 p-3">
+      <PopoverContent
+        align="end"
+        collisionPadding={16}
+        className="w-96 max-w-[calc(100vw-2rem)] space-y-4 p-4"
+        data-testid="context-size-popover"
+      >
         <div>
           <div className="mb-2 flex items-center justify-between">
             <span
               className={cn(
-                'text-lg font-semibold tabular-nums',
+                'text-xl font-semibold tabular-nums',
                 isOverLimit ? 'text-destructive' : 'text-primary'
               )}
             >
@@ -212,33 +217,37 @@ export function ContextSizeControl({
             </span>
           </div>
         </div>
-        <div className="space-y-3 border-t border-border pt-3">
+        <div className="space-y-4 border-t border-border pt-4">
           <div>
             <div className="flex items-center justify-between gap-3">
-              <div className="text-xs font-medium">{contextSetting.title}</div>
-              <div className="font-mono text-xs tabular-nums">
+              <div className="text-sm font-medium">{contextSetting.title}</div>
+              <div className="font-mono text-sm tabular-nums">
                 {formatContextSize(draftContext)}
               </div>
             </div>
             {contextSetting.description && !fitEnabled && (
-              <div className="text-xs text-muted-foreground">
+              <div className="mt-0.5 text-sm leading-snug text-muted-foreground">
                 {contextSetting.description}
               </div>
             )}
           </div>
           {fitAvailable && (
-            <label className="flex items-center justify-between gap-3 text-xs">
+            <label className="flex items-start justify-between gap-4 text-sm">
               <span className="min-w-0">
                 <span className="block font-medium">
                   {t('assistants:contextSizeFit')}
                 </span>
-                <span className="block text-muted-foreground">
+                <span
+                  className="mt-0.5 block leading-snug text-muted-foreground"
+                  data-testid="context-size-fit-description"
+                >
                   {fitEnabled
                     ? t('assistants:contextSizeFitOn')
                     : t('assistants:contextSizeFitHint')}
                 </span>
               </span>
               <Switch
+                className="mt-0.5 shrink-0"
                 aria-label={t('assistants:contextSizeFit')}
                 checked={fitEnabled}
                 onCheckedChange={setFit}

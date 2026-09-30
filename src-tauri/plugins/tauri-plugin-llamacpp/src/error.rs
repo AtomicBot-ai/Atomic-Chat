@@ -15,6 +15,8 @@ pub enum ErrorCode {
     MultimodalProjectorLoadFailed,
     ModelArchNotSupported,
     ModelLoadTimedOut,
+    /// The user stopped the load before the model was ready (ATO-530).
+    ModelLoadCancelled,
     LlamaCppProcessError,
 
     // --- System / Runtime Compatibility Errors ---
@@ -48,6 +50,14 @@ impl LlamacppError {
             message,
             details,
         }
+    }
+
+    pub fn load_cancelled() -> Self {
+        Self::new(
+            ErrorCode::ModelLoadCancelled,
+            "The model load was cancelled.".into(),
+            None,
+        )
     }
 
     /// Parses stderr from llama.cpp and creates a specific LlamacppError.
@@ -103,6 +113,10 @@ impl LlamacppError {
             || lower_stderr.contains("unknown model architecture")
             || lower_stderr.contains("error loading model hyperparameters")
             || lower_stderr.contains("key not found in model")
+            // TurboQuant can know the architecture but still expect a tensor
+            // layout that differs from a valid upstream GGUF. Re-downloading
+            // cannot fix that; the same file loads in stock llama.cpp.
+            || lower_stderr.contains("wrong number of tensors")
         {
             return Self::new(
                 ErrorCode::ModelArchNotSupported,
@@ -129,11 +143,10 @@ impl LlamacppError {
 
         // A truncated or corrupt GGUF (interrupted download, bad disk write).
         // llama.cpp's loader emits these when tensor data runs past the file
-        // bounds, the header magic is wrong, or the tensor count mismatches.
+        // bounds or the header magic is wrong.
         // Point the user at a re-download instead of the opaque generic error.
         if lower_stderr.contains("corrupted or incomplete")
             || lower_stderr.contains("invalid magic")
-            || lower_stderr.contains("wrong number of tensors")
             || lower_stderr.contains("unexpectedly reached end of file")
             || lower_stderr.contains("failed to read tensor")
         {
@@ -286,6 +299,15 @@ mod tests {
     #[test]
     fn classifies_loader_failure_reported_on_stdout() {
         let stdout = "0.00.319.245 E llama_model_load: error loading model: unknown model architecture: 'dflash'\n";
+
+        let error = LlamacppError::from_process_output(&exit_code(1), "", stdout);
+
+        assert!(matches!(error.code, ErrorCode::ModelArchNotSupported));
+    }
+
+    #[test]
+    fn tensor_layout_mismatch_is_backend_incompatibility_not_corruption() {
+        let stdout = "llama_model_load: done_getting_tensors: wrong number of tensors; expected 417, got 408\n";
 
         let error = LlamacppError::from_process_output(&exit_code(1), "", stdout);
 
