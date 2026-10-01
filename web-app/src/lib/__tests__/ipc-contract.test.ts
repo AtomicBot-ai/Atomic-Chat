@@ -14,6 +14,10 @@ const TAURI_ROOT = join(REPO_ROOT, 'src-tauri')
 const PLUGINS_ROOT = join(TAURI_ROOT, 'plugins')
 
 const EXPECTED_DESKTOP_ONLY = new Set([
+  'atomic_claude_cancel',
+  'atomic_claude_chat',
+  'atomic_claude_login',
+  'atomic_claude_status',
   // atomic-chat-core is a native sidecar. Mobile builds neither bundle it nor
   // expose its process lifecycle and control commands.
   'atomic_core_call',

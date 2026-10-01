@@ -38,7 +38,7 @@ import { useProviderRegistryStore } from '@/stores/provider-registry-store'
  * would make every provider "cloud" under vitest.
  */
 export const isLocalEngineProvider = (provider: ProviderObject): boolean =>
-  isLocalProvider(provider.provider) || provider.persist === true
+  provider.provider !== 'claude-code' && (isLocalProvider(provider.provider) || provider.persist === true)
 
 /** The exact complement of {@link isLocalEngineProvider}. */
 export const isCloudProvider = (provider: ProviderObject): boolean =>
@@ -78,7 +78,7 @@ export const isProviderConnected = (provider: ProviderObject): boolean => {
  * connection card renders no body for them, so there is still only one place
  * to connect one thing.
  */
-const SUBSCRIPTION_PROVIDERS = new Set(['chatgpt'])
+const SUBSCRIPTION_PROVIDERS = new Set(['chatgpt', 'claude-code'])
 
 export const isSubscriptionProvider = (
   providerName: string | undefined | null

@@ -152,6 +152,7 @@ export const canDisableReasoning = (
   provider: string | undefined,
   controls?: ReasoningControls
 ): boolean => {
+  if (provider === 'claude-code') return false
   if (controls?.canDisable !== undefined) return controls.canDisable
   if (controls?.offValue) return true
   // These APIs expose a real zero/disabled state. Other cloud APIs only
@@ -196,6 +197,7 @@ export const reasoningLevelsForModel = (
   provider: string | undefined,
   controls?: ReasoningControls
 ): ReasoningEffortLevel[] => {
+  if (provider === 'claude-code') return []
   if (controls !== undefined) return availableReasoningLevels(controls)
   if (
     isCloudReasoningProvider(provider) ||

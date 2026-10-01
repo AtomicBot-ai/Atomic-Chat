@@ -1,6 +1,7 @@
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
+import { CLAUDE_CODE_PROVIDER, streamClaudeCode } from './claude-code-chat'
 import {
   convertToModelMessages,
   streamText,
@@ -804,6 +805,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+    const selection = useModelProvider.getState()
+    if (selection.selectedProvider === CLAUDE_CODE_PROVIDER) {
+      if (!selection.selectedModel || !selection.getProviderByName(CLAUDE_CODE_PROVIDER)?.active)
+        throw new Error('Select an enabled Claude model first.')
+      if (this.continueFromContent) {
+        this.continueFromContent = null
+        throw new Error('Claude Code does not support continuing a partial response. Send a follow-up message instead.')
+      }
+      return streamClaudeCode({
+        threadId: this.threadId ?? options.chatId,
+        model: selection.selectedModel.model ?? selection.selectedModel.id,
+        system: this.systemMessage,
+        messages: options.messages,
+        abortSignal: options.abortSignal,
+        onTokenUsage: this.onTokenUsage,
+      })
+    }
     const requestStartedAt = Date.now()
     ttftMark('gammaStart')
     await this.refreshTools()

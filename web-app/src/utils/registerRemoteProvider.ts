@@ -79,7 +79,7 @@ export function isKeylessRemoteProvider(
  * provider object. `api_key` is empty for these by design — the proxy attaches
  * the bearer token itself — so every "no key ⇒ skip" gate must let them past.
  */
-const SUBSCRIPTION_PROVIDER_NAMES = ['chatgpt'] as const
+const SUBSCRIPTION_PROVIDER_NAMES = ['chatgpt', 'claude-code'] as const
 
 export function isSubscriptionProvider(
   providerName: string | undefined | null
@@ -99,7 +99,8 @@ export function isSubscriptionProvider(
 export async function registerRemoteProvider(
   provider: ModelProvider
 ): Promise<boolean> {
-  if (isLocalProvider(provider.provider)) {
+  // CLI sessions belong to the desktop chat, never to the shared HTTP proxy.
+  if (isLocalProvider(provider.provider) || provider.provider === 'claude-code') {
     return false
   }
 
@@ -142,7 +143,7 @@ export async function registerRemoteProvider(
  * because the proxy may simply not have the provider registered.
  */
 export async function unregisterRemoteProvider(providerName: string): Promise<void> {
-  if (isLocalProvider(providerName)) return
+  if (isLocalProvider(providerName) || providerName === 'claude-code') return
   try {
     await invoke('unregister_provider_config', { provider: providerName })
   } catch (error) {

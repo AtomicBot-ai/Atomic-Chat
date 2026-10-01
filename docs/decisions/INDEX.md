@@ -13,6 +13,10 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
+## Claude subscription
+
+- **2026-09-24** — [Connect Claude subscriptions through the core-owned official CLI](2026-09-24-connect-claude-subscriptions-through-the-core.md)
+
 ## Load-bearing — read before touching platform / provider / agent code
 
 - **2026-08-13** — [Mirror and sign upstream llama.cpp releases in atomic-chat-conf](2026-08-13-mirror-and-sign-upstream-llama-cpp-in-atomic-chat-conf.md)

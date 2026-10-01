@@ -17,6 +17,7 @@ import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
+import { claudeCodeProvider, type ClaudeCodeStatus } from '@/lib/claude-code-chat'
 
 /**
  * Turn a raw `get_local_http` failure (e.g. `HTTP 404: 404 page not found`,
@@ -310,7 +311,12 @@ export class TauriProvidersService extends DefaultProvidersService {
         runtimeProviders.push(provider)
       }
 
-      return runtimeProviders.concat(builtinProviders as ModelProvider[])
+      const cliProviders: ModelProvider[] = []
+      if (!IS_IOS && !IS_ANDROID) {
+        const status = await invoke<ClaudeCodeStatus>('atomic_claude_status').catch(() => undefined)
+        cliProviders.push(claudeCodeProvider(status?.subscription ? status.models : []))
+      }
+      return runtimeProviders.concat(cliProviders, builtinProviders as ModelProvider[])
     } catch (error: unknown) {
       console.error('Error getting providers in Tauri:', error)
       return []

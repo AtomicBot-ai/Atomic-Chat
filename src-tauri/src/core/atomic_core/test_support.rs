@@ -321,6 +321,13 @@ async fn serve(
                 }),
             )
         }
+        (&Method::POST, "/claude-code/chat") => {
+            state.applied_mutations.fetch_add(1, Ordering::SeqCst);
+            Response::builder().status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+                .body(Body::from("data: {\"type\":\"delta\",\"text\":\"OK\"}\n\n"))
+                .expect("build fake Claude stream")
+        }
         (&Method::GET, "/events") => return Ok(events(&state, &query).await),
         _ => {
             if let Some(id) = route.strip_prefix("/clients/") {

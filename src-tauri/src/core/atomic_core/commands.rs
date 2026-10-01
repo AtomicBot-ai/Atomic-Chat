@@ -232,6 +232,12 @@ impl AtomicCoreClient {
         self.supervisor.call(method, path, body, true).await
     }
 
+    pub(crate) async fn claude_chat(&self, body: Value) -> Result<reqwest::Response, CoreError> {
+        let _operation = self.operations.read().await;
+        if !self.enabled.load(Ordering::SeqCst) { return Err(Self::stopped_error()); }
+        self.supervisor.ensure_attached(true).await?.client.open_claude_chat(body).await
+    }
+
     /// A call for the core that owns the folder now, which never starts one: for
     /// state the next snapshot restates anyway (error-reporting consent).
     pub(crate) async fn call_attached(
