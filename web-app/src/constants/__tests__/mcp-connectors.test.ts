@@ -13,6 +13,7 @@ import en from '@/locales/en/mcp-connectors.json'
 const exa = MCP_CONNECTORS.find((c) => c.serverKey === 'exa')!
 const resend = MCP_CONNECTORS.find((c) => c.serverKey === 'resend')!
 const github = MCP_CONNECTORS.find((c) => c.serverKey === 'github')!
+const youcom = MCP_CONNECTORS.find((c) => c.serverKey === 'youcom')!
 
 describe('findInstalledServer', () => {
   it('matches by exact key', () => {
@@ -88,6 +89,17 @@ describe('buildConnectorConfig', () => {
     const config = await buildConnectorConfig(exa)
     expect(config).toEqual(exa.config)
     expect(config).not.toBe(exa.config)
+  })
+
+  it('installs You.com keyless against the free profile', async () => {
+    const config = await buildConnectorConfig(youcom)
+    expect(config.type).toBe('http')
+    expect(config.url).toBe('https://api.you.com/mcp?profile=free')
+    expect(config.env).toEqual({})
+    expect(youcom.secret).toBeUndefined()
+    // No official mark bundled, so the tile renders the monogram fallback.
+    expect(youcom.icon.src).toBeUndefined()
+    expect(youcom.icon.bg).toBe('#0F1724')
   })
 })
 
