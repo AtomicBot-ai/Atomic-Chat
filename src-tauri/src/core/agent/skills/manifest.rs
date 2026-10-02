@@ -60,11 +60,15 @@ struct RawSkillManifest {
     dangerous: Option<serde_yaml::Value>,
     platforms: Option<serde_yaml::Value>,
     /// Accepted but not surfaced in `SkillManifest`; present in third-party
-    /// skill frontmatter (e.g. NVIDIA skills declare `license` and `metadata`).
+    /// skill frontmatter (e.g. NVIDIA skills declare `license`, `metadata`,
+    /// and `compatibility`). Keeping them known preserves the
+    /// `deny_unknown_fields` guard against genuinely unexpected keys.
     #[allow(dead_code)]
     license: Option<serde_yaml::Value>,
     #[allow(dead_code)]
     metadata: Option<serde_yaml::Value>,
+    #[allow(dead_code)]
+    compatibility: Option<serde_yaml::Value>,
 }
 
 pub fn parse_skill_file(content: &str) -> Result<ParsedSkillFile, String> {
@@ -295,6 +299,17 @@ mod tests {
             "---\nname: test-skill\ndescription: x\nunknown: true\n---\nbody"
         )
         .is_err());
+    }
+
+    #[test]
+    fn accepts_third_party_frontmatter_fields_without_surfacing_them() {
+        let parsed = parse_skill_file(
+            "---\nname: test-skill\ndescription: Test\nlicense: MIT\nmetadata: {author: acme}\ncompatibility: [win32, linux]\n---\n# Body\n",
+        )
+        .unwrap();
+        assert_eq!(parsed.manifest.name, "test-skill");
+        assert_eq!(parsed.manifest.description, "Test");
+        assert_eq!(parsed.body, "# Body\n");
     }
 
     #[test]

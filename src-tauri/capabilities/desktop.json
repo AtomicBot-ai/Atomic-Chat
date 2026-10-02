@@ -4,7 +4,10 @@
   "description": "enables the default permissions for desktop platforms",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://*"]
+    "urls": [
+      "https://posthog.com",
+      "https://eu-assets.i.posthog.com"
+    ]
   },
   "platforms": ["linux", "macOS", "windows"],
   "permissions": [
@@ -59,9 +62,6 @@
         },
         {
           "url": "http://127.0.0.1:*"
-        },
-        {
-          "url": "http://0.0.0.0:*"
         }
       ]
     }

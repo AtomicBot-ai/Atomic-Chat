@@ -4,7 +4,10 @@
   "description": "enables the default permissions",
   "windows": ["main", "thread-*"],
   "remote": {
-    "urls": ["http://*"]
+    "urls": [
+      "https://posthog.com",
+      "https://eu-assets.i.posthog.com"
+    ]
   },
   "permissions": [
     "core:default",
@@ -62,9 +65,6 @@
         },
         {
           "url": "http://127.0.0.1:*"
-        },
-        {
-          "url": "http://0.0.0.0:*"
         }
       ]
     }
