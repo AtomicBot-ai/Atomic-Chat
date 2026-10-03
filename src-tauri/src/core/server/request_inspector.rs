@@ -514,13 +514,23 @@ impl InspectorHandle {
         if fields.duration_ms.is_none() {
             fields.duration_ms = Some(self.elapsed_ms());
         }
-        let _ =
-            self.0
-                .inspector
-                .in_flight
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                    Some(v.saturating_sub(1))
-                });
+        // A saturating decrement, written as compare-and-swap rather than
+        // `fetch_update`: Rust 1.99 deprecates that name in favour of
+        // `try_update`, which does not exist on the 1.88 this crate supports,
+        // so neither name compiles warning-free everywhere. The loop does.
+        let in_flight = &self.0.inspector.in_flight;
+        let mut current = in_flight.load(Ordering::Relaxed);
+        while current > 0 {
+            match in_flight.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(observed) => current = observed,
+            }
+        }
         let finished_at_ms = now_ms();
         self.0
             .inspector
