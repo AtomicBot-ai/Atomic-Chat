@@ -92,6 +92,8 @@ Thumbs.db
 *.ntvs*
 *.njsproj
 *.sln
+.vs/
+CHANGELOG.md
 
 # Cache & temp
 .cache/
