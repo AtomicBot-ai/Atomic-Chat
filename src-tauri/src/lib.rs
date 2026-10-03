@@ -1,3 +1,10 @@
+// Rust 1.99's clippy reports `double_must_use` against the code `#[async_trait]`
+// generates: it marks the boxed future `#[must_use]`, and a future is already
+// must_use. 18 errors across 9 traits, none of them in code written here, and
+// `-D warnings` turned every one into a build failure. async-trait 0.1.89 is
+// the current release; drop this once a release stops emitting the attribute.
+#![allow(clippy::double_must_use)]
+
 pub mod core;
 
 #[cfg(test)]
