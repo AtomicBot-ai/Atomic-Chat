@@ -5,8 +5,14 @@ import type { ModelInfo } from '@janhq/core'
 // Upstream llama.cpp first: it understands the full Gemma 4 projector set
 // (`gemma4uv`/`gemma4ua`) that the turboquant fork doesn't yet carry, so the
 // default vision model starts cleanly. TurboQuant (`llamacpp`) stays a
-// manual macOS choice. See ADR 2026-06-09 (ATO-116).
-const localProviderNames = ['llamacpp-upstream', 'llamacpp', 'mlx'] as const
+// manual macOS choice. See ADR 2026-06-09 (ATO-116). PrismML lists only the
+// Bonsai files the core set up for it.
+const localProviderNames = [
+  'llamacpp-upstream',
+  'llamacpp',
+  'atomic-prism',
+  'mlx',
+] as const
 
 export const getLastUsedModel = (): {
   provider: string

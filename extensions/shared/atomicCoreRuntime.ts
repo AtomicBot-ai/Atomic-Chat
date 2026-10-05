@@ -23,6 +23,7 @@
 export type CoreProvider =
   | 'llamacpp-upstream'
   | 'llamacpp'
+  | 'atomic-prism'
   | 'mlx'
   | 'foundation-models'
 
@@ -262,6 +263,21 @@ export function describeCoreError(error: unknown): string {
   return error.details
     ? `${error.message} (${error.details}) [${error.code}]`
     : `${error.message} [${error.code}]`
+}
+
+/**
+ * Whether a `model.yml` was set up by the core for the PrismML engine (`atomic_runtime.provider`).
+ * Such a model lives in the shared `llamacpp/models` tree but lists only under `atomic-prism`: the
+ * core refuses to load it on upstream llama.cpp or TurboQuant.
+ */
+export function isPrismModel(config: unknown): boolean {
+  if (!config || typeof config !== 'object') return false
+  const runtime = (config as { atomic_runtime?: unknown }).atomic_runtime
+  return (
+    !!runtime &&
+    typeof runtime === 'object' &&
+    (runtime as { provider?: unknown }).provider === 'atomic-prism'
+  )
 }
 
 /**

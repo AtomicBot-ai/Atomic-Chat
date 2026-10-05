@@ -112,6 +112,30 @@ describe('EngineUpdateBanner', () => {
     )
   })
 
+  it('offers a PrismML build with its release note, through the PrismML extension', async () => {
+    const user = userEvent.setup()
+    publish({
+      ...OFFER,
+      provider: 'atomic-prism',
+      currentBackend: 'prism-b9000-abcdef0/macos-arm64',
+      targetBackend: 'prism-b9100-1234567/macos-arm64',
+      currentVersion: 'prism-b9000-abcdef0',
+      targetVersion: 'prism-b9100-1234567',
+      notes: 'Faster PQ2_0 kernels on Metal.',
+    })
+    render(<EngineUpdateBanner />)
+
+    expect(
+      await screen.findByText('Faster PQ2_0 kernels on Metal.')
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'updater:update' }))
+
+    expect(getByName).toHaveBeenCalledWith('@janhq/atomic-prism-extension')
+    expect(downloadRecommendedBackend).toHaveBeenCalledWith(
+      'prism-b9100-1234567/macos-arm64'
+    )
+  })
+
   it('brings the offer back later after "Remind me later"', async () => {
     const user = userEvent.setup()
     publish()

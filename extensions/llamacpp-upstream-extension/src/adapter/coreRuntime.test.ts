@@ -33,6 +33,7 @@ import {
   refreshHardware,
   unload,
 } from './coreRuntime'
+import { isPrismModel } from '../../../shared/atomicCoreRuntime'
 
 const session = (model_id: string, port: number, provider = CORE_PROVIDER) => ({
   pid: 1,
@@ -143,6 +144,19 @@ describe('finding a session', () => {
     invoke.mockResolvedValue({})
 
     expect(await getLoadedModels()).toEqual([])
+  })
+})
+
+describe('isPrismModel', () => {
+  it.each([
+    [{ atomic_runtime: { provider: 'atomic-prism', min_build: 10754 } }, true],
+    [{ atomic_runtime: { provider: 'llamacpp-upstream' } }, false],
+    [{ atomic_runtime: 'atomic-prism' }, false],
+    [{ model_path: 'a/model.gguf' }, false],
+    [null, false],
+    ['atomic-prism', false],
+  ])('reads %j as %s', (config, expected) => {
+    expect(isPrismModel(config)).toBe(expected)
   })
 })
 

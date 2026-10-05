@@ -106,7 +106,7 @@ import {
   isSubscriptionProvider,
 } from '@/utils/registerRemoteProvider'
 
-/// Local inference backends (mlx, llamacpp, llamacpp-upstream,
+/// Local inference backends (mlx, llamacpp, llamacpp-upstream, atomic-prism,
 /// foundation-models) get special handling at the `streamText` boundary:
 ///   * when tools are also active, the assistant system prompt is not passed
 ///     as a `system` message — gemma-4 and similar local models reliably
@@ -124,6 +124,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'mlx',
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'foundation-models',
 ])
 
@@ -134,6 +135,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
 const GRAMMAR_CONSTRAINED_PROVIDERS = new Set<string>([
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'llamacpp-server',
 ])
 
@@ -731,7 +733,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     let measured = false
     if (
       args.providerId === 'llamacpp' ||
-      args.providerId === 'llamacpp-upstream'
+      args.providerId === 'llamacpp-upstream' ||
+      args.providerId === 'atomic-prism'
     ) {
       const exact = await ModelFactory.countLocalPromptTokens(
         args.providerId,
@@ -874,6 +877,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'llamacpp-upstream':
+            case 'atomic-prism':
             case 'mlx': {
               // Some templates (e.g. Hunyuan 3) have no `enable_thinking` and
               // skip thinking only through their own effort value.
@@ -933,6 +937,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } else if (
           effectiveProviderName === 'llamacpp' ||
           effectiveProviderName === 'llamacpp-upstream' ||
+          effectiveProviderName === 'atomic-prism' ||
           effectiveProviderName === 'mlx' ||
           (effectiveProviderName === 'chatgpt' &&
             reasoningControls?.supportsThinking)

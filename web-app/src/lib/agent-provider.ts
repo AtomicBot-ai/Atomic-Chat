@@ -18,6 +18,7 @@ import {
 export const AGENT_LOCAL_PROVIDERS = [
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
 ] as const
 

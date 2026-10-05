@@ -295,6 +295,12 @@ describe('classifyModelLoadFailure', () => {
     expect(
       classifyModelLoadFailure('MODEL_ARCH_NOT_SUPPORTED', null, false)
     ).toBe('arch_unsupported')
+    expect(
+      classifyModelLoadFailure('MODEL_ENGINE_INCOMPATIBLE', null, false)
+    ).toBe('engine_incompatible')
+    expect(classifyModelLoadFailure('MODEL_FORMAT_LEGACY', null, false)).toBe(
+      'format_legacy'
+    )
   })
 
   it('still classifies the 68% of failures that carry no code', () => {

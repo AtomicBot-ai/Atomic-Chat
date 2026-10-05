@@ -282,8 +282,9 @@ export function quantLabel(modelId: string): string {
   // MLX: trailing "<n>bit"
   const bit = seg.match(/(\d+)\s*bit$/i)
   if (bit) return `${bit[1]}BIT`
-  // GGUF: trailing quant token after a separator (I-quants, ternary TQ, plain Q)
-  const gguf = seg.match(/[-_.]((?:[IT]?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i)
+  // GGUF: trailing quant token after a separator (I-quants, ternary TQ,
+  // PrismML's PQ / PTQ packings, plain Q)
+  const gguf = seg.match(/[-_.]((?:(?:[IT]|PT?)?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i)
   if (gguf) return gguf[1].toUpperCase()
   // Fallback: last separator-delimited segment
   return (seg.split(/[-_.]/).pop() ?? seg).toUpperCase()

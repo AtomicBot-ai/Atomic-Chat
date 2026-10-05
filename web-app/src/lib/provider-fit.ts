@@ -11,6 +11,7 @@
 export const FIT_PROVIDERS: ReadonlySet<string> = new Set([
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
 ])
 
 type ProviderLike = {

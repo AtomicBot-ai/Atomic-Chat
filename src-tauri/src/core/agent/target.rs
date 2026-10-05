@@ -5,7 +5,7 @@
 //!
 //! | provider | route |
 //! |---|---|
-//! | `llamacpp`, `llamacpp-upstream` | direct `/completion` (GBNF, `cache_prompt`, `slot_id`) |
+//! | `llamacpp`, `llamacpp-upstream`, `atomic-prism` | direct `/completion` (GBNF, `cache_prompt`, `slot_id`) |
 //! | `mlx` | direct at the session port, like `createMlxModel` |
 //! | cloud | the Local API Server proxy, like `getLocalApiServerBaseURL` |
 //!
@@ -78,6 +78,14 @@ pub async fn resolve_agent_target<R: Runtime>(
         Some("llamacpp-upstream") => find_session_by_model_and_backend(
             &request.model_id,
             LlamaBackend::LlamacppUpstream,
+            &resolver,
+        )
+        .await
+        .map(AgentTarget::Llama)
+        .map_err(|error| error.to_string()),
+        Some("atomic-prism") => find_session_by_model_and_backend(
+            &request.model_id,
+            LlamaBackend::AtomicPrism,
             &resolver,
         )
         .await

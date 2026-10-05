@@ -19,7 +19,8 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   'llamacpp-upstream': 1,
   'mlx': 2,
   'llamacpp': 3,
-  'foundation-models': 4,
+  'atomic-prism': 4,
+  'foundation-models': 5,
 }
 
 /**

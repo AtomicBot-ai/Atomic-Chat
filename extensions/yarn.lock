@@ -328,6 +328,29 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@janhq/atomic-prism-extension@workspace:atomic-prism-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/atomic-prism-extension@workspace:atomic-prism-extension"
+  dependencies:
+    "@janhq/core": ../../core/package.tgz
+    "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware"
+    "@janhq/tauri-plugin-llamacpp-upstream-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp-upstream"
+    "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-http": "npm:2.5.7"
+    "@tauri-apps/plugin-log": "npm:^2.6.0"
+    "@vitest/ui": "npm:2.1.9"
+    cpx: "npm:1.5.0"
+    fetch-retry: "npm:^5.0.6"
+    jsdom: "npm:26.1.0"
+    rimraf: "npm:3.0.2"
+    rolldown: "npm:1.0.0-beta.1"
+    ts-loader: "npm:^9.5.0"
+    typescript: "npm:5.9.2"
+    ulidx: "npm:2.4.1"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/conversational-extension@workspace:conversational-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/conversational-extension@workspace:conversational-extension"
@@ -344,6 +367,18 @@ __metadata:
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
   resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=76f0c2&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  dependencies:
+    rxjs: "npm:^7.8.1"
+    ulidx: "npm:^2.3.0"
+  peerDependencies:
+    react: 19.0.0
+  checksum: 10c0/eb927388dcf6b111c5dae4ce1654dee3e55393abf3f7486fabf0d5eec3a03f8d103b423403924ec99082dd684d93db18b75c71b6288f8061fb7fc439a7240b4f
+  languageName: node
+  linkType: hard
+
+"@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fatomic-prism-extension%40workspace%3Aatomic-prism-extension":
+  version: 0.1.10
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=76f0c2&locator=%40janhq%2Fatomic-prism-extension%40workspace%3Aatomic-prism-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -558,6 +593,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fatomic-prism-extension%40workspace%3Aatomic-prism-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fatomic-prism-extension%40workspace%3Aatomic-prism-extension"
+  languageName: node
+  linkType: soft
+
 "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
@@ -579,6 +620,12 @@ __metadata:
 "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
+  languageName: node
+  linkType: soft
+
+"@janhq/tauri-plugin-llamacpp-upstream-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp-upstream::locator=%40janhq%2Fatomic-prism-extension%40workspace%3Aatomic-prism-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-llamacpp-upstream-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp-upstream::locator=%40janhq%2Fatomic-prism-extension%40workspace%3Aatomic-prism-extension"
   languageName: node
   linkType: soft
 

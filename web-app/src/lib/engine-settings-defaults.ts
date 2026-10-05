@@ -1,5 +1,6 @@
 import llamacppSettings from './core-settings-schema/llamacpp.json'
 import llamacppUpstreamSettings from './core-settings-schema/llamacpp-upstream.json'
+import atomicPrismSettings from './core-settings-schema/atomic-prism.json'
 import mlxSettings from './core-settings-schema/mlx.json'
 
 import { sameSettingValue } from '@/lib/model-settings-defaults'
@@ -36,6 +37,7 @@ const ENGINE_DEFAULTS: Record<string, Record<string, unknown>> = {
   'llamacpp-upstream': toDefaults(
     llamacppUpstreamSettings as SettingDefinition[]
   ),
+  'atomic-prism': toDefaults(atomicPrismSettings as SettingDefinition[]),
   'mlx': toDefaults(mlxSettings as SettingDefinition[]),
 }
 

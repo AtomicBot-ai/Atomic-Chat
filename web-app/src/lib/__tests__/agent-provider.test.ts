@@ -21,9 +21,10 @@ function provider(overrides: Partial<ModelProvider> = {}): ModelProvider {
 }
 
 describe('isAgentLocalProvider', () => {
-  it('covers the three engines the backend can reach directly', () => {
+  it('covers the engines the backend can reach directly', () => {
     expect(isAgentLocalProvider('llamacpp')).toBe(true)
     expect(isAgentLocalProvider('llamacpp-upstream')).toBe(true)
+    expect(isAgentLocalProvider('atomic-prism')).toBe(true)
     expect(isAgentLocalProvider('mlx')).toBe(true)
   })
 

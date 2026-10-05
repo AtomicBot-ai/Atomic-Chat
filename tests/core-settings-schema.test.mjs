@@ -6,10 +6,10 @@ import test from 'node:test'
 
 // The web-app's "Reset to default" reads a vendored copy of atomic-chat-core's settings schema
 // (web-app/src/lib/core-settings-schema/). The core copied those descriptors from the engine
-// extensions, which still register them, so all three copies must stay byte-identical.
+// extensions, which still register them, so every copy must stay byte-identical.
 const REPO_ROOT = new URL('..', import.meta.url).pathname
 const VENDORED = join(REPO_ROOT, 'web-app/src/lib/core-settings-schema')
-const SCHEMAS = ['llamacpp', 'llamacpp-upstream', 'mlx']
+const SCHEMAS = ['llamacpp', 'llamacpp-upstream', 'atomic-prism', 'mlx']
 
 function coreSchemaDir() {
   if (process.env.ATOMIC_CORE_SRC) {

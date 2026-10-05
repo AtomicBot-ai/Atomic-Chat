@@ -151,7 +151,9 @@ function ProviderDetail() {
   const pendingBackendKey =
     providerName === 'llamacpp'
       ? 'turboquant_pending_backend'
-      : 'llama_cpp_pending_backend'
+      : providerName === 'atomic-prism'
+        ? 'atomic_prism_pending_backend'
+        : 'llama_cpp_pending_backend'
   /// Mirrors the provider's pending-backend key so the provider settings
   /// page can surface a "restart to activate" pill next to the (still-old)
   /// `version_backend` value once a recommended GPU backend has finished
@@ -265,6 +267,9 @@ function ProviderDetail() {
   /// (see the 2026-06-23 turboquant-on-Win/Linux ADR). macOS turboquant has a
   /// single backend and never reaches the optimal-backend UI.
   const isTurboquantProvider = providerName === 'llamacpp'
+  /// PrismML keeps its own packs under `atomic-prism/backends`, so it gets its
+  /// own updater configuration for the same reason.
+  const isPrismProvider = providerName === 'atomic-prism'
   const backendUpdaterConfig = useMemo<UseBackendUpdaterConfig>(
     () =>
       isTurboquantProvider
@@ -274,8 +279,15 @@ function ProviderDetail() {
             recommendationKey: 'turboquant_better_backend_recommendation',
             postUpgradeRecheckEnabled: false,
           }
-        : {},
-    [isTurboquantProvider]
+        : isPrismProvider
+          ? {
+              extensionName: '@janhq/atomic-prism-extension',
+              providerId: 'atomic-prism',
+              recommendationKey: 'atomic_prism_better_backend_recommendation',
+              postUpgradeRecheckEnabled: false,
+            }
+          : {},
+    [isTurboquantProvider, isPrismProvider]
   )
   const {
     installBackend,
@@ -378,6 +390,7 @@ function ProviderDetail() {
   const needsBackendConfig =
     (provider?.provider === 'llamacpp' ||
       provider?.provider === 'llamacpp-upstream' ||
+      provider?.provider === 'atomic-prism' ||
       provider?.provider === 'mlx') &&
     provider.settings?.some(
       (setting) =>
@@ -1768,7 +1781,8 @@ function ProviderDetail() {
   const handleCheckEngineUpdate = useCallback(async () => {
     if (
       provider?.provider !== 'llamacpp' &&
-      provider?.provider !== LOCAL_LLAMACPP_PROVIDER
+      provider?.provider !== LOCAL_LLAMACPP_PROVIDER &&
+      provider?.provider !== 'atomic-prism'
     )
       return
 
@@ -1945,6 +1959,7 @@ function ProviderDetail() {
                 provider &&
                   (provider.provider === 'llamacpp' ||
                     provider.provider === 'llamacpp-upstream' ||
+                    provider.provider === 'atomic-prism' ||
                     provider.provider === 'mlx') &&
                   'flex-col-reverse'
               )}
@@ -2300,7 +2315,8 @@ function ProviderDetail() {
                               if (
                                 settingKey !== 'version_backend' &&
                                 (providerName === 'llamacpp' ||
-                                  providerName === 'llamacpp-upstream')
+                                  providerName === 'llamacpp-upstream' ||
+                                  providerName === 'atomic-prism')
                               ) {
                                 // Backend discovery can update version_backend while this
                                 // page still holds an older provider snapshot. Persist only
@@ -2413,32 +2429,37 @@ function ProviderDetail() {
                           {setting.key === 'version_backend' &&
                             (provider?.provider === 'llamacpp' ||
                               provider?.provider === 'llamacpp-upstream' ||
+                              provider?.provider === 'atomic-prism' ||
                               provider?.provider === 'mlx') && (
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {/* The install and engine-update controls use
                                     the same fixed width so they read as one
                                     control group and never resize with their
-                                    labels. */}
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={handleInstallBackendFromFile}
-                                  disabled={isInstallingBackend}
-                                  className="w-[16rem]"
-                                >
-                                  <IconUpload
-                                    size={12}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                      isInstallingBackend && 'animate-pulse'
-                                    )}
-                                  />
-                                  <span>
-                                    {isInstallingBackend
-                                      ? 'Installing Backend...'
-                                      : 'Install Backend from File'}
-                                  </span>
-                                </Button>
+                                    labels. A PrismML pack is installed only
+                                    from the conf manifest, sha256-checked, so
+                                    it has no install-from-file. */}
+                                {provider?.provider !== 'atomic-prism' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleInstallBackendFromFile}
+                                    disabled={isInstallingBackend}
+                                    className="w-[16rem]"
+                                  >
+                                    <IconUpload
+                                      size={12}
+                                      className={cn(
+                                        'text-muted-foreground',
+                                        isInstallingBackend && 'animate-pulse'
+                                      )}
+                                    />
+                                    <span>
+                                      {isInstallingBackend
+                                        ? 'Installing Backend...'
+                                        : 'Install Backend from File'}
+                                    </span>
+                                  </Button>
+                                )}
                                 {/* Engine updates land without an app
                                     release, but both the version list and
                                     the release index are snapshots taken at
@@ -2451,7 +2472,8 @@ function ProviderDetail() {
                                     the atomic-chat-conf manifest. */}
                                 {(provider?.provider === 'llamacpp' ||
                                   provider?.provider ===
-                                    LOCAL_LLAMACPP_PROVIDER) && (
+                                    LOCAL_LLAMACPP_PROVIDER ||
+                                  provider?.provider === 'atomic-prism') && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -2616,6 +2638,7 @@ function ProviderDetail() {
                       {provider &&
                         provider.provider !== 'llamacpp' &&
                         provider.provider !== 'llamacpp-upstream' &&
+                        provider.provider !== 'atomic-prism' &&
                         provider.provider !== 'mlx' && (
                           <>
                             <Button
@@ -2642,6 +2665,7 @@ function ProviderDetail() {
                       {provider &&
                         (provider.provider === 'llamacpp' ||
                           provider.provider === 'llamacpp-upstream' ||
+                          provider.provider === 'atomic-prism' ||
                           provider.provider === 'mlx') &&
                         !hasDownloadedModels && (
                           <Button
@@ -2785,6 +2809,7 @@ function ProviderDetail() {
                                   const isLocalEngine =
                                     provider.provider === 'llamacpp' ||
                                     provider.provider === 'llamacpp-upstream' ||
+                                    provider.provider === 'atomic-prism' ||
                                     provider.provider === 'mlx'
                                   // Cloud providers need an API key before
                                   // they can be "started" (registered with the

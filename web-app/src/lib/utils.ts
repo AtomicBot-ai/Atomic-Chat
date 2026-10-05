@@ -190,6 +190,9 @@ export const getProviderTitle = (provider: string) => {
       return 'llama.cpp turboquant'
     case 'llamacpp-upstream':
       return 'llama.cpp'
+    // The PrismML fork: the engine Bonsai's PQ2_0 / PTQ1_0 files need.
+    case 'atomic-prism':
+      return 'PrismML llama.cpp'
     // Named for what it is from here: a llama.cpp server the user runs and
     // connects to, as opposed to the two engines the app starts itself.
     case 'llamacpp-server':

@@ -100,7 +100,12 @@ const isTauriRuntime = (): boolean => {
     return false
   }
 }
-const localProviders = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+const localProviders = [
+  'llamacpp',
+  'llamacpp-upstream',
+  'atomic-prism',
+  'mlx',
+] as const
 type LocalProviderName = (typeof localProviders)[number]
 
 type HuggingFaceFeedEntry = Pick<

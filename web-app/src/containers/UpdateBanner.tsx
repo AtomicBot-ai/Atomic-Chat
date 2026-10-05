@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 
 /// One line of the changelog preview: a bold headline and an optional muted
 /// continuation. Produced by `parseReleaseHighlights()` for the app banner;
-/// the engine banner carries no changelog at all (ATO-528).
+/// the engine banner carries at most the one-line note its manifest has.
 export interface UpdateBannerHighlight {
   headline: string
   detail?: string

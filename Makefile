@@ -357,6 +357,7 @@ test-extensions:
 		--include '@janhq/assistant-extension' \
 		--include '@janhq/llamacpp-extension' \
 		--include '@janhq/llamacpp-upstream-extension' \
+		--include '@janhq/atomic-prism-extension' \
 		--include '@janhq/mlx-extension' \
 		--include '@janhq/download-extension' \
 		--include '@janhq/vector-db-extension' \

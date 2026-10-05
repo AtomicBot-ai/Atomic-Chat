@@ -2,7 +2,7 @@
 
 Byte-exact copies of the local engines' settings descriptors from
 `atomic-chat-core/src/settings/schema/` (`llamacpp.json`, `llamacpp-upstream.json`,
-`mlx.json`). The copy is pinned to the core version named in the root
+`atomic-prism.json`, `mlx.json`). The copy is pinned to the core version named in the root
 `package.json` under `atomicCore.version`; when that version changes, copy the
 files again from the matching core source with `cp` (never retype them) and
 recompute `CHECKSUM`.

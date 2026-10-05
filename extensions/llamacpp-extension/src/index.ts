@@ -78,7 +78,11 @@ import type {
   RuntimeDeviceInfo,
   SettingUpdateResult,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/types'
-import { createCoreRuntime, describeCoreError } from '../../shared/atomicCoreRuntime'
+import {
+  createCoreRuntime,
+  describeCoreError,
+  isPrismModel,
+} from '../../shared/atomicCoreRuntime'
 import type {
   CoreBackendCatalog,
   CoreBackendRecommendation,
@@ -2693,6 +2697,8 @@ export default class llamacpp_extension extends AIEngine {
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+      // The core refuses to run a PrismML-only file on this engine; it lists under `atomic-prism`.
+      if (isPrismModel(modelConfig)) continue
 
       const isEmbedding = await this.resolveEmbeddingConfig(
         modelId,

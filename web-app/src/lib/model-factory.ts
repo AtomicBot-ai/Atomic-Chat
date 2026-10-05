@@ -343,7 +343,7 @@ export async function findFoundationModelsSession(
  * of date and name a port that now belongs to nothing. `null` and errors are authoritative.
  */
 export async function findLocalSession(
-  providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+  providerName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' | 'mlx',
   modelId: string
 ): Promise<SessionInfo | null> {
   return invoke<SessionInfo | null>('resolve_local_session', {
@@ -704,7 +704,7 @@ export class ModelFactory {
    * pre-warm from the chat input and the real send don't both hit IPC.
    */
   private static async resolveLocalSession(
-    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+    providerName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' | 'mlx',
     modelId: string,
     provider: ProviderObject | undefined
   ): Promise<SessionInfo> {
@@ -777,7 +777,7 @@ export class ModelFactory {
 
   /** Resolve immediately before a request; never reuse a cached bearer key or port. */
   private static async resolveFreshLocalSession(
-    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+    providerName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' | 'mlx',
     modelId: string,
     provider: ProviderObject | undefined
   ): Promise<SessionInfo> {
@@ -823,13 +823,14 @@ export class ModelFactory {
     if (
       lower !== 'llamacpp' &&
       lower !== 'llamacpp-upstream' &&
+      lower !== 'atomic-prism' &&
       lower !== 'mlx'
     ) {
       return
     }
     try {
       await ModelFactory.resolveLocalSession(
-        lower as 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+        lower as 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' | 'mlx',
         modelId,
         provider
       )
@@ -850,7 +851,7 @@ export class ModelFactory {
    * heuristic; both calls are bounded by `timeoutSecs`.
    */
   static async countLocalPromptTokens(
-    engineName: 'llamacpp' | 'llamacpp-upstream',
+    engineName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism',
     modelId: string,
     provider: ProviderObject | undefined,
     body: {
@@ -938,6 +939,7 @@ export class ModelFactory {
     switch (providerName) {
       case 'llamacpp':
       case 'llamacpp-upstream':
+      case 'atomic-prism':
         return this.createLlamaCppModel(
           modelId,
           provider,
@@ -1004,8 +1006,9 @@ export class ModelFactory {
   /**
    * Create a llamacpp model by starting the model and finding the running session.
    * The `engineName` selects which of the core's llama.cpp runtimes serves it:
-   * `'llamacpp'` (our TurboQuant fork) or `'llamacpp-upstream'` (official
-   * ggml-org/llama.cpp). Both expose an OpenAI-compatible HTTP surface, so the
+   * `'llamacpp'` (our TurboQuant fork), `'llamacpp-upstream'` (official
+   * ggml-org/llama.cpp) or `'atomic-prism'` (PrismML's fork, for Bonsai). All
+   * expose an OpenAI-compatible HTTP surface, so the
    * rest of the factory is identical — only the provider passed to
    * `resolve_local_session` differs.
    */
@@ -1013,7 +1016,7 @@ export class ModelFactory {
     modelId: string,
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {},
-    engineName: 'llamacpp' | 'llamacpp-upstream' = 'llamacpp'
+    engineName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' = 'llamacpp'
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
       engineName,

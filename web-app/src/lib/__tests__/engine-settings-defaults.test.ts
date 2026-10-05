@@ -46,6 +46,14 @@ describe('customEngineSettingKeys', () => {
     ).toEqual([])
   })
 
+  it('knows the PrismML defaults, which carry no MTP setting', () => {
+    expect(hasEngineSettingDefaults('atomic-prism')).toBe(true)
+    expect(customEngineSettingKeys('atomic-prism', tuned())).toEqual([
+      'extra_args',
+      'threads',
+    ])
+  })
+
   it('has nothing to say about providers it has no defaults for', () => {
     expect(hasEngineSettingDefaults('openai')).toBe(false)
     expect(hasEngineSettingDefaults('toString')).toBe(false)

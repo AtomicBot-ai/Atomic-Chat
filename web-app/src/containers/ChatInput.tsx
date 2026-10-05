@@ -429,7 +429,8 @@ const ChatInput = memo(function ChatInput({
     const isLocal =
       selectedProvider === 'mlx' ||
       selectedProvider === 'llamacpp' ||
-      selectedProvider === 'llamacpp-upstream'
+      selectedProvider === 'llamacpp-upstream' ||
+      selectedProvider === 'atomic-prism'
     if (
       !isLocal ||
       !selectedModel?.id ||
@@ -489,7 +490,7 @@ const ChatInput = memo(function ChatInput({
           // no provider de-duplicates ids across engines, so the same model
           // loaded twice is invisible there; probe the other engines.
           const otherEngines = (
-            ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+            ['llamacpp', 'llamacpp-upstream', 'atomic-prism', 'mlx'] as const
           ).filter((engine) => engine !== selectedProvider)
           const strayCopies = await Promise.all(
             otherEngines.map((engine) =>
@@ -560,7 +561,8 @@ const ChatInput = memo(function ChatInput({
   const isLocalModelNotReady =
     (selectedProvider === 'mlx' ||
       selectedProvider === 'llamacpp' ||
-      selectedProvider === 'llamacpp-upstream') &&
+      selectedProvider === 'llamacpp-upstream' ||
+      selectedProvider === 'atomic-prism') &&
     !!selectedModel?.id &&
     !activeModels.includes(selectedModel.id)
 
@@ -1456,6 +1458,7 @@ const ChatInput = memo(function ChatInput({
           const isLocal =
             selectedProvider === 'llamacpp' ||
             selectedProvider === 'llamacpp-upstream' ||
+            selectedProvider === 'atomic-prism' ||
             selectedProvider === 'mlx'
           if (!isLocal) return false
           try {

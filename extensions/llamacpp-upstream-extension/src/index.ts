@@ -78,6 +78,7 @@ import {
 import { basename } from '@tauri-apps/api/path'
 import * as coreRuntime from './adapter/coreRuntime'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
+import { isPrismModel } from '../../shared/atomicCoreRuntime'
 import {
   buildEngineUpdateOffer,
   clearEngineUpdateOffer,
@@ -3053,6 +3054,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+      // The core refuses to run a PrismML-only file on this engine; it lists under `atomic-prism`.
+      if (isPrismModel(modelConfig)) continue
       const isEmbedding = await this.resolveEmbeddingConfig(
         modelId,
         modelConfig

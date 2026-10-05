@@ -13,10 +13,10 @@ import { ExtensionManager } from '@/lib/extension'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 
 /**
- * Providers that can offer an engine update, most-preferred first. Both
- * llama.cpp providers ship side by side on Windows/Linux, and only one banner
- * may be on screen — the default provider's offer wins, the other one waits
- * until the first is dealt with.
+ * Providers that can offer an engine update, most-preferred first. The
+ * llama.cpp providers ship side by side, and only one banner may be on
+ * screen — the default provider's offer wins, the others wait until the
+ * first is dealt with.
  *
  * MLX is deliberately absent: its sidecar ships inside the app bundle and has
  * no independent release stream to compare against, so there is nothing to
@@ -29,6 +29,7 @@ const ENGINE_PROVIDERS: { provider: string; extensionName: string }[] = [
     extensionName: '@janhq/llamacpp-upstream-extension',
   },
   { provider: 'llamacpp', extensionName: '@janhq/llamacpp-extension' },
+  { provider: 'atomic-prism', extensionName: '@janhq/atomic-prism-extension' },
 ]
 
 interface BackendDownloadCapableExtension {

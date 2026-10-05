@@ -10,6 +10,7 @@ import {
 } from '@/constants/localStorage'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useModelSetupSync } from '@/hooks/useModelSetup'
 import { useEffect } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAssistant, defaultAssistant } from '@/hooks/useAssistant'
@@ -91,7 +92,12 @@ export async function restoreServerModelAfterRecovery(
 }
 
 /** Providers whose session lookups `ModelFactory` caches (Foundation Models resolves every time). */
-const SESSION_CACHED_PROVIDERS = ['llamacpp', 'llamacpp-upstream', 'mlx'] as const
+const SESSION_CACHED_PROVIDERS = [
+  'llamacpp',
+  'llamacpp-upstream',
+  'atomic-prism',
+  'mlx',
+] as const
 type SessionCachedProvider = (typeof SESSION_CACHED_PROVIDERS)[number]
 
 const isSessionCachedProvider = (
@@ -147,7 +153,9 @@ export function handleCoreSessionDied(
   // was. The Vulkan advice is for llama.cpp where Vulkan backends exist; on
   // macOS the backend is Metal and there is no CPU backend to switch to.
   const vulkanAdvice =
-    (provider === 'llamacpp' || provider === 'llamacpp-upstream') &&
+    (provider === 'llamacpp' ||
+      provider === 'llamacpp-upstream' ||
+      provider === 'atomic-prism') &&
     !context.macos
   toast.error(
     context.generating
@@ -219,6 +227,7 @@ export function DataProvider() {
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const { checkForUpdate } = useAppUpdater()
+  useModelSetupSync()
 
   const setServerStatus = useAppState((state) => state.setServerStatus)
 

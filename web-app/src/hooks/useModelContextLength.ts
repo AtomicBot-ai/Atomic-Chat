@@ -11,6 +11,7 @@ import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 export const LOCAL_CONTEXT_PROVIDERS = new Set([
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
 ])
 const FALLBACK_MAX_CONTEXT = 512 * 1024

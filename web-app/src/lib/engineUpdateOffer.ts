@@ -7,6 +7,7 @@
  * sides in sync:
  *   - `extensions/llamacpp-extension/src/engineUpdateOffer.ts`
  *   - `extensions/llamacpp-upstream-extension/src/engineUpdateOffer.ts`
+ *   - `extensions/atomic-prism-extension/src/engineUpdateOffer.ts`
  *
  * A DOM `CustomEvent` rather than the `@janhq/core` bus, for the same reason
  * `app:backend-hotswapped` is one: the in-process EventEmitter singleton is
@@ -54,6 +55,11 @@ export interface EngineUpdateOffer {
   restartRequired: boolean
   /** Release page for "Show what's new". Absent renders no link. */
   releaseNotesUrl?: string
+  /**
+   * One line about the target release, where the engine's manifest carries
+   * one (PrismML's does). Absent renders no changelog block.
+   */
+  notes?: string
 }
 
 function isOffer(value: unknown): value is EngineUpdateOffer {
