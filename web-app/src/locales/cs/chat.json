@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Zvolte lokální model nebo cloudového poskytovatele s API klíčem.",
     "providerKeyMissing": "Přidejte v Nastavení API klíč tohoto poskytovatele a zkuste to znovu.",
     "localServerRequired": "Režim agenta s cloudovým modelem vyžaduje lokální API server. Spusťte jej v Nastavení."
+  },
+  "compaction": {
+    "label": "Kontext zkomprimován",
+    "hint": "Starší zprávy byly shrnuty do přehledu, aby konverzace odpovídala kontextovému oknu. Klikněte pro zobrazení."
   }
 }

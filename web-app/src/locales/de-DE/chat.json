@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Wählen Sie ein lokales Modell oder einen Cloud-Anbieter mit API-Schlüssel.",
     "providerKeyMissing": "Fügen Sie in den Einstellungen einen API-Schlüssel für diesen Anbieter hinzu und versuchen Sie es erneut.",
     "localServerRequired": "Der Agentenmodus mit einem Cloud-Modell benötigt den lokalen API-Server. Starten Sie ihn in den Einstellungen."
+  },
+  "compaction": {
+    "label": "Kontext komprimiert",
+    "hint": "Ältere Nachrichten in diesem Thread wurden zu einer Kurzfassung zusammengefasst, damit die Konversation in das Kontextfenster passt. Klicken Sie, um sie anzuzeigen."
   }
 }

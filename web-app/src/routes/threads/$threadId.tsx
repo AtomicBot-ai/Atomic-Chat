@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import {
@@ -19,6 +19,8 @@ import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
 import { MessageItem } from '@/containers/MessageItem'
+import { CompactionMarker } from '@/containers/CompactionMarker'
+import { useCompactionMarkers } from '@/stores/compaction-marker-store'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -1960,6 +1962,15 @@ function ThreadDetail() {
     }
     return undefined
   }, [chatMessages])
+  // Auto-compaction markers, indexed by the first message kept verbatim, so
+  // the divider renders exactly where the summarized history begins.
+  const compactionMarkers = useCompactionMarkers(
+    (s) => s.markersByThread[threadId]
+  )
+  const compactionByBoundary = useMemo(
+    () => new Map((compactionMarkers ?? []).map((m) => [m.boundaryMessageId, m])),
+    [compactionMarkers]
+  )
   const agentAttachmentReferencesByMessageId = useMemo(() => {
     const referencesByMessageId = new Map<string, AgentFileReference[]>()
     const references: AgentFileReference[] = []
@@ -2005,25 +2016,32 @@ function ThreadDetail() {
                   {chatMessages.map((message, index) => {
                     const isLastMessage = index === chatMessages.length - 1
                     const isFirstMessage = index === 0
+                    const compactionMarker = compactionByBoundary.get(
+                      message.id
+                    )
                     return (
-                      <MessageItem
-                        key={message.id}
-                        message={message}
-                        isFirstMessage={isFirstMessage}
-                        isLastMessage={isLastMessage}
-                        status={inputStatus}
-                        requestActive={requestActive}
-                        reasoningContainerRef={reasoningContainerRef}
-                        onReasoningScroll={onReasoningScroll}
-                        onRegenerate={handleRegenerate}
-                        onEdit={handleEditMessage}
-                        onDelete={handleDeleteMessage}
-                        isAnimating={!pendingContinueMessage}
-                        hideActions={!!pendingContinueMessage}
-                        agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
-                          message.id
+                      <Fragment key={message.id}>
+                        {compactionMarker && (
+                          <CompactionMarker event={compactionMarker} />
                         )}
-                      />
+                        <MessageItem
+                          message={message}
+                          isFirstMessage={isFirstMessage}
+                          isLastMessage={isLastMessage}
+                          status={inputStatus}
+                          requestActive={requestActive}
+                          reasoningContainerRef={reasoningContainerRef}
+                          onReasoningScroll={onReasoningScroll}
+                          onRegenerate={handleRegenerate}
+                          onEdit={handleEditMessage}
+                          onDelete={handleDeleteMessage}
+                          isAnimating={!pendingContinueMessage}
+                          hideActions={!!pendingContinueMessage}
+                          agentAttachmentReferences={agentAttachmentReferencesByMessageId.get(
+                            message.id
+                          )}
+                        />
+                      </Fragment>
                     )
                   })}
                   {pendingInitialUserMessage && (

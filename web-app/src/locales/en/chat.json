@@ -268,5 +268,9 @@
   "threadType": {
     "chat": "Chat thread",
     "agent": "Agent thread"
+  },
+  "compaction": {
+    "label": "Context compacted",
+    "hint": "Older messages in this thread were summarized into a brief so the conversation fits the context window. Click to view the summary."
   }
 }

@@ -54,6 +54,10 @@ export const localStorageKey = {
   // user fix a wrong "Not installed" status for agents installed in a
   // non-standard location that PATH/WSL detection misses.
   launchCustomPaths: 'launch-custom-paths',
+  // Per-thread record of auto-compaction events (context compaction boundary
+  // markers shown in the thread). Survives reloads so the marker stays where
+  // the summarized history begins.
+  compactionMarkers: 'atomic-compaction-markers',
   // Windows/Linux only: marks that the once-ever "find optimal backend" prompt
   // for the turboquant (`llamacpp`) provider has been shown after the first
   // model launch on that backend. Set on Skip OR Find so the popup never

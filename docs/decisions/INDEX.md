@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-377 records, 2026-05-19 → 2026-10-05.
+378 records, 2026-05-19 → 2026-10-05.
 
 ---
 
@@ -415,8 +415,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Other (19)
+## Other (20)
 
+- **2026-10-05** — [Auto-compact chat context with a model-written brief](2026-10-05-auto-compact-chat-context-with-a-model-written-brief.md)
 - **2026-09-30** — [Hide the Apple on-device provider](2026-09-30-hide-the-apple-on-device-provider.md)
 - **2026-09-22** — [Keep an unseen e2e window rendering](2026-09-22-keep-an-unseen-e2e-window-rendering.md)
 - **2026-09-21** — [Run desktop e2e scenarios side by side](2026-09-21-run-desktop-e2e-scenarios-side-by-side.md)

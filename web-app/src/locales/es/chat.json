@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Elige un modelo local o un proveedor en la nube con clave de API.",
     "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes e inténtalo de nuevo.",
     "localServerRequired": "El modo agente con un modelo en la nube necesita el servidor API local. Inícialo en Ajustes."
+  },
+  "compaction": {
+    "label": "Contexto compactado",
+    "hint": "Los mensajes anteriores de este hilo se resumieron en un breve para que la conversación quepa en la ventana de contexto. Haz clic para verlo."
   }
 }

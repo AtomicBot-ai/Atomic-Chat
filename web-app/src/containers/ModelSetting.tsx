@@ -15,6 +15,7 @@ import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
+import { modelSettings } from '@/lib/predefined'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   LEGACY_SAMPLING_KEYS,
@@ -130,12 +131,33 @@ export function ModelSettingsList({
     <div className={cn('space-y-8', className)}>
       {Object.entries(model.settings || {})
         .reduce<[string, unknown][]>((acc, entry) => {
-          if (entry[0] === 'auto_increase_ctx_len') return acc
+          if (
+            entry[0] === 'auto_increase_ctx_len' ||
+            entry[0] === 'auto_compaction'
+          ) {
+            return acc
+          }
           if (entry[0] === 'ctx_len') {
-            const autoIncrease = Object.entries(model.settings || {}).find(
+            const settingsEntries = Object.entries(model.settings || {})
+            const autoIncrease = settingsEntries.find(
               ([k]) => k === 'auto_increase_ctx_len'
             )
             if (autoIncrease) acc.push(autoIncrease)
+            // Auto-compaction rides next to the context controls. Models
+            // whose stored settings predate it get the default entry, so the
+            // toggle exists without a store migration.
+            const autoCompaction = settingsEntries.find(
+              ([k]) => k === 'auto_compaction'
+            ) ?? [
+              'auto_compaction',
+              {
+                ...modelSettings.auto_compaction,
+                controller_props: {
+                  ...modelSettings.auto_compaction.controller_props,
+                },
+              },
+            ]
+            acc.push(autoCompaction)
           }
           acc.push(entry)
           return acc
@@ -152,7 +174,11 @@ export function ModelSettingsList({
           // ladder's checkbox used to be filtered out here, so an MLX user
           // could not turn it off (ATO-466).
           if (provider.provider === 'mlx') {
-            return key === 'ctx_len' || key === 'auto_increase_ctx_len'
+            return (
+              key === 'ctx_len' ||
+              key === 'auto_increase_ctx_len' ||
+              key === 'auto_compaction'
+            )
           }
           return true
         })

@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Pilih model lokal, atau penyedia cloud dengan kunci API.",
     "providerKeyMissing": "Tambahkan kunci API untuk penyedia ini di Pengaturan lalu coba lagi.",
     "localServerRequired": "Mode agen dengan model cloud memerlukan Local API Server. Jalankan dari Pengaturan."
+  },
+  "compaction": {
+    "label": "Konteks dikompaksi",
+    "hint": "Pesan-pesan lama di utas ini diringkas menjadi ringkasan agar percakapan muat dalam jendela konteks. Klik untuk melihatnya."
   }
 }

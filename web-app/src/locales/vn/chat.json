@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Chọn mô hình cục bộ, hoặc nhà cung cấp đám mây có khóa API.",
     "providerKeyMissing": "Thêm khóa API cho nhà cung cấp này trong Cài đặt rồi thử lại.",
     "localServerRequired": "Chế độ agent với mô hình đám mây cần Local API Server. Hãy khởi động trong Cài đặt."
+  },
+  "compaction": {
+    "label": "Đã nén ngữ cảnh",
+    "hint": "Các tin nhắn cũ trong luồng này đã được tóm tắt để cuộc trò chuyện vừa với cửa sổ ngữ cảnh. Nhấp để xem bản tóm tắt."
   }
 }

@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "请选择本地模型，或已配置 API 密钥的云端提供商。",
     "providerKeyMissing": "请在设置中为该提供商添加 API 密钥后重试。",
     "localServerRequired": "使用云端模型运行智能体需要本地 API 服务器，请在设置中启动。"
+  },
+  "compaction": {
+    "label": "上下文已压缩",
+    "hint": "此会话中较早的消息已被汇总为摘要，以便对话适配上下文窗口。点击查看摘要。"
   }
 }

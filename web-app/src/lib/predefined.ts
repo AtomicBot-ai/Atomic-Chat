@@ -11,6 +11,16 @@ export const modelSettings = {
       value: true,
     },
   },
+  auto_compaction: {
+    key: 'auto_compaction',
+    title: 'Auto-Compact Context',
+    description:
+      'When the context window is full and cannot grow, summarize older messages into a brief so the conversation can continue. The thread history is never rewritten.',
+    controller_type: 'checkbox',
+    controller_props: {
+      value: true,
+    },
+  },
   ctx_len: {
     key: 'ctx_len',
     title: 'Context Size',

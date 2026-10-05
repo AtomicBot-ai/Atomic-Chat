@@ -129,6 +129,9 @@ export type ModelSettingParams = {
   repeat_last_n?: number
   presence_penalty?: number
   frequency_penalty?: number
+  // Auto-compaction summarizes older messages when the window cannot grow.
+  // Only read through the controller-props settings shape in the web-app.
+  auto_compaction?: boolean
 }
 
 /**

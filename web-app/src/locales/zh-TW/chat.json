@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "請選擇本機模型，或已設定 API 金鑰的雲端供應商。",
     "providerKeyMissing": "請在設定中為此供應商加入 API 金鑰後重試。",
     "localServerRequired": "以雲端模型執行智慧代理需要本機 API 伺服器，請在設定中啟動。"
+  },
+  "compaction": {
+    "label": "上下文已壓縮",
+    "hint": "此對話串中較早的訊息已被摘要，以便對話適應上下文視窗。點擊查看摘要。"
   }
 }

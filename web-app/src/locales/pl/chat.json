@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Wybierz model lokalny albo dostawcę w chmurze z kluczem API.",
     "providerKeyMissing": "Dodaj klucz API tego dostawcy w Ustawieniach i spróbuj ponownie.",
     "localServerRequired": "Tryb agenta z modelem w chmurze wymaga lokalnego serwera API. Uruchom go w Ustawieniach."
+  },
+  "compaction": {
+    "label": "Kontekst skompaktowany",
+    "hint": "Starsze wiadomości w tym wątku zostały streszczone, aby rozmowa zmieściła się w oknie kontekstu. Kliknij, aby zobaczyć podsumowanie."
   }
 }

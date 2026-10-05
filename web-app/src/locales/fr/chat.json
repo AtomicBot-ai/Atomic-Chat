@@ -21,5 +21,9 @@
     "providerUnavailableDescription": "Choisissez un modèle local ou un fournisseur cloud avec une clé API.",
     "providerKeyMissing": "Ajoutez une clé API pour ce fournisseur dans les paramètres et réessayez.",
     "localServerRequired": "Le mode agent avec un modèle cloud nécessite le serveur API local. Démarrez-le dans les paramètres."
+  },
+  "compaction": {
+    "label": "Contexte compacté",
+    "hint": "Les anciens messages de ce fil ont été résumés en un résumé afin que la conversation tienne dans la fenêtre de contexte. Cliquez pour l’afficher."
   }
 }

@@ -3,6 +3,7 @@ import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
+  generateText,
   streamText,
   NoSuchToolError,
   type ChatRequestOptions,
@@ -84,10 +85,21 @@ import {
   DEFAULT_OUTPUT_RESERVE_TOKENS,
   PREFLIGHT_CTX_THRESHOLD,
   estimatePromptTokensHeuristic,
+  estimateTokens,
   estimateToolsTokens,
   toOpenAiMessages,
   toOpenAiTools,
 } from '@/lib/prompt-size'
+import {
+  COMPACTION_SUMMARY_MAX_TOKENS,
+  COMPACTION_TAIL_SHARE,
+  buildCompactionPrompt,
+  buildCompactionSummaryMessage,
+  estimateUIMessageTokens,
+  readAutoCompaction,
+  selectCompactionBoundary,
+} from '@/lib/context-compaction'
+import { useCompactionMarkers } from '@/stores/compaction-marker-store'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { summarizeToolCost } from '@/lib/tool-cost'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
@@ -704,6 +716,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * safety net. Throws a context-limit error when the ladder is already at
    * the model's maximum so the request is not sent into a window it cannot
    * fit.
+   *
+   * When the ladder cannot help (at the training max, capped by device
+   * memory, or disabled by the user) and auto-compaction is enabled, the
+   * older part of the conversation is summarized into a structured brief
+   * and the request is rebuilt on top of it; the compacted UI messages are
+   * returned so the caller re-runs its pipeline over them. The thread
+   * history itself is never rewritten.
    */
   private async ensureContextFits(args: {
     providerId: string
@@ -711,16 +730,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     provider: ProviderObject | undefined
     system: string | undefined
     messages: ModelMessage[]
+    uiMessages: UIMessage[]
+    rebuild: (uiMessages: UIMessage[]) => ModelMessage[]
     tools: Record<string, Tool> | undefined
     maxOutputTokens: number | undefined
     recreateModel: () => Promise<void>
     abortSignal: AbortSignal | undefined
-  }): Promise<void> {
+    threadId: string
+  }): Promise<UIMessage[] | undefined> {
     const selectedModel = useModelProvider.getState().selectedModel
-    if (!selectedModel || selectedModel.id !== args.modelId) return
-    if (!readAutoIncreaseCtx(selectedModel)) return
+    if (!selectedModel || selectedModel.id !== args.modelId) return undefined
+    const autoIncrease = readAutoIncreaseCtx(selectedModel)
+    const compactionEnabled = readAutoCompaction(selectedModel)
     const ctxLen = readModelCtxLen(selectedModel)
-    if (!ctxLen || !this.serviceHub) return
+    if (!ctxLen || !this.serviceHub) return undefined
+    // Both growth and compaction disabled: keep the previous behaviour of
+    // sending the request as-is and letting the reactive path report it.
+    if (!autoIncrease && !compactionEnabled) return undefined
 
     const heuristic = estimatePromptTokensHeuristic({
       system: args.system,
@@ -753,10 +779,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         measured = true
       }
     }
-    if (args.abortSignal?.aborted) return
+    if (args.abortSignal?.aborted) return undefined
 
-    const needed =
-      promptTokens + (args.maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS)
+    const reserve = args.maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS
+    const needed = promptTokens + reserve
     const limit = ctxLen * PREFLIGHT_CTX_THRESHOLD
     this.lastPromptSize = {
       promptTokens,
@@ -764,34 +790,171 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ctxLen,
       measured,
     }
-    if (needed <= limit) return
+    if (needed <= limit) return undefined
 
-    const minCtxLen = Math.ceil(needed / PREFLIGHT_CTX_THRESHOLD)
-    console.info(
-      `[chat] prompt ${promptTokens} tokens (${measured ? 'measured' : 'estimated'}) + ${needed - promptTokens} reserved does not fit ctx ${ctxLen}; growing to >= ${minCtxLen}`
-    )
-    const result = await growModelContext({
-      providerId: args.providerId,
-      modelId: args.modelId,
-      serviceHub: this.serviceHub,
-      minCtxLen,
-    })
-    if (!result.ok) {
+    let overflowDescription: string | undefined
+    if (autoIncrease) {
+      const minCtxLen = Math.ceil(needed / PREFLIGHT_CTX_THRESHOLD)
+      console.info(
+        `[chat] prompt ${promptTokens} tokens (${measured ? 'measured' : 'estimated'}) + ${needed - promptTokens} reserved does not fit ctx ${ctxLen}; growing to >= ${minCtxLen}`
+      )
+      const result = await growModelContext({
+        providerId: args.providerId,
+        modelId: args.modelId,
+        serviceHub: this.serviceHub,
+        minCtxLen,
+      })
+      if (result.ok) {
+        if (args.abortSignal?.aborted) return undefined
+        await args.recreateModel()
+        this.lastPromptSize = { ...this.lastPromptSize, ctxLen: result.to }
+        return undefined
+      }
       if (result.reason === 'at_max') {
-        throw new Error(
-          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the model's maximum context is ${result.max ?? result.from}. Disable some connectors for this chat or shorten the conversation.`
-        )
+        overflowDescription = `the model's maximum context is ${result.max ?? result.from}`
+      } else if (result.reason === 'fit') {
+        overflowDescription = `the context this device has room for is ${result.from}`
+      } else {
+        // no_model / no_provider: nothing to grow, nothing to compact against.
+        return undefined
       }
-      if (result.reason === 'fit') {
-        throw new Error(
-          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context this device has room for is ${result.from}. Disable some connectors for this chat, shorten the conversation, or turn off "Fit to device memory" in the model settings to set the context by hand.`
-        )
-      }
-      return
     }
-    if (args.abortSignal?.aborted) return
-    await args.recreateModel()
-    this.lastPromptSize = { ...this.lastPromptSize, ctxLen: result.to }
+
+    if (compactionEnabled) {
+      const compacted = await this.tryCompactContext(args, { ctxLen, limit, reserve })
+      if (compacted) return compacted
+    }
+
+    if (autoIncrease && overflowDescription) {
+      const compactionNote = compactionEnabled
+        ? ' Auto-compaction was tried but could not shrink the conversation enough.'
+        : ''
+      if (overflowDescription.startsWith("the model's maximum")) {
+        throw new Error(
+          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but ${overflowDescription}.${compactionNote} Disable some connectors for this chat or shorten the conversation.`
+        )
+      }
+      throw new Error(
+        `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but ${overflowDescription}.${compactionNote} Disable some connectors for this chat, shorten the conversation, or turn off "Fit to device memory" in the model settings to set the context by hand.`
+      )
+    }
+    // Compaction only (growth disabled): send the request as-is and let the
+    // reactive path report it, matching the growth-disabled behaviour.
+    return undefined
+  }
+
+  /**
+   * One compaction attempt: summarize everything before a tool-pair-safe
+   * boundary into a structured brief and rebuild the request around it. Two
+   * tail budgets are tried (a quarter of the window, then an eighth) — the
+   * brief itself is capped, so a smaller tail still shrinks the request.
+   */
+  private async tryCompactContext(
+    args: {
+      providerId: string
+      modelId: string
+      provider: ProviderObject | undefined
+      system: string | undefined
+      uiMessages: UIMessage[]
+      rebuild: (uiMessages: UIMessage[]) => ModelMessage[]
+      tools: Record<string, Tool> | undefined
+      abortSignal: AbortSignal | undefined
+      threadId: string
+    },
+    fit: { ctxLen: number; limit: number; reserve: number }
+  ): Promise<UIMessage[] | undefined> {
+    // The summarizer rides the same model instance as the chat request; it
+    // is created before the pre-flight runs, so a null here is unexpected.
+    if (!this.model) return undefined
+    const quarterWindow = Math.max(
+      1024,
+      Math.floor(fit.ctxLen * COMPACTION_TAIL_SHARE)
+    )
+    for (const tailBudgetTokens of [quarterWindow, Math.floor(quarterWindow / 2)]) {
+      if (args.abortSignal?.aborted) return undefined
+      const boundary = selectCompactionBoundary(args.uiMessages, {
+        tailBudgetTokens,
+      })
+      if (boundary === -1) return undefined
+      const head = args.uiMessages.slice(0, boundary)
+
+      const prompt = buildCompactionPrompt({ system: args.system, head })
+      let summary: string | undefined
+      try {
+        const response = await generateText({
+          model: this.model,
+          prompt,
+          maxOutputTokens: COMPACTION_SUMMARY_MAX_TOKENS,
+          abortSignal: args.abortSignal,
+        })
+        summary = response.text
+      } catch (error) {
+        console.warn('[compaction] summarizer call failed:', error)
+        return undefined
+      }
+      if (args.abortSignal?.aborted) return undefined
+      if (!summary || !summary.trim()) {
+        console.warn('[compaction] summarizer returned an empty brief')
+        return undefined
+      }
+
+      const compactedUiMessages = [
+        buildCompactionSummaryMessage(summary),
+        ...args.uiMessages.slice(boundary),
+      ]
+      const rebuiltMessages = args.rebuild(compactedUiMessages)
+      let rebuiltTokens = estimatePromptTokensHeuristic({
+        system: args.system,
+        messages: rebuiltMessages,
+        tools: args.tools,
+      })
+      if (
+        args.providerId === 'llamacpp' ||
+        args.providerId === 'llamacpp-upstream'
+      ) {
+        try {
+          const exact = await ModelFactory.countLocalPromptTokens(
+            args.providerId,
+            args.modelId,
+            args.provider,
+            {
+              messages: toOpenAiMessages({
+                system: args.system,
+                messages: rebuiltMessages,
+              }),
+              tools: toOpenAiTools(args.tools),
+              ...(this.lastChatTemplateKwargs
+                ? { chat_template_kwargs: this.lastChatTemplateKwargs }
+                : {}),
+            }
+          )
+          if (exact !== null) rebuiltTokens = exact
+        } catch (error) {
+          console.warn('[compaction] exact re-measure failed, trusting estimate:', error)
+        }
+      }
+      if (rebuiltTokens + fit.reserve > fit.limit) continue
+
+      const previousSize = this.lastPromptSize
+      if (previousSize) {
+        this.lastPromptSize = { ...previousSize, promptTokens: rebuiltTokens }
+      }
+      const headTokens = args.uiMessages
+        .slice(0, boundary)
+        .reduce((sum, message) => sum + estimateUIMessageTokens(message), 0)
+      useCompactionMarkers.getState().recordMarker(args.threadId, {
+        boundaryMessageId: args.uiMessages[boundary].id,
+        compactedMessages: head.length,
+        estimatedTokensSaved: Math.max(0, headTokens - estimateTokens(summary)),
+        summary: summary.trim(),
+        createdAt: Date.now(),
+      })
+      console.info(
+        `[compaction] replaced ${head.length} older messages (~${headTokens} tokens) with a ~${estimateTokens(summary)}-token summary`
+      )
+      return compactedUiMessages
+    }
+    return undefined
   }
 
   async sendMessages(
@@ -1059,18 +1222,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         supportsVision,
       })
     }
-    const baseMessages = convertToModelMessages(preparedMessages)
-
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.
+    // Captured once here; the request rebuild below (and a compaction rebuild)
+    // re-applies it so the partial text is never lost.
     const continueContent = this.continueFromContent
     this.continueFromContent = null
-    const modelMessages = continueContent
-      ? [
-          ...baseMessages,
-          { role: 'assistant' as const, content: continueContent },
-        ]
-      : baseMessages
 
     // Local-providers (mlx, llamacpp, llamacpp-upstream, foundation-models):
     // when tools are also active we don't pass a `system` message (gemma-4 and
@@ -1122,13 +1279,26 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? undefined
       : systemWithSkills
 
-    // When we drop the `system` field for the gemma+tools CoT workaround, fold
-    // the instructions into the first user message so they still reach the
-    // model instead of being silently lost.
-    const finalModelMessages =
-      dropSystemForTools && systemWithSkills
+    // The request pipeline from sanitized UI messages to model messages,
+    // extracted so the compaction pre-flight can rebuild the request around
+    // a summary when the older part of the conversation is replaced.
+    const buildRequestMessages = (uiMessages: UIMessage[]): ModelMessage[] => {
+      const converted = convertToModelMessages(uiMessages)
+      const modelMessages = continueContent
+        ? [
+            ...converted,
+            { role: 'assistant' as const, content: continueContent },
+          ]
+        : converted
+      // When we drop the `system` field for the gemma+tools CoT workaround,
+      // fold the instructions into the first user message so they still reach
+      // the model instead of being silently lost. After a compaction the
+      // first message is the summary itself, and the fold lands there.
+      return dropSystemForTools && systemWithSkills
         ? foldSystemIntoFirstUserMessage(modelMessages, systemWithSkills)
         : modelMessages
+    }
+    let finalModelMessages = buildRequestMessages(preparedMessages)
 
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),
@@ -1146,18 +1316,27 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // when it would not fit. Without this a long tool catalogue fails with
     // "exceeds the available context size", the model is reloaded, and the
     // whole prompt is regenerated; with it there is one reload and no error.
+    // When the window cannot grow any further, auto-compaction summarizes
+    // the older conversation into a brief and the request is rebuilt on top
+    // of it (returned here as the compacted UI messages).
     if (isLocalProvider && modelId) {
-      await this.ensureContextFits({
+      const compactedUiMessages = await this.ensureContextFits({
         providerId: effectiveProviderName,
         modelId,
         provider,
         system: effectiveSystemMessage,
         messages: finalModelMessages,
+        uiMessages: preparedMessages,
+        rebuild: buildRequestMessages,
         tools: activeTools,
         maxOutputTokens,
         recreateModel,
         abortSignal: options.abortSignal,
+        threadId: this.threadId ?? '',
       })
+      if (compactedUiMessages) {
+        finalModelMessages = buildRequestMessages(compactedUiMessages)
+      }
     }
 
     const result = streamText({
