@@ -23,8 +23,14 @@ import type { CatalogModel } from '@/services/models/types'
  */
 export const LLAMACPP_PROVIDERS = ['llamacpp-upstream', 'llamacpp'] as const
 export const MLX_PROVIDER = 'mlx'
-/** Every provider that keeps model files on this device. */
+/** Every provider whose models the GGUF and MLX rows of the Hub may claim. */
 export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const
+/**
+ * TensorRT-LLM models (change `add-tensorrt-llm-model-hub`, design D8): the extension lists each
+ * under its repository, as `model.yml` names it. Kept apart from the GGUF and MLX ids, so a GGUF
+ * entry can never claim one that happens to be spelled alike.
+ */
+export const TENSORRT_LLM_PROVIDER = 'tensorrt-llm'
 
 /**
  * The MLX engine sanitizes ids with its own rules (dots survive, spaces become
@@ -34,35 +40,43 @@ export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const
 const sanitizeMlxId = (id: string): string =>
   id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 
-type InstalledModel = { model: Model; isMlx: boolean }
+type InstalledKind = 'gguf' | 'mlx' | 'tensorrt-llm'
+type InstalledModel = { model: Model; kind: InstalledKind }
 
 /**
  * Installed local models keyed by provider model id. The same id can be
  * registered by more than one provider (the fork and the upstream build see the
  * same file); the first occurrence wins so the Hub lists one row.
  */
-function collectLocalModels(
-  providers: readonly ModelProvider[]
-): Map<string, InstalledModel> {
-  const out = new Map<string, InstalledModel>()
+function collectLocalModels(providers: readonly ModelProvider[]): {
+  local: Map<string, InstalledModel>
+  tensorrt: Map<string, InstalledModel>
+} {
+  const local = new Map<string, InstalledModel>()
+  const tensorrt = new Map<string, InstalledModel>()
 
-  const add = (models: readonly Model[], isMlx: boolean) => {
+  const add = (
+    out: Map<string, InstalledModel>,
+    models: readonly Model[],
+    kind: InstalledKind
+  ) => {
     for (const model of models) {
       // The embedding model is an app-internal download for retrieval, not
       // something the Hub can offer a chat with.
       if (model.embedding || model.id === EMBEDDING_MODEL_ID) continue
       if (out.has(model.id)) continue
-      out.set(model.id, { model, isMlx })
+      out.set(model.id, { model, kind })
     }
   }
 
   const modelsOf = (name: string) =>
     providers.find((provider) => provider.provider === name)?.models ?? []
 
-  for (const name of LLAMACPP_PROVIDERS) add(modelsOf(name), false)
-  add(modelsOf(MLX_PROVIDER), true)
+  for (const name of LLAMACPP_PROVIDERS) add(local, modelsOf(name), 'gguf')
+  add(local, modelsOf(MLX_PROVIDER), 'mlx')
+  add(tensorrt, modelsOf(TENSORRT_LLM_PROVIDER), 'tensorrt-llm')
 
-  return out
+  return { local, tensorrt }
 }
 
 /**
@@ -90,6 +104,7 @@ export function mlxModelIds(entry: CatalogModel): string[] {
  * Provider model ids a catalog entry would produce once downloaded.
  */
 function candidateIds(entry: CatalogModel): string[] {
+  if (entry.is_tensorrt_llm) return [entry.model_name]
   if (entry.is_mlx) return mlxModelIds(entry)
 
   return (entry.quants ?? []).flatMap((quant) =>
@@ -137,10 +152,19 @@ function synthesizeEntry(id: string, installed: InstalledModel): CatalogModel {
     description: '',
     downloads: 0,
     developer,
-    is_mlx: installed.isMlx,
+    is_mlx: installed.kind === 'mlx',
   }
 
-  if (installed.isMlx) return base
+  // The id is the Hugging Face repository: the card reads its README and asks the core again.
+  if (installed.kind === 'tensorrt-llm') {
+    return {
+      ...base,
+      is_tensorrt_llm: true,
+      readme: `https://huggingface.co/${id}/resolve/main/README.md`,
+    }
+  }
+
+  if (installed.kind === 'mlx') return base
 
   return {
     ...base,
@@ -178,22 +202,30 @@ export function collectInstalledModels(
   catalog: readonly CatalogModel[],
   providers: readonly ModelProvider[]
 ): CatalogModel[] {
-  const installed = collectLocalModels(providers)
-  if (installed.size === 0) return []
+  const { local, tensorrt } = collectLocalModels(providers)
+  if (local.size === 0 && tensorrt.size === 0) return []
 
-  const claimed = new Set<string>()
+  const claimed = { local: new Set<string>(), tensorrt: new Set<string>() }
   const rows: CatalogModel[] = []
 
   for (const entry of catalog) {
+    const [installed, taken] = entry.is_tensorrt_llm
+      ? [tensorrt, claimed.tensorrt]
+      : [local, claimed.local]
     const matches = candidateIds(entry).filter((id) => installed.has(id))
     if (matches.length === 0) continue
-    for (const id of matches) claimed.add(id)
+    for (const id of matches) taken.add(id)
     rows.push(entry)
   }
 
-  for (const [id, model] of installed) {
-    if (claimed.has(id)) continue
-    rows.push(synthesizeEntry(id, model))
+  for (const [installed, taken] of [
+    [local, claimed.local],
+    [tensorrt, claimed.tensorrt],
+  ] as const) {
+    for (const [id, model] of installed) {
+      if (taken.has(id)) continue
+      rows.push(synthesizeEntry(id, model))
+    }
   }
 
   return rows

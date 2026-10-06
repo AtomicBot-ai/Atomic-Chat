@@ -2,6 +2,14 @@
 import { Card, CardItem } from '@/containers/Card'
 import { DecisionModelsSection } from '@/containers/DecisionModelsSection'
 import HeaderPage from '@/containers/HeaderPage'
+import { TensorrtLlmSetupPanel } from '@/containers/tensorrt-llm/TensorrtLlmSetupPanel'
+import { TensorrtLlmHubLink } from '@/containers/tensorrt-llm/TensorrtLlmHubLink'
+import { TensorrtLlmSettingsCard } from '@/containers/tensorrt-llm/TensorrtLlmSettingsCard'
+import { TensorrtLlmTroubleshooting } from '@/containers/tensorrt-llm/TensorrtLlmTroubleshooting'
+import {
+  selectTensorrtInstallation,
+  useManagedEnvironmentStore,
+} from '@/stores/managed-environment-store'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { isOnboardingPending } from '@/lib/onboarding'
@@ -98,6 +106,10 @@ import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { AppEvent, EngineManager, events } from '@janhq/core'
 import debounce from 'lodash.debounce'
 import { restartLocalModel } from '@/utils/restartLocalModel'
+
+/** Start, Stop and their spinner share one width, so a row does not jump between states; it fits
+ *  the longest translation ("Остановить"). */
+const MODEL_ACTION_BUTTON_CLASS = 'w-28'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -315,6 +327,10 @@ function ProviderDetail() {
   }, [backendMismatch, providerName, t])
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
+  // TensorRT-LLM models can be chosen once the engine is installed.
+  const tensorrtInstalled = useManagedEnvironmentStore(
+    (state) => selectTensorrtInstallation(state)?.status === 'ready'
+  )
   const provider = getProviderByName(providerName)
   const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
   const debouncedRestartLlamacppModel = useMemo(
@@ -1939,6 +1955,35 @@ function ProviderDetail() {
               />
             </div>
 
+            {/* TensorRT-LLM: setting up the engine comes before its settings and models. */}
+            {providerName === 'tensorrt-llm' && <TensorrtLlmSetupPanel />}
+            {providerName === 'tensorrt-llm' && <TensorrtLlmTroubleshooting />}
+            {providerName === 'tensorrt-llm' && provider && (
+              <TensorrtLlmSettingsCard
+                settings={provider.settings}
+                models={provider.models.map((model) => model.id)}
+                onChange={(key, value) => {
+                  // Applies from the next load: the extension hands the settings to the core then.
+                  const next = provider.settings.map((setting) =>
+                    setting.key === key
+                      ? {
+                          ...setting,
+                          controller_props: {
+                            ...setting.controller_props,
+                            value: value as never,
+                          },
+                        }
+                      : setting
+                  )
+                  serviceHub.providers().updateSettings(providerName, next)
+                  updateProvider(providerName, { ...provider, settings: next })
+                }}
+              />
+            )}
+            {providerName === 'tensorrt-llm' && tensorrtInstalled && (
+              <TensorrtLlmHubLink />
+            )}
+
             <div
               className={cn(
                 'flex flex-col gap-3',
@@ -1973,6 +2018,10 @@ function ProviderDetail() {
                   const isHiddenConcurrentMode =
                     setting.key === 'concurrent_mode' ||
                     setting.key === 'concurrent_slots'
+                  // TensorRT-LLM picks its card from the GPUs the core found, in
+                  // its own card below, rather than as a typed UUID.
+                  const isHiddenForTensorrt =
+                    providerName === 'tensorrt-llm' && setting.key === 'gpu_id'
 
                   // The DFlash speculative-decoding toggle is the master
                   // switch over `block_size`; the MTP toggle does the
@@ -2177,7 +2226,8 @@ function ProviderDetail() {
                           className={cn(
                             setting.key === 'device' && 'hidden',
                             isHiddenConcurrentMode && 'hidden',
-                            isHiddenByDflash && 'hidden'
+                            isHiddenByDflash && 'hidden',
+                            isHiddenForTensorrt && 'hidden'
                           )}
                           onChange={(newValue) => {
                             // Manual "Latest <variant>" picks carry a
@@ -2360,7 +2410,8 @@ function ProviderDetail() {
                       className={cn(
                         setting.key === 'device' && 'hidden',
                         isHiddenConcurrentMode && 'hidden',
-                        isHiddenByDflash && 'hidden'
+                        isHiddenByDflash && 'hidden',
+                        isHiddenForTensorrt && 'hidden'
                       )}
                       column={
                         setting.controller_type === 'input' &&
@@ -2813,6 +2864,7 @@ function ProviderDetail() {
                                         <Button
                                           size="sm"
                                           variant="destructive"
+                                          className={MODEL_ACTION_BUTTON_CLASS}
                                           disabled={isStopping}
                                           onClick={() =>
                                             handleStopModel(model.id)
@@ -2836,6 +2888,7 @@ function ProviderDetail() {
                                   const startButton = (
                                     <Button
                                       size="sm"
+                                      className={MODEL_ACTION_BUTTON_CLASS}
                                       disabled={isLoading || needsApiKey}
                                       onClick={() => handleStartModel(model.id)}
                                     >

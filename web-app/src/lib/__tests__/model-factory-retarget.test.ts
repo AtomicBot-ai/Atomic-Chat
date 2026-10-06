@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { transferableAbortController } from 'node:util'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
   createLiveSessionFetch,
   retargetLocalRequest,
@@ -30,6 +31,16 @@ describe('retargetLocalRequest', () => {
   })
 
   it('keeps the path, query and method of a Request object', () => {
+    // jsdom replaces AbortController but not Request. Node 26's undici makes a request's signal with
+    // the global (jsdom's) controller, then refuses to copy any signal that is not its own native
+    // one. The webview has one realm; so does this test, with Node's native controller.
+    vi.stubGlobal(
+      'AbortController',
+      transferableAbortController().constructor as typeof AbortController
+    )
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+    })
     const request = new Request(
       'http://localhost:3001/v1/chat/completions?stream=true',
       {

@@ -75,3 +75,26 @@ describe('withDefaultEngineSettings', () => {
     expect(timeout.controller_props.value).toBe(600)
   })
 })
+
+describe('TensorRT-LLM defaults', () => {
+  it('resets to the core schema defaults, the card choice included', () => {
+    // The card is picked on the provider's own page, not the Hardware page, so
+    // unlike llama.cpp's `device` it goes back to "most free memory" ('').
+    const settings = [
+      setting('gpu_id', 'GPU-2'),
+      setting('context_length', 32768),
+      setting('kv_cache_free_gpu_memory_fraction', 0.8),
+    ]
+
+    expect(hasEngineSettingDefaults('tensorrt-llm')).toBe(true)
+    expect(customEngineSettingKeys('tensorrt-llm', settings)).toEqual([
+      'gpu_id',
+      'context_length',
+    ])
+    expect(
+      withDefaultEngineSettings('tensorrt-llm', settings).map(
+        (s) => s.controller_props.value
+      )
+    ).toEqual(['', 8192, 0.8])
+  })
+})

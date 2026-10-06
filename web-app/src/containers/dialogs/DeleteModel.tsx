@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { deleteLocalModel } from '@/lib/model-deletion'
+import { formatBytes } from '@/lib/utils'
 
 import { IconTrash } from '@tabler/icons-react'
 
@@ -33,14 +34,23 @@ export const DialogDeleteModel = ({
 
   const removeModel = async () => {
     try {
-      await deleteLocalModel(serviceHub, selectedModelId, provider.provider)
+      const report = await deleteLocalModel(
+        serviceHub,
+        selectedModelId,
+        provider.provider
+      )
       toast.success(
         t('providers:deleteModel.title', { modelId: selectedModelId }),
         {
           id: `delete-model-${selectedModelId}`,
-          description: t('providers:deleteModel.success', {
-            modelId: selectedModelId,
-          }),
+          description: report
+            ? t('providers:deleteModel.successFreed', {
+                modelId: selectedModelId,
+                size: formatBytes(report.freedBytes),
+              })
+            : t('providers:deleteModel.success', {
+                modelId: selectedModelId,
+              }),
         }
       )
     } catch (error) {

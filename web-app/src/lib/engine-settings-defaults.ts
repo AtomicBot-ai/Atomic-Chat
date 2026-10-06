@@ -1,6 +1,7 @@
 import llamacppSettings from './core-settings-schema/llamacpp.json'
 import llamacppUpstreamSettings from './core-settings-schema/llamacpp-upstream.json'
 import mlxSettings from './core-settings-schema/mlx.json'
+import tensorrtLlmSettings from './core-settings-schema/tensorrt-llm.json'
 
 import { sameSettingValue } from '@/lib/model-settings-defaults'
 
@@ -37,6 +38,9 @@ const ENGINE_DEFAULTS: Record<string, Record<string, unknown>> = {
     llamacppUpstreamSettings as SettingDefinition[]
   ),
   'mlx': toDefaults(mlxSettings as SettingDefinition[]),
+  // Its card choice (`gpu_id`) is made on the provider's own page, so a reset
+  // puts it back to "the card with the most free memory" like any other key.
+  'tensorrt-llm': toDefaults(tensorrtLlmSettings as SettingDefinition[]),
 }
 
 const defaultsFor = (providerName: string) =>

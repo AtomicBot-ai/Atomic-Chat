@@ -11,6 +11,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { IconFolder } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import {
+  selectEnvironment,
+  useManagedEnvironmentStore,
+} from '@/stores/managed-environment-store'
 
 interface ChangeDataFolderLocationProps {
   children: React.ReactNode
@@ -30,6 +34,12 @@ export default function ChangeDataFolderLocation({
   onOpenChange,
 }: ChangeDataFolderLocationProps) {
   const { t } = useTranslation()
+  // Windows: TensorRT-LLM models live in Atomic Chat's WSL distribution, not in the data folder,
+  // and stay there (change `add-tensorrt-llm-windows`, spec "Перенос папки данных не перемещает
+  // модели в дистрибутиве").
+  const distribution = useManagedEnvironmentStore(
+    (state) => selectEnvironment(state)?.distribution ?? null
+  )
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
@@ -64,6 +74,14 @@ export default function ChangeDataFolderLocation({
               <code className="text-xs break-all">{newPath}</code>
             </div>
           </div>
+
+          {distribution && (
+            <p className="text-sm text-muted-foreground break-words">
+              {t('settings:dialogs.changeDataFolder.tensorrtModels', {
+                name: distribution.name,
+              })}
+            </p>
+          )}
         </div>
 
         <DialogFooter className="flex items-center gap-2">

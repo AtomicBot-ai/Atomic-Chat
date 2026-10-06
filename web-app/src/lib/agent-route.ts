@@ -1,4 +1,5 @@
 import type { AgentProviderBlockReason } from '@/lib/agent-provider'
+import type { AgentModelBlockReason } from '@/lib/tensorrt-llm/chat'
 
 export type MessageExecutionRoute = 'agent-ipc' | 'chat-transport'
 
@@ -20,6 +21,7 @@ export type RouteReason =
   | 'dflash'
   | 'project-thread'
   | 'rag-documents'
+  | 'model-without-tools'
 
 export type RouteInput = {
   /** Settings → General escape hatch: force every turn onto the old pipeline. */
@@ -28,6 +30,11 @@ export type RouteInput = {
   agentModeSelected: boolean
   /** From `agentProviderBlockReason(provider)`; `null` = agent-capable. */
   providerBlockReason: AgentProviderBlockReason | null
+  /**
+   * From `agentModelBlockReason(provider, model)`: the selected model cannot call tools (a
+   * TensorRT-LLM model whose family has no tool parser). Absent or `null` = no model-level block.
+   */
+  modelBlockReason?: AgentModelBlockReason | null
   /** This turn carries an audio attachment (agent loop cannot take audio). */
   hasAudioAttachment: boolean
   /** llamacpp-upstream dflash mode (`shouldSuppressToolsForUpstreamDflash`). */
@@ -57,6 +64,9 @@ export function resolveMessageExecutionRoute(
   }
   if (input.providerBlockReason === 'missing-api-key') {
     return { route: CHAT, reason: 'missing-api-key' }
+  }
+  if (input.modelBlockReason === 'model-without-tools') {
+    return { route: CHAT, reason: 'model-without-tools' }
   }
   if (input.hasAudioAttachment) {
     return { route: CHAT, reason: 'audio-attachment' }

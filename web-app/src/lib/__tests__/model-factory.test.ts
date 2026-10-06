@@ -320,6 +320,207 @@ describe('ModelFactory', () => {
   })
 })
 
+describe('ModelFactory tensorrt-llm provider', () => {
+  const tensorrtProvider = {
+    provider: 'tensorrt-llm',
+    // Never used for a local engine: requests go to the session the core serves.
+    base_url: 'http://example.invalid/v1',
+    api_key: '',
+    settings: [],
+    models: [],
+    active: true,
+  } as unknown as ProviderObject
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockStartModel.mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        startModel: mockStartModel,
+      } as ModelsService,
+    })
+    ModelFactory.invalidateLocalSessionCache('tensorrt-llm')
+  })
+
+  it('starts the model through the core and talks to its session gateway with the session key', async () => {
+    mockedInvoke.mockResolvedValue({
+      // What the Rust resolver hands back for a container session (protocol 2).
+      pid: null,
+      port: 4001,
+      model_id: 'qwen3-8b',
+      api_key: 'gateway-key',
+      execution: 'container',
+      generation: 'g-1',
+    })
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+
+    await ModelFactory.createModel('qwen3-8b', tensorrtProvider)
+
+    expect(mockStartModel).toHaveBeenCalledWith(tensorrtProvider, 'qwen3-8b')
+    expect(mockedInvoke).toHaveBeenCalledWith('resolve_local_session', {
+      provider: 'tensorrt-llm',
+      modelId: 'qwen3-8b',
+    })
+    const [modelId, config] = vi.mocked(OpenAICompatibleChatLanguageModel)
+      .mock.calls[0] as unknown as [
+      string,
+      {
+        provider: string
+        url: (options: { path: string }) => string
+        headers: () => Record<string, string>
+      },
+    ]
+    expect(modelId).toBe('qwen3-8b')
+    expect(config.provider).toBe('tensorrt-llm')
+    expect(config.url({ path: '/chat/completions' })).toBe(
+      'http://localhost:4001/v1/chat/completions'
+    )
+    expect(config.headers().Authorization).toBe('Bearer gateway-key')
+  })
+
+  /** Build the model with a llama.cpp parameter bag; return the fetch the AI SDK would call. */
+  async function tensorrtFetch(
+    route: (command: string, args: Record<string, unknown>) => unknown
+  ) {
+    mockedInvoke.mockImplementation(async (command, args) =>
+      route(command, (args ?? {}) as Record<string, unknown>)
+    )
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+    await ModelFactory.createModel('Qwen/Qwen3-1.7B', tensorrtProvider, {
+      temperature: 0.6,
+      top_k: 20,
+      repeat_penalty: 1.1,
+      n_predict: -1,
+      cache_prompt: true,
+      ctx_len: 8192,
+      reasoning_format: 'deepseek',
+      timings_per_token: true,
+      parallel_tool_calls: false,
+    })
+    const [, config] = vi.mocked(OpenAICompatibleChatLanguageModel).mock
+      .calls[0] as unknown as [string, { fetch: typeof fetch }]
+    return config.fetch
+  }
+
+  const trtSession = {
+    pid: null,
+    port: 4001,
+    model_id: 'Qwen/Qwen3-1.7B',
+    api_key: 'gateway-key',
+    execution: 'container',
+    generation: 'g-1',
+  }
+
+  it('sends trtllm-serve only the fields it reads and shows its refusal message', async () => {
+    let sentBody = ''
+    const chatFetch = await tensorrtFetch((command, args) => {
+      if (command === 'resolve_local_session') return trtSession
+      if (command === 'stream_local_http') {
+        sentBody = args.body as string
+        return Promise.reject(
+          'HTTP 400: {"object":"error","message":"tool_choice requires tools","type":"BadRequestError","param":null,"code":400}'
+        )
+      }
+      return null
+    })
+
+    const response = await chatFetch(
+      'http://localhost:4001/v1/chat/completions',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'Qwen/Qwen3-1.7B',
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: true,
+          stream_options: { include_usage: true },
+          tool_choice: 'auto',
+        }),
+      }
+    )
+
+    expect(JSON.parse(sentBody)).toEqual({
+      model: 'Qwen/Qwen3-1.7B',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: 0.6,
+      top_k: 20,
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: {
+        message: 'tool_choice requires tools',
+        type: 'BadRequestError',
+        code: 400,
+      },
+    })
+    // No response_format asked for: the core is not asked about structured output.
+    expect(mockedInvoke).not.toHaveBeenCalledWith(
+      'atomic_core_call',
+      expect.anything()
+    )
+  })
+
+  it('keeps response_format only when the core says the family has structured output', async () => {
+    const sent: string[] = []
+    let structured = true
+    const format = { type: 'json_object' }
+    const chatFetch = await tensorrtFetch((command, args) => {
+      if (command === 'resolve_local_session') return trtSession
+      if (command === 'atomic_core_call') {
+        expect(args.path).toBe('/models/tensorrt-llm/Qwen/Qwen3-1.7B/capabilities')
+        return { tools: true, structured_output: structured }
+      }
+      if (command === 'stream_local_http') {
+        sent.push(args.body as string)
+        return Promise.reject('HTTP 400: {"error":{"message":"stop here"}}')
+      }
+      return null
+    })
+    const send = () =>
+      chatFetch('http://localhost:4001/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ model: 'm', messages: [], response_format: format }),
+      })
+
+    await send()
+    expect(JSON.parse(sent[0]).response_format).toEqual(format)
+
+    // The answer is kept for the model object's life; a new model asks again.
+    structured = false
+    vi.mocked(
+      (await import('@ai-sdk/openai-compatible')).OpenAICompatibleChatLanguageModel
+    ).mockClear()
+    ModelFactory.invalidateLocalSessionCache('tensorrt-llm')
+    const plainFetch = await tensorrtFetch((command, args) => {
+      if (command === 'resolve_local_session') return trtSession
+      if (command === 'atomic_core_call') return { structured_output: structured }
+      if (command === 'stream_local_http') {
+        sent.push(args.body as string)
+        return Promise.reject('HTTP 400: {"error":{"message":"stop here"}}')
+      }
+      return null
+    })
+    await plainFetch('http://localhost:4001/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'm', messages: [], response_format: format }),
+    })
+    expect(JSON.parse(sent[1])).not.toHaveProperty('response_format')
+  })
+
+  it('fails with the provider named when the core serves no session after the start', async () => {
+    mockedInvoke.mockResolvedValue(null)
+
+    await expect(
+      ModelFactory.createModel('qwen3-8b', tensorrtProvider)
+    ).rejects.toThrow('No running TensorRT-LLM session found for model: qwen3-8b')
+  })
+})
+
 describe('countLocalPromptTokens', () => {
   const session = { port: 4242, api_key: 'k', model_id: 'm' }
 

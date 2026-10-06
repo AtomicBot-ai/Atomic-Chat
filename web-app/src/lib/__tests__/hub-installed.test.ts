@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { modelFormat } from '@/lib/model-card'
 import type { CatalogModel } from '@/services/models/types'
 import {
   collectInstalledModels,
@@ -7,6 +8,7 @@ import {
   findInstalledLocalModel,
   LLAMACPP_PROVIDERS,
   mlxModelIds,
+  TENSORRT_LLM_PROVIDER,
   quantModelIds,
   withStaffPicks,
 } from '../hub-installed'
@@ -159,6 +161,55 @@ describe('collectInstalledModels', () => {
   it('ignores models registered by remote providers', () => {
     const rows = collectInstalledModels([], [provider('openai', ['gpt-4o'])])
     expect(rows).toEqual([])
+  })
+})
+
+describe('collectInstalledModels — TensorRT-LLM', () => {
+  it('lists a downloaded TensorRT-LLM model as its repository, with the TensorRT-LLM badge', () => {
+    const rows = collectInstalledModels(
+      [],
+      [provider(TENSORRT_LLM_PROVIDER, ['nvidia/Qwen3-8B-FP8'])]
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      model_name: 'nvidia/Qwen3-8B-FP8',
+      developer: 'nvidia',
+      is_tensorrt_llm: true,
+      readme: 'https://huggingface.co/nvidia/Qwen3-8B-FP8/resolve/main/README.md',
+    })
+    expect(modelFormat(rows[0])).toBe('tensorrt-llm')
+  })
+
+  it('keeps it apart from a GGUF model of the same owner, even one spelled like it', () => {
+    const catalog = [
+      gguf('nvidia/Qwen3-8B-GGUF', ['Qwen3-8B-Q4_K_M']),
+      // A GGUF entry whose quant id happens to read like the TensorRT-LLM repository.
+      gguf('nvidia/Qwen3-8B-FP8-GGUF', ['nvidia/Qwen3-8B-FP8']),
+    ]
+    const rows = collectInstalledModels(catalog, [
+      provider('llamacpp', ['nvidia/Qwen3-8B-Q4_K_M']),
+      provider(TENSORRT_LLM_PROVIDER, ['nvidia/Qwen3-8B-FP8']),
+    ])
+
+    expect(rows.map((row) => [row.model_name, modelFormat(row)])).toEqual([
+      ['nvidia/Qwen3-8B-GGUF', 'gguf'],
+      ['nvidia/Qwen3-8B-FP8', 'tensorrt-llm'],
+    ])
+  })
+
+  it('finds the installed TensorRT-LLM model only under its own provider', () => {
+    const providers = [
+      provider('llamacpp', ['nvidia/Qwen3-8B-FP8']),
+      provider(TENSORRT_LLM_PROVIDER, ['nvidia/Qwen3-8B-FP8']),
+    ]
+    expect(
+      findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'], [TENSORRT_LLM_PROVIDER])
+    ).toEqual({ modelId: 'nvidia/Qwen3-8B-FP8', provider: TENSORRT_LLM_PROVIDER })
+    expect(findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'])).toEqual({
+      modelId: 'nvidia/Qwen3-8B-FP8',
+      provider: 'llamacpp',
+    })
   })
 })
 

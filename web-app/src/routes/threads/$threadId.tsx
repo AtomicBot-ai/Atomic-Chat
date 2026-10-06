@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useParams, useSearch, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import {
   agentContextWindow,
@@ -114,6 +114,12 @@ import {
   isContextLimitError,
   isOutOfMemoryError,
 } from '@/utils/error'
+import { route } from '@/constants/routes'
+import {
+  canGrowContext,
+  contextOverflowGuidance,
+  contextOverflowMessage,
+} from '@/lib/tensorrt-llm/chat'
 import {
   DEFAULT_CTX_LEN, growModelContext } from '@/lib/context-size'
 import { captureHandledError } from '@/lib/sentry'
@@ -299,6 +305,7 @@ function ThreadDetail() {
   // Get model and provider for useChat
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const navigate = useNavigate()
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const agentRun = useAgentRun((state) => state.runs[threadId])
   const persistedAgentRunsRef = useRef(new Set<string>())
@@ -1877,8 +1884,10 @@ function ThreadDetail() {
     // only serves the chat transport.
     if (!error || isAgentRunning) return
     const autoIncrease =
-      selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
-      true
+      (selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
+        true) &&
+      // A TensorRT-LLM context is fixed when its container starts (design D9).
+      canGrowContext(selectedProvider)
     if (!autoIncrease) return
     if (isContextLimitError(error)) {
       setIsAutoIncreasingContext(true)
@@ -1907,6 +1916,7 @@ function ThreadDetail() {
       !(
         error &&
         isContextLimitError(error) &&
+        canGrowContext(selectedProvider) &&
         (selectedModel?.settings?.auto_increase_ctx_len?.controller_props
           ?.value ??
           true)
@@ -2087,6 +2097,11 @@ function ThreadDetail() {
                       const activeError = error ?? contextLimitError
                       const rawMessage = activeError?.message
                       const isContextError = isContextLimitError(activeError)
+                      // TensorRT-LLM: the limit, and the setting that raises it; no reload here.
+                      const fixedContext = contextOverflowGuidance(
+                        selectedProvider,
+                        activeError
+                      )
                       const isAccessError =
                         !isContextError && isModelAccessError(activeError)
                       const isAuthError =
@@ -2113,7 +2128,9 @@ function ThreadDetail() {
                             : isOomError
                               ? OUT_OF_MEMORY_TITLE
                               : 'Error generating response'
-                      const body = isContextError
+                      const body = fixedContext
+                        ? contextOverflowMessage(fixedContext)
+                        : isContextError
                         ? CONTEXT_OVERFLOW_MESSAGE
                         : isAccessError
                           ? MODEL_ACCESS_DENIED_MESSAGE
@@ -2142,7 +2159,22 @@ function ThreadDetail() {
                                   <LinkifiedText text={body ?? ''} />
                                 </span>
                               </div>
-                              {isContextError ? (
+                              {fixedContext ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={() =>
+                                    void navigate({
+                                      to: route.settings.providers,
+                                      params: { providerName: 'tensorrt-llm' },
+                                    })
+                                  }
+                                >
+                                  <IconAlertCircle className="size-4 mr-2" />
+                                  Open TensorRT-LLM settings
+                                </Button>
+                              ) : isContextError ? (
                                 <Button
                                   variant="outline"
                                   size="sm"

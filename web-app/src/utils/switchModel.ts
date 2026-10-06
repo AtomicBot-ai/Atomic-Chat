@@ -12,6 +12,8 @@ import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import type { ModelLoadProgress } from '@/lib/inference-status'
+import { knownLoadStage } from '@/lib/tensorrt-llm/types'
+import { loadWatchdogMs } from '@/lib/tensorrt-llm/chat'
 import {
   isKeylessRemoteProvider,
   isSubscriptionProvider,
@@ -228,6 +230,7 @@ const LOCAL_PROVIDERS = [
   'llamacpp-upstream',
   'mlx',
   'foundation-models',
+  'tensorrt-llm',
 ] as const
 type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
 
@@ -1275,9 +1278,14 @@ async function loadLocalModelWithOomRetry(args: {
     try {
       await taggedWithTimeout(
         serviceHub.models().startModel(provider, modelId, true, {
-          onStage: (stage) => onProgress?.({ ...stage, retry }),
+          onStage: (stage) =>
+            onProgress?.(
+              stage.kind === 'startingEngine'
+                ? { ...stage, stage: knownLoadStage(stage.stage), retry }
+                : { ...stage, retry }
+            ),
         }),
-        MODEL_LOAD_WATCHDOG_MS,
+        loadWatchdogMs(providerName, MODEL_LOAD_WATCHDOG_MS),
         `Timed out waiting for model "${modelId}" to finish loading.`
       )
       if (lastStep) {

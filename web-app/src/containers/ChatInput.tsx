@@ -10,6 +10,10 @@ import {
 import { useMessageExecutionRoute } from '@/hooks/useMessageExecutionRoute'
 import { useAgentProvider } from '@/hooks/useAgentProvider'
 import { agentProviderBlockReason } from '@/lib/agent-provider'
+import {
+  agentModelBlockReason,
+  imageAttachmentsAllowed,
+} from '@/lib/tensorrt-llm/chat'
 import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -286,6 +290,12 @@ const ChatInput = memo(function ChatInput({
   // Only used for hints — the toggle stays usable and routing falls back to
   // chat safely at send time.
   const agentBlockReason = agentProviderBlockReason(agentProvider)
+  // A model that cannot call tools (TensorRT-LLM without a tool parser): the turn goes to chat,
+  // and the chip says why.
+  const agentModelBlock = agentModelBlockReason(
+    agentProvider?.provider,
+    selectedModel ?? undefined
+  )
   // This composer owns the microphone only if it started the session —
   // home and an open thread can both be mounted at once.
   const isVoiceActive =
@@ -768,12 +778,8 @@ const ChatInput = memo(function ChatInput({
     const checkMmprojSupport = async () => {
       if (selectedModel && selectedModel?.id) {
         try {
-          // Only check mmproj for llamacpp provider
-          if (selectedModel?.capabilities?.includes('vision')) {
-            setHasMmproj(true)
-          } else {
-            setHasMmproj(false)
-          }
+          // Images follow the model's vision capability; never for TensorRT-LLM.
+          setHasMmproj(imageAttachmentsAllowed(selectedProvider, selectedModel))
         } catch (error) {
           console.error('Error checking mmproj:', error)
           setHasMmproj(false)
@@ -3446,7 +3452,8 @@ const ChatInput = memo(function ChatInput({
                           <div
                             className={cn(
                               'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
-                              agentBlockReason && 'opacity-60'
+                              (agentBlockReason || agentModelBlock) &&
+                                'opacity-60'
                             )}
                             data-testid="agent-mode-chip"
                           >
@@ -3469,12 +3476,14 @@ const ChatInput = memo(function ChatInput({
                           </div>
                         )}
                       </TooltipTrigger>
-                      {agentBlockReason && (
+                      {(agentBlockReason || agentModelBlock) && (
                         <TooltipContent>
                           {t(
                             agentBlockReason === 'missing-api-key'
                               ? 'chat:agentMode.providerKeyMissing'
-                              : 'chat:agentMode.providerUnavailable'
+                              : agentBlockReason
+                                ? 'chat:agentMode.providerUnavailable'
+                                : 'chat:agentMode.modelWithoutTools'
                           )}
                         </TooltipContent>
                       )}

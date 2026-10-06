@@ -89,6 +89,10 @@ pub enum OpenAiTargetKind {
     LocalMlx,
     /// The Local API Server proxy, which fans out to the real provider.
     LocalApiServer,
+    /// A `tensorrt-llm` session: the core's session gateway in front of `trtllm-serve` in a
+    /// container. Its context is fixed at load (no reload to grow it) and it reads only the
+    /// reasoning field the core's live test showed it reading.
+    LocalTensorrtLlm,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -513,6 +517,17 @@ fn insert_reasoning_fields(
     reasoning: &CompletionReasoning,
 ) {
     let is_mlx = target.kind == OpenAiTargetKind::LocalMlx;
+    if target.kind == OpenAiTargetKind::LocalTensorrtLlm {
+        // `trtllm-serve` hands `chat_template_kwargs` to the chat template, which is how thinking is
+        // turned off. Nothing shows it reading `reasoning_effort` or a budget, so none is sent.
+        if matches!(reasoning, CompletionReasoning::Off) {
+            body.insert(
+                "chat_template_kwargs".into(),
+                json!({"enable_thinking": false}),
+            );
+        }
+        return;
+    }
     match reasoning {
         CompletionReasoning::Unset => {}
         CompletionReasoning::Off => {
@@ -1315,6 +1330,47 @@ mod tests {
             payload["chat_template_kwargs"],
             json!({"enable_thinking": false})
         );
+    }
+
+    #[test]
+    fn tensorrt_llm_reasoning_off_sends_only_the_template_kwargs() {
+        // `trtllm-serve` passes `chat_template_kwargs` to the template (the core's live test turns
+        // Qwen3 thinking off this way); the top-level `enable_thinking` is an mlx-vlm field.
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalTensorrtLlm, false)).unwrap();
+        let payload = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::Off),
+            false,
+        );
+
+        assert_eq!(
+            payload["chat_template_kwargs"],
+            json!({"enable_thinking": false})
+        );
+        assert!(payload.get("enable_thinking").is_none());
+    }
+
+    #[test]
+    fn tensorrt_llm_reasoning_on_adds_no_field_the_engine_was_not_shown_to_read() {
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalTensorrtLlm, false)).unwrap();
+        let payload = client.chat_payload(
+            &client.target(),
+            &request_with_reasoning(CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(1_024),
+                effort_value: Some("high".into()),
+            }),
+            false,
+        );
+
+        for field in ["reasoning_effort", "thinking_budget", "enable_thinking", "chat_template_kwargs"] {
+            assert!(payload.get(field).is_none(), "unexpected {field}");
+        }
     }
 
     #[test]

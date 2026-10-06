@@ -416,6 +416,248 @@ pub async fn atomic_core_call(
     state.call(&method, &path, body).await
 }
 
+/// How long the app keeps waiting for the result of a `sudo` command the person runs by hand.
+#[cfg(unix)]
+const MANUAL_HOST_STEP_WAIT: std::time::Duration = std::time::Duration::from_secs(2 * 60 * 60);
+
+/// Run the privileged step a managed-runtime operation is waiting on (design D3), and report back.
+///
+/// The webview names the operation and nothing else: the step — recipe, digests, parameters,
+/// nonce — is read from the core here, the request file is written here, and the webview never
+/// sees a path or an argument it could change. Answers `{outcome}`: `completed`,
+/// `reboot-required`, `failed` (with `log_tail`) or `declined` once the receipt is sent; `manual`
+/// with the exact command to run by hand otherwise — on Linux the `sudo` command when there is no
+/// `pkexec` or no polkit agent (the receipt is sent once the result file appears), on Windows
+/// `wsl --install` for an administrator terminal when UAC cannot be raised (no
+/// receipt: the person checks again once it ran).
+#[tauri::command]
+pub async fn atomic_core_run_host_step<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AtomicCoreClient>,
+    operation_id: String,
+) -> Result<Value, CoreError> {
+    run_host_step(&app, &state, &operation_id).await
+}
+
+async fn run_host_step<R: Runtime>(
+    app: &AppHandle<R>,
+    client: &AtomicCoreClient,
+    operation_id: &str,
+) -> Result<Value, CoreError> {
+    #[cfg(windows)]
+    {
+        run_host_step_windows(app, client, operation_id).await
+    }
+    #[cfg(not(windows))]
+    {
+        #[cfg(unix)]
+        if cfg!(target_os = "linux") {
+            return run_host_step_unix(app, client, operation_id).await;
+        }
+        let _ = (app, client, operation_id);
+        Err(CoreError::new(
+            "MANAGED_ADAPTER_UNAVAILABLE",
+            "Managed runtimes run on Linux and Windows only.",
+            None,
+        ))
+    }
+}
+
+/// The step the operation waits on, read from the core, and the claim that keeps a second run of
+/// it from starting while this one goes.
+async fn pending_host_step(
+    client: &AtomicCoreClient,
+    operation_id: &str,
+) -> Result<(super::host_step::HostStep, super::host_step::StepClaim), CoreError> {
+    use super::host_step::{self, HostStep};
+
+    if operation_id.is_empty()
+        || !operation_id.chars().all(|c| c.is_ascii_alphanumeric() || "._:-".contains(c))
+    {
+        return Err(CoreError::new("INVALID_ARGUMENT", "Not an operation id.", None));
+    }
+    let operation = client
+        .call("GET", &format!("/environments/operations/{operation_id}"), None)
+        .await?;
+    let step = HostStep::from_operation(&operation).ok_or_else(|| {
+        CoreError::new("MANAGED_HOST_STEP_INVALID", "This operation is not waiting for a privileged step.", None)
+    })?;
+    let claim = host_step::claim(&step.step_id).ok_or_else(|| {
+        CoreError::new(
+            "MANAGED_OPERATION_CONFLICT",
+            "The system password prompt for this step is already open.",
+            None,
+        )
+    })?;
+    Ok((step, claim))
+}
+
+/// The CLI core beside the core this app runs: the bundled pair, or the local build that
+/// ATOMIC_CORE_CMD points at in development.
+fn host_step_executor<R: Runtime>(app: &AppHandle<R>) -> Result<std::path::PathBuf, CoreError> {
+    let resource_dir = app.path().resource_dir().unwrap_or_default();
+    let command = super::launch::resolve_core_command(
+        &resource_dir,
+        std::env::var(super::launch::CORE_COMMAND_ENV).ok().as_deref(),
+    )?;
+    super::host_step::executor_binary(&command)
+        .map_err(|why| CoreError::new("MANAGED_HOST_STEP_INVALID", "Could not prepare the privileged step.", Some(why)))
+}
+
+/// Compiled on every unix so the macOS build type-checks what ships on Linux; called on Linux only.
+#[cfg(unix)]
+async fn run_host_step_unix<R: Runtime>(
+    app: &AppHandle<R>,
+    client: &AtomicCoreClient,
+    operation_id: &str,
+) -> Result<Value, CoreError> {
+    use super::host_step::{self, Elevation, ReceiptOutcome};
+
+    let (step, claim) = pending_host_step(client, operation_id).await?;
+    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| dir.is_dir())
+        .ok_or_else(|| {
+            CoreError::new(
+                "MANAGED_HOST_STEP_INVALID",
+                "This session has no XDG_RUNTIME_DIR to prepare the privileged step in.",
+                None,
+            )
+        })?;
+    let core_binary = host_step_executor(app)?;
+    let supervisor = client.supervisor();
+    let prepared = host_step::prepare(&runtime_dir, &core_binary, &step, supervisor.data_folder())
+        .map_err(|e| {
+            CoreError::new(
+                "MANAGED_HOST_STEP_INVALID",
+                "Could not prepare the privileged step.",
+                Some(format!("{}: {e}", core_binary.display())),
+            )
+        })?;
+
+    let (outcome, log_tail) = match host_step::elevate(std::path::Path::new("pkexec"), &prepared).await {
+        Elevation::Finished { outcome, log_tail } => {
+            if outcome == ReceiptOutcome::Failed {
+                // The result file goes with the copy; its reason stays in the app log (F-2).
+                log::warn!("[host-step] {} failed: {log_tail}", step.step_id);
+            }
+            (outcome, log_tail)
+        }
+        Elevation::Declined => (ReceiptOutcome::Declined, String::new()),
+        Elevation::Manual { command } => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let result = host_step::wait_for_result(
+                    &prepared,
+                    host_step::MANUAL_POLL_INTERVAL,
+                    MANUAL_HOST_STEP_WAIT,
+                )
+                .await;
+                if let Some((ReceiptOutcome::Failed, why)) = &result {
+                    log::warn!("[host-step] {} failed: {why}", step.step_id);
+                }
+                if let (Some((outcome, _)), Some(client)) = (result, app.try_state::<AtomicCoreClient>()) {
+                    send_host_step_receipt(&client, &step, outcome).await;
+                }
+                prepared.remove();
+                drop(claim);
+            });
+            return Ok(json!({ "outcome": "manual", "command": command }));
+        }
+    };
+    prepared.remove();
+    send_host_step_receipt(client, &step, outcome).await;
+    drop(claim);
+    Ok(json!({ "outcome": outcome.as_str(), "log_tail": log_tail }))
+}
+
+/// Windows (change `add-tensorrt-llm-windows`, design D15): the bundled `atomic-chat-core.exe`
+/// run in place through the UAC prompt, from a request folder under `%LOCALAPPDATA%` that only
+/// the user, `SYSTEM` and `Administrators` can touch.
+#[cfg(windows)]
+async fn run_host_step_windows<R: Runtime>(
+    app: &AppHandle<R>,
+    client: &AtomicCoreClient,
+    operation_id: &str,
+) -> Result<Value, CoreError> {
+    use super::host_step::{Elevation, ReceiptOutcome};
+    use super::host_step_windows;
+
+    let (step, claim) = pending_host_step(client, operation_id).await?;
+    let root = std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| dir.is_dir())
+        .ok_or_else(|| {
+            CoreError::new(
+                "MANAGED_HOST_STEP_INVALID",
+                "This session has no %LOCALAPPDATA% to prepare the privileged step in.",
+                None,
+            )
+        })?
+        .join("AtomicChat")
+        .join("host-steps");
+    let core_binary = host_step_executor(app)?;
+    let supervisor = client.supervisor();
+    let prepared = host_step_windows::prepare(&root, &core_binary, &step, supervisor.data_folder())
+        .map_err(|e| {
+            CoreError::new(
+                "MANAGED_HOST_STEP_INVALID",
+                "Could not prepare the privileged step.",
+                Some(format!("{}: {e}", root.display())),
+            )
+        })?;
+
+    // The UAC prompt and the executor's run block their thread for as long as they take. Once the
+    // person approved and the executor started, the UI hears it (`managed-host-step-running`):
+    // `wsl --install` then runs for minutes with no window of its own.
+    let emitter = app.clone();
+    let started = json!({ "operation_id": operation_id, "step_id": step.step_id });
+    let (prepared, elevation) = tauri::async_runtime::spawn_blocking(move || {
+        let mut on_started = || {
+            if let Err(e) = emitter.emit("managed-host-step-running", started.clone()) {
+                log::warn!("[host-step] could not tell the UI the step started: {e}");
+            }
+        };
+        let elevation = host_step_windows::elevate(&prepared, &mut on_started);
+        (prepared, elevation)
+    })
+    .await
+    .map_err(|e| CoreError::new("MANAGED_HOST_STEP_INVALID", "The privileged step did not finish.", Some(e.to_string())))?;
+    prepared.remove();
+
+    let (outcome, log_tail) = match elevation {
+        Elevation::Finished { outcome, log_tail } => {
+            if outcome == ReceiptOutcome::Failed {
+                log::warn!("[host-step] {} failed: {log_tail}", step.step_id);
+            }
+            (outcome, log_tail)
+        }
+        Elevation::Declined => (ReceiptOutcome::Declined, String::new()),
+        Elevation::Manual { command } => {
+            // No result file will ever come: the person runs the command, then checks again.
+            log::warn!("[host-step] UAC could not be raised for {}; handing over `{command}`", step.step_id);
+            drop(claim);
+            return Ok(json!({ "outcome": "manual", "command": command }));
+        }
+    };
+    send_host_step_receipt(client, &step, outcome).await;
+    drop(claim);
+    Ok(json!({ "outcome": outcome.as_str(), "log_tail": log_tail }))
+}
+
+async fn send_host_step_receipt(
+    client: &AtomicCoreClient,
+    step: &super::host_step::HostStep,
+    outcome: super::host_step::ReceiptOutcome,
+) {
+    let receipt = step.receipt(outcome, &uuid::Uuid::new_v4().to_string());
+    let path = format!("/environments/operations/{}/host-step-result", step.operation_id);
+    if let Err(error) = client.call("POST", &path, Some(receipt)).await {
+        // The operation stays in `preparing-host`; the provider page offers to try again.
+        log::warn!("[host-step] the core did not take the receipt: {error:?}");
+    }
+}
+
 /// What the app knows about the core right now — for diagnosing a machine where the core will not
 /// start, and for the extensions, which wait for an attachment before their first load.
 #[tauri::command]
@@ -516,6 +758,50 @@ async fn recover_public_server<R: Runtime>(app: &AppHandle<R>, generation: u64) 
     }
 }
 
+/// The one thing a managed setup can ask of the person's session, done for them from the progress
+/// bar: `restart` — Windows, after WSL was turned on (`reboot-required`): `shutdown.exe /r /t 0`;
+/// `sign-out` — Linux, after the `docker` group was added (`relogin-required`): `loginctl
+/// terminate-session $XDG_SESSION_ID`. Both run as the person, without elevation; anything else, or
+/// either on the other OS, is refused. An error is returned as text for the bar to show.
+#[tauri::command]
+pub async fn atomic_core_finish_session_step(action: String) -> Result<(), String> {
+    session_step_command(&action, std::env::var("XDG_SESSION_ID").ok())
+        .ok_or_else(|| format!("{action} is not available on this system"))
+        .and_then(|(program, args)| {
+            let mut command = std::process::Command::new(program);
+            command.args(&args);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+            let status = command.status().map_err(|e| format!("{program}: {e}"))?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("{program} exited with {status}"))
+            }
+        })
+}
+
+/// The argv for a session step on this OS, or None when it does not apply here.
+fn session_step_command(
+    action: &str,
+    session_id: Option<String>,
+) -> Option<(&'static str, Vec<String>)> {
+    match action {
+        "restart" if cfg!(windows) => Some((
+            "shutdown.exe",
+            vec!["/r".into(), "/t".into(), "0".into()],
+        )),
+        "sign-out" if cfg!(target_os = "linux") => {
+            let id = session_id.filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric()))?;
+            Some(("loginctl", vec!["terminate-session".into(), id]))
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,4 +885,25 @@ mod tests {
         assert_eq!(error.code, "CORE_NOT_RUNNING");
     }
 
+
+    #[test]
+    fn a_session_step_is_one_fixed_command_for_this_os_only() {
+        assert_eq!(session_step_command("format-disk", Some("2".into())), None);
+        if cfg!(windows) {
+            assert_eq!(
+                session_step_command("restart", None),
+                Some(("shutdown.exe", vec!["/r".to_string(), "/t".into(), "0".into()]))
+            );
+            assert_eq!(session_step_command("sign-out", Some("2".into())), None);
+        }
+        if cfg!(target_os = "linux") {
+            assert_eq!(
+                session_step_command("sign-out", Some("c2".into())),
+                Some(("loginctl", vec!["terminate-session".to_string(), "c2".into()]))
+            );
+            assert_eq!(session_step_command("sign-out", Some("2; rm -rf /".into())), None);
+            assert_eq!(session_step_command("sign-out", None), None);
+            assert_eq!(session_step_command("restart", None), None);
+        }
+    }
 }

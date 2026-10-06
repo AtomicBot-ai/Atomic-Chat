@@ -607,6 +607,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn relays_the_managed_runtime_events_unchanged() {
+        // Protocol 2 adds three events the webview's environment store and load-stage display read
+        // (`environment:changed`, `environment:operation`, `session:load-progress`). They carry full
+        // state with `instance_id`/`revision` or a `generation`; the relay must hand them over byte
+        // for byte and give none of them a legacy name.
+        let core = FakeCore::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        core.publish_lock(dir.path());
+        let supervisor = Arc::new(Supervisor::new(
+            dir.path().to_path_buf(),
+            dir.path().to_path_buf(),
+            None,
+        ));
+        let sink = Arc::new(Recorder::default());
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(run(Arc::clone(&supervisor), Arc::clone(&sink), cancel_rx));
+        wait_for(|| async { core.open_stream_count().await == 1 }).await;
+
+        let snapshot = json!({ "environment_id": "env", "instance_id": "i", "revision": 3, "gpus": [] });
+        let operation = json!({ "operation_id": "op", "instance_id": "i", "revision": 7, "phase": "pulling-image",
+            "progress": { "label": "pull", "completed": 10, "total": 100, "unit": "bytes" } });
+        let progress = json!({ "provider": "tensorrt-llm", "model_id": "qwen", "generation": "g-1",
+            "stage": "initializing-engine", "elapsed_ms": 42000 });
+        core.emit("environment:changed", snapshot.clone()).await;
+        core.emit("environment:operation", operation.clone()).await;
+        core.emit("session:load-progress", progress.clone()).await;
+        wait_for(|| {
+            let sink = Arc::clone(&sink);
+            async move {
+                sink.names()
+                    .iter()
+                    .any(|n| n == "atomic-core://session:load-progress")
+            }
+        })
+        .await;
+
+        assert_eq!(sink.payload_of("atomic-core://environment:changed"), Some(snapshot));
+        assert_eq!(sink.payload_of("atomic-core://environment:operation"), Some(operation));
+        assert_eq!(sink.payload_of("atomic-core://session:load-progress"), Some(progress.clone()));
+        for name in ["environment:changed", "environment:operation", "session:load-progress"] {
+            assert!(legacy_event_for(&format!("{EVENT_PREFIX}{name}"), &progress).is_none());
+        }
+
+        let _ = cancel_tx.send(());
+        let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+    }
+
+    #[tokio::test]
     async fn a_resync_invalidates_the_mirror_and_hands_out_a_fresh_snapshot() {
         let core = FakeCore::start().await;
         let dir = tempfile::tempdir().unwrap();

@@ -391,6 +391,7 @@
     "title": "Delete Model: {{modelId}}",
     "description": "Are you sure you want to delete this model? This action cannot be undone.",
     "success": "Model {{modelId}} has been permanently deleted.",
+    "successFreed": "Model {{modelId}} has been permanently deleted; {{size}} freed.",
     "cancel": "Cancel",
     "delete": "Delete"
   },
@@ -742,7 +743,8 @@
     "restartingDetail": "The previous engine is being stopped and this one started. Chat is paused until the swap finishes.",
     "ready": "{{model}} is loaded",
     "notLoaded": "No model loaded — the first message will start one",
-    "retry": "Try again"
+    "retry": "Try again",
+    "logs": "Logs"
   },
   "modelLoad": {
     "starting": "Starting Model",
@@ -760,6 +762,12 @@
       "stopLoading": "Stop loading",
       "notLoaded": "Not loaded — the first message will start it",
       "failed": "Failed to load"
+    },
+    "engine": {
+      "stopping-previous": "Unloading the previous model",
+      "starting-container": "Starting the engine container",
+      "initializing-engine": "Preparing the engine",
+      "ready": "Engine ready"
     }
   },
   "desktopNotification": {

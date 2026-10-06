@@ -1,0 +1,12 @@
+---
+date: 2026-09-30
+title: "TensorRT-LLM is a Linux-only extension that decides its own visibility"
+---
+
+# 2026-09-30 — TensorRT-LLM is a Linux-only extension that decides its own visibility
+
+- **Context:** `atomic-chat-core` 0.7.0 runs NVIDIA TensorRT-LLM in a Docker container on Linux (openspec change `add-tensorrt-llm-linux`). The app needs a provider for it, but only where it can run or be set up: a Linux machine with an NVIDIA GPU, once the engine's descriptor is published in `atomic-chat-conf` — which can happen after the app is installed. The Foundation Models extension hides itself by leaving `EngineManager` in `onLoad`, which cannot bring a provider back later, cannot drop one the persisted provider store already holds, and makes every app start wait for the check.
+- **Decision:** `@janhq/tensorrt-llm-extension` (the `@janhq/` prefix the installer requires) is built only by `build:extensions:linux`; the darwin and win32 scripts `--exclude` it, and `tests/pre-install-tarballs.test.mjs` reads those flags instead of a list of its own. The extension stays registered and answers `isHidden()` from the core's probe of the machine: hidden when the plan is `unsupported` or blocked by `driver-missing`, `no-gpu` or `descriptor-unavailable` (the core cannot tell "no driver" from "no card"); every other blocker is shown with its instructions. `onLoad` starts the probe without waiting; `refreshVisibility()` shares a probe in flight. The web-app skips hidden engines in `getProviders`, and `refreshAppManagedProviders` (`lib/provider-visibility.ts`) runs once after the first provider list and each time the provider settings open: it re-asks the engine, lists what is visible and deletes what is hidden from the store. Before anything is installed the probe names the engine id `tensorrt-llm` as its descriptor, which the core resolves to its newest descriptor.
+- **Consequences:** A descriptor published later shows the provider the next time the provider settings open, without an app update. On Linux the provider appears a moment after start, once the probe answers. An NVIDIA card with no driver installed looks like no card and stays hidden; `atc doctor` reports the driver. Deleting a single TensorRT-LLM model is not offered (design D12a); the extension refuses it.
+- **Owner:** `team`
+- **Links:** `extensions/tensorrt-llm-extension/`, `web-app/src/lib/provider-visibility.ts`, `web-app/src/services/providers/tauri.ts`; `atomic-chat-spec` change `add-tensorrt-llm-linux` (spec `tensorrt-llm-desktop`, rulings `R-app-4`, `R-app-5`).

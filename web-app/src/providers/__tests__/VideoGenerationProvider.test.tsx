@@ -43,7 +43,8 @@ describe('VideoGenerationProvider', () => {
 
   it('does nothing on a platform without media generation', () => {
     features.media = false
-    const { unmount } = render(<VideoGenerationProvider />)
+    const { container, unmount } = render(<VideoGenerationProvider />)
+    expect(container).toBeEmptyDOMElement()
     unmount()
     expect(store.bind).not.toHaveBeenCalled()
     expect(store.unbind).not.toHaveBeenCalled()

@@ -49,6 +49,24 @@ export interface CatalogModel {
   readme?: string
   tools?: boolean
   is_mlx?: boolean
+  /**
+   * A safetensors checkpoint listed under the Hub's TensorRT-LLM format (change
+   * `add-tensorrt-llm-model-hub`): whether it runs is the core's verdict, never this flag.
+   */
+  is_tensorrt_llm?: boolean
+  /** What the Hub knows of a TensorRT-LLM entry before the core's verdict. */
+  tensorrt?: TensorrtCatalogFields
+}
+
+export interface TensorrtCatalogFields {
+  /** One of the descriptor's curated checkpoints. */
+  curated?: boolean
+  /** The revision to read and download at: the descriptor's pin; absent means `main`. */
+  revision?: string
+  /** `config.architectures` from Hugging Face's listing (`expand[]=config`). */
+  architectures?: string[]
+  /** Parameter counts by safetensors dtype from the listing (`expand[]=safetensors`). */
+  parameters?: Record<string, number>
 }
 
 export type ModelCatalog = CatalogModel[]
@@ -74,7 +92,11 @@ export type HuggingFaceFeedSort =
   | 'likes'
   | 'lastModified'
 
-export type HuggingFaceFeedFormat = 'gguf' | 'mlx'
+/**
+ * `tensorrt-llm` lists every safetensors repository with its architectures and parameters by
+ * dtype (change `add-tensorrt-llm-model-hub`, design D4); whether one runs is the core's verdict.
+ */
+export type HuggingFaceFeedFormat = 'gguf' | 'mlx' | 'tensorrt-llm'
 
 export type HuggingFaceFeedParams = {
   format: HuggingFaceFeedFormat
@@ -147,6 +169,14 @@ export type PreflightReason =
   | 'NETWORK'
   | 'UNKNOWN'
 
+/**
+ * What a delete freed, from an engine that deletes through the core and has it measured there
+ * (TensorRT-LLM: the model folder and every engine cache of it, core task 2.24).
+ */
+export interface ModelDeletionReport {
+  freedBytes: number
+}
+
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
@@ -199,7 +229,8 @@ export interface ModelsService {
     resume?: boolean
   ): Promise<DownloadRefusal | undefined>
   abortDownload(id: string): Promise<void>
-  deleteModel(id: string, provider?: string): Promise<void>
+  /** Resolves with what the delete freed when the engine measures it (TensorRT-LLM does). */
+  deleteModel(id: string, provider?: string): Promise<ModelDeletionReport | void>
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
   stopAllModels(): Promise<void>

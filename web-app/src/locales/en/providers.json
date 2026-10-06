@@ -33,6 +33,7 @@
     "title": "Delete Model: {{modelId}}",
     "description": "Are you sure you want to delete this model? This action cannot be undone.",
     "success": "Model {{modelId}} has been permanently deleted.",
+    "successFreed": "Model {{modelId}} has been permanently deleted; {{size}} freed.",
     "cancel": "Cancel",
     "delete": "Delete"
   },
@@ -78,5 +79,163 @@
     "neverUpdated": "Not yet loaded",
     "successDescription": "Provider catalog updated.",
     "errorDescription": "Could not refresh provider catalog. Using cached or built-in providers."
+  },
+  "tensorrt": {
+    "title": "TensorRT-LLM engine",
+    "description": "NVIDIA's inference engine, run by Atomic Chat in a Docker container on your NVIDIA GPU.",
+    "checking": "Checking this computer…",
+    "checkAgain": "Check again",
+    "blocked": "TensorRT-LLM cannot run on this computer yet:",
+    "notInstalled": "TensorRT-LLM is not installed. Installing it downloads the engine image and, if needed, sets up Docker and the NVIDIA Container Toolkit.",
+    "install": "Install…",
+    "installed": "TensorRT-LLM is installed.",
+    "failed": "The installation stopped:",
+    "retry": "Try again",
+    "newerPlan": "The engine can now be set up with a newer plan, for example from a newer engine release. Install starts over with it; Try again repeats the failed attempt as it was.",
+    "cancel": "Cancel",
+    "progress": "{{done}} of {{total}}",
+    "blocker": {
+      "ampere": "TensorRT-LLM needs an NVIDIA card of the Ampere generation (RTX 30xx) or newer: compute capability {{required}} or higher. This card has {{actual}}."
+    },
+    "plan": {
+      "title": "Install TensorRT-LLM",
+      "intro": "This is everything the installation will do on this computer.",
+      "noSystemChanges": "Docker and the NVIDIA runtime are already set up; nothing on the system changes.",
+      "relogin": "You will need to sign out and sign back in once the system changes are made; the installation then continues on its own.",
+      "download": "Download: {{size}}.",
+      "disk": "Disk: {{required}} in {{path}}; {{free}} free there.",
+      "diskNoFree": "Disk: {{required}} in {{path}}.",
+      "diskNoPath": "Disk: {{required}} needed in Docker's storage; {{free}} free there.",
+      "diskUnknown": "Disk: {{required}} in Docker's storage. The location and free space were not reported.",
+      "notices": "NVIDIA terms and notices",
+      "noticesMissing": "The NVIDIA terms and notices for this engine were not reported.",
+      "warning": {
+        "addressPools": "A VPN or another network on this computer ({{routes}}) uses the addresses Docker needs, so Docker may fail to start after the installation.",
+        "addressPoolsNoRoutes": "A VPN or another network on this computer uses the addresses Docker needs, so Docker may fail to start after the installation.",
+        "addressPoolsFix": "To avoid it, exclude Docker's address ranges from the VPN, or give Docker other ranges with \"default-address-pools\" in /etc/docker/daemon.json. You can still install now."
+      },
+      "cancel": "Cancel",
+      "agree": "Agree and install",
+      "reboot": "Windows may need a restart after WSL is turned on. After the restart, open Atomic Chat: the installation continues by itself.",
+      "wslDisk": "Disk: {{required}} for Atomic Chat's WSL distribution in {{path}}; {{free}} free there.",
+      "wslDiskNoFree": "Disk: {{required}} for Atomic Chat's WSL distribution in {{path}}.",
+      "wslDiskNoPath": "Disk: {{required}} needed for Atomic Chat's WSL distribution; {{free}} free there.",
+      "wslDiskUnknown": "Disk: {{required}} for Atomic Chat's WSL distribution. Its location and free space were not reported."
+    },
+    "consent": {
+      "review": "Review the plan"
+    },
+    "hostStep": {
+      "waiting": "Waiting for your system password to set up Docker and the NVIDIA Container Toolkit…",
+      "manual": "This desktop has no password prompt Atomic Chat can use. Run this command in a terminal; the installation continues when it finishes:",
+      "retry": "Ask for the password again",
+      "uac": {
+        "waiting": "Approve the Windows administrator prompt (UAC) that turns on WSL. After you approve, Windows downloads and installs WSL; this takes several minutes with no window of its own.",
+        "manual": "Windows cannot show an administrator prompt for Atomic Chat here. Open a terminal as administrator, run this command, restart the computer if it asks, then press Check again:",
+        "retry": "Ask for approval again",
+        "running": "Windows is installing WSL. This takes several minutes and shows no window of its own; Atomic Chat continues by itself when it finishes."
+      },
+      "running": "Installing Docker and the NVIDIA Container Toolkit; this takes a few minutes, and the installation continues by itself."
+    },
+    "relogin": {
+      "title": "Sign out and sign back in",
+      "body": "You were added to the docker group, which takes effect at your next sign-in. After you sign back in and open Atomic Chat, the installation continues by itself.",
+      "stillWaiting": "Already signed out and back in, and still waiting here? Restart the computer: a session that stays running in the background (a remote login, or services kept alive after sign-out) can keep your old groups."
+    },
+    "phase": {
+      "checking": "Checking this computer…",
+      "awaiting-consent": "Waiting for your consent",
+      "preparing-host": "Setting up Docker and the NVIDIA Container Toolkit",
+      "relogin-required": "Waiting for you to sign in again",
+      "reboot-required": "Waiting for a restart",
+      "preparing-environment": "Checking that Docker sees your GPU",
+      "pulling-image": "Downloading the engine image",
+      "verifying": "Verifying the engine image",
+      "activating": "Finishing the installation",
+      "removing": "Removing the engine",
+      "cancelling": "Cancelling",
+      "ready": "Installed",
+      "removed": "Removed",
+      "cancelled": "Cancelled",
+      "failed": "Failed"
+    },
+    "remove": {
+      "space": "The engine image takes about {{size}} in Docker's storage. Uninstalling Atomic Chat does not free it; remove the engine here first.",
+      "button": "Remove engine",
+      "title": "Remove TensorRT-LLM?",
+      "body": "The engine image, its caches and the installation are deleted. Docker, the NVIDIA Container Toolkit and the docker group stay on this computer.",
+      "keepModels": "Keep the downloaded TensorRT-LLM models",
+      "confirm": "Remove",
+      "spaceWindows": "The engine image takes about {{size}} inside Atomic Chat's WSL distribution. Uninstalling Atomic Chat removes neither the image nor the distribution; remove the engine and then the environment here first.",
+      "bodyWindows": "The engine image, its caches and the installation are deleted. Atomic Chat's WSL distribution, with Docker and the NVIDIA Container Toolkit in it, stays; you can remove it afterwards as the environment."
+    },
+    "settings": {
+      "title": "TensorRT-LLM settings",
+      "gpu": "GPU",
+      "gpuDefault": "The card with the most free memory at load time",
+      "gpuMissing": "The saved card {{gpu}} is not in this computer now; the next load uses the card with the most free memory and says so.",
+      "outputTooLong": "Max output tokens ({{output}}) must be less than the context length ({{context}}).",
+      "logs": "Model logs",
+      "viewLogs": "View logs",
+      "noLogs": "No log yet: this model has not been loaded.",
+      "gpuDescription": "The card the model loads on. Changes apply from the next load.",
+      "logsDescription": "The engine log of the model's running session, or of its last failed load.",
+      "logOf": "Log of {{model}}"
+    },
+    "notInstalledWindows": "TensorRT-LLM is not installed. Installing it turns on WSL if needed, sets up Atomic Chat's own WSL distribution with Docker and the NVIDIA Container Toolkit inside it, and downloads the engine image.",
+    "reboot": {
+      "title": "Restart the computer",
+      "body": "WSL is turned on, and Windows needs a restart to finish. After the restart, open Atomic Chat: the installation continues by itself, without asking again."
+    },
+    "phaseWindows": {
+      "preparing-host": "Turning on WSL",
+      "preparing-environment": "Setting up Atomic Chat's WSL distribution and checking that it sees your GPU"
+    },
+    "removeEnvironment": {
+      "hint": "Atomic Chat's WSL distribution \"{{name}}\" takes {{size}}. Uninstalling Atomic Chat does not remove it.",
+      "button": "Remove environment",
+      "title": "Remove Atomic Chat's WSL distribution?",
+      "body": "The distribution \"{{name}}\" in {{path}} is unregistered and everything in it is deleted, freeing {{size}}. Your other WSL distributions are not touched.",
+      "models": "These TensorRT-LLM models are deleted with it:",
+      "noModels": "There are no TensorRT-LLM models in it.",
+      "uninstall": "Uninstalling Atomic Chat would not have removed it: this is the way to get the space back.",
+      "confirm": "Remove environment",
+      "removing": "Removing Atomic Chat's WSL distribution"
+    },
+    "bar": {
+      "hostStep": "Approve the system password prompt. After that, Docker and the NVIDIA Container Toolkit are installed; this can take a few minutes, and the installation continues by itself.",
+      "hostStepWindows": "Approve the Windows administrator prompt (UAC). After that, Windows downloads and installs WSL; this takes several minutes with no window of its own, and the installation continues by itself.",
+      "reboot": "WSL is turned on. Restart Windows to finish; after the restart, open Atomic Chat and the installation continues by itself.",
+      "relogin": "You were added to the docker group. Sign out and sign back in for it to take effect; then open Atomic Chat and the installation continues by itself.",
+      "restartNow": "Restart now",
+      "signOutNow": "Sign out now",
+      "later": "Later",
+      "details": "Details",
+      "actionFailed": "Could not do it from here ({{error}}). Do it yourself; the installation continues afterwards."
+    },
+    "hub": {
+      "body": "TensorRT-LLM models are chosen and downloaded in the Model Hub, with a check that each one runs on this computer.",
+      "action": "Choose a model in Model Hub"
+    },
+    "troubleshooting": {
+      "title": "Troubleshooting",
+      "description": "If the setup is stuck, copy the diagnostics for support, or reset the setup state and start again. Resetting keeps everything already installed.",
+      "overridesTitle": "This computer reads TensorRT-LLM settings from a non-default source:",
+      "overridesHint": "These environment variables are usually left over from testing. While they are set, Atomic Chat does not see updates published for TensorRT-LLM. Remove them from the Windows environment variables, sign out and back in, then reset the setup state.",
+      "afterFailure": "The last setup failed. Start over to set up with what is available now instead of retrying the failed attempt.",
+      "copy": "Copy diagnostics",
+      "copied": "Diagnostics copied to the clipboard",
+      "copyFailed": "Could not write to the clipboard",
+      "unavailable": "Diagnostics are not available: {{reason}}",
+      "reset": "Reset setup state",
+      "startOver": "Start over",
+      "running": "A setup or removal is in progress; finish or cancel it first.",
+      "confirmTitle": "Reset the TensorRT-LLM setup state?",
+      "confirmBody": "Finished and failed setup attempts are archived and the next setup starts from a fresh check of this computer. The WSL distribution, the engine image and your models stay as they are.",
+      "confirm": "Reset",
+      "cancel": "Cancel",
+      "resetDone": "Setup state reset ({{count}} attempts archived)",
+      "resetFailed": "Could not reset the setup state: {{reason}}"
+    }
   }
 }

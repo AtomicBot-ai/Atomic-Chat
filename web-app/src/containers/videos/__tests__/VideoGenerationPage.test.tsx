@@ -396,6 +396,9 @@ describe('VideoGenerationPage', () => {
     await act(async () => {
       await userEvent.click(await screen.findByTestId('video-recipe-restore'))
     })
+    // The recipe is in the form and its model is picked before the load is offered.
+    expect(useVideoForm.getState().prompt).toBe('a lighthouse at dusk, waves rolling in')
+    expect(useVideoSetting.getState().selectedArtifactId).toBe(LTX_Q4_ID)
     expect(toast.info).toHaveBeenCalledWith(
       'videos:viewer.loadOffer',
       expect.objectContaining({ action: expect.objectContaining({ label: 'images:model.load' }) })

@@ -86,6 +86,7 @@ export type LoadBackend =
   | 'llamacpp-upstream'
   | 'mlx'
   | 'foundation-models'
+  | 'tensorrt-llm'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -363,7 +364,8 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'llamacpp' ||
     provider === 'llamacpp-upstream' ||
     provider === 'mlx' ||
-    provider === 'foundation-models'
+    provider === 'foundation-models' ||
+    provider === 'tensorrt-llm'
   )
     return provider
   return 'unknown'

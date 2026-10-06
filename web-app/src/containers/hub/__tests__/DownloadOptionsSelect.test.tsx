@@ -60,7 +60,41 @@ vi.mock('@/containers/MlxModelDownloadAction', () => ({
   ),
 }))
 
+const tensorrtHub = vi.hoisted(() => ({ state: 'ready' as string }))
+vi.mock('@/hooks/useTensorrtHubState', () => ({
+  useTensorrtHubState: () => ({
+    visible: true,
+    state: tensorrtHub.state,
+    blockers: [],
+    descriptorId: 'tensorrt-llm-1.3.0rc29-r2',
+  }),
+}))
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({
+    providers: () => ({ getProviders: async () => [] }),
+    models: () => ({ abortDownload: vi.fn() }),
+  }),
+}))
+
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
+
+const trtModels = vi.hoisted(() => ({
+  fetchHfRevision: vi.fn(),
+  checkTensorrtModel: vi.fn(),
+  installTensorrtModel: vi.fn(),
+}))
+vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/tensorrt-llm/models')>()),
+  ...trtModels,
+}))
+
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { resetTensorrtVerdictsForTests } from '@/services/tensorrt-llm/verdict'
+import type { ModelCompatibility } from '@/services/managed-environment/types'
 import { DownloadOptionsSelect } from '../DownloadOptionsSelect'
 
 const GB = 1024 ** 3
@@ -316,5 +350,90 @@ describe('DownloadOptionsSelect with an installed quant', () => {
     expect(
       screen.queryByRole('button', { name: 'hub:download' })
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
+  const compatible: ModelCompatibility = {
+    architectures: ['Qwen3ForCausalLM'],
+    quantization_format: 'fp8',
+    weight_bytes: 8 * GB,
+    checked_gpu_id: 'GPU-1',
+    curated: true,
+    unified_memory: false,
+    fits_other_gpus: [],
+    verdict: { ok: true },
+  }
+  const trtModel = (): CatalogModel => ({
+    model_name: 'nvidia/Qwen3-8B-FP8',
+    developer: 'nvidia',
+    description: '',
+    downloads: 0,
+    is_tensorrt_llm: true,
+    tensorrt: { curated: true, revision: 'rev-a' },
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetTensorrtVerdictsForTests()
+    tensorrtHub.state = 'ready'
+    useModelProvider.setState({ providers: [] })
+    useGeneralSetting.setState({ huggingfaceToken: 'hf_secret' })
+    trtModels.fetchHfRevision.mockImplementation(async (repository: string) => ({
+      repository,
+      revision: 'rev-a-sha',
+      config_json: {},
+      hf_quant_config_json: null,
+      files: [],
+    }))
+    trtModels.checkTensorrtModel.mockResolvedValue(compatible)
+    trtModels.installTensorrtModel.mockReturnValue(new Promise(() => {}))
+  })
+
+  it('says why the model cannot run here and offers no download', async () => {
+    trtModels.checkTensorrtModel.mockResolvedValue({
+      ...compatible,
+      verdict: {
+        ok: false,
+        error: { code: 'MODEL_INCOMPATIBLE', message: 'Needs compute capability 10.0, the card has 8.9.' },
+      },
+    })
+    render(<DownloadOptionsSelect model={trtModel()} budgetBytes={16 * GB} />)
+
+    expect(await screen.findByText(/the card has 8\.9/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:tensorrt.installEngine' })).not.toBeInTheDocument()
+  })
+
+  it('before the engine is installed, shows the verdict and sends to the install instead of downloading', async () => {
+    tensorrtHub.state = 'not-installed'
+    const user = userEvent.setup()
+    render(<DownloadOptionsSelect model={trtModel()} budgetBytes={16 * GB} />)
+
+    expect(await screen.findByText('hub:tensorrt.models.fits')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'hub:tensorrt.installEngine' }))
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { providerName: 'tensorrt-llm' } })
+    )
+  })
+
+  it('with the engine installed, downloads exactly the revision the core checked, with the token', async () => {
+    const user = userEvent.setup()
+    render(<DownloadOptionsSelect model={trtModel()} budgetBytes={16 * GB} />)
+
+    expect(screen.getByText('TensorRT-LLM')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'hub:download' }))
+
+    expect(trtModels.installTensorrtModel.mock.calls[0][0]).toMatchObject({
+      repository: 'nvidia/Qwen3-8B-FP8',
+      revision: 'rev-a-sha',
+      token: 'hf_secret',
+    })
+    // Started: the button gives way to the download's progress, and the panel's row is named.
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+    expect(
+      useDownloadStore.getState().downloadOriginByModelId['tensorrt-llm-nvidia_Qwen3-8B-FP8']
+    ).toBe('nvidia/Qwen3-8B-FP8')
   })
 })

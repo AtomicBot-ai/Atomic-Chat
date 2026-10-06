@@ -197,13 +197,26 @@ pub fn ensure_free_space(target_dir: &Path, needed: u64) -> Result<(), String> {
     if needed == 0 {
         return Ok(());
     }
-    let Some(available) = available_space_for(target_dir) else {
+    let available = available_space_for(target_dir);
+    if available.is_none() {
         log::warn!(
             "Could not determine free space for {}; skipping preflight",
             target_dir.display()
         );
+    }
+    check_reported_free_space(available, needed)
+}
+
+/// The same refusal against a number someone else measured: the core's free space for the
+/// TensorRT-LLM models root, which on Windows is in the WSL guest where the volume list cannot see
+/// (change `add-tensorrt-llm-windows`). `None` — not measured — never refuses.
+pub fn check_reported_free_space(available: Option<u64>, needed: u64) -> Result<(), String> {
+    let Some(available) = available else {
         return Ok(());
     };
+    if needed == 0 {
+        return Ok(());
+    }
 
     let required = needed.saturating_add(FREE_SPACE_HEADROOM);
     if available >= required {
@@ -240,42 +253,51 @@ pub fn format_bytes(bytes: u64) -> String {
 
 // ===== Preflight: Windows path length =====
 
-/// Legacy `MAX_PATH`. Long-path support needs both a `longPathAware` manifest
-/// and an opt-in registry key, so a path over this limit fails on a large share
-/// of installs regardless of what the app declares.
-#[cfg(windows)]
-const MAX_PATH: usize = 260;
-
-/// Reject a save path that will not survive the Windows path limit.
+/// Why a save path will not survive the Windows path limit, or `None` when it will. Pure, and
+/// compiled everywhere so its cases are tested on every platform.
 ///
-/// HuggingFace repo ids nest deeply (`unsloth/Model-Name-Long-GGUF/file.gguf`)
-/// under an already-long per-user data folder, and the downloader appends its
-/// sidecar extensions on top, so the longest sidecar is what actually
-/// overflows first — that is the length checked here.
-#[cfg(windows)]
-pub fn ensure_path_within_limit(save_path: &Path) -> Result<(), String> {
-    // A verbatim path (`\\?\C:\...`) bypasses the limit entirely.
-    let text = save_path.to_string_lossy();
+/// HuggingFace repo ids nest deeply (`unsloth/Model-Name-Long-GGUF/file.gguf`) under an
+/// already-long per-user data folder, and the downloader appends its sidecar extensions on top, so
+/// the longest sidecar is what actually overflows first — that is the length checked here. A UNC
+/// path (`\\wsl.localhost\…`, Atomic Chat's WSL distribution, change `add-tensorrt-llm-windows`)
+/// is held to the same limit; only a verbatim path (`\\?\C:\…`, `\\?\UNC\…`) bypasses it.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn path_limit_error(text: &str) -> Option<String> {
+    // Legacy `MAX_PATH`. Long-path support needs both a `longPathAware` manifest and an opt-in
+    // registry key, so a path over this limit fails on a large share of installs regardless of
+    // what the app declares.
+    const LIMIT: usize = 260;
     if text.starts_with(r"\\?\") {
-        return Ok(());
+        return None;
     }
-
     // `.tmp` / `.url` are appended while downloading, and a multi-connection
     // download also writes its segment map as `.parts`, through `.parts.new`
     // — the longest name the downloader creates.
     let effective = text.chars().count() + ".parts.new".len();
-    if effective < MAX_PATH {
-        return Ok(());
+    if effective < LIMIT {
+        return None;
     }
-
-    log::warn!("Refusing download: save path is {effective} chars, over the {MAX_PATH} limit");
-    Err(disk_fault_message(
+    log::warn!("Refusing download: save path is {effective} chars, over the {LIMIT} limit");
+    // The data folder can move; the folder of the WSL distribution cannot, so there the only
+    // part that can be shorter is the model's own.
+    let advice = if text.starts_with(r"\\") {
+        "The model's files sit too deep in Atomic Chat's WSL distribution; choose a model with a shorter repository name."
+    } else {
+        "Move the Jan data folder closer to the drive root and retry."
+    };
+    Some(disk_fault_message(
         DiskFault::PathTooLong,
-        &format!(
-            "File path is {effective} characters, over the {MAX_PATH}-character Windows limit. \
-             Move the Jan data folder closer to the drive root and retry."
-        ),
+        &format!("File path is {effective} characters, over the {LIMIT}-character Windows limit. {advice}"),
     ))
+}
+
+/// Reject a save path that will not survive the Windows path limit ([`path_limit_error`]).
+#[cfg(windows)]
+pub fn ensure_path_within_limit(save_path: &Path) -> Result<(), String> {
+    match path_limit_error(&save_path.to_string_lossy()) {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 #[cfg(not(windows))]
@@ -432,6 +454,34 @@ mod tests {
         // A verbatim path is exempt from MAX_PATH entirely.
         let verbatim = PathBuf::from(format!(r"\\?\C:\{}\model.gguf", "x".repeat(300)));
         assert!(ensure_path_within_limit(&verbatim).is_ok());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_free_space_the_core_reports_refuses_a_download_that_does_not_fit() {
+        // Change add-tensorrt-llm-windows: the models root is in the WSL guest, which the volume
+        // list cannot see; the core measures it.
+        let error = check_reported_free_space(Some(10 * 1024 * 1024 * 1024), 20 * 1024 * 1024 * 1024).unwrap_err();
+        assert!(error.starts_with("Error: [disk_full] "), "got {error}");
+        assert!(check_reported_free_space(Some(30 * 1024 * 1024 * 1024), 20 * 1024 * 1024 * 1024).is_ok());
+        // Unmeasured is not a reason to refuse.
+        assert!(check_reported_free_space(None, u64::MAX / 2).is_ok());
+    }
+
+    #[test]
+    fn a_long_path_in_the_wsl_distribution_is_refused_with_advice_about_the_model() {
+        let unc = format!(
+            r"\\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\{}\models\tensorrt-llm\{}",
+            "k".repeat(36),
+            "a".repeat(200)
+        );
+        let error = path_limit_error(&unc).expect("over the limit");
+        assert!(error.starts_with("Error: [disk_path_too_long] "), "got {error}");
+        assert!(error.contains("WSL"), "got {error}");
+        assert!(!error.contains("data folder"), "got {error}");
+        // The verbatim spelling of a UNC path is exempt, as any verbatim path.
+        assert_eq!(path_limit_error(&format!(r"\\?\UNC\{}", &unc[2..])), None);
+        assert_eq!(path_limit_error(r"\\wsl.localhost\AtomicChat\short"), None);
     }
 
     #[cfg(not(windows))]

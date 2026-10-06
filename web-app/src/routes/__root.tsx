@@ -24,6 +24,7 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
+import { useManagedEnvironmentSync } from '@/hooks/useManagedEnvironmentSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
@@ -43,6 +44,7 @@ import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
+import { TensorrtLlmOperationBar } from '@/containers/tensorrt-llm/TensorrtLlmOperationBar'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -68,6 +70,9 @@ const AppLayout = () => {
   // starts the tunnel with the Local API Server when asked to. No-op wherever
   // there is no Local API Server (mobile, web).
   useRemoteAccessSync()
+  // Follows the core's TensorRT-LLM environment and its setup for the whole session, so the
+  // provider page finds a running setup as it is. No-op off Linux.
+  useManagedEnvironmentSync()
   const isSetupCompleted = useSetupCompleted()
 
   return (
@@ -186,6 +191,7 @@ function RootLayout() {
             <DataProvider />
             <DeferredFirstSendProvider />
             <GlobalEventHandler />
+            <TensorrtLlmOperationBar />
             <StartupBackendCoordinator />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>

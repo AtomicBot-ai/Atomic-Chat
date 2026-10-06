@@ -9,7 +9,10 @@ import test from 'node:test'
 // extensions, which still register them, so all three copies must stay byte-identical.
 const REPO_ROOT = new URL('..', import.meta.url).pathname
 const VENDORED = join(REPO_ROOT, 'web-app/src/lib/core-settings-schema')
-const SCHEMAS = ['llamacpp', 'llamacpp-upstream', 'mlx']
+// Every schema the web-app vendors from the core.
+const SCHEMAS = ['llamacpp', 'llamacpp-upstream', 'mlx', 'tensorrt-llm']
+// Each is also registered by its engine extension from that extension's own settings.json.
+const EXTENSION_SCHEMAS = SCHEMAS
 
 function coreSchemaDir() {
   if (process.env.ATOMIC_CORE_SRC) {
@@ -39,7 +42,7 @@ test('core-settings-schema CHECKSUM matches the vendored files (same algorithm a
 })
 
 test('every vendored schema equals the engine extension settings.json byte-for-byte', () => {
-  for (const name of SCHEMAS) {
+  for (const name of EXTENSION_SCHEMAS) {
     const vendored = readFileSync(join(VENDORED, `${name}.json`))
     const extension = readFileSync(join(REPO_ROOT, `extensions/${name}-extension/settings.json`))
     assert.ok(

@@ -25,6 +25,7 @@ export type CoreProvider =
   | 'llamacpp'
   | 'mlx'
   | 'foundation-models'
+  | 'tensorrt-llm'
 
 export type Invoke = <T>(
   command: string,
@@ -38,8 +39,18 @@ export interface CoreError {
   details?: string
 }
 
+/**
+ * How a session's backend runs (control protocol 2). Absent means `native`: every session a core
+ * reported before managed runtimes existed is one.
+ */
+export type CoreSessionExecution = 'native' | 'container'
+
 export interface CoreSessionInfo {
-  pid: number
+  /**
+   * The backend's host process id, or `null` when it has none: a `tensorrt-llm` session runs in a
+   * container, and the core never reports a pid it could not stand behind. Never kill by it.
+   */
+  pid: number | null
   port: number
   model_id: string
   model_path: string
@@ -47,6 +58,30 @@ export interface CoreSessionInfo {
   api_key: string
   mmproj_path?: string | null
   runtime_device?: unknown
+  execution?: CoreSessionExecution
+  /** New on every load of the same model; a stale one addresses a session already replaced. */
+  generation?: string
+}
+
+/**
+ * The stages a container-backed load reports on `atomic-core://session:load-progress` (design D8).
+ * A native load has none.
+ */
+export type CoreSessionLoadStage =
+  | 'stopping-previous'
+  | 'starting-container'
+  | 'initializing-engine'
+  | 'ready'
+
+/** Payload of `atomic-core://session:load-progress`. */
+export interface CoreSessionLoadProgress {
+  provider: string
+  model_id: string
+  generation: string
+  stage: CoreSessionLoadStage
+  elapsed_ms: number
+  /** Present when the saved card was gone and the load runs on another one. */
+  gpu_substituted?: { requested_gpu_id: string; gpu_id: string }
 }
 
 export interface CoreSessionSummary extends CoreSessionInfo {

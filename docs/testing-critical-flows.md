@@ -454,7 +454,8 @@ Existing evidence:
 - `media-gallery-store.test.ts` covers paging without doubling, selection
   survival across a reload, prepend under live and gallery modes, `patch`,
   removal landing on the neighbour, shift/meta selection and stepping.
-- `lib/video/__tests__/{duration,validate,recipe,poster}.test.ts` are tables:
+- `lib/video/__tests__/duration.test.ts`, `validate.test.ts`, `recipe.test.ts`
+  and `poster.test.ts` are tables:
   1/2/3/5 s become 25/49/73/121 frames on both lattices, off-lattice and
   out-of-range counts are refused with the core's messages, image-to-video
   is refused in every spelling, the export name and the restored draft,
@@ -490,11 +491,12 @@ Existing evidence:
   region, the toolbar on one row with labels folded below 32 rem, and video
   tiles the size of image tiles with the duration badge inside.
 - The core's own evidence — the video block of the fake `sd-server`, the
-  video e2e on the compiled binary (`test/e2e/video.test.ts`,
-  `test/e2e/videos-api.test.ts`) and the live block — lives in
+  video e2e on the compiled binary (test/e2e/video.test.ts and
+  test/e2e/videos-api.test.ts there) and the live block — lives in
   `atomic-chat-core/docs/testing-critical-flows.md`.
 
-- `tests/e2e/desktop/video-{generation,failures,settings,chat-handoff}.spec.ts`
+- `tests/e2e/desktop/video-generation.spec.ts`, `video-failures.spec.ts`,
+  `video-settings.spec.ts` and `video-chat-handoff.spec.ts`
   (harness `videos.ts`) drive the built app on the core's scripted engine
   in video mode: the model loaded with the audio VAE and the connectors on
   the argv, a clip generated and played by the webview itself (metadata and

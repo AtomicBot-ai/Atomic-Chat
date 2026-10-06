@@ -31,6 +31,12 @@ describe('getProviderLogo', () => {
     )
   })
 
+  it('marks TensorRT-LLM with the NVIDIA logo', () => {
+    expect(getProviderLogo('tensorrt-llm')).toBe(
+      '/images/model-provider/nvidia.svg'
+    )
+  })
+
   it('returns undefined for unknown providers', () => {
     expect(getProviderLogo('unknown')).toBeUndefined()
     expect(getProviderLogo('')).toBeUndefined()
@@ -45,6 +51,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('gemini')).toBe('Gemini')
     expect(getProviderTitle('nvidia')).toBe('NVIDIA NIM')
     expect(getProviderTitle('aimlapi')).toBe('AI/ML API')
+    expect(getProviderTitle('tensorrt-llm')).toBe('TensorRT-LLM')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
   })
 

@@ -1,6 +1,8 @@
 import { useAgentProvider } from '@/hooks/useAgentProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { agentProviderBlockReason } from '@/lib/agent-provider'
+import { agentModelBlockReason } from '@/lib/tensorrt-llm/chat'
 import {
   resolveMessageExecutionRoute,
   type ResolvedMessageExecutionRoute,
@@ -17,11 +19,13 @@ export function useMessageExecutionRoute(): ResolvedMessageExecutionRoute {
   const legacyChatEngine = useGeneralSetting((s) => s.legacyChatEngine)
   const agentModeSelected = useGeneralSetting((s) => s.agentModeEnabled)
   const provider = useAgentProvider()
+  const selectedModel = useModelProvider((s) => s.selectedModel)
 
   return resolveMessageExecutionRoute({
     legacyChatEngine,
     agentModeSelected,
     providerBlockReason: agentProviderBlockReason(provider),
+    modelBlockReason: agentModelBlockReason(provider?.provider, selectedModel ?? undefined),
     hasAudioAttachment: false,
     dflashEnabled: shouldSuppressToolsForUpstreamDflash(
       provider?.provider ?? '',

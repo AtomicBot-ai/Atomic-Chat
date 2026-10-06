@@ -1,16 +1,8 @@
-import { render } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DownloadEvent } from '@janhq/core'
+import { Toaster, toast } from 'sonner'
 
-const toast = vi.hoisted(() => ({
-  loading: vi.fn(),
-  info: vi.fn(),
-  error: vi.fn(),
-  success: vi.fn(),
-  dismiss: vi.fn(),
-}))
-
-vi.mock('sonner', () => ({ toast }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -39,7 +31,16 @@ vi.mock('@/lib/sentry', () => ({ captureHandledError: vi.fn() }))
 import { DownloadManagement } from '../DownloadManegement'
 
 const TASK = 'diffusion-model-flux_1_q4_k_m'
-const VALIDATION_TOAST = `model-validation-started-${TASK}`
+const FINISHING = 'images:download.finishingModel'
+
+// The real sonner toaster: the assertions are on what the user sees.
+const renderWithToaster = () =>
+  render(
+    <>
+      <Toaster />
+      <DownloadManagement />
+    </>
+  )
 
 describe('DownloadManagement — the "verifying…" toast', () => {
   const handlers = new Map<string, Set<(payload: unknown) => void>>()
@@ -48,7 +49,6 @@ describe('DownloadManagement — the "verifying…" toast', () => {
 
   beforeEach(() => {
     handlers.clear()
-    Object.values(toast).forEach((fn) => fn.mockClear())
     const core = ((globalThis as unknown as { core?: Record<string, unknown> })
       .core ??= {})
     core.events = {
@@ -64,21 +64,28 @@ describe('DownloadManagement — the "verifying…" toast', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
+    toast.dismiss()
     delete (globalThis as unknown as { core: Record<string, unknown> }).core
       .events
   })
 
   it('opens without a timeout for an image model, so something must close it', () => {
-    render(<DownloadManagement />)
-    emit(DownloadEvent.onModelValidationStarted, {
-      modelId: TASK,
-      downloadType: 'Model',
-    })
-
-    expect(toast.loading).toHaveBeenCalledWith(
-      'images:download.finishingModel',
-      expect.objectContaining({ id: VALIDATION_TOAST, duration: Infinity })
+    vi.useFakeTimers()
+    renderWithToaster()
+    act(() =>
+      emit(DownloadEvent.onModelValidationStarted, {
+        modelId: TASK,
+        downloadType: 'Model',
+      })
     )
+    // sonner hands the toast to <Toaster /> on the next macrotask.
+    act(() => vi.advanceTimersByTime(0))
+    expect(screen.getByText(FINISHING)).toBeInTheDocument()
+
+    // Well past sonner's default lifetime: only a terminal event closes it.
+    act(() => vi.advanceTimersByTime(60_000))
+    expect(screen.getByText(FINISHING)).toBeInTheDocument()
   })
 
   it.each([
@@ -93,14 +100,20 @@ describe('DownloadManagement — the "verifying…" toast', () => {
       DownloadEvent.onModelValidationFailed,
       { error: 'Size verification failed.', reason: 'validation_failed' },
     ],
-  ])('is closed by %s', (_label, event, extra) => {
-    render(<DownloadManagement />)
-    emit(DownloadEvent.onModelValidationStarted, {
-      modelId: TASK,
-      downloadType: 'Model',
-    })
-    emit(event, { modelId: TASK, downloadType: 'Model', ...extra })
+  ])('is closed by %s', async (_label, event, extra) => {
+    renderWithToaster()
+    act(() =>
+      emit(DownloadEvent.onModelValidationStarted, {
+        modelId: TASK,
+        downloadType: 'Model',
+      })
+    )
+    expect(await screen.findByText(FINISHING)).toBeInTheDocument()
 
-    expect(toast.dismiss).toHaveBeenCalledWith(VALIDATION_TOAST)
+    act(() => emit(event, { modelId: TASK, downloadType: 'Model', ...extra }))
+
+    await waitFor(() =>
+      expect(screen.queryByText(FINISHING)).not.toBeInTheDocument()
+    )
   })
 })

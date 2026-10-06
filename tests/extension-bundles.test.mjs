@@ -21,6 +21,7 @@ const EXTENSIONS = [
   'llamacpp-upstream-extension',
   'mlx-extension',
   'foundation-models-extension',
+  'tensorrt-llm-extension',
 ]
 
 for (const extension of EXTENSIONS) {

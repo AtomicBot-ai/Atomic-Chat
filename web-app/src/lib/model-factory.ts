@@ -69,6 +69,11 @@ import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
+import {
+  asksForStructuredOutput,
+  createEngineErrorFetch,
+  tensorrtLlmRequestBody,
+} from '@/lib/tensorrt-llm/request'
 
 /**
  * Inactivity budget (seconds) handed to `stream_local_http` on this generic
@@ -342,8 +347,17 @@ export async function findFoundationModelsSession(
  * table rather than the webview reading a cache of its own: a cached answer could be a moment out
  * of date and name a port that now belongs to nothing. `null` and errors are authoritative.
  */
+/** Local engines whose sessions `ModelFactory` resolves through the core's mirror and caches. */
+type CachedLocalProvider = 'llamacpp' | 'llamacpp-upstream' | 'mlx' | 'tensorrt-llm'
+
+/** How an error about a missing session names the engine, e.g. "No running MLX session". */
+const SESSION_ENGINE_LABEL: Partial<Record<CachedLocalProvider, string>> = {
+  mlx: 'MLX ',
+  'tensorrt-llm': 'TensorRT-LLM ',
+}
+
 export async function findLocalSession(
-  providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+  providerName: CachedLocalProvider,
   modelId: string
 ): Promise<SessionInfo | null> {
   return invoke<SessionInfo | null>('resolve_local_session', {
@@ -419,7 +433,14 @@ const STREAM_END_GRACE_MS = 2_000
  */
 export function createLocalStreamingFetch(
   fallbackFetch: typeof httpFetch,
-  parameters: Record<string, unknown>
+  parameters: Record<string, unknown>,
+  /**
+   * The last say over a local JSON body, after `parameters` are merged in: an engine that refuses
+   * unknown fields cuts it down here. Not applied to the non-local / non-POST fallback path.
+   */
+  shapeBody?: (
+    body: Record<string, unknown>
+  ) => Record<string, unknown> | Promise<Record<string, unknown>>
 ): typeof httpFetch {
   const normalFetch = createCustomFetch(fallbackFetch, parameters)
 
@@ -443,10 +464,14 @@ export function createLocalStreamingFetch(
 
     let bodyStr = (init?.body as string) ?? ''
     if (bodyStr) {
+      let merged: Record<string, unknown> | undefined
       try {
-        bodyStr = JSON.stringify({ ...JSON.parse(bodyStr), ...parameters })
+        merged = { ...JSON.parse(bodyStr), ...parameters }
       } catch {
         /* non-JSON body, leave as-is */
+      }
+      if (merged) {
+        bodyStr = JSON.stringify(shapeBody ? await shapeBody(merged) : merged)
       }
     }
 
@@ -704,7 +729,7 @@ export class ModelFactory {
    * pre-warm from the chat input and the real send don't both hit IPC.
    */
   private static async resolveLocalSession(
-    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+    providerName: CachedLocalProvider,
     modelId: string,
     provider: ProviderObject | undefined
   ): Promise<SessionInfo> {
@@ -746,7 +771,7 @@ export class ModelFactory {
       const sessionInfo = await findLocalSession(providerName, modelId)
       if (!sessionInfo) {
         throw new Error(
-          `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
+          `No running ${SESSION_ENGINE_LABEL[providerName] ?? ''}session found for model: ${modelId}`
         )
       }
       ModelFactory.localSessionCache.set(key, {
@@ -777,7 +802,7 @@ export class ModelFactory {
 
   /** Resolve immediately before a request; never reuse a cached bearer key or port. */
   private static async resolveFreshLocalSession(
-    providerName: 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+    providerName: CachedLocalProvider,
     modelId: string,
     provider: ProviderObject | undefined
   ): Promise<SessionInfo> {
@@ -793,7 +818,7 @@ export class ModelFactory {
     if (!sessionInfo) {
       ModelFactory.invalidateLocalSessionCache(providerName, modelId)
       throw new Error(
-        `No running ${providerName === 'mlx' ? 'MLX ' : ''}session found for model: ${modelId}`
+        `No running ${SESSION_ENGINE_LABEL[providerName] ?? ''}session found for model: ${modelId}`
       )
     }
     ModelFactory.localSessionCache.set(
@@ -823,13 +848,14 @@ export class ModelFactory {
     if (
       lower !== 'llamacpp' &&
       lower !== 'llamacpp-upstream' &&
-      lower !== 'mlx'
+      lower !== 'mlx' &&
+      lower !== 'tensorrt-llm'
     ) {
       return
     }
     try {
       await ModelFactory.resolveLocalSession(
-        lower as 'llamacpp' | 'llamacpp-upstream' | 'mlx',
+        lower as CachedLocalProvider,
         modelId,
         provider
       )
@@ -954,6 +980,9 @@ export class ModelFactory {
           provider,
           localInjected
         )
+
+      case 'tensorrt-llm':
+        return this.createTensorrtLlmModel(modelId, provider, localInjected)
 
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, override)
@@ -1124,6 +1153,96 @@ export class ModelFactory {
         separator: '\n',
       }),
     })
+  }
+
+  /**
+   * Create a TensorRT-LLM model (Linux). The core runs `trtllm-serve` in a
+   * container and serves the session on a loopback gateway that checks the
+   * session's Bearer key, so from here it is one more OpenAI-compatible local
+   * session, resolved and re-resolved the way llama.cpp's is: every load gets a
+   * new gateway port and key, so a model object must not keep the first one.
+   * The IPC streaming fetch is used because the HTTP plugin's stream bridge does
+   * not relay SSE chunks; aborting it drops the connection, which the gateway
+   * passes on to the engine.
+   */
+  private static async createTensorrtLlmModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    const sessionInfo = await ModelFactory.resolveLocalSession(
+      'tensorrt-llm',
+      modelId,
+      provider
+    )
+
+    // `trtllm-serve` refuses any field it does not know with `400 extra_forbidden`, so the merged
+    // llama.cpp parameter bag is cut down to what it reads (task 3.13). Whether the model's family
+    // has structured output is asked of the core only when a request actually wants it.
+    let structuredOutput: Promise<boolean> | undefined
+    const shapeBody = async (body: Record<string, unknown>) =>
+      tensorrtLlmRequestBody(body, {
+        structuredOutput: asksForStructuredOutput(body)
+          ? await (structuredOutput ??=
+              ModelFactory.tensorrtLlmStructuredOutput(modelId))
+          : false,
+      })
+    const liveFetch = createLiveSessionFetch(
+      createEngineErrorFetch(
+        createLocalStreamingFetch(httpFetch, parameters, shapeBody)
+      ),
+      () =>
+        ModelFactory.resolveFreshLocalSession('tensorrt-llm', modelId, provider)
+    )
+
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'tensorrt-llm',
+      headers: () => ({
+        Authorization: `Bearer ${sessionInfo.api_key}`,
+        Origin: 'tauri://localhost',
+      }),
+      url: ({ path }) =>
+        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+      includeUsage: true,
+      fetch: liveFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
+  }
+
+  /**
+   * Whether the model's family has structured output, as the core reads it off the installed
+   * descriptor — the same answer its session gateway refuses `response_format` by. Unknown counts
+   * as no: the request then goes without the format rather than being refused.
+   */
+  private static async tensorrtLlmStructuredOutput(
+    modelId: string
+  ): Promise<boolean> {
+    try {
+      const capabilities = await invoke<{ structured_output?: boolean }>(
+        'atomic_core_call',
+        {
+          method: 'GET',
+          // Ids contain `/`; the core matches on the rest of the path, unencoded.
+          path: `/models/tensorrt-llm/${modelId}/capabilities`,
+          body: null,
+        }
+      )
+      return capabilities?.structured_output === true
+    } catch (error) {
+      console.warn(
+        '[ModelFactory] TensorRT-LLM capabilities unavailable; response_format dropped:',
+        error
+      )
+      return false
+    }
   }
 
   /**

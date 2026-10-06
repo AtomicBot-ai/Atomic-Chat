@@ -278,6 +278,11 @@ pub fn run() {
         core::atomic_core::commands::atomic_core_call,
         core::atomic_core::commands::atomic_core_status,
         core::atomic_core::commands::atomic_core_snapshot,
+        // The privileged step of a TensorRT-LLM setup (pkexec on Linux, UAC on Windows; elsewhere
+        // it answers unavailable).
+        core::atomic_core::commands::atomic_core_run_host_step,
+        // The progress bar's "restart now" (Windows) / "sign out now" (Linux) for a managed setup.
+        core::atomic_core::commands::atomic_core_finish_session_step,
     ]);
 
     // Mobile: no updater commands
@@ -449,6 +454,8 @@ pub fn run() {
     };
 
     let app = app_builder
+        // The last TensorRT-LLM models root the core named (outside the data folder on Windows).
+        .manage(core::filesystem::model_roots::CoreModelRoot::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),

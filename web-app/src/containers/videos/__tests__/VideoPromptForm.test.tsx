@@ -148,6 +148,7 @@ describe('VideoPromptForm', () => {
       })
     })
     expect(fake.generateVideo).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('image-stop')).toBeInTheDocument()
   })
 
   it('offers the family presets, the lattice durations and the fixed rate', async () => {

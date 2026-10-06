@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogModel, HuggingFaceRepo } from '@/services/models/types'
 import type { ResolvedStaffPick } from '@/hooks/useStaffPicks'
 
@@ -20,6 +20,29 @@ const mocks = vi.hoisted(() => ({
     models: [] as CatalogModel[],
     nextCursor: null as string | null,
   })),
+}))
+
+const tensorrtHub = vi.hoisted(() => ({
+  value: {
+    visible: false,
+    state: 'unknown',
+    blockers: [] as Array<Record<string, unknown>>,
+    descriptorId: null as string | null,
+  },
+}))
+vi.mock('@/hooks/useTensorrtHubState', () => ({
+  useTensorrtHubState: () => tensorrtHub.value,
+}))
+
+const tensorrtCurated = vi.hoisted(() => ({
+  value: {
+    models: [] as CatalogModel[],
+    supportedArchitectures: null as string[] | null,
+    loading: false,
+  },
+}))
+vi.mock('@/hooks/useTensorrtCurated', () => ({
+  useTensorrtCurated: () => tensorrtCurated.value,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -222,7 +245,7 @@ vi.mock('@/stores/model-catalog-store', () => ({
 
 import { Route } from '../index'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
-import { setHubSearchQuery } from '../hub-session'
+import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
 import en from '@/locales/en/hub.json'
 
@@ -245,11 +268,23 @@ const HubPage = () => {
 }
 
 describe('/hub route', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   beforeEach(() => {
+    setHubFormat(null)
     vi.clearAllMocks()
     localStorage.clear()
     setHubSearchQuery('')
     mocks.search = {}
+    tensorrtHub.value = {
+      visible: false,
+      state: 'unknown',
+      blockers: [],
+      descriptorId: null,
+    }
+    tensorrtCurated.value = { models: [], supportedArchitectures: null, loading: false }
     mocks.mediaSupported = false
     mocks.decisionSupported = false
     mocks.sources = []
@@ -560,6 +595,8 @@ describe('/hub route', () => {
   })
 
   it('swaps to the MLX picks when the filter is narrowed to MLX alone', () => {
+    // MLX is offered on macOS only; elsewhere a saved MLX filter reads as GGUF.
+    vi.stubGlobal('IS_MACOS', true)
     localStorage.setItem(
       HUB_FILTERS_STORAGE_KEY,
       serializeHubFilters({
@@ -569,12 +606,249 @@ describe('/hub route', () => {
         uncensored: false,
       })
     )
+    setHubFormat('mlx')
 
     render(<HubPage />)
 
     expect(mocks.requestedPickFormats).toContain('mlx')
     expect(screen.getByText('Qwen3.5 4B (MLX)')).toBeInTheDocument()
     expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+  })
+
+  it('opens on GGUF on a new launch even when another format was saved', () => {
+    vi.stubGlobal('IS_MACOS', true)
+    localStorage.setItem(
+      HUB_FILTERS_STORAGE_KEY,
+      serializeHubFilters({ formats: ['mlx'], sort: 'recommended', onlyFitting: false, uncensored: false })
+    )
+
+    render(<HubPage />)
+
+    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+    expect(screen.queryByText('Qwen3.5 4B (MLX)')).not.toBeInTheDocument()
+  })
+
+  it('opens on the format a provider page links with, keeps it and drops it from the URL', () => {
+    // "Find a model" on the MLX provider page: /hub/?engine=mlx, over a saved GGUF filter.
+    vi.stubGlobal('IS_MACOS', true)
+    mocks.search = { engine: 'mlx' }
+
+    render(<HubPage />)
+
+    expect(mocks.requestedPickFormats).toContain('mlx')
+    expect(screen.getByText('Qwen3.5 4B (MLX)')).toBeInTheDocument()
+    expect(getHubFormat()).toBe('mlx')
+    const cleared = mocks.navigate.mock.calls
+      .map(([options]) => options as { search?: (prev: object) => object })
+      .filter((options) => typeof options.search === 'function')
+      .map((options) => options.search!({ engine: 'mlx' }))
+    expect(cleared).toContainEqual(expect.objectContaining({ engine: undefined }))
+  })
+
+  it('reads an engine this machine does not offer as GGUF', () => {
+    mocks.search = { engine: 'mlx' }
+
+    render(<HubPage />)
+
+    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+    expect(screen.queryByText('Qwen3.5 4B (MLX)')).not.toBeInTheDocument()
+  })
+
+  describe('under the TensorRT-LLM format', () => {
+    const selectTensorrt = () => setHubFormat('tensorrt-llm')
+
+    it('shows what blocks the engine instead of models', () => {
+      selectTensorrt()
+      tensorrtHub.value = {
+        visible: true,
+        state: 'blocked',
+        blockers: [
+          {
+            code: 'prerequisite-blocked',
+            reason: 'driver-too-old',
+            message: 'The NVIDIA driver is too old.',
+            params: { required: '615.65.02', actual: '580.95.05' },
+          },
+        ],
+        descriptorId: 'tensorrt-llm-1.3.0rc29-r2',
+      }
+
+      render(<HubPage />)
+
+      expect(screen.getByText('hub:tensorrt.blocked.title')).toBeInTheDocument()
+      expect(screen.getByText('The NVIDIA driver is too old.')).toBeInTheDocument()
+      expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+      // Nothing to open: no model is selected for the detail panel.
+      expect(screen.getByTestId('detail-panel')).toHaveTextContent('hub:selectModel')
+    })
+
+    it('claims nothing until the core has answered', () => {
+      selectTensorrt()
+      tensorrtHub.value = { ...tensorrtHub.value, visible: true, state: 'unknown' }
+
+      render(<HubPage />)
+
+      expect(screen.getByRole('status')).toHaveTextContent('hub:tensorrt.checking')
+      expect(screen.queryByText('hub:tensorrt.blocked.title')).not.toBeInTheDocument()
+    })
+
+    const trtEntry = (name: string, architectures: string[]): CatalogModel => ({
+      model_name: name,
+      developer: name.split('/')[0],
+      description: '',
+      downloads: 10,
+      is_tensorrt_llm: true,
+      tensorrt: { architectures, parameters: { BF16: 4e9 } },
+    })
+
+    const engineReady = () => {
+      tensorrtHub.value = {
+        visible: true,
+        state: 'ready',
+        blockers: [],
+        descriptorId: 'tensorrt-llm-1.3.0rc29-r2',
+      }
+      tensorrtCurated.value = {
+        models: [
+          {
+            model_name: 'nvidia/Qwen3-8B-FP8',
+            developer: 'nvidia',
+            description: '',
+            downloads: 0,
+            is_tensorrt_llm: true,
+            tensorrt: { curated: true, revision: 'rev-a' },
+          },
+        ],
+        supportedArchitectures: ['Qwen3ForCausalLM'],
+        loading: false,
+      }
+    }
+
+    it('lists the curated models first, then the narrowed safetensors feed, and no staff picks', async () => {
+      selectTensorrt()
+      engineReady()
+      mocks.listHuggingFaceFeed.mockResolvedValueOnce({
+        models: [
+          trtEntry('nvidia/Qwen3-8B-FP8', ['Qwen3ForCausalLM']),
+          trtEntry('someone/Qwen3-4B-FP8', ['Qwen3ForCausalLM']),
+          trtEntry('someone/Mamba-7B', ['MambaForCausalLM']),
+        ],
+        nextCursor: null,
+      })
+
+      render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-FP8')).toBeInTheDocument()
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+      expect(headings).toEqual(['hub:tensorrt.curated', 'hub:feedTitle'])
+      expect(screen.getAllByText('Qwen3-8B-FP8')).toHaveLength(1)
+      expect(screen.queryByText('Mamba-7B')).not.toBeInTheDocument()
+      expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ format: 'tensorrt-llm' })
+      )
+    })
+
+    it('shows and opens a repository typed in full even when the prefilter would hide it', async () => {
+      selectTensorrt()
+      engineReady()
+      const user = userEvent.setup()
+      mocks.fetchHuggingFaceRepo.mockImplementation(async (repo: string) =>
+        repo === 'someone/Mamba-7B'
+          ? (trtEntry('someone/Mamba-7B', ['MambaForCausalLM']) as never)
+          : null
+      )
+      mocks.searchHuggingFaceCandidates.mockImplementation(async () => [
+        trtEntry('someone/Mamba-7B-v2', ['MambaForCausalLM']),
+        trtEntry('someone/Qwen3-14B', ['Qwen3ForCausalLM']),
+      ])
+
+      render(<HubPage />)
+      await user.type(
+        screen.getByRole('textbox', { name: 'hub:searchPlaceholder' }),
+        'someone/Mamba-7B'
+      )
+
+      await waitFor(() => expect(screen.getByText('Mamba-7B')).toBeInTheDocument(), {
+        timeout: 2000,
+      })
+      expect(screen.getByText('Qwen3-14B')).toBeInTheDocument()
+      expect(screen.queryByText('Mamba-7B-v2')).not.toBeInTheDocument()
+      expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.anything(),
+        expect.any(Number),
+        'tensorrt-llm'
+      )
+      const opened = mocks.navigate.mock.calls
+        .map(([options]) => options as { search?: (prev: object) => { model?: string } })
+        .filter((options) => typeof options.search === 'function')
+        .map((options) => options.search!({}).model)
+      expect(opened).toContain('someone/Mamba-7B')
+    })
+
+    it('keeps the format a link names even before the provider is known, and reads it as GGUF meanwhile', () => {
+      mocks.search = { engine: 'tensorrt-llm' }
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(getHubFormat()).toBe('tensorrt-llm')
+    })
+
+    it('stops asking Hugging Face for pages the prefilter keeps emptying', async () => {
+      selectTensorrt()
+      engineReady()
+      let page = 0
+      mocks.listHuggingFaceFeed.mockImplementation(async () => {
+        page += 1
+        return {
+          models: [trtEntry(`someone/Mamba-${page}`, ['MambaForCausalLM'])],
+          nextCursor: `cursor-${page}`,
+        }
+      })
+
+      render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-8B-FP8')).toBeInTheDocument()
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect(mocks.listHuggingFaceFeed.mock.calls.length).toBeLessThanOrEqual(4)
+      expect(screen.queryByText(/Mamba/)).not.toBeInTheDocument()
+    })
+
+    it('asks Hugging Face for nothing while the engine is blocked, uncensored or not', () => {
+      localStorage.setItem(
+        HUB_FILTERS_STORAGE_KEY,
+        serializeHubFilters({
+          formats: ['tensorrt-llm'],
+          sort: 'recommended',
+          onlyFitting: false,
+          uncensored: true,
+        })
+      )
+      setHubFormat('tensorrt-llm')
+      tensorrtHub.value = {
+        visible: true,
+        state: 'blocked',
+        blockers: [{ code: 'prerequisite-blocked', reason: 'docker-missing', message: 'No Docker.' }],
+        descriptorId: null,
+      }
+
+      render(<HubPage />)
+
+      expect(screen.getByText('No Docker.')).toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).not.toHaveBeenCalled()
+      expect(mocks.searchHuggingFaceCandidates).not.toHaveBeenCalled()
+    })
+
+    it('is GGUF again where the format is not offered', () => {
+      selectTensorrt()
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(screen.queryByText('hub:tensorrt.checking')).not.toBeInTheDocument()
+    })
   })
 
   it('resolves a deep link the catalog does not carry from Hugging Face', async () => {

@@ -20,7 +20,10 @@ use serde_json::Value;
 /// Wire version this app speaks. A core announcing anything else is refused
 /// rather than talked to: the control API is the only channel, and guessing
 /// across an incompatible version would corrupt state on the other side.
-pub const CONTROL_PROTOCOL_VERSION: u32 = 1;
+///
+/// 2: `SessionInfo.pid` became nullable (a `tensorrt-llm` session runs in a container) and gained
+/// `execution`/`generation`, alongside the `environment:*` and `session:load-progress` events.
+pub const CONTROL_PROTOCOL_VERSION: u32 = 2;
 
 pub const CONTROL_API_PREFIX: &str = "/atomic/v1";
 
@@ -532,6 +535,20 @@ mod tests {
         let error = core.client().handshake(None).await.unwrap_err();
 
         assert_eq!(error.code, "CORE_PROTOCOL_MISMATCH");
+    }
+
+    #[tokio::test]
+    async fn handshake_refuses_a_protocol_1_core() {
+        // Protocol 1 types `SessionInfo.pid` as a number. An app that attached to such a core would
+        // be fine, but a core that reports container sessions speaks 2, and the pairing must be
+        // exact in both directions: this app reads `pid: null`, so a protocol-1 core is refused.
+        let core = FakeCore::start().await;
+        core.set_protocol(1);
+
+        let error = core.client().handshake(None).await.unwrap_err();
+
+        assert_eq!(error.code, "CORE_PROTOCOL_MISMATCH");
+        assert!(error.message.contains("protocol 1"), "{}", error.message);
     }
 
     #[tokio::test]
