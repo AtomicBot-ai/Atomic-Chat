@@ -1079,6 +1079,22 @@ else
 	@echo "This target is for Windows only."
 endif
 
+# Publish a draft release as latest and repoint the landing page's download
+# manifest (atomic-chat-conf app/latest.json) at its installers:
+#   make release-prod 2.1.3            publish v2.1.3
+#   make release-prod 2.1.3 DRY_RUN=1  show what would happen, change nothing
+# On a release that is already latest it only rewrites the manifest.
+ifeq (release-prod,$(firstword $(MAKECMDGOALS)))
+RELEASE_VERSION := $(word 2,$(MAKECMDGOALS))
+ifneq ($(RELEASE_VERSION),)
+$(eval $(RELEASE_VERSION):;@:)
+endif
+endif
+.PHONY: release-prod
+release-prod:
+	@test -n "$(RELEASE_VERSION)" || { echo "Usage: make release-prod 2.1.3"; exit 1; }
+	node scripts/release-prod.mjs --tag $(RELEASE_VERSION) $(if $(DRY_RUN),--dry-run)
+
 # Download upstream ggml-org/llama.cpp backend for bundling alongside the
 # turboquant fork on macOS. We ship BOTH backends in the DMG so users can pick
 # the "Llama.cpp" provider (vanilla upstream) or the "llama.cpp" provider

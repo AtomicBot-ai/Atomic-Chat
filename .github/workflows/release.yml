@@ -1693,8 +1693,8 @@ jobs:
         if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
         continue-on-error: true
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.create-draft-release.outputs.version }}
-          RELEASE_URL: ${{ needs.create-draft-release.outputs.release_url }}
           DRAFT_RESULT: ${{ needs.create-draft-release.result }}
           MAC_RESULT: ${{ needs.build-macos.result }}
           WIN_RESULT: ${{ needs.build-windows.result }}
@@ -1718,8 +1718,17 @@ jobs:
             *cancelled*) head="⏹ <b>Atomic Chat v$VERSION</b>: сборка отменена" ;;
             *) head="✅ <b>Atomic Chat v$VERSION</b>: сборка завершена" ;;
           esac
+          # A draft's URL (`releases/tag/untagged-…`) changes whenever the draft is edited, and this
+          # run edits it after creating it (enrich-release-notes rewrites the notes): the URL
+          # create-draft-release reported is dead by now. Ask for the current one; the releases page
+          # is the fallback.
+          release_url=""
+          if [ -n "$VERSION" ]; then
+            release_url="$(gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json url -q .url 2>/dev/null || true)"
+            [ -n "$release_url" ] || release_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases"
+          fi
           links="<a href=\"$run_url\">Билд</a>"
-          [ -n "$RELEASE_URL" ] && links="$links · <a href=\"$RELEASE_URL\">Draft-релиз</a>"
+          [ -n "$release_url" ] && links="$links · <a href=\"$release_url\">Draft-релиз</a>"
           text="$(printf '%s\n' \
             "$head" \
             "$(icon "$MAC_RESULT") macOS  $(icon "$WIN_RESULT") Windows  $(icon "$WIN_ARM_RESULT") Windows-ARM64  $(icon "$LINUX_RESULT") Linux" \
