@@ -32,7 +32,16 @@ export type SetupView =
   | { kind: 'blocked'; blockers: BlockerView[] }
   | { kind: 'not-installed'; plan: RequirementPlan }
   | { kind: 'operation'; operation: EnvironmentOperation; step: OperationStep }
-  | { kind: 'failed'; operation: EnvironmentOperation }
+  | {
+      kind: 'failed'
+      operation: EnvironmentOperation
+      /**
+       * What the machine can be set up with now, when that is not what the failed setup was approved
+       * for — typically a newer descriptor published after it failed. "Try again" resumes the failed
+       * setup with the plan it was approved for, never this one.
+       */
+      newerPlan?: RequirementPlan
+    }
   | { kind: 'installed'; installation: RuntimeInstallation }
 
 export interface SetupState {
@@ -53,12 +62,31 @@ export function deriveSetupView(state: SetupState): SetupView {
   const { plan, operation, installation, failed } = state
   if (operation) return { kind: 'operation', operation, step: stepOf(operation) }
   if (installation?.status === 'ready') return { kind: 'installed', installation }
-  if (failed) return { kind: 'failed', operation: failed }
+  if (failed) {
+    const newerPlan = planNewerThanFailed(plan, failed)
+    return newerPlan ? { kind: 'failed', operation: failed, newerPlan } : { kind: 'failed', operation: failed }
+  }
   if (!plan) return { kind: 'checking' }
   if (plan.availability === 'unsupported' || plan.availability === 'prerequisite-blocked') {
     return { kind: 'blocked', blockers: plan.blockers.map(blockerView) }
   }
   return { kind: 'not-installed', plan }
+}
+
+/**
+ * The current plan, when it could start and is not the one the failed setup was approved for. A
+ * failed setup stays pinned to the descriptor it was consented with (the core resumes it with that
+ * one only), so a fix published since — a lower driver floor, say — reaches the person only through
+ * a new setup with the new plan. The plan digest covers the descriptor, so a new descriptor always
+ * shows here; a setup that failed before any consent has nothing to compare and gets none.
+ */
+function planNewerThanFailed(
+  plan: RequirementPlan | undefined,
+  failed: EnvironmentOperation
+): RequirementPlan | undefined {
+  if (!plan || failed.approved_plan_digest === null) return undefined
+  if (plan.availability === 'unsupported' || plan.availability === 'prerequisite-blocked') return undefined
+  return plan.plan_digest === failed.approved_plan_digest ? undefined : plan
 }
 
 export function stepOf(operation: EnvironmentOperation): OperationStep {

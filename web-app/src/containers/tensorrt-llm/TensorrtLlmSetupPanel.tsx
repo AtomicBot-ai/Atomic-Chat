@@ -364,7 +364,15 @@ export function TensorrtLlmSetupPanel() {
               {stepFailures[view.operation.operation_id]}
             </pre>
           )}
-          <div>
+          {view.newerPlan && (
+            <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.newerPlan')}</p>
+          )}
+          <div className="flex gap-2">
+            {view.newerPlan && (
+              <Button size="sm" disabled={probing} onClick={() => setPlanOpen(true)}>
+                {t('providers:tensorrt.install')}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

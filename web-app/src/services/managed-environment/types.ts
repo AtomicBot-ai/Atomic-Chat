@@ -104,6 +104,24 @@ export interface EnvironmentSnapshot {
   minimum_app_version: string | null
   /** Null before the import and always on Linux; absent from a core built before Windows. */
   distribution?: WslDistribution | null
+  /**
+   * Environment variables that move where the core reads conf or keeps its managed state, as the
+   * core's process sees them (core 0.9.6+; absent from an older core). A machine that carries one
+   * says so on the provider page: a pinned descriptor URL silently hides every newer descriptor.
+   */
+  source_overrides?: EnvironmentSourceOverride[]
+}
+
+export interface EnvironmentSourceOverride {
+  variable: string
+  value: string
+}
+
+/** `POST /environments/:id/reset`: the finished operations the core archived. */
+export interface EnvironmentResetResult {
+  environment_id: string
+  archived_operation_ids: string[]
+  archive_path: string | null
 }
 
 export interface ContainerRuntimeStepParameters {
