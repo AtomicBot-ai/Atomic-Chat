@@ -8,6 +8,8 @@ import {
   latestSetupFor,
   mergeSetup,
   parseHubFileUrl,
+  prismFamilyCard,
+  prismFamilyCards,
   requiresPrism,
   routeForVerdict,
   setupBytes,
@@ -19,6 +21,7 @@ import type {
   CompatibilityVerdict,
   ModelSetup,
   ModelSetupPlan,
+  PrismFamily,
 } from '@/services/model-setup/types'
 
 const verdict = (
@@ -330,5 +333,76 @@ describe('setupBytes', () => {
       transferred: 5,
       total: 50,
     })
+  })
+})
+
+describe('Bonsai families as Hub cards', () => {
+  const family = (over: Partial<PrismFamily> = {}): PrismFamily => ({
+    id: 'ternary-bonsai-2-27b',
+    title: 'Ternary Bonsai 2 27B',
+    repo: 'prism-ml/Ternary-Bonsai-2-27B-gguf',
+    revision: 'b072e1d',
+    files: [
+      {
+        file: 'Ternary-Bonsai-2-27B-PTQ1_0.gguf',
+        size: 5_946_648_928,
+        sha256: 'a'.repeat(64),
+        treatment: 'prism_required',
+      },
+      {
+        file: 'Ternary-Bonsai-2-27B-PQ2_0.gguf',
+        size: 7_206_168_928,
+        sha256: 'b'.repeat(64),
+        treatment: 'prism_required',
+        default: true,
+      },
+    ],
+    projectors: [
+      {
+        file: 'Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf',
+        size: 629_246_976,
+        sha256: 'c'.repeat(64),
+        default: true,
+      },
+    ],
+    ...over,
+  })
+
+  it('offers the recommended file first, pinned to the family revision', () => {
+    const card = prismFamilyCard(family())
+
+    expect(card).toMatchObject({
+      model_name: 'prism-ml/Ternary-Bonsai-2-27B-gguf',
+      developer: 'prism-ml',
+      description: 'Ternary Bonsai 2 27B',
+      num_quants: 2,
+    })
+    expect(card.quants?.map((q) => q.model_id)).toEqual([
+      'prism-ml/Ternary-Bonsai-2-27B-PQ2_0',
+      'prism-ml/Ternary-Bonsai-2-27B-PTQ1_0',
+    ])
+    expect(card.quants?.[0]).toMatchObject({
+      path: 'https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/b072e1d/Ternary-Bonsai-2-27B-PQ2_0.gguf',
+      file_size: '6.7 GB',
+    })
+    expect(card.mmproj_models?.[0].file_size).toBe('600.1 MB')
+    // The URL is what the verdict and the setup read the file from.
+    expect(parseHubFileUrl(card.quants![0].path)).toEqual({
+      repo: 'prism-ml/Ternary-Bonsai-2-27B-gguf',
+      file: 'Ternary-Bonsai-2-27B-PQ2_0.gguf',
+      revision: 'b072e1d',
+    })
+  })
+
+  it('lists the featured families first', () => {
+    const cards = prismFamilyCards([
+      family({ id: 'a', repo: 'prism-ml/Bonsai-8B-gguf' }),
+      family({ id: 'b', featured: true }),
+    ])
+
+    expect(cards.map((c) => c.model_name)).toEqual([
+      'prism-ml/Ternary-Bonsai-2-27B-gguf',
+      'prism-ml/Bonsai-8B-gguf',
+    ])
   })
 })

@@ -12,6 +12,7 @@ import {
   withTimeout,
   OPERATION_TIMED_OUT_CODE,
 } from '../utils'
+import { isMonochromeFamilyLogo } from '../model-logo'
 
 describe('getProviderLogo', () => {
   it('returns correct logo paths for known providers', () => {
@@ -38,10 +39,11 @@ describe('getProviderLogo', () => {
     )
   })
 
-  it('marks PrismML with the llama.cpp logo, like the other llama.cpp engines', () => {
+  it('marks PrismML with its own mark, the one its Bonsai models carry in the Hub', () => {
     expect(getProviderLogo('atomic-prism')).toBe(
-      '/images/model-provider/llamacpp.svg'
+      '/images/model-provider/prism-ml.webp'
     )
+    expect(isMonochromeFamilyLogo(getProviderLogo('atomic-prism')!)).toBe(true)
   })
 
   it('returns undefined for unknown providers', () => {

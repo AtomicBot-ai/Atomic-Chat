@@ -132,6 +132,35 @@ export type ModelSetup = {
   updated_at: number
 }
 
+/** A file of a Bonsai family the Hub may offer (`GET /models/atomic-prism/families`). */
+export type PrismFamilyFile = {
+  file: string
+  size: number
+  sha256: string
+  packing?: string
+  /** `prism_required`: only PrismML runs it; `any`: every llama.cpp engine does. */
+  treatment: 'prism_required' | 'any'
+  /** The file the family recommends. */
+  default?: boolean
+  summary?: string
+}
+
+/** One Bonsai model as the conf model rules name it, pinned to a revision. */
+export type PrismFamily = {
+  id: string
+  title: string
+  repo: string
+  revision: string
+  featured?: boolean
+  files: PrismFamilyFile[]
+  projectors: { file: string; size: number; sha256: string; default?: boolean }[]
+}
+
+export type PrismFamiliesResponse = {
+  rules_version: number
+  families: PrismFamily[]
+}
+
 export type ModelSetupEvent =
   | { type: 'changed'; setup: ModelSetup }
   | { type: 'progress'; taskId: string; transferred: number; total: number }
@@ -145,6 +174,8 @@ export interface ModelSetupService {
     request: ModelCompatibilityRequest
   ): Promise<CompatibilityVerdict>
   plan(request: ModelSetupPlanRequest): Promise<ModelSetupPlan>
+  /** The Bonsai models the Hub lists under PrismML. */
+  families(): Promise<PrismFamiliesResponse>
   start(request: ModelSetupStartRequest): Promise<ModelSetup>
   list(): Promise<ModelSetup[]>
   cancel(setupId: string): Promise<ModelSetup>

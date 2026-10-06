@@ -28,9 +28,19 @@ const CodeBlockContext = createContext<CodeBlockContextType>({
   code: '',
 })
 
+// The number is drawn by a `::before` pseudo-element from `data-line-number`
+// rather than a text node: a selection copies text nodes, so every copied line
+// came out prefixed with its number (#280). Generated content is never part of
+// a selection. No `select-none` on the gutter: a drag that starts on a number
+// must still select the code.
 const lineNumberTransformer: ShikiTransformer = {
   name: 'line-numbers',
   line(node, line) {
+    // The number text used to keep a blank line non-empty. Without it the line
+    // holds no text, and under the artifact's `whitespace-normal` the newline
+    // between lines collapses, so a copy dropped the blank line. A `<br>` keeps
+    // the line break in the selection.
+    const isBlank = node.children.length === 0
     node.children.unshift({
       type: 'element',
       tagName: 'span',
@@ -41,10 +51,21 @@ const lineNumberTransformer: ShikiTransformer = {
           'mr-4',
           'text-right',
           'text-muted-foreground',
+          'before:content-[attr(data-line-number)]',
         ],
+        dataLineNumber: String(line),
+        ariaHidden: 'true',
       },
-      children: [{ type: 'text', value: String(line) }],
+      children: [],
     })
+    if (isBlank) {
+      node.children.push({
+        type: 'element',
+        tagName: 'br',
+        properties: {},
+        children: [],
+      })
+    }
   },
 }
 

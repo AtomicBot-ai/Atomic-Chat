@@ -138,8 +138,7 @@ pub fn canonicalize_existing_prefix(path: &Path) -> PathBuf {
 
 /// Strips a leading slash from a Windows drive-letter path (e.g. `/C:/...` -> `C:/...` or `\C:\...` -> `C:\...`).
 /// Safe to run on any platform; only modifies paths starting with `/` or `\` followed by an ASCII letter and `:`.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn strip_windows_drive_slash(path: &str) -> &str {
+pub fn strip_windows_drive_slash(path: &str) -> &str {
     let bytes = path.as_bytes();
     if bytes.len() >= 3
         && (bytes[0] == b'/' || bytes[0] == b'\\')

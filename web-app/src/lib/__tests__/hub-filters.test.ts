@@ -198,13 +198,26 @@ describe('hubFormats', () => {
       'tensorrt-llm',
     ])
   })
+
+  it('offers PrismML only where its provider is', () => {
+    expect(hubFormats({ mlx: true, tensorrt: false, prism: true })).toEqual([
+      'gguf',
+      'mlx',
+      'atomic-prism',
+    ])
+    expect(hubFormats({ mlx: true, tensorrt: false, prism: false })).toEqual([
+      'gguf',
+      'mlx',
+    ])
+  })
 })
 
 describe('engine in the Hub URL', () => {
-  it('accepts the three formats and nothing else', () => {
+  it('accepts the four formats and nothing else', () => {
     expect(parseHubEngine('gguf')).toBe('gguf')
     expect(parseHubEngine('mlx')).toBe('mlx')
     expect(parseHubEngine('tensorrt-llm')).toBe('tensorrt-llm')
+    expect(parseHubEngine('atomic-prism')).toBe('atomic-prism')
     expect(parseHubEngine('onnx')).toBeUndefined()
     expect(parseHubEngine(undefined)).toBeUndefined()
     expect(parseHubEngine(['gguf'])).toBeUndefined()

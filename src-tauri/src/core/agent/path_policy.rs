@@ -691,7 +691,10 @@ fn path_buf_from_input(raw: &str) -> PathBuf {
     if let Some(rest) = raw.strip_prefix(r"\?\") {
         return PathBuf::from(format!(r"\\?\{rest}"));
     }
-    PathBuf::from(raw)
+    // Models sometimes write a drive path in URL form, `/C:\Users\...`. Windows
+    // reads that as rooted but drive-less and joins it onto the workspace's
+    // drive, so the tool hit a folder that does not exist (#271).
+    PathBuf::from(jan_utils::path::strip_windows_drive_slash(raw))
 }
 
 #[cfg(not(windows))]
@@ -938,6 +941,38 @@ mod tests {
             assert_eq!(
                 tokio::fs::read(outside.join(&file_name)).await.unwrap(),
                 b"x"
+            );
+        }
+
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn resolves_windows_drive_path_with_a_leading_slash() {
+        let parent = test_dir();
+        let root = parent.join("workspace");
+        let outside = parent.join("outside");
+        tokio::fs::create_dir(&root).await.unwrap();
+        tokio::fs::create_dir(&outside).await.unwrap();
+        tokio::fs::write(outside.join("notes.md"), "x").await.unwrap();
+        let canonical_outside = tokio::fs::canonicalize(&outside).await.unwrap();
+        let verbatim = canonical_outside.to_string_lossy().into_owned();
+        let plain = verbatim
+            .strip_prefix(r"\\?\")
+            .expect("Windows canonical paths use the verbatim prefix");
+
+        for raw in [format!(r"/{plain}\notes.md"), format!(r"\{plain}\notes.md")] {
+            let call = ToolCallPayload {
+                tool: "os.fs.read".into(),
+                args: serde_json::json!({ "path": &raw }),
+            };
+            let prepared = prepare_call_paths(&call, &root, &[]).await.unwrap();
+
+            assert!(prepared.escaped_root, "{raw} must leave the workspace");
+            assert_eq!(
+                prepared.call.args["path"],
+                canonical_outside.join("notes.md").to_string_lossy().as_ref()
             );
         }
 

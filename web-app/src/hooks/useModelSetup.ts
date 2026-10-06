@@ -11,6 +11,8 @@ import {
   isRunningSetup,
   latestSetupFor,
   parseHubFileUrl,
+  PRISM_PROVIDER,
+  prismFamilyCards,
   setupBytes,
   setupsUnderWay,
   type HubFile,
@@ -21,10 +23,13 @@ import type {
   CompatibilityVerdict,
   ModelSetup,
 } from '@/services/model-setup/types'
+import type { CatalogModel } from '@/services/models/types'
 import { useModelSetupStore } from '@/stores/model-setup-store'
 
 /** Verdict requests in flight, so two rows of one file ask the core once. */
 const asking = new Set<string>()
+/** The families request in flight, so two lists ask the core once. */
+let askingFamilies = false
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
@@ -154,6 +159,54 @@ export function useCompatibilityVerdict(
   }, [url, known, serviceHub])
 
   return verdict
+}
+
+/**
+ * Whether the Hub offers its PrismML list: where the provider is shown. The
+ * core hides it where PrismML publishes no build (Linux and Windows on Arm).
+ */
+export function usePrismHubVisible(): boolean {
+  return useModelProvider((state) =>
+    state.providers.some((provider) => provider.provider === PRISM_PROVIDER)
+  )
+}
+
+/**
+ * The Hub's PrismML list: the Bonsai families of the core's model rules, as
+ * cards, asked once per core generation. Empty where there is no core, and
+ * until the next generation when the core could not answer.
+ */
+export function usePrismFamilies(enabled: boolean): {
+  models: CatalogModel[]
+  loading: boolean
+} {
+  const serviceHub = useServiceHub()
+  const families = useModelSetupStore((state) => state.families)
+
+  useEffect(() => {
+    if (!enabled || families !== null || askingFamilies) return
+    const service = serviceHub.modelSetup()
+    if (!service.isSupported()) {
+      useModelSetupStore.getState().setFamilies([])
+      return
+    }
+    askingFamilies = true
+    service
+      .families()
+      .then((answer) =>
+        useModelSetupStore.getState().setFamilies(answer.families)
+      )
+      .catch((error) => {
+        console.warn('[model-setup] could not list the Bonsai families:', error)
+        useModelSetupStore.getState().setFamilies([])
+      })
+      .finally(() => {
+        askingFamilies = false
+      })
+  }, [enabled, families, serviceHub])
+
+  const models = useMemo(() => prismFamilyCards(families ?? []), [families])
+  return { models, loading: enabled && families === null }
 }
 
 /** The newest setup of one Hub file, if any was ever started. */

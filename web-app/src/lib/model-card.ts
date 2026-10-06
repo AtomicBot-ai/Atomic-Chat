@@ -181,7 +181,11 @@ export async function fetchModelStats(modelId: string): Promise<ModelStats> {
   return stats
 }
 
-export type ModelFormat = 'mlx' | 'gguf' | 'tensorrt-llm'
+/**
+ * A Hub format. `atomic-prism` is a list rather than a file format: the Bonsai
+ * GGUF files only PrismML's llama.cpp runs, which `modelFormat` reads as GGUF.
+ */
+export type ModelFormat = 'mlx' | 'gguf' | 'tensorrt-llm' | 'atomic-prism'
 
 export function modelFormat(model: CatalogModel): ModelFormat {
   if (model.is_tensorrt_llm) return 'tensorrt-llm'

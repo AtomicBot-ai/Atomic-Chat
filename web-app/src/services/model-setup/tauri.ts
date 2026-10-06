@@ -22,6 +22,7 @@ import type {
   ModelSetupPlan,
   ModelSetupPlanRequest,
   ModelSetupStartRequest,
+  PrismFamiliesResponse,
 } from './types'
 
 export const CHANGED_EVENT = 'atomic-core://model-setup:changed'
@@ -52,6 +53,13 @@ export class TauriModelSetupService extends DefaultModelSetupService {
 
   override async plan(request: ModelSetupPlanRequest): Promise<ModelSetupPlan> {
     return coreCall<ModelSetupPlan>('POST', '/models/setup-plan', request)
+  }
+
+  override async families(): Promise<PrismFamiliesResponse> {
+    return coreCall<PrismFamiliesResponse>(
+      'GET',
+      '/models/atomic-prism/families'
+    )
   }
 
   override async start(request: ModelSetupStartRequest): Promise<ModelSetup> {

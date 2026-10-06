@@ -32,6 +32,8 @@ describe('TauriModelSetupService commands', () => {
           return { outcome: 'engine_required', provider: 'atomic-prism' }
         case 'POST /models/setup-plan':
           return { digest: 'd' }
+        case 'GET /models/atomic-prism/families':
+          return { rules_version: 3, families: [] }
         case 'GET /model-setups':
           return { setups: [record] }
         case 'POST /model-setups':
@@ -42,6 +44,18 @@ describe('TauriModelSetupService commands', () => {
           throw new Error(`unexpected ${call.method} ${call.path}`)
       }
     })
+  })
+
+  it('asks the core for the Bonsai families the Hub lists', async () => {
+    const service = new TauriModelSetupService()
+
+    await expect(service.families()).resolves.toEqual({
+      rules_version: 3,
+      families: [],
+    })
+    expect(calls).toEqual([
+      { method: 'GET', path: '/models/atomic-prism/families', body: null },
+    ])
   })
 
   it('reaches the compatibility and setup routes with the bodies verbatim', async () => {

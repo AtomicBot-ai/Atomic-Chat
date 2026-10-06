@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,6 +6,7 @@ import EngineUpdateBanner from '@/containers/dialogs/EngineUpdateBanner'
 import {
   engineUpdateOfferKey,
   isEngineUpdateSnoozed,
+  retractEngineUpdateOffer,
   ENGINE_UPDATE_AVAILABLE_EVENT,
   type EngineUpdateOffer,
 } from '@/lib/engineUpdateOffer'
@@ -21,6 +22,16 @@ vi.mock('@/lib/extension', () => ({
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ opener: () => ({ open }) }),
+}))
+
+// The media engine is updated by the image store, not an extension.
+const imageStore = vi.hoisted(() => ({
+  engineUpdate: { availableTag: null as string | null },
+  checkEngineUpdate: vi.fn(),
+  updateEngine: vi.fn(),
+}))
+vi.mock('@/stores/image-generation-store', () => ({
+  useImageGenerationStore: { getState: () => imageStore },
 }))
 
 const OFFER: EngineUpdateOffer = {
@@ -48,6 +59,9 @@ describe('EngineUpdateBanner', () => {
     open.mockResolvedValue(undefined)
     downloadRecommendedBackend.mockResolvedValue(undefined)
     getByName.mockReturnValue({ downloadRecommendedBackend })
+    imageStore.engineUpdate.availableTag = null
+    imageStore.checkEngineUpdate.mockResolvedValue(undefined)
+    imageStore.updateEngine.mockResolvedValue(undefined)
   })
 
   it('renders nothing when no engine update is on offer', () => {
@@ -221,5 +235,76 @@ describe('EngineUpdateBanner', () => {
     expect(
       localStorage.getItem(engineUpdateOfferKey(OFFER.provider))
     ).toBeNull()
+  })
+
+  describe('media engine', () => {
+    const MEDIA_OFFER: EngineUpdateOffer = {
+      provider: 'sd-cpp',
+      currentBackend: 'master-849-d04e895/macos-arm64',
+      targetBackend: 'master-900-abc1234/macos-arm64',
+      currentVersion: 'master-849-d04e895',
+      targetVersion: 'master-900-abc1234',
+      downloadSizeBytes: 40_000_000,
+      restartRequired: false,
+      releaseNotesUrl:
+        'https://github.com/leejet/stable-diffusion.cpp/releases/tag/master-900-abc1234',
+    }
+
+    it('updates through the image store once the user accepts', async () => {
+      const user = userEvent.setup()
+      imageStore.engineUpdate.availableTag = MEDIA_OFFER.targetVersion
+      publish(MEDIA_OFFER)
+      render(<EngineUpdateBanner />)
+
+      expect(await screen.findByText('master-900-abc1234')).toBeInTheDocument()
+      expect(imageStore.updateEngine).not.toHaveBeenCalled()
+      await user.click(screen.getByRole('button', { name: 'updater:update' }))
+
+      expect(imageStore.updateEngine).toHaveBeenCalledTimes(1)
+      expect(imageStore.checkEngineUpdate).not.toHaveBeenCalled()
+      expect(getByName).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(
+          screen.queryByText('updater:engine.title')
+        ).not.toBeInTheDocument()
+      )
+    })
+
+    it('asks the manifest again for an offer this launch has not confirmed', async () => {
+      const user = userEvent.setup()
+      // The manifest went back to the installed tag since the offer was made.
+      publish(MEDIA_OFFER)
+      render(<EngineUpdateBanner />)
+
+      await screen.findByText('updater:engine.title')
+      await user.click(screen.getByRole('button', { name: 'updater:update' }))
+
+      expect(imageStore.checkEngineUpdate).toHaveBeenCalledTimes(1)
+      expect(imageStore.updateEngine).not.toHaveBeenCalled()
+    })
+
+    it('waits behind a llama.cpp offer', async () => {
+      publish()
+      publish(MEDIA_OFFER)
+      render(<EngineUpdateBanner />)
+
+      expect(await screen.findByText('b10909-mix-bea84f7')).toBeInTheDocument()
+      expect(screen.queryByText('master-900-abc1234')).not.toBeInTheDocument()
+    })
+
+    it('steps down when the offer is withdrawn elsewhere', async () => {
+      publish(MEDIA_OFFER)
+      render(<EngineUpdateBanner />)
+      await screen.findByText('updater:engine.title')
+
+      // Updated from Settings → Media: the store withdraws the offer.
+      act(() => retractEngineUpdateOffer('sd-cpp'))
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText('updater:engine.title')
+        ).not.toBeInTheDocument()
+      )
+    })
   })
 })

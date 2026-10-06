@@ -450,10 +450,14 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   },
   "decision": {
-    "multilingual": "100+ languages",
+    "multilingual": "Multilingual",
     "context": "{{tokens}} tokens",
     "diskSize": "{{size}} GB on disk",
     "progress": "{{current}} of {{total}} GB",
@@ -463,9 +467,12 @@
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "The model files and its converted copy will be deleted. If the model is running, it is stopped first.",
     "removed": "{{name}} removed",
-    "installEngine": "Install TurboQuant",
-    "engineLatest": "TurboQuant is up to date. A build that runs decision models is not released yet.",
-    "engineInstallFailed": "TurboQuant could not be installed",
+    "installEngine": "Install {{engine}}",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be installed",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
       "disabled": "Stopped",
       "idle": "Starts on the next request",
@@ -476,7 +483,7 @@
       "unsupported": "Engine not supported"
     },
     "errors": {
-      "engineUnsupported": "The installed TurboQuant engine cannot run decision models.",
+      "engineUnsupported": "The installed {{engine}} engine cannot run this decision model.",
       "notConfigured": "No decision model is selected. Download a model and press Start.",
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",

@@ -32,6 +32,7 @@ import { useModelSources } from '@/hooks/useModelSources'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useTensorrtCurated } from '@/hooks/useTensorrtCurated'
+import { usePrismFamilies, usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -55,7 +56,7 @@ import {
   filterInstalledBySearch,
   withStaffPicks,
 } from '@/lib/hub-installed'
-import { isDecisionHostSupported } from '@/lib/decision/platform'
+import { isAnyDecisionHostSupported } from '@/lib/decision/platform'
 import {
   HUB_CATEGORIES,
   isHubCategory,
@@ -183,19 +184,17 @@ function HubContent() {
   const decisionApiSupported = useServiceHub().decision().isSupported()
   const cpuArch = useHardware((s) => s.hardwareData.cpu.arch)
   // Image and video models need the local media engine, decision models a
-  // TurboQuant build for this machine; with neither the Hub stays the chat
-  // catalog it always was, switch and all.
+  // TurboQuant or llama.cpp build for this machine; with neither the Hub stays
+  // the chat catalog it always was, switch and all.
   const mediaSupported = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
   const decisionSupported =
     PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
     decisionApiSupported &&
-    isDecisionHostSupported(cpuArch)
+    isAnyDecisionHostSupported(cpuArch)
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
-        c === 'decision'
-          ? decisionSupported
-          : c === 'chat' || mediaSupported
+        c === 'decision' ? decisionSupported : c === 'chat' || mediaSupported
       ),
     [mediaSupported, decisionSupported]
   )
@@ -397,9 +396,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     const format = getHubFormat()
     return format ? { ...saved, formats: [format] } : saved
   })
+  const prismHubVisible = usePrismHubVisible()
   const availableFormats = useMemo(
-    () => hubFormats({ mlx: IS_MACOS, tensorrt: tensorrtHub.visible }),
-    [tensorrtHub.visible]
+    () =>
+      hubFormats({
+        mlx: IS_MACOS,
+        tensorrt: tensorrtHub.visible,
+        prism: prismHubVisible,
+      }),
+    [tensorrtHub.visible, prismHubVisible]
   )
   const filters = useMemo(
     () => normalizeHubFilters(storedFilters, availableFormats),
@@ -490,6 +495,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // any safetensors repository instead of the picks and the catalog.
   const listSources = hubListSources(filters.formats[0] ?? 'gguf')
   const tensorrtFormat = filters.formats[0] === 'tensorrt-llm'
+  // PrismML lists the Bonsai families of the core's model rules: no picks, no
+  // catalog, no Hugging Face feed or search.
+  const prismFormat = filters.formats[0] === 'atomic-prism'
+  const prismFamilies = usePrismFamilies(prismFormat)
 
   // Under the TensorRT-LLM format the engine's state comes first: what blocks
   // it, or nothing at all until the core has answered. "Downloaded" lists what
@@ -513,7 +522,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const feed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    !isSearchMode && !tensorrtPanel
+    !isSearchMode && !tensorrtPanel && !prismFormat
   )
   const uncensoredQueries = useMemo(
     () => huggingFaceQueries(debouncedSearchValue, true),
@@ -522,13 +531,16 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const uncensoredFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !tensorrtPanel,
+    filters.uncensored && !tensorrtPanel && !prismFormat,
     uncensoredQueries[0] ?? ''
   )
   const abliteratedFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !tensorrtPanel && uncensoredQueries.length > 1,
+    filters.uncensored &&
+      !tensorrtPanel &&
+      !prismFormat &&
+      uncensoredQueries.length > 1,
     uncensoredQueries[1] ?? ''
   )
 
@@ -664,8 +676,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // Uncensored has cursor-based feeds of its own above; keeping it out of this
   // one-shot path removes the old 20-results-per-term ceiling.
   useEffect(() => {
-    // Behind the TensorRT-LLM panel nothing is listed, so nothing is asked.
-    if (showOnlyDownloaded || tensorrtPanel) {
+    // Behind the TensorRT-LLM panel nothing is listed, so nothing is asked;
+    // PrismML lists its own families only.
+    if (showOnlyDownloaded || tensorrtPanel || prismFormat) {
       setHfCandidates((current) => (current.length > 0 ? [] : current))
       hfCandidatesFetchedForRef.current = ''
       return
@@ -682,7 +695,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return
     }
     const queries = huggingFaceQueries(query, false)
-    const cacheKey = `${listSources.feedFormat}\n${queries.join('\n')}`.toLowerCase()
+    const cacheKey =
+      `${listSources.feedFormat}\n${queries.join('\n')}`.toLowerCase()
     if (hfCandidatesFetchedForRef.current === cacheKey) return
     hfCandidatesFetchedForRef.current = cacheKey
 
@@ -738,6 +752,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     huggingFaceRepo,
     tensorrtFormat,
     tensorrtPanel,
+    prismFormat,
     listSources.feedFormat,
   ])
 
@@ -758,6 +773,28 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }))
     }
 
+    if (prismFormat) {
+      // A search narrows the families by name; fit and Uncensored apply as
+      // they do to any GGUF.
+      const query = debouncedSearchValue.trim().toLowerCase()
+      const matching = query
+        ? prismFamilies.models.filter(
+            (model) =>
+              model.model_name.toLowerCase().includes(query) ||
+              model.description.toLowerCase().includes(query)
+          )
+        : prismFamilies.models
+      const filtered = applyHubFilters(
+        matching,
+        { ...filters, formats: ['gguf'] },
+        { budgetBytes, applyFitFilter: true }
+      )
+      return filtered.map((model, index) => ({
+        model,
+        sectionLabel: index === 0 ? t('hub:prismCurated') : undefined,
+      }))
+    }
+
     if (!isSearchMode && tensorrtFormat) {
       // The feed waits for the descriptor's architectures: narrowed only once
       // they arrive, its rows would vanish under the pointer.
@@ -771,7 +808,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         fromHuggingFace: row.section !== 'curated',
         sectionLabel:
           index === 0 || rows[index - 1].section !== row.section
-            ? t(row.section === 'curated' ? 'hub:tensorrt.curated' : 'hub:feedTitle')
+            ? t(
+                row.section === 'curated'
+                  ? 'hub:tensorrt.curated'
+                  : 'hub:feedTitle'
+              )
             : undefined,
       }))
     }
@@ -849,7 +890,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         candidates: filters.uncensored ? pagedUncensored : hfCandidates,
         context: tensorrtContext,
       })
-      const exact = rows.filter((row) => row.section === 'exact').map((row) => row.model)
+      const exact = rows
+        .filter((row) => row.section === 'exact')
+        .map((row) => row.model)
       // The memory-budget fit is a GGUF reading of system memory; TensorRT-LLM
       // weights were already weighed against the cards by the prefilter.
       const found = applyHubFilters(
@@ -901,6 +944,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   }, [
     tensorrtPanel,
     tensorrtFormat,
+    prismFormat,
+    prismFamilies.models,
+    debouncedSearchValue,
     tensorrtCurated.models,
     tensorrtCurated.loading,
     tensorrtContext,
@@ -1152,7 +1198,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     }
     if (
       lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS &&
-      !(tensorrtFormat && tensorrtFeedPages.current.empty >= TENSORRT_EMPTY_PAGES_LIMIT)
+      !(
+        tensorrtFormat &&
+        tensorrtFeedPages.current.empty >= TENSORRT_EMPTY_PAGES_LIMIT
+      )
     ) {
       feed.loadMore()
     }
@@ -1182,18 +1231,17 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   const isEmpty = listItems.length === 0
   const uncensoredLoading =
-    filters.uncensored &&
-    (uncensoredFeed.loading || abliteratedFeed.loading)
+    filters.uncensored && (uncensoredFeed.loading || abliteratedFeed.loading)
   const tensorrtLoading =
-    tensorrtFormat &&
-    !isSearchMode &&
-    (tensorrtCurated.loading || feed.loading)
+    tensorrtFormat && !isSearchMode && (tensorrtCurated.loading || feed.loading)
   const showSkeleton =
     isEmpty &&
-    ((loading && !isSearchMode) ||
-      hfSearching ||
-      uncensoredLoading ||
-      tensorrtLoading)
+    (prismFormat
+      ? prismFamilies.loading
+      : (loading && !isSearchMode) ||
+        hfSearching ||
+        uncensoredLoading ||
+        tensorrtLoading)
 
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">

@@ -79,7 +79,7 @@ export interface HubListSources {
   staffPicks: boolean
   /** The app's model catalog, searched locally. */
   catalog: boolean
-  /** The TensorRT-LLM descriptor's curated models, checked by the core. */
+  /** The engine's curated models: the TensorRT-LLM descriptor's, or PrismML's Bonsai families. */
   curated: boolean
   feedFormat: HuggingFaceFeedFormat
   /** Narrow feed and search rows with `passesTensorrtPrefilter`. */
@@ -89,6 +89,10 @@ export interface HubListSources {
 export function hubListSources(format: ModelFormat): HubListSources {
   if (format === 'tensorrt-llm') {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'tensorrt-llm', prefilter: true }
+  }
+  // PrismML lists the Bonsai families of the core's model rules, and nothing else.
+  if (format === 'atomic-prism') {
+    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
   }
   return { staffPicks: true, catalog: true, curated: false, feedFormat: format, prefilter: false }
 }

@@ -80,14 +80,16 @@ export function getProviderLogo(provider: string) {
   switch (provider) {
     case 'jan':
       return '/images/model-provider/jan.png'
-    // Every llama.cpp engine the app starts (PrismML's fork included), plus the
-    // `llama-server` the user starts and we merely connect to — same engine, so
-    // the same mark.
+    // Both engines the app starts, plus the `llama-server` the user starts and
+    // we merely connect to — same engine, so the same mark.
     case 'llamacpp':
     case 'llamacpp-upstream':
-    case 'atomic-prism':
     case 'llamacpp-server':
       return '/images/model-provider/llamacpp.svg'
+    // PrismML's own fork carries PrismML's mark, the one the Hub shows on
+    // Bonsai models (a monochrome mark, tinted to the text color).
+    case 'atomic-prism':
+      return '/images/model-provider/prism-ml.webp'
     case 'mlx':
       return '/images/model-provider/mlx.png'
     // NVIDIA's own engine; the same mark as the NVIDIA NIM cloud provider.
@@ -209,6 +211,9 @@ export const getProviderTitle = (provider: string) => {
       return 'MLX'
     case 'tensorrt-llm':
       return 'TensorRT-LLM'
+    // The media engine, named on the engine-update banner. Not a chat provider.
+    case 'sd-cpp':
+      return 'stable-diffusion.cpp'
     case 'openai':
       return 'OpenAI'
     case 'chatgpt':

@@ -68,6 +68,9 @@
   "defaultSize": "Размер по умолчанию",
   "steps": "Шаги",
   "license": "Лицензия",
+  "decisionEngine": "Движок",
+  "decisionReadsImages": "читает изображения",
+  "licenseNonCommercial": "некоммерческая",
   "frameRate": "Частота кадров",
   "categoryChatHint": "Языковые модели для чата",
   "categoryImagesHint": "Генерация изображений по описанию",
@@ -114,6 +117,7 @@
   "prismStage_failed": "Ошибка",
   "prismStage_cancelled": "Отменено",
   "prismStage_interrupted": "Прервано",
+  "prismCurated": "Модели Bonsai для PrismML",
   "tensorrt": {
     "checking": "Проверяем, может ли TensorRT-LLM работать на этом компьютере…",
     "blocked": {

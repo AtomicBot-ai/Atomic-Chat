@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useHardware } from '@/hooks/useHardware'
+import { usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -68,10 +69,15 @@ export function HubFilters({
   )
 
   // MLX only exists on Apple Silicon, so offering the toggle elsewhere would
-  // be a filter that can only ever empty the list. TensorRT-LLM follows its
-  // provider: no platform check of the Hub's own.
+  // be a filter that can only ever empty the list. TensorRT-LLM and PrismML
+  // follow their providers: no platform check of the Hub's own.
   const tensorrtVisible = useTensorrtHubState().visible
-  const availableFormats = hubFormats({ mlx: IS_MACOS, tensorrt: tensorrtVisible })
+  const prismVisible = usePrismHubVisible()
+  const availableFormats = hubFormats({
+    mlx: IS_MACOS,
+    tensorrt: tensorrtVisible,
+    prism: prismVisible,
+  })
   const sortKeys = HUB_SORT_KEYS.filter(
     (key) => key !== 'likes' || showLikesSort
   )

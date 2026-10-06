@@ -78,6 +78,9 @@
   "defaultSize": "Default size",
   "steps": "Steps",
   "license": "License",
+  "decisionEngine": "Engine",
+  "decisionReadsImages": "reads images",
+  "licenseNonCommercial": "non-commercial",
   "frameRate": "Frame rate",
   "tensorrt": {
     "checking": "Checking whether TensorRT-LLM can run on this computer…",
@@ -146,5 +149,6 @@
   "prismStage_ready": "Ready",
   "prismStage_failed": "Failed",
   "prismStage_cancelled": "Cancelled",
-  "prismStage_interrupted": "Interrupted"
+  "prismStage_interrupted": "Interrupted",
+  "prismCurated": "Bonsai models for PrismML"
 }

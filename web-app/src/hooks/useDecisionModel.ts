@@ -52,7 +52,9 @@ export type DecisionModelState = {
  * from `useDownloadStore` (the download panel's events), the core's view from
  * `useDecisionStore`, so the hook owns no state of its own.
  */
-export function useDecisionModel(model: DecisionCatalogModel): DecisionModelState {
+export function useDecisionModel(
+  model: DecisionCatalogModel
+): DecisionModelState {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const taskId = decisionDownloadTaskId(model.id)
@@ -63,12 +65,14 @@ export function useDecisionModel(model: DecisionCatalogModel): DecisionModelStat
   )
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
-  const installed = useDecisionStore((state) => Boolean(state.installed[model.id]))
+  const installed = useDecisionStore((state) =>
+    Boolean(state.installed[model.id])
+  )
   const config = useDecisionStore((state) => state.config)
   const status = useDecisionStore((state) => state.status)
   const busyId = useDecisionStore((state) => state.busy)
 
-  const active = isActiveDecisionModel(config, model.id)
+  const active = isActiveDecisionModel(config, model)
   const running = active && Boolean(config?.enabled)
   const downloading = localDownloading || Boolean(progressEntry)
 

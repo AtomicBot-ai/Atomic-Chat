@@ -457,6 +457,169 @@ describe('atomic_prism_extension', () => {
     })
   })
 
+  describe('visibility', () => {
+    it('stays hidden, and unconfirmed, until the core answers', () => {
+      expect(extension.isHidden()).toBe(true)
+      expect(extension.visibilityKnown()).toBe(false)
+    })
+
+    it('shows the provider where PrismML publishes a build for this machine', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({ supported_backends: ['linux-cpu-x64', 'linux-vulkan-x64'] })
+      )
+
+      await expect(extension.refreshVisibility()).resolves.toBe(true)
+
+      expect(extension.isHidden()).toBe(false)
+      expect(extension.visibilityKnown()).toBe(true)
+    })
+
+    it('hides it where there is none: Linux and Windows on Arm', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({ os_type: 'windows', arch_suffix: 'arm64', supported_backends: [] })
+      )
+
+      await expect(extension.refreshVisibility()).resolves.toBe(false)
+
+      expect(extension.isHidden()).toBe(true)
+      expect(extension.visibilityKnown()).toBe(true)
+    })
+
+    it('keeps the last answer when the core cannot be reached', async () => {
+      vi.mocked(loadCatalog).mockResolvedValueOnce(
+        catalogOf({ supported_backends: ['macos-arm64'] })
+      )
+      await extension.refreshVisibility()
+      vi.mocked(loadCatalog).mockRejectedValueOnce(new Error('core restarting'))
+
+      await expect(extension.refreshVisibility()).resolves.toBe(true)
+      expect(extension.isHidden()).toBe(false)
+    })
+
+    it('asks the core once for callers that come while a check runs', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({ supported_backends: ['macos-arm64'] })
+      )
+
+      const answers = await Promise.all([
+        extension.refreshVisibility(),
+        extension.refreshVisibility(),
+      ])
+
+      expect(answers).toEqual([true, true])
+      expect(vi.mocked(loadCatalog).mock.calls).toHaveLength(1)
+    })
+  })
+
+  describe('getEngineStatus', () => {
+    it('is not installed, with the build the core recommends for this machine', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({
+          supported_backends: ['macos-arm64'],
+          available: [{ version: TAG, backend: 'macos-arm64', order: 1 }],
+          recommended: `${TAG}/macos-arm64`,
+        })
+      )
+
+      await expect(extension.getEngineStatus()).resolves.toEqual({
+        installed: false,
+        recommended: `${TAG}/macos-arm64`,
+      })
+      // The packs are listed again, so an install that just finished counts.
+      expect(vi.mocked(loadCatalog).mock.calls[0][0]).toMatchObject({ refresh: true })
+    })
+
+    it('falls back to the best available build when the core names none', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({
+          supported_backends: ['linux-cpu-x64', 'linux-vulkan-x64'],
+          available: [
+            { version: TAG, backend: 'linux-cpu-x64', order: 1 },
+            { version: TAG, backend: 'linux-vulkan-x64', order: 2 },
+          ],
+        })
+      )
+
+      const status = await extension.getEngineStatus()
+
+      expect(status.recommended).toBe(`${TAG}/linux-vulkan-x64`)
+    })
+
+    it('offers nothing when only unverified builds exist and they are not allowed', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({ supported_backends: ['macos-arm64'], available: [] })
+      )
+
+      await expect(extension.getEngineStatus()).resolves.toEqual({
+        installed: false,
+        recommended: null,
+      })
+    })
+
+    it('is installed once the core lists a pack on disk', async () => {
+      vi.mocked(loadCatalog).mockResolvedValue(
+        catalogOf({
+          supported_backends: ['macos-arm64'],
+          installed: [{ version: TAG, backend: 'macos-arm64' }],
+        })
+      )
+
+      const status = await extension.getEngineStatus()
+
+      expect(status.installed).toBe(true)
+      expect(extension.isHidden()).toBe(false)
+    })
+  })
+
+  describe('allow_candidate_builds', () => {
+    const watchCoreHandOff = () => {
+      const order: string[] = []
+      extension['coreSettings'] = {
+        ensureReady: vi.fn(async () => {
+          order.push('import')
+        }),
+        mirror: vi.fn(),
+      } as any
+      vi.spyOn(extension, 'configureBackends').mockImplementation(async () => {
+        order.push('catalog')
+      })
+      return order
+    }
+
+    it('imports a change into the core, then rebuilds the version list from the new catalog', async () => {
+      const order = watchCoreHandOff()
+      extension['isInitializing'] = false
+      extension['config'] = { allow_candidate_builds: false } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+
+      await vi.waitFor(() => expect(order).toEqual(['import', 'catalog']))
+      expect(extension['config'].allow_candidate_builds).toBe(true)
+    })
+
+    it('does nothing for a save that leaves it as it was', async () => {
+      const order = watchCoreHandOff()
+      extension['isInitializing'] = false
+      extension['config'] = { allow_candidate_builds: true } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+      await Promise.resolve()
+
+      expect(order).toEqual([])
+    })
+
+    it('leaves the first catalog to the start-up pass', async () => {
+      const order = watchCoreHandOff()
+      extension['isInitializing'] = true
+      extension['config'] = { allow_candidate_builds: false } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+      await Promise.resolve()
+
+      expect(order).toEqual([])
+    })
+  })
+
   describe('configureBackends', () => {
     it('leaves version_backend at none with no catalog and nothing installed', async () => {
       const settings = stubSettings(extension)
@@ -584,6 +747,7 @@ describe('atomic_prism_extension', () => {
     beforeEach(() => {
       ;(window as any).dispatchEvent = vi.fn()
       extension.downloadRecommendedBackend = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(isBackendInstalled).mockResolvedValue(true)
     })
 
     it('offers the newer release with the core’s notes and size, and installs nothing', async () => {
@@ -683,6 +847,18 @@ describe('atomic_prism_extension', () => {
 
       await extension['reconcileBackendReleaseTag']()
 
+      expect(publishedOffer()).toBeNull()
+    })
+
+    it('offers nothing to a machine that never set PrismML up', async () => {
+      // `configureBackends()` names the catalog's pick without installing it.
+      extension['config'] = { version_backend: `${TAG}/macos-arm64` } as any
+      vi.mocked(isBackendInstalled).mockResolvedValue(false)
+
+      await extension['reconcileBackendReleaseTag']()
+
+      expect(isBackendInstalled).toHaveBeenCalledWith('macos-arm64', TAG)
+      expect(coreRuntime.checkBackendUpdates).not.toHaveBeenCalled()
       expect(publishedOffer()).toBeNull()
     })
 

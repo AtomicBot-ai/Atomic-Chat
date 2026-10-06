@@ -48,7 +48,12 @@ export const DEFAULT_HUB_FILTERS: HubFilterState = {
 
 export const HUB_FILTERS_STORAGE_KEY = 'atomic_hub_filters_v1'
 
-const ALL_FORMATS: readonly ModelFormat[] = ['gguf', 'mlx', 'tensorrt-llm']
+const ALL_FORMATS: readonly ModelFormat[] = [
+  'gguf',
+  'mlx',
+  'tensorrt-llm',
+  'atomic-prism',
+]
 
 const isFormat = (value: unknown): value is ModelFormat =>
   ALL_FORMATS.includes(value as ModelFormat)
@@ -58,17 +63,24 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'gguf': 'GGUF',
   'mlx': 'MLX',
   'tensorrt-llm': 'TensorRT-LLM',
+  'atomic-prism': 'PrismML',
 }
 
 /**
  * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, TensorRT-LLM where its
- * provider is shown and a card is new enough (`useTensorrtHubState().visible`).
+ * provider is shown and a card is new enough (`useTensorrtHubState().visible`), PrismML where its
+ * provider is shown — the core hides it where PrismML publishes no build.
  */
-export function hubFormats(options: { mlx: boolean; tensorrt: boolean }): ModelFormat[] {
+export function hubFormats(options: {
+  mlx: boolean
+  tensorrt: boolean
+  prism?: boolean
+}): ModelFormat[] {
   return [
     'gguf',
     ...(options.mlx ? (['mlx'] as const) : []),
     ...(options.tensorrt ? (['tensorrt-llm'] as const) : []),
+    ...(options.prism ? (['atomic-prism'] as const) : []),
   ]
 }
 

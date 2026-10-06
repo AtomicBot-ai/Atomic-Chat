@@ -32,6 +32,8 @@ import {
   activateDecisionModel,
   decisionDownloadTaskId,
   decisionModelDir,
+  decisionModelPath,
+  decisionStartupTimeoutSecs,
   deleteDecisionModel,
   downloadDecisionModel,
   isActiveDecisionModel,
@@ -51,9 +53,41 @@ const model: DecisionCatalogModel = {
   languages: 'multilingual',
   context: 8192,
   calibrated: false,
+  engine: 'llamacpp',
+  format: 'checkpoint',
   files: [
     { path: 'rl_agent_config.json', bytes: 100, sha256: HASH },
     { path: 'model/model.safetensors', bytes: 900, sha256: HASH },
+  ],
+}
+
+/** A stock llama.cpp model: a GGUF and its projector. */
+const gguf: DecisionCatalogModel = {
+  id: 'clef-flash',
+  name: 'Clef Flash',
+  repo: 'ggml-org/Clef-Flash-GGUF',
+  revision: 'c'.repeat(40),
+  languages: 'en',
+  context: 8192,
+  calibrated: false,
+  engine: 'llamacpp-upstream',
+  format: 'gguf',
+  decision_type: 'clef',
+  vision: true,
+  min_engine: 'b11418',
+  files: [
+    {
+      path: 'Clef-Flash-Q4_K_M.gguf',
+      role: 'model',
+      bytes: 6000,
+      sha256: HASH,
+    },
+    {
+      path: 'mmproj-Clef-Flash-Q8_0.gguf',
+      role: 'mmproj',
+      bytes: 600,
+      sha256: HASH,
+    },
   ],
 }
 
@@ -95,10 +129,32 @@ describe('paths and ids', () => {
 
   it('reads the active model off the configured path', () => {
     expect(
-      isActiveDecisionModel({ model_path: 'decision/models/laya' }, 'laya')
+      isActiveDecisionModel(
+        { model_path: 'decision/models/laya-multilingual' },
+        model
+      )
     ).toBe(true)
-    expect(isActiveDecisionModel({ model_path: '' }, 'laya')).toBe(false)
-    expect(isActiveDecisionModel(null, 'laya')).toBe(false)
+    expect(isActiveDecisionModel({ model_path: '' }, model)).toBe(false)
+    expect(isActiveDecisionModel(null, model)).toBe(false)
+    // A GGUF model is active by its file, not its folder.
+    expect(
+      isActiveDecisionModel(
+        { model_path: 'decision/models/clef-flash/Clef-Flash-Q4_K_M.gguf' },
+        gguf
+      )
+    ).toBe(true)
+    expect(
+      isActiveDecisionModel({ model_path: 'decision/models/clef-flash' }, gguf)
+    ).toBe(false)
+  })
+
+  it('points the core at the folder of a checkpoint, the -m file of a GGUF', () => {
+    expect(decisionModelPath(model)).toBe('decision/models/laya-multilingual')
+    expect(decisionModelPath(gguf)).toBe(
+      'decision/models/clef-flash/Clef-Flash-Q4_K_M.gguf'
+    )
+    expect(decisionStartupTimeoutSecs(model)).toBe(60)
+    expect(decisionStartupTimeoutSecs(gguf)).toBe(600)
   })
 })
 
@@ -199,11 +255,29 @@ describe('core control', () => {
       enabled: true,
       model_path: 'decision/models/laya-multilingual',
       model_id: 'laya-multilingual',
+      mmproj_path: '',
+      ctx_size: 0,
+      startup_timeout_secs: 60,
     })
     expect(service.load).toHaveBeenCalledOnce()
     expect(service.setConfig.mock.invocationCallOrder[0]).toBeLessThan(
       service.load.mock.invocationCallOrder[0]
     )
+  })
+
+  it('points the core at a GGUF, its projector and its context for stock llama.cpp', async () => {
+    const service = decisionService()
+    await expect(activateDecisionModel(gguf)).resolves.toEqual({
+      state: 'ready',
+    })
+    expect(service.setConfig).toHaveBeenCalledWith({
+      enabled: true,
+      model_path: 'decision/models/clef-flash/Clef-Flash-Q4_K_M.gguf',
+      model_id: 'clef-flash',
+      mmproj_path: 'decision/models/clef-flash/mmproj-Clef-Flash-Q8_0.gguf',
+      ctx_size: 8192,
+      startup_timeout_secs: 600,
+    })
   })
 
   it('stops by turning the model off', async () => {
@@ -222,6 +296,7 @@ describe('core control', () => {
       enabled: false,
       model_path: '',
       model_id: '',
+      mmproj_path: '',
     })
     expect(fsMock.rm).toHaveBeenCalledWith(
       'file://decision/models/laya-multilingual'

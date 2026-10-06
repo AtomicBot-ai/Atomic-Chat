@@ -4,12 +4,15 @@
  * download, and how far a setup has come.
  */
 
+import { sanitizeModelId } from '@/lib/utils'
 import {
   MODEL_SETUP_FINAL_STAGES,
   type CompatibilityVerdict,
   type ModelSetup,
   type ModelSetupStage,
+  type PrismFamily,
 } from '@/services/model-setup/types'
+import type { CatalogModel } from '@/services/models/types'
 
 /** The provider id of PrismML's llama.cpp. */
 export const PRISM_PROVIDER = 'atomic-prism'
@@ -214,4 +217,53 @@ export function setupBytes(
       transferred += Math.min(reported?.transferred ?? 0, size)
   }
   return { transferred, total }
+}
+
+/** A file size the way the Hub's catalog spells it: `7.2 GB`, `629.2 MB`. */
+function catalogFileSize(bytes: number): string {
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+}
+
+/**
+ * A Bonsai family as a Model Hub card, for the Hub's PrismML list. Its files
+ * are the quants, the recommended one first, and every URL is pinned to the
+ * family's revision, which the verdict and the setup read from it. Ids follow
+ * a Hugging Face repository's card, so a model reads as downloaded whichever
+ * list it was found in.
+ */
+export function prismFamilyCard(family: PrismFamily): CatalogModel {
+  const [owner] = family.repo.split('/', 1)
+  const url = (file: string) =>
+    `https://huggingface.co/${family.repo}/resolve/${family.revision}/${file}`
+  const recommendedFirst = <T extends { default?: boolean }>(items: T[]) =>
+    [...items].sort((a, b) => Number(!!b.default) - Number(!!a.default))
+  const quants = recommendedFirst(family.files).map((file) => ({
+    model_id: `${owner}/${sanitizeModelId(file.file.replace(/\.gguf$/i, ''))}`,
+    path: url(file.file),
+    file_size: catalogFileSize(file.size),
+  }))
+  const projectors = recommendedFirst(family.projectors).map((file) => ({
+    model_id: sanitizeModelId(file.file.replace(/\.gguf$/i, '')),
+    path: url(file.file),
+    file_size: catalogFileSize(file.size),
+  }))
+  return {
+    model_name: family.repo,
+    developer: owner,
+    description: family.title,
+    downloads: 0,
+    num_quants: quants.length,
+    quants,
+    num_mmproj: projectors.length,
+    mmproj_models: projectors,
+    readme: url('README.md'),
+  }
+}
+
+/** The Hub's PrismML list: the featured families first, in the rules' order otherwise. */
+export function prismFamilyCards(families: readonly PrismFamily[]): CatalogModel[] {
+  return [...families]
+    .sort((a, b) => Number(!!b.featured) - Number(!!a.featured))
+    .map(prismFamilyCard)
 }

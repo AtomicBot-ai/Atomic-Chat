@@ -115,12 +115,14 @@ describe('filterDecisionModels', () => {
   it('needs every word in the name, description, repo or backbone', () => {
     const ids = (q: string) =>
       filterDecisionModels(catalog.models, q).map((m) => m.id)
-    expect(ids('')).toEqual([
+    expect(ids('').slice(0, 3)).toEqual([
       'laya-multilingual',
       'laya',
       'laya-typed-decisions',
     ])
-    expect(ids('mmbert')).toEqual(['laya-multilingual'])
+    expect(ids('')).toHaveLength(catalog.models.length)
+    expect(ids('mmbert')).toEqual(['laya-multilingual', 'julia-1'])
+    expect(ids('cloudflare images')).toEqual(['clef-flash', 'clef'])
     expect(ids('laya typed')).toEqual(['laya-typed-decisions'])
     expect(ids('laya nothing')).toEqual([])
   })

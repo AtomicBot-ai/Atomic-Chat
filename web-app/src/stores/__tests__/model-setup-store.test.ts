@@ -63,7 +63,7 @@ describe('useModelSetupStore', () => {
     expect(useModelSetupStore.getState().speeds.t.bytesPerSecond).toBe(50)
   })
 
-  it('forgets the verdicts when a new core generation attaches', () => {
+  it('forgets the verdicts and the Bonsai families when a new core generation attaches', () => {
     const store = useModelSetupStore.getState()
     store.setVerdict('u1', verdict)
     store.setVerdict('u2', null)
@@ -72,9 +72,12 @@ describe('useModelSetupStore', () => {
       u2: null,
     })
 
+    store.setFamilies([])
     store.apply({ type: 'changed', setup: setup('a', 1, 'queued') })
     store.apply({ type: 'reset' })
     expect(useModelSetupStore.getState().verdicts).toEqual({})
+    // Its model rules may be newer: the Hub's PrismML list is asked again.
+    expect(useModelSetupStore.getState().families).toBeNull()
     expect(useModelSetupStore.getState().setups.a).toBeDefined()
   })
 

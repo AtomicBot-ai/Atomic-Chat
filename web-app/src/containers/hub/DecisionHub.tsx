@@ -4,9 +4,12 @@ import HeaderPage from '@/containers/HeaderPage'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { DecisionModelDetailPanel } from '@/containers/hub/DecisionModelDetailPanel'
 import { HubNoResults, HubSearchInput } from '@/containers/hub/HubSearch'
+import { useHardware } from '@/hooks/useHardware'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { DECISION_ENGINE_UI } from '@/lib/decision/engine'
+import { isDecisionHostSupported } from '@/lib/decision/platform'
 import { filterDecisionModels } from '@/lib/hub-media'
-import { DECISION_ICON_KEY } from '@/lib/model-logo'
+import { decisionIconKey } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import type { DecisionCatalogModel } from '@/services/decision-catalog-registry'
 import { useDecisionStore } from '@/stores/decision-store'
@@ -46,7 +49,7 @@ function DecisionModelRow({
       )}
     >
       <ModelLogo
-        icon={DECISION_ICON_KEY}
+        icon={decisionIconKey(model)}
         name={model.name}
         author={repoOwner(model.repo)}
         className="size-9 rounded-lg"
@@ -55,6 +58,12 @@ function DecisionModelRow({
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
             {model.name}
+          </span>
+          <span
+            className="shrink-0 rounded-[5px] bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+            data-testid={`decision-engine-${model.id}`}
+          >
+            {DECISION_ENGINE_UI[model.engine].name}
           </span>
           {installed && (
             <IconCircleCheckFilled
@@ -74,8 +83,10 @@ function DecisionModelRow({
 
 /**
  * The Hub's Decision category: the curated decision catalog in the Hub's
- * two-column layout. Downloaded models come first; they are started from the
- * llama.cpp TurboQuant provider page, where Open leads.
+ * two-column layout, each model tagged with the engine that runs it.
+ * Downloaded models come first; they are started from that engine's provider
+ * page (llama.cpp TurboQuant, or llama.cpp), where Open leads. A model whose
+ * engine has no build for this machine is not listed.
  */
 export function DecisionHub({
   categoryTabs,
@@ -87,21 +98,30 @@ export function DecisionHub({
   const { t } = useTranslation()
   const catalog = useDecisionStore((s) => s.catalog)
   const installed = useDecisionStore((s) => s.installed)
+  const cpuArch = useHardware((s) => s.hardwareData.cpu.arch)
 
   useEffect(() => useDecisionStore.getState().bind(), [])
 
+  const runnable = useMemo(
+    () =>
+      catalog.models.filter((model) =>
+        isDecisionHostSupported(cpuArch, model.engine)
+      ),
+    [catalog.models, cpuArch]
+  )
+
   const sections = useMemo(() => {
-    const shown = filterDecisionModels(catalog.models, query)
+    const shown = filterDecisionModels(runnable, query)
     return {
       installed: shown.filter((model) => installed[model.id]),
       available: shown.filter((model) => !installed[model.id]),
     }
-  }, [catalog.models, query, installed])
+  }, [runnable, query, installed])
 
   // Resolved against the whole catalog: a search that hides the open model
   // should not blank the panel beside it.
   const selectedModel =
-    catalog.models.find((model) => model.id === selectedModelId) ?? null
+    runnable.find((model) => model.id === selectedModelId) ?? null
   const firstModelId = (sections.installed[0] ?? sections.available[0])?.id
 
   useEffect(() => {

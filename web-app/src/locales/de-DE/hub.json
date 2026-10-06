@@ -63,6 +63,9 @@
   "defaultSize": "Standardgröße",
   "steps": "Schritte",
   "license": "Lizenz",
+  "decisionEngine": "Engine",
+  "decisionReadsImages": "reads images",
+  "licenseNonCommercial": "non-commercial",
   "frameRate": "Bildrate",
   "categoryChatHint": "Language models for chat",
   "categoryImagesHint": "Generate images from a prompt",
@@ -108,5 +111,6 @@
   "prismStage_ready": "Bereit",
   "prismStage_failed": "Fehlgeschlagen",
   "prismStage_cancelled": "Abgebrochen",
-  "prismStage_interrupted": "Unterbrochen"
+  "prismStage_interrupted": "Unterbrochen",
+  "prismCurated": "Bonsai-Modelle für PrismML"
 }

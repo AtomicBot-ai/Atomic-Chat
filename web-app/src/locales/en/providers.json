@@ -237,5 +237,15 @@
       "resetDone": "Setup state reset ({{count}} attempts archived)",
       "resetFailed": "Could not reset the setup state: {{reason}}"
     }
+  },
+  "prismEngine": {
+    "description": "Needed to run Bonsai models.",
+    "noBuild": "No verified build for this computer yet: turn on “Allow unverified PrismML builds” below.",
+    "checkFailed": "Could not check the PrismML builds: {{error}}",
+    "checkAgain": "Check again",
+    "install": "Install engine",
+    "installing": "Installing…",
+    "installFailed": "Could not install the engine: {{error}}",
+    "findModels": "Bonsai models"
   }
 }

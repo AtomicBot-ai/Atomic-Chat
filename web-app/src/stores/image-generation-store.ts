@@ -8,6 +8,10 @@ import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { acquireGpuForDiffusion } from '@/lib/diffusion/arbiter'
 import { configureDiffusion, getDiffusionPaths } from '@/lib/diffusion/config'
+import {
+  buildMediaEngineUpdateOffer,
+  MEDIA_ENGINE_PROVIDER,
+} from '@/lib/diffusion/engineUpdateOffer'
 import { toDiffusionError } from '@/lib/diffusion/errors'
 import { autoOffload, fitForQuant } from '@/lib/diffusion/fit'
 import {
@@ -27,6 +31,10 @@ import {
   captureImageGenerate,
 } from '@/lib/diffusion/telemetry'
 import { validateImageRequest } from '@/lib/diffusion/validate'
+import {
+  publishEngineUpdateOffer,
+  retractEngineUpdateOffer,
+} from '@/lib/engineUpdateOffer'
 import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
 import { notifyWhenAway } from '@/lib/notifications'
 import {
@@ -132,6 +140,11 @@ type ImageGenerationState = {
   unloadingArtifactId: string | null
   engineInstall: EngineInstallProgress
   engineUpdate: EngineUpdateState
+  /**
+   * The tag an `updateEngine()` is downloading, for the app-wide progress
+   * card; null once the download is over, whatever its outcome.
+   */
+  engineUpdatingTo: string | null
   pendingEngineArtifactId: string | null
 
   /** The model-list dialog, for the places with no picker of their own. */
@@ -242,6 +255,7 @@ const initial = {
   unloadingArtifactId: null as string | null,
   engineInstall: emptyInstall,
   engineUpdate: noUpdate,
+  engineUpdatingTo: null as string | null,
   pendingEngineArtifactId: null,
   setupOpen: false,
   setupModality: 'image' as DiffusionModality,
@@ -439,6 +453,11 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             })
           }),
       ])
+
+      // Once per launch, as the llama.cpp providers do: what the manifest
+      // says goes to the engine-update banner. Not awaited — the round trip
+      // must not hold up adopting a running job.
+      void get().checkEngineUpdate()
 
       // Adopt a job that was running before this page (or this window)
       // existed, so a reload mid-generation shows progress instead of a
@@ -661,13 +680,14 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       if (engineUpdate.checking) return
       if (status?.install.state !== 'installed' || !hostBackendId) {
         set({ engineUpdate: noUpdate })
+        retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
         return
       }
       set({ engineUpdate: { ...engineUpdate, checking: true, error: null } })
       try {
         const pending = get().pendingEngineArtifactId
         const family = pending ? parseArtifactId(pending)?.family : undefined
-        const { manifest, error } = await resolveSdcppManifest({
+        const { manifest, source, error } = await resolveSdcppManifest({
           force,
           ...(family ? { family } : {}),
         })
@@ -675,18 +695,35 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           (asset) => asset.backend === hostBackendId
         )
         const installedTag = status.install.tag
+        const availableTag =
+          published && manifest.tag_name !== installedTag
+            ? manifest.tag_name
+            : null
         set({
           engineUpdate: {
             checking: false,
-            availableTag:
-              published && manifest.tag_name !== installedTag
-                ? manifest.tag_name
-                : null,
+            availableTag,
             checkedAt: Date.now(),
             // A stale answer is still an answer; only note that it is stale.
             error: error ?? null,
           },
         })
+        // The banner speaks only for the config's manifest. The bundled
+        // baseline is what installs fall back to, not news of a release, so
+        // it neither offers nor withdraws anything.
+        if (source !== 'baseline') {
+          if (availableTag) {
+            publishEngineUpdateOffer(
+              buildMediaEngineUpdateOffer(
+                status.install,
+                hostBackendId,
+                manifest
+              )
+            )
+          } else {
+            retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
+          }
+        }
       } catch (err) {
         set({
           engineUpdate: {
@@ -707,6 +744,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       )
         return
       updatingEngine = true
+      set({ engineUpdatingTo: get().engineUpdate.availableTag })
       const pending = get().pendingEngineArtifactId
       const family = pending ? parseArtifactId(pending)?.family : undefined
       try {
@@ -716,7 +754,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         set({ capabilities: null, videoCapabilities: null })
         await get().installEngine({ ...(family ? { family } : {}) })
         if (get().engineInstall.error === null) {
-          set({ engineUpdate: { ...noUpdate, checkedAt: Date.now() } })
+          // One set: whoever watches `engineUpdatingTo` fall reads the outcome
+          // from `availableTag`, which is cleared only on success.
+          set({
+            engineUpdate: { ...noUpdate, checkedAt: Date.now() },
+            engineUpdatingTo: null,
+          })
+          retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
           if (pending && get().pendingEngineArtifactId === pending)
             await get().loadModel(pending)
         } else {
@@ -735,6 +779,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         set({ lastError: toDiffusionError(error) })
       } finally {
         updatingEngine = false
+        set({ engineUpdatingTo: null })
       }
     },
 

@@ -13,11 +13,16 @@ import {
   decisionCheckpointBytes,
   decisionDiskBytes,
   decisionFileUrl,
+  decisionModelFile,
+  decisionProjectorFile,
+  decisionQuantLabel,
   fetchDecisionCatalog,
   getBaselineDecisionCatalog,
   getCachedDecisionCatalog,
+  isNonCommercialLicense,
   isSafeDecisionFilePath,
   parseDecisionCatalog,
+  REQUIRED_DECISION_FILES,
   sanitizeDecisionModel,
   SUPPORTED_SCHEMA_VERSION,
 } from '../decision-catalog-registry'
@@ -53,7 +58,10 @@ const model = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const manifest = (models: unknown[] = [model()], overrides: Record<string, unknown> = {}) => ({
+const manifest = (
+  models: unknown[] = [model()],
+  overrides: Record<string, unknown> = {}
+) => ({
   $schema: './schema.decision.json',
   schema_version: SUPPORTED_SCHEMA_VERSION,
   updated_at: '2026-10-01T12:00:00Z',
@@ -86,9 +94,13 @@ describe('fetchDecisionCatalog', () => {
     fetchOk(manifest())
     const result = await fetchDecisionCatalog({ url: REMOTE_URL })
     expect(result.source).toBe('remote')
-    expect(result.catalog.models.map((m) => m.id)).toEqual(['laya-multilingual'])
+    expect(result.catalog.models.map((m) => m.id)).toEqual([
+      'laya-multilingual',
+    ])
     expect(result.catalog).not.toHaveProperty('$schema')
-    expect(getCachedDecisionCatalog()?.catalog.updated_at).toBe('2026-10-01T12:00:00Z')
+    expect(getCachedDecisionCatalog()?.catalog.updated_at).toBe(
+      '2026-10-01T12:00:00Z'
+    )
   })
 
   it('serves the fresh cache without a round-trip', async () => {
@@ -116,7 +128,9 @@ describe('fetchDecisionCatalog', () => {
   })
 
   it('rejects a manifest written for a newer client, and one with no usable model', async () => {
-    fetchOk(manifest([model()], { schema_version: SUPPORTED_SCHEMA_VERSION + 1 }))
+    fetchOk(
+      manifest([model()], { schema_version: SUPPORTED_SCHEMA_VERSION + 1 })
+    )
     expect((await fetchDecisionCatalog({ url: REMOTE_URL })).error).toMatch(
       /schema_version 2 is newer/
     )
@@ -141,13 +155,22 @@ describe('fetchDecisionCatalog', () => {
 })
 
 describe('strict parsing', () => {
-  it('keeps a valid model, minus unknown keys', () => {
-    expect(sanitizeDecisionModel(model({ marketing: 'new!' }))).toEqual(model())
+  it('keeps a valid model, minus unknown keys, as a TurboQuant checkpoint by default', () => {
+    expect(sanitizeDecisionModel(model({ marketing: 'new!' }))).toEqual({
+      ...model(),
+      engine: 'llamacpp',
+      format: 'checkpoint',
+    })
   })
 
   it('drops optional fields that do not parse', () => {
     const parsed = sanitizeDecisionModel(
-      model({ min_engine: '1.7.0', gguf_cache_bytes: -1, default: 'yes', license: '' })
+      model({
+        min_engine: '1.7.0',
+        gguf_cache_bytes: -1,
+        default: 'yes',
+        license: '',
+      })
     )
     expect(parsed).not.toHaveProperty('min_engine')
     expect(parsed).not.toHaveProperty('gguf_cache_bytes')
@@ -164,19 +187,34 @@ describe('strict parsing', () => {
     ['calibration as a string', { calibrated: 'no' }],
     ['no files', { files: 'model.safetensors' }],
     ['a missing required file', { files: [file('model.safetensors')] }],
-    ['a file without a hash', { files: [...model().files, { path: 'README.md', bytes: 1 }] }],
-    ['a duplicate path', { files: [...model().files, file('model.safetensors')] }],
+    [
+      'a file without a hash',
+      { files: [...model().files, { path: 'README.md', bytes: 1 }] },
+    ],
+    [
+      'a duplicate path',
+      { files: [...model().files, file('model.safetensors')] },
+    ],
     ['a root config.json', { files: [...model().files, file('config.json')] }],
-    ['a path that climbs out', { files: [...model().files, file('../escape.json')] }],
+    [
+      'a path that climbs out',
+      { files: [...model().files, file('../escape.json')] },
+    ],
   ])('drops a model with %s', (_label, overrides) => {
     expect(sanitizeDecisionModel(model(overrides))).toBeNull()
   })
 
   it('rejects anything that is not a manifest, and keeps the first of two equal ids', () => {
-    expect(() => parseDecisionCatalog({ models: [] })).toThrow(/not a valid manifest/)
+    expect(() => parseDecisionCatalog({ models: [] })).toThrow(
+      /not a valid manifest/
+    )
     expect(sanitizeDecisionModel('laya')).toBeNull()
     const catalog = parseDecisionCatalog(
-      manifest([model(), model({ name: 'Second' }), model({ id: 'laya', default: false })])
+      manifest([
+        model(),
+        model({ name: 'Second' }),
+        model({ id: 'laya', default: false }),
+      ])
     )
     expect(catalog.models.map((m) => [m.id, m.name])).toEqual([
       ['laya-multilingual', 'Laya Multilingual'],
@@ -193,14 +231,34 @@ describe('strict parsing', () => {
 })
 
 describe('the bundled baseline', () => {
-  it('offers the three verified models with laya-multilingual as the default', () => {
+  it('offers the verified checkpoints, then the stock llama.cpp GGUFs, one default per engine', () => {
     const { models } = getBaselineDecisionCatalog()
-    expect(models.map((m) => m.id)).toEqual([
-      'laya-multilingual',
-      'laya',
-      'laya-typed-decisions',
+    expect(
+      models.filter((m) => m.engine === 'llamacpp').map((m) => m.id)
+    ).toEqual(['laya-multilingual', 'laya', 'laya-typed-decisions'])
+    expect(
+      models.filter((m) => m.engine === 'llamacpp-upstream').map((m) => m.id)
+    ).toEqual([
+      'julia-1',
+      'laya-gguf',
+      'lev',
+      'kev-4b',
+      'bespoke-nimble-9b',
+      'clef-flash',
+      'clef',
+      'openjev',
     ])
-    expect(models.filter((m) => m.default).map((m) => m.id)).toEqual(['laya-multilingual'])
+    expect(models.filter((m) => m.default).map((m) => m.id)).toEqual([
+      'laya-multilingual',
+      'julia-1',
+    ])
+    expect(models.find((m) => m.id === 'clef')).toMatchObject({
+      format: 'gguf',
+      decision_type: 'clef',
+      vision: true,
+      min_engine: 'b11418',
+      icon: 'cloudflare',
+    })
   })
 })
 
@@ -214,5 +272,110 @@ describe('helpers', () => {
     expect(decisionDiskBytes(parsed)).toBe(1930)
     const { gguf_cache_bytes: _gguf, ...withoutCache } = parsed
     expect(decisionDiskBytes(withoutCache)).toBe(930)
+  })
+})
+
+describe('stock llama.cpp GGUF models', () => {
+  const HASH = 'c'.repeat(64)
+  const gguf = (overrides: Record<string, unknown> = {}) => ({
+    id: 'clef-flash',
+    name: 'Clef Flash',
+    repo: 'ggml-org/Clef-Flash-GGUF',
+    revision: 'd'.repeat(40),
+    languages: 'en',
+    context: 8192,
+    calibrated: false,
+    license: 'apache-2.0',
+    min_engine: 'b11418',
+    engine: 'llamacpp-upstream',
+    format: 'gguf',
+    decision_type: 'clef',
+    icon: 'cloudflare',
+    vision: true,
+    files: [
+      {
+        path: 'Clef-Flash-Q4_K_M.gguf',
+        role: 'model',
+        bytes: 6486448288,
+        sha256: HASH,
+      },
+      {
+        path: 'mmproj-Clef-Flash-Q8_0.gguf',
+        role: 'mmproj',
+        bytes: 624229728,
+        sha256: HASH,
+      },
+    ],
+    ...overrides,
+  })
+
+  it('keeps the engine, the type, the logo, the projector and the upstream tag', () => {
+    const parsed = sanitizeDecisionModel(gguf())!
+    expect(parsed).toMatchObject({
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      decision_type: 'clef',
+      icon: 'cloudflare',
+      vision: true,
+      min_engine: 'b11418',
+    })
+    expect(decisionModelFile(parsed)?.path).toBe('Clef-Flash-Q4_K_M.gguf')
+    expect(decisionProjectorFile(parsed)?.path).toBe(
+      'mmproj-Clef-Flash-Q8_0.gguf'
+    )
+    expect(decisionQuantLabel(parsed)).toBe('Q4_K_M')
+  })
+
+  it.each([
+    ['a checkpoint on the upstream engine', { format: 'checkpoint' }],
+    ['an unknown engine', { engine: 'vllm' }],
+    [
+      'two model files',
+      {
+        files: [
+          ...gguf().files.slice(0, 1),
+          { path: 'b.gguf', role: 'model', bytes: 1, sha256: HASH },
+        ],
+      },
+    ],
+    [
+      'a file without a role',
+      { files: [{ path: 'a.gguf', bytes: 1, sha256: HASH }] },
+    ],
+    [
+      'a file that is not a GGUF',
+      {
+        files: [
+          { path: 'a.safetensors', role: 'model', bytes: 1, sha256: HASH },
+        ],
+      },
+    ],
+  ])('drops %s', (_label, overrides) => {
+    expect(sanitizeDecisionModel(gguf(overrides))).toBeNull()
+  })
+
+  it('reads a TurboQuant tag as no floor for upstream, and drops vision without a projector', () => {
+    const parsed = sanitizeDecisionModel(
+      gguf({ min_engine: 'b10269-1.7.0', files: gguf().files.slice(0, 1) })
+    )!
+    expect(parsed).not.toHaveProperty('min_engine')
+    expect(parsed).not.toHaveProperty('vision')
+    expect(decisionProjectorFile(parsed)).toBeUndefined()
+  })
+
+  it('is dropped whole by a client that predates it, which keeps only checkpoints', () => {
+    // The 1.x parser required the four checkpoint files on every model.
+    expect(
+      gguf().files.every((f) =>
+        REQUIRED_DECISION_FILES.every((r) => r !== f.path)
+      )
+    ).toBe(true)
+  })
+
+  it('tells a non-commercial license apart', () => {
+    expect(isNonCommercialLicense('cc-by-nc-4.0')).toBe(true)
+    expect(isNonCommercialLicense('cc-by-nc-sa-4.0')).toBe(true)
+    expect(isNonCommercialLicense('apache-2.0')).toBe(false)
+    expect(isNonCommercialLicense(undefined)).toBe(false)
   })
 })

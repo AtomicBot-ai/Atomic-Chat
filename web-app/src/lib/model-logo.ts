@@ -92,6 +92,12 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   'nanbeige': '/images/model-provider/nanbeige.webp',
   'ornith': '/images/model-provider/ornith.webp',
   'convai': '/images/model-provider/convai.webp',
+  // Decision model makers (atomic-chat-conf models/decision.json `icon`).
+  'supersonic': '/images/model-provider/supersonic.webp',
+  'interfaze': '/images/model-provider/interfaze.webp',
+  'bespoke': '/images/model-provider/bespoke.webp',
+  'cloudflare': '/images/model-provider/cloudflare.webp',
+  'openjev': '/images/model-provider/openjev.webp',
   'bfl': '/svg/bfl.svg',
   'flux': '/svg/bfl.svg',
   'tongyi': '/svg/qwen-color.svg',
@@ -122,8 +128,26 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
   'ltx-2': 'ltx',
 }
 
-/** Every decision model in the catalog is a Convai laya checkpoint. */
+/**
+ * The mark of a decision checkpoint without an `icon`: every checkpoint in the
+ * catalog is a Convai laya one, and catalogs from before the field carry none.
+ */
 export const DECISION_ICON_KEY = 'convai'
+
+/**
+ * The logo key of a decision model: its catalog `icon`, else Convai's for a
+ * laya checkpoint, else none (the logo falls back to the model family, then
+ * to a letter).
+ */
+export function decisionIconKey(model: {
+  icon?: string
+  format: 'checkpoint' | 'gguf'
+}): string | undefined {
+  return (
+    model.icon ??
+    (model.format === 'checkpoint' ? DECISION_ICON_KEY : undefined)
+  )
+}
 
 /** The Hugging Face mark, used as the neutral avatar for long-tail results. */
 export const HUGGINGFACE_LOGO_SRC = ICON_KEY_LOGOS.huggingface

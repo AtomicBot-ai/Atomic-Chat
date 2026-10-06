@@ -71,6 +71,9 @@
   "defaultSize": "기본 크기",
   "steps": "스텝 수",
   "license": "라이선스",
+  "decisionEngine": "Engine",
+  "decisionReadsImages": "reads images",
+  "licenseNonCommercial": "non-commercial",
   "frameRate": "프레임 속도",
   "categoryChatHint": "Language models for chat",
   "categoryImagesHint": "Generate images from a prompt",
@@ -116,5 +119,6 @@
   "prismStage_ready": "준비됨",
   "prismStage_failed": "실패",
   "prismStage_cancelled": "취소됨",
-  "prismStage_interrupted": "중단됨"
+  "prismStage_interrupted": "중단됨",
+  "prismCurated": "PrismML용 Bonsai 모델"
 }

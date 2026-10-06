@@ -62,6 +62,9 @@
   "defaultSize": "Taille par défaut",
   "steps": "Étapes",
   "license": "Licence",
+  "decisionEngine": "Engine",
+  "decisionReadsImages": "reads images",
+  "licenseNonCommercial": "non-commercial",
   "frameRate": "Fréquence d'images",
   "categoryChatHint": "Language models for chat",
   "categoryImagesHint": "Generate images from a prompt",
@@ -107,5 +110,6 @@
   "prismStage_ready": "Prêt",
   "prismStage_failed": "Échec",
   "prismStage_cancelled": "Annulé",
-  "prismStage_interrupted": "Interrompu"
+  "prismStage_interrupted": "Interrompu",
+  "prismCurated": "Modèles Bonsai pour PrismML"
 }

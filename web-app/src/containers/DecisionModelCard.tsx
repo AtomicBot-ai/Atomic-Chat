@@ -90,14 +90,17 @@ export function DecisionModelStatus({
  * before. Start and Stop look like the chat models' beside them; the state is
  * `DecisionModelStatus`, under the name. With `onOpen`, an installed model
  * offers Open in place of Start / Stop: the Hub sends the user to where
- * models are run.
+ * models are run. `startBlocked`: the engine build is too old for the model,
+ * so Start stays disabled until it is updated (the row says which build).
  */
 const DecisionModelCard = memo(function DecisionModelCard({
   model,
   onOpen,
+  startBlocked = false,
 }: {
   model: DecisionCatalogModel
   onOpen?: () => void
+  startBlocked?: boolean
 }) {
   const { t } = useTranslation()
   const {
@@ -218,7 +221,7 @@ const DecisionModelCard = memo(function DecisionModelCard({
           ) : (
             <Button
               size="sm"
-              disabled={anyBusy}
+              disabled={anyBusy || startBlocked}
               aria-label={t('settings:decision.start')}
               className="min-w-16 justify-center"
               onClick={() => void activate()}

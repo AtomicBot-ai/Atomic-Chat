@@ -15,6 +15,7 @@ import type {
   ModelSetupPlanRequest,
   ModelSetupService,
   ModelSetupStartRequest,
+  PrismFamiliesResponse,
 } from './types'
 
 export const MODEL_SETUP_UNSUPPORTED =
@@ -32,6 +33,10 @@ export class DefaultModelSetupService implements ModelSetupService {
   }
 
   async plan(_request: ModelSetupPlanRequest): Promise<ModelSetupPlan> {
+    throw new Error(MODEL_SETUP_UNSUPPORTED)
+  }
+
+  async families(): Promise<PrismFamiliesResponse> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 

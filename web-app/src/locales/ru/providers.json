@@ -134,5 +134,15 @@
       "logOf": "Лог {{model}}",
       "noLogs": "Лога пока нет: эта модель ещё не загружалась."
     }
+  },
+  "prismEngine": {
+    "description": "Нужен, чтобы запускать модели Bonsai.",
+    "noBuild": "Для этого компьютера пока нет проверенной сборки: включите ниже «Allow unverified PrismML builds».",
+    "checkFailed": "Не удалось проверить сборки PrismML: {{error}}",
+    "checkAgain": "Проверить снова",
+    "install": "Установить движок",
+    "installing": "Установка…",
+    "installFailed": "Не удалось установить движок: {{error}}",
+    "findModels": "Модели Bonsai"
   }
 }

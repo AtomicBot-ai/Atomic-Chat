@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
     models: [] as CatalogModel[],
     nextCursor: null as string | null,
   })),
+  prismFamilies: vi.fn(async () => ({
+    rules_version: 1,
+    families: [] as unknown[],
+  })),
 }))
 
 const tensorrtHub = vi.hoisted(() => ({
@@ -226,6 +230,10 @@ vi.mock('@/hooks/useServiceHub', () => ({
       }),
       providers: () => ({ getProviders: async () => [] }),
       decision: () => ({ isSupported: () => mocks.decisionSupported }),
+      modelSetup: () => ({
+        isSupported: () => true,
+        families: mocks.prismFamilies,
+      }),
   }),
 }))
 
@@ -244,6 +252,8 @@ vi.mock('@/stores/model-catalog-store', () => ({
 }))
 
 import { Route } from '../index'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useModelSetupStore } from '@/stores/model-setup-store'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
@@ -848,6 +858,108 @@ describe('/hub route', () => {
 
       expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
       expect(screen.queryByText('hub:tensorrt.checking')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('under the PrismML format', () => {
+    const family = (
+      id: string,
+      repo: string,
+      file: string,
+      featured = false
+    ) => ({
+      id,
+      title: id,
+      repo,
+      revision: 'rev',
+      ...(featured ? { featured } : {}),
+      files: [
+        {
+          file,
+          size: 2 * 1024 ** 3,
+          sha256: 'a'.repeat(64),
+          treatment: 'prism_required',
+          default: true,
+        },
+      ],
+      projectors: [],
+    })
+    const providers = (names: string[]) => {
+      ;(
+        useModelProvider.getState() as unknown as {
+          providers: Array<{ provider: string }>
+        }
+      ).providers = names.map((provider) => ({ provider }))
+    }
+
+    beforeEach(() => {
+      useModelSetupStore.setState({ families: null })
+      providers(['llamacpp-upstream', 'atomic-prism'])
+      mocks.prismFamilies.mockResolvedValue({
+        rules_version: 1,
+        families: [
+          family('bonsai-8b', 'prism-ml/Bonsai-8B-gguf', 'Bonsai-8B-PQ2_0.gguf'),
+          family(
+            'ternary-bonsai-2-27b',
+            'prism-ml/Ternary-Bonsai-2-27B-gguf',
+            'Ternary-Bonsai-2-27B-PQ2_0.gguf',
+            true
+          ),
+        ],
+      })
+    })
+
+    afterEach(() => providers([]))
+
+    it('lists the Bonsai families under their own heading, featured first, and nothing else', async () => {
+      setHubFormat('atomic-prism')
+
+      render(<HubPage />)
+
+      expect(
+        await screen.findByText('Ternary-Bonsai-2-27B-gguf')
+      ).toBeInTheDocument()
+      expect(
+        screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+      ).toEqual(['hub:prismCurated'])
+      const names = screen
+        .getAllByText(/Bonsai-/)
+        .map((node) => node.textContent)
+      expect(names.indexOf('Ternary-Bonsai-2-27B-gguf')).toBeLessThan(
+        names.indexOf('Bonsai-8B-gguf')
+      )
+      expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).not.toHaveBeenCalled()
+      expect(mocks.prismFamilies).toHaveBeenCalledTimes(1)
+    })
+
+    it('narrows the families by a search and asks Hugging Face for nothing', async () => {
+      setHubFormat('atomic-prism')
+      const user = userEvent.setup()
+      render(<HubPage />)
+      await screen.findByText('Bonsai-8B-gguf')
+
+      await user.type(
+        screen.getByRole('textbox', { name: 'hub:searchPlaceholder' }),
+        'ternary'
+      )
+
+      await waitFor(() =>
+        expect(screen.queryByText('Bonsai-8B-gguf')).not.toBeInTheDocument()
+      )
+      expect(screen.getByText('Ternary-Bonsai-2-27B-gguf')).toBeInTheDocument()
+      expect(mocks.searchHuggingFaceCandidates).not.toHaveBeenCalled()
+      expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+    })
+
+    it('is GGUF where PrismML is not offered', () => {
+      providers(['llamacpp-upstream'])
+      setHubFormat('atomic-prism')
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(mocks.prismFamilies).not.toHaveBeenCalled()
     })
   })
 

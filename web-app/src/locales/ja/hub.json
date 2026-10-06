@@ -75,6 +75,9 @@
   "defaultSize": "既定のサイズ",
   "steps": "ステップ数",
   "license": "ライセンス",
+  "decisionEngine": "Engine",
+  "decisionReadsImages": "reads images",
+  "licenseNonCommercial": "non-commercial",
   "frameRate": "フレームレート",
   "categoryChatHint": "Language models for chat",
   "categoryImagesHint": "Generate images from a prompt",
@@ -120,5 +123,6 @@
   "prismStage_ready": "準備完了",
   "prismStage_failed": "失敗",
   "prismStage_cancelled": "キャンセル済み",
-  "prismStage_interrupted": "中断"
+  "prismStage_interrupted": "中断",
+  "prismCurated": "PrismML 用の Bonsai モデル"
 }

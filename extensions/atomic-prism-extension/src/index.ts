@@ -356,6 +356,13 @@ export default class atomic_prism_extension extends AIEngine {
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
   private isMirroringCoreSettings = false
+  /// Hidden until the core says otherwise: where PrismML publishes no build for this machine
+  /// (Linux and Windows on Arm) there is nothing to set up, and the provider must not flash up.
+  private hidden = true
+  /// Whether `hidden` is the core's answer, or only the default nobody has confirmed yet.
+  private known = false
+  /// The visibility check in flight, shared by every caller that asks while it runs.
+  private visibilityCheck?: Promise<boolean>
   /// Import once per core attachment and settings state; mirror the core's values back.
   private readonly coreSettings = createCoreSettingsSync({
     core: coreRuntime,
@@ -637,6 +644,10 @@ export default class atomic_prism_extension extends AIEngine {
     })
     await this.adoptOptimalFromCore()
 
+    // Not awaited, like the catalog below: the app's DataProvider waits for this check and then
+    // updates the provider list.
+    void this.refreshVisibility()
+
     // Not awaited: the catalog round trip must not hold the UI up.
     this.configureBackendsPromise = this.configureBackends()
       .catch((err) => {
@@ -648,6 +659,93 @@ export default class atomic_prism_extension extends AIEngine {
         this.isInitializing = false
         this.configureBackendsPromise = null
       })
+  }
+
+  // ── Visibility ─────────────────────────────────────────────────────────────
+
+  /** Whether the provider stays out of the app's lists, as of the last core answer. */
+  isHidden(): boolean {
+    return this.hidden
+  }
+
+  /**
+   * Whether the core has answered at least once. A check that fails keeps the last answer; before
+   * any answer the provider stays hidden, but that is not a reason to forget it.
+   */
+  visibilityKnown(): boolean {
+    return this.known
+  }
+
+  /**
+   * Ask the core again whether PrismML publishes a build this machine can run; `true` when the
+   * provider should be shown. The answer is the catalog's `supported_backends`: the core maps the
+   * machine to PrismML's archive names, and an empty list means no build exists for it. A call
+   * made while a check runs waits for that check rather than starting another.
+   */
+  refreshVisibility(): Promise<boolean> {
+    this.visibilityCheck ??= this.probeVisibility().finally(() => {
+      this.visibilityCheck = undefined
+    })
+    return this.visibilityCheck
+  }
+
+  private async probeVisibility(): Promise<boolean> {
+    try {
+      this.applyVisibility(await loadCatalog({ appVersion: await appVersion() }))
+    } catch (error) {
+      // A core restarting or unreachable says nothing about the machine: keep the last answer.
+      logger.warn(
+        `PrismML availability could not be checked: ${coreRuntime.describeCoreError(error)}`
+      )
+    }
+    return !this.hidden
+  }
+
+  private applyVisibility(catalog: coreRuntime.CoreBackendCatalog): void {
+    this.hidden = catalog.supported_backends.length === 0
+    this.known = true
+  }
+
+  /**
+   * What the provider page shows while PrismML's engine is not installed: whether the core has a
+   * pack on disk, and the build it would install on this machine — `null` when none is offered
+   * (no verified build yet and `allow_candidate_builds` off). The packs are listed again, so an
+   * install that just finished counts.
+   */
+  async getEngineStatus(): Promise<{
+    installed: boolean
+    recommended: string | null
+  }> {
+    const catalog = await loadCatalog({
+      refresh: true,
+      appVersion: await appVersion(),
+    })
+    this.applyVisibility(catalog)
+    const [best] = [...catalog.available].sort(
+      (a, b) => (b.order ?? 0) - (a.order ?? 0)
+    )
+    return {
+      installed: catalog.installed.length > 0,
+      recommended:
+        catalog.recommended ?? (best ? `${best.version}/${best.backend}` : null),
+    }
+  }
+
+  /**
+   * `allow_candidate_builds` decides what the core offers: its catalog, its update checks and the
+   * Hub's model setup plan read the core's own copy of the setting, which hears of a change only
+   * when the settings are imported — before a model load, otherwise. Import now, then rebuild the
+   * version list from the catalog the new value gives.
+   */
+  private async applyCandidateBuildsChange(): Promise<void> {
+    try {
+      await this.coreSettings.ensureReady()
+      await this.configureBackends()
+    } catch (error) {
+      logger.warn(
+        `[allow_candidate_builds] could not hand the change to the core: ${coreRuntime.describeCoreError(error)}`
+      )
+    }
   }
 
   private getStoredBackendType(): string | null {
@@ -765,6 +863,7 @@ export default class atomic_prism_extension extends AIEngine {
         // `refresh`: the packs on disk may have changed since the last answer (a backend installed
         // from a file never passes through the core), and this method decides from what is installed.
         catalog = await loadCatalog({ refresh: true, appVersion: await appVersion() })
+        this.applyVisibility(catalog)
         version_backends = [...catalog.available].sort(
           (a, b) => (b.order ?? 0) - (a.order ?? 0)
         )
@@ -1112,6 +1211,17 @@ export default class atomic_prism_extension extends AIEngine {
       }
 
       const currentType = current.slice(current.indexOf('/') + 1)
+
+      // Only a build on disk has anything to update. `configureBackends()`
+      // names the catalog's pick on a machine that never set PrismML up, and
+      // a newer release must not reach that user as an "update".
+      const currentTag = current.slice(0, current.indexOf('/'))
+      if (!(await isBackendInstalled(currentType.trim(), currentTag.trim()))) {
+        logger.info(
+          `reconcileBackendReleaseTag: ${current} is not installed, nothing to update`
+        )
+        return
+      }
 
       const check = await this.checkBackendForUpdates()
       if (check.currentWithdrawn) {
@@ -1745,7 +1855,13 @@ export default class atomic_prism_extension extends AIEngine {
       key === 'version_backend'
         ? stripBom(this.config.version_backend || '')
         : undefined
+    // `updateSettings` reports every setting on each save, changed or not.
+    const candidateBuildsChanged =
+      key === 'allow_candidate_builds' &&
+      !this.isInitializing &&
+      this.config.allow_candidate_builds !== value
     this.config[key] = value
+    if (candidateBuildsChanged) void this.applyCandidateBuildsChange()
 
     if (key === 'version_backend') {
       const valueStr = value as string
