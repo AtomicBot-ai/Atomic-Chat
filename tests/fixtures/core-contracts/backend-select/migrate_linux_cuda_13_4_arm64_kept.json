@@ -1,0 +1,21 @@
+{
+  "comparator": "json-exact",
+  "expected": null,
+  "input": {
+    "kind": "migrate",
+    "stored_type": "linux-cuda-13.4-arm64",
+    "version_backends": [
+      {
+        "backend": "linux-cpu-arm64",
+        "order": 0,
+        "version": "b11344"
+      }
+    ]
+  },
+  "name": "migrate_linux_cuda_13_4_arm64_kept",
+  "source": {
+    "commit": "7379d30d6627a6ec9073403d1efeb8cff9bddf17",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

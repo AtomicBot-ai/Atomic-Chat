@@ -1,0 +1,30 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "backend_string": "b11344/linux-cpu-arm64",
+    "backend_type": "linux-cpu-arm64",
+    "version": "b11344"
+  },
+  "input": {
+    "has_enough_gpu_memory": false,
+    "kind": "prioritize",
+    "version_backends": [
+      {
+        "backend": "linux-cpu-arm64",
+        "order": 0,
+        "version": "b11344"
+      },
+      {
+        "backend": "linux-vulkan-arm64",
+        "order": 0,
+        "version": "b11344"
+      }
+    ]
+  },
+  "name": "prioritize_linux_arm64_cpu_without_enough_gpu_memory",
+  "source": {
+    "commit": "7379d30d6627a6ec9073403d1efeb8cff9bddf17",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

@@ -82,12 +82,12 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
   // Local image generation — desktop platforms only, like voice input.
-  // stable-diffusion.cpp publishes no Windows arm64 build.
+  // stable-diffusion.cpp publishes no Windows or Linux arm64 build.
   [PlatformFeature.MEDIA_GENERATION]:
     isPlatformTauri() &&
     !isPlatformIOS() &&
     !isPlatformAndroid() &&
-    !(IS_WINDOWS && IS_ARM64),
+    !((IS_WINDOWS || IS_LINUX) && IS_ARM64),
 
   // Public Remote access through the bundled cloudflared tunnel. Cloudflare
   // publishes no Windows arm64 build, so that bundle ships without it.
@@ -98,6 +98,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
     !(IS_WINDOWS && IS_ARM64),
 
   // Only gates the `llamacpp` provider where it is listed; it is never
-  // registered on mobile or web in the first place.
-  [PlatformFeature.TURBOQUANT_ENGINE]: !(IS_WINDOWS && IS_ARM64),
+  // registered on mobile or web in the first place. The Windows and Linux
+  // arm64 bundles ship without the TurboQuant engine.
+  [PlatformFeature.TURBOQUANT_ENGINE]: !((IS_WINDOWS || IS_LINUX) && IS_ARM64),
 }

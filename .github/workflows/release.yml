@@ -26,6 +26,10 @@ on:
         description: "Build Linux x86_64 (AppImage)"
         type: boolean
         default: false
+      build_linux_arm64:
+        description: "Build Linux ARM64 (AppImage)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -73,6 +77,7 @@ jobs:
           BUILD_WINDOWS: ${{ github.event_name == 'push' || inputs.build_windows }}
           BUILD_WINDOWS_ARM64: ${{ github.event_name == 'push' || inputs.build_windows_arm64 }}
           BUILD_LINUX: ${{ github.event_name == 'push' || inputs.build_linux }}
+          BUILD_LINUX_ARM64: ${{ github.event_name == 'push' || inputs.build_linux_arm64 }}
         run: |
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           platforms=""
@@ -80,6 +85,7 @@ jobs:
           [ "$BUILD_WINDOWS" = true ] && platforms="$platforms Windows"
           [ "$BUILD_WINDOWS_ARM64" = true ] && platforms="$platforms Windows-ARM64"
           [ "$BUILD_LINUX" = true ] && platforms="$platforms Linux"
+          [ "$BUILD_LINUX_ARM64" = true ] && platforms="$platforms Linux-ARM64"
           kind="релиз"
           [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && kind="prerelease, ручной запуск"
           text="$(printf '%s\n' \
@@ -1587,14 +1593,263 @@ jobs:
           asset_content_type: text/plain
 
   # ──────────────────────────────────────────────────────────────
+  # Linux  (ARM64 — AppImage, upstream ggml-org/llama.cpp, CPU-only bundled)
+  # ──────────────────────────────────────────────────────────────
+  # Same pipeline as build-linux-x64 on a native arm64 runner, minus the
+  # TurboQuant bundle: the fork publishes no portable Linux arm64 build, so
+  # this AppImage ships llamacpp-upstream only (tauri.linux-arm64.conf.json)
+  # and the app hides TurboQuant there. Vulkan and CUDA 13 arm64 are runtime
+  # downloads. The agent gate checks run in the x64 job only.
+  build-linux-arm64:
+    if: github.event_name == 'push' || inputs.build_linux_arm64
+    # ubuntu-22.04 (glibc 2.35) for the same distro coverage as the x64 AppImage.
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 90
+    needs: create-draft-release
+    outputs:
+      linux_sig: ${{ steps.metadata.outputs.linux_sig }}
+      appimage_name: ${{ steps.metadata.outputs.appimage_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # See build-linux-x64: only the default branch writes.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-linux-arm64-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-linux-arm64-
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libasound2-dev \
+            pkg-config \
+            patchelf \
+            squashfs-tools \
+            unzip
+
+      - name: Install Python dependencies
+        # See build-linux-x64 (`yarn build:icon` imports PIL).
+        run: python3 -m pip install --user Pillow
+
+      - name: Update version in project files
+        env:
+          NEW_VERSION: ${{ needs.create-draft-release.outputs.version }}
+        run: |
+          jq --arg v "$NEW_VERSION" \
+            '.version = $v | .bundle.createUpdaterArtifacts = true' \
+            src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+
+          jq --arg v "$NEW_VERSION" '.version = $v' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          cargo install ctoml || true
+          ctoml src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Install dependencies and build core
+        run: |
+          yarn install
+          yarn build:tauri:plugin:api
+          yarn build:core
+          yarn build:extensions
+
+      - name: Download binaries (bun, uv, cloudflared, sqlite-vec)
+        run: yarn download:bin
+
+      - name: Download the pinned atomic-chat-core release
+        run: yarn download:core
+
+      - name: Assert the cloudflared sidecar was bundled
+        # See build-linux-x64.
+        run: |
+          sidecar=src-tauri/resources/bin/cloudflared-aarch64-unknown-linux-gnu
+          if [ ! -x "$sidecar" ]; then
+            echo "::error::$sidecar is missing or not executable after yarn download:bin."
+            exit 1
+          fi
+          echo "cloudflared present: $(ls -l "$sidecar")"
+
+      - name: Assert sqlite-vec was bundled
+        # See build-linux-x64.
+        run: |
+          if [ ! -f src-tauri/resources/bin/sqlite-vec.so ]; then
+            echo "::error::sqlite-vec.so not found after yarn download:bin."
+            echo "          Vector DB ANN acceleration would be missing from the AppImage."
+            echo "          Check the previous step's logs for the sqlite-vec download failure."
+            exit 1
+          fi
+          echo "sqlite-vec.so present: $(ls -l src-tauri/resources/bin/sqlite-vec.so)"
+
+      - name: Download upstream llamacpp backend (ggml-org/llama.cpp, linux-cpu-arm64)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make download-llamacpp-upstream-backend
+
+      - name: Build web app and generate icons
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          yarn build:web
+          yarn build:icon
+
+      - name: Copy assets to Tauri
+        run: yarn copy:assets:tauri
+
+      - name: Build CLI (Linux)
+        run: |
+          mkdir -p src-tauri/resources/bin
+          cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
+          chmod +x src-tauri/resources/bin/jan-cli
+
+      - name: Build app (AppImage)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4196"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          # See build-linux-x64: `tauri build` rebuilds the web bundle.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT: production
+          SENTRY_RELEASE: ${{ github.sha }}
+          NO_STRIP: "1"
+        run: yarn build:tauri:linux:arm64
+
+      - name: Upload Rust debug files to Sentry (Linux ARM64)
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_DESKTOP: ${{ secrets.SENTRY_PROJECT_DESKTOP }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT_DESKTOP" ]; then
+            echo "Sentry secrets absent — skipping debug-file upload."
+            exit 0
+          fi
+          npx @sentry/cli@^2 debug-files upload \
+            --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
+            src-tauri/target/release
+
+      - name: Recreate updater signature after AppImage repackage
+        # See build-linux-x64: buildAppImage.sh replaces the signed AppImage.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for app in src-tauri/target/release/bundle/appimage/*.AppImage; do
+            [ -f "$app" ] || continue
+            sigfile="${app}.sig"
+            if [ -f "$sigfile" ]; then
+              rm "$sigfile"
+              echo "Removed stale .sig: $sigfile"
+            fi
+            echo "Recreating updater signature for: $(basename "$app")"
+            yarn tauri signer sign \
+              --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+              --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+              "$app"
+            echo "Created new .sig for: $(basename "$app")"
+          done
+
+      - name: Collect artifact metadata
+        id: metadata
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          echo "=== bundle/appimage/ contents ==="
+          ls -la
+          APPIMAGE_NAME=$(ls *.AppImage | head -1)
+          if [ -z "$APPIMAGE_NAME" ]; then
+            echo "ERROR: no .AppImage produced"
+            exit 1
+          fi
+          LINUX_SIG=""
+          if [ -f "${APPIMAGE_NAME}.sig" ]; then
+            LINUX_SIG=$(cat "${APPIMAGE_NAME}.sig")
+          else
+            echo "Warning: no ${APPIMAGE_NAME}.sig (Tauri updater signature missing)"
+          fi
+          echo "appimage_name=${APPIMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "linux_sig=${LINUX_SIG}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .AppImage to release
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.metadata.outputs.appimage_name }}
+          asset_name: ${{ steps.metadata.outputs.appimage_name }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload .AppImage updater signature to release
+        if: steps.metadata.outputs.linux_sig != ''
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.metadata.outputs.appimage_name }}.sig
+          asset_name: ${{ steps.metadata.outputs.appimage_name }}.sig
+          asset_content_type: text/plain
+
+  # ──────────────────────────────────────────────────────────────
   # Tauri updater manifest  (macOS + Windows + Linux; tolerant of any being skipped)
   # ──────────────────────────────────────────────────────────────
   publish-latest-json:
     if: |
       always() && needs.create-draft-release.result == 'success' &&
-      (needs.build-macos.result == 'success' || needs.build-windows.result == 'success' || needs.sign-windows-arm64-installer.result == 'success' || needs.build-linux-x64.result == 'success')
+      (needs.build-macos.result == 'success' || needs.build-windows.result == 'success' || needs.sign-windows-arm64-installer.result == 'success' || needs.build-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
     runs-on: ubuntu-latest
-    needs: [create-draft-release, build-macos, build-windows, sign-windows-arm64-installer, build-linux-x64]
+    needs: [create-draft-release, build-macos, build-windows, sign-windows-arm64-installer, build-linux-x64, build-linux-arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1614,12 +1869,16 @@ jobs:
           LINUX_SIG: ${{ needs.build-linux-x64.outputs.linux_sig }}
           APPIMAGE_NAME: ${{ needs.build-linux-x64.outputs.appimage_name }}
           LINUX_RESULT: ${{ needs.build-linux-x64.result }}
+          LINUX_ARM_SIG: ${{ needs.build-linux-arm64.outputs.linux_sig }}
+          LINUX_ARM_APPIMAGE_NAME: ${{ needs.build-linux-arm64.outputs.appimage_name }}
+          LINUX_ARM_RESULT: ${{ needs.build-linux-arm64.result }}
         run: |
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
           WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
           WIN_ARM_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${WIN_ARM_EXE_NAME// /.}"
           LINUX_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${APPIMAGE_NAME// /.}"
+          LINUX_ARM_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${LINUX_ARM_APPIMAGE_NAME// /.}"
 
           # Fill in the platform blocks only for jobs that actually
           # succeeded; delete the others so Tauri's updater doesn't see a
@@ -1634,10 +1893,13 @@ jobs:
              --arg win_arm_url "$WIN_ARM_URL" \
              --arg linux_sig "$LINUX_SIG" \
              --arg linux_url "$LINUX_URL" \
+             --arg linux_arm_sig "$LINUX_ARM_SIG" \
+             --arg linux_arm_url "$LINUX_ARM_URL" \
              --arg mac_result "$MAC_RESULT" \
              --arg win_result "$WIN_RESULT" \
              --arg win_arm_result "$WIN_ARM_RESULT" \
              --arg linux_result "$LINUX_RESULT" \
+             --arg linux_arm_result "$LINUX_ARM_RESULT" \
              '.version = $version
               | .pub_date = $pub_date
               | (if $mac_result == "success" then
@@ -1666,6 +1928,12 @@ jobs:
                   | .platforms["linux-x86_64"].url = $linux_url
                 else
                   del(.platforms["linux-x86_64"])
+                end)
+              | (if $linux_arm_result == "success" then
+                  .platforms["linux-aarch64"].signature = $linux_arm_sig
+                  | .platforms["linux-aarch64"].url = $linux_arm_url
+                else
+                  del(.platforms["linux-aarch64"])
                 end)' \
              src-tauri/latest.json.template > latest.json
 
@@ -1684,7 +1952,7 @@ jobs:
   notify-finish:
     if: always()
     runs-on: ubuntu-latest
-    needs: [create-draft-release, build-macos, build-windows, sign-windows-arm64-core, build-windows-arm64, sign-windows-arm64-installer, build-linux-x64, publish-latest-json]
+    needs: [create-draft-release, build-macos, build-windows, sign-windows-arm64-core, build-windows-arm64, sign-windows-arm64-installer, build-linux-x64, build-linux-arm64, publish-latest-json]
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -1701,6 +1969,7 @@ jobs:
           # The first ARM64 job that did not succeed, else the installer signing result.
           WIN_ARM_RESULT: ${{ needs.sign-windows-arm64-core.result != 'success' && needs.sign-windows-arm64-core.result || needs.build-windows-arm64.result != 'success' && needs.build-windows-arm64.result || needs.sign-windows-arm64-installer.result }}
           LINUX_RESULT: ${{ needs.build-linux-x64.result }}
+          LINUX_ARM_RESULT: ${{ needs.build-linux-arm64.result }}
           LATEST_JSON_RESULT: ${{ needs.publish-latest-json.result }}
         run: |
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
@@ -1712,7 +1981,7 @@ jobs:
               *) echo "⏭" ;;
             esac
           }
-          results="$DRAFT_RESULT $MAC_RESULT $WIN_RESULT $WIN_ARM_RESULT $LINUX_RESULT $LATEST_JSON_RESULT"
+          results="$DRAFT_RESULT $MAC_RESULT $WIN_RESULT $WIN_ARM_RESULT $LINUX_RESULT $LINUX_ARM_RESULT $LATEST_JSON_RESULT"
           case "$results" in
             *failure*) head="❌ <b>Atomic Chat v$VERSION</b>: сборка упала" ;;
             *cancelled*) head="⏹ <b>Atomic Chat v$VERSION</b>: сборка отменена" ;;
@@ -1731,7 +2000,7 @@ jobs:
           [ -n "$release_url" ] && links="$links · <a href=\"$release_url\">Draft-релиз</a>"
           text="$(printf '%s\n' \
             "$head" \
-            "$(icon "$MAC_RESULT") macOS  $(icon "$WIN_RESULT") Windows  $(icon "$WIN_ARM_RESULT") Windows-ARM64  $(icon "$LINUX_RESULT") Linux" \
+            "$(icon "$MAC_RESULT") macOS  $(icon "$WIN_RESULT") Windows  $(icon "$WIN_ARM_RESULT") Windows-ARM64  $(icon "$LINUX_RESULT") Linux  $(icon "$LINUX_ARM_RESULT") Linux-ARM64" \
             "$(icon "$LATEST_JSON_RESULT") latest.json (автообновление)" \
             "$links")"
           curl -fsS -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \

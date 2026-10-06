@@ -1089,8 +1089,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         .split('/')[1]
         ?.trim()
       const macHostVariant = IS_MAC ? hostVariant : undefined
-      // Windows on ARM ships `win-cpu-arm64` as its bundled build, so the
-      // arch is read off it the same way.
+      // Windows and Linux on ARM ship `win-cpu-arm64` / `linux-cpu-arm64` as
+      // their bundled build, so the arch is read off it the same way.
       const localStaticVariants: string[] = IS_WINDOWS
         ? hostVariant?.endsWith('-arm64')
           ? ['win-cpu-arm64', 'win-opencl-adreno-arm64', 'win-cuda-13-arm64']
@@ -1102,7 +1102,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
               'win-vulkan-x64',
             ]
         : IS_LINUX
-          ? ['linux-cpu-x64', 'linux-vulkan-x64']
+          ? hostVariant?.endsWith('-arm64')
+            ? ['linux-cpu-arm64', 'linux-vulkan-arm64', 'linux-cuda-13-arm64']
+            : ['linux-cpu-x64', 'linux-vulkan-x64']
           : macHostVariant === 'macos-arm64'
             ? [macHostVariant]
             : []
@@ -3258,12 +3260,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // are named `llama-bXXXX-bin-ubuntu-{vulkan,}-x64.tar.gz` on Linux, but
     // the extension stores backends under `linux-vulkan-x64` / `linux-cpu-x64`
     // so that backend resolution — here and in the core — finds them by the
-    // correct internal id.
+    // correct internal id. The arm64 CUDA 13 tarball keeps its CUDA id.
     const backendIdentifier =
       IS_LINUX && rawBackendIdentifier.startsWith('ubuntu-')
-        ? rawBackendIdentifier.includes('vulkan')
-          ? `linux-vulkan-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`
-          : `linux-cpu-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`
+        ? /^ubuntu-cuda-13\.\d+-arm64$/.test(rawBackendIdentifier)
+          ? rawBackendIdentifier.replace(/^ubuntu-/, 'linux-')
+          : rawBackendIdentifier.includes('vulkan')
+            ? `linux-vulkan-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`
+            : `linux-cpu-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`
         : rawBackendIdentifier
 
     if (backendIdentifier !== rawBackendIdentifier) {

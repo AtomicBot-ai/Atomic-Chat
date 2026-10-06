@@ -14,6 +14,7 @@ import {
   resolveGpuFamilyConcrete,
   isConcreteOfGpuFamily,
   friendlyBackendLabel,
+  cudaFamilyMajor,
   requiredDiskSpaceForBackend,
   listInstalledBackendPacks,
   deleteBackendPack,
@@ -96,6 +97,18 @@ describe('Backend functions', () => {
       )
     })
 
+    it('uses upstream ubuntu tarball names for the Linux arm64 builds', () => {
+      expect(getBackendArchiveName('b11344', 'linux-cpu-arm64')).toBe(
+        'llama-b11344-bin-ubuntu-arm64.tar.gz'
+      )
+      expect(getBackendArchiveName('b11344', 'linux-vulkan-arm64')).toBe(
+        'llama-b11344-bin-ubuntu-vulkan-arm64.tar.gz'
+      )
+      expect(getBackendArchiveName('b11344', 'linux-cuda-13.4-arm64')).toBe(
+        'llama-b11344-bin-ubuntu-cuda-13.4-arm64.tar.gz'
+      )
+    })
+
     it('uses upstream tarball names for macOS backend archives', () => {
       expect(getBackendArchiveName('b9702', 'macos-arm64')).toBe(
         'llama-b9702-bin-macos-arm64.tar.gz'
@@ -147,6 +160,25 @@ describe('Backend functions', () => {
       expect(
         isConcreteOfGpuFamily('win-cuda-13-arm64', 'win-cuda-13.4-x64')
       ).toBe(false)
+    })
+
+    it('resolves the Linux arm64 CUDA 13 family only against Linux arm64 assets', () => {
+      const remote = [
+        { version: 'b11344', backend: 'win-cuda-13.5-arm64', order: 0 },
+        { version: 'b11344', backend: 'linux-cuda-13.4-arm64', order: 0 },
+      ]
+      expect(resolveGpuFamilyConcrete('linux-cuda-13-arm64', remote)).toBe(
+        'b11344/linux-cuda-13.4-arm64'
+      )
+      expect(
+        isConcreteOfGpuFamily('linux-cuda-13-arm64', 'win-cuda-13.5-arm64')
+      ).toBe(false)
+      expect(cudaFamilyMajor('linux-cuda-13-arm64')).toBe('13')
+      expect(cudaFamilyMajor('linux-cuda-13.4-arm64')).toBeNull()
+      expect(cudaFamilyMajor('win-cuda-12-x64')).toBe('12')
+      expect(friendlyBackendLabel('linux-cuda-13-arm64')).toBe('CUDA 13')
+      expect(friendlyBackendLabel('linux-cpu-arm64')).toBe('CPU')
+      expect(friendlyBackendLabel('linux-vulkan-arm64')).toBe('Vulkan')
     })
 
     it('labels the Windows arm64 variants', () => {

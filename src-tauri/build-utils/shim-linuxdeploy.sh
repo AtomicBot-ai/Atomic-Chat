@@ -12,15 +12,17 @@ export COREPACK_HOME=${COREPACK_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/node/corep
 export XDG_CACHE_HOME=${PWD}/.cache
 
 LINUXDEPLOY_VER="1-alpha-20250213-2"
-LINUXDEPLOY="$XDG_CACHE_HOME/tauri/linuxdeploy-$LINUXDEPLOY_VER-x86_64.AppImage"
-SYMLINK="$XDG_CACHE_HOME/tauri/linuxdeploy-x86_64.AppImage"
+# x86_64 or aarch64: the name tauri-bundler looks for and linuxdeploy publishes.
+ARCH="$(uname -m)"
+LINUXDEPLOY="$XDG_CACHE_HOME/tauri/linuxdeploy-$LINUXDEPLOY_VER-$ARCH.AppImage"
+SYMLINK="$XDG_CACHE_HOME/tauri/linuxdeploy-$ARCH.AppImage"
 
 mkdir -p "$XDG_CACHE_HOME/tauri"
 
 if [ ! -f "$LINUXDEPLOY" ]; then
-  GLOB_PATTERN="$XDG_CACHE_HOME/tauri/linuxdeploy-*-x86_64.AppImage"
+  GLOB_PATTERN="$XDG_CACHE_HOME/tauri/linuxdeploy-*-$ARCH.AppImage"
   rm -f $GLOB_PATTERN
-  wget "https://github.com/linuxdeploy/linuxdeploy/releases/download/$LINUXDEPLOY_VER/linuxdeploy-x86_64.AppImage" -O "$LINUXDEPLOY"
+  wget "https://github.com/linuxdeploy/linuxdeploy/releases/download/$LINUXDEPLOY_VER/linuxdeploy-$ARCH.AppImage" -O "$LINUXDEPLOY"
   chmod a+x "$LINUXDEPLOY"
 fi
 

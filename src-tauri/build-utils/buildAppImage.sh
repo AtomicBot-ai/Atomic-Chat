@@ -10,7 +10,8 @@ set -euo pipefail
 # Product name is "Atomic Chat" (with a space) — preserve quoting
 # everywhere or the spaces will silently break the build.
 
-RUNTIME="./.cache/build-tools/type2-runtime-x86_64"
+ARCH="$(uname -m)"
+RUNTIME="./.cache/build-tools/type2-runtime-${ARCH}"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 PRODUCT_NAME="Atomic Chat"
 
@@ -19,7 +20,7 @@ command -v mksquashfs >/dev/null \
 
 mkdir -p ./.cache/build-tools
 if [ ! -f "${RUNTIME}" ]; then
-  wget https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 -O "${RUNTIME}" \
+  wget "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${ARCH}" -O "${RUNTIME}" \
     || { echo "Failed to download AppImage type2 runtime."; exit 1; }
 fi
 

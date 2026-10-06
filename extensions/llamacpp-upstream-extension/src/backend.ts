@@ -242,15 +242,19 @@ export async function deleteBackendPack(
  * Rust matrix in `tauri-plugin-llamacpp-upstream` consistent and to
  * leave room for non-Ubuntu Linux variants if we ever ship them.
  *
- * Whitelist is deliberately narrow: `s390x`, `arm64`, `rocm-7.2-x64`,
- * `openvino-2026.0-x64`, and `vulkan-arm64` are dropped here. Adding
+ * Whitelist is deliberately narrow: `s390x`, `snapdragon-arm64`,
+ * `rocm-7.2-x64` and `openvino-2026.0-x64` are dropped here. Adding
  * one is a one-line edit in this map + a feature detector in the Rust
- * `get_supported_features`.
+ * `get_supported_features`. The arm64 CUDA 13 build carries its toolkit
+ * minor, so it is matched by `LINUX_CUDA_BACKEND_RE` instead.
  */
 const LINUX_UPSTREAM_ASSET_BY_BACKEND: Record<string, string> = {
   'linux-cpu-x64': 'ubuntu-x64',
   'linux-vulkan-x64': 'ubuntu-vulkan-x64',
+  'linux-cpu-arm64': 'ubuntu-arm64',
+  'linux-vulkan-arm64': 'ubuntu-vulkan-arm64',
 }
+const LINUX_CUDA_BACKEND_RE = /^linux-cuda-(13\.\d+)-arm64$/
 
 /**
  * The manifest as the core resolved it for this platform and architecture, as
@@ -308,7 +312,10 @@ export function getBackendArchiveName(
 ): string {
   version = version.replace(/\uFEFF/g, '').trim()
   backend = backend.replace(/\uFEFF/g, '').trim()
-  const linuxInfix = LINUX_UPSTREAM_ASSET_BY_BACKEND[backend]
+  const linuxCuda = LINUX_CUDA_BACKEND_RE.exec(backend)
+  const linuxInfix =
+    LINUX_UPSTREAM_ASSET_BY_BACKEND[backend] ??
+    (linuxCuda ? `ubuntu-cuda-${linuxCuda[1]}-arm64` : undefined)
   if (linuxInfix) {
     return `llama-${version}-bin-${linuxInfix}.tar.gz`
   }
@@ -375,13 +382,13 @@ export function requiredDiskSpaceForBackend(
 }
 
 /**
- * Matches a *minor-less* Windows CUDA family id (e.g. `win-cuda-13-x64`,
- * `win-cuda-12-x64`, `win-cuda-13-arm64`). These are the family ids the Rust
- * matrix (`determine_supported_backends`) and the TS dropdown `staticVariants`
- * emit — the concrete minor (`13.3`, `12.4`) is only known once the
- * ggml-org release stream is queried (ATO-105/ATO-174).
+ * Matches a *minor-less* CUDA family id (e.g. `win-cuda-13-x64`,
+ * `win-cuda-12-x64`, `win-cuda-13-arm64`, `linux-cuda-13-arm64`). These are
+ * the family ids the Rust matrix (`determine_supported_backends`) and the TS
+ * dropdown `staticVariants` emit — the concrete minor (`13.3`, `12.4`) is only
+ * known once the ggml-org release stream is queried (ATO-105/ATO-174).
  */
-const WIN_CUDA_FAMILY_RE = /^win-cuda-(\d+)-(x64|arm64)$/
+const CUDA_FAMILY_RE = /^(win-cuda-(\d+)-(x64|arm64)|linux-cuda-(\d+)-(arm64))$/
 
 /**
  * The ROCm equivalent. HIP has no major to pin at all: upstream publishes a
@@ -394,13 +401,13 @@ const WIN_ROCM_CONCRETE_RE = /^win-rocm-(\d+)\.(\d+)-x64$/
 
 /**
  * The CUDA major (`"13"`, `"12"`) of a minor-less family id, or `null` if
- * `backend` is not a minor-less Windows CUDA family id (concrete ids like
+ * `backend` is not a minor-less CUDA family id (concrete ids like
  * `win-cuda-13.3-x64` deliberately return `null` here — they need no
  * family resolution).
  */
 export function cudaFamilyMajor(backend: string): string | null {
-  const m = WIN_CUDA_FAMILY_RE.exec(backend.replace(/\uFEFF/g, '').trim())
-  return m ? m[1] : null
+  const m = CUDA_FAMILY_RE.exec(backend.replace(/\uFEFF/g, '').trim())
+  return m ? (m[2] ?? m[4]) : null
 }
 
 /**
@@ -411,8 +418,11 @@ export function cudaFamilyMajor(backend: string): string | null {
 function gpuFamilyConcreteRe(familyBackend: string): RegExp | null {
   const id = familyBackend.replace(/\uFEFF/g, '').trim()
   if (id === WIN_ROCM_FAMILY_ID) return WIN_ROCM_CONCRETE_RE
-  const m = WIN_CUDA_FAMILY_RE.exec(id)
-  return m ? new RegExp(`^win-cuda-(${m[1]})\\.(\\d+)-${m[2]}$`) : null
+  const m = CUDA_FAMILY_RE.exec(id)
+  if (!m) return null
+  return m[2]
+    ? new RegExp(`^win-cuda-(${m[2]})\\.(\\d+)-${m[3]}$`)
+    : new RegExp(`^linux-cuda-(${m[4]})\\.(\\d+)-${m[5]}$`)
 }
 
 /**

@@ -5,18 +5,29 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{Manager, Runtime};
 
-/// `win-cuda-13-arm64` or `win-cuda-13.<minor>-arm64`.
-fn is_win_cuda13_arm64(backend: &str) -> bool {
+/// `<os>-cuda-13-arm64` (when `family_ok`) or `<os>-cuda-13.<minor>-arm64`.
+fn is_cuda13_arm64(backend: &str, os: &str, family_ok: bool) -> bool {
     match backend
-        .strip_prefix("win-cuda-13")
+        .strip_prefix(os)
+        .and_then(|rest| rest.strip_prefix("-cuda-13"))
         .and_then(|rest| rest.strip_suffix("-arm64"))
     {
-        Some("") => true,
+        Some("") => family_ok,
         Some(minor) => minor
             .strip_prefix('.')
             .is_some_and(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())),
         None => false,
     }
+}
+
+/// `win-cuda-13-arm64` or `win-cuda-13.<minor>-arm64`.
+fn is_win_cuda13_arm64(backend: &str) -> bool {
+    is_cuda13_arm64(backend, "win", true)
+}
+
+/// `linux-cuda-13-arm64` or `linux-cuda-13.<minor>-arm64`.
+fn is_linux_cuda13_arm64(backend: &str) -> bool {
+    is_cuda13_arm64(backend, "linux", true)
 }
 
 #[tauri::command]
@@ -37,13 +48,17 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     // ggml-org tarball filename (e.g. llama-bXXXX-bin-ubuntu-vulkan-x64.tar.gz).
     // Map them to the internal linux-* ids used throughout this extension so
     // they are recognised by findCompatibleInstalledBackend and the rest of
-    // the backend machinery (ATO-233).
+    // the backend machinery (ATO-233). The arm64 CUDA 13 tarball keeps its
+    // CUDA id; x64 Linux ships no CUDA build, so that one falls to CPU.
     if old_backend.starts_with("ubuntu-") {
         let arch_suffix = if old_backend.contains("-arm64") {
             "arm64"
         } else {
             "x64"
         };
+        if is_cuda13_arm64(&old_backend, "ubuntu", false) {
+            return old_backend.replacen("ubuntu-", "linux-", 1);
+        }
         if old_backend.contains("vulkan") {
             return format!("linux-vulkan-{}", arch_suffix);
         }
@@ -128,33 +143,32 @@ pub fn map_old_backend_to_new(old_backend: String) -> String {
     }
 
     // Linux mappings — per 2026-05-28 ADR *Linux ships only
-    // `llamacpp-upstream`*, the only supported Linux backend ids are
-    // `linux-cpu-x64` (bundled default) and `linux-vulkan-x64` (auto-
-    // installed when a Vulkan-capable GPU is detected). Any persisted
+    // `llamacpp-upstream`*, the supported Linux backend ids are
+    // `linux-{cpu,vulkan}-{x64,arm64}` plus, on arm64 only, the CUDA 13
+    // family id `linux-cuda-13-arm64` and its concrete minors. Any persisted
     // legacy janhq-mirror id (`linux-common_cpus-x64`,
     // `linux-cuda-{11,12,13}-common_cpus-x64`,
     // `linux-vulkan-common_cpus-x64`, AVX variants, …) is translated to
     // its closest current equivalent so old user settings keep resolving
-    // to a backend we can actually download. Linux CUDA tiers fall
-    // through to the CPU build because upstream publishes no
+    // to a backend we can actually download. Legacy Linux CUDA tiers fall
+    // through to the CPU build because upstream publishes no x64
     // `ubuntu-cuda-*` asset — NVIDIA users opt into Vulkan separately
     // via the "Find optimal backend" flow.
     if is_linux {
         // ggml-org native ids — already correct, pass through.
-        if old_backend == "linux-cpu-x64" || old_backend == "linux-vulkan-x64" {
+        if old_backend == "linux-cpu-x64"
+            || old_backend == "linux-vulkan-x64"
+            || old_backend == "linux-cpu-arm64"
+            || old_backend == "linux-vulkan-arm64"
+            || is_linux_cuda13_arm64(&old_backend)
+        {
             return old_backend;
         }
-        // x86_64 host: collapse everything onto cpu or vulkan.
-        if is_x64 {
-            if old_backend.contains("vulkan") {
-                return "linux-vulkan-x64".to_string();
-            }
-            // Legacy linux-cuda-* and linux-common_cpus-x64 / AVX variants
-            // all map to the CPU backend on x86_64.
-            return "linux-cpu-x64".to_string();
+        if old_backend.contains("vulkan") {
+            return format!("linux-vulkan-{}", arch);
         }
-        // aarch64 host: Phase 2 territory, keep the placeholder.
-        return "linux-cpu-arm64".to_string();
+        // Legacy linux-cuda-* and linux-common_cpus / AVX variants.
+        return format!("linux-cpu-{}", arch);
     }
 
     // Non-Linux non-Windows fall-through (kept verbatim for any legacy
@@ -473,11 +487,16 @@ pub fn determine_supported_backends(
             }
         }
         "linux-aarch64" | "linux-arm64" => {
-            // aarch64 / DGX Spark is Phase 2 of the Linux epic; keep this
-            // arm as a placeholder so the matrix does not panic on ARM
-            // hosts that somehow reach this code path before the Phase 2
-            // ADR lands.
+            // ggml-org Linux arm64 builds: CPU, Vulkan and CUDA 13. The
+            // Snapdragon (`ubuntu-snapdragon-arm64`) build is not offered.
+            // CUDA is the minor-less family id, resolved like Windows.
             supported_backends.push("linux-cpu-arm64".to_string());
+            if features.vulkan {
+                supported_backends.push("linux-vulkan-arm64".to_string());
+            }
+            if features.cuda13 {
+                supported_backends.push("linux-cuda-13-arm64".to_string());
+            }
         }
         "macos-x86_64" | "macos-x86" => {
             supported_backends.push("macos-x64".to_string());
@@ -1728,10 +1747,8 @@ mod tests {
 
     #[test]
     fn test_map_old_backend_to_new_arch() {
-        // Per 2026-05-28 ADR: aarch64 Linux is Phase 2 territory; any
-        // legacy arm64 id resolves to the placeholder `linux-cpu-arm64`
-        // so callers stop trying to download archetype-mismatched
-        // bundles.
+        // Legacy arm64 Linux ids resolve to the ggml-org arm64 builds;
+        // the current ids, CUDA 13 included, round-trip unchanged.
         assert_eq!(
             map_old_backend_to_new("linux-arm64".to_string()),
             "linux-cpu-arm64"
@@ -1741,8 +1758,28 @@ mod tests {
             "linux-cpu-arm64"
         );
         assert_eq!(
-            map_old_backend_to_new("linux-cpu-arm64".to_string()),
+            map_old_backend_to_new("linux-aarch64-vulkan-arm64".to_string()),
+            "linux-vulkan-arm64"
+        );
+        for id in [
+            "linux-cpu-arm64",
+            "linux-vulkan-arm64",
+            "linux-cuda-13-arm64",
+            "linux-cuda-13.4-arm64",
+        ] {
+            assert_eq!(map_old_backend_to_new(id.to_string()), id);
+        }
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-arm64".to_string()),
             "linux-cpu-arm64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-cuda-13.4-arm64".to_string()),
+            "linux-cuda-13.4-arm64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-cuda-13.4-x64".to_string()),
+            "linux-cpu-x64"
         );
     }
 
@@ -2245,23 +2282,38 @@ mod tests {
     }
 
     #[test]
-    fn test_determine_supported_backends_linux_aarch64_placeholder() {
-        // Phase 2 territory — placeholder backend so the matrix does not
-        // panic on ARM hosts that hit this code path.
-        let features = SystemFeatures {
-            cuda11: false,
-            cuda12: false,
+    fn test_determine_supported_backends_linux_aarch64_matrix() {
+        let cpu_only = SystemFeatures {
+            cuda11: true,
+            cuda12: true,
             cuda13: false,
             vulkan: false,
+            rocm: true,
+            opencl: true,
+        };
+        assert_eq!(
+            determine_supported_backends("linux".to_string(), "aarch64".to_string(), cpu_only)
+                .unwrap(),
+            vec!["linux-cpu-arm64".to_string()]
+        );
+
+        let every_tier = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: true,
+            vulkan: true,
             rocm: false,
             opencl: false,
         };
-
-        let result =
-            determine_supported_backends("linux".to_string(), "aarch64".to_string(), features)
-                .unwrap();
-
-        assert_eq!(result, vec!["linux-cpu-arm64".to_string()]);
+        assert_eq!(
+            determine_supported_backends("linux".to_string(), "arm64".to_string(), every_tier)
+                .unwrap(),
+            vec![
+                "linux-cpu-arm64".to_string(),
+                "linux-vulkan-arm64".to_string(),
+                "linux-cuda-13-arm64".to_string(),
+            ]
+        );
     }
 
     #[test]
