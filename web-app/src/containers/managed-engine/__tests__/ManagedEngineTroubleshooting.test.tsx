@@ -138,9 +138,10 @@ describe('ManagedEngineTroubleshooting', () => {
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
     expect(client.environmentDiagnostics).toHaveBeenCalledWith('default')
-    expect(clipboard.copyToClipboard).toHaveBeenCalledWith(
-      JSON.stringify({ core_version: '0.9.6' }, null, 2)
-    )
+    // What reaches the clipboard is the core's report itself, readable as JSON.
+    const [copied] = clipboard.copyToClipboard.mock.calls[0] as [string]
+    expect(JSON.parse(copied)).toEqual({ core_version: '0.9.6' })
+    expect(copied).toContain('\n  "core_version"')
   })
 
   it('after a failed setup, starts over: resets, takes the snapshot again and probes afresh', async () => {

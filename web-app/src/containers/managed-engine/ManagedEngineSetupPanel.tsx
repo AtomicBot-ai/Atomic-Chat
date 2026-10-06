@@ -248,7 +248,7 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
           steps: steps.filter((step) => step !== stepId),
         }))
       })
-  }, [])
+  },[engine.id])
 
   useEffect(() => {
     const step = operation?.pending_host_step

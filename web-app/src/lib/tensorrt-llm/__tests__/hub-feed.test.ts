@@ -21,12 +21,12 @@ const card = (total: number | null, id = 'GPU-1'): GpuFacts => ({
   driver_version: '615.65.02',
 })
 
-const entry = (tensorrt: CatalogModel['tensorrt']): CatalogModel => ({
+const entry = (tensorrt: CatalogModel['managed']): CatalogModel => ({
   model_name: 'owner/model',
   description: '',
   downloads: 0,
   is_managed: true,
-  tensorrt,
+  managed: tensorrt,
 })
 
 const supported = ['Qwen3ForCausalLM', 'Qwen3_5ForConditionalGeneration']
@@ -138,7 +138,7 @@ describe('hubListSources', () => {
   })
 })
 
-const named = (name: string, tensorrt: CatalogModel['tensorrt']): CatalogModel => ({
+const named = (name: string, tensorrt: CatalogModel['managed']): CatalogModel => ({
   ...entry(tensorrt),
   model_name: name,
 })
