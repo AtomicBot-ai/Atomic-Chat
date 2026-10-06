@@ -29,7 +29,7 @@ vi.mock('@/services/managed-environment/client', async (importOriginal) => ({
 }))
 
 import { ManagedEngineTroubleshooting } from '../ManagedEngineTroubleshooting'
-import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { resetManagedPlansForTests } from '@/hooks/useManagedPlan'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import type {
@@ -126,6 +126,50 @@ describe('ManagedEngineTroubleshooting', () => {
         'ATOMIC_RUNTIME_DESCRIPTOR_URL=https://raw/conf/bbcc7ec/tensorrt-llm.json'
       )
     ).toBeInTheDocument()
+  })
+
+  // The core lists overrides once per host; each engine's page names only what moves that engine
+  // (the Windows acceptance build, 2026-10-06, set all four of these at once).
+  const conf = 'file:///C:/conf/runtimes'
+  const everyOverride = [
+    { variable: 'ATOMIC_RUNTIME_DESCRIPTOR_URL', value: `${conf}/legacy.json` },
+    { variable: 'ATOMIC_ENVIRONMENT_MANIFEST_URL', value: `${conf}/environments/windows.json` },
+    { variable: 'ATOMIC_RUNTIME_DESCRIPTOR_URL_TENSORRT_LLM', value: `${conf}/tensorrt-llm.json` },
+    { variable: 'ATOMIC_RUNTIME_DESCRIPTOR_URL_VLLM', value: `${conf}/vllm.json` },
+  ]
+  const listed = () =>
+    screen.queryAllByRole('listitem').map((item) => item.textContent?.split('=')[0])
+
+  it("on the vLLM page, names the shared manifest and vLLM's own descriptor, not TensorRT-LLM's", () => {
+    seed(environment({ source_overrides: everyOverride }))
+    render(<ManagedEngineTroubleshooting engine={VLLM_ENGINE} />)
+    expect(screen.getByText('providers:vllm.troubleshooting.overridesTitle')).toBeInTheDocument()
+    expect(listed()).toEqual([
+      'ATOMIC_ENVIRONMENT_MANIFEST_URL',
+      'ATOMIC_RUNTIME_DESCRIPTOR_URL_VLLM',
+    ])
+  })
+
+  it("on the TensorRT-LLM page, names the legacy and its own descriptor override, not vLLM's", () => {
+    seed(environment({ source_overrides: everyOverride }))
+    render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
+    expect(listed()).toEqual([
+      'ATOMIC_RUNTIME_DESCRIPTOR_URL',
+      'ATOMIC_ENVIRONMENT_MANIFEST_URL',
+      'ATOMIC_RUNTIME_DESCRIPTOR_URL_TENSORRT_LLM',
+    ])
+  })
+
+  it("shows no notice when the only override is another engine's descriptor", () => {
+    seed(
+      environment({
+        source_overrides: [{ variable: 'ATOMIC_RUNTIME_DESCRIPTOR_URL_VLLM', value: `${conf}/vllm.json` }],
+      })
+    )
+    render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
+    expect(
+      screen.queryByText('providers:tensorrt.troubleshooting.overridesTitle')
+    ).not.toBeInTheDocument()
   })
 
   it('copies the core report to the clipboard', async () => {

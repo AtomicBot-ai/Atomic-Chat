@@ -4,8 +4,8 @@
  * "Try again" changed anything — its state lives outside the app, and only photos of PowerShell
  * explained it):
  *
- * - a notice when the core reads conf, or keeps its state, somewhere else because an environment
- *   variable says so — the cause that hid the fix there;
+ * - a notice when the core reads this engine's conf, or keeps its state, somewhere else because an
+ *   environment variable says so — the cause that hid the fix there;
  * - "Copy diagnostics": the core's own report (where each conf document comes from, what is cached,
  *   every operation on disk, recent warnings) as JSON on the clipboard, for a support message;
  * - "Reset setup state": the core archives every finished operation, so a failed setup is no longer
@@ -29,18 +29,45 @@ import {
 } from '@/components/ui/dialog'
 import { useManagedPlan } from '@/hooks/useManagedPlan'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { providerKey, type ManagedEngine } from '@/lib/managed-engines'
+import {
+  providerKey,
+  TENSORRT_LLM_ENGINE,
+  type ManagedEngine,
+} from '@/lib/managed-engines'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
   environmentDiagnostics,
   readManagedSnapshot,
   resetEnvironment,
 } from '@/services/managed-environment/client'
+import type { EnvironmentSourceOverride } from '@/services/managed-environment/types'
 import {
   selectEnvironment,
   selectFailedSetup,
   useManagedEnvironmentStore,
 } from '@/stores/managed-environment-store'
+
+const DESCRIPTOR_URL_VARIABLE = 'ATOMIC_RUNTIME_DESCRIPTOR_URL'
+
+/**
+ * The overrides that move what `engineId` reads. The core lists them once per host
+ * (`EnvironmentSnapshot.source_overrides`), but a descriptor override belongs to one engine:
+ * `ATOMIC_RUNTIME_DESCRIPTOR_URL_<ENGINE>` (the id upper-cased, `-` as `_`) to that engine, the
+ * older `ATOMIC_RUNTIME_DESCRIPTOR_URL` to TensorRT-LLM alone. Every other variable — the
+ * environment manifest, the managed-runtime state folder — moves all engines. Without this, the
+ * vLLM page listed the TensorRT-LLM descriptor under "reads vLLM settings", and the other way round.
+ */
+function overridesAffecting(
+  engineId: string,
+  overrides: readonly EnvironmentSourceOverride[]
+): EnvironmentSourceOverride[] {
+  const own = `${DESCRIPTOR_URL_VARIABLE}_${engineId.toUpperCase().replace(/-/g, '_')}`
+  return overrides.filter(({ variable }) => {
+    if (variable === DESCRIPTOR_URL_VARIABLE) return engineId === TENSORRT_LLM_ENGINE.id
+    if (variable.startsWith(`${DESCRIPTOR_URL_VARIABLE}_`)) return variable === own
+    return true
+  })
+}
 
 const errorText = (error: unknown): string =>
   error instanceof Error
@@ -64,7 +91,7 @@ export function ManagedEngineTroubleshooting({ engine }: { engine: ManagedEngine
 
   if (!environment) return null
   const environmentId = environment.environment_id
-  const overrides = environment.source_overrides ?? []
+  const overrides = overridesAffecting(engine.id, environment.source_overrides ?? [])
   const running = environment.active_operation_id !== null
 
   const copyDiagnostics = async () => {
