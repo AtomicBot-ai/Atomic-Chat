@@ -63,10 +63,18 @@ export function OperationBarView({
   const { t } = useTranslation()
   // The engine the operation sets up or removes; the environment's own removal is every engine's,
   // and its texts are the same in every engine's block.
-  const k = providerKey(
-    (operation.target.kind === 'runtime' ? managedEngine(operation.target.engine_id) : undefined) ??
-      managedEngines()[0]
-  )
+  const engine =
+    operation.target.kind === 'runtime' ? managedEngine(operation.target.engine_id) : undefined
+  const k = providerKey(engine ?? managedEngines()[0])
+  // The card is titled by the engine it sets up; the environment (Atomic Chat's WSL distribution)
+  // is every managed engine's.
+  const title =
+    engine?.label ??
+    (operation.target.kind === 'runtime'
+      ? operation.target.engine_id
+      : managedEngines()
+          .map((entry) => entry.label)
+          .join(' / '))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const step = stepOf(operation)
@@ -145,7 +153,7 @@ export function OperationBarView({
           <IconLoader2 size={18} className="mt-0.5 shrink-0 animate-spin text-muted-foreground" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium leading-5">TensorRT-LLM</div>
+          <div className="text-sm font-medium leading-5">{title}</div>
           <div className="mt-0.5 text-xs leading-5 text-muted-foreground break-words">{text}</div>
         </div>
       </div>

@@ -48,9 +48,37 @@ describe('ManagedEngineOperationBar', () => {
         onDismiss={() => {}}
       />
     )
+    expect(screen.getByText('TensorRT-LLM')).toBeInTheDocument()
     expect(screen.getByText('providers:tensorrt.phase.pulling-image')).toBeInTheDocument()
     expect(screen.queryByText('providers:tensorrt.bar.restartNow')).toBeNull()
     expect(screen.queryByText('providers:tensorrt.bar.signOutNow')).toBeNull()
+  })
+
+  it('names the engine the operation installs: vLLM pulling its image says vLLM, not TensorRT-LLM', () => {
+    render(
+      <OperationBarView
+        operation={operation({
+          target: { kind: 'runtime', installation_id: 'vllm', engine_id: 'vllm' },
+          progress: { label: 'pull', completed: 512, total: 1024, unit: 'bytes' },
+        })}
+        windows={false}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByText('vLLM')).toBeInTheDocument()
+    expect(screen.queryByText('TensorRT-LLM')).toBeNull()
+    expect(screen.getByText('providers:vllm.phase.pulling-image')).toBeInTheDocument()
+  })
+
+  it('titles the removal of the environment with every managed engine, since it is all of theirs', () => {
+    render(
+      <OperationBarView
+        operation={operation({ target: { kind: 'environment' }, kind: 'remove', phase: 'removing' })}
+        windows
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByText('vLLM / TensorRT-LLM')).toBeInTheDocument()
   })
 
   it('says the UAC step takes minutes instead of looking stuck', () => {
