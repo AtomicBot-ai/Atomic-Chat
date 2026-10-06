@@ -50,16 +50,30 @@
     }
   },
   {
-    "key": "kv_cache_max_tokens",
-    "title": "KV Cache Token Limit",
-    "description": "Upper bound of the KV cache in tokens. 0 sizes it for every parallel request at the full context length. Atomic Chat turns it into bytes for the engine from the model's shape and the KV cache precision. Applies from the next model load.",
+    "key": "kv_cache_memory_gib",
+    "title": "KV Cache Size (GB)",
+    "description": "Memory for the KV cache, in GB. 0 lets vLLM size it itself from what its share of the card leaves after the weights — the default, right for every model including hybrid ones such as Qwen3.5. Set a number only to cap the KV cache by hand; too little refuses the context length at load. Applies from the next model load.",
     "controllerType": "input",
     "controllerProps": {
       "value": 0,
       "placeholder": "0",
       "type": "number",
       "min": 0,
-      "max": 16777216
+      "max": 1024
+    }
+  },
+  {
+    "key": "gpu_memory_utilization",
+    "title": "GPU Memory Share",
+    "description": "The share of the card's memory vLLM may take, from 0 to 1. 0 is auto: Atomic Chat gives vLLM what is free on the card right before the model starts, less 1.5 GB for vLLM's own start-up and other programs. vLLM refuses to start when the card has less free memory than this share. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0 (auto)",
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "step": 0.01
     }
   },
   {
