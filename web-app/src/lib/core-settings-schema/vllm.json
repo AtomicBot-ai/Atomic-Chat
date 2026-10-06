@@ -39,11 +39,11 @@
   {
     "key": "max_num_seqs",
     "title": "Parallel Requests",
-    "description": "How many requests the engine serves at once (chat, agent and API together); more wait in a queue. Atomic Chat reserves KV cache memory for that many full contexts unless a KV cache token limit is set. Applies from the next model load.",
+    "description": "How many requests the engine serves at once (chat, agent and API together); more wait in a queue. Atomic Chat reserves KV cache memory for that many full contexts unless a KV cache token limit is set, so 1 fits the most on a desktop card. Applies from the next model load.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 8,
-      "placeholder": "8",
+      "value": 1,
+      "placeholder": "1",
       "type": "number",
       "min": 1,
       "max": 256
@@ -115,6 +115,145 @@
       "type": "number",
       "min": 0,
       "max": 3600
+    }
+  },
+  {
+    "key": "max_num_batched_tokens",
+    "title": "Max Batched Tokens",
+    "description": "Most tokens the engine processes in one step across all requests; long prompts are split into chunks of this size. Lower takes less activation memory and keeps replies to other requests flowing, higher reads a long prompt faster. 0 leaves vLLM's own value. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 1048576
+    }
+  },
+  {
+    "key": "enable_prefix_caching",
+    "title": "Prefix Caching",
+    "description": "Reuses the KV cache of a prompt start the engine has already seen (the system prompt, earlier turns of a chat), so a follow-up reads only what is new. Turn it off only to rule it out when chasing a problem. Applies from the next model load.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
+    "key": "cpu_offload_gb",
+    "title": "CPU Offload (GB)",
+    "description": "Keeps this many GB of the model's weights in system memory instead of on the card, so a model slightly larger than the card fits, at a large speed cost: they cross PCIe on every step. Atomic Chat counts only the rest of the weights against the card. 0 keeps every weight on the card. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 1024
+    }
+  },
+  {
+    "key": "dtype",
+    "title": "Weight Precision",
+    "description": "Precision of the model's unquantized weights and activations. Auto takes the model's own (bfloat16 falls back to float16 on cards before Ampere). A quantized model keeps its quantized weights either way. Applies from the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "name": "Model precision"
+        },
+        {
+          "value": "float16",
+          "name": "float16"
+        },
+        {
+          "value": "bfloat16",
+          "name": "bfloat16"
+        },
+        {
+          "value": "float32",
+          "name": "float32"
+        }
+      ]
+    }
+  },
+  {
+    "key": "seed",
+    "title": "Seed",
+    "description": "Seed of the engine's random sampling, for replies that repeat across restarts. 0 leaves vLLM's own. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 2147483647
+    }
+  },
+  {
+    "key": "async_scheduling",
+    "title": "Async Scheduling",
+    "description": "Plans the engine's next step while the card runs the current one, which speeds up generation a little. Experimental in vLLM: some models and features do not support it, and a load that fails with it on may succeed with it off. Applies from the next model load.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "default_temperature",
+    "title": "Default Temperature",
+    "description": "Temperature for a request that does not set one, from 0 to 2. Empty takes the model's own generation_config.json, else vLLM's 1.0. A request's own value always wins. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Model default",
+      "type": "text"
+    }
+  },
+  {
+    "key": "default_top_p",
+    "title": "Default Top P",
+    "description": "Top P for a request that does not set one, above 0 and up to 1. Empty takes the model's own default. A request's own value always wins. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Model default",
+      "type": "text"
+    }
+  },
+  {
+    "key": "default_top_k",
+    "title": "Default Top K",
+    "description": "Top K for a request that does not set one; -1 or 0 turns it off. Empty takes the model's own default. A request's own value always wins. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Model default",
+      "type": "text"
+    }
+  },
+  {
+    "key": "default_min_p",
+    "title": "Default Min P",
+    "description": "Min P for a request that does not set one, from 0 to 1. Empty takes the model's own default. A request's own value always wins. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Model default",
+      "type": "text"
+    }
+  },
+  {
+    "key": "default_repetition_penalty",
+    "title": "Default Repetition Penalty",
+    "description": "Repetition penalty for a request that does not set one, above 0 (1 is none). Empty takes the model's own default. A request's own value always wins. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Model default",
+      "type": "text"
     }
   }
 ]

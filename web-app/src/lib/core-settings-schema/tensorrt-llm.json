@@ -56,8 +56,8 @@
     "description": "How many requests the engine serves at once (chat, agent and API together); more wait in a queue. Hybrid models such as Qwen3.5 reserve memory for each one up front, so a higher value needs more GPU memory. Applies from the next model load.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 8,
-      "placeholder": "8",
+      "value": 1,
+      "placeholder": "1",
       "type": "number",
       "min": 1,
       "max": 256

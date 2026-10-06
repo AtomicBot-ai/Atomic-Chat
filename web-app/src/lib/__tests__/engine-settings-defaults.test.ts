@@ -105,6 +105,6 @@ describe('TensorRT-LLM defaults', () => {
     expect(customEngineSettingKeys('vllm', settings)).toEqual(['max_num_seqs'])
     expect(
       withDefaultEngineSettings('vllm', settings).map((s) => s.controller_props.value)
-    ).toEqual([8, 'auto'])
+    ).toEqual([1, 'auto'])
   })
 })
