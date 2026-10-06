@@ -62,16 +62,16 @@ vi.mock('@/lib/sentry', () => ({ captureHandledError: vi.fn() }))
 import { DownloadManagement } from '../DownloadManegement'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import {
-  installTensorrtModel,
-  tensorrtDownloadId,
+  installManagedModel,
+  managedDownloadId,
   type InstallDeps,
-} from '@/services/tensorrt-llm/models'
+} from '@/services/managed-models/models'
 import type { TransferItem } from '@/services/diffusion/transfer'
 
 const REPO = 'Qwen/Qwen3-1.7B'
 const SHA = 'c0ffee' + '0'.repeat(34)
 /** One id for the task, its files, the panel row and every event (design D6). */
-const DOWNLOAD_ID = tensorrtDownloadId(REPO)
+const DOWNLOAD_ID = managedDownloadId(REPO)
 const VALIDATION_TOAST = `model-validation-started-${DOWNLOAD_ID}`
 
 /** Hugging Face with one small repository: a config and one LFS weight file. */
@@ -122,14 +122,14 @@ describe('DownloadManagement — a TensorRT-LLM model download (task 3.18)', () 
         fits_other_gpus: [],
         verdict: { ok: true },
       }),
-      location: async () => ({ root: '/data/tensorrt-llm/models', free_bytes: null }),
+      location: async () => ({ root: '/data/managed-models', free_bytes: null }),
       existingSize: async () => null,
       hasPartial: async () => false,
       transfer: downloader(outcome),
       writeYaml: async () => {},
       emit,
     }
-    return installTensorrtModel({ repository: REPO }, deps)
+    return installManagedModel({ engineId: 'tensorrt-llm', repository: REPO }, deps)
   }
 
   beforeEach(() => {

@@ -3,7 +3,7 @@ import { useMemo, type RefObject } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
-import { TensorrtModelDownloadAction } from '@/containers/TensorrtModelDownloadAction'
+import { ManagedModelDownloadAction } from '@/containers/ManagedModelDownloadAction'
 import { TensorrtInstalledActions } from '@/containers/hub/TensorrtInstalledActions'
 import { TensorrtVerdict } from '@/containers/hub/TensorrtVerdict'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -71,7 +71,7 @@ export function TensorrtDownloadOptions({
         ) : (
           state === 'ready' &&
           verdict?.kind === 'ok' && (
-            <TensorrtModelDownloadAction model={model} revision={verdict.meta.revision} />
+            <ManagedModelDownloadAction engineId={TENSORRT_LLM_ENGINE.id} model={model} revision={verdict.meta.revision} />
           )
         )}
       </div>

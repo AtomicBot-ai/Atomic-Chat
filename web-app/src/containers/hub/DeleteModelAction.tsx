@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import { deleteLocalModel } from '@/lib/model-deletion'
 import { formatBytes } from '@/lib/utils'
 
@@ -91,6 +92,16 @@ export function DeleteModelAction({
             {t('common:deleteModel.description')}
           </DialogDescription>
         </DialogHeader>
+        {isManagedProvider(provider) && (
+          // One copy in the shared store serves every managed engine (spec `vllm-desktop`).
+          <p className="text-sm text-muted-foreground">
+            {t('common:deleteModel.managedShared', {
+              engines: managedEngines()
+                .map((engine) => engine.label)
+                .join(', '),
+            })}
+          </p>
+        )}
         <DialogFooter className="mt-2">
           <Button
             variant="ghost"

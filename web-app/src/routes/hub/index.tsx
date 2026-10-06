@@ -75,7 +75,7 @@ import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import type { GpuFacts } from '@/services/managed-environment/types'
-import { normalizeRepository } from '@/services/tensorrt-llm/models'
+import { normalizeRepository } from '@/services/managed-models/models'
 import {
   selectEnvironment,
   useManagedEnvironmentStore,

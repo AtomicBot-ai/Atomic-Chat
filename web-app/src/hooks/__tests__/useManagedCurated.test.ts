@@ -6,13 +6,13 @@ const models = vi.hoisted(() => ({
   checkManagedModel: vi.fn(),
   describeDescriptor: vi.fn(),
 }))
-vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/tensorrt-llm/models')>()),
+vi.mock('@/services/managed-models/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/managed-models/models')>()),
   ...models,
 }))
 
 import { useManagedCurated } from '../useManagedCurated'
-import { GatedModelError } from '@/services/tensorrt-llm/models'
+import { GatedModelError } from '@/services/managed-models/models'
 import { resetManagedVerdictsForTests } from '@/services/managed-models/verdict'
 import type {
   CuratedModel,

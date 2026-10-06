@@ -31,7 +31,7 @@ import {
   runHostStep,
   runtimeTarget,
 } from '@/services/managed-environment/client'
-import { describeDescriptor } from '@/services/tensorrt-llm/models'
+import { describeDescriptor } from '@/services/managed-models/models'
 import { useRunningHostSteps } from '@/stores/host-step-running-store'
 import type {
   EnvironmentOperation,

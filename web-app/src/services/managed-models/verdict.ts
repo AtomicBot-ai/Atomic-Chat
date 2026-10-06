@@ -19,7 +19,7 @@ import {
   IncompatibleModelError,
   InsufficientModelSpaceError,
   type HfRevision,
-} from '@/services/tensorrt-llm/models'
+} from '@/services/managed-models/models'
 
 export type ManagedVerdict =
   | { kind: 'ok'; meta: HfRevision; compatibility: ModelCompatibility }

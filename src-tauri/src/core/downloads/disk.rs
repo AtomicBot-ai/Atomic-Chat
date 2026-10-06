@@ -208,7 +208,7 @@ pub fn ensure_free_space(target_dir: &Path, needed: u64) -> Result<(), String> {
 }
 
 /// The same refusal against a number someone else measured: the core's free space for the
-/// TensorRT-LLM models root, which on Windows is in the WSL guest where the volume list cannot see
+/// managed models root (TensorRT-LLM, vLLM), which on Windows is in the WSL guest where the volume list cannot see
 /// (change `add-tensorrt-llm-windows`). `None` — not measured — never refuses.
 pub fn check_reported_free_space(available: Option<u64>, needed: u64) -> Result<(), String> {
     let Some(available) = available else {
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn a_long_path_in_the_wsl_distribution_is_refused_with_advice_about_the_model() {
         let unc = format!(
-            r"\\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\{}\models\tensorrt-llm\{}",
+            r"\\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\{}\managed-models\{}",
             "k".repeat(36),
             "a".repeat(200)
         );

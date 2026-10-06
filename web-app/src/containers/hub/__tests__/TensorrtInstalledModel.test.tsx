@@ -32,8 +32,8 @@ vi.mock('@/utils/switchModel', async (importOriginal) => ({
 }))
 
 const trtModels = vi.hoisted(() => ({ fetchHfRevision: vi.fn(), checkManagedModel: vi.fn() }))
-vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/tensorrt-llm/models')>()),
+vi.mock('@/services/managed-models/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/managed-models/models')>()),
   ...trtModels,
 }))
 

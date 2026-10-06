@@ -1,23 +1,25 @@
 /**
- * Getting a TensorRT-LLM model onto disk (spec `tensorrt-llm-models`, `tensorrt-llm-desktop`,
- * "Выбор и скачивание модели"): the app downloads, the core decides whether a checkpoint can run.
+ * Getting a model into the shared store of the managed engines (spec `tensorrt-llm-models`,
+ * `tensorrt-llm-desktop` "Выбор и скачивание модели", `managed-model-store`): the app downloads, an
+ * engine decides whether a checkpoint can run. A model is downloaded once, for every managed engine.
  *
  * 1. Read the repository at a revision from Hugging Face — pinned to its commit, so every file is
  *    read and downloaded from the same tree: `config.json`, `hf_quant_config.json` when the
  *    repository has one, every file with its size and LFS sha256, and the tensor names in the
  *    headers of its weight files (a range request each; no weights are downloaded). A refusal means
  *    the model is gated and its terms were not accepted: the person is sent to the model page.
- * 2. Ask the core (`POST /models/tensorrt-llm/check`, no network on its side). Incompatible means
- *    nothing is downloaded, and the reason — with numbers, and the other cards it would fit on —
- *    goes back to the person.
- * 3. Ask the core where models go and how much room there is (`GET /models/tensorrt-llm/location`,
- *    change `add-tensorrt-llm-windows`, design D6): `<data>/tensorrt-llm/models` on Linux, Atomic
- *    Chat's WSL distribution (`\\wsl.localhost\…`) on Windows. Without room for what is still to
- *    download, nothing is downloaded.
+ * 2. Ask the engine the download is for (`POST /models/<engine>/check`, no network on the core's
+ *    side). Incompatible means nothing is downloaded, and the reason — with numbers, and the other
+ *    cards it would fit on — goes back to the person.
+ * 3. Ask the core where the store is and how much room there is (`GET /managed-models/location`,
+ *    change `add-vllm-runtime`): `<data>/managed-models` on Linux, a folder in Atomic Chat's WSL
+ *    distribution (`\\wsl.localhost\…`) on Windows. Without room for what is still to download,
+ *    nothing is downloaded.
  * 4. Download every file into `<root>/<repository>/`, verified by size and LFS sha256, resuming
  *    partial files and skipping files already complete.
- * 5. Write `model.yml` last: a folder without one is a download in progress, not a model.
- * 6. Report it as the download panel's row under one id (`tensorrtDownloadId`, change
+ * 5. Write `model.yml` last: a folder without one is a download in progress, not a model. It names
+ *    nothing engine-dependent: each engine names the quantization format from the files itself.
+ * 6. Report it as the download panel's row under one id (`managedDownloadId`, change
  *    `add-tensorrt-llm-model-hub`, design D6) — progress, then its end: done, stopped by a cancel
  *    (partial files stay, Download again resumes them), or the reason it failed. The end also
  *    closes the "Validating Model" toast the downloader opened under the same id.
@@ -32,7 +34,7 @@ import type {
   ModelCompatibility,
 } from '@/services/managed-environment/types'
 import { isDownloadCancellationError } from '@/lib/downloadCancellation'
-import { tensorrtDownloadId } from '@/lib/tensorrt-llm/download-id'
+import { managedDownloadId } from '@/lib/managed-engine/download-id'
 import {
   isTransferValidationError,
   transferFiles,
@@ -40,7 +42,7 @@ import {
   type TransferOptions,
 } from '@/services/diffusion/transfer'
 
-export { tensorrtDownloadId }
+export { managedDownloadId }
 
 const HF = 'https://huggingface.co'
 
@@ -85,11 +87,12 @@ export class InsufficientModelSpaceError extends Error {
 }
 
 /**
- * `GET /models/tensorrt-llm/location`: the one root models are downloaded into, as this machine
- * opens it, and the free space for new models there (on Windows the smaller of the guest's and the
- * volume's that holds the distribution); `free_bytes` is null when the core could not measure it.
+ * `GET /managed-models/location`: the one root every managed engine's models are downloaded into,
+ * as this machine opens it, and the free space for new models there (on Windows the smaller of the
+ * guest's and the volume's that holds the distribution); `free_bytes` is null when the core could
+ * not measure it.
  */
-export interface TensorrtLlmModelLocation {
+export interface ManagedModelLocation {
   root: string
   free_bytes: number | null
 }
@@ -224,8 +227,8 @@ export async function readWeightNames(
   return [...names].sort()
 }
 
-/** The body of `POST /models/tensorrt-llm/check` for a revision read by `fetchHfRevision`. */
-export function checkRequestFor(meta: HfRevision, gpuId?: string): Parameters<InstallDeps['check']>[0] {
+/** The body of `POST /models/<engine>/check` for a revision read by `fetchHfRevision`. */
+export function checkRequestFor(meta: HfRevision, gpuId?: string): CheckRequest {
   return {
     repository: meta.repository,
     revision: meta.revision,
@@ -279,20 +282,24 @@ export async function fetchHfRevision(
   }
 }
 
+/** The body of a managed engine's `check`. */
+export interface CheckRequest {
+  repository: string
+  revision: string
+  config_json: unknown
+  hf_quant_config_json: unknown | null
+  files: CheckpointFile[]
+  gpu_id?: string
+  /** Needs a core that knows the field (it refuses fields it does not know with `INVALID_ARGUMENT`). */
+  weight_names?: string[]
+}
+
 export interface InstallDeps {
   fetch: typeof fetch
-  check: (request: {
-    repository: string
-    revision: string
-    config_json: unknown
-    hf_quant_config_json: unknown | null
-    files: CheckpointFile[]
-    gpu_id?: string
-    /** Needs a core that knows the field (it refuses fields it does not know with `INVALID_ARGUMENT`). */
-    weight_names?: string[]
-  }) => Promise<ModelCompatibility>
-  /** Where the core keeps the models, and the room there. */
-  location: () => Promise<TensorrtLlmModelLocation>
+  /** The verdict of the engine `engineId` on the checkpoint. */
+  check: (engineId: string, request: CheckRequest) => Promise<ModelCompatibility>
+  /** Where the core keeps the store, and the room there. */
+  location: () => Promise<ManagedModelLocation>
   /** Size of a file (an absolute path), or null when it is not there. */
   existingSize: (savePath: string) => Promise<number | null>
   /** Whether a download of this file was started and left a partial (`<file>.tmp`) behind. */
@@ -304,6 +311,12 @@ export interface InstallDeps {
 }
 
 export interface InstallRequest {
+  /**
+   * The engine whose verdict lets the download start: one that accepts the model (spec
+   * `vllm-desktop`, "Карточка модели показывает вердикт каждого managed-движка"). The model itself
+   * lands in the shared store, for every managed engine.
+   */
+  engineId: string
   repository: string
   revision?: string
   token?: string
@@ -322,19 +335,19 @@ export function underRoot(root: string, ...relative: string[]): string {
 }
 
 /** Checks, downloads and records one model; rejects before any download when it cannot run here. */
-export async function installTensorrtModel(
+export async function installManagedModel(
   request: InstallRequest,
   deps: InstallDeps = defaultInstallDeps()
 ): Promise<{ modelId: string; compatibility: ModelCompatibility }> {
   const repository = normalizeRepository(request.repository)
   const meta = await fetchHfRevision(repository, request.revision, request.token, deps.fetch)
-  const compatibility = await deps.check(checkRequestFor(meta, request.gpuId))
+  const compatibility = await deps.check(request.engineId, checkRequestFor(meta, request.gpuId))
   if (!compatibility.verdict.ok) throw new IncompatibleModelError(compatibility)
 
   // Only for a model that can run here; before Atomic Chat's distribution exists on Windows the
   // core refuses (`MANAGED_ADAPTER_UNAVAILABLE`) and nothing is downloaded.
   const { root, free_bytes: freeBytes } = await deps.location()
-  const downloadId = tensorrtDownloadId(repository)
+  const downloadId = managedDownloadId(repository)
   const pending: TransferItem[] = []
   for (const file of meta.files) {
     const savePath = underRoot(root, repository, file.path)
@@ -376,12 +389,12 @@ export async function installTensorrtModel(
       })
     }
 
-    // Last: this file is what turns the folder into a model for the core and the extension.
+    // Last: this file is what turns the folder into a model for the core and the extensions. No
+    // quantization: that is each engine's own reading of the files (spec `managed-model-store`).
     await deps.writeYaml(underRoot(root, repository, 'model.yml'), {
       repository,
       revision: meta.revision,
       architectures: compatibility.architectures,
-      quantization: compatibility.quantization_format,
       files: meta.files,
     })
   } catch (error) {
@@ -433,16 +446,13 @@ function coreCall<T>(method: 'GET' | 'POST', path: string, body: unknown = null)
 }
 
 /** `POST /models/<engine>/check`: the engine's verdict on a checkpoint, by that engine's descriptor. */
-export function checkManagedModel(
-  engineId: string,
-  request: Parameters<InstallDeps['check']>[0]
-): Promise<ModelCompatibility> {
+export function checkManagedModel(engineId: string, request: CheckRequest): Promise<ModelCompatibility> {
   return coreCall('POST', `/models/${encodeURIComponent(engineId)}/check`, request)
 }
 
-/** Where the core keeps TensorRT-LLM models on this machine, and the room there. */
-export function tensorrtModelLocation(): Promise<TensorrtLlmModelLocation> {
-  return coreCall('GET', '/models/tensorrt-llm/location')
+/** Where the core keeps the shared store of managed models on this machine, and the room there. */
+export function managedModelLocation(): Promise<ManagedModelLocation> {
+  return coreCall('GET', '/managed-models/location')
 }
 
 /**
@@ -465,8 +475,8 @@ export async function describeDescriptor(descriptorId: string): Promise<Descript
 export function defaultInstallDeps(): InstallDeps {
   return {
     fetch,
-    check: (request) => checkManagedModel('tensorrt-llm', request),
-    location: tensorrtModelLocation,
+    check: checkManagedModel,
+    location: managedModelLocation,
     existingSize: async (savePath) => {
       try {
         const stat = await fs.fileStat(savePath)

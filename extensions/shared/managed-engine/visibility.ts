@@ -1,6 +1,7 @@
 /**
- * Whether the TensorRT-LLM provider belongs in this app's lists at all (spec
- * `tensorrt-llm-desktop`, "Провайдер виден там, где может работать или может быть настроен").
+ * Whether a managed engine's provider belongs in this app's lists at all (spec
+ * `tensorrt-llm-desktop`, "Провайдер виден там, где может работать или может быть настроен"; the
+ * same rule for every managed engine, by that engine's own plan, spec `vllm-desktop`).
  *
  * The spec hides it where there is no NVIDIA card and where the core has no descriptor for the
  * engine. The core describes both as blockers of a `prerequisite-blocked` plan, not as
@@ -21,24 +22,21 @@ export function isProviderHidden(plan: PlanVerdict): boolean {
   return plan.blockers.some((blocker) => blocker.reason !== undefined && HIDING_REASONS.has(blocker.reason))
 }
 
-/** The engine and the installation this app sets up; one per user (the core's own convention). */
-export const ENGINE_ID = 'tensorrt-llm'
-
 export interface EnvironmentView {
   installations: Array<{ engine_id: string; active_descriptor_id: string | null }>
 }
 
 /**
- * The `descriptor_id` a probe names. The installed engine's own descriptor when there is one;
- * otherwise the engine id, which is never a real descriptor id, so the core plans with the newest
- * descriptor it can get and names it in the plan (ruling R-app-4).
+ * The `descriptor_id` a probe of `engineId` names. The installed engine's own descriptor when there
+ * is one; otherwise the engine id, which is never a real descriptor id, so the core plans with that
+ * engine's newest descriptor it can get and names it in the plan (ruling R-app-4).
  */
-export function descriptorHint(environments: EnvironmentView[]): string {
+export function descriptorHint(environments: EnvironmentView[], engineId: string): string {
   for (const environment of environments) {
     const installed = environment.installations.find(
-      (installation) => installation.engine_id === ENGINE_ID && installation.active_descriptor_id
+      (installation) => installation.engine_id === engineId && installation.active_descriptor_id
     )
     if (installed?.active_descriptor_id) return installed.active_descriptor_id
   }
-  return ENGINE_ID
+  return engineId
 }

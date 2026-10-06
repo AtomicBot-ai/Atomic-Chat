@@ -111,9 +111,9 @@ fn test_resolve_path() {
     }
 }
 
-/// An app whose data folder is `data` and whose core last named `models` as its TensorRT-LLM
-/// root (change `add-tensorrt-llm-windows`, design D6): on Windows that root is in the WSL guest,
-/// outside the data folder.
+/// An app whose data folder is `data` and whose core last named `models` as the managed models
+/// root (change `add-tensorrt-llm-windows`, design D6; change `add-vllm-runtime`, design D4): on
+/// Windows that root is in the WSL guest, outside the data folder.
 fn app_with_core_root(data: &std::path::Path, models: Option<&std::path::Path>) -> tauri::App<tauri::test::MockRuntime> {
     use crate::core::filesystem::model_roots::CoreModelRoot;
     let builder = tauri::test::mock_builder().manage(crate::test_support::TestDataRoot(data.to_path_buf()));
@@ -170,10 +170,10 @@ fn model_yml_outside_the_data_folder_and_the_core_root_is_refused() {
 
 #[test]
 fn model_yml_under_the_data_folder_needs_no_core_root() {
-    // Linux: the core names `<data>/tensorrt-llm/models`, inside the data folder, as before.
+    // Linux: the core names `<data>/managed-models`, inside the data folder.
     let data = tempfile::tempdir().unwrap();
     let app = app_with_core_root(data.path(), None);
-    let models = data.path().join("tensorrt-llm").join("models").join("m");
+    let models = data.path().join("managed-models").join("m");
     fs::create_dir_all(&models).unwrap();
     let yml = models.join("model.yml");
 
@@ -183,7 +183,7 @@ fn model_yml_under_the_data_folder_needs_no_core_root() {
         yml.to_str().unwrap(),
     ))
     .unwrap();
-    let read = tauri::async_runtime::block_on(read_yaml(app.handle().clone(), "tensorrt-llm/models/m/model.yml")).unwrap();
+    let read = tauri::async_runtime::block_on(read_yaml(app.handle().clone(), "managed-models/m/model.yml")).unwrap();
 
     assert_eq!(read["repository"], "m");
 }

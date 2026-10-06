@@ -1,24 +1,29 @@
 import { describe, expect, it, vi } from 'vitest'
 
+const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
+
 import {
   GatedModelError,
   IncompatibleModelError,
   InsufficientModelSpaceError,
   fetchHfRevision,
   foldTensorName,
-  installTensorrtModel,
+  installManagedModel,
+  managedModelLocation,
+  checkManagedModel,
   readWeightNames,
-  tensorrtDownloadId,
+  managedDownloadId,
   type InstallDeps,
 } from '../models'
 
-/** The root the core names on Linux: the data folder's, as before (change add-tensorrt-llm-windows). */
-const LINUX_ROOT = '/home/ann/.local/share/Atomic Chat/data/tensorrt-llm/models'
+/** The root of the shared store the core names on Linux (change add-vllm-runtime). */
+const LINUX_ROOT = '/home/ann/.local/share/Atomic Chat/data/managed-models'
 
 const SHA = 'c0ffee' + '0'.repeat(34)
 
 /** The one id of this repository's download: task, files, panel row and events (design D6). */
-const DOWNLOAD_ID = 'tensorrt-llm-nvidia_Qwen3-8B-FP8'
+const DOWNLOAD_ID = 'managed-nvidia_Qwen3-8B-FP8'
 
 /** A Hugging Face that answers the API listing and the files of one repository. */
 function hub(options: { status?: number; quant?: boolean } = {}) {
@@ -139,12 +144,12 @@ describe('fetchHfRevision', () => {
   })
 })
 
-describe('installTensorrtModel', () => {
+describe('installManagedModel', () => {
   it('downloads nothing for a model the core finds incompatible, and says why with the other card', async () => {
     // spec "Вставлен несовместимый репозиторий".
     const { d, steps } = deps({ check: vi.fn(async () => verdict(false)) })
 
-    const error = await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d).catch((e: unknown) => e)
+    const error = await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(IncompatibleModelError)
     expect((error as IncompatibleModelError).message).toContain('12.4 GB')
@@ -155,14 +160,15 @@ describe('installTensorrtModel', () => {
   it('asks the core with the metadata of the pinned revision, then downloads every file into the model folder', async () => {
     const { d } = deps()
 
-    const installed = await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+    const installed = await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
     expect(installed.modelId).toBe('nvidia/Qwen3-8B-FP8')
     expect(d.check).toHaveBeenCalledWith(
+      'tensorrt-llm',
       expect.objectContaining({ repository: 'nvidia/Qwen3-8B-FP8', revision: SHA })
     )
     const items = vi.mocked(d.transfer).mock.calls[0][0]
-    // Under the root the core names; on Linux that is still `<data>/tensorrt-llm/models`.
+    // Under the root of the shared store the core names; on Linux `<data>/managed-models`.
     expect(items.map((i) => i.save_path)).toEqual([
       `${LINUX_ROOT}/nvidia/Qwen3-8B-FP8/config.json`,
       `${LINUX_ROOT}/nvidia/Qwen3-8B-FP8/model-00001-of-00002.safetensors`,
@@ -180,15 +186,17 @@ describe('installTensorrtModel', () => {
     // spec "Модель докачана в app": a folder without model.yml is not a model.
     const { d, steps } = deps()
 
-    await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+    await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
     expect(steps.at(-1)).toBe(`yaml:${LINUX_ROOT}/nvidia/Qwen3-8B-FP8/model.yml`)
-    expect(vi.mocked(d.writeYaml).mock.calls[0][1]).toMatchObject({
+    const yml = vi.mocked(d.writeYaml).mock.calls[0][1] as Record<string, unknown>
+    expect(yml).toMatchObject({
       repository: 'nvidia/Qwen3-8B-FP8',
       revision: SHA,
       architectures: ['Qwen3ForCausalLM'],
-      quantization: 'fp8',
     })
+    // spec `managed-model-store` "model.yml не зависит от движка": each engine names the format itself.
+    expect(yml).not.toHaveProperty('quantization')
   })
 
   it('writes no model.yml when the download fails', async () => {
@@ -198,7 +206,7 @@ describe('installTensorrtModel', () => {
       }),
     })
 
-    await expect(installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow(
+    await expect(installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow(
       'connection reset'
     )
     expect(steps).toEqual([])
@@ -212,9 +220,9 @@ describe('installTensorrtModel', () => {
         }),
       })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
-      expect(tensorrtDownloadId('nvidia/Qwen3-8B-FP8')).toBe(DOWNLOAD_ID)
+      expect(managedDownloadId('nvidia/Qwen3-8B-FP8')).toBe(DOWNLOAD_ID)
       const [items, taskId] = vi.mocked(d.transfer).mock.calls[0]
       expect(taskId).toBe(DOWNLOAD_ID)
       expect(new Set(items.map((item) => item.model_id))).toEqual(new Set([DOWNLOAD_ID]))
@@ -239,7 +247,7 @@ describe('installTensorrtModel', () => {
         }),
       })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8', token: 'hf_secret' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8', token: 'hf_secret' }, d)
 
       const updates = emitted.filter((e) => e.event === 'onFileDownloadUpdate')
       expect(updates.map((e) => e.payload.size)).toEqual([
@@ -256,7 +264,7 @@ describe('installTensorrtModel', () => {
         }),
       })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
       const itemIds = vi.mocked(d.transfer).mock.calls[0][0].map((item) => item.model_id)
       expect(new Set(itemIds)).toEqual(new Set([DOWNLOAD_ID]))
@@ -279,7 +287,7 @@ describe('installTensorrtModel', () => {
         }),
       })
 
-      await expect(installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow(
+      await expect(installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow(
         'Hash verification failed'
       )
       expect(emitted).toEqual([
@@ -302,7 +310,7 @@ describe('installTensorrtModel', () => {
         }),
       })
 
-      await expect(installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow()
+      await expect(installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow()
       expect(emitted.map((e) => e.event)).toEqual(['onFileDownloadError'])
       expect(emitted[0].payload).toMatchObject({ modelId: DOWNLOAD_ID, error: 'connection reset' })
     })
@@ -315,7 +323,7 @@ describe('installTensorrtModel', () => {
         }),
       })
 
-      await expect(installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow(
+      await expect(installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toThrow(
         'cancelled'
       )
       expect(emitted).toEqual([
@@ -336,7 +344,7 @@ describe('installTensorrtModel', () => {
         existingSize: vi.fn(async (path: string) => sizes[path.split('/').pop() ?? ''] ?? null),
       })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
       expect(d.transfer).not.toHaveBeenCalled()
       expect(emitted).toEqual([])
@@ -350,7 +358,7 @@ describe('installTensorrtModel', () => {
         throw new Error('Download cancelled')
       }),
     })
-    await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, cancelled.d).catch(() => undefined)
+    await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, cancelled.d).catch(() => undefined)
 
     const again = deps({
       existingSize: vi.fn(async (path: string) =>
@@ -358,7 +366,7 @@ describe('installTensorrtModel', () => {
       ),
       hasPartial: vi.fn(async (path: string) => path.endsWith('model-00002-of-00002.safetensors')),
     })
-    await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, again.d)
+    await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, again.d)
 
     const [items, taskId, options] = vi.mocked(again.d.transfer).mock.calls[0]
     expect(taskId).toBe(DOWNLOAD_ID)
@@ -375,7 +383,7 @@ describe('installTensorrtModel', () => {
       ),
     })
 
-    await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+    await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
     const [items, , options] = vi.mocked(d.transfer).mock.calls[0]
     expect(items.map((i) => i.save_path.split('/').pop())).not.toContain(
@@ -391,7 +399,7 @@ describe('installTensorrtModel', () => {
       // spec "Скачивание в дистрибутив на Windows".
       const { d, steps } = deps({ location: vi.fn(async () => ({ root: UNC_ROOT, free_bytes: 300_000_000_000 })) })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
       const items = vi.mocked(d.transfer).mock.calls[0][0]
       expect(items[1].save_path).toBe(`${UNC_ROOT}\\nvidia\\Qwen3-8B-FP8\\model-00001-of-00002.safetensors`)
@@ -402,7 +410,7 @@ describe('installTensorrtModel', () => {
     it('asks for the location only once the core found the model compatible', async () => {
       const { d } = deps({ check: vi.fn(async () => verdict(false)) })
 
-      const error = await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d).catch((e: unknown) => e)
+      const error = await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d).catch((e: unknown) => e)
 
       expect(error).toBeInstanceOf(IncompatibleModelError)
       expect(d.location).not.toHaveBeenCalled()
@@ -412,7 +420,7 @@ describe('installTensorrtModel', () => {
       // spec "Скачивание на Windows": the core's free space, not the data folder's volume.
       const { d, steps } = deps({ location: vi.fn(async () => ({ root: UNC_ROOT, free_bytes: 6_000_000_000 })) })
 
-      const error = await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d).catch((e: unknown) => e)
+      const error = await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d).catch((e: unknown) => e)
 
       expect(error).toBeInstanceOf(InsufficientModelSpaceError)
       expect(error).toMatchObject({ root: UNC_ROOT, freeBytes: 6_000_000_000, neededBytes: 8_000_011_700 })
@@ -427,7 +435,7 @@ describe('installTensorrtModel', () => {
         ),
       })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
       expect(steps).toEqual([
         'transfer:config.json,model-00002-of-00002.safetensors,tokenizer.json',
@@ -442,7 +450,7 @@ describe('installTensorrtModel', () => {
         hasPartial: vi.fn(async (path: string) => path.endsWith('model-00001-of-00002.safetensors')),
       })
 
-      await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
       expect(steps.at(-1)).toBe(`yaml:${LINUX_ROOT}/nvidia/Qwen3-8B-FP8/model.yml`)
     })
@@ -450,7 +458,7 @@ describe('installTensorrtModel', () => {
     it('lets the downloader decide when the core could not measure the space', async () => {
       const { d, steps } = deps({ location: vi.fn(async () => ({ root: LINUX_ROOT, free_bytes: null })) })
 
-      const installed = await installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)
+      const installed = await installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)
 
       expect(installed.modelId).toBe('nvidia/Qwen3-8B-FP8')
       expect(steps.at(-1)).toBe(`yaml:${LINUX_ROOT}/nvidia/Qwen3-8B-FP8/model.yml`)
@@ -463,7 +471,7 @@ describe('installTensorrtModel', () => {
       })
       const { d, steps } = deps({ location: vi.fn(async () => Promise.reject(unavailable)) })
 
-      await expect(installTensorrtModel({ repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toBe(unavailable)
+      await expect(installManagedModel({ engineId: 'tensorrt-llm', repository: 'nvidia/Qwen3-8B-FP8' }, d)).rejects.toBe(unavailable)
       expect(steps).toEqual([])
     })
   })
@@ -558,5 +566,26 @@ describe('foldTensorName', () => {
   it('folds numeric path segments only', () => {
     expect(foldTensorName('model.layers.12.mlp.experts.7.w1.weight')).toBe('model.layers.*.mlp.experts.*.w1.weight')
     expect(foldTensorName('model.layers.3.self_attn.q_proj2.weight')).toBe('model.layers.*.self_attn.q_proj2.weight')
+  })
+})
+
+describe('the core routes of the shared store', () => {
+  it('asks the store, not an engine, where models go, and asks the given engine for its verdict', async () => {
+    invokeMock.mockResolvedValue({ root: LINUX_ROOT, free_bytes: 1 })
+    await expect(managedModelLocation()).resolves.toEqual({ root: LINUX_ROOT, free_bytes: 1 })
+    expect(invokeMock).toHaveBeenLastCalledWith('atomic_core_call', {
+      method: 'GET',
+      path: '/managed-models/location',
+      body: null,
+    })
+
+    invokeMock.mockResolvedValue(verdict(true))
+    const request = { repository: 'r/m', revision: SHA, config_json: {}, hf_quant_config_json: null, files: [] }
+    await checkManagedModel('second-engine', request)
+    expect(invokeMock).toHaveBeenLastCalledWith('atomic_core_call', {
+      method: 'POST',
+      path: '/models/second-engine/check',
+      body: request,
+    })
   })
 })

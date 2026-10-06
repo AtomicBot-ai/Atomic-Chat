@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { isManagedProvider } from '@/lib/managed-engines'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 type ProviderCustomHeaderPayload = {
@@ -26,7 +27,10 @@ export type LocalProviderName = (typeof LOCAL_PROVIDER_NAMES)[number]
 
 export function isLocalProvider(providerName: string | undefined | null): boolean {
   if (!providerName) return false
-  return (LOCAL_PROVIDER_NAMES as readonly string[]).includes(providerName)
+  return (
+    (LOCAL_PROVIDER_NAMES as readonly string[]).includes(providerName) ||
+    isManagedProvider(providerName)
+  )
 }
 
 /**

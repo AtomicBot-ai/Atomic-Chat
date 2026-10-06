@@ -14,28 +14,32 @@ import {
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import type { CatalogModel } from '@/services/models/types'
-import { installTensorrtModel, tensorrtDownloadId } from '@/services/tensorrt-llm/models'
+import { installManagedModel, managedDownloadId } from '@/services/managed-models/models'
 import { verdictFromError, type ManagedVerdict as Verdict } from '@/services/managed-models/verdict'
 
 /**
- * "Download" for a TensorRT-LLM model the core said runs here (change `add-tensorrt-llm-model-hub`,
- * design D6): the same `installTensorrtModel` the provider page used, at the revision the core
- * checked. Its progress and its Cancel are the download panel's row (`tensorrtDownloadId`); a
- * download cancelled or cut off is resumed by pressing Download again.
+ * "Download" for a safetensors model a managed engine said runs here (change
+ * `add-tensorrt-llm-model-hub`, design D6; into the shared store, change `add-vllm-runtime`):
+ * `installManagedModel` at the revision the engine checked. Its progress and its Cancel are the
+ * download panel's row (`managedDownloadId`); a download cancelled or cut off is resumed by pressing
+ * Download again.
  */
-export const TensorrtModelDownloadAction = memo(function TensorrtModelDownloadAction({
+export const ManagedModelDownloadAction = memo(function ManagedModelDownloadAction({
+  engineId,
   model,
   revision,
 }: {
+  /** The engine whose verdict accepted the model; the download re-checks with it. */
+  engineId: string
   model: CatalogModel
-  /** The commit the core's verdict was given for. */
+  /** The commit the engine's verdict was given for. */
   revision: string
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const token = useGeneralSetting((state) => state.huggingfaceToken) || undefined
   const repository = model.model_name
-  const downloadId = tensorrtDownloadId(repository)
+  const downloadId = managedDownloadId(repository)
   const progress = useDownloadStore((state) => state.downloads[downloadId]?.progress ?? 0)
   const isDownloading = useDownloadStore(
     (state) => state.localDownloadingModels.has(downloadId) || downloadId in state.downloads
@@ -50,7 +54,7 @@ export const TensorrtModelDownloadAction = memo(function TensorrtModelDownloadAc
     store.setDownloadOrigin(downloadId, repository)
     store.addLocalDownloadingModel(downloadId)
     try {
-      await installTensorrtModel({ repository, revision, token })
+      await installManagedModel({ engineId, repository, revision, token })
       // The model is a model once `model.yml` is written: list it, so the card turns to "New chat".
       useModelProvider.getState().setProviders(await serviceHub.providers().getProviders())
     } catch (error) {
@@ -61,7 +65,7 @@ export const TensorrtModelDownloadAction = memo(function TensorrtModelDownloadAc
     } finally {
       useDownloadStore.getState().removeLocalDownloadingModel(downloadId)
     }
-  }, [downloadId, repository, revision, token, serviceHub])
+  }, [downloadId, engineId, repository, revision, token, serviceHub])
 
   return (
     <div className="flex flex-col items-end gap-2">

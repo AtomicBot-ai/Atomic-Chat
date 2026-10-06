@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import type { CuratedModel } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
-import { describeDescriptor } from '@/services/tensorrt-llm/models'
+import { describeDescriptor } from '@/services/managed-models/models'
 import { managedVerdict, refusedOnEveryCard } from '@/services/managed-models/verdict'
 
 /**

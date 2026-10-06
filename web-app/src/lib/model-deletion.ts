@@ -13,6 +13,7 @@ import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type { ServiceHub } from '@/services'
 import type { ModelDeletionReport } from '@/services/models/types'
+import { isManagedProvider } from '@/lib/managed-engines'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 
 /**
@@ -26,7 +27,7 @@ import { isLocalProvider } from '@/utils/registerRemoteProvider'
  * store-level tombstone.
  *
  * Rejects when a local engine refuses (unknown model, missing `model.yml`, a
- * TensorRT-LLM model the core could not stop); the caller is expected to
+ * managed model the core could not stop); the caller is expected to
  * surface that. Resolves with what the engine freed when it measured it.
  */
 export async function deleteLocalModel(
@@ -36,11 +37,13 @@ export async function deleteLocalModel(
 ): Promise<ModelDeletionReport | void> {
   let report: ModelDeletionReport | void = undefined
   if (isLocalProvider(provider)) {
-    // TensorRT-LLM's delete goes to the core, which stops the model itself and
-    // deletes nothing until Docker confirms the stop (design D12a). Unloading
-    // here first would mark the model stopped even when that stop fails and
-    // the delete is refused, so it is left active until the delete succeeds.
-    const stopsInCore = provider === 'tensorrt-llm'
+    // A managed engine's delete goes to the core's shared store, which stops
+    // the model in whichever managed provider holds it and deletes nothing
+    // until Docker confirms the stop (design D12a, spec `managed-model-store`).
+    // Unloading here first would mark the model stopped even when that stop
+    // fails and the delete is refused, so it is left active until the delete
+    // succeeds.
+    const stopsInCore = isManagedProvider(provider)
     // A loaded model holds its weights open and keeps showing up as active in
     // the model picker, so unload it before the files go away. A failure here
     // is not fatal to the delete itself.
@@ -66,8 +69,9 @@ export async function deleteLocalModel(
   useFavoriteModel.getState().removeFavorite(modelId)
   useModelProvider.getState().deleteModel(modelId)
 
-  // Re-list the engines so a model the other llama.cpp provider also registered
-  // (both read the same models directory) disappears too.
+  // Re-list the engines so a model another provider also registered (both
+  // llama.cpp providers read one models directory; every managed engine lists
+  // the shared store) disappears too.
   const providers = await serviceHub.providers().getProviders()
   useModelProvider.getState().setProviders(
     providers.map((entry) => ({

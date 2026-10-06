@@ -45,7 +45,7 @@ import {
 } from '@/lib/diffusion/models'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import { isDecisionDownloadTaskId } from '@/lib/decision/models'
-import { isTensorrtDownloadId } from '@/lib/tensorrt-llm/download-id'
+import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useImageForm } from '@/hooks/useImageForm'
 import { notifyWhenAway } from '@/lib/notifications'
@@ -243,10 +243,10 @@ export function DownloadManagement() {
   }, [t])
 
   const downloadProcesses = useMemo(() => {
-    // A TensorRT-LLM id spells its repository with `_`; the Hub's Download
+    // A managed model's id spells its repository with `_`; the Hub's Download
     // recorded the repository itself as the download's origin.
     const rowName = (id: string) =>
-      (isTensorrtDownloadId(id) && downloadOriginByModelId[id]) || id
+      (isManagedDownloadId(id) && downloadOriginByModelId[id]) || id
     // Get downloads with progress data
     const downloadsWithProgress = Object.entries(downloads).map(
       ([downloadKey, download]) => {
@@ -848,13 +848,13 @@ export function DownloadManagement() {
   // Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
   // which start with `mlx`) get cancel-only, matching Jan's gating.
   // Decision models resume from their settings card, not from here.
-  // TensorRT-LLM models are cancel-only too: Download again in the Hub resumes
+  // Managed models are cancel-only too: Download again in the Hub resumes
   // from the files on disk (change add-tensorrt-llm-model-hub, design D6).
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
-    !isTensorrtDownloadId(id)
+    !isManagedDownloadId(id)
 
   const handlePauseDownload = useCallback(
     (download: { id: string; name: string }) => {
