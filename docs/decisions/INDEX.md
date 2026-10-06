@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-383 records, 2026-05-19 → 2026-10-06.
+384 records, 2026-05-19 → 2026-10-06.
 
 ---
 
@@ -278,8 +278,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (19)
+## Packaging, installers, autostart & platform policy (20)
 
+- **2026-10-02** — [Publish releases with make release-prod and feed the landing page from conf](2026-10-02-publish-releases-with-make-release-prod-and-feed-the-landing-from-conf.md)
 - **2026-09-30** — [Stop a leftover app core before the Windows installer overwrites it](2026-09-30-stop-a-leftover-app-core-before-the-windows-installer-overwrites-it.md) — an update exits without `RunEvent::Exit`, so the core outlives the app.
 - **2026-09-23** — [Add a Video page that shares the image runtime](2026-09-23-add-a-video-page-that-shares-the-image-runtime.md)
 - **2026-09-23** — [Capture video posters in the webview](2026-09-23-capture-video-posters-in-the-webview.md)
