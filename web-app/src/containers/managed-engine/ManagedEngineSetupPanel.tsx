@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { managedPlanKey, useManagedPlan } from '@/hooks/useManagedPlan'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { providerKey, type ManagedEngine } from '@/lib/managed-engines'
+import { managedEngine, providerKey, type ManagedEngine } from '@/lib/managed-engines'
 import { formatBytes } from '@/lib/utils'
 import {
   deriveSetupView,
@@ -43,6 +43,7 @@ import {
   selectFailedEnvironmentRemoval,
   selectFailedSetup,
   selectInstallation,
+  selectOtherEngineOperation,
   selectSetupOperation,
   useManagedEnvironmentStore,
 } from '@/stores/managed-environment-store'
@@ -101,6 +102,10 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
   const installation = useManagedEnvironmentStore((state) => selectInstallation(state, engine.id))
   const operation = useManagedEnvironmentStore((state) => selectSetupOperation(state, engine.id))
   const anyOperation = useManagedEnvironmentStore((state) => selectSetupOperation(state))
+  // Another engine's setup or removal: the core runs one at a time, so this install waits.
+  const otherOperation = useManagedEnvironmentStore((state) =>
+    operation ? undefined : selectOtherEngineOperation(state, engine.id)
+  )
   const failed = useManagedEnvironmentStore((state) => selectFailedSetup(state, engine.id))
   const failedEnvironmentRemoval = useManagedEnvironmentStore(selectFailedEnvironmentRemoval)
 
@@ -312,6 +317,8 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
         </div>
       </div>
 
+      {otherOperation && <OtherEngineOperation engine={engine} operation={otherOperation} />}
+
       {view.kind === 'checking' && (
         <p className="text-sm text-main-view-fg/70">{t(k('checking'))}</p>
       )}
@@ -334,7 +341,7 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
           <p className="min-w-0 text-sm text-main-view-fg/70">
             {t(windows ? k('notInstalledWindows') : k('notInstalled'))}
           </p>
-          <Button size="sm" disabled={probing} onClick={() => setPlanOpen(true)}>
+          <Button size="sm" disabled={probing || !!otherOperation} onClick={() => setPlanOpen(true)}>
             {t(k('install'))}
           </Button>
         </div>
@@ -378,13 +385,14 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
           )}
           <div className="flex gap-2">
             {view.newerPlan && (
-              <Button size="sm" disabled={probing} onClick={() => setPlanOpen(true)}>
+              <Button size="sm" disabled={probing || !!otherOperation} onClick={() => setPlanOpen(true)}>
                 {t(k('install'))}
               </Button>
             )}
             <Button
               variant="outline"
               size="sm"
+              disabled={!!otherOperation}
               onClick={() =>
                 void act(() => resumeOperation(view.operation.operation_id, view.operation.revision))
               }
@@ -544,6 +552,31 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/**
+ * Another managed engine's setup or removal is running: this engine's install waits for it — the
+ * core runs one environment operation at a time — so the page says so instead of offering a start
+ * the core would refuse as a conflict. The phase is in the other engine's own words.
+ */
+function OtherEngineOperation({
+  engine,
+  operation,
+}: {
+  engine: ManagedEngine
+  operation: EnvironmentOperation
+}) {
+  const { t } = useTranslation()
+  const other =
+    operation.target.kind === 'runtime' ? managedEngine(operation.target.engine_id) : undefined
+  const engineName =
+    other?.label ?? (operation.target.kind === 'runtime' ? operation.target.engine_id : '')
+  const phase = other ? t(providerKey(other)(`phase.${operation.phase}`)) : operation.phase
+  return (
+    <p className="text-sm text-main-view-fg/70 break-words">
+      {t(providerKey(engine)('otherOperation'), { engine: engineName, phase })}
+    </p>
   )
 }
 

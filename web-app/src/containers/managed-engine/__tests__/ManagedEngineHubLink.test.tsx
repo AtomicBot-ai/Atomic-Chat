@@ -10,7 +10,7 @@ const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
 import { ManagedEngineHubLink } from '../ManagedEngineHubLink'
-import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { route } from '@/constants/routes'
 
 describe('ManagedEngineHubLink', () => {
@@ -25,5 +25,14 @@ describe('ManagedEngineHubLink', () => {
       to: route.hub.index,
       search: { engine: 'tensorrt-llm' },
     })
+  })
+
+  it('opens the Model Hub on the vLLM format (spec vllm-desktop "Переход к выбору модели")', () => {
+    render(<ManagedEngineHubLink engine={VLLM_ENGINE} />)
+
+    expect(screen.getByText('providers:vllm.hub.body')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'providers:vllm.hub.action' }))
+
+    expect(navigate).toHaveBeenLastCalledWith({ to: route.hub.index, search: { engine: 'vllm' } })
   })
 })

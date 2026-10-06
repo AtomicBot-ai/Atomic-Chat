@@ -28,7 +28,7 @@ vi.mock('@/services/managed-environment/client', async (importOriginal) => ({
 }))
 
 import { resetHostStepPromptsForTests, ManagedEngineSetupPanel } from '../ManagedEngineSetupPanel'
-import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { resetManagedPlansForTests } from '@/hooks/useManagedPlan'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -792,9 +792,9 @@ describe('ManagedEngineSetupPanel', () => {
     const second = { id: 'second-engine', label: 'Second', i18n: 'second' }
     const secondTarget = { kind: 'runtime', installation_id: 'second-engine', engine_id: 'second-engine' }
 
-    it('speaks with its own texts, probes and installs its own installation, and does not show another engine\'s setup', async () => {
-      // TensorRT-LLM is being set up; the second engine's page shows its own state, not that setup.
-      seed(environment({ active_operation_id: 'op-1' }), [operation({ phase: 'pulling-image' })])
+    it('speaks with its own texts, probes and installs its own installation, and does not show another engine\'s state', async () => {
+      // TensorRT-LLM failed to install; the second engine's page shows its own state, not that failure.
+      seed(environment(), [operation({ phase: 'failed', error: { code: 'X', message: 'trt failed' } })])
       client.probe.mockResolvedValue(
         plan({ target: secondTarget as RequirementPlan['target'], descriptor_id: 'second-engine-1-r1' })
       )
@@ -803,6 +803,7 @@ describe('ManagedEngineSetupPanel', () => {
 
       expect(await screen.findByRole('button', { name: 'providers:second.install' })).toBeInTheDocument()
       expect(screen.queryByText(/providers:tensorrt\./)).not.toBeInTheDocument()
+      expect(screen.queryByText('trt failed')).not.toBeInTheDocument()
       expect(client.probe).toHaveBeenCalledWith('second-engine', secondTarget)
 
       fireEvent.click(screen.getByRole('button', { name: 'providers:second.install' }))
@@ -833,6 +834,133 @@ describe('ManagedEngineSetupPanel', () => {
       )
       await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
       expect(client.beginOperation.mock.calls[0][1]).toMatchObject({ kind: 'remove', target: secondTarget })
+    })
+  })
+
+  describe('vLLM (spec vllm-desktop, "Установка vLLM тем же сценарием окружения")', () => {
+    const vllmTarget = { kind: 'runtime' as const, installation_id: 'vllm', engine_id: 'vllm' }
+    const vllmPlan = (overrides: Partial<RequirementPlan> = {}) =>
+      plan({ target: vllmTarget, descriptor_id: 'vllm-0.31.0-cu129-r1', ...overrides })
+    const vllmOperation = (overrides: Partial<EnvironmentOperation> = {}) =>
+      operation({ operation_id: 'op-v', target: vllmTarget, ...overrides })
+
+    it('TensorRT-LLM already installed: a plan without system changes, then to ready without a privileged step', async () => {
+      seed(environment({ availability: 'supported', installations: [installedEngine] }))
+      client.probe.mockResolvedValue(
+        vllmPlan({
+          availability: 'setup-required',
+          system_changes: [],
+          requires_elevation: false,
+          may_require_relogin: false,
+          download_bytes: 10 * 1024 ** 3,
+        })
+      )
+      client.beginOperation.mockResolvedValue(vllmOperation())
+      render(<ManagedEngineSetupPanel engine={VLLM_ENGINE} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'providers:vllm.install' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText('providers:vllm.plan.noSystemChanges')).toBeInTheDocument()
+      expect(within(dialog).getByText(/providers:vllm.plan.download/)).toHaveTextContent('10.0 GB')
+      expect(within(dialog).queryByText(/providers:vllm.plan.relogin/)).not.toBeInTheDocument()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'providers:vllm.plan.agree' }))
+
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      expect(client.beginOperation.mock.calls[0][1]).toMatchObject({ kind: 'setup', target: vllmTarget })
+      coreSays(vllmOperation({ phase: 'awaiting-consent', revision: 2, plan_digest: digest }))
+      await waitFor(() => expect(client.resumeOperation).toHaveBeenCalledWith('op-v', 2, digest))
+      coreSays(vllmOperation({ phase: 'pulling-image', revision: 3 }))
+      expect(await screen.findByText('providers:vllm.phase.pulling-image')).toBeInTheDocument()
+
+      act(() => {
+        store().applyEnvironment(
+          environment({
+            revision: 200,
+            installations: [
+              installedEngine,
+              { ...installedEngine, installation_id: 'vllm', engine_id: 'vllm', active_descriptor_id: 'vllm-0.31.0-cu129-r1' },
+            ],
+          })
+        )
+        store().applyOperation(vllmOperation({ phase: 'ready', revision: 4 }))
+      })
+      expect(await screen.findByText('providers:vllm.installed')).toBeInTheDocument()
+      expect(client.runHostStep).not.toHaveBeenCalled()
+    })
+
+    it('a clean machine: the same path as TensorRT-LLM — system changes, the password, signing in again', async () => {
+      client.probe.mockResolvedValue(vllmPlan())
+      client.beginOperation.mockResolvedValue(vllmOperation())
+      render(<ManagedEngineSetupPanel engine={VLLM_ENGINE} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'providers:vllm.install' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText(/Add ann to the docker group/)).toBeInTheDocument()
+      expect(within(dialog).getByText('providers:vllm.plan.relogin')).toBeInTheDocument()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'providers:vllm.plan.agree' }))
+
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      coreSays(vllmOperation({ phase: 'awaiting-consent', revision: 2, plan_digest: digest }))
+      await waitFor(() => expect(client.resumeOperation).toHaveBeenCalledWith('op-v', 2, digest))
+      coreSays(
+        vllmOperation({
+          phase: 'preparing-host',
+          revision: 3,
+          pending_host_step: { step_id: 'step-v', action: 'linux.install-container-runtime' } as EnvironmentOperation['pending_host_step'],
+        })
+      )
+      await waitFor(() => expect(client.runHostStep).toHaveBeenCalledWith('op-v'))
+      coreSays(vllmOperation({ phase: 'relogin-required', revision: 4 }))
+      expect(await screen.findByText('providers:vllm.relogin.title')).toBeInTheDocument()
+    })
+
+    it('the driver suits vLLM but not TensorRT-LLM: the TensorRT-LLM page shows the blocker, vLLM offers the install', async () => {
+      client.probe.mockImplementation(async (_descriptor: string, target: { engine_id: string }) =>
+        target.engine_id === 'vllm'
+          ? vllmPlan()
+          : plan({
+              availability: 'prerequisite-blocked',
+              blockers: [
+                {
+                  code: 'MANAGED_PREREQUISITE_BLOCKED',
+                  reason: 'driver-too-old',
+                  message: 'TensorRT-LLM needs NVIDIA driver 615 or newer; this computer has 580.',
+                  params: { required: '615', actual: '580' },
+                },
+              ],
+            })
+      )
+      render(
+        <>
+          <section data-testid="trt">
+            <ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />
+          </section>
+          <section data-testid="vllm">
+            <ManagedEngineSetupPanel engine={VLLM_ENGINE} />
+          </section>
+        </>
+      )
+
+      const trt = within(screen.getByTestId('trt'))
+      const vllm = within(screen.getByTestId('vllm'))
+      expect(await trt.findByText(/needs NVIDIA driver 615/)).toBeInTheDocument()
+      expect(trt.queryByRole('button', { name: 'providers:tensorrt.install' })).not.toBeInTheDocument()
+      expect(await vllm.findByRole('button', { name: 'providers:vllm.install' })).toBeEnabled()
+      expect(vllm.queryByText(/needs NVIDIA driver/)).not.toBeInTheDocument()
+    })
+
+    it('while TensorRT-LLM is being set up, explains that vLLM can be installed after it instead of failing on a conflict', async () => {
+      seed(environment({ active_operation_id: 'op-1' }), [operation({ phase: 'pulling-image' })])
+      client.probe.mockResolvedValue(vllmPlan())
+      render(<ManagedEngineSetupPanel engine={VLLM_ENGINE} />)
+
+      expect(
+        await screen.findByText(
+          'providers:vllm.otherOperation {"engine":"TensorRT-LLM","phase":"providers:tensorrt.phase.pulling-image"}'
+        )
+      ).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'providers:vllm.install' })).toBeDisabled()
+      expect(client.beginOperation).not.toHaveBeenCalled()
     })
   })
 })

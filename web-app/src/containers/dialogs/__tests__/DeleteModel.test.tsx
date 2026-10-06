@@ -77,4 +77,22 @@ describe('DialogDeleteModel', () => {
     await screen.findByRole('button', { name: 'providers:deleteModel.delete' })
     expect(screen.queryByText(/providers:deleteModel.managedShared/)).not.toBeInTheDocument()
   })
+
+  it('deleting a model from the vLLM page warns it goes from both engines, and says what was freed', async () => {
+    // spec vllm-desktop "Удаление модели со страницы vLLM".
+    const vllm = { ...trt, provider: 'vllm' } as unknown as ModelProvider
+    deletion.deleteLocalModel.mockResolvedValue({ freedBytes: 5 * 1024 ** 3 })
+    render(<DialogDeleteModel provider={vllm} modelId="Qwen/Qwen3-1.7B" />)
+    fireEvent.click(screen.getByLabelText('providers:deleteModel.delete'))
+
+    expect(
+      await screen.findByText('providers:deleteModel.managedShared {"engines":"vLLM, TensorRT-LLM"}')
+    ).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'providers:deleteModel.delete' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    expect(deletion.deleteLocalModel).toHaveBeenCalledWith(expect.anything(), 'Qwen/Qwen3-1.7B', 'vllm')
+    const [, options] = toast.success.mock.calls[0] as [string, { description: string }]
+    expect(options.description).toContain('"size":"5.0 GB"')
+  })
 })

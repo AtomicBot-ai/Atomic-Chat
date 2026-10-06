@@ -163,6 +163,20 @@ export function selectSetupOperation(
 }
 
 /**
+ * Another managed engine's setup or removal still in progress, while `engineId` has none: the core
+ * runs one environment operation at a time, so this engine's install waits for it (spec
+ * `vllm-desktop`, "Установка vLLM тем же сценарием окружения").
+ */
+export function selectOtherEngineOperation(
+  state: Held,
+  engineId: string
+): EnvironmentOperation | undefined {
+  return unfinished(state).find(
+    (operation) => operation.target.kind === 'runtime' && operation.target.engine_id !== engineId
+  )
+}
+
+/**
  * The last setup of `engineId` that ended in `failed`, kept visible with its error until the engine
  * is installed or a new attempt starts. Operations carry no time, so "last" is the snapshot's and
  * the events' own order. Without `engineId`, the last failed setup of any engine.
