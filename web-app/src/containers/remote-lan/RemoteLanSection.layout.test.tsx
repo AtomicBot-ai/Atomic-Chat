@@ -33,6 +33,19 @@ vi.mock('@/hooks/useRemoteAccess', () => ({
     cancelConfirm: () => {},
   }),
 }))
+// Remote access is a desktop-Tauri feature (none on Windows arm64); this is a
+// plain browser, so switch it on to lay out the desktop pair of cards.
+vi.mock('@/lib/platform/const', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/platform/const')>()
+  const { PlatformFeature } = await import('@/lib/platform/types')
+  return {
+    ...actual,
+    PlatformFeatures: {
+      ...actual.PlatformFeatures,
+      [PlatformFeature.REMOTE_ACCESS]: true,
+    },
+  }
+})
 vi.mock('@/hooks/useLanAccess', () => ({
   useLanAccess: () => ({
     tone: 'idle',

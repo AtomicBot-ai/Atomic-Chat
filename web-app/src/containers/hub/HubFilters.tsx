@@ -37,6 +37,11 @@ const SORT_LABEL_KEYS: Record<HubSortKey, string> = {
 const FILTER_CHECKBOX_CLASS =
   'items-start whitespace-normal [&>span:first-child]:size-4 [&>span:first-child]:rounded-[5px] [&>span:first-child]:border [&>span:first-child]:border-input data-[state=checked]:[&>span:first-child]:border-primary data-[state=checked]:[&>span:first-child]:bg-primary data-[state=checked]:[&>span:first-child]:text-primary-foreground'
 
+// Dropdown triggers give way to Uncensored instead of pushing it out. The sort
+// label goes first: "TensorRT-LLM" is the one that tells you what you browse.
+const FORMAT_TRIGGER_CLASS = 'max-w-[40%] overflow-hidden'
+const SORT_TRIGGER_CLASS = 'min-w-0 shrink overflow-hidden'
+
 export type HubFiltersProps = {
   state: HubFilterState
   onChange: (next: HubFilterState) => void
@@ -88,15 +93,25 @@ export function HubFilters({
   const selectedFormat = state.formats[0] ?? 'gguf'
 
   return (
-    // Wraps rather than overflows: "TensorRT-LLM" in the format button leaves no
-    // room for Uncensored in the Hub's narrowest column.
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+    // One line, Uncensored pinned to its end. The row used to wrap, and since a
+    // trigger is as wide as its current label, every pick moved Uncensored
+    // between lines (GGUF fits beside it, PrismML does not). Where the column
+    // is too narrow (TensorRT-LLM, a large font) the triggers' labels truncate.
+    <div className={cn('flex items-center gap-2', className)}>
       {availableFormats.length > 1 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" aria-label={t('hub:formats')}>
-              {HUB_FORMAT_LABELS[selectedFormat]}
-              <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={t('hub:formats')}
+              title={HUB_FORMAT_LABELS[selectedFormat]}
+              className={FORMAT_TRIGGER_CLASS}
+            >
+              <span className="truncate">
+                {HUB_FORMAT_LABELS[selectedFormat]}
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="start">
@@ -118,9 +133,15 @@ export function HubFilters({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" aria-label={t('hub:sortBy')}>
-            {t(SORT_LABEL_KEYS[state.sort])}
-            <ChevronsUpDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={t('hub:sortBy')}
+            title={t(SORT_LABEL_KEYS[state.sort])}
+            className={SORT_TRIGGER_CLASS}
+          >
+            <span className="truncate">{t(SORT_LABEL_KEYS[state.sort])}</span>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="bottom" align="start" className="max-w-72">
@@ -183,7 +204,7 @@ export function HubFilters({
         aria-checked={state.uncensored}
         title={t('hub:uncensoredHint')}
         onClick={() => onChange({ ...state, uncensored: !state.uncensored })}
-        className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
+        className="ml-auto flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
       >
         <span
           className={cn(

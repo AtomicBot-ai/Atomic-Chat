@@ -115,7 +115,9 @@ export default function AgentApprovalInline({
             </button>
             {detailsOpen && (
               <div className="mt-2 space-y-2">
-                <div className="rounded-md border bg-secondary px-2 py-1.5 text-xs">
+                {/* A tool name has no break opportunity of its own
+                    (`mcp.server.some_long_tool_name`), so let it break anywhere. */}
+                <div className="rounded-md border bg-secondary px-2 py-1.5 text-xs [overflow-wrap:anywhere]">
                   <div>
                     <span className="font-medium">
                       {t('agentApproval.tool')}:
