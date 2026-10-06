@@ -26,9 +26,19 @@ on:
         description: "Build Linux x86_64 (AppImage)"
         type: boolean
         default: false
+      sdcpp_manifest_url:
+        description: "Test builds only: sd.cpp manifest URL (e.g. atomic-chat-conf backends/sdcpp-manifest.staging.json); empty = the live one"
+        type: string
+        default: ""
 
 permissions:
   contents: write
+
+env:
+  # Read by the web build (web-app/src/services/diffusion/install.ts). Empty
+  # on tag pushes and by default, which the installer treats as "use the live
+  # manifest", so a release build can never ship pointing at staging.
+  VITE_SDCPP_MANIFEST_URL: ${{ inputs.sdcpp_manifest_url }}
 
 jobs:
   create-draft-release:

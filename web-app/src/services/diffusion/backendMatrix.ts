@@ -8,9 +8,14 @@
  * the pinned release, so an id the manifest does not carry is skipped rather
  * than guessed at.
  *
- * Linux has no CUDA prebuilt from leejet (nor from ggml-org), so NVIDIA hosts
- * there run Vulkan until the diffusers sidecar (phase 1b) lands. Windows ROCm
- * is not in every tag; when absent the host falls through to Vulkan.
+ * Linux x64 has no CUDA prebuilt from leejet (nor from ggml-org), so NVIDIA
+ * hosts there run Vulkan until the diffusers sidecar (phase 1b) lands. Windows
+ * ROCm is not in every tag; when absent the host falls through to Vulkan.
+ *
+ * arm64 Linux and Windows on Arm get no upstream archive at all; their CUDA 13
+ * and CPU builds come from AtomicBot-ai/stable-diffusion.cpp, mirrored under
+ * the same tag (ADR 2026-10-06). CUDA 13 is the only accelerated tier there:
+ * those builds target sm_121 (GB10 / N1X) with a Hopper PTX floor.
  */
 
 import type { DiffusionBackend } from './types'
@@ -49,6 +54,11 @@ const LINUX_VULKAN = 'linux-vulkan-x64'
 const LINUX_CPU = 'linux-cpu-x64'
 const MACOS_ARM64 = 'macos-arm64'
 const WIN_CUDART_CU12 = 'win-cudart-cu12'
+/** Atomic-built arm64 archives; they carry their CUDA runtime, so no companion. */
+const WIN_CUDA13_ARM64 = 'win-cuda13-arm64'
+const WIN_CPU_ARM64 = 'win-cpu-arm64'
+const LINUX_CUDA13_ARM64 = 'linux-cuda13-arm64'
+const LINUX_CPU_ARM64 = 'linux-cpu-arm64'
 
 const versionKey = (version: string): number[] =>
   version.split('.').map((part) => Number(part))
@@ -83,7 +93,8 @@ const firstAvailable = (
 
 /**
  * The backend id to install, or `null` when this host cannot run any build
- * the manifest ships (Intel Macs, ARM Windows/Linux, an empty manifest).
+ * the manifest ships (Intel Macs, an arm64 host on a manifest without arm64
+ * builds, an empty manifest).
  */
 export function selectDiffusionBackend(
   input: DiffusionBackendSelectionInput
@@ -93,7 +104,19 @@ export function selectDiffusionBackend(
   if (os === 'macos') {
     return arch === 'arm64' ? firstAvailable(available, [MACOS_ARM64]) : null
   }
-  if (arch !== 'x64') return null
+  if (arch === 'arm64') {
+    // The CUDA 13 runtime inside these archives needs the r580+ driver the
+    // cuda13 probe checks for; anything less runs the CPU build.
+    const cuda = features.cuda13
+      ? os === 'windows'
+        ? WIN_CUDA13_ARM64
+        : LINUX_CUDA13_ARM64
+      : null
+    return firstAvailable(available, [
+      cuda,
+      os === 'windows' ? WIN_CPU_ARM64 : LINUX_CPU_ARM64,
+    ])
+  }
 
   if (os === 'windows') {
     const cuda = features.cuda12 || features.cuda13 ? WIN_CUDA12 : null

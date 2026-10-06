@@ -87,8 +87,10 @@ export type SdcppManifestResult = {
 export const DEFAULT_SDCPP_MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/sdcpp-manifest.json'
 
+// `||`, not `??`: release.yml always sets the variable, empty unless a test
+// build asks for the staging manifest.
 export const SDCPP_MANIFEST_URL: string =
-  (import.meta.env.VITE_SDCPP_MANIFEST_URL as string | undefined) ??
+  (import.meta.env.VITE_SDCPP_MANIFEST_URL as string | undefined) ||
   DEFAULT_SDCPP_MANIFEST_URL
 
 export const DEFAULT_UPSTREAM_REPO = 'leejet/stable-diffusion.cpp'
@@ -482,7 +484,8 @@ function unsupportedReason(host: DiffusionHost): string {
     return 'Image generation needs an Apple Silicon Mac; Intel Macs are not supported.'
   }
   if (host.arch !== 'x64') {
-    return `No stable-diffusion.cpp build is published for ${host.arch} ${host.os}.`
+    // arm64 builds come from the Atomic fork; a manifest from before them has none.
+    return `The release manifest lists no stable-diffusion.cpp build for ${host.arch} ${host.os} yet.`
   }
   return 'The release manifest lists no build for this computer.'
 }

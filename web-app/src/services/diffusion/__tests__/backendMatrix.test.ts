@@ -20,6 +20,15 @@ const MANIFEST_IDS = [
   'win-cudart-cu12',
 ]
 
+/** A manifest after the Atomic arm64 builds were mirrored beside upstream's. */
+const ARM64_IDS = [
+  'linux-cuda13-arm64',
+  'linux-cpu-arm64',
+  'win-cuda13-arm64',
+  'win-cpu-arm64',
+]
+const WITH_ARM64 = [...MANIFEST_IDS, ...ARM64_IDS]
+
 const host = (
   overrides: Partial<DiffusionBackendSelectionInput>
 ): DiffusionBackendSelectionInput => ({
@@ -107,10 +116,41 @@ describe('selectDiffusionBackend on Windows', () => {
     expect(selectDiffusionBackend(host({}))).toBe('win-cpu-x64')
   })
 
-  it('has nothing for ARM Windows', () => {
+  it('has nothing for ARM Windows on a manifest without arm64 builds', () => {
     expect(
       selectDiffusionBackend(host({ arch: 'arm64', features: { vulkan: true } }))
     ).toBeNull()
+  })
+})
+
+describe('selectDiffusionBackend on Windows on Arm', () => {
+  const arm = (overrides: Partial<DiffusionBackendSelectionInput>) =>
+    host({ arch: 'arm64', available: WITH_ARM64, ...overrides })
+
+  it('takes the CUDA 13 build on an N1X with a CUDA 13 driver', () => {
+    expect(
+      selectDiffusionBackend(arm({ features: { cuda12: true, cuda13: true, vulkan: true } }))
+    ).toBe('win-cuda13-arm64')
+  })
+
+  it('never hands an arm64 host an x64 build', () => {
+    for (const features of [{ cuda12: true }, { rocm: true }, { vulkan: true }, {}]) {
+      expect(selectDiffusionBackend(arm({ features }))).toBe('win-cpu-arm64')
+    }
+  })
+
+  it('runs the CPU build on a driver too old for CUDA 13', () => {
+    expect(selectDiffusionBackend(arm({ features: { cuda12: true } }))).toBe(
+      'win-cpu-arm64'
+    )
+  })
+
+  it('falls back to the CPU build when the tag has no CUDA arm64 asset', () => {
+    expect(
+      selectDiffusionBackend(
+        arm({ features: { cuda13: true }, available: [...MANIFEST_IDS, 'win-cpu-arm64'] })
+      )
+    ).toBe('win-cpu-arm64')
   })
 })
 
@@ -151,6 +191,42 @@ describe('selectDiffusionBackend on Linux', () => {
     ).toBe('linux-cpu-x64')
   })
 
+  it('takes the CUDA 13 build on a DGX Spark', () => {
+    expect(
+      selectDiffusionBackend(
+        host({
+          os: 'linux',
+          arch: 'arm64',
+          features: { cuda12: true, cuda13: true, vulkan: true },
+          gpus: [{ vendor: 'NVIDIA', totalMemoryMib: 0 }],
+          available: WITH_ARM64,
+        })
+      )
+    ).toBe('linux-cuda13-arm64')
+  })
+
+  it('runs the arm64 CPU build on arm64 Linux without CUDA 13', () => {
+    expect(
+      selectDiffusionBackend(
+        host({
+          os: 'linux',
+          arch: 'arm64',
+          features: { vulkan: true },
+          gpus: [{ totalMemoryMib: 8192 }],
+          available: WITH_ARM64,
+        })
+      )
+    ).toBe('linux-cpu-arm64')
+  })
+
+  it('has nothing for arm64 Linux on a manifest without arm64 builds', () => {
+    expect(
+      selectDiffusionBackend(
+        host({ os: 'linux', arch: 'arm64', features: { cuda13: true } })
+      )
+    ).toBeNull()
+  })
+
   it('stays on the CPU build when the manifest lacks the Vulkan asset', () => {
     expect(
       selectDiffusionBackend(
@@ -170,8 +246,8 @@ describe('companionFor', () => {
     expect(companionFor('win-cuda12-x64')).toBe('win-cudart-cu12')
   })
 
-  it('needs nothing for every other build', () => {
-    for (const id of MANIFEST_IDS.filter((id) => id !== 'win-cuda12-x64')) {
+  it('needs nothing for every other build, arm64 CUDA included', () => {
+    for (const id of WITH_ARM64.filter((id) => id !== 'win-cuda12-x64')) {
       expect(companionFor(id)).toBeNull()
     }
   })
@@ -184,5 +260,9 @@ describe('backendKindOf', () => {
     expect(backendKindOf('linux-rocm-7.14-x64')).toBe('rocm')
     expect(backendKindOf('win-vulkan-x64')).toBe('vulkan')
     expect(backendKindOf('linux-cpu-x64')).toBe('cpu')
+    expect(backendKindOf('win-cuda13-arm64')).toBe('cuda')
+    expect(backendKindOf('linux-cuda13-arm64')).toBe('cuda')
+    expect(backendKindOf('win-cpu-arm64')).toBe('cpu')
+    expect(backendKindOf('linux-cpu-arm64')).toBe('cpu')
   })
 })
