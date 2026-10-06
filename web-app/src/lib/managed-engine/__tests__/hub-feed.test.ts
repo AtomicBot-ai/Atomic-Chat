@@ -32,12 +32,28 @@ const entry = (tensorrt: CatalogModel['managed']): CatalogModel => ({
 const supported = ['Qwen3ForCausalLM', 'Qwen3_5ForConditionalGeneration']
 
 describe('estimateWeightBytes', () => {
-  it('counts each dtype at its width: F32/I32 4, BF16/F16 2, F8_*/U8/I8 1', () => {
+  it('counts each dtype at its width: F32 4, BF16/F16 2, F8_*/U8/I8 1, packed I32 0.5', () => {
     expect(
-      estimateWeightBytes({ F32: 1, I32: 1, BF16: 1, F16: 1, F8_E4M3: 1, F8_E5M2: 1, U8: 1, I8: 1 })
-    ).toBe(4 + 4 + 2 + 2 + 1 + 1 + 1 + 1)
+      estimateWeightBytes({ F32: 1, I32: 2, BF16: 1, F16: 1, F8_E4M3: 1, F8_E5M2: 1, U8: 1, I8: 1 })
+    ).toBe(4 + 1 + 2 + 2 + 1 + 1 + 1 + 1)
     // NVFP4: the U8 count is already packed bytes.
     expect(estimateWeightBytes({ U8: 9 * GB, F8_E4M3: 1.1 * GB, BF16: 2 * GB })).toBe(14.1 * GB)
+  })
+
+  it('does not overcount AWQ and GPTQ: Hugging Face reports their packed I32 weights as logical parameters', () => {
+    // Qwen/Qwen2.5-7B-Instruct-AWQ and -GPTQ-Int4 as the HF listing reports them; 5.57 GB on disk.
+    const estimate = estimateWeightBytes({ I32: 6_525_288_448, F16: 1_090_328_064 })!
+    expect(estimate).toBeLessThanOrEqual(5.57 * GB)
+    expect(estimate).toBeGreaterThan(5 * GB)
+    // So an 8 GB card keeps it under vLLM (weights + 2 GiB).
+    const awq = entry({ architectures: ['Qwen2ForCausalLM'], parameters: { I32: 6_525_288_448, F16: 1_090_328_064 } })
+    expect(
+      passesManagedPrefilter(awq, {
+        engineId: 'vllm',
+        supportedArchitectures: ['Qwen2ForCausalLM'],
+        gpus: [card(8 * 1024 ** 3)],
+      })
+    ).toBe(true)
   })
 
   it('knows nothing without parameters, and counts an unknown dtype at its narrowest', () => {

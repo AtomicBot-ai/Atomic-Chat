@@ -704,7 +704,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (hfCandidatesFetchedForRef.current === cacheKey) return
     hfCandidatesFetchedForRef.current = cacheKey
 
-    const limit = 10
+    // A managed format's hits are narrowed by the prefilter afterwards, so it asks for more.
+    const limit = managedFormat ? 30 : 10
     let cancelled = false
     let settled = false
     setHfSearching(true)

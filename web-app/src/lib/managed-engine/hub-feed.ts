@@ -11,14 +11,20 @@ import type { ModelFormat } from '@/lib/model-card'
 import type { GpuFacts } from '@/services/managed-environment/types'
 import type { CatalogModel, HuggingFaceFeedFormat } from '@/services/models/types'
 
-/** Bytes per element by safetensors dtype; `U8` of NVFP4 is already the packed bytes. */
+/**
+ * Bytes per parameter by safetensors dtype, as Hugging Face's listing counts parameters. `U8` of
+ * NVFP4 is already the packed bytes. `I32`/`U32` are the containers AWQ, GPTQ and
+ * compressed-tensors pack 4- and 8-bit weights into, and the listing reports them as logical
+ * parameters (Qwen2.5-7B-Instruct-AWQ: `I32` 6.5e9, 5.6 GB on disk), so they count at the
+ * narrowest packing, half a byte; a real 32-bit tensor is rare and small.
+ */
 const DTYPE_BYTES: Record<string, number> = {
   F64: 8,
   I64: 8,
   U64: 8,
   F32: 4,
-  I32: 4,
-  U32: 4,
+  I32: 0.5,
+  U32: 0.5,
   BF16: 2,
   F16: 2,
   I16: 2,

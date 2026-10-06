@@ -795,10 +795,11 @@ describe('/hub route', () => {
       })
       expect(screen.getByText('Qwen3-14B')).toBeInTheDocument()
       expect(screen.queryByText('Mamba-7B-v2')).not.toBeInTheDocument()
+      // A managed format asks for 30 hits: the prefilter narrows them, and 10 left almost nothing.
       expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
         expect.any(String),
         expect.anything(),
-        expect.any(Number),
+        30,
         'safetensors'
       )
       const opened = mocks.navigate.mock.calls
