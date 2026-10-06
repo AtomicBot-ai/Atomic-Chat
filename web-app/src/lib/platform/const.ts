@@ -82,12 +82,11 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
   // Local image generation — desktop platforms only, like voice input.
-  // stable-diffusion.cpp publishes no Windows or Linux arm64 build.
+  // Windows on Arm and arm64 Linux run the Atomic fork's stable-diffusion.cpp
+  // builds (ADR 2026-10-06); a manifest without them leaves the engine card
+  // explaining why, rather than hiding Images and Video.
   [PlatformFeature.MEDIA_GENERATION]:
-    isPlatformTauri() &&
-    !isPlatformIOS() &&
-    !isPlatformAndroid() &&
-    !((IS_WINDOWS || IS_LINUX) && IS_ARM64),
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
   // Public Remote access through the bundled cloudflared tunnel. Cloudflare
   // publishes no Windows arm64 build, so that bundle ships without it.

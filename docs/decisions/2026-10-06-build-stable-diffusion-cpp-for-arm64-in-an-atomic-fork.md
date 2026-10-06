@@ -38,10 +38,14 @@ title: "Build stable-diffusion.cpp for arm64 in an Atomic fork, mirrored under t
     `d_head < 64` is off. It costs speed, not correctness.
   - **Upgrading the tag** now means running the fork's workflow before the mirror. A tag without fork
     archives still mirrors as before, and arm64 hosts then get `null` with a manifest-specific reason.
+  - **Visibility.** `PlatformFeature.MEDIA_GENERATION` no longer excludes Windows or Linux arm64, so
+    the sidebar's Images and Video, the Hub's media category and Settings → Media show there. On a live
+    manifest without arm64 archives the engine card states that reason instead of the pages hiding.
 - **Owner:** `team`.
 - **Links:**
   - `web-app/src/services/diffusion/backendMatrix.ts`
   - `web-app/src/services/diffusion/install.ts`
+  - `web-app/src/lib/platform/const.ts` (`MEDIA_GENERATION`)
   - `.github/workflows/release.yml` (`sdcpp_manifest_url`)
   - AtomicBot-ai/stable-diffusion.cpp `atomic/README.md` and `.github/workflows/release-arm64.yml`
   - atomic-chat-conf `.github/workflows/mirror-sdcpp.yml` and `backends/sdcpp-schema.json`
