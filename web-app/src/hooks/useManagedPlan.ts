@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { create } from 'zustand'
 
 import { descriptorHint, probe, runtimeTarget } from '@/services/managed-environment/client'
@@ -108,6 +108,34 @@ export interface ManagedPlan {
   error: string | null
   /** Ask the core again now; resolves to the new plan, undefined when the probe failed. */
   recheck: () => Promise<RequirementPlan | undefined>
+}
+
+/**
+ * Ask the core for the plan of every engine in `engineIds` whose held plan does not answer what the
+ * plan depends on now — the same one probe per engine and state as `useManagedPlan`, for a screen
+ * that reads several engines at once (a model card's verdicts).
+ */
+export function useEnsureManagedPlans(engineIds: readonly string[]): void {
+  const environment = useManagedEnvironmentStore(selectEnvironment)
+  const wanted = engineIds.map((id) => `${id}\u0000${managedPlanKey(environment, id)}`).join('\u0001')
+  useEffect(() => {
+    if (wanted === '') return
+    const current = selectEnvironment(useManagedEnvironmentStore.getState())
+    for (const entry of wanted.split('\u0001')) {
+      const [engineId, key] = entry.split('\u0000')
+      if (planOf(engineId).key === key || inflight.get(engineId)?.key === key) continue
+      void request(engineId, key, current)
+    }
+  }, [wanted])
+}
+
+/** Every engine's plan as held now, by engine id; asks nothing. */
+export function useHeldManagedPlans(): Readonly<Record<string, RequirementPlan | undefined>> {
+  const plans = usePlanStore((state) => state.plans)
+  return useMemo(
+    () => Object.fromEntries(Object.entries(plans).map(([id, held]) => [id, held.plan])),
+    [plans]
+  )
 }
 
 /**

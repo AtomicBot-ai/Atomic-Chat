@@ -61,14 +61,20 @@ vi.mock('@/containers/MlxModelDownloadAction', () => ({
 }))
 
 const tensorrtHub = vi.hoisted(() => ({ state: 'ready' as string }))
-vi.mock('@/hooks/useManagedHubState', () => ({
-  useManagedHubState: () => ({
+vi.mock('@/hooks/useManagedHubState', () => {
+  const state = () => ({
     visible: true,
     state: tensorrtHub.state,
     blockers: [],
     descriptorId: 'tensorrt-llm-1.3.0rc29-r2',
-  }),
-}))
+  })
+  return {
+    useManagedHubState: state,
+    useManagedHubStates: () => [
+      { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: state() },
+    ],
+  }
+})
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
@@ -369,8 +375,8 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
     developer: 'nvidia',
     description: '',
     downloads: 0,
-    is_tensorrt_llm: true,
-    tensorrt: { curated: true, revision: 'rev-a' },
+    is_managed: true,
+    managed: { curated: true, revision: 'rev-a' },
   })
 
   beforeEach(() => {

@@ -18,8 +18,14 @@ vi.mock('@/services/managed-models/models', async (importOriginal) => ({
   ...models,
 }))
 
-import { TensorrtVerdict } from '../TensorrtVerdict'
-import { useTensorrtVerdict } from '@/hooks/useTensorrtVerdict'
+// Which engines the Hub offers and with which descriptor: the engines' plans are another test's.
+const hubStates = vi.hoisted(() => ({ value: [] as unknown[] }))
+vi.mock('@/hooks/useManagedHubState', () => ({ useManagedHubStates: () => hubStates.value }))
+
+import { EngineVerdictText } from '../ManagedVerdicts'
+import { useManagedVerdicts } from '@/hooks/useManagedVerdicts'
+import { TENSORRT_LLM_ENGINE, type ManagedEngine } from '@/lib/managed-engines'
+import type { ManagedHubState } from '@/lib/managed-engine/hub-state'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import {
   GatedModelError,
@@ -58,19 +64,35 @@ const trt = (repository: string, revision?: string): CatalogModel => ({
   model_name: repository,
   description: '',
   downloads: 0,
-  is_tensorrt_llm: true,
-  ...(revision ? { tensorrt: { curated: true, revision } } : {}),
+  is_managed: true,
+  ...(revision ? { managed: { curated: true, revision } } : {}),
 })
 
-/** The card's verdict as the Hub card renders it. */
+const SECOND: ManagedEngine = { id: 'second-engine', label: 'Second', i18n: 'second' }
+
+const hub = (overrides: Partial<ManagedHubState> = {}): ManagedHubState => ({
+  visible: true,
+  state: 'ready',
+  blockers: [],
+  descriptorId: 'tensorrt-llm-1.3.0rc29-r3',
+  ...overrides,
+})
+
+/** The TensorRT-LLM verdict as the Hub card renders it. */
 function Verdict({ model }: { model: CatalogModel }) {
-  const { verdict } = useTensorrtVerdict(model)
-  return verdict ? <TensorrtVerdict verdict={verdict} /> : <p>checking</p>
+  const verdict = useManagedVerdicts(model)[0]?.verdict
+  return verdict ? <EngineVerdictText engine={TENSORRT_LLM_ENGINE} verdict={verdict} /> : <p>checking</p>
+}
+
+const trtVerdict = (model: CatalogModel) => {
+  const own = useManagedVerdicts(model)[0]
+  return { verdict: own?.verdict ?? null, checking: own?.checking ?? false }
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   resetManagedVerdictsForTests()
+  hubStates.value = [{ engine: TENSORRT_LLM_ENGINE, hub: hub() }]
   useGeneralSetting.setState({ huggingfaceToken: 'hf_secret' })
   useManagedEnvironmentStore.getState().reset()
   useManagedEnvironmentStore.getState().applySnapshot({
@@ -106,7 +128,7 @@ beforeEach(() => {
   models.checkManagedModel.mockResolvedValue(compatible)
 })
 
-describe('the TensorRT-LLM verdict of a Hub card', () => {
+describe('the TensorRT-LLM verdict of a Hub card (ManagedVerdicts)', () => {
   it('says why the model cannot run here, with the core numbers, and names the card it fits', async () => {
     // spec "Вставлен несовместимый репозиторий".
     models.checkManagedModel.mockResolvedValue(incompatible)
@@ -142,18 +164,18 @@ describe('the TensorRT-LLM verdict of a Hub card', () => {
   })
 
   it('reads a curated model at its pinned revision with the Hugging Face token', async () => {
-    const { result } = renderHook(() => useTensorrtVerdict(trt('nvidia/Qwen3-8B-FP8', 'r-fits')))
+    const { result } = renderHook(() => trtVerdict(trt('nvidia/Qwen3-8B-FP8', 'r-fits')))
 
     await waitFor(() => expect(result.current.verdict?.kind).toBe('ok'))
     expect(models.fetchHfRevision).toHaveBeenCalledWith('nvidia/Qwen3-8B-FP8', 'r-fits', 'hf_secret')
   })
 
   it('does not ask the core again when the card is opened again', async () => {
-    const first = renderHook(() => useTensorrtVerdict(trt('nvidia/Qwen3-8B-FP8')))
+    const first = renderHook(() => trtVerdict(trt('nvidia/Qwen3-8B-FP8')))
     await waitFor(() => expect(first.result.current.verdict?.kind).toBe('ok'))
     first.unmount()
 
-    const again = renderHook(() => useTensorrtVerdict(trt('nvidia/Qwen3-8B-FP8')))
+    const again = renderHook(() => trtVerdict(trt('nvidia/Qwen3-8B-FP8')))
 
     // Held, so there from the first render: nothing to wait for.
     expect(again.result.current.verdict?.kind).toBe('ok')
@@ -163,15 +185,60 @@ describe('the TensorRT-LLM verdict of a Hub card', () => {
 
   it('claims nothing for a model of another format', () => {
     const { result } = renderHook(() =>
-      useTensorrtVerdict({ model_name: 'Qwen/Qwen3-8B-GGUF', description: '', downloads: 0 })
+      useManagedVerdicts({ model_name: 'Qwen/Qwen3-8B-GGUF', description: '', downloads: 0 })
     )
-    expect(result.current).toEqual({ verdict: null, checking: false })
+    expect(result.current).toEqual([])
+    expect(models.fetchHfRevision).not.toHaveBeenCalled()
+  })
+})
+
+describe('the verdicts of several managed engines (ManagedVerdicts)', () => {
+  it('asks each visible engine with its own check, in registry order, and keeps each answer apart', async () => {
+    hubStates.value = [
+      { engine: SECOND, hub: hub({ state: 'not-installed', descriptorId: 'second-engine-1-r1' }) },
+      { engine: TENSORRT_LLM_ENGINE, hub: hub() },
+    ]
+    models.checkManagedModel.mockImplementation(async (engine: string) =>
+      engine === 'tensorrt-llm' ? incompatible : compatible
+    )
+
+    const { result } = renderHook(() => useManagedVerdicts(trt('casperhansen/Qwen3-8B-AWQ')))
+
+    await waitFor(() => expect(result.current.every((entry) => !entry.checking)).toBe(true))
+    expect(result.current.map((entry) => [entry.engine.id, entry.verdict?.kind])).toEqual([
+      ['second-engine', 'ok'],
+      ['tensorrt-llm', 'incompatible'],
+    ])
+    expect(models.checkManagedModel).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks again when the engine checks with another descriptor, and not for an engine the Hub does not offer', async () => {
+    hubStates.value = [
+      { engine: SECOND, hub: hub({ visible: false }) },
+      { engine: TENSORRT_LLM_ENGINE, hub: hub() },
+    ]
+    const view = renderHook(() => useManagedVerdicts(trt('nvidia/Qwen3-8B-FP8')))
+    await waitFor(() => expect(view.result.current[0]?.verdict?.kind).toBe('ok'))
+    expect(view.result.current.map((entry) => entry.engine.id)).toEqual(['tensorrt-llm'])
+    expect(models.checkManagedModel).toHaveBeenCalledTimes(1)
+
+    hubStates.value = [{ engine: TENSORRT_LLM_ENGINE, hub: hub({ descriptorId: 'tensorrt-llm-1.3.0rc29-r4' }) }]
+    view.rerender()
+    await waitFor(() => expect(models.checkManagedModel).toHaveBeenCalledTimes(2))
+  })
+
+  it('waits for an engine whose descriptor is not known yet', () => {
+    hubStates.value = [{ engine: TENSORRT_LLM_ENGINE, hub: hub({ state: 'unknown', descriptorId: null }) }]
+    const { result } = renderHook(() => useManagedVerdicts(trt('nvidia/Qwen3-8B-FP8')))
+    expect(result.current).toEqual([
+      expect.objectContaining({ verdict: null, checking: true }),
+    ])
     expect(models.fetchHfRevision).not.toHaveBeenCalled()
   })
 })
 
 describe('a download the core or the disk refused', () => {
-  const show = (verdict: Verdict) => render(<TensorrtVerdict verdict={verdict} />)
+  const show = (verdict: Verdict) => render(<EngineVerdictText engine={TENSORRT_LLM_ENGINE} verdict={verdict} />)
 
   it('reports an install the core refused after the files were checked again', () => {
     show(verdictFromError(new IncompatibleModelError(incompatible)))
@@ -179,7 +246,7 @@ describe('a download the core or the disk refused', () => {
   })
 
   it('says where the model would go, what it needs and what is free when the core has no room', () => {
-    const root = '\\\\wsl.localhost\\AtomicChat\\var\\lib\\atomic-chat\\scopes\\k1\\models\\tensorrt-llm'
+    const root = '\\\\wsl.localhost\\AtomicChat\\var\\lib\\atomic-chat\\scopes\\k1\\managed-models'
     show(verdictFromError(new InsufficientModelSpaceError(root, 8 * 1024 ** 3, 6 * 1024 ** 3)))
 
     const line = screen.getByText(/hub:tensorrt.models.noSpace/)

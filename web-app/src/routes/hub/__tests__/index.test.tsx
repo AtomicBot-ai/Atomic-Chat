@@ -32,6 +32,9 @@ const tensorrtHub = vi.hoisted(() => ({
 }))
 vi.mock('@/hooks/useManagedHubState', () => ({
   useManagedHubState: () => tensorrtHub.value,
+  useManagedHubStates: () => [
+    { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: tensorrtHub.value },
+  ],
 }))
 
 const tensorrtCurated = vi.hoisted(() => ({
@@ -697,8 +700,8 @@ describe('/hub route', () => {
       developer: name.split('/')[0],
       description: '',
       downloads: 10,
-      is_tensorrt_llm: true,
-      tensorrt: { architectures, parameters: { BF16: 4e9 } },
+      is_managed: true,
+      managed: { architectures, parameters: { BF16: 4e9 } },
     })
 
     const engineReady = () => {
@@ -715,8 +718,8 @@ describe('/hub route', () => {
             developer: 'nvidia',
             description: '',
             downloads: 0,
-            is_tensorrt_llm: true,
-            tensorrt: { curated: true, revision: 'rev-a' },
+            is_managed: true,
+            managed: { curated: true, revision: 'rev-a' },
           },
         ],
         supportedArchitectures: ['Qwen3ForCausalLM'],

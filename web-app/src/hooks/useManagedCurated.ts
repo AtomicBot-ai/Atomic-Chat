@@ -22,15 +22,15 @@ export interface ManagedCurated {
 
 const NONE: ManagedCurated = { models: [], supportedArchitectures: null, loading: false }
 
-export function curatedCard(model: CuratedModel): CatalogModel {
+export function curatedCard(model: CuratedModel, engineId: string): CatalogModel {
   const [owner] = model.repository.split('/', 1)
   return {
     model_name: model.repository,
     developer: owner,
     description: model.note,
     downloads: 0,
-    is_tensorrt_llm: true,
-    tensorrt: { curated: true, revision: model.revision },
+    is_managed: true,
+    managed: { curated: true, curatedBy: engineId, revision: model.revision },
     readme: `https://huggingface.co/${model.repository}/resolve/${model.revision}/README.md`,
   }
 }
@@ -59,14 +59,14 @@ export function useManagedCurated(engineId: string, descriptorId: string | null)
       const checked = await Promise.all(
         summary.curated_models.map(async (model) => ({
           model,
-          verdict: await managedVerdict(engineId, model.repository, model.revision, token),
+          verdict: await managedVerdict(engineId, descriptorId, model.repository, model.revision, token),
         }))
       )
       if (cancelled) return
       setState({
         models: checked
           .filter((entry) => !refusedOnEveryCard(entry.verdict))
-          .map((entry) => curatedCard(entry.model)),
+          .map((entry) => curatedCard(entry.model, engineId)),
         supportedArchitectures: summary.supported_architectures,
         loading: false,
       })

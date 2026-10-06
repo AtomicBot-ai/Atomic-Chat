@@ -628,7 +628,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (!tensorrtFormat || !huggingFaceRepo) return null
     const typed = normalizeRepository(debouncedSearchValue).toLowerCase()
     if (huggingFaceRepo.model_name.toLowerCase() !== typed) return null
-    return { ...huggingFaceRepo, is_mlx: false, is_tensorrt_llm: true }
+    return { ...huggingFaceRepo, is_mlx: false, is_managed: true }
   }, [tensorrtFormat, huggingFaceRepo, debouncedSearchValue])
 
   // Exact-repo lookup: the user pasted a full `owner/name`.
@@ -1119,7 +1119,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           (item): item is HubListItem =>
             !!item?.fromHuggingFace &&
             // A TensorRT-LLM row needs no file sizes: its card asks the core.
-            !item.model.is_tensorrt_llm &&
+            !item.model.is_managed &&
             modelDownloadSizeText(item.model) === undefined
         )
         .map((item) => item.model.model_name)
@@ -1177,7 +1177,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     const model = selectedItem?.model
     if (!model || !('fromHuggingFace' in selectedItem)) return
     if (!selectedItem.fromHuggingFace) return
-    if (model.is_tensorrt_llm) return
+    if (model.is_managed) return
     if (modelDownloadSizeText(model) !== undefined) return
     feed.ensureDetails([model.model_name])
   }, [selectedItem, feed])

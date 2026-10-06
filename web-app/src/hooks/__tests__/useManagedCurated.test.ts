@@ -94,8 +94,8 @@ describe('useManagedCurated', () => {
     ])
     expect(result.current.models[0]).toMatchObject({
       developer: 'nvidia',
-      is_tensorrt_llm: true,
-      tensorrt: { curated: true, revision: 'rev-a' },
+      is_managed: true,
+      managed: { curated: true, revision: 'rev-a' },
     })
     expect(result.current.supportedArchitectures).toEqual(descriptor.supported_architectures)
     // Each is read at the revision the descriptor pins.

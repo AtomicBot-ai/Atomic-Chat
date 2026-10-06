@@ -56,14 +56,14 @@ export interface TensorrtPrefilterContext {
 }
 
 export function passesTensorrtPrefilter(model: CatalogModel, context: TensorrtPrefilterContext): boolean {
-  const architectures = model.tensorrt?.architectures ?? []
+  const architectures = model.managed?.architectures ?? []
   // Without `config.json` there is nothing the engine could load.
   if (architectures.length === 0) return false
   const { supportedArchitectures, gpus } = context
   if (supportedArchitectures && !architectures.some((name) => supportedArchitectures.includes(name))) {
     return false
   }
-  const weights = estimateWeightBytes(model.tensorrt?.parameters)
+  const weights = estimateWeightBytes(model.managed?.parameters)
   // A card with shared memory reports no VRAM, and the host's memory is not in the snapshot: the
   // size is left to the core's check rather than guessed against.
   if (weights === null || gpus.length === 0 || gpus.some((gpu) => gpu.total_vram_bytes === null)) {

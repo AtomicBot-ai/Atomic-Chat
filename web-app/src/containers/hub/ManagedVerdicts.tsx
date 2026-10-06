@@ -1,28 +1,32 @@
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { hubKey, type ManagedEngine } from '@/lib/managed-engines'
 import { formatBytes } from '@/lib/utils'
 import type { GpuFacts, ModelCompatibility } from '@/services/managed-environment/types'
 import type { ManagedVerdict as Verdict } from '@/services/managed-models/verdict'
 import { selectEnvironment, useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 
 /**
- * The core's verdict on a TensorRT-LLM model in its Hub card (spec `tensorrt-llm-desktop`, "Выбор
- * и скачивание модели"): it runs here and how big its weights are, or why not — in the core's
- * words, with its numbers and the other cards of this machine it would fit on — or what Hugging
- * Face or the disk refused. Warnings of the check are shown and never stand in the way.
+ * One managed engine's verdict on a model in its Hub card (spec `tensorrt-llm-desktop`, "Выбор и
+ * скачивание модели"; spec `vllm-desktop`, "Карточка модели показывает вердикт каждого
+ * managed-движка"): it runs here and how big its weights are, or why not — in the core's words,
+ * with its numbers and the other cards of this machine it would fit on — or what Hugging Face or
+ * the disk refused. Warnings of the check are shown and never stand in the way. Texts are the
+ * engine's own (`hub:<engine>.models.*`).
  */
 
 /** One empty list for every render without an environment: a fresh `[]` would re-render forever. */
 const NO_GPUS: GpuFacts[] = []
 
-export function TensorrtVerdict({ verdict }: { verdict: Verdict }) {
+export function EngineVerdictText({ engine, verdict }: { engine: ManagedEngine; verdict: Verdict }) {
   const { t } = useTranslation()
+  const k = hubKey(engine)
   const gpus = useManagedEnvironmentStore((state) => selectEnvironment(state)?.gpus ?? NO_GPUS)
   switch (verdict.kind) {
     case 'ok':
       return (
         <div className="flex flex-col gap-1 text-sm">
           <p className="break-words">
-            {t('hub:tensorrt.models.fits', { size: formatBytes(verdict.compatibility.weight_bytes) })}
+            {t(k('models.fits'), { size: formatBytes(verdict.compatibility.weight_bytes) })}
           </p>
           <Warnings compatibility={verdict.compatibility} />
         </div>
@@ -30,7 +34,7 @@ export function TensorrtVerdict({ verdict }: { verdict: Verdict }) {
     case 'no-space':
       return (
         <p className="break-words text-sm text-destructive">
-          {t('hub:tensorrt.models.noSpace', {
+          {t(k('models.noSpace'), {
             path: verdict.root,
             needed: formatBytes(verdict.neededBytes),
             free: formatBytes(verdict.freeBytes),
@@ -46,7 +50,7 @@ export function TensorrtVerdict({ verdict }: { verdict: Verdict }) {
           <p className="break-words text-destructive">
             {verdict.compatibility.verdict.ok ? '' : verdict.compatibility.verdict.error.message}
           </p>
-          {others && <p className="break-words">{t('hub:tensorrt.models.otherCard', { cards: others })}</p>}
+          {others && <p className="break-words">{t(k('models.otherCard'), { cards: others })}</p>}
           <Warnings compatibility={verdict.compatibility} />
         </div>
       )
@@ -54,7 +58,7 @@ export function TensorrtVerdict({ verdict }: { verdict: Verdict }) {
     case 'gated':
       return (
         <a className="text-sm underline break-words" href={verdict.url} target="_blank" rel="noreferrer">
-          {t('hub:tensorrt.models.gated', { url: verdict.url })}
+          {t(k('models.gated'), { url: verdict.url })}
         </a>
       )
     case 'error':

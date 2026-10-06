@@ -50,17 +50,20 @@ export interface CatalogModel {
   tools?: boolean
   is_mlx?: boolean
   /**
-   * A safetensors checkpoint listed under the Hub's TensorRT-LLM format (change
-   * `add-tensorrt-llm-model-hub`): whether it runs is the core's verdict, never this flag.
+   * A safetensors checkpoint for the managed engines (TensorRT-LLM, vLLM), listed under their Hub
+   * formats (changes `add-tensorrt-llm-model-hub`, `add-vllm-runtime`): whether it runs is each
+   * engine's verdict, never this flag.
    */
-  is_tensorrt_llm?: boolean
-  /** What the Hub knows of a TensorRT-LLM entry before the core's verdict. */
-  tensorrt?: TensorrtCatalogFields
+  is_managed?: boolean
+  /** What the Hub knows of a managed entry before the engines' verdicts. */
+  managed?: ManagedCatalogFields
 }
 
-export interface TensorrtCatalogFields {
-  /** One of the descriptor's curated checkpoints. */
+export interface ManagedCatalogFields {
+  /** One of a descriptor's curated checkpoints. */
   curated?: boolean
+  /** The engine whose descriptor curates it, when `curated`. */
+  curatedBy?: string
   /** The revision to read and download at: the descriptor's pin; absent means `main`. */
   revision?: string
   /** `config.architectures` from Hugging Face's listing (`expand[]=config`). */

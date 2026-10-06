@@ -25,7 +25,7 @@ const entry = (tensorrt: CatalogModel['tensorrt']): CatalogModel => ({
   model_name: 'owner/model',
   description: '',
   downloads: 0,
-  is_tensorrt_llm: true,
+  is_managed: true,
   tensorrt,
 })
 

@@ -38,6 +38,14 @@ export interface ManagedHubState {
 
 const NO_BLOCKERS: ManagedBlocker[] = []
 
+/** An engine the Hub knows nothing of: not offered, nothing claimed. */
+export const UNKNOWN_HUB_STATE: ManagedHubState = {
+  visible: false,
+  state: 'unknown',
+  blockers: NO_BLOCKERS,
+  descriptorId: null,
+}
+
 /** A card older than Ampere: no setup fixes that, so the format is not offered (design D2). */
 export const COMPUTE_CAPABILITY_TOO_LOW = 'compute-capability-too-low'
 

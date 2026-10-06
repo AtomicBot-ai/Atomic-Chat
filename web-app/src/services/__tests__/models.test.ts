@@ -1558,17 +1558,17 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
       downloads: 5400,
       likes: 120,
       is_mlx: false,
-      is_tensorrt_llm: true,
+      is_managed: true,
       last_modified: '2026-09-20T00:00:00.000Z',
-      tensorrt: {
+      managed: {
         architectures: ['Qwen3_5ForConditionalGeneration'],
         parameters: { U8: 9_000_000_000, F8_E4M3: 1_100_000_000, BF16: 2_000_000_000 },
       },
     })
     expect(page.models[1]).toMatchObject({
       model_name: 'someone/raw-weights',
-      is_tensorrt_llm: true,
-      tensorrt: { architectures: undefined, parameters: undefined },
+      is_managed: true,
+      managed: { architectures: undefined, parameters: undefined },
     })
   })
 
@@ -1594,9 +1594,9 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
       'nvidia/Qwen3.5-35B-A3B-NVFP4',
       'someone/raw-weights',
     ])
-    expect(result.every((model) => model.is_tensorrt_llm && !model.is_mlx)).toBe(true)
+    expect(result.every((model) => model.is_managed && !model.is_mlx)).toBe(true)
     expect(
-      result.find((model) => model.model_name === 'nvidia/Qwen3.5-35B-A3B-NVFP4')?.tensorrt
+      result.find((model) => model.model_name === 'nvidia/Qwen3.5-35B-A3B-NVFP4')?.managed
         ?.architectures
     ).toEqual(['Qwen3_5ForConditionalGeneration'])
   })

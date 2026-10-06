@@ -4,8 +4,9 @@
  * the repository read at a revision from Hugging Face, then `POST /models/<engine>/check`. Nothing
  * about compatibility is decided here.
  *
- * Kept for the session by engine and `repository@revision` — the curated list, a card opened again
- * and the download all ask the same question. Only the core's own answers are kept (`ok`, `incompatible`):
+ * Kept for the session by engine, the engine's descriptor and `repository@revision` (design D14) —
+ * the curated list, a card opened again and the download all ask the same question, and an engine
+ * installed or updated to another descriptor asks again. Only the core's own answers are kept (`ok`, `incompatible`):
  * a refusal by Hugging Face changes once the person accepts the model's terms, and a network error
  * is not an answer at all.
  */
@@ -55,31 +56,44 @@ async function evaluate(
 const pending = new Map<string, Promise<ManagedVerdict>>()
 const settled = new Map<string, ManagedVerdict>()
 
-const keyOf = (engineId: string, repository: string, revision: string | undefined) =>
-  `${engineId}|${repository}@${revision ?? 'main'}`
+const keyOf = (
+  engineId: string,
+  descriptorId: string | null,
+  repository: string,
+  revision: string | undefined
+) => `${engineId}|${descriptorId ?? ''}|${repository}@${revision ?? 'main'}`
 
 export function resetManagedVerdictsForTests(): void {
   pending.clear()
   settled.clear()
 }
 
-/** The verdict of `engineId` already held for this repository and revision, without asking. */
+/**
+ * The verdict of `engineId` with the descriptor `descriptorId` already held for this repository and
+ * revision, without asking.
+ */
 export function heldManagedVerdict(
   engineId: string,
+  descriptorId: string | null,
   repository: string,
   revision: string | undefined
 ): ManagedVerdict | undefined {
-  return settled.get(keyOf(engineId, repository, revision))
+  return settled.get(keyOf(engineId, descriptorId, repository, revision))
 }
 
-/** The engine's verdict, asked once per engine, repository and revision while its answer stands. */
+/**
+ * The engine's verdict, asked once per engine, descriptor, repository and revision while its answer
+ * stands. `descriptorId` is the descriptor the engine checks with — its installation's, else the
+ * one its plan would install; the core picks it itself, so it only keys the answer.
+ */
 export function managedVerdict(
   engineId: string,
+  descriptorId: string | null,
   repository: string,
   revision: string | undefined,
   token: string | undefined
 ): Promise<ManagedVerdict> {
-  const key = keyOf(engineId, repository, revision)
+  const key = keyOf(engineId, descriptorId, repository, revision)
   const held = settled.get(key)
   if (held) return Promise.resolve(held)
   const asking = pending.get(key)

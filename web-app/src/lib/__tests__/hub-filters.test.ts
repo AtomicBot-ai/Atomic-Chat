@@ -240,7 +240,7 @@ describe('filterByFormats', () => {
       description: '',
       downloads: 0,
       library_name: 'transformers',
-      is_tensorrt_llm: true,
+      is_managed: true,
     }
     const list = [gguf('a/gguf', '1 GB'), mlx('b/mlx', '1 GB'), trt]
     expect(filterByFormats(list, ['tensorrt-llm']).map((m) => m.model_name)).toEqual([

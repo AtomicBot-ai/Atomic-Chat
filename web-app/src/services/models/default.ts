@@ -174,13 +174,13 @@ function huggingFaceFormatParams(
 /** A listing entry's architectures and parameters by dtype; anything malformed reads as absent. */
 function tensorrtListingFields(repo: HuggingFaceTensorrtExpansion): Pick<
   CatalogModel,
-  'is_tensorrt_llm' | 'tensorrt'
+  'is_managed' | 'managed'
 > {
   const architectures = repo.config?.architectures
   const parameters = repo.safetensors?.parameters
   return {
-    is_tensorrt_llm: true,
-    tensorrt: {
+    is_managed: true,
+    managed: {
       architectures:
         Array.isArray(architectures) &&
         architectures.every((name) => typeof name === 'string')

@@ -2,12 +2,13 @@ import { IconX } from '@tabler/icons-react'
 import { memo, useCallback, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { TensorrtVerdict } from '@/containers/hub/TensorrtVerdict'
+import { EngineVerdictText } from '@/containers/hub/ManagedVerdicts'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { requireManagedEngine } from '@/lib/managed-engines'
 import {
   cancelDownload,
   isDownloadCancellationError,
@@ -96,7 +97,7 @@ export const ManagedModelDownloadAction = memo(function ManagedModelDownloadActi
           {t('hub:download')}
         </Button>
       )}
-      {failure && <TensorrtVerdict verdict={failure} />}
+      {failure && <EngineVerdictText engine={requireManagedEngine(engineId)} verdict={failure} />}
     </div>
   )
 })
