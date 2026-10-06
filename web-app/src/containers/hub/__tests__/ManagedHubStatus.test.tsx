@@ -19,8 +19,9 @@ vi.mock('@/services/managed-environment/client', async (importOriginal) => ({
   ...client,
 }))
 
-import { TensorrtHubBlocked, TensorrtHubChecking } from '../TensorrtHubStatus'
-import { resetTensorrtPlanForTests, useTensorrtPlan } from '@/hooks/useTensorrtPlan'
+import { ManagedHubBlocked, ManagedHubChecking } from '../ManagedHubStatus'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { resetManagedPlansForTests, useManagedPlan } from '@/hooks/useManagedPlan'
 import type { ManagedBlocker } from '@/services/managed-environment/types'
 
 const driverTooOld: ManagedBlocker = {
@@ -33,12 +34,12 @@ const driverTooOld: ManagedBlocker = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  resetTensorrtPlanForTests()
+  resetManagedPlansForTests()
 })
 
-describe('TensorrtHubBlocked', () => {
+describe('ManagedHubBlocked', () => {
   it('says which driver is needed and which one is there, with what to do and the way to the provider page', () => {
-    render(<TensorrtHubBlocked blockers={[driverTooOld]} />)
+    render(<ManagedHubBlocked engine={TENSORRT_LLM_ENGINE} blockers={[driverTooOld]} />)
 
     expect(
       screen.getByText(
@@ -56,7 +57,8 @@ describe('TensorrtHubBlocked', () => {
 
   it('lists every blocker, in the core words where the Hub has none of its own, with its commands', () => {
     render(
-      <TensorrtHubBlocked
+      <ManagedHubBlocked
+        engine={TENSORRT_LLM_ENGINE}
         blockers={[
           driverTooOld,
           {
@@ -76,7 +78,7 @@ describe('TensorrtHubBlocked', () => {
 
   it('checks the machine again on request', async () => {
     client.probe.mockResolvedValue({ blockers: [], descriptor_id: null })
-    render(<TensorrtHubBlocked blockers={[driverTooOld]} />)
+    render(<ManagedHubBlocked engine={TENSORRT_LLM_ENGINE} blockers={[driverTooOld]} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'hub:tensorrt.blocked.checkAgain' }))
 
@@ -85,18 +87,18 @@ describe('TensorrtHubBlocked', () => {
   })
 })
 
-describe('TensorrtHubChecking', () => {
+describe('ManagedHubChecking', () => {
   it('claims nothing while the core has not answered', () => {
-    render(<TensorrtHubChecking />)
+    render(<ManagedHubChecking engine={TENSORRT_LLM_ENGINE} />)
     expect(screen.getByRole('status')).toHaveTextContent('hub:tensorrt.checking')
   })
 
   it('says the check failed and offers to check again, instead of spinning forever', async () => {
     client.probe.mockRejectedValueOnce(new Error('core is restarting'))
-    const { result } = renderHook(() => useTensorrtPlan())
+    const { result } = renderHook(() => useManagedPlan('tensorrt-llm'))
     await waitFor(() => expect(result.current.error).toBe('core is restarting'))
 
-    render(<TensorrtHubChecking />)
+    render(<ManagedHubChecking engine={TENSORRT_LLM_ENGINE} />)
 
     expect(screen.getByText('core is restarting')).toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()

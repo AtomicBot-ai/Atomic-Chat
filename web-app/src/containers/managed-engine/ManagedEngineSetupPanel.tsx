@@ -12,8 +12,9 @@ import {
 } from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { tensorrtPlanKey, useTensorrtPlan } from '@/hooks/useTensorrtPlan'
+import { managedPlanKey, useManagedPlan } from '@/hooks/useManagedPlan'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { providerKey, type ManagedEngine } from '@/lib/managed-engines'
 import { formatBytes } from '@/lib/utils'
 import {
   deriveSetupView,
@@ -22,12 +23,13 @@ import {
   type OperationStep,
   type PlanSummary,
   type WarningView,
-} from '@/lib/tensorrt-llm/setup-view'
+} from '@/lib/managed-engine/setup-view'
 import {
   beginOperation,
   cancelOperation,
   resumeOperation,
   runHostStep,
+  runtimeTarget,
 } from '@/services/managed-environment/client'
 import { describeDescriptor } from '@/services/tensorrt-llm/models'
 import { useRunningHostSteps } from '@/stores/host-step-running-store'
@@ -40,17 +42,17 @@ import {
   selectEnvironment,
   selectFailedEnvironmentRemoval,
   selectFailedSetup,
+  selectInstallation,
   selectSetupOperation,
-  selectTensorrtInstallation,
-  TENSORRT_LLM_ENGINE_ID,
   useManagedEnvironmentStore,
 } from '@/stores/managed-environment-store'
 
 /**
- * The TensorRT-LLM part of the provider page (Linux and Windows): whether this machine can run the
+ * A managed engine's part of its provider page (Linux and Windows): whether this machine can run the
  * engine and why not, the whole plan before consent, the OS authorization prompt (`pkexec`, or UAC
  * to turn on WSL), the sign-in the Docker group needs or the restart WSL needs, the pull with its
- * bytes, and removing the engine (spec `tensorrt-llm-desktop`).
+ * bytes, and removing the engine (spec `tensorrt-llm-desktop`; the same for every managed engine,
+ * change `add-vllm-runtime`, design D14).
  *
  * Everything shown comes from the core — its plan and its operation, which outlives this panel —
  * so closing the page and opening it again finds the same setup where it is.
@@ -92,19 +94,21 @@ const errorText = (error: unknown) =>
     ? String((error as { message: unknown }).message)
     : String(error)
 
-export function TensorrtLlmSetupPanel() {
+export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   const environment = useManagedEnvironmentStore(selectEnvironment)
-  const installation = useManagedEnvironmentStore(selectTensorrtInstallation)
-  const operation = useManagedEnvironmentStore(selectSetupOperation)
-  const failed = useManagedEnvironmentStore(selectFailedSetup)
+  const installation = useManagedEnvironmentStore((state) => selectInstallation(state, engine.id))
+  const operation = useManagedEnvironmentStore((state) => selectSetupOperation(state, engine.id))
+  const anyOperation = useManagedEnvironmentStore((state) => selectSetupOperation(state))
+  const failed = useManagedEnvironmentStore((state) => selectFailedSetup(state, engine.id))
   const failedEnvironmentRemoval = useManagedEnvironmentStore(selectFailedEnvironmentRemoval)
 
   // The plan is shared with the Model Hub. This page asks on every opening — something may have
   // been fixed outside the app — and whenever what the plan depends on changes (the WSL
   // distribution going on Windows turns the page back to the install); never on a bare revision,
   // which the core bumps after every probe.
-  const { plan, probing, error: probeError, recheck: probeAgain } = useTensorrtPlan({
+  const { plan, probing, error: probeError, recheck: probeAgain } = useManagedPlan(engine.id, {
     enabled: false,
   })
   const [actionError, setActionError] = useState<string | null>(null)
@@ -125,7 +129,7 @@ export function TensorrtLlmSetupPanel() {
     return probeAgain()
   }, [probeAgain])
 
-  const planKey = tensorrtPlanKey(environment)
+  const planKey = managedPlanKey(environment, engine.id)
   useEffect(() => {
     void recheck()
   }, [recheck, planKey])
@@ -151,7 +155,7 @@ export function TensorrtLlmSetupPanel() {
   /** The models the provider lists — on Windows, the ones in the distribution. */
   const models = useModelProvider(
     (state) =>
-      state.providers.find((provider) => provider.provider === TENSORRT_LLM_ENGINE_ID)?.models ??
+      state.providers.find((provider) => provider.provider === engine.id)?.models ??
       NO_MODELS
   )
 
@@ -177,6 +181,7 @@ export function TensorrtLlmSetupPanel() {
       await beginOperation(environmentId, {
         request_id: crypto.randomUUID(),
         kind: 'setup',
+        target: runtimeTarget(engine.id),
         ...(shown.descriptor_id ? { descriptor_id: shown.descriptor_id } : {}),
       })
     })
@@ -230,7 +235,7 @@ export function TensorrtLlmSetupPanel() {
         if (answer.outcome === 'manual') setManualCommand(answer.command)
         if (answer.outcome === 'failed' && answer.log_tail) {
           const reason = answer.log_tail
-          console.warn(`[tensorrt-llm] privileged step ${stepId} failed: ${reason}`)
+          console.warn(`[${engine.id}] privileged step ${stepId} failed: ${reason}`)
           useElevatingSteps.setState(({ failures }) => ({
             failures: { ...failures, [operationId]: reason },
           }))
@@ -266,12 +271,15 @@ export function TensorrtLlmSetupPanel() {
   const view = deriveSetupView({ plan, operation, installation, failed })
   const summary = plan ? planSummary(plan, notices, environment?.executor) : undefined
   /**
-   * Windows only: the engine is gone and the distribution is still there. Removing it is the one
-   * way to give back the space its disk image took (design D12).
+   * Windows only: every managed engine is gone and the distribution is still there. Removing it is
+   * the one way to give back the space its disk image took (design D12); while any engine is
+   * installed or being set up, the distribution is still that engine's.
    */
   const distribution = windows ? (environment?.distribution ?? null) : null
   const canRemoveEnvironment =
-    distribution !== null && !operation && installation?.status !== 'ready'
+    distribution !== null &&
+    !anyOperation &&
+    !(environment?.installations ?? []).some((entry) => entry.status === 'ready')
 
   const removeEnvironment = () =>
     act(async () => {
@@ -299,23 +307,23 @@ export function TensorrtLlmSetupPanel() {
     <div className="flex flex-col gap-3 rounded-lg border border-main-view-fg/10 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-medium text-main-view-fg">{t('providers:tensorrt.title')}</h2>
-          <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.description')}</p>
+          <h2 className="font-medium text-main-view-fg">{t(k('title'))}</h2>
+          <p className="text-sm text-main-view-fg/70">{t(k('description'))}</p>
         </div>
       </div>
 
       {view.kind === 'checking' && (
-        <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.checking')}</p>
+        <p className="text-sm text-main-view-fg/70">{t(k('checking'))}</p>
       )}
 
       {view.kind === 'blocked' && (
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">{t('providers:tensorrt.blocked')}</p>
-          <Blockers blockers={view.blockers} />
-          {summary?.disk.insufficient && <DiskLine summary={summary} />}
+          <p className="text-sm font-medium">{t(k('blocked'))}</p>
+          <Blockers engine={engine} blockers={view.blockers} />
+          {summary?.disk.insufficient && <DiskLine engine={engine} summary={summary} />}
           <div>
             <Button variant="outline" size="sm" disabled={probing} onClick={() => void recheck()}>
-              {t('providers:tensorrt.checkAgain')}
+              {t(k('checkAgain'))}
             </Button>
           </div>
         </div>
@@ -324,16 +332,17 @@ export function TensorrtLlmSetupPanel() {
       {view.kind === 'not-installed' && (
         <div className="flex items-center justify-between gap-3">
           <p className="min-w-0 text-sm text-main-view-fg/70">
-            {t(windows ? 'providers:tensorrt.notInstalledWindows' : 'providers:tensorrt.notInstalled')}
+            {t(windows ? k('notInstalledWindows') : k('notInstalled'))}
           </p>
           <Button size="sm" disabled={probing} onClick={() => setPlanOpen(true)}>
-            {t('providers:tensorrt.install')}
+            {t(k('install'))}
           </Button>
         </div>
       )}
 
       {view.kind === 'operation' && (
         <OperationStatus
+          engine={engine}
           operation={view.operation}
           step={view.step}
           windows={windows}
@@ -357,7 +366,7 @@ export function TensorrtLlmSetupPanel() {
 
       {view.kind === 'failed' && (
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">{t('providers:tensorrt.failed')}</p>
+          <p className="text-sm font-medium">{t(k('failed'))}</p>
           <p className="text-sm text-destructive break-words">{view.operation.error?.message}</p>
           {stepFailures[view.operation.operation_id] && (
             <pre className="max-h-60 overflow-auto rounded bg-main-view-fg/5 p-2 text-xs whitespace-pre-wrap break-words">
@@ -365,12 +374,12 @@ export function TensorrtLlmSetupPanel() {
             </pre>
           )}
           {view.newerPlan && (
-            <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.newerPlan')}</p>
+            <p className="text-sm text-main-view-fg/70">{t(k('newerPlan'))}</p>
           )}
           <div className="flex gap-2">
             {view.newerPlan && (
               <Button size="sm" disabled={probing} onClick={() => setPlanOpen(true)}>
-                {t('providers:tensorrt.install')}
+                {t(k('install'))}
               </Button>
             )}
             <Button
@@ -380,7 +389,7 @@ export function TensorrtLlmSetupPanel() {
                 void act(() => resumeOperation(view.operation.operation_id, view.operation.revision))
               }
             >
-              {t('providers:tensorrt.retry')}
+              {t(k('retry'))}
             </Button>
           </div>
         </div>
@@ -388,15 +397,15 @@ export function TensorrtLlmSetupPanel() {
 
       {view.kind === 'installed' && (
         <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">{t('providers:tensorrt.installed')}</p>
+          <p className="text-sm font-medium">{t(k('installed'))}</p>
           <div className="flex items-center justify-between gap-3">
             <p className="min-w-0 text-sm text-main-view-fg/70">
-              {t(windows ? 'providers:tensorrt.remove.spaceWindows' : 'providers:tensorrt.remove.space', {
+              {t(windows ? k('remove.spaceWindows') : k('remove.space'), {
                 size: formatBytes(plan?.required_disk_bytes ?? undefined),
               })}
             </p>
             <Button variant="outline" size="sm" onClick={() => setRemoveOpen(true)}>
-              {t('providers:tensorrt.remove.button')}
+              {t(k('remove.button'))}
             </Button>
           </div>
         </div>
@@ -405,13 +414,13 @@ export function TensorrtLlmSetupPanel() {
       {canRemoveEnvironment && distribution && (
         <div className="flex items-center justify-between gap-3">
           <p className="min-w-0 text-sm text-main-view-fg/70 break-words">
-            {t('providers:tensorrt.removeEnvironment.hint', {
+            {t(k('removeEnvironment.hint'), {
               name: distribution.name,
               size: formatBytes(distribution.size_bytes ?? undefined),
             })}
           </p>
           <Button variant="outline" size="sm" onClick={() => setRemoveEnvironmentOpen(true)}>
-            {t('providers:tensorrt.removeEnvironment.button')}
+            {t(k('removeEnvironment.button'))}
           </Button>
         </div>
       )}
@@ -426,16 +435,16 @@ export function TensorrtLlmSetupPanel() {
       <Dialog open={planOpen} onOpenChange={setPlanOpen}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t('providers:tensorrt.plan.title')}</DialogTitle>
-            <DialogDescription>{t('providers:tensorrt.plan.intro')}</DialogDescription>
+            <DialogTitle>{t(k('plan.title'))}</DialogTitle>
+            <DialogDescription>{t(k('plan.intro'))}</DialogDescription>
           </DialogHeader>
-          {plan && summary && <PlanDetails summary={summary} />}
+          {plan && summary && <PlanDetails engine={engine} summary={summary} />}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPlanOpen(false)}>
-              {t('providers:tensorrt.plan.cancel')}
+              {t(k('plan.cancel'))}
             </Button>
             <Button disabled={!plan || !summary?.canStart} onClick={() => plan && void agree(plan)}>
-              {t('providers:tensorrt.plan.agree')}
+              {t(k('plan.agree'))}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -444,9 +453,9 @@ export function TensorrtLlmSetupPanel() {
       <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('providers:tensorrt.remove.title')}</DialogTitle>
+            <DialogTitle>{t(k('remove.title'))}</DialogTitle>
             <DialogDescription>
-              {t(windows ? 'providers:tensorrt.remove.bodyWindows' : 'providers:tensorrt.remove.body')}
+              {t(windows ? k('remove.bodyWindows') : k('remove.body'))}
             </DialogDescription>
           </DialogHeader>
           <label className="flex items-center gap-2 text-sm">
@@ -455,11 +464,11 @@ export function TensorrtLlmSetupPanel() {
               checked={keepModels}
               onChange={(event) => setKeepModels(event.target.checked)}
             />
-            {t('providers:tensorrt.remove.keepModels')}
+            {t(k('remove.keepModels'))}
           </label>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemoveOpen(false)}>
-              {t('providers:tensorrt.plan.cancel')}
+              {t(k('plan.cancel'))}
             </Button>
             <Button
               variant="destructive"
@@ -485,12 +494,13 @@ export function TensorrtLlmSetupPanel() {
                   await beginOperation(environmentId, {
                     request_id: crypto.randomUUID(),
                     kind: 'remove',
+                    target: runtimeTarget(engine.id),
                     retain_models: keepModels,
                   })
                 })
               }
             >
-              {t('providers:tensorrt.remove.confirm')}
+              {t(k('remove.confirm'))}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -499,9 +509,9 @@ export function TensorrtLlmSetupPanel() {
       <Dialog open={removeEnvironmentOpen} onOpenChange={setRemoveEnvironmentOpen}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t('providers:tensorrt.removeEnvironment.title')}</DialogTitle>
+            <DialogTitle>{t(k('removeEnvironment.title'))}</DialogTitle>
             <DialogDescription className="break-words">
-              {t('providers:tensorrt.removeEnvironment.body', {
+              {t(k('removeEnvironment.body'), {
                 name: environment?.distribution?.name ?? '',
                 path: environment?.distribution?.path ?? '',
                 size: formatBytes(environment?.distribution?.size_bytes ?? undefined),
@@ -510,7 +520,7 @@ export function TensorrtLlmSetupPanel() {
           </DialogHeader>
           {models.length > 0 ? (
             <div className="flex min-w-0 flex-col gap-1 text-sm">
-              <p className="font-medium">{t('providers:tensorrt.removeEnvironment.models')}</p>
+              <p className="font-medium">{t(k('removeEnvironment.models'))}</p>
               <ul className="flex list-disc flex-col gap-1 pl-5">
                 {models.map((model) => (
                   <li key={model.id} className="break-words">
@@ -520,15 +530,15 @@ export function TensorrtLlmSetupPanel() {
               </ul>
             </div>
           ) : (
-            <p className="text-sm">{t('providers:tensorrt.removeEnvironment.noModels')}</p>
+            <p className="text-sm">{t(k('removeEnvironment.noModels'))}</p>
           )}
-          <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.removeEnvironment.uninstall')}</p>
+          <p className="text-sm text-main-view-fg/70">{t(k('removeEnvironment.uninstall'))}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemoveEnvironmentOpen(false)}>
-              {t('providers:tensorrt.plan.cancel')}
+              {t(k('plan.cancel'))}
             </Button>
             <Button variant="destructive" onClick={() => void removeEnvironment()}>
-              {t('providers:tensorrt.removeEnvironment.confirm')}
+              {t(k('removeEnvironment.confirm'))}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -537,15 +547,16 @@ export function TensorrtLlmSetupPanel() {
   )
 }
 
-function Blockers({ blockers }: { blockers: BlockerView[] }) {
+function Blockers({ engine, blockers }: { engine: ManagedEngine; blockers: BlockerView[] }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   return (
     <ul className="flex flex-col gap-2">
       {blockers.map((blocker, index) => (
         <li key={index} className="flex min-w-0 flex-col gap-1 text-sm">
           <span className="break-words">
             {blocker.ampere
-              ? t('providers:tensorrt.blocker.ampere', blocker.ampere)
+              ? t(k('blocker.ampere'), blocker.ampere)
               : blocker.message}
           </span>
           {blocker.commands.length > 0 && (
@@ -559,15 +570,16 @@ function Blockers({ blockers }: { blockers: BlockerView[] }) {
   )
 }
 
-function DiskLine({ summary }: { summary: PlanSummary }) {
+function DiskLine({ engine, summary }: { engine: ManagedEngine; summary: PlanSummary }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   const { location, path, requiredBytes, freeBytes } = summary.disk
   const required = formatBytes(requiredBytes ?? undefined)
   // On Windows the space is the WSL distribution's, on the volume that holds its folder.
   const key = (name: 'disk' | 'diskNoFree' | 'diskNoPath' | 'diskUnknown') =>
     location === 'distribution'
-      ? `providers:tensorrt.plan.wsl${name[0].toUpperCase()}${name.slice(1)}`
-      : `providers:tensorrt.plan.${name}`
+      ? k(`plan.wsl${name[0].toUpperCase()}${name.slice(1)}`)
+      : k(`plan.${name}`)
   if (path === null) {
     // The core measured nothing this time (the free-space read failed).
     return (
@@ -588,8 +600,9 @@ function DiskLine({ summary }: { summary: PlanSummary }) {
 }
 
 /** Above everything else in the plan: each is a reason the install may not work out as agreed. */
-function PlanWarnings({ warnings }: { warnings: WarningView[] }) {
+function PlanWarnings({ engine, warnings }: { engine: ManagedEngine; warnings: WarningView[] }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   return (
     <ul className="flex flex-col gap-2 rounded border border-amber-600/40 bg-amber-600/10 p-2">
       {warnings.map((warning, index) => (
@@ -598,12 +611,12 @@ function PlanWarnings({ warnings }: { warnings: WarningView[] }) {
             <>
               <p className="break-words font-medium text-amber-600">
                 {warning.addressPools.routes
-                  ? t('providers:tensorrt.plan.warning.addressPools', {
+                  ? t(k('plan.warning.addressPools'), {
                       routes: warning.addressPools.routes,
                     })
-                  : t('providers:tensorrt.plan.warning.addressPoolsNoRoutes')}
+                  : t(k('plan.warning.addressPoolsNoRoutes'))}
               </p>
-              <p className="break-words">{t('providers:tensorrt.plan.warning.addressPoolsFix')}</p>
+              <p className="break-words">{t(k('plan.warning.addressPoolsFix'))}</p>
             </>
           )}
           <p className={warning.addressPools ? 'break-words text-main-view-fg/70' : 'break-words'}>
@@ -615,11 +628,12 @@ function PlanWarnings({ warnings }: { warnings: WarningView[] }) {
   )
 }
 
-function PlanDetails({ summary }: { summary: PlanSummary }) {
+function PlanDetails({ engine, summary }: { engine: ManagedEngine; summary: PlanSummary }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   return (
     <div className="flex min-w-0 flex-col gap-3 text-sm">
-      {summary.warnings.length > 0 && <PlanWarnings warnings={summary.warnings} />}
+      {summary.warnings.length > 0 && <PlanWarnings engine={engine} warnings={summary.warnings} />}
       {summary.changes.length > 0 ? (
         <ul className="flex list-disc flex-col gap-1 pl-5">
           {summary.changes.map((change, index) => (
@@ -632,21 +646,21 @@ function PlanDetails({ summary }: { summary: PlanSummary }) {
           ))}
         </ul>
       ) : (
-        <p>{t('providers:tensorrt.plan.noSystemChanges')}</p>
+        <p>{t(k('plan.noSystemChanges'))}</p>
       )}
-      {summary.relogin && <p className="font-medium">{t('providers:tensorrt.plan.relogin')}</p>}
-      {summary.reboot && <p className="font-medium">{t('providers:tensorrt.plan.reboot')}</p>}
+      {summary.relogin && <p className="font-medium">{t(k('plan.relogin'))}</p>}
+      {summary.reboot && <p className="font-medium">{t(k('plan.reboot'))}</p>}
       {summary.downloadBytes !== null && (
         <p>
-          {t('providers:tensorrt.plan.download', {
+          {t(k('plan.download'), {
             size: formatBytes(summary.downloadBytes),
           })}
         </p>
       )}
-      <DiskLine summary={summary} />
+      <DiskLine engine={engine} summary={summary} />
       {summary.notices.length > 0 ? (
         <div className="flex flex-col gap-1">
-          <p className="font-medium">{t('providers:tensorrt.plan.notices')}</p>
+          <p className="font-medium">{t(k('plan.notices'))}</p>
           {summary.notices.map((notice, index) => (
             <p key={index} className="break-words text-main-view-fg/70">
               {notice}
@@ -654,14 +668,15 @@ function PlanDetails({ summary }: { summary: PlanSummary }) {
           ))}
         </div>
       ) : (
-        <p className="text-main-view-fg/70">{t('providers:tensorrt.plan.noticesMissing')}</p>
+        <p className="text-main-view-fg/70">{t(k('plan.noticesMissing'))}</p>
       )}
-      {summary.blockers.length > 0 && <Blockers blockers={summary.blockers} />}
+      {summary.blockers.length > 0 && <Blockers engine={engine} blockers={summary.blockers} />}
     </div>
   )
 }
 
 function OperationStatus({
+  engine,
   operation,
   step,
   windows,
@@ -672,6 +687,7 @@ function OperationStatus({
   onReview,
   onCheckAgain,
 }: {
+  engine: ManagedEngine
   operation: EnvironmentOperation
   step: OperationStep
   /** The environment is Atomic Chat's WSL distribution: some phases mean something else here. */
@@ -686,14 +702,15 @@ function OperationStatus({
   onCheckAgain: () => void
 }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   // `preparing-host` turns WSL on; `preparing-environment` imports and sets up the distribution;
   // `removing` an environment unregisters the distribution, not the engine.
   const phaseKey =
     operation.target.kind === 'environment' && operation.phase === 'removing'
-      ? 'providers:tensorrt.removeEnvironment.removing'
+      ? k('removeEnvironment.removing')
       : windows && (operation.phase === 'preparing-host' || operation.phase === 'preparing-environment')
-        ? `providers:tensorrt.phaseWindows.${operation.phase}`
-        : `providers:tensorrt.phase.${operation.phase}`
+        ? k(`phaseWindows.${operation.phase}`)
+        : k(`phase.${operation.phase}`)
   /** The privileged step is UAC turning on WSL, not the system password. */
   const uac = operation.pending_host_step?.action === 'windows.enable-wsl'
   const runningSteps = useRunningHostSteps((state) => state.steps)
@@ -713,16 +730,16 @@ function OperationStatus({
     <div className="flex flex-col gap-2">
       {step === 'relogin' ? (
         <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">{t('providers:tensorrt.relogin.title')}</p>
-          <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.relogin.body')}</p>
+          <p className="text-sm font-medium">{t(k('relogin.title'))}</p>
+          <p className="text-sm text-main-view-fg/70">{t(k('relogin.body'))}</p>
           <p className="text-sm text-main-view-fg/70">
-            {t('providers:tensorrt.relogin.stillWaiting')}
+            {t(k('relogin.stillWaiting'))}
           </p>
         </div>
       ) : step === 'reboot' ? (
         <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">{t('providers:tensorrt.reboot.title')}</p>
-          <p className="text-sm text-main-view-fg/70">{t('providers:tensorrt.reboot.body')}</p>
+          <p className="text-sm font-medium">{t(k('reboot.title'))}</p>
+          <p className="text-sm text-main-view-fg/70">{t(k('reboot.body'))}</p>
         </div>
       ) : (
         <p className="text-sm font-medium">{t(phaseKey)}</p>
@@ -732,7 +749,7 @@ function OperationStatus({
         <div className="flex flex-col gap-1">
           <Progress value={bytes.percent} />
           <p className="truncate text-xs tabular-nums text-main-view-fg/70">
-            {t('providers:tensorrt.progress', { done: bytes.done, total: bytes.total })}
+            {t(k('progress'), { done: bytes.done, total: bytes.total })}
           </p>
         </div>
       )}
@@ -741,10 +758,10 @@ function OperationStatus({
         <div className="flex flex-col gap-2">
           <p className="text-sm text-main-view-fg/70">
             {manualCommand
-              ? t(uac ? 'providers:tensorrt.hostStep.uac.manual' : 'providers:tensorrt.hostStep.manual')
+              ? t(uac ? k('hostStep.uac.manual') : k('hostStep.manual'))
               : running
-                ? t(uac ? 'providers:tensorrt.hostStep.uac.running' : 'providers:tensorrt.hostStep.running')
-                : t(uac ? 'providers:tensorrt.hostStep.uac.waiting' : 'providers:tensorrt.hostStep.waiting')}
+                ? t(uac ? k('hostStep.uac.running') : k('hostStep.running'))
+                : t(uac ? k('hostStep.uac.waiting') : k('hostStep.waiting'))}
           </p>
           {manualCommand && (
             <pre className="select-all overflow-x-auto rounded bg-main-view-fg/5 p-2 text-xs">
@@ -753,11 +770,11 @@ function OperationStatus({
           )}
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" disabled={granting} onClick={onGrant}>
-              {t(uac ? 'providers:tensorrt.hostStep.uac.retry' : 'providers:tensorrt.hostStep.retry')}
+              {t(uac ? k('hostStep.uac.retry') : k('hostStep.retry'))}
             </Button>
             {manualCommand && uac && (
               <Button variant="outline" size="sm" onClick={onCheckAgain}>
-                {t('providers:tensorrt.checkAgain')}
+                {t(k('checkAgain'))}
               </Button>
             )}
           </div>
@@ -767,7 +784,7 @@ function OperationStatus({
       {step === 'consent' && (
         <div>
           <Button size="sm" onClick={onReview}>
-            {t('providers:tensorrt.consent.review')}
+            {t(k('consent.review'))}
           </Button>
         </div>
       )}
@@ -779,7 +796,7 @@ function OperationStatus({
           disabled={operation.cancellation_requested || operation.phase === 'cancelling'}
           onClick={onCancel}
         >
-          {t('providers:tensorrt.cancel')}
+          {t(k('cancel'))}
         </Button>
       </div>
     </div>

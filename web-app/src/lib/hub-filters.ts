@@ -62,7 +62,7 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
 
 /**
  * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, TensorRT-LLM where its
- * provider is shown and a card is new enough (`useTensorrtHubState().visible`).
+ * provider is shown and a card is new enough (`useManagedHubState(engine).visible`).
  */
 export function hubFormats(options: { mlx: boolean; tensorrt: boolean }): ModelFormat[] {
   return [

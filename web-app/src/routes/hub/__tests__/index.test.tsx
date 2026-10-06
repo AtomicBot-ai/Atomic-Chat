@@ -30,8 +30,8 @@ const tensorrtHub = vi.hoisted(() => ({
     descriptorId: null as string | null,
   },
 }))
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => tensorrtHub.value,
+vi.mock('@/hooks/useManagedHubState', () => ({
+  useManagedHubState: () => tensorrtHub.value,
 }))
 
 const tensorrtCurated = vi.hoisted(() => ({
@@ -41,8 +41,8 @@ const tensorrtCurated = vi.hoisted(() => ({
     loading: false,
   },
 }))
-vi.mock('@/hooks/useTensorrtCurated', () => ({
-  useTensorrtCurated: () => tensorrtCurated.value,
+vi.mock('@/hooks/useManagedCurated', () => ({
+  useManagedCurated: () => tensorrtCurated.value,
 }))
 
 vi.mock('@tanstack/react-router', () => ({

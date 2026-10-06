@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import type { CatalogModel } from '@/services/models/types'
 import {
-  heldTensorrtVerdict,
-  tensorrtVerdict,
-  type TensorrtVerdict,
-} from '@/services/tensorrt-llm/verdict'
+  heldManagedVerdict,
+  managedVerdict,
+  type ManagedVerdict as TensorrtVerdict,
+} from '@/services/managed-models/verdict'
 
 /**
  * The core's verdict for a TensorRT-LLM card of the Model Hub (design D5): asked when the card
@@ -23,14 +23,14 @@ export function useTensorrtVerdict(model: CatalogModel | null): {
   const revision = model?.tensorrt?.revision
   const key = repository ? `${repository}@${revision ?? 'main'}` : null
   const [answer, setAnswer] = useState<{ key: string; verdict: TensorrtVerdict } | null>(() => {
-    const held = repository ? heldTensorrtVerdict(repository, revision) : undefined
+    const held = repository ? heldManagedVerdict('tensorrt-llm', repository, revision) : undefined
     return key && held ? { key, verdict: held } : null
   })
 
   useEffect(() => {
     if (!repository || !key) return
     let cancelled = false
-    void tensorrtVerdict(repository, revision, token).then((verdict) => {
+    void managedVerdict('tensorrt-llm', repository, revision, token).then((verdict) => {
       if (!cancelled) setAnswer({ key, verdict })
     })
     return () => {
@@ -39,7 +39,7 @@ export function useTensorrtVerdict(model: CatalogModel | null): {
   }, [repository, revision, key, token])
 
   // The answer of the card shown before this one is not this card's.
-  const held = repository ? heldTensorrtVerdict(repository, revision) : undefined
+  const held = repository ? heldManagedVerdict('tensorrt-llm', repository, revision) : undefined
   const verdict = answer?.key === key ? answer.verdict : (held ?? null)
   return { verdict, checking: repository !== null && verdict === null }
 }

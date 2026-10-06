@@ -1,18 +1,19 @@
 /**
- * The core's verdict on one TensorRT-LLM checkpoint, as the Model Hub shows it (change
- * `add-tensorrt-llm-model-hub`, design D3, D5): the repository read at a revision from Hugging
- * Face, then `POST /models/tensorrt-llm/check`. Nothing about compatibility is decided here.
+ * A managed engine's verdict on one checkpoint, as the Model Hub shows it (change
+ * `add-tensorrt-llm-model-hub`, design D3, D5; per engine, change `add-vllm-runtime`, design D14):
+ * the repository read at a revision from Hugging Face, then `POST /models/<engine>/check`. Nothing
+ * about compatibility is decided here.
  *
- * Kept for the session by `repository@revision` — the curated list, a card opened again and the
- * download all ask the same question. Only the core's own answers are kept (`ok`, `incompatible`):
+ * Kept for the session by engine and `repository@revision` — the curated list, a card opened again
+ * and the download all ask the same question. Only the core's own answers are kept (`ok`, `incompatible`):
  * a refusal by Hugging Face changes once the person accepts the model's terms, and a network error
  * is not an answer at all.
  */
 
 import type { ModelCompatibility } from '@/services/managed-environment/types'
 import {
+  checkManagedModel,
   checkRequestFor,
-  checkTensorrtModel,
   fetchHfRevision,
   GatedModelError,
   IncompatibleModelError,
@@ -20,7 +21,7 @@ import {
   type HfRevision,
 } from '@/services/tensorrt-llm/models'
 
-export type TensorrtVerdict =
+export type ManagedVerdict =
   | { kind: 'ok'; meta: HfRevision; compatibility: ModelCompatibility }
   | { kind: 'incompatible'; compatibility: ModelCompatibility }
   | { kind: 'gated'; url: string }
@@ -34,13 +35,14 @@ export const errorText = (error: unknown) =>
     : String(error)
 
 async function evaluate(
+  engineId: string,
   repository: string,
   revision: string | undefined,
   token: string | undefined
-): Promise<TensorrtVerdict> {
+): Promise<ManagedVerdict> {
   try {
     const meta = await fetchHfRevision(repository, revision, token)
-    const compatibility = await checkTensorrtModel(checkRequestFor(meta))
+    const compatibility = await checkManagedModel(engineId, checkRequestFor(meta))
     return compatibility.verdict.ok
       ? { kind: 'ok', meta, compatibility }
       : { kind: 'incompatible', compatibility }
@@ -50,37 +52,39 @@ async function evaluate(
   }
 }
 
-const pending = new Map<string, Promise<TensorrtVerdict>>()
-const settled = new Map<string, TensorrtVerdict>()
+const pending = new Map<string, Promise<ManagedVerdict>>()
+const settled = new Map<string, ManagedVerdict>()
 
-const keyOf = (repository: string, revision: string | undefined) =>
-  `${repository}@${revision ?? 'main'}`
+const keyOf = (engineId: string, repository: string, revision: string | undefined) =>
+  `${engineId}|${repository}@${revision ?? 'main'}`
 
-export function resetTensorrtVerdictsForTests(): void {
+export function resetManagedVerdictsForTests(): void {
   pending.clear()
   settled.clear()
 }
 
-/** The verdict already held for this repository and revision, without asking. */
-export function heldTensorrtVerdict(
+/** The verdict of `engineId` already held for this repository and revision, without asking. */
+export function heldManagedVerdict(
+  engineId: string,
   repository: string,
   revision: string | undefined
-): TensorrtVerdict | undefined {
-  return settled.get(keyOf(repository, revision))
+): ManagedVerdict | undefined {
+  return settled.get(keyOf(engineId, repository, revision))
 }
 
-/** The core's verdict, asked once per repository and revision while its answer stands. */
-export function tensorrtVerdict(
+/** The engine's verdict, asked once per engine, repository and revision while its answer stands. */
+export function managedVerdict(
+  engineId: string,
   repository: string,
   revision: string | undefined,
   token: string | undefined
-): Promise<TensorrtVerdict> {
-  const key = keyOf(repository, revision)
+): Promise<ManagedVerdict> {
+  const key = keyOf(engineId, repository, revision)
   const held = settled.get(key)
   if (held) return Promise.resolve(held)
   const asking = pending.get(key)
   if (asking) return asking
-  const promise = evaluate(repository, revision, token).then((verdict) => {
+  const promise = evaluate(engineId, repository, revision, token).then((verdict) => {
     pending.delete(key)
     if (verdict.kind === 'ok' || verdict.kind === 'incompatible') settled.set(key, verdict)
     return verdict
@@ -94,7 +98,7 @@ export function tensorrtVerdict(
  * another card, or the core was never asked (Hugging Face refused access or could not be reached)
  * — keeps a curated model listed, and its card says which.
  */
-export function refusedOnEveryCard(verdict: TensorrtVerdict): boolean {
+export function refusedOnEveryCard(verdict: ManagedVerdict): boolean {
   return verdict.kind === 'incompatible' && verdict.compatibility.fits_other_gpus.length === 0
 }
 
@@ -102,7 +106,7 @@ export function refusedOnEveryCard(verdict: TensorrtVerdict): boolean {
  * Why a download did not happen, in the same terms as the card's verdict: the core refused the
  * files when it checked them again, Hugging Face refused access, the core has no room, or else.
  */
-export function verdictFromError(error: unknown): TensorrtVerdict {
+export function verdictFromError(error: unknown): ManagedVerdict {
   if (error instanceof IncompatibleModelError) {
     return { kind: 'incompatible', compatibility: error.compatibility }
   }

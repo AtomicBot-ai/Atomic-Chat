@@ -13,8 +13,8 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
 
 const tensorrtHub = vi.hoisted(() => ({ state: 'ready' as string }))
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => ({
+vi.mock('@/hooks/useManagedHubState', () => ({
+  useManagedHubState: () => ({
     visible: true,
     state: tensorrtHub.state,
     blockers: [],
@@ -31,7 +31,7 @@ vi.mock('@/utils/switchModel', async (importOriginal) => ({
   ...switching,
 }))
 
-const trtModels = vi.hoisted(() => ({ fetchHfRevision: vi.fn(), checkTensorrtModel: vi.fn() }))
+const trtModels = vi.hoisted(() => ({ fetchHfRevision: vi.fn(), checkManagedModel: vi.fn() }))
 vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/tensorrt-llm/models')>()),
   ...trtModels,
@@ -40,7 +40,7 @@ vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
 import { TensorrtDownloadOptions } from '../TensorrtDownloadOptions'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { resetTensorrtVerdictsForTests } from '@/services/tensorrt-llm/verdict'
+import { resetManagedVerdictsForTests } from '@/services/managed-models/verdict'
 import type { ModelsService } from '@/services/models/types'
 import type { ProvidersService } from '@/services/providers/types'
 import { seedServiceHub } from '@/test/service-hub'
@@ -72,7 +72,7 @@ const getProviders = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
-  resetTensorrtVerdictsForTests()
+  resetManagedVerdictsForTests()
   tensorrtHub.state = 'ready'
   deleteModel.mockResolvedValue({ freedBytes: 8 * GB })
   getProviders.mockResolvedValue([tensorrt([])])
@@ -89,7 +89,7 @@ beforeEach(() => {
     hf_quant_config_json: null,
     files: [],
   }))
-  trtModels.checkTensorrtModel.mockResolvedValue({
+  trtModels.checkManagedModel.mockResolvedValue({
     architectures: ['Qwen3ForCausalLM'],
     quantization_format: 'fp8',
     weight_bytes: 8 * GB,

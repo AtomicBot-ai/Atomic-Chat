@@ -12,7 +12,7 @@ import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import type { ModelLoadProgress } from '@/lib/inference-status'
-import { knownLoadStage } from '@/lib/tensorrt-llm/types'
+import { knownLoadStage } from '@/lib/managed-engine/types'
 import { loadWatchdogMs } from '@/lib/tensorrt-llm/chat'
 import {
   isKeylessRemoteProvider,

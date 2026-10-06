@@ -5,7 +5,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { stepOf } from '@/lib/tensorrt-llm/setup-view'
+import { stepOf } from '@/lib/managed-engine/setup-view'
+import { managedEngine, managedEngines, providerKey } from '@/lib/managed-engines'
 import { cn, formatBytes } from '@/lib/utils'
 import type { EnvironmentOperation } from '@/services/managed-environment/types'
 import { useRunningHostSteps } from '@/stores/host-step-running-store'
@@ -16,15 +17,16 @@ import {
 } from '@/stores/managed-environment-store'
 
 /**
- * A TensorRT-LLM setup or removal in progress, as one of the app's notification cards (the same
+ * A managed engine's setup or removal in progress (whichever engine it is: the card speaks with that
+ * engine's texts), as one of the app's notification cards (the same
  * place and look as the update banners: bottom right, above the download panel): the phase in
  * words, the bytes while the image downloads, and — only when the step needs it — the one action
  * left to the person: restart Windows after WSL was turned on, or sign out on Linux after the
  * `docker` group was added (Rust `atomic_core_finish_session_step`). After the UAC approval Windows
  * installs WSL for minutes with no window, so the card says that instead of asking for approval.
  */
-export function TensorrtLlmOperationBar() {
-  const operation = useManagedEnvironmentStore(selectSetupOperation)
+export function ManagedEngineOperationBar() {
+  const operation = useManagedEnvironmentStore((state) => selectSetupOperation(state))
   const environment = useManagedEnvironmentStore(selectEnvironment)
   const runningSteps = useRunningHostSteps((state) => state.steps)
   const windows = environment?.executor === 'wsl-docker'
@@ -59,6 +61,12 @@ export function OperationBarView({
   onDismiss: () => void
 }) {
   const { t } = useTranslation()
+  // The engine the operation sets up or removes; the environment's own removal is every engine's,
+  // and its texts are the same in every engine's block.
+  const k = providerKey(
+    (operation.target.kind === 'runtime' ? managedEngine(operation.target.engine_id) : undefined) ??
+      managedEngines()[0]
+  )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const step = stepOf(operation)
@@ -66,19 +74,19 @@ export function OperationBarView({
   const text =
     step === 'host-step'
       ? hostStepRunning
-        ? t(windows ? 'providers:tensorrt.hostStep.uac.running' : 'providers:tensorrt.hostStep.running')
-        : t(windows ? 'providers:tensorrt.bar.hostStepWindows' : 'providers:tensorrt.bar.hostStep')
+        ? t(windows ? k('hostStep.uac.running') : k('hostStep.running'))
+        : t(windows ? k('bar.hostStepWindows') : k('bar.hostStep'))
       : step === 'reboot'
-        ? t('providers:tensorrt.bar.reboot')
+        ? t(k('bar.reboot'))
         : step === 'relogin'
-          ? t('providers:tensorrt.bar.relogin')
+          ? t(k('bar.relogin'))
           : operation.target.kind === 'environment' && operation.phase === 'removing'
-            ? t('providers:tensorrt.removeEnvironment.removing')
+            ? t(k('removeEnvironment.removing'))
             : windows &&
                 (operation.phase === 'preparing-host' ||
                   operation.phase === 'preparing-environment')
-              ? t(`providers:tensorrt.phaseWindows.${operation.phase}`)
-              : t(`providers:tensorrt.phase.${operation.phase}`)
+              ? t(k(`phaseWindows.${operation.phase}`))
+              : t(k(`phase.${operation.phase}`))
 
   const progress = operation.progress
   const bytes =
@@ -88,9 +96,9 @@ export function OperationBarView({
 
   const action: { name: 'restart' | 'sign-out'; label: string } | null =
     step === 'reboot' && windows
-      ? { name: 'restart', label: t('providers:tensorrt.bar.restartNow') }
+      ? { name: 'restart', label: t(k('bar.restartNow')) }
       : step === 'relogin' && !windows
-        ? { name: 'sign-out', label: t('providers:tensorrt.bar.signOutNow') }
+        ? { name: 'sign-out', label: t(k('bar.signOutNow')) }
         : null
 
   const run = async (name: 'restart' | 'sign-out') => {
@@ -100,7 +108,7 @@ export function OperationBarView({
       await invoke('atomic_core_finish_session_step', { action: name })
     } catch (e) {
       setError(
-        t('providers:tensorrt.bar.actionFailed', {
+        t(k('bar.actionFailed'), {
           error: e instanceof Error ? e.message : String(e),
         })
       )
@@ -113,7 +121,7 @@ export function OperationBarView({
     <div
       role="status"
       aria-live="polite"
-      data-testid="tensorrt-operation-bar"
+      data-testid="managed-operation-bar"
       className={cn(
         'fixed z-40 bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
         'transition-[bottom] duration-200',
@@ -123,7 +131,7 @@ export function OperationBarView({
       <Button
         variant="ghost"
         size="icon-xs"
-        aria-label={t('providers:tensorrt.bar.later')}
+        aria-label={t(k('bar.later'))}
         onClick={onDismiss}
         className="absolute right-1.5 top-1.5 text-muted-foreground"
       >
@@ -158,7 +166,7 @@ export function OperationBarView({
       {action ? (
         <div className="flex flex-wrap items-center justify-end gap-1 px-2 pb-2 pt-3">
           <Button size="sm" variant="ghost" onClick={onDismiss}>
-            {t('providers:tensorrt.bar.later')}
+            {t(k('bar.later'))}
           </Button>
           <Button size="sm" disabled={busy} onClick={() => void run(action.name)}>
             {action.label}

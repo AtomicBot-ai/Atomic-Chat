@@ -18,11 +18,12 @@ import type {
 } from './types'
 import type { ManagedSnapshotPart } from '@/stores/managed-environment-store'
 
-/** The installation the app sets up; the core's own convention, one per user. */
-export const TENSORRT_LLM_TARGET: ManagedOperationTarget = {
-  kind: 'runtime',
-  installation_id: 'tensorrt-llm',
-  engine_id: 'tensorrt-llm',
+/**
+ * The installation of `engineId` the app sets up: the core's own convention, one per engine per user,
+ * named after the engine.
+ */
+export function runtimeTarget(engineId: string): ManagedOperationTarget {
+  return { kind: 'runtime', installation_id: engineId, engine_id: engineId }
 }
 
 function coreCall<T>(method: 'GET' | 'POST', path: string, body: unknown = null): Promise<T> {
@@ -50,7 +51,7 @@ export async function listEnvironments(): Promise<EnvironmentSnapshot[]> {
  */
 export function probe(
   descriptorId: string,
-  target: ManagedOperationTarget = TENSORRT_LLM_TARGET
+  target: ManagedOperationTarget
 ): Promise<RequirementPlan> {
   return coreCall('POST', '/environments/probe', { descriptor_id: descriptorId, target })
 }
@@ -60,17 +61,13 @@ export function beginOperation(
   request: {
     request_id: string
     kind: ManagedOperationKind
-    target?: ManagedOperationTarget
+    target: ManagedOperationTarget
     descriptor_id?: string
     retain_models?: boolean
     approved_plan_digest?: Sha256Digest
   }
 ): Promise<EnvironmentOperation> {
-  const { target = TENSORRT_LLM_TARGET, ...rest } = request
-  return coreCall('POST', `/environments/${encodeURIComponent(environmentId)}/operations`, {
-    ...rest,
-    target,
-  })
+  return coreCall('POST', `/environments/${encodeURIComponent(environmentId)}/operations`, request)
 }
 
 export function getOperation(operationId: string): Promise<EnvironmentOperation> {
@@ -92,19 +89,19 @@ export function resumeOperation(
   })
 }
 
-/** The engine id, sent as the probe's descriptor preference before anything is installed. */
-const TENSORRT_LLM_ENGINE_ID = 'tensorrt-llm'
-
 /**
- * The `descriptor_id` a TensorRT-LLM probe names: the installed engine's own, otherwise the engine
- * id, which the core resolves to its newest descriptor and names in the plan (ruling R-app-4).
+ * The `descriptor_id` a probe of `engineId` names: the installed engine's own, otherwise the engine
+ * id, which the core resolves to that engine's newest descriptor and names in the plan (ruling
+ * R-app-4).
  */
-export function descriptorHint(environment: EnvironmentSnapshot | undefined): string {
+export function descriptorHint(
+  environment: EnvironmentSnapshot | undefined,
+  engineId: string
+): string {
   const installed = environment?.installations.find(
-    (installation) =>
-      installation.engine_id === TENSORRT_LLM_ENGINE_ID && installation.active_descriptor_id
+    (installation) => installation.engine_id === engineId && installation.active_descriptor_id
   )
-  return installed?.active_descriptor_id ?? TENSORRT_LLM_ENGINE_ID
+  return installed?.active_descriptor_id ?? engineId
 }
 
 export type HostStepAnswer =

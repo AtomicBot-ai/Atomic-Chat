@@ -10,7 +10,7 @@
  * - A load takes minutes and reports its stages; the load snackbar names the stage and the time.
  */
 
-import type { CoreSessionLoadStage } from '@/lib/tensorrt-llm/types'
+import type { CoreSessionLoadStage } from '@/lib/managed-engine/types'
 
 export const TENSORRT_LLM = 'tensorrt-llm'
 

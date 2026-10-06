@@ -13,7 +13,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 const invoke = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
-import { TensorrtLlmSettingsCard } from '../TensorrtLlmSettingsCard'
+import { ManagedEngineSettingsCard } from '../ManagedEngineSettingsCard'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 
 const gpu = (gpu_id: string, name: string, free: number) => ({
@@ -59,13 +60,14 @@ const settings = (values: Record<string, unknown>) =>
     controller_props: { value },
   })) as unknown as ProviderSetting[]
 
-describe('TensorrtLlmSettingsCard', () => {
+describe('ManagedEngineSettingsCard', () => {
   it('offers the cards the core found, by name, with the most-free-memory default first', async () => {
     // Through the app's own menu, never a native <select> (task 3.19, F-11: dark theme).
     const onChange = vi.fn()
     const user = userEvent.setup()
     const { container } = render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: '', context_length: 8192, max_output_tokens: 4096 })}
         models={[]}
         onChange={onChange}
@@ -89,7 +91,8 @@ describe('TensorrtLlmSettingsCard', () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
     render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: 'GPU-aaa', context_length: 8192, max_output_tokens: 4096 })}
         models={[]}
         onChange={onChange}
@@ -104,7 +107,8 @@ describe('TensorrtLlmSettingsCard', () => {
   it('keeps a saved card that is gone visible, so the person sees what the load will replace', async () => {
     const user = userEvent.setup()
     render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: 'GPU-gone', context_length: 8192, max_output_tokens: 4096 })}
         models={[]}
         onChange={vi.fn()}
@@ -118,7 +122,8 @@ describe('TensorrtLlmSettingsCard', () => {
 
   it('warns when the output limit does not fit inside the context', () => {
     render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: '', context_length: 4096, max_output_tokens: 4096 })}
         models={[]}
         onChange={vi.fn()}
@@ -138,7 +143,8 @@ describe('TensorrtLlmSettingsCard', () => {
       at: 1,
     })
     render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: '', context_length: 8192, max_output_tokens: 4096 })}
         models={['nvidia/Qwen3-8B-FP8']}
         onChange={vi.fn()}
@@ -159,12 +165,13 @@ describe('TensorrtLlmSettingsCard', () => {
   })
 })
 
-describe('TensorrtLlmSettingsCard: one entry point for the logs', () => {
+describe('ManagedEngineSettingsCard: one entry point for the logs', () => {
   it('offers one "view logs" button and a model menu, not a button per model, and names whose log it shows', async () => {
     invoke.mockResolvedValue({ model_id: 'b/two', source: null, log_tail: '' })
     const user = userEvent.setup()
     render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: '', context_length: 8192, max_output_tokens: 4096 })}
         models={['a/one', 'b/two', 'c/three']}
         onChange={vi.fn()}
@@ -187,7 +194,8 @@ describe('TensorrtLlmSettingsCard: one entry point for the logs', () => {
 
   it('has no logs row before any model is downloaded', () => {
     render(
-      <TensorrtLlmSettingsCard
+      <ManagedEngineSettingsCard
+        engine={TENSORRT_LLM_ENGINE}
         settings={settings({ gpu_id: '', context_length: 8192, max_output_tokens: 4096 })}
         models={[]}
         onChange={vi.fn()}

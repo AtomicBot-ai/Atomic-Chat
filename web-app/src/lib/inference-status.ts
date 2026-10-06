@@ -11,7 +11,7 @@
  * there is one status system rather than two that can disagree.
  */
 
-import type { CoreSessionLoadStage } from '@/lib/tensorrt-llm/types'
+import type { CoreSessionLoadStage } from '@/lib/managed-engine/types'
 
 export type InferenceStatusPhase =
   /** No local engine in play — no model picked, or a remote provider. */

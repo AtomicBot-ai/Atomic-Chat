@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   selectFailedSetup,
   selectSetupOperation,
-  selectTensorrtInstallation,
+  selectInstallation,
   useManagedEnvironmentStore,
 } from '../managed-environment-store'
 import type {
@@ -166,8 +166,8 @@ describe('managed environment store', () => {
       )
     )
 
-    expect(selectTensorrtInstallation(store())?.status).toBe('installing')
-    expect(selectSetupOperation(store())?.operation_id).toBe('op-1')
+    expect(selectInstallation(store(), 'tensorrt-llm')?.status).toBe('installing')
+    expect(selectSetupOperation(store(), 'tensorrt-llm')?.operation_id).toBe('op-1')
   })
 
   it('names no running operation once it is over', () => {
@@ -193,6 +193,59 @@ describe('managed environment store', () => {
       )
     )
 
-    expect(selectFailedSetup(store())?.error?.message).toBe('no GPU in the container')
+    expect(selectFailedSetup(store(), 'tensorrt-llm')?.error?.message).toBe('no GPU in the container')
+  })
+
+  it('reads each engine its own installation, setup and failure; the environment removal is every engine\'s', () => {
+    const second = { kind: 'runtime' as const, installation_id: 'second-engine', engine_id: 'second-engine' }
+    store().applySnapshot(
+      snapshot(
+        'core-a',
+        [
+          environment('core-a', 1, {
+            active_operation_id: 'op-2',
+            installations: [
+              {
+                installation_id: 'tensorrt-llm',
+                engine_id: 'tensorrt-llm',
+                environment_id: 'default',
+                active_descriptor_id: 'tensorrt-llm-1.3.0rc29-r3',
+                candidate_descriptor_id: null,
+                availability: 'supported',
+                status: 'ready',
+              },
+            ],
+          }),
+        ],
+        [
+          operation('core-a', 3, {
+            phase: 'failed',
+            error: { code: 'MANAGED_GPU_CHECK_FAILED', message: 'trt failed' },
+          }),
+          operation('core-a', 4, { operation_id: 'op-2', target: second, phase: 'pulling-image' }),
+        ]
+      )
+    )
+
+    expect(selectInstallation(store(), 'tensorrt-llm')?.status).toBe('ready')
+    expect(selectInstallation(store(), 'second-engine')).toBeUndefined()
+    expect(selectSetupOperation(store(), 'second-engine')?.operation_id).toBe('op-2')
+    expect(selectSetupOperation(store(), 'tensorrt-llm')).toBeUndefined()
+    // The notification card follows whichever engine is being set up.
+    expect(selectSetupOperation(store())?.operation_id).toBe('op-2')
+    expect(selectFailedSetup(store(), 'tensorrt-llm')?.error?.message).toBe('trt failed')
+    expect(selectFailedSetup(store(), 'second-engine')).toBeUndefined()
+
+    store().applyOperation(
+      operation('core-a', 6, {
+        operation_id: 'op-env',
+        target: { kind: 'environment' },
+        kind: 'remove',
+        phase: 'removing',
+      })
+    )
+    store().applyEnvironment(environment('core-a', 2, { active_operation_id: 'op-env' }))
+    expect(selectSetupOperation(store(), 'tensorrt-llm')?.operation_id).toBe('op-env')
+    expect(selectSetupOperation(store(), 'second-engine')?.operation_id).toBe('op-env')
   })
 })

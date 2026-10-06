@@ -18,8 +18,8 @@ vi.mock('@/hooks/useHardware', () => ({
     selector({ hardwareData: { total_memory: 32 * 1024, gpus: [] } }),
 }))
 // The TensorRT-LLM provider is shown: the format menu offers it next to GGUF.
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => ({
+vi.mock('@/hooks/useManagedHubState', () => ({
+  useManagedHubState: () => ({
     visible: true,
     state: 'ready',
     blockers: [],

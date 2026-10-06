@@ -27,8 +27,9 @@ vi.mock('@/services/managed-environment/client', async (importOriginal) => ({
   ...client,
 }))
 
-import { resetHostStepPromptsForTests, TensorrtLlmSetupPanel } from '../TensorrtLlmSetupPanel'
-import { resetTensorrtPlanForTests } from '@/hooks/useTensorrtPlan'
+import { resetHostStepPromptsForTests, ManagedEngineSetupPanel } from '../ManagedEngineSetupPanel'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { resetManagedPlansForTests } from '@/hooks/useManagedPlan'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type {
@@ -147,7 +148,7 @@ function coreSays(op: EnvironmentOperation) {
 beforeEach(() => {
   vi.clearAllMocks()
   resetHostStepPromptsForTests()
-  resetTensorrtPlanForTests()
+  resetManagedPlansForTests()
   store().reset()
   seed(environment())
   client.probe.mockResolvedValue(plan())
@@ -158,7 +159,7 @@ beforeEach(() => {
   descriptors.describeDescriptor.mockResolvedValue(null)
 })
 
-describe('TensorrtLlmSetupPanel', () => {
+describe('ManagedEngineSetupPanel', () => {
   it('offers the install once the core has answered, though its probe made it publish a new revision', async () => {
     let revision = 1
     client.probe.mockImplementation(async () => {
@@ -167,7 +168,7 @@ describe('TensorrtLlmSetupPanel', () => {
       return plan()
     })
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     const install = await screen.findByRole('button', { name: 'providers:tensorrt.install' })
     await waitFor(() => expect(install).toBeEnabled())
@@ -183,12 +184,12 @@ describe('TensorrtLlmSetupPanel', () => {
         blockers: [{ code: 'prerequisite-blocked', reason: 'docker-missing', message: 'Docker is not installed.' }],
       })
     )
-    const first = render(<TensorrtLlmSetupPanel />)
+    const first = render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     expect(await screen.findByText('Docker is not installed.')).toBeInTheDocument()
     first.unmount()
 
     // Docker installed in a terminal: the core's snapshot did not change.
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(await screen.findByRole('button', { name: 'providers:tensorrt.install' })).toBeInTheDocument()
     expect(screen.queryByText('Docker is not installed.')).not.toBeInTheDocument()
@@ -197,7 +198,7 @@ describe('TensorrtLlmSetupPanel', () => {
 
   it('shows the whole plan and installs nothing when the person closes it', async () => {
     // spec "Отказ от согласия".
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.install' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -226,7 +227,7 @@ describe('TensorrtLlmSetupPanel', () => {
         ],
       })
     )
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.install' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -243,7 +244,7 @@ describe('TensorrtLlmSetupPanel', () => {
   })
 
   it('shows no warning block for a plan without warnings', async () => {
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.install' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -259,7 +260,7 @@ describe('TensorrtLlmSetupPanel', () => {
       curated_models: [],
       supported_architectures: [],
     })
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.install' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -270,7 +271,7 @@ describe('TensorrtLlmSetupPanel', () => {
 
   it('on consent starts the setup, approves exactly the plan it showed, asks for the system password and then explains the sign-in', async () => {
     // spec "Чистая Ubuntu с драйвером".
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.install' }))
     fireEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'providers:tensorrt.plan.agree' })
@@ -302,7 +303,7 @@ describe('TensorrtLlmSetupPanel', () => {
 
   it('does not approve a plan it did not show', async () => {
     // The machine changed between the probe and the consent: the core offers another plan.
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.install' }))
     fireEvent.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'providers:tensorrt.plan.agree' })
@@ -328,7 +329,7 @@ describe('TensorrtLlmSetupPanel', () => {
       }),
     ])
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(await screen.findByText('providers:tensorrt.phase.pulling-image')).toBeInTheDocument()
     expect(screen.getByText(/5\.0 GB/)).toBeInTheDocument()
@@ -356,7 +357,7 @@ describe('TensorrtLlmSetupPanel', () => {
       })
     )
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(await screen.findByText(/\/var\/lib\/docker/)).toBeInTheDocument()
     expect(screen.getByText(/63\.0 GB/)).toBeInTheDocument()
@@ -380,7 +381,7 @@ describe('TensorrtLlmSetupPanel', () => {
       })
     )
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(
       await screen.findByText('providers:tensorrt.blocker.ampere {"required":"8.0","actual":"7.5"}')
@@ -402,7 +403,7 @@ describe('TensorrtLlmSetupPanel', () => {
       }),
     ])
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(
       await screen.findByText(
@@ -447,7 +448,7 @@ describe('TensorrtLlmSetupPanel', () => {
 
     it('asks for UAC, then for a restart, and goes on after it with no new consent', async () => {
       // spec "Windows без WSL".
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
       expect(await screen.findByText('providers:tensorrt.notInstalledWindows')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'providers:tensorrt.install' }))
 
@@ -501,7 +502,7 @@ describe('TensorrtLlmSetupPanel', () => {
         operation({ phase: 'preparing-host', revision: 3, pending_host_step: enableWsl }),
       ])
 
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
       expect(await screen.findByText('wsl --install --no-distribution')).toBeInTheDocument()
       expect(screen.getByText('providers:tensorrt.hostStep.uac.manual')).toBeInTheDocument()
@@ -518,7 +519,7 @@ describe('TensorrtLlmSetupPanel', () => {
       operation({ kind: 'remove', phase: 'awaiting-consent', revision: 2, plan_digest: digest }),
     ])
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('providers:tensorrt.remove.title')).toBeInTheDocument()
@@ -544,7 +545,7 @@ describe('TensorrtLlmSetupPanel', () => {
       // NVIDIA Windows on Arm, 2026-10-06: r3 lowered the driver floor, but Try again resumed the r2 setup.
       client.probe.mockResolvedValue(plan({ descriptor_id: 'tensorrt-llm-1.3.0rc29-r3' }))
       seed(environment(), [failedOnR2()])
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
       expect(await screen.findByText(/older than the 615\.65\.02/)).toBeInTheDocument()
       expect(await screen.findByText('providers:tensorrt.newerPlan')).toBeInTheDocument()
@@ -566,7 +567,7 @@ describe('TensorrtLlmSetupPanel', () => {
     it('offers only Try again while the current plan is the one that failed', async () => {
       client.probe.mockResolvedValue(plan({ plan_digest: oldDigest }))
       seed(environment(), [failedOnR2()])
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
       expect(await screen.findByRole('button', { name: 'providers:tensorrt.retry' })).toBeInTheDocument()
       await waitFor(() => expect(client.probe).toHaveBeenCalled())
@@ -588,7 +589,7 @@ describe('TensorrtLlmSetupPanel', () => {
         pending_host_step: { step_id: 'step-f2' } as EnvironmentOperation['pending_host_step'],
       }),
     ])
-    const first = render(<TensorrtLlmSetupPanel />)
+    const first = render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     await waitFor(() => expect(client.runHostStep).toHaveBeenCalled())
     coreSays(
       operation({
@@ -600,7 +601,7 @@ describe('TensorrtLlmSetupPanel', () => {
     expect(await screen.findByText(/fully subnetted/)).toBeInTheDocument()
     first.unmount()
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(await screen.findByText(/docker-service failed \(exit 1\)/)).toBeInTheDocument()
   })
@@ -611,7 +612,7 @@ describe('TensorrtLlmSetupPanel', () => {
       operation({ phase: 'relogin-required', revision: 5 }),
     ])
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(await screen.findByText('providers:tensorrt.relogin.title')).toBeInTheDocument()
     expect(screen.getByText('providers:tensorrt.relogin.stillWaiting')).toBeInTheDocument()
@@ -628,11 +629,11 @@ describe('TensorrtLlmSetupPanel', () => {
       }),
     ])
 
-    const first = render(<TensorrtLlmSetupPanel />)
+    const first = render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     await waitFor(() => expect(client.runHostStep).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('button', { name: 'providers:tensorrt.hostStep.retry' })).toBeDisabled()
     first.unmount()
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
     await screen.findByText('providers:tensorrt.phase.preparing-host')
 
     expect(client.runHostStep).toHaveBeenCalledTimes(1)
@@ -645,7 +646,7 @@ describe('TensorrtLlmSetupPanel', () => {
   it('says what removing the engine frees, that uninstalling the app does not, and keeps models by default', async () => {
     seed(environment({ installations: [installedEngine] }))
 
-    render(<TensorrtLlmSetupPanel />)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
     expect(await screen.findByText(/providers:tensorrt.remove.space/)).toHaveTextContent('63.0 GB')
     fireEvent.click(screen.getByRole('button', { name: 'providers:tensorrt.remove.button' }))
@@ -686,7 +687,7 @@ describe('TensorrtLlmSetupPanel', () => {
     it('offers it once the engine is gone, says the app’s uninstall leaves it, and removes it after a consent naming the models and the space', async () => {
       // spec "Удаление окружения на Windows".
       seed(windowsEnvironment())
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
       expect(await screen.findByText(/providers:tensorrt.removeEnvironment.hint/)).toHaveTextContent('42.0 GB')
       fireEvent.click(screen.getByRole('button', { name: 'providers:tensorrt.removeEnvironment.button' }))
@@ -732,7 +733,7 @@ describe('TensorrtLlmSetupPanel', () => {
 
     it('is not offered while the engine is installed, and the engine’s removal says the distribution stays', async () => {
       seed(windowsEnvironment({ installations: [installedEngine] }))
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
       expect(await screen.findByText(/providers:tensorrt.remove.spaceWindows/)).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'providers:tensorrt.removeEnvironment.button' })).not.toBeInTheDocument()
@@ -751,7 +752,7 @@ describe('TensorrtLlmSetupPanel', () => {
           error: { code: 'MANAGED_PREREQUISITE_BLOCKED', message: 'wsl --unregister AtomicChat failed (exit 1).' },
         }),
       ])
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
 
       expect(await screen.findByText('wsl --unregister AtomicChat failed (exit 1).')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'providers:tensorrt.removeEnvironment.button' })).toBeInTheDocument()
@@ -761,7 +762,7 @@ describe('TensorrtLlmSetupPanel', () => {
       seed(windowsEnvironment({ active_operation_id: 'op-1' }), [
         operation({ kind: 'remove', target: { kind: 'environment' }, phase: 'awaiting-consent', revision: 2, plan_digest: digest }),
       ])
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
       const first = await screen.findByRole('dialog')
       fireEvent.click(within(first).getByRole('button', { name: 'providers:tensorrt.plan.cancel' }))
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -775,15 +776,63 @@ describe('TensorrtLlmSetupPanel', () => {
 
     it('is not offered before the distribution exists, nor on Linux', async () => {
       seed(environment({ executor: 'wsl-docker', distribution: null }))
-      const { unmount } = render(<TensorrtLlmSetupPanel />)
+      const { unmount } = render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
       expect(await screen.findByRole('button', { name: 'providers:tensorrt.install' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'providers:tensorrt.removeEnvironment.button' })).not.toBeInTheDocument()
       unmount()
 
       seed(environment())
-      render(<TensorrtLlmSetupPanel />)
+      render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
       expect(await screen.findByRole('button', { name: 'providers:tensorrt.install' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'providers:tensorrt.removeEnvironment.button' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('a second managed engine', () => {
+    const second = { id: 'second-engine', label: 'Second', i18n: 'second' }
+    const secondTarget = { kind: 'runtime', installation_id: 'second-engine', engine_id: 'second-engine' }
+
+    it('speaks with its own texts, probes and installs its own installation, and does not show another engine\'s setup', async () => {
+      // TensorRT-LLM is being set up; the second engine's page shows its own state, not that setup.
+      seed(environment({ active_operation_id: 'op-1' }), [operation({ phase: 'pulling-image' })])
+      client.probe.mockResolvedValue(
+        plan({ target: secondTarget as RequirementPlan['target'], descriptor_id: 'second-engine-1-r1' })
+      )
+
+      render(<ManagedEngineSetupPanel engine={second} />)
+
+      expect(await screen.findByRole('button', { name: 'providers:second.install' })).toBeInTheDocument()
+      expect(screen.queryByText(/providers:tensorrt\./)).not.toBeInTheDocument()
+      expect(client.probe).toHaveBeenCalledWith('second-engine', secondTarget)
+
+      fireEvent.click(screen.getByRole('button', { name: 'providers:second.install' }))
+      fireEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'providers:second.plan.agree' })
+      )
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      expect(client.beginOperation.mock.calls[0][1]).toMatchObject({
+        kind: 'setup',
+        target: secondTarget,
+        descriptor_id: 'second-engine-1-r1',
+      })
+    })
+
+    it('removes its own installation', async () => {
+      seed(
+        environment({
+          installations: [
+            { ...installedEngine, installation_id: 'second-engine', engine_id: 'second-engine', active_descriptor_id: 'second-engine-1-r1' },
+          ],
+        })
+      )
+      render(<ManagedEngineSetupPanel engine={second} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'providers:second.remove.button' }))
+      fireEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'providers:second.remove.confirm' })
+      )
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      expect(client.beginOperation.mock.calls[0][1]).toMatchObject({ kind: 'remove', target: secondTarget })
     })
   })
 })

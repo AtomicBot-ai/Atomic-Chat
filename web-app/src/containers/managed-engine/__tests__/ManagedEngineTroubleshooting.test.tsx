@@ -28,8 +28,9 @@ vi.mock('@/services/managed-environment/client', async (importOriginal) => ({
   ...client,
 }))
 
-import { TensorrtLlmTroubleshooting } from '../TensorrtLlmTroubleshooting'
-import { resetTensorrtPlanForTests } from '@/hooks/useTensorrtPlan'
+import { ManagedEngineTroubleshooting } from '../ManagedEngineTroubleshooting'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { resetManagedPlansForTests } from '@/hooks/useManagedPlan'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import type {
   EnvironmentOperation,
@@ -95,13 +96,13 @@ const seed = (
 beforeEach(() => {
   vi.clearAllMocks()
   useManagedEnvironmentStore.getState().reset()
-  resetTensorrtPlanForTests()
+  resetManagedPlansForTests()
   client.probe.mockResolvedValue({ plan_digest: 'sha256:x', blockers: [] })
 })
 
-describe('TensorrtLlmTroubleshooting', () => {
+describe('ManagedEngineTroubleshooting', () => {
   it('shows nothing before the core has described an environment', () => {
-    const { container } = render(<TensorrtLlmTroubleshooting />)
+    const { container } = render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -116,7 +117,7 @@ describe('TensorrtLlmTroubleshooting', () => {
         ],
       })
     )
-    render(<TensorrtLlmTroubleshooting />)
+    render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
     expect(
       screen.getByText('providers:tensorrt.troubleshooting.overridesTitle')
     ).toBeInTheDocument()
@@ -131,7 +132,7 @@ describe('TensorrtLlmTroubleshooting', () => {
     seed(environment())
     client.environmentDiagnostics.mockResolvedValue({ core_version: '0.9.6' })
     clipboard.copyToClipboard.mockResolvedValue(true)
-    render(<TensorrtLlmTroubleshooting />)
+    render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
 
     fireEvent.click(screen.getByText('providers:tensorrt.troubleshooting.copy'))
 
@@ -154,7 +155,7 @@ describe('TensorrtLlmTroubleshooting', () => {
       environments: [environment({ revision: 2 })],
       environment_operations: [],
     })
-    render(<TensorrtLlmTroubleshooting />)
+    render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
 
     fireEvent.click(
       screen.getByText('providers:tensorrt.troubleshooting.startOver')
@@ -173,7 +174,7 @@ describe('TensorrtLlmTroubleshooting', () => {
 
   it('cannot reset while an operation runs', () => {
     seed(environment({ active_operation_id: 'op-1' }))
-    render(<TensorrtLlmTroubleshooting />)
+    render(<ManagedEngineTroubleshooting engine={TENSORRT_LLM_ENGINE} />)
     expect(
       screen.getByText('providers:tensorrt.troubleshooting.reset')
     ).toBeDisabled()

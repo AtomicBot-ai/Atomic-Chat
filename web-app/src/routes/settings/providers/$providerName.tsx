@@ -2,12 +2,13 @@
 import { Card, CardItem } from '@/containers/Card'
 import { DecisionModelsSection } from '@/containers/DecisionModelsSection'
 import HeaderPage from '@/containers/HeaderPage'
-import { TensorrtLlmSetupPanel } from '@/containers/tensorrt-llm/TensorrtLlmSetupPanel'
-import { TensorrtLlmHubLink } from '@/containers/tensorrt-llm/TensorrtLlmHubLink'
-import { TensorrtLlmSettingsCard } from '@/containers/tensorrt-llm/TensorrtLlmSettingsCard'
-import { TensorrtLlmTroubleshooting } from '@/containers/tensorrt-llm/TensorrtLlmTroubleshooting'
+import { ManagedEngineSetupPanel } from '@/containers/managed-engine/ManagedEngineSetupPanel'
+import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
+import { ManagedEngineSettingsCard } from '@/containers/managed-engine/ManagedEngineSettingsCard'
+import { ManagedEngineTroubleshooting } from '@/containers/managed-engine/ManagedEngineTroubleshooting'
+import { managedEngine } from '@/lib/managed-engines'
 import {
-  selectTensorrtInstallation,
+  selectInstallation,
   useManagedEnvironmentStore,
 } from '@/stores/managed-environment-store'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -327,9 +328,10 @@ function ProviderDetail() {
   }, [backendMismatch, providerName, t])
   const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
-  // TensorRT-LLM models can be chosen once the engine is installed.
-  const tensorrtInstalled = useManagedEnvironmentStore(
-    (state) => selectTensorrtInstallation(state)?.status === 'ready'
+  // A managed engine's models can be chosen once the engine is installed.
+  const managed = managedEngine(providerName)
+  const managedInstalled = useManagedEnvironmentStore(
+    (state) => managed !== undefined && selectInstallation(state, managed.id)?.status === 'ready'
   )
   const provider = getProviderByName(providerName)
   const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
@@ -1955,11 +1957,12 @@ function ProviderDetail() {
               />
             </div>
 
-            {/* TensorRT-LLM: setting up the engine comes before its settings and models. */}
-            {providerName === 'tensorrt-llm' && <TensorrtLlmSetupPanel />}
-            {providerName === 'tensorrt-llm' && <TensorrtLlmTroubleshooting />}
-            {providerName === 'tensorrt-llm' && provider && (
-              <TensorrtLlmSettingsCard
+            {/* A managed engine: setting it up comes before its settings and models. */}
+            {managed && <ManagedEngineSetupPanel engine={managed} />}
+            {managed && <ManagedEngineTroubleshooting engine={managed} />}
+            {managed && provider && (
+              <ManagedEngineSettingsCard
+                engine={managed}
                 settings={provider.settings}
                 models={provider.models.map((model) => model.id)}
                 onChange={(key, value) => {
@@ -1980,9 +1983,7 @@ function ProviderDetail() {
                 }}
               />
             )}
-            {providerName === 'tensorrt-llm' && tensorrtInstalled && (
-              <TensorrtLlmHubLink />
-            )}
+            {managed && managedInstalled && <ManagedEngineHubLink engine={managed} />}
 
             <div
               className={cn(
@@ -2018,10 +2019,10 @@ function ProviderDetail() {
                   const isHiddenConcurrentMode =
                     setting.key === 'concurrent_mode' ||
                     setting.key === 'concurrent_slots'
-                  // TensorRT-LLM picks its card from the GPUs the core found, in
-                  // its own card below, rather than as a typed UUID.
-                  const isHiddenForTensorrt =
-                    providerName === 'tensorrt-llm' && setting.key === 'gpu_id'
+                  // A managed engine picks its card from the GPUs the core found,
+                  // in its own card above, rather than as a typed UUID.
+                  const isHiddenForManaged =
+                    managed !== undefined && setting.key === 'gpu_id'
 
                   // The DFlash speculative-decoding toggle is the master
                   // switch over `block_size`; the MTP toggle does the
@@ -2227,7 +2228,7 @@ function ProviderDetail() {
                             setting.key === 'device' && 'hidden',
                             isHiddenConcurrentMode && 'hidden',
                             isHiddenByDflash && 'hidden',
-                            isHiddenForTensorrt && 'hidden'
+                            isHiddenForManaged && 'hidden'
                           )}
                           onChange={(newValue) => {
                             // Manual "Latest <variant>" picks carry a
@@ -2411,7 +2412,7 @@ function ProviderDetail() {
                         setting.key === 'device' && 'hidden',
                         isHiddenConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
-                        isHiddenForTensorrt && 'hidden'
+                        isHiddenForManaged && 'hidden'
                       )}
                       column={
                         setting.controller_type === 'input' &&

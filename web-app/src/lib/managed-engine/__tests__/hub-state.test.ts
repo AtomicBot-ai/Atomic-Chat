@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { tensorrtHubState } from '../hub-state'
+import { managedHubState } from '../hub-state'
 import type {
   EnvironmentSnapshot,
   ManagedBlocker,
@@ -67,7 +67,7 @@ const blocker = (reason: string, params: Record<string, string> = {}): ManagedBl
   params,
 })
 
-describe('tensorrtHubState', () => {
+describe('managedHubState', () => {
   it.each([
     {
       name: 'macOS: no provider, no snapshot',
@@ -131,11 +131,11 @@ describe('tensorrtHubState', () => {
       expected: { visible: true, state: 'ready', descriptorId: 'tensorrt-llm-1.2.1-r1' },
     },
   ])('$name', ({ input, expected }) => {
-    expect(tensorrtHubState(input)).toMatchObject(expected)
+    expect(managedHubState(input)).toMatchObject(expected)
   })
 
   it('hands the blockers over with their reasons for the panel', () => {
-    const state = tensorrtHubState({
+    const state = managedHubState({
       providerShown: true,
       environment,
       installation: undefined,
@@ -149,7 +149,7 @@ describe('tensorrtHubState', () => {
   })
 
   it('an installation still being set up is not ready', () => {
-    const state = tensorrtHubState({
+    const state = managedHubState({
       providerShown: true,
       environment,
       installation: { ...ready, status: 'installing', active_descriptor_id: null },

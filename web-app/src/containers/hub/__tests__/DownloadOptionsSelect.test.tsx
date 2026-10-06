@@ -61,8 +61,8 @@ vi.mock('@/containers/MlxModelDownloadAction', () => ({
 }))
 
 const tensorrtHub = vi.hoisted(() => ({ state: 'ready' as string }))
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => ({
+vi.mock('@/hooks/useManagedHubState', () => ({
+  useManagedHubState: () => ({
     visible: true,
     state: tensorrtHub.state,
     blockers: [],
@@ -82,7 +82,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
 const trtModels = vi.hoisted(() => ({
   fetchHfRevision: vi.fn(),
-  checkTensorrtModel: vi.fn(),
+  checkManagedModel: vi.fn(),
   installTensorrtModel: vi.fn(),
 }))
 vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
@@ -93,7 +93,7 @@ vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { resetTensorrtVerdictsForTests } from '@/services/tensorrt-llm/verdict'
+import { resetManagedVerdictsForTests } from '@/services/managed-models/verdict'
 import type { ModelCompatibility } from '@/services/managed-environment/types'
 import { DownloadOptionsSelect } from '../DownloadOptionsSelect'
 
@@ -375,7 +375,7 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    resetTensorrtVerdictsForTests()
+    resetManagedVerdictsForTests()
     tensorrtHub.state = 'ready'
     useModelProvider.setState({ providers: [] })
     useGeneralSetting.setState({ huggingfaceToken: 'hf_secret' })
@@ -386,12 +386,12 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
       hf_quant_config_json: null,
       files: [],
     }))
-    trtModels.checkTensorrtModel.mockResolvedValue(compatible)
+    trtModels.checkManagedModel.mockResolvedValue(compatible)
     trtModels.installTensorrtModel.mockReturnValue(new Promise(() => {}))
   })
 
   it('says why the model cannot run here and offers no download', async () => {
-    trtModels.checkTensorrtModel.mockResolvedValue({
+    trtModels.checkManagedModel.mockResolvedValue({
       ...compatible,
       verdict: {
         ok: false,

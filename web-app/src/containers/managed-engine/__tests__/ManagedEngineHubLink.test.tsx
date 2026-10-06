@@ -9,13 +9,14 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
-import { TensorrtLlmHubLink } from '../TensorrtLlmHubLink'
+import { ManagedEngineHubLink } from '../ManagedEngineHubLink'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 import { route } from '@/constants/routes'
 
-describe('TensorrtLlmHubLink', () => {
+describe('ManagedEngineHubLink', () => {
   it('opens the Model Hub on the TensorRT-LLM format', () => {
     // spec "Переход к выбору модели".
-    render(<TensorrtLlmHubLink />)
+    render(<ManagedEngineHubLink engine={TENSORRT_LLM_ENGINE} />)
 
     expect(screen.getByText('providers:tensorrt.hub.body')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'providers:tensorrt.hub.action' }))

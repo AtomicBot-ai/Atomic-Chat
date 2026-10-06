@@ -432,8 +432,12 @@ function coreCall<T>(method: 'GET' | 'POST', path: string, body: unknown = null)
   return invoke<T>('atomic_core_call', { method, path, body })
 }
 
-export function checkTensorrtModel(request: Parameters<InstallDeps['check']>[0]): Promise<ModelCompatibility> {
-  return coreCall('POST', '/models/tensorrt-llm/check', request)
+/** `POST /models/<engine>/check`: the engine's verdict on a checkpoint, by that engine's descriptor. */
+export function checkManagedModel(
+  engineId: string,
+  request: Parameters<InstallDeps['check']>[0]
+): Promise<ModelCompatibility> {
+  return coreCall('POST', `/models/${encodeURIComponent(engineId)}/check`, request)
 }
 
 /** Where the core keeps TensorRT-LLM models on this machine, and the room there. */
@@ -461,7 +465,7 @@ export async function describeDescriptor(descriptorId: string): Promise<Descript
 export function defaultInstallDeps(): InstallDeps {
   return {
     fetch,
-    check: checkTensorrtModel,
+    check: (request) => checkManagedModel('tensorrt-llm', request),
     location: tensorrtModelLocation,
     existingSize: async (savePath) => {
       try {

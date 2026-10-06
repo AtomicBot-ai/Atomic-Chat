@@ -1,7 +1,7 @@
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatBytes } from '@/lib/utils'
 import type { GpuFacts, ModelCompatibility } from '@/services/managed-environment/types'
-import type { TensorrtVerdict as Verdict } from '@/services/tensorrt-llm/verdict'
+import type { ManagedVerdict as Verdict } from '@/services/managed-models/verdict'
 import { selectEnvironment, useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 
 /**

@@ -11,7 +11,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 const models = vi.hoisted(() => ({
   fetchHfRevision: vi.fn(),
-  checkTensorrtModel: vi.fn(),
+  checkManagedModel: vi.fn(),
 }))
 vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/tensorrt-llm/models')>()),
@@ -27,10 +27,10 @@ import {
   InsufficientModelSpaceError,
 } from '@/services/tensorrt-llm/models'
 import {
-  resetTensorrtVerdictsForTests,
+  resetManagedVerdictsForTests,
   verdictFromError,
-  type TensorrtVerdict as Verdict,
-} from '@/services/tensorrt-llm/verdict'
+  type ManagedVerdict as Verdict,
+} from '@/services/managed-models/verdict'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import type { ModelCompatibility } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
@@ -70,7 +70,7 @@ function Verdict({ model }: { model: CatalogModel }) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  resetTensorrtVerdictsForTests()
+  resetManagedVerdictsForTests()
   useGeneralSetting.setState({ huggingfaceToken: 'hf_secret' })
   useManagedEnvironmentStore.getState().reset()
   useManagedEnvironmentStore.getState().applySnapshot({
@@ -103,13 +103,13 @@ beforeEach(() => {
     hf_quant_config_json: null,
     files: [],
   }))
-  models.checkTensorrtModel.mockResolvedValue(compatible)
+  models.checkManagedModel.mockResolvedValue(compatible)
 })
 
 describe('the TensorRT-LLM verdict of a Hub card', () => {
   it('says why the model cannot run here, with the core numbers, and names the card it fits', async () => {
     // spec "Вставлен несовместимый репозиторий".
-    models.checkTensorrtModel.mockResolvedValue(incompatible)
+    models.checkManagedModel.mockResolvedValue(incompatible)
     render(<Verdict model={trt('nvidia/Qwen3-8B-NVFP4')} />)
 
     expect(await screen.findByText(/compute capability 10\.0, the card has 8\.9/)).toBeInTheDocument()
@@ -126,7 +126,7 @@ describe('the TensorRT-LLM verdict of a Hub card', () => {
   })
 
   it('says the model fits with the size of its weights, and shows a warning of the check without refusing', async () => {
-    models.checkTensorrtModel.mockResolvedValue({
+    models.checkManagedModel.mockResolvedValue({
       ...compatible,
       warnings: [
         {
@@ -158,7 +158,7 @@ describe('the TensorRT-LLM verdict of a Hub card', () => {
     // Held, so there from the first render: nothing to wait for.
     expect(again.result.current.verdict?.kind).toBe('ok')
     expect(again.result.current.checking).toBe(false)
-    expect(models.checkTensorrtModel).toHaveBeenCalledTimes(1)
+    expect(models.checkManagedModel).toHaveBeenCalledTimes(1)
   })
 
   it('claims nothing for a model of another format', () => {

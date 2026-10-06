@@ -19,9 +19,9 @@ import { MediaHub } from '@/containers/hub/MediaHub'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
 import { ModelListRow } from '@/containers/hub/ModelListRow'
 import {
-  TensorrtHubBlocked,
-  TensorrtHubChecking,
-} from '@/containers/hub/TensorrtHubStatus'
+  ManagedHubBlocked,
+  ManagedHubChecking,
+} from '@/containers/hub/ManagedHubStatus'
 import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -31,8 +31,9 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useStaffPicks } from '@/hooks/useStaffPicks'
-import { useTensorrtCurated } from '@/hooks/useTensorrtCurated'
-import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
+import { useManagedCurated } from '@/hooks/useManagedCurated'
+import { useManagedHubState } from '@/hooks/useManagedHubState'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   applyHubFilters,
@@ -389,7 +390,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     querySearchParam ?? getHubSearchQuery()
   )
   const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
-  const tensorrtHub = useTensorrtHubState()
+  const tensorrtHub = useManagedHubState(TENSORRT_LLM_ENGINE.id)
   // Sort and toggles are saved; the format is GGUF on every launch and kept only for this one
   // (`hub-session.ts`). A format this machine does not offer (yet) reads as GGUF.
   const [storedFilters, setFilters] = useState<HubFilterState>(() => {
@@ -534,7 +535,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   // The curated models of the engine's descriptor, and what narrows the feed:
   // its architectures and this machine's cards.
-  const tensorrtCurated = useTensorrtCurated(
+  const tensorrtCurated = useManagedCurated(
+    TENSORRT_LLM_ENGINE.id,
     tensorrtFormat && !tensorrtPanel ? tensorrtHub.descriptorId : null
   )
   const tensorrtGpus = useManagedEnvironmentStore(
@@ -1237,9 +1239,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
         <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto p-2">
           {tensorrtPanel === 'blocked' ? (
-            <TensorrtHubBlocked blockers={tensorrtHub.blockers} />
+            <ManagedHubBlocked engine={TENSORRT_LLM_ENGINE} blockers={tensorrtHub.blockers} />
           ) : tensorrtPanel === 'checking' ? (
-            <TensorrtHubChecking />
+            <ManagedHubChecking engine={TENSORRT_LLM_ENGINE} />
           ) : showSkeleton ? (
             <div className="flex animate-pulse flex-col gap-2">
               {[...Array(6)].map((_, index) => (

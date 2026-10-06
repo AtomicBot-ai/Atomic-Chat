@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const models = vi.hoisted(() => ({
   fetchHfRevision: vi.fn(),
-  checkTensorrtModel: vi.fn(),
+  checkManagedModel: vi.fn(),
   describeDescriptor: vi.fn(),
 }))
 vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
@@ -11,9 +11,9 @@ vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
   ...models,
 }))
 
-import { useTensorrtCurated } from '../useTensorrtCurated'
+import { useManagedCurated } from '../useManagedCurated'
 import { GatedModelError } from '@/services/tensorrt-llm/models'
-import { resetTensorrtVerdictsForTests } from '@/services/tensorrt-llm/verdict'
+import { resetManagedVerdictsForTests } from '@/services/managed-models/verdict'
 import type {
   CuratedModel,
   DescriptorSummary,
@@ -69,7 +69,7 @@ const verdicts: Record<string, ModelCompatibility> = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  resetTensorrtVerdictsForTests()
+  resetManagedVerdictsForTests()
   models.describeDescriptor.mockResolvedValue(descriptor)
   models.fetchHfRevision.mockImplementation(async (repository: string, revision?: string) => ({
     repository,
@@ -78,14 +78,14 @@ beforeEach(() => {
     hf_quant_config_json: null,
     files: [],
   }))
-  models.checkTensorrtModel.mockImplementation(async ({ repository }: { repository: string }) =>
+  models.checkManagedModel.mockImplementation(async (_engine: string, { repository }: { repository: string }) =>
     verdicts[repository]
   )
 })
 
-describe('useTensorrtCurated', () => {
+describe('useManagedCurated', () => {
   it('lists the descriptor curated models that run on at least one card, as Hub cards, in its order', async () => {
-    const { result } = renderHook(() => useTensorrtCurated('tensorrt-llm-1.3.0rc29-r2'))
+    const { result } = renderHook(() => useManagedCurated('tensorrt-llm', 'tensorrt-llm-1.3.0rc29-r2'))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.models.map((model) => model.model_name)).toEqual([
@@ -110,7 +110,7 @@ describe('useTensorrtCurated', () => {
       return { repository, revision: `${revision}-sha`, config_json: {}, hf_quant_config_json: null, files: [] }
     })
 
-    const { result } = renderHook(() => useTensorrtCurated('tensorrt-llm-1.3.0rc29-r2'))
+    const { result } = renderHook(() => useManagedCurated('tensorrt-llm', 'tensorrt-llm-1.3.0rc29-r2'))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.models.map((model) => model.model_name)).toEqual([
@@ -121,25 +121,40 @@ describe('useTensorrtCurated', () => {
   })
 
   it('asks the core again for nothing it already answered this session', async () => {
-    const first = renderHook(() => useTensorrtCurated('tensorrt-llm-1.3.0rc29-r2'))
+    const first = renderHook(() => useManagedCurated('tensorrt-llm', 'tensorrt-llm-1.3.0rc29-r2'))
     await waitFor(() => expect(first.result.current.loading).toBe(false))
     first.unmount()
-    const checks = models.checkTensorrtModel.mock.calls.length
+    const checks = models.checkManagedModel.mock.calls.length
 
-    const again = renderHook(() => useTensorrtCurated('tensorrt-llm-1.3.0rc29-r2'))
+    const again = renderHook(() => useManagedCurated('tensorrt-llm', 'tensorrt-llm-1.3.0rc29-r2'))
     await waitFor(() => expect(again.result.current.models).toHaveLength(2))
-    expect(models.checkTensorrtModel.mock.calls.length).toBe(checks)
+    expect(models.checkManagedModel.mock.calls.length).toBe(checks)
   })
 
   it('lists nothing when the core does not hold the descriptor, and asks nothing without one', async () => {
     models.describeDescriptor.mockResolvedValue(null)
-    const { result } = renderHook(() => useTensorrtCurated('tensorrt-llm-unknown'))
+    const { result } = renderHook(() => useManagedCurated('tensorrt-llm', 'tensorrt-llm-unknown'))
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.models).toEqual([])
     expect(result.current.supportedArchitectures).toBeNull()
 
-    const none = renderHook(() => useTensorrtCurated(null))
+    const none = renderHook(() => useManagedCurated('tensorrt-llm', null))
     expect(none.result.current).toMatchObject({ models: [], loading: false })
     expect(models.describeDescriptor).toHaveBeenCalledTimes(1)
+  })
+
+  it('checks an engine\'s curated models with that engine, and keeps its verdicts apart from another engine\'s', async () => {
+    // The second engine refuses for every card what TensorRT-LLM accepts.
+    models.checkManagedModel.mockImplementation(async (engine: string, { repository }: { repository: string }) =>
+      engine === 'second-engine' ? refused([]) : verdicts[repository]
+    )
+    const trt = renderHook(() => useManagedCurated('tensorrt-llm', 'tensorrt-llm-1.3.0rc29-r2'))
+    await waitFor(() => expect(trt.result.current.loading).toBe(false))
+    const second = renderHook(() => useManagedCurated('second-engine', 'second-engine-1-r1'))
+    await waitFor(() => expect(second.result.current.loading).toBe(false))
+
+    expect(trt.result.current.models.map((model) => model.model_name)).toContain('nvidia/Qwen3-8B-FP8')
+    expect(second.result.current.models).toEqual([])
+    expect(models.checkManagedModel).toHaveBeenCalledWith('second-engine', expect.objectContaining({ repository: 'nvidia/Qwen3-8B-FP8' }))
   })
 })

@@ -1,5 +1,5 @@
 /**
- * The way out when the TensorRT-LLM setup is stuck, on the provider page (2026-10-06: a Windows on
+ * The way out when a managed engine's setup is stuck, on its provider page (2026-10-06: a Windows on
  * Arm machine stayed blocked after conf had published the fix, and neither reinstalling the app nor
  * "Try again" changed anything — its state lives outside the app, and only photos of PowerShell
  * explained it):
@@ -27,8 +27,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useTensorrtPlan } from '@/hooks/useTensorrtPlan'
+import { useManagedPlan } from '@/hooks/useManagedPlan'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { providerKey, type ManagedEngine } from '@/lib/managed-engines'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
   environmentDiagnostics,
@@ -48,15 +49,16 @@ const errorText = (error: unknown): string =>
       ? error
       : JSON.stringify(error)
 
-export function TensorrtLlmTroubleshooting() {
+export function ManagedEngineTroubleshooting({ engine }: { engine: ManagedEngine }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   const environment = useManagedEnvironmentStore(selectEnvironment)
-  const failed = useManagedEnvironmentStore(selectFailedSetup)
+  const failed = useManagedEnvironmentStore((state) => selectFailedSetup(state, engine.id))
   const applySnapshot = useManagedEnvironmentStore(
     (state) => state.applySnapshot
   )
   // Only its `recheck`: the setup panel owns the probing; this asks it again after a reset.
-  const { recheck } = useTensorrtPlan({ enabled: false })
+  const { recheck } = useManagedPlan(engine.id, { enabled: false })
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -70,11 +72,11 @@ export function TensorrtLlmTroubleshooting() {
     try {
       const report = await environmentDiagnostics(environmentId)
       const copied = await copyToClipboard(JSON.stringify(report, null, 2))
-      if (copied) toast.success(t('providers:tensorrt.troubleshooting.copied'))
-      else toast.error(t('providers:tensorrt.troubleshooting.copyFailed'))
+      if (copied) toast.success(t(k('troubleshooting.copied')))
+      else toast.error(t(k('troubleshooting.copyFailed')))
     } catch (error) {
       toast.error(
-        t('providers:tensorrt.troubleshooting.unavailable', {
+        t(k('troubleshooting.unavailable'), {
           reason: errorText(error),
         })
       )
@@ -93,13 +95,13 @@ export function TensorrtLlmTroubleshooting() {
       applySnapshot(await readManagedSnapshot())
       void recheck()
       toast.success(
-        t('providers:tensorrt.troubleshooting.resetDone', {
+        t(k('troubleshooting.resetDone'), {
           count: result.archived_operation_ids.length,
         })
       )
     } catch (error) {
       toast.error(
-        t('providers:tensorrt.troubleshooting.resetFailed', {
+        t(k('troubleshooting.resetFailed'), {
           reason: errorText(error),
         })
       )
@@ -112,17 +114,17 @@ export function TensorrtLlmTroubleshooting() {
     <div className="flex flex-col gap-3 rounded-lg border border-main-view-fg/10 p-4">
       <div className="flex flex-col gap-1">
         <h3 className="font-medium text-main-view-fg">
-          {t('providers:tensorrt.troubleshooting.title')}
+          {t(k('troubleshooting.title'))}
         </h3>
         <p className="text-sm text-main-view-fg/70">
-          {t('providers:tensorrt.troubleshooting.description')}
+          {t(k('troubleshooting.description'))}
         </p>
       </div>
 
       {overrides.length > 0 && (
         <div className="flex flex-col gap-1 rounded-md bg-yellow-500/10 p-3">
           <p className="text-sm font-medium">
-            {t('providers:tensorrt.troubleshooting.overridesTitle')}
+            {t(k('troubleshooting.overridesTitle'))}
           </p>
           <ul className="flex flex-col gap-1">
             {overrides.map((override) => (
@@ -135,14 +137,14 @@ export function TensorrtLlmTroubleshooting() {
             ))}
           </ul>
           <p className="text-sm text-main-view-fg/70">
-            {t('providers:tensorrt.troubleshooting.overridesHint')}
+            {t(k('troubleshooting.overridesHint'))}
           </p>
         </div>
       )}
 
       {failed && (
         <p className="text-sm text-main-view-fg/70">
-          {t('providers:tensorrt.troubleshooting.afterFailure')}
+          {t(k('troubleshooting.afterFailure'))}
         </p>
       )}
 
@@ -153,7 +155,7 @@ export function TensorrtLlmTroubleshooting() {
           disabled={busy}
           onClick={() => void copyDiagnostics()}
         >
-          {t('providers:tensorrt.troubleshooting.copy')}
+          {t(k('troubleshooting.copy'))}
         </Button>
         <Button
           variant={failed ? 'default' : 'outline'}
@@ -162,13 +164,13 @@ export function TensorrtLlmTroubleshooting() {
           onClick={() => setConfirmOpen(true)}
         >
           {failed
-            ? t('providers:tensorrt.troubleshooting.startOver')
-            : t('providers:tensorrt.troubleshooting.reset')}
+            ? t(k('troubleshooting.startOver'))
+            : t(k('troubleshooting.reset'))}
         </Button>
       </div>
       {running && (
         <p className="text-xs text-main-view-fg/60">
-          {t('providers:tensorrt.troubleshooting.running')}
+          {t(k('troubleshooting.running'))}
         </p>
       )}
 
@@ -176,18 +178,18 @@ export function TensorrtLlmTroubleshooting() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {t('providers:tensorrt.troubleshooting.confirmTitle')}
+              {t(k('troubleshooting.confirmTitle'))}
             </DialogTitle>
             <DialogDescription>
-              {t('providers:tensorrt.troubleshooting.confirmBody')}
+              {t(k('troubleshooting.confirmBody'))}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              {t('providers:tensorrt.troubleshooting.cancel')}
+              {t(k('troubleshooting.cancel'))}
             </Button>
             <Button onClick={() => void reset()}>
-              {t('providers:tensorrt.troubleshooting.confirm')}
+              {t(k('troubleshooting.confirm'))}
             </Button>
           </DialogFooter>
         </DialogContent>

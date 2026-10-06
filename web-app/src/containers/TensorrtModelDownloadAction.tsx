@@ -15,7 +15,7 @@ import {
 } from '@/lib/downloadCancellation'
 import type { CatalogModel } from '@/services/models/types'
 import { installTensorrtModel, tensorrtDownloadId } from '@/services/tensorrt-llm/models'
-import { verdictFromError, type TensorrtVerdict as Verdict } from '@/services/tensorrt-llm/verdict'
+import { verdictFromError, type ManagedVerdict as Verdict } from '@/services/managed-models/verdict'
 
 /**
  * "Download" for a TensorRT-LLM model the core said runs here (change `add-tensorrt-llm-model-hub`,

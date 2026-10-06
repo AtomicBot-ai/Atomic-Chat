@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { DropdownControl } from '@/containers/dynamicControllerSetting/DropdownControl'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { providerKey, type ManagedEngine } from '@/lib/managed-engines'
 import { formatBytes } from '@/lib/utils'
 import type { GpuFacts, ManagedError } from '@/services/managed-environment/types'
 import {
@@ -13,14 +14,14 @@ import {
 } from '@/stores/managed-environment-store'
 
 /**
- * The TensorRT-LLM settings the generic list cannot render well (spec `tensorrt-llm-desktop`,
+ * A managed engine's settings the generic list cannot render well (spec `tensorrt-llm-desktop`,
  * "Настройки, логи и удаление"): the card, chosen from the GPUs the core found rather than typed
  * as a UUID, the output limit checked against the context, and each model's container log. The
- * context length, output limit, KV-cache share and load timeout stay in the generic list, from the
- * extension's `settings.json` (the core's schema). Changes apply from the next load.
+ * engine's other settings (context length, output limit, KV-cache, load timeout) stay in the generic
+ * list, from the extension's `settings.json` (the core's schema). Changes apply from the next load.
  */
 
-/** `GET /models/tensorrt-llm/:id/logs`. */
+/** `GET /models/:provider/:id/logs`. */
 type ModelLogs =
   | { model_id: string; source: 'session'; generation: string; log_tail: string }
   | {
@@ -46,17 +47,20 @@ function gpuLabel(gpu: GpuFacts): string {
   return `${gpu.name} (${gpu.compute_capability})${memory}`
 }
 
-export function TensorrtLlmSettingsCard({
+export function ManagedEngineSettingsCard({
+  engine,
   settings,
   models,
   onChange,
 }: {
+  engine: ManagedEngine
   settings: ProviderSetting[]
   /** Downloaded model ids, whose logs can be read. */
   models: string[]
   onChange: (key: string, value: unknown) => void
 }) {
   const { t } = useTranslation()
+  const k = providerKey(engine)
   const gpus = useManagedEnvironmentStore((state) => selectEnvironment(state)?.gpus ?? NO_GPUS)
   const gpuId = String(valueOf(settings, 'gpu_id') ?? '')
   const context = Number(valueOf(settings, 'context_length'))
@@ -73,7 +77,7 @@ export function TensorrtLlmSettingsCard({
     try {
       const answer = await invoke<ModelLogs>('atomic_core_call', {
         method: 'GET',
-        path: `/models/tensorrt-llm/${model}/logs`,
+        path: `/models/${engine.id}/${model}/logs`,
         body: null,
       })
       setLogs({ model, logs: answer })
@@ -86,16 +90,16 @@ export function TensorrtLlmSettingsCard({
     <Card
       header={
         <h1 className="text-foreground font-medium text-base mb-4">
-          {t('providers:tensorrt.settings.title')}
+          {t(k('settings.title'))}
         </h1>
       }
     >
       <CardItem
-        title={t('providers:tensorrt.settings.gpu')}
+        title={t(k('settings.gpu'))}
         description={
           gpuGone
-            ? t('providers:tensorrt.settings.gpuMissing', { gpu: gpuId })
-            : t('providers:tensorrt.settings.gpuDescription')
+            ? t(k('settings.gpuMissing'), { gpu: gpuId })
+            : t(k('settings.gpuDescription'))
         }
         // Bounded, so a long card name truncates inside the menu instead of widening the row.
         classNameWrapperAction="w-80 max-w-[50%]"
@@ -105,7 +109,7 @@ export function TensorrtLlmSettingsCard({
           <DropdownControl
             value={gpuId}
             options={[
-              { value: '', name: t('providers:tensorrt.settings.gpuDefault') },
+              { value: '', name: t(k('settings.gpuDefault')) },
               ...gpus.map((gpu) => ({ value: gpu.gpu_id, name: gpuLabel(gpu) })),
               ...(gpuGone ? [{ value: gpuId, name: gpuId }] : []),
             ]}
@@ -116,14 +120,14 @@ export function TensorrtLlmSettingsCard({
 
       {Number.isFinite(context) && Number.isFinite(output) && output >= context && (
         <p className="mt-2 text-sm text-destructive">
-          {t('providers:tensorrt.settings.outputTooLong', { output, context })}
+          {t(k('settings.outputTooLong'), { output, context })}
         </p>
       )}
 
       {logModel !== null && (
         <CardItem
-          title={t('providers:tensorrt.settings.logs')}
-          description={t('providers:tensorrt.settings.logsDescription')}
+          title={t(k('settings.logs'))}
+          description={t(k('settings.logsDescription'))}
           // Under the title, across the card: a model id is long (`deepseek-ai/deepseek-coder-…`), and
           // beside the title it pushed the button out of the card.
           column
@@ -147,7 +151,7 @@ export function TensorrtLlmSettingsCard({
                 className="shrink-0"
                 onClick={() => void showLogs(logModel)}
               >
-                {t('providers:tensorrt.settings.viewLogs')}
+                {t(k('settings.viewLogs'))}
               </Button>
             </div>
           }
@@ -157,7 +161,7 @@ export function TensorrtLlmSettingsCard({
       {logs && (
         <div className="mt-3 flex min-w-0 flex-col gap-2">
           <p className="text-xs font-medium text-muted-foreground">
-            {t('providers:tensorrt.settings.logOf', { model: logs.model })}
+            {t(k('settings.logOf'), { model: logs.model })}
           </p>
           {logs.logs?.source === 'last-attempt' && logs.logs.error && (
             <p className="text-sm text-destructive break-words">{logs.logs.error.message}</p>
@@ -165,7 +169,7 @@ export function TensorrtLlmSettingsCard({
           {logs.error && <p className="text-sm text-destructive break-words">{logs.error}</p>}
           {logs.logs && (
             <pre className="max-h-80 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground whitespace-pre-wrap break-words">
-              {logs.logs.log_tail || t('providers:tensorrt.settings.noLogs')}
+              {logs.logs.log_tail || t(k('settings.noLogs'))}
             </pre>
           )}
         </div>

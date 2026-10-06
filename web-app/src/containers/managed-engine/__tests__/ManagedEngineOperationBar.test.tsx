@@ -10,7 +10,7 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 const invoke = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
-import { OperationBarView } from '../TensorrtLlmOperationBar'
+import { OperationBarView } from '../ManagedEngineOperationBar'
 import type { EnvironmentOperation } from '@/services/managed-environment/types'
 
 const operation = (over: Partial<EnvironmentOperation> = {}): EnvironmentOperation => ({
@@ -34,7 +34,7 @@ const operation = (over: Partial<EnvironmentOperation> = {}): EnvironmentOperati
   ...over,
 })
 
-describe('TensorrtLlmOperationBar', () => {
+describe('ManagedEngineOperationBar', () => {
   beforeEach(() => {
     invoke.mockReset()
     navigate.mockReset()

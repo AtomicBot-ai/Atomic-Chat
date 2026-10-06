@@ -7,13 +7,13 @@ import { TensorrtModelDownloadAction } from '@/containers/TensorrtModelDownloadA
 import { TensorrtInstalledActions } from '@/containers/hub/TensorrtInstalledActions'
 import { TensorrtVerdict } from '@/containers/hub/TensorrtVerdict'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
+import { useManagedHubState } from '@/hooks/useManagedHubState'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 import { useTensorrtVerdict } from '@/hooks/useTensorrtVerdict'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
 import { findInstalledLocalModel, TENSORRT_LLM_PROVIDER } from '@/lib/hub-installed'
 import type { CatalogModel } from '@/services/models/types'
-import { TENSORRT_LLM_ENGINE_ID } from '@/stores/managed-environment-store'
 
 /**
  * The download part of a TensorRT-LLM card (spec `tensorrt-llm-desktop`, "Выбор и скачивание
@@ -30,7 +30,7 @@ export function TensorrtDownloadOptions({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { state } = useTensorrtHubState()
+  const { state } = useManagedHubState(TENSORRT_LLM_ENGINE.id)
   const { verdict, checking } = useTensorrtVerdict(model)
   // Downloaded already: the extension lists it under its repository.
   const providers = useModelProvider((store) => store.providers)
@@ -62,7 +62,7 @@ export function TensorrtDownloadOptions({
             onClick={() =>
               navigate({
                 to: route.settings.providers,
-                params: { providerName: TENSORRT_LLM_ENGINE_ID },
+                params: { providerName: TENSORRT_LLM_ENGINE.id },
               })
             }
           >

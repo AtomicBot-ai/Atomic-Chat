@@ -28,8 +28,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 const tensorrt = vi.hoisted(() => ({ visible: false }))
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => ({
+vi.mock('@/hooks/useManagedHubState', () => ({
+  useManagedHubState: () => ({
     visible: tensorrt.visible,
     state: 'unknown',
     blockers: [],

@@ -13,7 +13,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useHardware } from '@/hooks/useHardware'
-import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
+import { useManagedHubState } from '@/hooks/useManagedHubState'
+import { TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HUB_FORMAT_LABELS,
@@ -70,7 +71,7 @@ export function HubFilters({
   // MLX only exists on Apple Silicon, so offering the toggle elsewhere would
   // be a filter that can only ever empty the list. TensorRT-LLM follows its
   // provider: no platform check of the Hub's own.
-  const tensorrtVisible = useTensorrtHubState().visible
+  const tensorrtVisible = useManagedHubState(TENSORRT_LLM_ENGINE.id).visible
   const availableFormats = hubFormats({ mlx: IS_MACOS, tensorrt: tensorrtVisible })
   const sortKeys = HUB_SORT_KEYS.filter(
     (key) => key !== 'likes' || showLikesSort

@@ -4,23 +4,23 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import type { CuratedModel } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
 import { describeDescriptor } from '@/services/tensorrt-llm/models'
-import { refusedOnEveryCard, tensorrtVerdict } from '@/services/tensorrt-llm/verdict'
+import { managedVerdict, refusedOnEveryCard } from '@/services/managed-models/verdict'
 
 /**
- * The curated models of a TensorRT-LLM descriptor that run on this machine, as Model Hub cards
+ * The curated models of a managed engine's descriptor that run on this machine, as Model Hub cards
  * (change `add-tensorrt-llm-model-hub`, design D3): the installation's descriptor, or the one the
- * plan would install (`useTensorrtHubState().descriptorId`). Each is checked by the core at the
- * revision the descriptor pins; one the core refuses for every card of this machine is left out. Also the
- * descriptor's `supported_architectures`, which the Hugging Face feed is narrowed by.
+ * plan would install (`useManagedHubState(engine).descriptorId`). Each is checked by that engine at
+ * the revision the descriptor pins; one it refuses for every card of this machine is left out. Also
+ * the descriptor's `supported_architectures`, which the Hugging Face feed is narrowed by.
  */
-export interface TensorrtCurated {
+export interface ManagedCurated {
   models: CatalogModel[]
   /** `null` until the descriptor is read, and when the core does not hold it. */
   supportedArchitectures: string[] | null
   loading: boolean
 }
 
-const NONE: TensorrtCurated = { models: [], supportedArchitectures: null, loading: false }
+const NONE: ManagedCurated = { models: [], supportedArchitectures: null, loading: false }
 
 export function curatedCard(model: CuratedModel): CatalogModel {
   const [owner] = model.repository.split('/', 1)
@@ -35,9 +35,9 @@ export function curatedCard(model: CuratedModel): CatalogModel {
   }
 }
 
-export function useTensorrtCurated(descriptorId: string | null): TensorrtCurated {
+export function useManagedCurated(engineId: string, descriptorId: string | null): ManagedCurated {
   const token = useGeneralSetting((state) => state.huggingfaceToken) || undefined
-  const [state, setState] = useState<TensorrtCurated>(() =>
+  const [state, setState] = useState<ManagedCurated>(() =>
     descriptorId ? { ...NONE, loading: true } : NONE
   )
 
@@ -59,7 +59,7 @@ export function useTensorrtCurated(descriptorId: string | null): TensorrtCurated
       const checked = await Promise.all(
         summary.curated_models.map(async (model) => ({
           model,
-          verdict: await tensorrtVerdict(model.repository, model.revision, token),
+          verdict: await managedVerdict(engineId, model.repository, model.revision, token),
         }))
       )
       if (cancelled) return
@@ -74,7 +74,7 @@ export function useTensorrtCurated(descriptorId: string | null): TensorrtCurated
     return () => {
       cancelled = true
     }
-  }, [descriptorId, token])
+  }, [engineId, descriptorId, token])
 
   return state
 }
