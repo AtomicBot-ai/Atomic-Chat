@@ -20,6 +20,8 @@ interface VisibilityGatedEngine {
   refreshVisibility(): Promise<boolean>
   /** False while the engine has no answer yet: hidden, but not to be forgotten. */
   visibilityKnown?(): boolean
+  /** The engine's settings as its extension registered them (managed engines: the core's schema). */
+  getSettings?(): Promise<Array<{ key: string }>>
 }
 
 function isGated(engine: unknown): engine is VisibilityGatedEngine {
@@ -36,7 +38,7 @@ export function isEngineHidden(engine: unknown): boolean {
 }
 
 export interface ProviderVisibilityStore {
-  providers: Array<{ provider: string }>
+  providers: Array<{ provider: string; settings?: Array<{ key: string }> }>
   setProviders(providers: ModelProvider[]): void
   deleteProvider(providerName: string): void
 }
@@ -59,13 +61,27 @@ export async function refreshManagedProviders(options: {
 
   await Promise.all(gated.map(([, engine]) => engine.refreshVisibility()))
   const inStore = (name: string) => options.store.providers.some((p) => p.provider === name)
-  // A shown engine missing from the store, or a hidden one still in it (and known to be hidden),
-  // is what calls for a new list; otherwise the whole list is not read again.
-  const stale = gated.some(([name, engine]) => {
-    const known = engine.visibilityKnown?.() ?? true
-    return engine.isHidden() ? known && inStore(name) : !inStore(name)
-  })
-  if (!stale) return true
+  const keysOf = (settings: Array<{ key: string }> | undefined) =>
+    (settings ?? []).map((setting) => setting.key).join(',')
+  // A shown engine whose stored settings list is not the one its extension registers: the store
+  // kept it from an older extension (an app update that added settings), and since the provider is
+  // already in the store nothing else would ever read its list again.
+  const settingsChanged = async (name: string, engine: VisibilityGatedEngine) => {
+    if (!engine.getSettings) return false
+    const stored = options.store.providers.find((p) => p.provider === name)?.settings
+    return keysOf(stored) !== keysOf(await engine.getSettings())
+  }
+  // A shown engine missing from the store or with an outdated settings list, or a hidden one still
+  // in it (and known to be hidden), is what calls for a new list; otherwise the whole list is not
+  // read again.
+  const verdicts = await Promise.all(
+    gated.map(async ([name, engine]) => {
+      const known = engine.visibilityKnown?.() ?? true
+      if (engine.isHidden()) return known && inStore(name)
+      return !inStore(name) || (await settingsChanged(name, engine))
+    })
+  )
+  if (!verdicts.some(Boolean)) return true
   options.store.setProviders(await options.getProviders())
   for (const [name, engine] of gated) {
     const known = engine.visibilityKnown?.() ?? true

@@ -107,6 +107,50 @@ describe('refreshManagedProviders', () => {
     expect(providers.names()).toEqual(['tensorrt-llm'])
   })
 
+  it('re-reads a shown provider whose stored settings are older than its extension’s', async () => {
+    // Windows acceptance, 2026-10-06: vLLM was stored with its first 8 settings; the rebuilt
+    // extension registered 20, and the provider page kept showing 8.
+    const key = (k: string) => ({ key: k })
+    const fresh = ['gpu_id', 'context_length', 'kv_cache_memory_gib', 'gpu_memory_utilization']
+    const engine = { ...gated(true), getSettings: async () => fresh.map(key) }
+    let providers = [{ provider: 'vllm', settings: ['gpu_id', 'context_length', 'kv_cache_max_tokens'].map(key) }]
+    const getProviders = vi.fn(async () => [
+      { provider: 'vllm', settings: fresh.map(key) } as unknown as ModelProvider,
+    ])
+
+    await refreshManagedProviders({
+      engines: new Map([['vllm', engine]]),
+      getProviders,
+      store: {
+        get providers() {
+          return providers
+        },
+        setProviders(next) {
+          providers = next as unknown as typeof providers
+        },
+        deleteProvider() {},
+      },
+    })
+
+    expect(getProviders).toHaveBeenCalledTimes(1)
+    expect(providers[0]?.settings?.map((s) => s.key)).toEqual(fresh)
+  })
+
+  it('does not re-read a shown provider whose stored settings match its extension’s', async () => {
+    const engine = { ...gated(true), getSettings: async () => [{ key: 'gpu_id' }] }
+    const getProviders = vi.fn(async () => [])
+    await refreshManagedProviders({
+      engines: new Map([['vllm', engine]]),
+      getProviders,
+      store: {
+        providers: [{ provider: 'vllm', settings: [{ key: 'gpu_id' }] }],
+        setProviders() {},
+        deleteProvider() {},
+      },
+    })
+    expect(getProviders).not.toHaveBeenCalled()
+  })
+
   it('does nothing at all when no engine is gated', async () => {
     const getProviders = vi.fn()
     const providers = store(['mlx'])
