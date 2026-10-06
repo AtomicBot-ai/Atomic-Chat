@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { seedServiceHub } from '@/test/service-hub'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelSetupStore } from '@/stores/model-setup-store'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 import type {
@@ -82,7 +83,7 @@ class FakeService extends DefaultModelSetupService {
 let service: FakeService
 const onReady = vi.fn()
 
-const renderSheet = () =>
+const renderSheet = ({ installed = false } = {}) =>
   render(
     <ModelSetupSheet
       open
@@ -90,6 +91,7 @@ const renderSheet = () =>
       file={file}
       modelName="Bonsai 8B"
       modelId="prism-ml/Bonsai-8B-PQ2_0"
+      installed={installed}
       onReady={onReady}
     />
   )
@@ -98,6 +100,7 @@ describe('ModelSetupSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
+    useModelProvider.setState({ deletedModels: [] })
     service = new FakeService()
     seedServiceHub({ modelSetup: service })
   })
@@ -248,10 +251,12 @@ describe('ModelSetupSheet', () => {
     renderSheet()
     await screen.findByTestId('model-setup-engine')
 
+    // Ready just now: the providers are still being read again, so the model
+    // is not listed yet.
     act(() => {
       useModelSetupStore.getState().apply({
         type: 'changed',
-        setup: setup({ stage: 'ready', revision: 5 }),
+        setup: setup({ stage: 'ready', revision: 5, updated_at: Date.now() }),
       })
     })
 
@@ -260,5 +265,42 @@ describe('ModelSetupSheet', () => {
     )
     fireEvent.click(screen.getByTestId('model-setup-new-chat'))
     expect(onReady).toHaveBeenCalledWith('prism-ml/Bonsai-8B-PQ2_0')
+  })
+
+  it('keeps offering the chat of an installed model set up before this launch', () => {
+    useModelSetupStore.setState({ setups: { s1: setup({ stage: 'ready' }) } })
+    renderSheet({ installed: true })
+
+    expect(screen.getByTestId('model-setup-new-chat')).toBeInTheDocument()
+    expect(service.plan).not.toHaveBeenCalled()
+  })
+
+  it('sets the model up again once it was deleted, instead of a chat with nothing', async () => {
+    useModelSetupStore.setState({
+      setups: { s1: setup({ stage: 'ready', updated_at: Date.now() }) },
+    })
+    useModelProvider.setState({ deletedModels: ['prism-ml/Bonsai-8B-PQ2_0'] })
+    renderSheet()
+
+    expect(await screen.findByTestId('model-setup-start')).toHaveTextContent(
+      'hub:prismSetupStart'
+    )
+    expect(screen.queryByTestId('model-setup-new-chat')).toBeNull()
+    expect(screen.queryByTestId('model-setup-stage')).toBeNull()
+
+    await screen.findByTestId('model-setup-engine')
+    fireEvent.click(screen.getByTestId('model-setup-start'))
+    await waitFor(() => expect(service.start).toHaveBeenCalled())
+  })
+
+  it('sets the model up again when a setup from before this launch left no model', async () => {
+    useModelSetupStore.setState({ setups: { s1: setup({ stage: 'ready' }) } })
+    renderSheet()
+
+    expect(await screen.findByTestId('model-setup-engine')).toBeInTheDocument()
+    expect(screen.queryByTestId('model-setup-new-chat')).toBeNull()
+    expect(screen.getByTestId('model-setup-start')).toHaveTextContent(
+      'hub:prismSetupStart'
+    )
   })
 })

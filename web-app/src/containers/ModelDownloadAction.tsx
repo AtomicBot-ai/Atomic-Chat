@@ -294,6 +294,7 @@ export const ModelDownloadAction = ({
       file={hubFile}
       modelName={model.model_name}
       modelId={setupModelId}
+      installed={isDownloaded}
       onReady={(modelId) => {
         setSetupOpen(false)
         handleUseModel(modelId, PRISM_PROVIDER)

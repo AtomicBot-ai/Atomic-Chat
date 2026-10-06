@@ -80,10 +80,12 @@ export function getProviderLogo(provider: string) {
   switch (provider) {
     case 'jan':
       return '/images/model-provider/jan.png'
-    // Both engines the app starts, plus the `llama-server` the user starts and
-    // we merely connect to — same engine, so the same mark.
+    // Every llama.cpp engine the app starts (PrismML's fork included), plus the
+    // `llama-server` the user starts and we merely connect to — same engine, so
+    // the same mark.
     case 'llamacpp':
     case 'llamacpp-upstream':
+    case 'atomic-prism':
     case 'llamacpp-server':
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
@@ -174,12 +176,15 @@ export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
 export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
 
 /**
- * Returns true for either llamacpp provider id ('llamacpp' = turboquant,
- * 'llamacpp-upstream' = upstream ggml-org build). Both providers support
- * client-side token counting via their respective getTokensCount() methods.
+ * Returns true for every llamacpp provider id the app starts ('llamacpp' =
+ * turboquant, 'llamacpp-upstream' = upstream ggml-org build, 'atomic-prism' =
+ * PrismML's fork). Each supports client-side token counting via its own
+ * getTokensCount() method.
  */
 export const isLlamacppProvider = (provider: string) =>
-  provider === 'llamacpp' || provider === 'llamacpp-upstream'
+  provider === 'llamacpp' ||
+  provider === 'llamacpp-upstream' ||
+  provider === 'atomic-prism'
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {

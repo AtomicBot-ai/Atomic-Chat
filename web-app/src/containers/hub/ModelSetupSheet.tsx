@@ -13,10 +13,16 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { useHubFileSetup, useModelSetupBytes } from '@/hooks/useModelSetup'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatBytes, formatProgressPair } from '@/lib/downloadFormat'
-import { isFinalSetup, isRunningSetup, type HubFile } from '@/lib/model-setup'
+import {
+  isFinalSetup,
+  isRunningSetup,
+  isStandingReadySetup,
+  type HubFile,
+} from '@/lib/model-setup'
 import type {
   ModelSetupError,
   ModelSetupPlan,
@@ -31,6 +37,11 @@ export type ModelSetupSheetProps = {
   modelName: string
   /** The id the model registers under, so the Hub recognises it once set up. */
   modelId: string
+  /**
+   * The model is listed under a provider. A `ready` setup whose model is not
+   * listed, or was deleted, is planned again instead of offering its chat.
+   */
+  installed: boolean
   /** The setup is `ready`: open a chat with the model. */
   onReady: (modelId: string) => void
 }
@@ -58,6 +69,7 @@ export function ModelSetupSheet({
   file,
   modelName,
   modelId,
+  installed,
   onReady,
 }: ModelSetupSheetProps) {
   const { t } = useTranslation()
@@ -72,7 +84,14 @@ export function ModelSetupSheet({
   const [planStale, setPlanStale] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const showPlan = !setup || (isFinalSetup(setup) && setup.stage !== 'ready')
+  const deleted = useModelProvider(
+    (state) =>
+      !!setup &&
+      Array.isArray(state.deletedModels) &&
+      state.deletedModels.includes(setup.plan.model_id)
+  )
+  const ready = !!setup && isStandingReadySetup(setup, { installed, deleted })
+  const showPlan = !setup || (isFinalSetup(setup) && !ready)
 
   const loadPlan = useCallback(async () => {
     setPlanError(null)
@@ -286,7 +305,7 @@ export function ModelSetupSheet({
         </div>
 
         <SheetFooter className="flex-row justify-end gap-2">
-          {setup?.stage === 'ready' ? (
+          {setup && ready ? (
             <Button
               onClick={() => onReady(setup.plan.model_id)}
               data-testid="model-setup-new-chat"
@@ -314,7 +333,9 @@ export function ModelSetupSheet({
               onClick={() => void start()}
               data-testid="model-setup-start"
             >
-              {setup ? t('hub:prismSetupRetry') : t('hub:prismSetupStart')}
+              {setup && setup.stage !== 'ready'
+                ? t('hub:prismSetupRetry')
+                : t('hub:prismSetupStart')}
             </Button>
           )}
         </SheetFooter>

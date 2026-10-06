@@ -7,6 +7,7 @@ import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useModelSetupDownloads } from '@/hooks/useModelSetup'
 import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -54,6 +55,7 @@ import {
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import { useModelSetupStore } from '@/stores/model-setup-store'
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -284,12 +286,16 @@ export function DownloadManagement() {
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
   }, [downloads, localDownloadingModels, downloadOriginByModelId])
 
+  // A PrismML model setup runs its downloads in the core, which sends no
+  // download events, so its rows come from the setups themselves.
+  const setupDownloads = useModelSetupDownloads()
+
   const downloadCount = useMemo(() => {
-    const modelDownloads = downloadProcesses.length
+    const modelDownloads = downloadProcesses.length + setupDownloads.length
     const appUpdateDownload = appUpdateState.isDownloading ? 1 : 0
     const total = modelDownloads + appUpdateDownload
     return total
-  }, [downloadProcesses, appUpdateState.isDownloading])
+  }, [downloadProcesses, setupDownloads, appUpdateState.isDownloading])
 
   // ATO-462: each download run starts expanded and stays present while active;
   // a deliberate collapse lasts for that run. Measure how much of the run the
@@ -963,6 +969,29 @@ export function DownloadManagement() {
     [serviceHub]
   )
 
+  // A setup cancels and resumes in the core: Cancel keeps what it downloaded,
+  // and one the app closed on waits, paused, for Resume. The store hears the
+  // outcome, which also ends the row and says how it ended.
+  const handleSetupAction = useCallback(
+    (setupId: string, action: 'cancel' | 'resume') => {
+      const service = serviceHub.modelSetup()
+      service[action](setupId)
+        .then((setup) =>
+          useModelSetupStore.getState().apply({ type: 'changed', setup })
+        )
+        .catch((error) => {
+          console.error(`[DownloadManagement] setup ${action} failed:`, error)
+          toast.error(t('common:toast.downloadFailed.title'), {
+            id: 'download-failed',
+            description:
+              (error as { message?: string } | undefined)?.message ??
+              String(error),
+          })
+        })
+    },
+    [serviceHub, t]
+  )
+
   const panelItems = useMemo<DownloadRowProps[]>(() => {
     const rows: DownloadRowProps[] = []
 
@@ -988,15 +1017,34 @@ export function DownloadManagement() {
       })
     }
 
+    for (const { setup, bytes, bytesPerSecond } of setupDownloads) {
+      const interrupted = setup.stage === 'interrupted'
+      rows.push({
+        id: setup.plan.model_id,
+        progress: bytes.total > 0 ? bytes.transferred / bytes.total : 0,
+        current: bytes.transferred,
+        total: bytes.total,
+        bytesPerSecond,
+        // Cancel-only while it runs, like a TensorRT-LLM download; Resume only
+        // for one the app closed on.
+        paused: interrupted,
+        pausable: interrupted,
+        onResume: () => handleSetupAction(setup.setup_id, 'resume'),
+        onCancel: () => handleSetupAction(setup.setup_id, 'cancel'),
+      })
+    }
+
     return rows
   }, [
     appUpdateState,
     appUpdateBps,
     downloadProcesses,
+    setupDownloads,
     pausedDownloads,
     handlePauseDownload,
     handleResumeDownload,
     handleCancelDownload,
+    handleSetupAction,
     t,
   ])
 

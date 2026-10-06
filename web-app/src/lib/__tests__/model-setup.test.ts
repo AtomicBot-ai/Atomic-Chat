@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  currentSetupTask,
   isFinalSetup,
   isRunningSetup,
+  isStandingReadySetup,
   latestSetupFor,
   mergeSetup,
   parseHubFileUrl,
@@ -10,6 +12,7 @@ import {
   routeForVerdict,
   setupBytes,
   setupSteps,
+  setupsUnderWay,
 } from '@/lib/model-setup'
 import type {
   CompatibilityOutcome,
@@ -153,6 +156,106 @@ describe('setup stages', () => {
       'registering',
       'ready',
     ])
+  })
+})
+
+describe('isStandingReadySetup', () => {
+  const launch = 100
+  const ready = (updated_at: number) => setup({ stage: 'ready', updated_at })
+
+  it('stands for an installed model', () => {
+    expect(
+      isStandingReadySetup(
+        ready(1),
+        { installed: true, deleted: false },
+        launch
+      )
+    ).toBe(true)
+  })
+
+  it('ends once the app deleted the model, however recent', () => {
+    expect(
+      isStandingReadySetup(
+        ready(200),
+        { installed: true, deleted: true },
+        launch
+      )
+    ).toBe(false)
+  })
+
+  it('stands for a model ready since this launch that is not listed yet', () => {
+    expect(
+      isStandingReadySetup(
+        ready(200),
+        { installed: false, deleted: false },
+        launch
+      )
+    ).toBe(true)
+  })
+
+  it('ends when a setup from before this launch left no model', () => {
+    expect(
+      isStandingReadySetup(
+        ready(1),
+        { installed: false, deleted: false },
+        launch
+      )
+    ).toBe(false)
+  })
+
+  it('is never true for a setup that is not ready', () => {
+    expect(
+      isStandingReadySetup(
+        setup({ stage: 'failed', updated_at: 200 }),
+        { installed: true, deleted: false },
+        launch
+      )
+    ).toBe(false)
+  })
+})
+
+describe('setupsUnderWay', () => {
+  it('lists the newest setup of each file while it runs or waits, oldest first', () => {
+    const replaced = setup({
+      setup_id: 'a',
+      stage: 'interrupted',
+      created_at: 1,
+      updated_at: 1,
+    })
+    const retried = setup({
+      setup_id: 'b',
+      stage: 'downloading_model',
+      created_at: 5,
+      updated_at: 6,
+    })
+    const waiting = setup({
+      setup_id: 'c',
+      stage: 'interrupted',
+      created_at: 2,
+      updated_at: 2,
+      request: { repo: 'prism-ml/Bonsai', file: 'other.gguf' },
+    })
+    expect(
+      setupsUnderWay([retried, replaced, waiting]).map((s) => s.setup_id)
+    ).toEqual(['c', 'b'])
+  })
+
+  it('leaves out a file whose newest setup ended', () => {
+    const failed = setup({ setup_id: 'a', stage: 'failed', updated_at: 1 })
+    const ready = setup({ setup_id: 'b', stage: 'ready', updated_at: 2 })
+    expect(setupsUnderWay([failed, ready])).toEqual([])
+  })
+})
+
+describe('currentSetupTask', () => {
+  it.each([
+    ['installing_engine', 'te'],
+    ['downloading_model', 'tm'],
+    ['downloading_projector', 'tp'],
+    ['verifying', undefined],
+    ['interrupted', undefined],
+  ] as const)('%s downloads with %s', (stage, task) => {
+    expect(currentSetupTask(setup({ stage }))).toBe(task)
   })
 })
 

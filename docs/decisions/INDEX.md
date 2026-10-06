@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-383 records, 2026-05-19 → 2026-10-05.
+384 records, 2026-05-19 → 2026-10-06.
 
 ---
 
@@ -215,8 +215,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (35)
+## Models, Hub & downloads (36)
 
+- **2026-10-06** — [List PrismML model setups in the download panel, and set a deleted Bonsai up again](2026-10-06-list-prismml-model-setups-in-the-download-panel.md)
 - **2026-10-03** — [Choose TensorRT-LLM models in the Model Hub, as its third format](2026-10-03-choose-tensorrt-llm-models-in-the-model-hub.md)
 - **2026-10-01** — [Download decision models in the Hub, run them on the TurboQuant page](2026-10-01-download-decision-models-in-the-hub-and-run-them-on-the-turboquant-page.md)
 - **2026-09-29** — [List image and video models in the Hub, from the curated catalog only](2026-09-29-list-image-and-video-models-in-the-hub.md)

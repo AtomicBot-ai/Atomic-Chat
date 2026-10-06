@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useModelSetupStore } from '@/stores/model-setup-store'
 import type { ModelSetup } from '@/services/model-setup/types'
@@ -22,8 +22,15 @@ const verdict = {
 
 describe('useModelSetupStore', () => {
   beforeEach(() => {
-    useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
+    useModelSetupStore.setState({
+      setups: {},
+      progress: {},
+      speeds: {},
+      verdicts: {},
+    })
   })
+
+  afterEach(() => vi.useRealTimers())
 
   it('keeps the newest revision of every setup it hears about', () => {
     const { apply } = useModelSetupStore.getState()
@@ -43,6 +50,17 @@ describe('useModelSetupStore', () => {
     expect(useModelSetupStore.getState().progress).toEqual({
       t: { transferred: 5, total: 10 },
     })
+  })
+
+  it('measures how fast each download comes, for the download panel', () => {
+    vi.useFakeTimers()
+    const { apply } = useModelSetupStore.getState()
+    vi.setSystemTime(10_000)
+    apply({ type: 'progress', taskId: 't', transferred: 0, total: 100 })
+    vi.setSystemTime(11_000)
+    apply({ type: 'progress', taskId: 't', transferred: 50, total: 100 })
+
+    expect(useModelSetupStore.getState().speeds.t.bytesPerSecond).toBe(50)
   })
 
   it('forgets the verdicts when a new core generation attaches', () => {

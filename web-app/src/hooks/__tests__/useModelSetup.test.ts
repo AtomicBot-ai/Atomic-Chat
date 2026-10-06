@@ -1,8 +1,18 @@
-import { cleanup, renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast }))
+const notifications = vi.hoisted(() => ({ notifyWhenAway: vi.fn() }))
+vi.mock('@/lib/notifications', () => notifications)
 
 import {
   useCompatibilityVerdict,
+  useModelSetupDownloads,
   useModelSetupSync,
 } from '@/hooks/useModelSetup'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -45,7 +55,12 @@ describe('useModelSetupSync', () => {
   const getProviders = vi.fn(async () => [])
 
   beforeEach(() => {
-    useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
+    useModelSetupStore.setState({
+      setups: {},
+      progress: {},
+      speeds: {},
+      verdicts: {},
+    })
     service = new FakeService()
     seedServiceHub({
       modelSetup: service,
@@ -107,6 +122,104 @@ describe('useModelSetupSync', () => {
     )
   })
 
+  describe('says how a setup it saw under way ended, as a download ends', () => {
+    /** What the person was told: each toast as `kind: title`. */
+    const told = () => [
+      ...toast.success.mock.calls.map(([title]) => `success: ${title}`),
+      ...toast.error.mock.calls.map(([title]) => `error: ${title}`),
+      ...toast.info.mock.calls.map(([title]) => `info: ${title}`),
+    ]
+
+    beforeEach(() => {
+      toast.success.mockClear()
+      toast.error.mockClear()
+      toast.info.mockClear()
+      notifications.notifyWhenAway.mockClear()
+    })
+
+    const settle = async () => {
+      renderHook(() => useModelSetupSync())
+      await waitFor(() =>
+        expect(useModelSetupStore.getState().setups.s1?.stage).toBe(
+          'downloading_model'
+        )
+      )
+    }
+
+    it('ready: the download-complete toast and, while away, the OS notification', async () => {
+      await settle()
+
+      act(() =>
+        service.handler!({ type: 'changed', setup: record('ready', 2) })
+      )
+      // The same ending heard again is not a second one.
+      act(() =>
+        service.handler!({ type: 'changed', setup: record('ready', 3) })
+      )
+
+      expect(told()).toEqual(['success: common:toast.downloadComplete.title'])
+      expect(notifications.notifyWhenAway.mock.calls).toEqual([
+        [
+          'common:desktopNotification.modelReadyTitle',
+          'common:desktopNotification.modelReadyBody',
+        ],
+      ])
+      expect(useModelSetupStore.getState().setups.s1.stage).toBe('ready')
+    })
+
+    it('failed: the reason from the core in the download-failed toast', async () => {
+      await settle()
+
+      act(() =>
+        service.handler!({
+          type: 'changed',
+          setup: {
+            ...record('failed', 2),
+            error: { code: 'DOWNLOAD_FAILED', message: 'network down' },
+          },
+        })
+      )
+
+      expect(told()).toEqual(['error: common:toast.downloadFailed.title'])
+      const [, options] = toast.error.mock.calls[0] as unknown as [
+        string,
+        { description: string },
+      ]
+      expect(options.description).toBe('hub:prismSetupFailed')
+      expect(useModelSetupStore.getState().setups.s1.error?.message).toBe(
+        'network down'
+      )
+    })
+
+    it('cancelled: the download-cancelled toast once, whoever applied it first', async () => {
+      await settle()
+
+      // The panel applies the record its cancel returned; the event follows.
+      act(() =>
+        useModelSetupStore
+          .getState()
+          .apply({ type: 'changed', setup: record('cancelled', 2) })
+      )
+      act(() =>
+        service.handler!({ type: 'changed', setup: record('cancelled', 2) })
+      )
+
+      expect(told()).toEqual(['info: common:toast.downloadCancelled.title'])
+      expect(useModelSetupStore.getState().setups.s1.stage).toBe('cancelled')
+    })
+
+    it('says nothing about setups that had ended before this window heard of them', async () => {
+      service.list.mockResolvedValueOnce([record('ready', 1)])
+      renderHook(() => useModelSetupSync())
+      await waitFor(() =>
+        expect(useModelSetupStore.getState().setups.s1?.stage).toBe('ready')
+      )
+
+      expect(told()).toEqual([])
+      expect(notifications.notifyWhenAway.mock.calls).toEqual([])
+    })
+  })
+
   it('does nothing where there is no core', () => {
     seedServiceHub({ modelSetup: new DefaultModelSetupService() })
     renderHook(() => useModelSetupSync())
@@ -114,11 +227,43 @@ describe('useModelSetupSync', () => {
   })
 })
 
+describe('useModelSetupDownloads', () => {
+  it('gives each setup under way its bytes and the speed of its running download', () => {
+    useModelSetupStore.setState({
+      setups: {
+        s1: {
+          ...record('downloading_model', 1),
+          plan: {
+            model_id: 'o/f',
+            engine: null,
+            model: { size: 100 },
+            projector: null,
+          },
+          task_ids: { model: 'tm' },
+        } as ModelSetup,
+      },
+      progress: { tm: { transferred: 40, total: 100 } },
+      speeds: { tm: { bytesPerSecond: 7, atBytes: 40, atTime: 0 } },
+    })
+
+    const { result } = renderHook(() => useModelSetupDownloads())
+
+    expect(result.current).toHaveLength(1)
+    expect(result.current[0].bytes).toEqual({ transferred: 40, total: 100 })
+    expect(result.current[0].bytesPerSecond).toBe(7)
+  })
+})
+
 describe('useCompatibilityVerdict', () => {
   let service: FakeService
 
   beforeEach(() => {
-    useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
+    useModelSetupStore.setState({
+      setups: {},
+      progress: {},
+      speeds: {},
+      verdicts: {},
+    })
     service = new FakeService()
     seedServiceHub({ modelSetup: service })
   })

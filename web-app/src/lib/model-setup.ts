@@ -79,6 +79,25 @@ export function isRunningSetup(setup: ModelSetup): boolean {
   return !isFinalSetup(setup) && setup.stage !== 'interrupted'
 }
 
+/** When this window started, for {@link isStandingReadySetup}. */
+const WINDOW_STARTED_AT = Date.now()
+
+/**
+ * Whether a `ready` setup still stands for a model on disk. The core keeps the
+ * record after the model is deleted, so the app's own delete (its tombstone)
+ * ends it. A model the providers do not list ends it too, unless the setup
+ * became ready since this window started: the providers are read again only
+ * once `ready` arrives, so a fresh model may not be listed yet.
+ */
+export function isStandingReadySetup(
+  setup: ModelSetup,
+  model: { installed: boolean; deleted: boolean },
+  windowStartedAt = WINDOW_STARTED_AT
+): boolean {
+  if (setup.stage !== 'ready' || model.deleted) return false
+  return model.installed || setup.updated_at >= windowStartedAt
+}
+
 /** Keeps the record with the highest revision, as the core asks. */
 export function mergeSetup(
   setups: Readonly<Record<string, ModelSetup>>,
@@ -101,6 +120,36 @@ export function latestSetupFor(
     if (!latest || setup.updated_at > latest.updated_at) latest = setup
   }
   return latest
+}
+
+/**
+ * The setups the download panel lists: the newest setup of each Hub file while
+ * it still runs or waits for `resume`, oldest first.
+ */
+export function setupsUnderWay(setups: Iterable<ModelSetup>): ModelSetup[] {
+  const newest = new Map<string, ModelSetup>()
+  for (const setup of setups) {
+    const key = `${setup.request.repo}\n${setup.request.file}`
+    const known = newest.get(key)
+    if (!known || setup.updated_at > known.updated_at) newest.set(key, setup)
+  }
+  return [...newest.values()]
+    .filter((setup) => !isFinalSetup(setup))
+    .sort((a, b) => a.created_at - b.created_at)
+}
+
+/** The download task of the stage a setup is in, when that stage downloads. */
+export function currentSetupTask(setup: ModelSetup): string | undefined {
+  switch (setup.stage) {
+    case 'installing_engine':
+      return setup.task_ids.engine
+    case 'downloading_model':
+      return setup.task_ids.model
+    case 'downloading_projector':
+      return setup.task_ids.projector
+    default:
+      return undefined
+  }
 }
 
 /** The stages a setup walks, in order; skipped ones are left out. */

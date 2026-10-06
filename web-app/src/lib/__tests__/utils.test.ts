@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   getProviderLogo,
   getProviderTitle,
+  isLlamacppProvider,
   getReadableLanguageName,
   toGigabytes,
   formatMegaBytes,
@@ -37,9 +38,30 @@ describe('getProviderLogo', () => {
     )
   })
 
+  it('marks PrismML with the llama.cpp logo, like the other llama.cpp engines', () => {
+    expect(getProviderLogo('atomic-prism')).toBe(
+      '/images/model-provider/llamacpp.svg'
+    )
+  })
+
   it('returns undefined for unknown providers', () => {
     expect(getProviderLogo('unknown')).toBeUndefined()
     expect(getProviderLogo('')).toBeUndefined()
+  })
+})
+
+describe('isLlamacppProvider', () => {
+  it('counts tokens for every llama.cpp engine the app starts', () => {
+    expect(isLlamacppProvider('llamacpp')).toBe(true)
+    expect(isLlamacppProvider('llamacpp-upstream')).toBe(true)
+    expect(isLlamacppProvider('atomic-prism')).toBe(true)
+  })
+
+  it('leaves the other engines and the cloud out', () => {
+    expect(isLlamacppProvider('mlx')).toBe(false)
+    expect(isLlamacppProvider('tensorrt-llm')).toBe(false)
+    expect(isLlamacppProvider('llamacpp-server')).toBe(false)
+    expect(isLlamacppProvider('openai')).toBe(false)
   })
 })
 
