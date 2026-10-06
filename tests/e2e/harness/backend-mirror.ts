@@ -39,7 +39,7 @@ export interface BackendMirror {
  * names its macOS builds, into `dir`. Returns the archive's path.
  */
 export async function buildBackendArchive(dir: string, options: { tag: string; reply: string }): Promise<string> {
-  const build = options.tag.replace(/^b/, '')
+  const buildNumber = options.tag.replace(/^b/, '')
   const source = join(dir, 'archive-source')
   const bin = join(source, 'build', 'bin')
   await mkdir(bin, { recursive: true })
@@ -48,7 +48,7 @@ export async function buildBackendArchive(dir: string, options: { tag: string; r
     join(bin, 'llama-server'),
     [
       '#!/bin/sh',
-      `if [ "$1" = "--version" ]; then echo "version: ${build} (e2e fixture)"; exit 0; fi`,
+      `if [ "$1" = "--version" ]; then echo "version: ${buildNumber} (e2e fixture)"; exit 0; fi`,
       `export FAKE_LLAMA_MODE=ready FAKE_LLAMA_REPLY=${JSON.stringify(options.reply)}`,
       `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"`,
       '',

@@ -281,6 +281,12 @@ describe('EngineUpdateBanner', () => {
 
       expect(imageStore.checkEngineUpdate).toHaveBeenCalledTimes(1)
       expect(imageStore.updateEngine).not.toHaveBeenCalled()
+      // The manifest no longer offers a newer tag, so the stale offer comes down.
+      await waitFor(() =>
+        expect(
+          screen.queryByText('updater:engine.title')
+        ).not.toBeInTheDocument()
+      )
     })
 
     it('waits behind a llama.cpp offer', async () => {

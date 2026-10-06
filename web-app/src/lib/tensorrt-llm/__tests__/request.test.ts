@@ -84,13 +84,13 @@ describe('tensorrtLlmRequestBody', () => {
   })
 
   it('sends a structured response_format only for a family with structured output', () => {
-    const format = { type: 'json_schema', json_schema: { name: 'x', schema: {} } }
+    const responseFormat = { type: 'json_schema', json_schema: { name: 'x', schema: {} } }
 
     expect(
-      tensorrtLlmRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: true })
-    ).toEqual({ ...REQUEST, response_format: format })
+      tensorrtLlmRequestBody({ ...REQUEST, response_format: responseFormat }, { structuredOutput: true })
+    ).toEqual({ ...REQUEST, response_format: responseFormat })
     expect(
-      tensorrtLlmRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: false })
+      tensorrtLlmRequestBody({ ...REQUEST, response_format: responseFormat }, { structuredOutput: false })
     ).toEqual(REQUEST)
     expect(
       tensorrtLlmRequestBody(

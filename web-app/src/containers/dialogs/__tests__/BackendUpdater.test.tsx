@@ -96,6 +96,7 @@ describe('BackendUpdater — media engine', () => {
     act(() => useImageGenerationStore.setState({ engineUpdatingTo: null }))
 
     expect(toast.error).toHaveBeenCalledTimes(1)
+    expect(toast.error.mock.calls[0]?.[0]).toBe('settings:media.updateFailed')
     expect(toast.success).not.toHaveBeenCalled()
   })
 })

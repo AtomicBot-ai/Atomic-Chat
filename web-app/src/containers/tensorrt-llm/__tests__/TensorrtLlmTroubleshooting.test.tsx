@@ -137,7 +137,7 @@ describe('TensorrtLlmTroubleshooting', () => {
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
     expect(client.environmentDiagnostics).toHaveBeenCalledWith('default')
-    expect(clipboard.copyToClipboard).toHaveBeenCalledWith(
+    expect(clipboard.copyToClipboard.mock.calls[0]?.[0]).toBe(
       JSON.stringify({ core_version: '0.9.6' }, null, 2)
     )
   })
