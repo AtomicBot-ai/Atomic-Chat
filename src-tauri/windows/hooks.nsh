@@ -22,6 +22,17 @@
 ;                                                 but on perUser/passive
 ;                                                 installs lockfiles can be
 ;                                                 left behind, so we redo it.
+;   5. %APPDATA%\atomic-managed-runtimes\     — TensorRT-LLM setup state
+;                                                 (operations, cached conf
+;                                                 documents, environment.json).
+;   6. %LOCALAPPDATA%\AtomicChat\              — the TensorRT-LLM WSL
+;                                                 distribution's disk, its
+;                                                 rootfs download, host steps.
+;      With "Delete app data", the distribution environment.json records as
+;      ours is unregistered first (wsl --unregister), then 5 and 6 go: a
+;      reinstall then starts the TensorRT-LLM setup from scratch. Deleting 5
+;      without unregistering would leave a distribution the next core sees
+;      as someone else's and refuses to touch.
 ;
 ; A custom data_folder set by the user via "Change data folder location"
 ; is NOT covered by these hooks — the user is responsible for cleaning it.
@@ -105,5 +116,16 @@
     RmDir /r "$LOCALAPPDATA\chat.atomic.app"
     ; Drop the per-user AUMID registration used by Toast notifications in dev builds.
     DeleteRegKey HKCU "Software\Classes\AppUserModelId\chat.atomic.app"
+
+    ; TensorRT-LLM: unregister the WSL distribution our environment record names
+    ; (only that one, and only a plain name), then drop its state and its disk.
+    ; Sysnative: this uninstaller is a 32-bit process, and System32 would be
+    ; redirected to SysWOW64, which has no wsl.exe. Errors are ignored: no
+    ; record, no WSL, or an already unregistered distribution all mean there
+    ; is nothing to unregister.
+    nsExec::Exec `powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $$r = Get-Content -Raw -LiteralPath '$APPDATA\atomic-managed-runtimes\environment.json' | ConvertFrom-Json; $$n = [string]$$r.distribution.name; if ($$n -match '^[A-Za-z0-9._-]{1,64}$$') { $$w = Join-Path $$env:WINDIR 'Sysnative\wsl.exe'; if (-not (Test-Path $$w)) { $$w = Join-Path $$env:WINDIR 'System32\wsl.exe' }; & $$w --unregister $$n } } catch { }"`
+    Pop $0
+    RmDir /r "$APPDATA\atomic-managed-runtimes"
+    RmDir /r "$LOCALAPPDATA\AtomicChat"
   ${EndIf}
 !macroend

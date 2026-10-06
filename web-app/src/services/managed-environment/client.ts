@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 import type {
   EnvironmentOperation,
+  EnvironmentResetResult,
   EnvironmentSnapshot,
   ManagedOperationKind,
   ManagedOperationTarget,
@@ -118,4 +119,22 @@ export type HostStepAnswer =
  */
 export function runHostStep(operationId: string): Promise<HostStepAnswer> {
   return invoke<HostStepAnswer>('atomic_core_run_host_step', { operationId })
+}
+
+/**
+ * Archive the environment's finished operations (core 0.9.6+), so no failed setup is shown or
+ * resumed and the next setup starts from a fresh plan. Installs and removes nothing; the core
+ * refuses while an operation is still running.
+ */
+export function resetEnvironment(environmentId: string): Promise<EnvironmentResetResult> {
+  return coreCall('POST', `/environments/${encodeURIComponent(environmentId)}/reset`)
+}
+
+/**
+ * The core's read-only report on the environment (core 0.9.6+): the snapshot, where each conf
+ * document comes from and what is cached, every operation on disk, recent warnings. Kept as plain
+ * JSON: it only ever travels to the clipboard.
+ */
+export function environmentDiagnostics(environmentId: string): Promise<Record<string, unknown>> {
+  return coreCall('GET', `/environments/${encodeURIComponent(environmentId)}/diagnostics`)
 }

@@ -5,6 +5,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { TensorrtLlmSetupPanel } from '@/containers/tensorrt-llm/TensorrtLlmSetupPanel'
 import { TensorrtLlmHubLink } from '@/containers/tensorrt-llm/TensorrtLlmHubLink'
 import { TensorrtLlmSettingsCard } from '@/containers/tensorrt-llm/TensorrtLlmSettingsCard'
+import { TensorrtLlmTroubleshooting } from '@/containers/tensorrt-llm/TensorrtLlmTroubleshooting'
 import {
   selectTensorrtInstallation,
   useManagedEnvironmentStore,
@@ -1956,6 +1957,7 @@ function ProviderDetail() {
 
             {/* TensorRT-LLM: setting up the engine comes before its settings and models. */}
             {providerName === 'tensorrt-llm' && <TensorrtLlmSetupPanel />}
+            {providerName === 'tensorrt-llm' && <TensorrtLlmTroubleshooting />}
             {providerName === 'tensorrt-llm' && provider && (
               <TensorrtLlmSettingsCard
                 settings={provider.settings}

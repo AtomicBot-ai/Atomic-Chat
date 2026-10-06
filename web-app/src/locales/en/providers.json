@@ -216,6 +216,26 @@
     "hub": {
       "body": "TensorRT-LLM models are chosen and downloaded in the Model Hub, with a check that each one runs on this computer.",
       "action": "Choose a model in Model Hub"
+    },
+    "troubleshooting": {
+      "title": "Troubleshooting",
+      "description": "If the setup is stuck, copy the diagnostics for support, or reset the setup state and start again. Resetting keeps everything already installed.",
+      "overridesTitle": "This computer reads TensorRT-LLM settings from a non-default source:",
+      "overridesHint": "These environment variables are usually left over from testing. While they are set, Atomic Chat does not see updates published for TensorRT-LLM. Remove them from the Windows environment variables, sign out and back in, then reset the setup state.",
+      "afterFailure": "The last setup failed. Start over to set up with what is available now instead of retrying the failed attempt.",
+      "copy": "Copy diagnostics",
+      "copied": "Diagnostics copied to the clipboard",
+      "copyFailed": "Could not write to the clipboard",
+      "unavailable": "Diagnostics are not available: {{reason}}",
+      "reset": "Reset setup state",
+      "startOver": "Start over",
+      "running": "A setup or removal is in progress; finish or cancel it first.",
+      "confirmTitle": "Reset the TensorRT-LLM setup state?",
+      "confirmBody": "Finished and failed setup attempts are archived and the next setup starts from a fresh check of this computer. The WSL distribution, the engine image and your models stay as they are.",
+      "confirm": "Reset",
+      "cancel": "Cancel",
+      "resetDone": "Setup state reset ({{count}} attempts archived)",
+      "resetFailed": "Could not reset the setup state: {{reason}}"
     }
   }
 }
