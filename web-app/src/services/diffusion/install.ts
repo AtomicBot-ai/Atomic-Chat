@@ -33,7 +33,7 @@ import { BASELINE_SDCPP_MANIFEST } from '../sdcpp-manifest-baseline'
 import {
   backendKindOf,
   companionFor,
-  selectDiffusionBackend,
+  diffusionBackendLadder,
   type DiffusionBackendSelectionInput,
   type DiffusionHostArch,
   type DiffusionHostOs,
@@ -201,6 +201,59 @@ export const clearSdcppManifestCache = (): void => {
     ls.removeItem(CACHE_TS_KEY)
   } catch (error) {
     console.warn('[diffusion-install] Failed to clear manifest cache:', error)
+  }
+}
+
+const FAILED_BACKENDS_KEY = 'atomic_sdcpp_failed_backends_v1'
+/** A few tags' worth of rungs; older entries name tags no manifest serves. */
+const FAILED_BACKENDS_LIMIT = 16
+
+const failedBackendKey = (tag: string, backendId: string): string =>
+  `${tag}/${backendId}`
+
+/**
+ * `<tag>/<backendId>` builds that unpacked on this machine but failed the
+ * core's probe. Selection skips them so a host does not download an archive
+ * that cannot run here on every attempt; a new tag gets a fresh try.
+ */
+export const getFailedDiffusionBackends = (): Set<string> => {
+  const ls = safeLocalStorage()
+  if (!ls) return new Set()
+  try {
+    const parsed: unknown = JSON.parse(ls.getItem(FAILED_BACKENDS_KEY) ?? '[]')
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((entry): entry is string => typeof entry === 'string')
+        : []
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+const rememberFailedDiffusionBackend = (tag: string, backendId: string): void => {
+  const ls = safeLocalStorage()
+  if (!ls) return
+  const key = failedBackendKey(tag, backendId)
+  const entries = [...getFailedDiffusionBackends()].filter((entry) => entry !== key)
+  entries.push(key)
+  try {
+    ls.setItem(
+      FAILED_BACKENDS_KEY,
+      JSON.stringify(entries.slice(-FAILED_BACKENDS_LIMIT))
+    )
+  } catch (error) {
+    console.warn('[diffusion-install] Failed to remember a failed backend:', error)
+  }
+}
+
+export const clearFailedDiffusionBackends = (): void => {
+  const ls = safeLocalStorage()
+  if (!ls) return
+  try {
+    ls.removeItem(FAILED_BACKENDS_KEY)
+  } catch (error) {
+    console.warn('[diffusion-install] Failed to clear failed backends:', error)
   }
 }
 
@@ -467,15 +520,33 @@ export async function describeDiffusionHost(): Promise<DiffusionHost> {
   return { os, arch, features, gpus }
 }
 
+/**
+ * What this host would install from `manifest`, best first, leaving out the
+ * builds that already failed here on this tag. When that leaves nothing, the
+ * last build is offered again, so a retry ends on its own error rather than
+ * on "no build for this computer".
+ */
+export function backendLadderForHost(
+  host: DiffusionHost,
+  manifest: SdcppManifest
+): string[] {
+  const ladder = diffusionBackendLadder({
+    ...host,
+    available: manifest.assets.filter((a) => !a.companion).map((a) => a.backend),
+  })
+  const failed = getFailedDiffusionBackends()
+  const usable = ladder.filter(
+    (backendId) => !failed.has(failedBackendKey(manifest.tag_name, backendId))
+  )
+  return usable.length > 0 ? usable : ladder.slice(-1)
+}
+
 /** The backend this host would install from `manifest`, or null when none applies. */
 export function selectBackendForHost(
   host: DiffusionHost,
   manifest: SdcppManifest
 ): string | null {
-  return selectDiffusionBackend({
-    ...host,
-    available: manifest.assets.filter((a) => !a.companion).map((a) => a.backend),
-  })
+  return backendLadderForHost(host, manifest)[0] ?? null
 }
 
 /** Why no backend applies, in words the settings card can show. */
@@ -588,21 +659,55 @@ export type EnsureDiffusionBackendOptions = {
 /**
  * Make sure the right sd.cpp build for this host is installed, downloading
  * it when it is not. Resolves to the install record either way.
+ *
+ * A build that unpacks but fails the core's probe (`ENGINE_INSTALL_FAILED`)
+ * is remembered for this tag, its tree is removed, and the next build down
+ * the host's ladder is installed instead — ROCm → Vulkan → CPU on an AMD
+ * Windows host without the HIP SDK. Only the last build's failure surfaces.
  */
 export async function ensureDiffusionBackend(
   options: EnsureDiffusionBackendOptions = {}
 ): Promise<DiffusionBackendInstallRecord> {
-  const hub = getServiceHub()
-  const diffusion = hub.diffusion()
+  const diffusion = getServiceHub().diffusion()
   const { manifest } = await resolveSdcppManifest({ family: options.family })
   const host = await describeDiffusionHost()
-  const backendId = selectBackendForHost(host, manifest)
-  if (!backendId) {
+  const ladder = backendLadderForHost(host, manifest)
+  if (ladder.length === 0) {
     throw new DiffusionInstallError(
       'UNSUPPORTED_BACKEND',
       'No stable-diffusion.cpp build is published for this computer.'
     )
   }
+  const installed = await diffusion.listInstalledBackends()
+  const last = ladder[ladder.length - 1]
+  for (const [index, backendId] of ladder.slice(0, -1).entries()) {
+    try {
+      return await installDiffusionBackend(manifest, backendId, installed, {
+        ...options,
+        removeTreeOnProbeFailure: true,
+      })
+    } catch (error) {
+      if (errorCodeOf(error) !== 'ENGINE_INSTALL_FAILED') throw error
+      rememberFailedDiffusionBackend(manifest.tag_name, backendId)
+      console.warn(
+        `[diffusion-install] ${manifest.tag_name}/${backendId} does not run on this machine; trying ${ladder[index + 1]}:`,
+        error
+      )
+    }
+  }
+  return installDiffusionBackend(manifest, last, installed, {
+    ...options,
+    removeTreeOnProbeFailure: false,
+  })
+}
+
+async function installDiffusionBackend(
+  manifest: SdcppManifest,
+  backendId: string,
+  installed: DiffusionBackendInstallRecord[],
+  options: EnsureDiffusionBackendOptions & { removeTreeOnProbeFailure: boolean }
+): Promise<DiffusionBackendInstallRecord> {
+  const diffusion = getServiceHub().diffusion()
   const asset = manifest.assets.find((a) => a.backend === backendId)
   if (!asset) {
     throw new DiffusionInstallError(
@@ -612,7 +717,6 @@ export async function ensureDiffusionBackend(
   }
 
   const tag = manifest.tag_name
-  const installed = await diffusion.listInstalledBackends()
   const current = installed.find(
     (record) => record.tag === tag && record.backendId === backendId
   )
@@ -657,27 +761,46 @@ export async function ensureDiffusionBackend(
     for (const item of items) {
       await invoke('decompress', { path: item.save_path, outputDir: dir })
     }
-    const record = await diffusion.finalizeBackendInstall({
-      dir,
-      tag,
-      backendId,
-      backend: backendKindOf(backendId),
-      engine: 'sd-cpp',
-      ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
-    })
+    let record: DiffusionBackendInstallRecord
+    try {
+      record = await diffusion.finalizeBackendInstall({
+        dir,
+        tag,
+        backendId,
+        backend: backendKindOf(backendId),
+        engine: 'sd-cpp',
+        ...(asset.sha256 ? { sha256: asset.sha256 } : {}),
+      })
+    } catch (error) {
+      // The tree was unpacked by this call and never marked as an install;
+      // a lower rung is about to replace it, so it only costs disk.
+      if (
+        options.removeTreeOnProbeFailure &&
+        !current &&
+        errorCodeOf(error) === 'ENGINE_INSTALL_FAILED'
+      ) {
+        await removeBestEffort([dir, ...items.map((item) => item.save_path)])
+      }
+      throw error
+    }
     emitTransferSuccess(taskId, 'Backend', totalBytes)
     await retireOtherBackends(installed, record)
-    for (const item of items) {
-      try {
-        await fs.rm(item.save_path)
-      } catch {
-        // A leftover archive costs disk, not correctness.
-      }
-    }
+    // A leftover archive costs disk, not correctness.
+    await removeBestEffort(items.map((item) => item.save_path))
     return record
   } catch (error) {
     emitTransferError(taskId, 'Backend', error)
     throw error
+  }
+}
+
+async function removeBestEffort(paths: string[]): Promise<void> {
+  for (const path of paths) {
+    try {
+      await fs.rm(path)
+    } catch (error) {
+      console.warn(`[diffusion-install] could not remove ${path}:`, error)
+    }
   }
 }
 

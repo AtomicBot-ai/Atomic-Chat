@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   backendKindOf,
   companionFor,
+  diffusionBackendLadder,
   LINUX_VULKAN_MIN_VRAM_MIB,
   selectDiffusionBackend,
   type DiffusionBackendSelectionInput,
@@ -120,6 +121,50 @@ describe('selectDiffusionBackend on Windows', () => {
     expect(
       selectDiffusionBackend(host({ arch: 'arm64', features: { vulkan: true } }))
     ).toBeNull()
+  })
+})
+
+describe('diffusionBackendLadder', () => {
+  it('lists every build the host can fall back to, best first', () => {
+    // An AMD card without the HIP SDK fails the ROCm probe and walks down.
+    expect(
+      diffusionBackendLadder(host({ features: { rocm: true, vulkan: true } }))
+    ).toEqual(['win-rocm-7.14-x64', 'win-vulkan-x64', 'win-cpu-x64'])
+    expect(
+      diffusionBackendLadder(host({ features: { cuda12: true, vulkan: true } }))
+    ).toEqual(['win-cuda12-x64', 'win-vulkan-x64', 'win-cpu-x64'])
+    expect(diffusionBackendLadder(host({}))).toEqual(['win-cpu-x64'])
+  })
+
+  it('keeps only what the manifest ships, once each', () => {
+    expect(
+      diffusionBackendLadder(
+        host({
+          features: { rocm: true, vulkan: true },
+          available: ['win-vulkan-x64', 'win-cpu-x64'],
+        })
+      )
+    ).toEqual(['win-vulkan-x64', 'win-cpu-x64'])
+    expect(
+      diffusionBackendLadder(
+        host({ arch: 'arm64', features: { cuda13: true }, available: WITH_ARM64 })
+      )
+    ).toEqual(['win-cuda13-arm64', 'win-cpu-arm64'])
+    expect(
+      diffusionBackendLadder(
+        host({
+          os: 'linux',
+          features: { vulkan: true },
+          gpus: [{ totalMemoryMib: LINUX_VULKAN_MIN_VRAM_MIB }],
+        })
+      )
+    ).toEqual(['linux-vulkan-x64', 'linux-cpu-x64'])
+  })
+
+  it('is empty where selection has nothing', () => {
+    expect(diffusionBackendLadder(host({ os: 'macos', arch: 'x64' }))).toEqual([])
+    expect(diffusionBackendLadder(host({ available: [] }))).toEqual([])
+    expect(selectDiffusionBackend(host({ available: [] }))).toBeNull()
   })
 })
 

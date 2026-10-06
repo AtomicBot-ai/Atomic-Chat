@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-389 records, 2026-05-19 → 2026-10-06.
+390 records, 2026-05-19 → 2026-10-06.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (21)
+## Local image & video generation (22)
 
+- **2026-10-06** — [Fall back from a media engine build that fails its probe, and stop shipping Windows ROCm](2026-10-06-fall-back-from-a-media-engine-build-that-fails-its-probe.md)
 - **2026-10-06** — [Build stable-diffusion.cpp for arm64 in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-stable-diffusion-cpp-for-arm64-in-an-atomic-fork.md)
 - **2026-09-30** — [Shape the media form for the picked model, and let Generate start it](2026-09-30-shape-the-media-form-for-the-picked-model.md)
 - **2026-09-30** — [Keep image and video models on a discrete GPU](2026-09-30-keep-media-models-on-a-discrete-gpu.md)

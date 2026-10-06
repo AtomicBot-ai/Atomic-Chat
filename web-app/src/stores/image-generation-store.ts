@@ -662,7 +662,9 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           error_code: null,
         })
         await get().refreshStatus()
-        set({ engineInstall: emptyInstall })
+        // A build that failed the probe was skipped for the next one down;
+        // the host's backend is now the one that actually installed.
+        set({ engineInstall: emptyInstall, hostBackendId: record.backendId })
       } catch (error) {
         const described = toDiffusionError(error)
         set({ engineInstall: { ...emptyInstall, error: described } })

@@ -84,25 +84,29 @@ const pickVersioned = (available: string[], pattern: RegExp): string | null => {
   return best?.id ?? null
 }
 
-const firstAvailable = (
+const allAvailable = (
   available: string[],
   candidates: (string | null)[]
-): string | null =>
-  candidates.find((id): id is string => id !== null && available.includes(id)) ??
-  null
+): string[] =>
+  candidates.filter(
+    (id, index): id is string =>
+      id !== null && available.includes(id) && candidates.indexOf(id) === index
+  )
 
 /**
- * The backend id to install, or `null` when this host cannot run any build
- * the manifest ships (Intel Macs, an arm64 host on a manifest without arm64
- * builds, an empty manifest).
+ * Every build this host can run that the manifest ships, best first; empty
+ * when there is none (Intel Macs, an arm64 host on a manifest without arm64
+ * builds, an empty manifest). The installer walks down it when a build
+ * unpacks but fails the core's probe — upstream's Windows ROCm archive on a
+ * host without the HIP SDK it links against — instead of stopping there.
  */
-export function selectDiffusionBackend(
+export function diffusionBackendLadder(
   input: DiffusionBackendSelectionInput
-): string | null {
+): string[] {
   const { os, arch, features, gpus, available } = input
 
   if (os === 'macos') {
-    return arch === 'arm64' ? firstAvailable(available, [MACOS_ARM64]) : null
+    return arch === 'arm64' ? allAvailable(available, [MACOS_ARM64]) : []
   }
   if (arch === 'arm64') {
     // The CUDA 13 runtime inside these archives needs the r580+ driver the
@@ -112,7 +116,7 @@ export function selectDiffusionBackend(
         ? WIN_CUDA13_ARM64
         : LINUX_CUDA13_ARM64
       : null
-    return firstAvailable(available, [
+    return allAvailable(available, [
       cuda,
       os === 'windows' ? WIN_CPU_ARM64 : LINUX_CPU_ARM64,
     ])
@@ -122,7 +126,7 @@ export function selectDiffusionBackend(
     const cuda = features.cuda12 || features.cuda13 ? WIN_CUDA12 : null
     const rocm = features.rocm ? pickVersioned(available, WIN_ROCM_RE) : null
     const vulkan = features.vulkan ? WIN_VULKAN : null
-    return firstAvailable(available, [cuda, rocm, vulkan, WIN_CPU])
+    return allAvailable(available, [cuda, rocm, vulkan, WIN_CPU])
   }
 
   // Linux: Vulkan is the only accelerated prebuilt, and only when the loader
@@ -131,7 +135,17 @@ export function selectDiffusionBackend(
     (gpu) => (gpu.totalMemoryMib ?? 0) >= LINUX_VULKAN_MIN_VRAM_MIB
   )
   const vulkan = features.vulkan && anyVulkanDevice ? LINUX_VULKAN : null
-  return firstAvailable(available, [vulkan, LINUX_CPU])
+  return allAvailable(available, [vulkan, LINUX_CPU])
+}
+
+/**
+ * The backend id to install, or `null` when this host cannot run any build
+ * the manifest ships: the top of `diffusionBackendLadder`.
+ */
+export function selectDiffusionBackend(
+  input: DiffusionBackendSelectionInput
+): string | null {
+  return diffusionBackendLadder(input)[0] ?? null
 }
 
 /** The companion archive a backend needs unpacked beside it, if any. */

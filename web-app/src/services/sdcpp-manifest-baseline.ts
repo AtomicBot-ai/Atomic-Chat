@@ -23,12 +23,6 @@ export const BASELINE_SDCPP_MANIFEST: SdcppManifest = {
       "size": 330849525
     },
     {
-      "backend": "win-rocm-7.14-x64",
-      "name": "sd-master-137f740-bin-win-rocm-7.14.0-x64.zip",
-      "sha256": "d541f7aa0d0046843dc35fecd79dbf808cf5af8bd6ab5c0d048dad9e9342c59d",
-      "size": 192039488
-    },
-    {
       "backend": "win-vulkan-x64",
       "name": "sd-master-137f740-bin-win-vulkan-x64.zip",
       "sha256": "c76b8427d4dd4946f1f2e088512835550f7c6a17565cf2064ca7b656a6d7f7a6",
