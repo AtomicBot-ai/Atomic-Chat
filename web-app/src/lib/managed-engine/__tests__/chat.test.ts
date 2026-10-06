@@ -117,3 +117,27 @@ describe('a second managed engine is chatted with by the same rules', () => {
     expect(message).not.toContain('TensorRT-LLM')
   })
 })
+
+describe('chatting with a vLLM model (spec vllm-desktop "Чат с моделью vLLM")', () => {
+  it('a model without tool calling is kept out of Agent mode, with a reason', () => {
+    // "Модель без tools в Agent-режиме".
+    expect(agentModelBlockReason('vllm', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('vllm', model(['tools']))).toBeNull()
+  })
+
+  it('takes no images, keeps its context fixed and waits for a long first start', () => {
+    expect(imageAttachmentsAllowed('vllm', model(['vision']))).toBe(false)
+    expect(canGrowContext('vllm')).toBe(false)
+    expect(loadWatchdogMs('vllm', 35 * 60_000)).toBeGreaterThan(3600 * 1000)
+  })
+
+  it('on an overflow names the limit and the vLLM settings that raise it', () => {
+    const overflow = new Error(
+      "This model's maximum context length is 8192 tokens. However, your request has 9000 input tokens. [context_length_exceeded]"
+    )
+    const guidance = contextOverflowGuidance('vllm', overflow)
+    expect(guidance?.engine.id).toBe('vllm')
+    expect(guidance?.limit).toBe(8192)
+    expect(contextOverflowMessage(guidance!)).toContain('Settings → Providers → vLLM')
+  })
+})

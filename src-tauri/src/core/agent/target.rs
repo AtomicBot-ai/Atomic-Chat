@@ -274,9 +274,26 @@ mod tests {
     }
 
     #[test]
+    fn a_vllm_session_is_reached_through_its_gateway_with_its_key() {
+        // spec vllm-desktop "Чат с моделью vLLM": Agent turns go to the session the core serves.
+        let mut request = request("Qwen/Qwen3.5-2B");
+        request.provider = Some("vllm".into());
+        let mut session = container_session(4002, "vllm-key");
+        session.model_id = "Qwen/Qwen3.5-2B".into();
+
+        let target = managed_target(&session, &request);
+
+        assert_eq!(target.kind, OpenAiTargetKind::LocalManaged);
+        assert_eq!(target.base_url, "http://127.0.0.1:4002/v1");
+        assert_eq!(target.api_key.as_deref(), Some("vllm-key"));
+        assert!(!target.has_vision);
+    }
+
+    #[test]
     fn only_the_managed_engines_route_to_a_session_gateway() {
         use crate::core::sessions::resolver::is_managed_provider;
         assert!(is_managed_provider("tensorrt-llm"));
+        assert!(is_managed_provider("vllm"));
         for other in ["llamacpp", "llamacpp-upstream", "mlx", "foundation-models", "openai"] {
             assert!(!is_managed_provider(other), "{other}");
         }

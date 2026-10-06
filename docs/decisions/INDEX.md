@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-384 records, 2026-05-19 → 2026-10-06.
+385 records, 2026-05-19 → 2026-10-06.
 
 ---
 
@@ -417,8 +417,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
 
-## Managed engines (1)
+## Managed engines (2)
 
+- **2026-10-06** — [Ship vLLM as the second managed engine](2026-10-06-ship-vllm-as-the-second-managed-engine.md)
 - **2026-10-06** — [Drive managed engines from one registry and one model store](2026-10-06-drive-managed-engines-from-one-registry-and-one-model-store.md)
 
 ## TensorRT-LLM on Windows (1)

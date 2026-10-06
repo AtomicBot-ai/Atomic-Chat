@@ -27,7 +27,7 @@ pub const PROVIDER_FOUNDATION_MODELS: &str = "foundation-models";
 /// and serves every session on a loopback gateway that checks the session's key. Linux, and Windows
 /// in Atomic Chat's WSL distribution. Not in the default search order either: on desktop the core's
 /// own `:1337` routes them; the app asks for them by name (chat, agent).
-pub const MANAGED_PROVIDERS: [&str; 1] = ["tensorrt-llm"];
+pub const MANAGED_PROVIDERS: [&str; 2] = ["vllm", "tensorrt-llm"];
 
 /// Whether `provider` is a managed engine: its sessions are containers behind the core's gateway.
 pub fn is_managed_provider(provider: &str) -> bool {
