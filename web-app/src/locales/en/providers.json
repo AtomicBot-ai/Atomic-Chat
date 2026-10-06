@@ -91,6 +91,7 @@
     "installed": "TensorRT-LLM is installed.",
     "failed": "The installation stopped:",
     "retry": "Try again",
+    "newerPlan": "The engine can now be set up with a newer plan, for example from a newer engine release. Install starts over with it; Try again repeats the failed attempt as it was.",
     "cancel": "Cancel",
     "progress": "{{done}} of {{total}}",
     "blocker": {

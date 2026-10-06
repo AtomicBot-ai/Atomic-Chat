@@ -527,6 +527,54 @@ describe('TensorrtLlmSetupPanel', () => {
     expect(client.beginOperation).not.toHaveBeenCalled()
   })
 
+  describe('a setup that failed on a descriptor conf has since replaced', () => {
+    const oldDigest = ('sha256:' + 'b'.repeat(64)) as RequirementPlan['plan_digest']
+    const failedOnR2 = () =>
+      operation({
+        phase: 'failed',
+        revision: 7,
+        approved_plan_digest: oldDigest,
+        error: {
+          code: 'MANAGED_PREREQUISITE_BLOCKED',
+          message: 'The NVIDIA libraries Windows provides to WSL are version 615.41, older than the 615.65.02 TensorRT-LLM needs.',
+        },
+      })
+
+    it('offers a new setup with the current plan next to Try again, and starts it with the new descriptor', async () => {
+      // NVIDIA Windows on Arm, 2026-10-06: r3 lowered the driver floor, but Try again resumed the r2 setup.
+      client.probe.mockResolvedValue(plan({ descriptor_id: 'tensorrt-llm-1.3.0rc29-r3' }))
+      seed(environment(), [failedOnR2()])
+      render(<TensorrtLlmSetupPanel />)
+
+      expect(await screen.findByText(/older than the 615\.65\.02/)).toBeInTheDocument()
+      expect(await screen.findByText('providers:tensorrt.newerPlan')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'providers:tensorrt.retry' })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'providers:tensorrt.install' }))
+      fireEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'providers:tensorrt.plan.agree' })
+      )
+
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      expect(client.beginOperation.mock.calls[0][1]).toMatchObject({
+        kind: 'setup',
+        descriptor_id: 'tensorrt-llm-1.3.0rc29-r3',
+      })
+      expect(client.resumeOperation).not.toHaveBeenCalled()
+    })
+
+    it('offers only Try again while the current plan is the one that failed', async () => {
+      client.probe.mockResolvedValue(plan({ plan_digest: oldDigest }))
+      seed(environment(), [failedOnR2()])
+      render(<TensorrtLlmSetupPanel />)
+
+      expect(await screen.findByRole('button', { name: 'providers:tensorrt.retry' })).toBeInTheDocument()
+      await waitFor(() => expect(client.probe).toHaveBeenCalled())
+      expect(screen.queryByRole('button', { name: 'providers:tensorrt.install' })).not.toBeInTheDocument()
+      expect(screen.queryByText('providers:tensorrt.newerPlan')).not.toBeInTheDocument()
+    })
+  })
+
   it('shows why the privileged step failed, not only that it did, even after the page opens again', async () => {
     // Manual run F-2: the screen said only "Preparing the system did not finish".
     client.runHostStep.mockResolvedValue({

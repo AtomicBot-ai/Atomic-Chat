@@ -138,6 +138,44 @@ describe('deriveSetupView', () => {
     })
     expect(deriveSetupView({ plan: plan(), failed, installation: installed }).kind).toBe('installed')
   })
+
+  describe('a plan newer than the failed setup (a descriptor published after it failed)', () => {
+    const approved = ('sha256:' + 'b'.repeat(64)) as EnvironmentOperation['approved_plan_digest']
+    const failedOnOld = operation({
+      phase: 'failed',
+      approved_plan_digest: approved,
+      error: { code: 'MANAGED_PREREQUISITE_BLOCKED', message: 'older than the 615.65.02 TensorRT-LLM needs' },
+    })
+
+    it('offers the current plan next to the failure when it could start and is another plan', () => {
+      const current = plan({ descriptor_id: 'tensorrt-llm-1.3.0rc29-r3' })
+      expect(deriveSetupView({ plan: current, failed: failedOnOld })).toEqual({
+        kind: 'failed',
+        operation: failedOnOld,
+        newerPlan: current,
+      })
+    })
+
+    it('offers nothing new when the current plan is the one the failed setup was approved for', () => {
+      const view = deriveSetupView({ plan: plan({ plan_digest: approved as RequirementPlan['plan_digest'] }), failed: failedOnOld })
+      expect(view).toEqual({ kind: 'failed', operation: failedOnOld })
+    })
+
+    it('offers nothing when the machine is blocked now', () => {
+      for (const availability of ['prerequisite-blocked', 'unsupported'] as const) {
+        expect(deriveSetupView({ plan: plan({ availability }), failed: failedOnOld })).toEqual({
+          kind: 'failed',
+          operation: failedOnOld,
+        })
+      }
+    })
+
+    it('offers nothing for a setup that failed before any consent, or before the first probe answered', () => {
+      const unapproved = operation({ phase: 'failed', approved_plan_digest: null })
+      expect(deriveSetupView({ plan: plan(), failed: unapproved })).toEqual({ kind: 'failed', operation: unapproved })
+      expect(deriveSetupView({ failed: failedOnOld })).toEqual({ kind: 'failed', operation: failedOnOld })
+    })
+  })
 })
 
 describe('blockerView', () => {
