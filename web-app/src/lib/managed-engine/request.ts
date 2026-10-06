@@ -1,17 +1,19 @@
 /**
- * What a chat request to a TensorRT-LLM session may carry, and how the engine's refusal reads
- * (task 3.13, manual-run finding F-8).
+ * What a chat request to a managed engine's session may carry, and how the engine's refusal reads
+ * (task 3.13, manual-run finding F-8; every managed engine, change `add-vllm-runtime`).
  *
  * `trtllm-serve`'s request models forbid unknown fields (pydantic `extra="forbid"`): one llama.cpp
  * knob in the body — `repeat_penalty`, `n_predict`, `cache_prompt`, … — and the whole request is a
- * `400 extra_forbidden`. The local streaming fetch merges the model's llama.cpp-shaped parameter bag
- * into every body, so for this engine the merged body is cut down to the fields it reads.
+ * `400 extra_forbidden`. `vllm serve` accepts and ignores them with a warning, but a llama.cpp knob
+ * means nothing there either. The local streaming fetch merges the model's llama.cpp-shaped
+ * parameter bag into every body, so for a managed engine the merged body is cut down to the
+ * OpenAI fields every managed engine reads.
  */
 
 /** The request itself: what the AI SDK always sends for a chat turn. */
 const PROTOCOL_FIELDS = ['model', 'messages', 'stream', 'stream_options'] as const
 
-/** Sampling and output fields `trtllm-serve` reads (the list of task 3.13). */
+/** Sampling and output fields `trtllm-serve` and `vllm serve` both read (the list of task 3.13). */
 const SAMPLING_FIELDS = [
   'temperature',
   'top_p',
@@ -45,13 +47,13 @@ export function asksForStructuredOutput(body: Record<string, unknown>): boolean 
 }
 
 /**
- * The body cut down to what `trtllm-serve` accepts. `tools` only when there are any, and
+ * The body cut down to what a managed engine accepts. `tools` only when there are any, and
  * `tool_choice` only together with them: the engine refuses a `tool_choice` without `tools`.
  * `response_format` only when it asks for structured output and the model's family has it
  * (`structuredOutput`); a plain-text format is the default and is left out. Everything else — the
  * llama.cpp knobs, `parallel_tool_calls`, `reasoning_format`, `timings_per_token` — is dropped.
  */
-export function tensorrtLlmRequestBody(
+export function managedRequestBody(
   body: Record<string, unknown>,
   options: { structuredOutput: boolean }
 ): Record<string, unknown> {

@@ -1,3 +1,4 @@
+import { isManagedProvider } from '@/lib/managed-engines'
 import {
   isKeylessRemoteProvider,
   isLocalProvider,
@@ -12,9 +13,10 @@ import {
  * `/v1/chat/completions`, mirroring what `ModelFactory.createMlxModel` does for
  * regular chat. None of them need the Local API Server.
  *
- * `tensorrt-llm` is driven like `mlx`, over the session's OpenAI-compatible
- * endpoint (the core's gateway in front of the container); whether a given
- * model can call tools is a model-level check made before the run.
+ * Every managed engine (`tensorrt-llm`, `vllm`; `isManagedProvider`) is driven
+ * like `mlx`, over the session's OpenAI-compatible endpoint (the core's gateway
+ * in front of the container); whether a given model can call tools is a
+ * model-level check made before the run.
  *
  * `foundation-models` is deliberately absent: Apple's on-device runtime exposes
  * no endpoint the agent can drive.
@@ -23,10 +25,7 @@ export const AGENT_LOCAL_PROVIDERS = [
   'llamacpp',
   'llamacpp-upstream',
   'mlx',
-  'tensorrt-llm',
 ] as const
-
-export type AgentLocalProvider = (typeof AGENT_LOCAL_PROVIDERS)[number]
 
 /** Why Agent mode is unavailable. `null` from the helpers below means it is. */
 export type AgentProviderBlockReason =
@@ -35,9 +34,12 @@ export type AgentProviderBlockReason =
 
 export function isAgentLocalProvider(
   provider: string | undefined | null
-): provider is AgentLocalProvider {
+): boolean {
   if (!provider) return false
-  return (AGENT_LOCAL_PROVIDERS as readonly string[]).includes(provider)
+  return (
+    (AGENT_LOCAL_PROVIDERS as readonly string[]).includes(provider) ||
+    isManagedProvider(provider)
+  )
 }
 
 /**

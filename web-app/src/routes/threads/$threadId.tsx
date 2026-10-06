@@ -119,7 +119,7 @@ import {
   canGrowContext,
   contextOverflowGuidance,
   contextOverflowMessage,
-} from '@/lib/tensorrt-llm/chat'
+} from '@/lib/managed-engine/chat'
 import {
   DEFAULT_CTX_LEN, growModelContext } from '@/lib/context-size'
 import { captureHandledError } from '@/lib/sentry'
@@ -2097,7 +2097,7 @@ function ThreadDetail() {
                       const activeError = error ?? contextLimitError
                       const rawMessage = activeError?.message
                       const isContextError = isContextLimitError(activeError)
-                      // TensorRT-LLM: the limit, and the setting that raises it; no reload here.
+                      // A managed engine: the limit, and the setting that raises it; no reload here.
                       const fixedContext = contextOverflowGuidance(
                         selectedProvider,
                         activeError
@@ -2167,12 +2167,12 @@ function ThreadDetail() {
                                   onClick={() =>
                                     void navigate({
                                       to: route.settings.providers,
-                                      params: { providerName: 'tensorrt-llm' },
+                                      params: { providerName: fixedContext.engine.id },
                                     })
                                   }
                                 >
                                   <IconAlertCircle className="size-4 mr-2" />
-                                  Open TensorRT-LLM settings
+                                  {`Open ${fixedContext.engine.label} settings`}
                                 </Button>
                               ) : isContextError ? (
                                 <Button

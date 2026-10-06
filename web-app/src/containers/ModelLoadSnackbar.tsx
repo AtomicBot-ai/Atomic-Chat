@@ -13,7 +13,7 @@ import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import i18n from '@/i18n/setup'
 import type { InferenceStatus } from '@/lib/inference-status'
-import { engineStageText } from '@/lib/tensorrt-llm/chat'
+import { engineStageText } from '@/lib/managed-engine/chat'
 import { cancelModelLoad } from '@/utils/switchModel'
 
 /** How long "Model ready" stays up before Sonner clears it. */

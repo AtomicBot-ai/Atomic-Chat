@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createEngineErrorFetch,
   openAIErrorBody,
-  tensorrtLlmRequestBody,
+  managedRequestBody,
 } from '../request'
 
 /** What the local streaming fetch hands over for a llama.cpp-configured model (finding F-8). */
@@ -43,9 +43,9 @@ const REQUEST = {
 
 const TOOLS = [{ type: 'function', function: { name: 'f', parameters: {} } }]
 
-describe('tensorrtLlmRequestBody', () => {
+describe('managedRequestBody', () => {
   it('drops every llama.cpp knob and keeps the request and the sampling fields', () => {
-    const shaped = tensorrtLlmRequestBody(
+    const shaped = managedRequestBody(
       { ...REQUEST, ...SAMPLING, ...LLAMA_CPP_KNOBS },
       { structuredOutput: false }
     )
@@ -58,7 +58,7 @@ describe('tensorrtLlmRequestBody', () => {
 
   it('keeps max_completion_tokens as the client sent it', () => {
     expect(
-      tensorrtLlmRequestBody(
+      managedRequestBody(
         { ...REQUEST, max_completion_tokens: 256 },
         { structuredOutput: false }
       )
@@ -67,16 +67,16 @@ describe('tensorrtLlmRequestBody', () => {
 
   it('sends tool_choice only together with tools', () => {
     expect(
-      tensorrtLlmRequestBody(
+      managedRequestBody(
         { ...REQUEST, tools: TOOLS, tool_choice: 'auto' },
         { structuredOutput: false }
       )
     ).toEqual({ ...REQUEST, tools: TOOLS, tool_choice: 'auto' })
     expect(
-      tensorrtLlmRequestBody({ ...REQUEST, tool_choice: 'auto' }, { structuredOutput: false })
+      managedRequestBody({ ...REQUEST, tool_choice: 'auto' }, { structuredOutput: false })
     ).toEqual(REQUEST)
     expect(
-      tensorrtLlmRequestBody(
+      managedRequestBody(
         { ...REQUEST, tools: [], tool_choice: 'none' },
         { structuredOutput: false }
       )
@@ -87,13 +87,13 @@ describe('tensorrtLlmRequestBody', () => {
     const format = { type: 'json_schema', json_schema: { name: 'x', schema: {} } }
 
     expect(
-      tensorrtLlmRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: true })
+      managedRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: true })
     ).toEqual({ ...REQUEST, response_format: format })
     expect(
-      tensorrtLlmRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: false })
+      managedRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: false })
     ).toEqual(REQUEST)
     expect(
-      tensorrtLlmRequestBody(
+      managedRequestBody(
         { ...REQUEST, response_format: { type: 'text' } },
         { structuredOutput: true }
       )

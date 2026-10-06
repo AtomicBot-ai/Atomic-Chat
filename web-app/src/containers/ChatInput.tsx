@@ -13,7 +13,7 @@ import { agentProviderBlockReason } from '@/lib/agent-provider'
 import {
   agentModelBlockReason,
   imageAttachmentsAllowed,
-} from '@/lib/tensorrt-llm/chat'
+} from '@/lib/managed-engine/chat'
 import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
 import { usePrompt } from '@/hooks/usePrompt'

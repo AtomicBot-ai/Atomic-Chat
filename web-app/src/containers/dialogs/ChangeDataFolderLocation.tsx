@@ -1,3 +1,4 @@
+import { managedEngines } from '@/lib/managed-engines'
 import {
   Dialog,
   DialogClose,
@@ -34,9 +35,9 @@ export default function ChangeDataFolderLocation({
   onOpenChange,
 }: ChangeDataFolderLocationProps) {
   const { t } = useTranslation()
-  // Windows: TensorRT-LLM models live in Atomic Chat's WSL distribution, not in the data folder,
-  // and stay there (change `add-tensorrt-llm-windows`, spec "Перенос папки данных не перемещает
-  // модели в дистрибутиве").
+  // Windows: the managed engines' models (TensorRT-LLM, vLLM: one shared store) live in Atomic
+  // Chat's WSL distribution, not in the data folder, and stay there (change
+  // `add-tensorrt-llm-windows`, spec "Перенос папки данных не перемещает модели в дистрибутиве").
   const distribution = useManagedEnvironmentStore(
     (state) => selectEnvironment(state)?.distribution ?? null
   )
@@ -77,8 +78,11 @@ export default function ChangeDataFolderLocation({
 
           {distribution && (
             <p className="text-sm text-muted-foreground break-words">
-              {t('settings:dialogs.changeDataFolder.tensorrtModels', {
+              {t('settings:dialogs.changeDataFolder.managedModels', {
                 name: distribution.name,
+                engines: managedEngines()
+                  .map((engine) => engine.label)
+                  .join(', '),
               })}
             </p>
           )}

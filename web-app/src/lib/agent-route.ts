@@ -1,5 +1,5 @@
 import type { AgentProviderBlockReason } from '@/lib/agent-provider'
-import type { AgentModelBlockReason } from '@/lib/tensorrt-llm/chat'
+import type { AgentModelBlockReason } from '@/lib/managed-engine/chat'
 
 export type MessageExecutionRoute = 'agent-ipc' | 'chat-transport'
 

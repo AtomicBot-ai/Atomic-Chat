@@ -7,7 +7,7 @@
 //! |---|---|
 //! | `llamacpp`, `llamacpp-upstream` | direct `/completion` (GBNF, `cache_prompt`, `slot_id`) |
 //! | `mlx` | direct at the session port, like `createMlxModel` |
-//! | `tensorrt-llm` | direct at the session port (the core's gateway), like `createTensorrtLlmModel` |
+//! | managed (`tensorrt-llm`, …) | direct at the session port (the core's gateway), like `createManagedModel` |
 //! | cloud | the Local API Server proxy, like `getLocalApiServerBaseURL` |
 //!
 //! Cloud credentials never reach this module: the proxy resolves the provider
@@ -87,9 +87,11 @@ pub async fn resolve_agent_target<R: Runtime>(
         Some("mlx") => resolve_mlx_target(app_handle, request)
             .await
             .map(AgentTarget::OpenAi),
-        Some("tensorrt-llm") => resolve_tensorrt_llm_target(app_handle, request)
-            .await
-            .map(AgentTarget::OpenAi),
+        Some(provider) if crate::core::sessions::resolver::is_managed_provider(provider) => {
+            resolve_managed_target(app_handle, provider, request)
+                .await
+                .map(AgentTarget::OpenAi)
+        }
         // Apple's on-device runtime has no OpenAI-compatible endpoint to talk
         // to; failing here beats a confusing transport error later.
         Some("foundation-models") => Err(AGENT_PROVIDER_UNSUPPORTED.to_string()),
@@ -128,34 +130,37 @@ pub(crate) async fn resolve_mlx_target<R: Runtime>(
     })
 }
 
-/// A `tensorrt-llm` session as the agent talks to it, found in the core's mirror like MLX's.
-async fn resolve_tensorrt_llm_target<R: Runtime>(
+/// A managed engine's session as the agent talks to it, found in the core's mirror under the
+/// provider the turn names, like MLX's.
+async fn resolve_managed_target<R: Runtime>(
     app_handle: &AppHandle<R>,
+    provider: &str,
     request: &AgentTurnRequest,
 ) -> Result<OpenAiTarget, String> {
     let state: State<AppState> = app_handle.state();
     let resolver = crate::core::sessions::resolver_for(app_handle, &state);
     let info = resolver
-        .list_in(crate::core::sessions::resolver::PROVIDER_TENSORRT_LLM)
+        .list_in(provider)
         .await
         .into_iter()
         .find(|info| super::llm_client::model_ids_match(&info.model_id, &request.model_id))
         .ok_or_else(|| format!("no active session for model '{}'", request.model_id))?;
-    Ok(tensorrt_llm_target(&info, request))
+    Ok(managed_target(&info, request))
 }
 
 /// Pure so it can be tested without a Tauri runtime.
 ///
-/// The port is the core's session gateway, which checks the Bearer key and proxies to the
-/// container. No `response_format`: the gateway refuses it unless the model family declares
-/// structured output, which this side does not know, so the prompt contract and the runner's repair
-/// step carry the shape — as for cloud targets. No vision: this engine has none in this slice.
-pub(crate) fn tensorrt_llm_target(
+/// Built from the session alone, whichever managed engine runs it: the port is the core's session
+/// gateway, which checks the Bearer key and proxies to the container. No `response_format`: the
+/// gateway refuses it unless the model family declares structured output, which this side does not
+/// know, so the prompt contract and the runner's repair step carry the shape — as for cloud
+/// targets. No vision: no managed engine takes images in this release (the gateway refuses them).
+pub(crate) fn managed_target(
     info: &crate::core::sessions::resolver::ResolvedSession,
     request: &AgentTurnRequest,
 ) -> OpenAiTarget {
     OpenAiTarget {
-        kind: OpenAiTargetKind::LocalTensorrtLlm,
+        kind: OpenAiTargetKind::LocalManaged,
         base_url: format!("http://127.0.0.1:{}/v1", info.port),
         api_key: (!info.api_key.is_empty()).then(|| info.api_key.clone()),
         model_id: info.model_id.clone(),
@@ -250,15 +255,15 @@ mod tests {
     }
 
     #[test]
-    fn tensorrt_llm_target_points_at_the_session_gateway_with_its_key() {
+    fn managed_target_points_at_the_session_gateway_with_its_key() {
         let mut request = request("qwen3-8b");
         request.provider = Some("tensorrt-llm".into());
-        // Vision is off for this engine in this slice whatever the frontend claims.
+        // Vision is off for managed engines in this release whatever the frontend claims.
         request.capabilities = vec![VISION_CAPABILITY.into()];
 
-        let target = tensorrt_llm_target(&container_session(4001, "gateway-key"), &request);
+        let target = managed_target(&container_session(4001, "gateway-key"), &request);
 
-        assert_eq!(target.kind, OpenAiTargetKind::LocalTensorrtLlm);
+        assert_eq!(target.kind, OpenAiTargetKind::LocalManaged);
         assert_eq!(target.base_url, "http://127.0.0.1:4001/v1");
         assert_eq!(target.api_key.as_deref(), Some("gateway-key"));
         assert_eq!(target.model_id, "qwen3-8b");
@@ -266,6 +271,15 @@ mod tests {
         // The gateway refuses `response_format` unless the model family declares structured
         // output, and nothing here knows the family: the prompt contract carries the shape.
         assert!(!target.json_schema);
+    }
+
+    #[test]
+    fn only_the_managed_engines_route_to_a_session_gateway() {
+        use crate::core::sessions::resolver::is_managed_provider;
+        assert!(is_managed_provider("tensorrt-llm"));
+        for other in ["llamacpp", "llamacpp-upstream", "mlx", "foundation-models", "openai"] {
+            assert!(!is_managed_provider(other), "{other}");
+        }
     }
 
     #[test]

@@ -89,10 +89,11 @@ pub enum OpenAiTargetKind {
     LocalMlx,
     /// The Local API Server proxy, which fans out to the real provider.
     LocalApiServer,
-    /// A `tensorrt-llm` session: the core's session gateway in front of `trtllm-serve` in a
-    /// container. Its context is fixed at load (no reload to grow it) and it reads only the
-    /// reasoning field the core's live test showed it reading.
-    LocalTensorrtLlm,
+    /// A managed engine's session (`tensorrt-llm`, `vllm`): the core's session gateway in front of
+    /// the engine's server in a container. Its context is fixed at load (no reload to grow it) and
+    /// it reads only the reasoning field the core's live tests showed it reading
+    /// (`chat_template_kwargs`).
+    LocalManaged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -517,9 +518,10 @@ fn insert_reasoning_fields(
     reasoning: &CompletionReasoning,
 ) {
     let is_mlx = target.kind == OpenAiTargetKind::LocalMlx;
-    if target.kind == OpenAiTargetKind::LocalTensorrtLlm {
-        // `trtllm-serve` hands `chat_template_kwargs` to the chat template, which is how thinking is
-        // turned off. Nothing shows it reading `reasoning_effort` or a budget, so none is sent.
+    if target.kind == OpenAiTargetKind::LocalManaged {
+        // `trtllm-serve` and `vllm serve` hand `chat_template_kwargs` to the chat template, which is
+        // how thinking is turned off. Nothing shows them reading `reasoning_effort` or a budget, so
+        // none is sent.
         if matches!(reasoning, CompletionReasoning::Off) {
             body.insert(
                 "chat_template_kwargs".into(),
@@ -1333,11 +1335,11 @@ mod tests {
     }
 
     #[test]
-    fn tensorrt_llm_reasoning_off_sends_only_the_template_kwargs() {
+    fn managed_reasoning_off_sends_only_the_template_kwargs() {
         // `trtllm-serve` passes `chat_template_kwargs` to the template (the core's live test turns
         // Qwen3 thinking off this way); the top-level `enable_thinking` is an mlx-vlm field.
         let client =
-            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalTensorrtLlm, false)).unwrap();
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalManaged, false)).unwrap();
         let payload = client.chat_payload(
             &client.target(),
             &request_with_reasoning(CompletionReasoning::Off),
@@ -1352,9 +1354,9 @@ mod tests {
     }
 
     #[test]
-    fn tensorrt_llm_reasoning_on_adds_no_field_the_engine_was_not_shown_to_read() {
+    fn managed_reasoning_on_adds_no_field_the_engine_was_not_shown_to_read() {
         let client =
-            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalTensorrtLlm, false)).unwrap();
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalManaged, false)).unwrap();
         let payload = client.chat_payload(
             &client.target(),
             &request_with_reasoning(CompletionReasoning::On {

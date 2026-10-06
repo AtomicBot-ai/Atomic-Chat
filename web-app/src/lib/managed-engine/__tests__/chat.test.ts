@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   agentModelBlockReason,
@@ -9,6 +9,7 @@ import {
   imageAttachmentsAllowed,
   loadWatchdogMs,
 } from '../chat'
+import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 
 const model = (capabilities: string[]) => ({ id: 'qwen3-8b', capabilities }) as unknown as Model
 
@@ -86,5 +87,33 @@ describe('loadWatchdogMs', () => {
     // `load_timeout_seconds` goes up to 3600 in the core's schema; the app must not give up first.
     expect(loadWatchdogMs('tensorrt-llm', 35 * 60_000)).toBeGreaterThan(3600 * 1000)
     expect(loadWatchdogMs('llamacpp-upstream', 35 * 60_000)).toBe(35 * 60_000)
+  })
+})
+
+describe('a second managed engine is chatted with by the same rules', () => {
+  const overflow = new Error(
+    "This model's maximum context length is 4096 tokens. However, you requested 5000 tokens. [context_length_exceeded]"
+  )
+  beforeEach(() =>
+    setManagedEnginesForTests([{ id: 'second-engine', label: 'Second', i18n: 'second' }, TENSORRT_LLM_ENGINE])
+  )
+  afterEach(() => setManagedEnginesForTests(undefined))
+
+  it('gates Agent mode and images, keeps the context fixed and waits as long for a load', () => {
+    expect(agentModelBlockReason('second-engine', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('second-engine', model(['tools']))).toBeNull()
+    expect(imageAttachmentsAllowed('second-engine', model(['vision']))).toBe(false)
+    expect(canGrowContext('second-engine')).toBe(false)
+    expect(loadWatchdogMs('second-engine', 35 * 60_000)).toBeGreaterThan(3600 * 1000)
+  })
+
+  it('names its own engine and settings in the overflow message', () => {
+    const guidance = contextOverflowGuidance('second-engine', overflow)
+    expect(guidance?.engine.id).toBe('second-engine')
+    expect(guidance?.limit).toBe(4096)
+    const message = contextOverflowMessage(guidance!)
+    expect(message).toContain('Second does not grow the context')
+    expect(message).toContain('Settings → Providers → Second')
+    expect(message).not.toContain('TensorRT-LLM')
   })
 })

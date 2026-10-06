@@ -23,9 +23,16 @@ pub const PROVIDER_MLX: &str = "mlx";
 /// Never searched by default — the proxy does not route to it — but the webview asks the resolver
 /// for its sessions by this name.
 pub const PROVIDER_FOUNDATION_MODELS: &str = "foundation-models";
-/// Linux only. Not in the default search order either: on desktop the core's own `:1337` routes
-/// it; the app asks for it by name (chat, agent).
-pub const PROVIDER_TENSORRT_LLM: &str = "tensorrt-llm";
+/// The managed engines (change `add-vllm-runtime`, design D14): the core runs each in a container
+/// and serves every session on a loopback gateway that checks the session's key. Linux, and Windows
+/// in Atomic Chat's WSL distribution. Not in the default search order either: on desktop the core's
+/// own `:1337` routes them; the app asks for them by name (chat, agent).
+pub const MANAGED_PROVIDERS: [&str; 1] = ["tensorrt-llm"];
+
+/// Whether `provider` is a managed engine: its sessions are containers behind the core's gateway.
+pub fn is_managed_provider(provider: &str) -> bool {
+    MANAGED_PROVIDERS.contains(&provider)
+}
 
 /// Search order for a request that does not name a provider.
 ///
