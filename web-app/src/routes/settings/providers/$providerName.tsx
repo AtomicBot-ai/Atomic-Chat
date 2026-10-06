@@ -1985,13 +1985,15 @@ function ProviderDetail() {
             )}
             {managed && managedInstalled && <ManagedEngineHubLink engine={managed} />}
 
+            {/* Local engines, managed ones included, show their models above the engine settings. */}
             <div
               className={cn(
                 'flex flex-col gap-3',
                 provider &&
                   (provider.provider === 'llamacpp' ||
                     provider.provider === 'llamacpp-upstream' ||
-                    provider.provider === 'mlx') &&
+                    provider.provider === 'mlx' ||
+                    managed !== undefined) &&
                   'flex-col-reverse'
               )}
             >
