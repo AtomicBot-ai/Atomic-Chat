@@ -49,6 +49,14 @@ describe('sortProvidersForSettings', () => {
     expect(order(['llamacpp', 'mlx'])[0]).toBe('mlx')
   })
 
+  it('puts TensorRT-LLM after both llama.cpp engines on Linux', () => {
+    // Linux ships no MLX and no Foundation Models, so the local engines are
+    // upstream, turboquant and TensorRT-LLM, in that order, ahead of the cloud.
+    expect(
+      order(['tensorrt-llm', 'openai', 'llamacpp', 'llamacpp-upstream'])
+    ).toEqual(['llamacpp-upstream', 'llamacpp', 'tensorrt-llm', 'openai'])
+  })
+
   it('sorts unknown providers after the local engines, by title', () => {
     expect(order(['openrouter', 'anthropic', 'llamacpp', 'openai'])).toEqual([
       'llamacpp',

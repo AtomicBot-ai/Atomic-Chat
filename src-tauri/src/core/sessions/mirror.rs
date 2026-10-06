@@ -29,7 +29,11 @@ use crate::core::server::proxy::model_ids_match;
 /// a translation layer at every call site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreSession {
-    pub pid: i32,
+    /// The backend's host process id, or `None` for a session that has none: control protocol 2
+    /// runs `tensorrt-llm` in a container, which the core reports with `pid: null`. Nothing in the
+    /// app kills or probes a process by this; it is carried only so the webview sees what the core
+    /// said.
+    pub pid: Option<u32>,
     pub port: i32,
     pub model_id: String,
     #[serde(default)]
@@ -43,6 +47,13 @@ pub struct CoreSession {
     /// `llamacpp-upstream`, `llamacpp`, `mlx`, … — which runtime inside the core holds it.
     #[serde(default = "default_provider")]
     pub provider: String,
+    /// `native` or `container`; absent on every native session, as the core leaves it out. A
+    /// string rather than an enum so a kind a newer core adds does not cost the app the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<String>,
+    /// Changes on every load of the same model (protocol 2); absent on native sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -325,6 +336,70 @@ mod tests {
             &json!({ "model_id": "a", "pid": 100, "provider": "llamacpp-upstream" })
         ));
         assert_eq!(mirror.find("a"), None);
+    }
+
+    /// A `tensorrt-llm` session as control protocol 2 reports it: a container has no host process,
+    /// so `pid` is null, and each load carries its own `generation`.
+    fn container_session(model_id: &str, port: i32) -> Value {
+        json!({
+            "pid": null,
+            "port": port,
+            "model_id": model_id,
+            "model_path": format!("/data/tensorrt-llm/models/{model_id}"),
+            "is_embedding": false,
+            "api_key": "k",
+            "provider": "tensorrt-llm",
+            "execution": "container",
+            "generation": "g-1",
+        })
+    }
+
+    #[test]
+    fn a_container_session_without_a_pid_is_mirrored_from_the_snapshot() {
+        // Protocol 1 typed `pid` as a number, so a container session failed to parse and was
+        // silently skipped: the model was loaded in the core and invisible to the app.
+        let mirror = CoreSessions::new();
+
+        mirror.apply_snapshot(
+            1,
+            "i",
+            &snapshot(vec![session("a", 3001), container_session("qwen", 4001)]),
+        );
+
+        let found = mirror.find_by_provider("tensorrt-llm", "qwen").unwrap();
+        assert_eq!(found.pid, None);
+        assert_eq!(found.port, 4001);
+        assert_eq!(found.execution.as_deref(), Some("container"));
+        assert_eq!(found.generation.as_deref(), Some("g-1"));
+        assert_eq!(mirror.find("a").unwrap().pid, Some(100));
+    }
+
+    #[test]
+    fn a_container_session_is_added_by_its_event_and_removed_by_a_null_pid_death() {
+        let mirror = CoreSessions::new();
+        mirror.apply_snapshot(1, "i", &snapshot(vec![]));
+
+        assert!(mirror.apply_event(1, "session:started", &container_session("qwen", 4001)));
+        assert_eq!(mirror.find("qwen").unwrap().port, 4001);
+
+        assert!(mirror.apply_event(
+            1,
+            "session:died",
+            &json!({ "model_id": "qwen", "pid": null, "provider": "tensorrt-llm" })
+        ));
+        assert!(mirror.is_empty());
+    }
+
+    #[test]
+    fn a_native_session_serializes_without_the_container_fields() {
+        // The webview reads these through `resolve_local_session`; a native session keeps the exact
+        // shape it had before protocol 2.
+        let native: CoreSession = serde_json::from_value(session("a", 3001)).unwrap();
+        let wire = serde_json::to_value(&native).unwrap();
+
+        assert_eq!(wire["pid"], 100);
+        assert!(wire.get("execution").is_none());
+        assert!(wire.get("generation").is_none());
     }
 
     #[test]

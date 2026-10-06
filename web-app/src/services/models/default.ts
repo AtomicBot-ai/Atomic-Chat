@@ -36,6 +36,7 @@ import type {
   HuggingFaceFeedSort,
   HuggingFaceFeedFormat,
   CatalogModel,
+  ModelDeletionReport,
   ModelValidationResult,
 } from './types'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
@@ -100,31 +101,100 @@ const isTauriRuntime = (): boolean => {
     return false
   }
 }
+// Engines whose loaded models count as the app's active local models: what
+// `getActiveModels()` reports and what `stopAllModels()` / `stopAllModelsExcept()`
+// unload. An engine missing here is invisible to the provider page's Stop, which
+// then shows its model stopped while it keeps running (task 3.14, F-9).
 const localProviders = [
   'llamacpp',
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'tensorrt-llm',
 ] as const
 type LocalProviderName = (typeof localProviders)[number]
+
+/** What `expand[]=config` and `expand[]=safetensors` add to a listing entry. */
+type HuggingFaceTensorrtExpansion = {
+  config?: { architectures?: unknown }
+  safetensors?: { parameters?: unknown }
+}
 
 type HuggingFaceFeedEntry = Pick<
   HuggingFaceRepo,
   'downloads' | 'likes' | 'tags'
-> & {
-  id?: string
-  modelId?: string
-  createdAt?: string
-  lastModified?: string
-  trendingScore?: number
-}
+> &
+  HuggingFaceTensorrtExpansion & {
+    id?: string
+    modelId?: string
+    createdAt?: string
+    lastModified?: string
+    trendingScore?: number
+  }
 
 type HuggingFaceRepoSearchResult = Pick<
   HuggingFaceRepo,
   'downloads' | 'likes' | 'tags'
-> & {
-  id?: string
-  modelId?: string
+> &
+  HuggingFaceTensorrtExpansion & {
+    id?: string
+    modelId?: string
+  }
+
+/**
+ * Asking for any `expand[]` makes Hugging Face answer with only the fields named, so the ones the
+ * Hub already reads are named too.
+ */
+const TENSORRT_LLM_EXPAND = [
+  'config',
+  'safetensors',
+  'downloads',
+  'likes',
+  'tags',
+  'createdAt',
+  'lastModified',
+] as const
+
+/** `filter=` and `expand[]` of a listing or search of one format, after `leading` params. */
+function huggingFaceFormatParams(
+  format: HuggingFaceFeedFormat,
+  leading: Record<string, string>,
+  trailing: Record<string, string> = {}
+): URLSearchParams {
+  const params = new URLSearchParams({
+    ...leading,
+    filter: format === 'tensorrt-llm' ? 'safetensors' : format,
+    ...trailing,
+  })
+  if (format === 'tensorrt-llm') {
+    for (const field of TENSORRT_LLM_EXPAND) params.append('expand[]', field)
+  }
+  return params
+}
+
+/** A listing entry's architectures and parameters by dtype; anything malformed reads as absent. */
+function tensorrtListingFields(repo: HuggingFaceTensorrtExpansion): Pick<
+  CatalogModel,
+  'is_tensorrt_llm' | 'tensorrt'
+> {
+  const architectures = repo.config?.architectures
+  const parameters = repo.safetensors?.parameters
+  return {
+    is_tensorrt_llm: true,
+    tensorrt: {
+      architectures:
+        Array.isArray(architectures) &&
+        architectures.every((name) => typeof name === 'string')
+          ? (architectures as string[])
+          : undefined,
+      parameters:
+        parameters &&
+        typeof parameters === 'object' &&
+        Object.values(parameters).every((count) => typeof count === 'number')
+          ? (parameters as Record<string, number>)
+          : undefined,
+    },
+  }
 }
 
 const normalizeHuggingFaceSearchValue = (value: string) =>
@@ -306,11 +376,11 @@ export class DefaultModelsService implements ModelsService {
     const trimmed = query.trim()
     if (trimmed.length < 3) return []
     try {
-      const params = new URLSearchParams({
-        search: trimmed,
-        filter: format,
-        limit: String(limit),
-      })
+      const params = huggingFaceFormatParams(
+        format,
+        { search: trimmed },
+        { limit: String(limit) }
+      )
       const response = await fetch(
         `https://huggingface.co/api/models?${params.toString()}`,
         { headers: this.getHuggingFaceHeaders(hfToken) }
@@ -326,7 +396,10 @@ export class DefaultModelsService implements ModelsService {
         .filter((repo) =>
           format === 'gguf'
             ? isLikelyGgufRepo(repo)
-            : repo.tags?.some((tag) => tag.toLowerCase() === 'mlx')
+            : format === 'mlx'
+              ? repo.tags?.some((tag) => tag.toLowerCase() === 'mlx')
+              : // Every safetensors repository: the Hub narrows it, the core decides.
+                true
         )
         .sort(
           (a, b) =>
@@ -352,6 +425,7 @@ export class DefaultModelsService implements ModelsService {
           num_safetensors: 0,
           safetensors_files: [],
           is_mlx: format === 'mlx',
+          ...(format === 'tensorrt-llm' ? tensorrtListingFields(repo) : {}),
           readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
         } satisfies CatalogModel
       })
@@ -373,8 +447,7 @@ export class DefaultModelsService implements ModelsService {
     limit = HUGGING_FACE_FEED_LIMIT,
     hfToken,
   }: HuggingFaceFeedParams): Promise<HuggingFaceFeedPage> {
-    const params = new URLSearchParams({
-      filter: format,
+    const params = huggingFaceFormatParams(format, {}, {
       sort: HUGGING_FACE_FEED_SORT[sort],
       direction: '-1',
       limit: String(limit),
@@ -425,7 +498,9 @@ export class DefaultModelsService implements ModelsService {
           num_safetensors: 0,
           safetensors_files: [],
           is_mlx:
-            format === 'mlx' || tags.some((t) => t.toLowerCase() === 'mlx'),
+            format === 'mlx' ||
+            (format === 'gguf' && tags.some((t) => t.toLowerCase() === 'mlx')),
+          ...(format === 'tensorrt-llm' ? tensorrtListingFields(repo) : {}),
           created_at: repo.createdAt,
           last_modified: repo.lastModified,
           readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
@@ -770,7 +845,10 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async deleteModel(id: string, provider?: string): Promise<void> {
+  async deleteModel(
+    id: string,
+    provider?: string
+  ): Promise<ModelDeletionReport | void> {
     const engine = this.getEngine(provider)
     // `getEngine()?.delete()` used to resolve to `undefined` when the provider
     // had no engine registered, so the caller reported a successful delete and
@@ -781,6 +859,8 @@ export class DefaultModelsService implements ModelsService {
         `No engine registered for provider "${provider ?? defaultProvider}"`
       )
     }
+    // `AIEngine.delete` answers nothing; an engine that can say what it freed offers this too.
+    if (reportsDeletion(engine)) return engine.deleteWithReport(id)
     return engine.delete(id)
   }
 
@@ -1281,4 +1361,14 @@ export class DefaultModelsService implements ModelsService {
       return 0
     }
   }
+}
+
+/** An engine whose delete reports the space it freed (the TensorRT-LLM extension, task 3.15). */
+function reportsDeletion(engine: unknown): engine is {
+  deleteWithReport(modelId: string): Promise<ModelDeletionReport>
+} {
+  return (
+    typeof (engine as { deleteWithReport?: unknown }).deleteWithReport ===
+    'function'
+  )
 }

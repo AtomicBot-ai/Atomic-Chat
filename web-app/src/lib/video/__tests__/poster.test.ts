@@ -34,8 +34,6 @@ const video = vi.hoisted(() => ({
   created: [] as HTMLVideoElement[],
 }))
 
-}
-
 describe('posterSize', () => {
   it('puts the longer side at the edge and keeps the shape', () => {
     expect(posterSize(768, 512)).toEqual({ width: 256, height: 171 })
@@ -343,7 +341,10 @@ describe('PosterBackfillQueue', () => {
   it('never runs fewer than one at a time', () => {
     const run = vi.fn(async () => {})
     const queue = new PosterBackfillQueue({ run, concurrency: 0 })
-    queue.request(makeVideoItem({ id: 'a', posterPath: null }))
+    const item = makeVideoItem({ id: 'a', posterPath: null })
+    queue.request(item)
     expect(run).toHaveBeenCalledTimes(1)
+    // It is running, so the queue no longer wants it.
+    expect(queue.wants(item)).toBe(false)
   })
 })

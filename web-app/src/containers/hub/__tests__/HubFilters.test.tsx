@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -24,6 +24,16 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
       params ? `${key}:${JSON.stringify(params)}` : key,
+  }),
+}))
+
+const tensorrt = vi.hoisted(() => ({ visible: false }))
+vi.mock('@/hooks/useTensorrtHubState', () => ({
+  useTensorrtHubState: () => ({
+    visible: tensorrt.visible,
+    state: 'unknown',
+    blockers: [],
+    descriptorId: null,
   }),
 }))
 
@@ -72,6 +82,28 @@ describe('HubFilters', () => {
       total_memory: 32 * 1024,
       gpus: [],
     }
+    tensorrt.visible = false
+  })
+
+  it('offers no format choice where only GGUF exists (no MLX, no TensorRT-LLM provider)', () => {
+    renderFilters()
+    expect(screen.queryByRole('button', { name: 'hub:formats' })).not.toBeInTheDocument()
+  })
+
+  it('offers TensorRT-LLM next to GGUF where its provider is shown, and switches to it', async () => {
+    tensorrt.visible = true
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    await user.click(screen.getByRole('button', { name: 'hub:formats' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByRole('menuitemradio', { name: 'GGUF' })).toBeInTheDocument()
+    await user.click(within(menu).getByRole('menuitemradio', { name: 'TensorRT-LLM' }))
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ formats: ['tensorrt-llm'] })
+    )
+    expect(screen.getByRole('button', { name: 'hub:formats' })).toHaveTextContent('TensorRT-LLM')
   })
 
   it('shows the current sort and switches on selection', async () => {

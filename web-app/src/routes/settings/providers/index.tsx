@@ -15,8 +15,9 @@ import { PlatformFeature } from '@/lib/platform/types'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Switch } from '@/components/ui/switch'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { refreshAppManagedProviders } from '@/lib/provider-visibility'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -28,6 +29,14 @@ function ModelProviders() {
   const serviceHub = useServiceHub()
   const { providers, updateProvider } = useModelProvider()
   const navigate = useNavigate()
+
+  // Ask gated engines again each time this page opens: a TensorRT-LLM descriptor published since
+  // the app started shows the provider here without an update (spec `tensorrt-llm-desktop`).
+  useEffect(() => {
+    void refreshAppManagedProviders(() =>
+      serviceHub.providers().getProviders()
+    ).catch((error) => console.warn('Could not refresh gated providers:', error))
+  }, [serviceHub])
 
   // Local inference engines only. Cloud providers — including Ollama and
   // user-created OpenAI-compatible endpoints — are connected on `/cloud`, which

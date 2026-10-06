@@ -246,6 +246,20 @@ describe('DefaultModelsService', () => {
       expect(mockEngine.delete).toHaveBeenCalledWith(id)
     })
 
+    it('answers what an engine that measures its deletes freed (TensorRT-LLM, task 3.15)', async () => {
+      const engine = {
+        delete: vi.fn(),
+        deleteWithReport: vi.fn().mockResolvedValue({ freedBytes: 4_100_000_000 }),
+      }
+      mockEngineManager.get.mockReturnValueOnce(engine)
+
+      await expect(
+        modelsService.deleteModel('Qwen/Qwen3-1.7B', 'tensorrt-llm')
+      ).resolves.toEqual({ freedBytes: 4_100_000_000 })
+      expect(engine.deleteWithReport).toHaveBeenCalledWith('Qwen/Qwen3-1.7B')
+      expect(engine.delete).not.toHaveBeenCalled()
+    })
+
     it('rejects instead of reporting success when the provider has no engine', async () => {
       mockEngineManager.get.mockReturnValueOnce(undefined)
 
@@ -353,6 +367,38 @@ describe('DefaultModelsService', () => {
         expect(engine.unload).toHaveBeenCalledWith('model1')
         expect(engine.unload).toHaveBeenCalledWith('model2')
       }
+    })
+
+    // The provider page's Stop runs `stopAllModels` and then redraws from
+    // `getActiveModels()`; an engine missing from both left a TensorRT-LLM
+    // model running while its row said stopped (task 3.14, F-9).
+    it('stops a TensorRT-LLM model by its full id and counts it as active until then', async () => {
+      let loaded = ['Qwen/Qwen3-1.7B']
+      const tensorrt = {
+        ...mockEngine,
+        getLoadedModels: vi.fn(async () => loaded),
+        unload: vi.fn(async () => {
+          loaded = []
+          return { success: true }
+        }),
+      }
+      const idle = {
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue([]),
+        unload: vi.fn(),
+      }
+      mockEngineManager.get.mockImplementation((provider: string) =>
+        provider === 'tensorrt-llm' ? tensorrt : idle
+      )
+
+      expect(await modelsService.getActiveModels()).toEqual(['Qwen/Qwen3-1.7B'])
+
+      await modelsService.stopAllModels()
+
+      expect(tensorrt.unload).toHaveBeenCalledTimes(1)
+      expect(tensorrt.unload).toHaveBeenCalledWith('Qwen/Qwen3-1.7B')
+      expect(idle.unload).not.toHaveBeenCalled()
+      expect(await modelsService.getActiveModels()).toEqual([])
     })
 
     it('should handle empty active models', async () => {
@@ -1447,4 +1493,111 @@ describe('Hugging Face search formats', () => {
       expect(url.searchParams.get('search')).toBe('Qwen')
     }
   )
+})
+
+describe('Hugging Face for the TensorRT-LLM format', () => {
+  // `/api/models?expand[]=config&expand[]=safetensors` as Hugging Face answers it (trimmed):
+  // an NVFP4 checkpoint keeps its packed weights as U8 and its scales as F8_E4M3.
+  const listing = [
+    {
+      id: 'nvidia/Qwen3.5-35B-A3B-NVFP4',
+      downloads: 5400,
+      likes: 120,
+      tags: ['safetensors', 'qwen3_5', 'image-text-to-text', 'modelopt'],
+      createdAt: '2026-09-01T00:00:00.000Z',
+      lastModified: '2026-09-20T00:00:00.000Z',
+      config: {
+        architectures: ['Qwen3_5ForConditionalGeneration'],
+        model_type: 'qwen3_5',
+      },
+      safetensors: {
+        parameters: { U8: 9_000_000_000, F8_E4M3: 1_100_000_000, BF16: 2_000_000_000 },
+        total: 12_100_000_000,
+      },
+    },
+    // No `config.json` in the listing: kept as is, the prefilter decides.
+    { id: 'someone/raw-weights', downloads: 3, tags: ['safetensors'] },
+  ]
+
+  const expectTensorrtQuery = (url: URL) => {
+    expect(url.searchParams.get('filter')).toBe('safetensors')
+    expect(url.searchParams.getAll('expand[]')).toEqual(
+      expect.arrayContaining([
+        'config',
+        'safetensors',
+        'downloads',
+        'likes',
+        'tags',
+        'createdAt',
+        'lastModified',
+      ])
+    )
+    // New Qwen and Gemma 4 checkpoints are `image-text-to-text`: no pipeline filter.
+    expect(url.searchParams.has('pipeline_tag')).toBe(false)
+  }
+
+  it('lists safetensors repositories with their architectures and parameters by dtype', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => null },
+      json: async () => listing,
+    } as unknown as Response)
+
+    const page = await new DefaultModelsService().listHuggingFaceFeed({
+      format: 'tensorrt-llm',
+      sort: 'trending',
+      cursor: null,
+    })
+
+    const url = new URL(String(vi.mocked(fetch).mock.calls.at(-1)?.[0]))
+    expectTensorrtQuery(url)
+    expect(url.searchParams.get('sort')).toBe('trendingScore')
+    expect(page.models[0]).toMatchObject({
+      model_name: 'nvidia/Qwen3.5-35B-A3B-NVFP4',
+      developer: 'nvidia',
+      downloads: 5400,
+      likes: 120,
+      is_mlx: false,
+      is_tensorrt_llm: true,
+      last_modified: '2026-09-20T00:00:00.000Z',
+      tensorrt: {
+        architectures: ['Qwen3_5ForConditionalGeneration'],
+        parameters: { U8: 9_000_000_000, F8_E4M3: 1_100_000_000, BF16: 2_000_000_000 },
+      },
+    })
+    expect(page.models[1]).toMatchObject({
+      model_name: 'someone/raw-weights',
+      is_tensorrt_llm: true,
+      tensorrt: { architectures: undefined, parameters: undefined },
+    })
+  })
+
+  it('searches the same way, every safetensors repository a candidate', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => listing,
+    } as Response)
+
+    const result = await new DefaultModelsService().searchHuggingFaceCandidates(
+      'Qwen3.5',
+      'hf_test',
+      10,
+      'tensorrt-llm'
+    )
+
+    const [requested, init] = vi.mocked(fetch).mock.calls.at(-1)!
+    const url = new URL(String(requested))
+    expectTensorrtQuery(url)
+    expect(url.searchParams.get('search')).toBe('Qwen3.5')
+    expect(init).toEqual({ headers: { Authorization: 'Bearer hf_test' } })
+    expect(result.map((model) => model.model_name).sort()).toEqual([
+      'nvidia/Qwen3.5-35B-A3B-NVFP4',
+      'someone/raw-weights',
+    ])
+    expect(result.every((model) => model.is_tensorrt_llm && !model.is_mlx)).toBe(true)
+    expect(
+      result.find((model) => model.model_name === 'nvidia/Qwen3.5-35B-A3B-NVFP4')?.tensorrt
+        ?.architectures
+    ).toEqual(['Qwen3_5ForConditionalGeneration'])
+  })
 })

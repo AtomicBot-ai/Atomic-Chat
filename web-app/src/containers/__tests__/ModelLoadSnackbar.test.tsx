@@ -279,3 +279,44 @@ describe('ModelLoadSnackbar', () => {
     expect(snackbar()).not.toBeInTheDocument()
   })
 })
+
+describe('ModelLoadSnackbar for a container-backed engine', () => {
+  beforeEach(() => {
+    i18n.changeLanguage('en')
+    act(() => {
+      useModelLoad.setState({ modelLoadError: undefined, modelLoadErrorModelId: undefined })
+      useAppState.setState({ activeModels: [], userStoppedModels: [] })
+    })
+  })
+
+  afterEach(() => {
+    act(() => useAppState.getState().updateLoadingModel(false))
+    act(() => toast.dismiss())
+  })
+
+  it('names the stage the engine is in and the time it has taken, and keeps both current', async () => {
+    // spec tensorrt-llm-desktop, "Первый старт большой модели".
+    seed({}, 'tensorrt-llm')
+    renderSnackbar()
+    startLoad()
+
+    act(() =>
+      useAppState.getState().setLoadingModelProgress({
+        kind: 'startingEngine',
+        stage: 'initializing-engine',
+        elapsedMs: 42_000,
+      })
+    )
+    await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 0:42'))
+
+    act(() =>
+      useAppState.getState().setLoadingModelProgress({
+        kind: 'startingEngine',
+        stage: 'initializing-engine',
+        elapsedMs: 185_000,
+      })
+    )
+    await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 3:05'))
+  })
+})
+

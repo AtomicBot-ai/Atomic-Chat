@@ -181,9 +181,10 @@ export async function fetchModelStats(modelId: string): Promise<ModelStats> {
   return stats
 }
 
-export type ModelFormat = 'mlx' | 'gguf'
+export type ModelFormat = 'mlx' | 'gguf' | 'tensorrt-llm'
 
 export function modelFormat(model: CatalogModel): ModelFormat {
+  if (model.is_tensorrt_llm) return 'tensorrt-llm'
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'
 }

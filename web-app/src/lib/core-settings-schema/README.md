@@ -2,10 +2,12 @@
 
 Byte-exact copies of the local engines' settings descriptors from
 `atomic-chat-core/src/settings/schema/` (`llamacpp.json`, `llamacpp-upstream.json`,
-`atomic-prism.json`, `mlx.json`). The copy is pinned to the core version named in the root
+`atomic-prism.json`, `mlx.json`, `tensorrt-llm.json`). The copy is pinned to the core version named in the root
 `package.json` under `atomicCore.version`; when that version changes, copy the
 files again from the matching core source with `cp` (never retype them) and
-recompute `CHECKSUM`.
+recompute `CHECKSUM`. The branch pins `0.7.5`, which is not released yet
+(openspec change `add-tensorrt-llm-linux`, task 3.11): until it is (task 7.1),
+the matching source is the core's `change/add-tensorrt-llm-linux` branch.
 
 `CHECKSUM` is the sha256 hex digest over every file in this directory except
 `CHECKSUM` itself, in sorted name order, feeding each file's name bytes and then

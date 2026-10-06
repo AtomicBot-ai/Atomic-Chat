@@ -31,6 +31,9 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({}),
 }))
 
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
+
 const MODEL = 'AtomicChat/Qwen3.6-27B-GGUF'
 
 const seed = (
@@ -101,6 +104,28 @@ describe('InferenceServerStatusStrip', () => {
     expect(
       screen.getByRole('button', { name: 'common:inferenceStatus.retry' })
     ).toBeInTheDocument()
+  })
+
+  it('offers the logs of a failed TensorRT-LLM load, and only for that engine', () => {
+    // spec tensorrt-llm-desktop: a load error comes with its reason and access to the container logs.
+    useModelLoad.setState({
+      modelLoadError: { code: 'MODEL_LOAD_FAILED' } as never,
+      modelLoadErrorModelId: MODEL,
+    })
+    seed({}, 'tensorrt-llm')
+
+    const { unmount } = render(<InferenceServerStatusStrip />)
+    screen.getByRole('button', { name: 'common:inferenceStatus.logs' }).click()
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/settings/providers/$providerName',
+      params: { providerName: 'tensorrt-llm' },
+    })
+    unmount()
+
+    seed({}, 'llamacpp')
+    render(<InferenceServerStatusStrip />)
+    expect(screen.queryByRole('button', { name: 'common:inferenceStatus.logs' })).not.toBeInTheDocument()
   })
 
   it('takes no room in a steady state', () => {

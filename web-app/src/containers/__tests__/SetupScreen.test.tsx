@@ -464,6 +464,28 @@ describe('SetupScreen', () => {
       expect(run).toHaveTextContent(/^setup:localStep\.run$/)
       unmount()
     })
+
+    it('retries the model from its Run button after the auto-start fails', async () => {
+      mocks.engine.import.mockRejectedValueOnce(new Error('unsupported'))
+      const finishLocalScan = deferLocalScan([detectedModel])
+      const { unmount } = render(<SetupScreen />)
+      await finishLocalScan()
+      const run = await screen.findByRole('button', {
+        name: /setup:localStep\.run/,
+      })
+
+      await act(async () => {
+        fireEvent.click(run)
+      })
+
+      // The same file is imported again, and the row holds while it runs.
+      expect(mocks.engine.import.mock.calls).toEqual([
+        expectedImport(detectedModel),
+        expectedImport(detectedModel),
+      ])
+      expect(run).toBeDisabled()
+      unmount()
+    })
   })
 
   it('offers a visible Skip, and does nothing until it is pressed', async () => {

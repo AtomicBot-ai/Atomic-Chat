@@ -87,6 +87,52 @@ describe('deleteLocalModel', () => {
     expect(useModelProvider.getState().providers[0].models).toEqual([])
   })
 
+  describe('tensorrt-llm (task 3.15)', () => {
+    it('leaves stopping to the core and answers what the delete freed', async () => {
+      const { serviceHub, models } = setup([
+        provider('tensorrt-llm', ['Qwen/Qwen3-1.7B']),
+      ])
+      models.deleteModel.mockResolvedValue({ freedBytes: 4_100_000_000 })
+      useAppState.setState({ activeModels: ['Qwen/Qwen3-1.7B'] })
+
+      await expect(
+        deleteLocalModel(serviceHub, 'Qwen/Qwen3-1.7B', 'tensorrt-llm')
+      ).resolves.toEqual({ freedBytes: 4_100_000_000 })
+
+      expect(models.stopModel).not.toHaveBeenCalled()
+      expect(models.deleteModel).toHaveBeenCalledWith(
+        'Qwen/Qwen3-1.7B',
+        'tensorrt-llm'
+      )
+      expect(useAppState.getState().activeModels).toEqual([])
+      expect(useModelProvider.getState().providers[0].models).toEqual([])
+    })
+
+    it('keeps a model the core could not stop active and listed', async () => {
+      const { serviceHub, models } = setup([
+        provider('tensorrt-llm', ['Qwen/Qwen3-1.7B']),
+      ])
+      models.deleteModel.mockRejectedValue(
+        Object.assign(
+          new Error(
+            'TensorRT-LLM could not stop Qwen/Qwen3-1.7B, so its files were not touched.'
+          ),
+          { code: 'MANAGED_STOP_UNCONFIRMED' }
+        )
+      )
+      useAppState.setState({ activeModels: ['Qwen/Qwen3-1.7B'] })
+
+      await expect(
+        deleteLocalModel(serviceHub, 'Qwen/Qwen3-1.7B', 'tensorrt-llm')
+      ).rejects.toThrow('its files were not touched')
+
+      expect(useAppState.getState().activeModels).toEqual(['Qwen/Qwen3-1.7B'])
+      expect(
+        useModelProvider.getState().providers[0].models.map((m) => m.id)
+      ).toEqual(['Qwen/Qwen3-1.7B'])
+    })
+  })
+
   it('leaves the store untouched when the local engine refuses', async () => {
     const { serviceHub, models } = setup([provider('llamacpp', ['qwen3'])])
     models.deleteModel.mockRejectedValue(new Error('missing model.yml'))

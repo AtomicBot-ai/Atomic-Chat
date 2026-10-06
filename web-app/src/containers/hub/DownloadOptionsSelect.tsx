@@ -3,6 +3,7 @@ import { IconChevronDown, IconChevronUp } from '@tabler/icons-react'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { FitBadge } from '@/containers/hub/FitBadge'
+import { TensorrtDownloadOptions } from '@/containers/hub/TensorrtDownloadOptions'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -32,7 +33,8 @@ export type DownloadOptionsSelectProps = {
  * used by Welcome and the recommendation cards.
  *
  * MLX repos ship as one safetensors set rather than a list of quants, so they
- * skip the selector entirely and render the MLX download action directly.
+ * skip the selector entirely and render the MLX download action directly; so
+ * do TensorRT-LLM checkpoints, with the core's verdict in place of the fit.
  */
 export function DownloadOptionsSelect({
   model,
@@ -96,6 +98,11 @@ export function DownloadOptionsSelect({
     defaultQuant
 
   const fitKnown = budgetBytes > 0
+
+  // One checkpoint, judged by the core rather than by size against memory.
+  if (model.is_tensorrt_llm) {
+    return <TensorrtDownloadOptions model={model} sectionRef={sectionRef} />
+  }
 
   if (model.is_mlx) {
     const sizeText = getMlxTotalFileSize(model)

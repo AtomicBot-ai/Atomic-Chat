@@ -11,6 +11,8 @@
  * there is one status system rather than two that can disagree.
  */
 
+import type { CoreSessionLoadStage } from '@/lib/tensorrt-llm/types'
+
 export type InferenceStatusPhase =
   /** No local engine in play — no model picked, or a remote provider. */
   | 'idle'
@@ -40,6 +42,11 @@ export type ModelLoadStep =
   | { kind: 'loadingWeights'; cachedFraction: number | null }
   /** The model is up; the Local API Server is being pointed at it. */
   | { kind: 'startingServer' }
+  /**
+   * A container-backed engine (TensorRT-LLM) is starting: the stage the core reports and the time
+   * the load has taken, since a first start runs for minutes.
+   */
+  | { kind: 'startingEngine'; stage: CoreSessionLoadStage; elapsedMs: number }
 
 /**
  * A step, and — after an out-of-memory failure — what the retry changed. The

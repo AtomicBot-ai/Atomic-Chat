@@ -4,6 +4,7 @@ import {
 } from '@tauri-apps/plugin-autostart'
 import { invoke } from '@tauri-apps/api/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { refreshAppManagedProviders } from '@/lib/provider-visibility'
 import {
   BACKEND_PRESERVE_KEYS,
   localStorageKey,
@@ -97,6 +98,7 @@ const SESSION_CACHED_PROVIDERS = [
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'tensorrt-llm',
 ] as const
 type SessionCachedProvider = (typeof SESSION_CACHED_PROVIDERS)[number]
 
@@ -108,7 +110,8 @@ const isSessionCachedProvider = (
 /** `atomic-core://session:died`: a loaded session's process exited without being unloaded. */
 export type CoreSessionDiedPayload = {
   provider?: string
-  pid?: number
+  /** `null` for a container session, which has no host process. */
+  pid?: number | null
   model_id?: string
   exit_code?: number | null
   signal?: string | null
@@ -165,7 +168,10 @@ export function handleCoreSessionDied(
       id: `session-died-${modelId ?? 'unknown'}`,
       description: vulkanAdvice
         ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
-        : "The model's backend process exited unexpectedly. Try reloading the model.",
+        : provider === 'tensorrt-llm'
+          ? // A container, not a process on this machine: its log is on the provider's page.
+            "The model's engine container stopped unexpectedly. Try reloading the model; its logs are in Settings → Providers → TensorRT-LLM."
+          : "The model's backend process exited unexpectedly. Try reloading the model.",
     }
   )
 }
@@ -188,7 +194,8 @@ const syncRemoteProviders = () => {
 
   providers.forEach((provider) => {
     // Only cloud providers should be registered with the backend proxy. Local
-    // engines (`llamacpp`, `llamacpp-upstream`, `mlx`, `foundation-models`)
+    // engines (`llamacpp`, `llamacpp-upstream`, `mlx`, `foundation-models`,
+    // `tensorrt-llm`)
     // run in-process and must never be treated as remote. Both local llama.cpp
     // provider ids are packaged on every desktop platform.
     // The pre-fix check excluded only `'llamacpp'`, which silently leaked
@@ -288,6 +295,13 @@ export function DataProvider() {
       .getProviders()
       .then((providers) => {
         setProviders(providers)
+        // An engine that decides its own visibility (TensorRT-LLM) answers after its probe, which
+        // runs in the background so it does not hold the app start up.
+        void refreshAppManagedProviders(() =>
+          serviceHub.providers().getProviders()
+        ).catch((error) =>
+          console.warn('Could not refresh gated providers:', error)
+        )
         // Register active remote providers with the backend
         providers.forEach((provider) => {
           if (provider.active) {

@@ -1,0 +1,12 @@
+---
+date: 2026-09-30
+title: "Run the privileged host step through pkexec on a copy of the core"
+---
+
+# 2026-09-30 — Run the privileged host step through pkexec on a copy of the core
+
+- **Context:** Setting TensorRT-LLM up on a Linux machine without Docker Engine or the NVIDIA Container Toolkit takes one privileged step (openspec change `add-tensorrt-llm-linux`, design D3). Its recipe lives in `atomic-chat-core` only — the core binary's `host-step exec <request-file>` subcommand, the same code `atc` runs — so app and CLI never disagree about what runs as root. The app ships as an AppImage: a FUSE mount without `allow_other`, whose files root cannot read, so `pkexec` on the core inside the bundle fails. The webview must not choose anything that runs as root.
+- **Decision:** The Rust command `atomic_core_run_host_step` takes only an operation id. It reads the pending step from the core, copies the bundled core binary into a fresh `0700` folder under `$XDG_RUNTIME_DIR` (a new random name each time, created with `create`, never reused), writes the `0600` request file beside it and runs `pkexec <copy> host-step exec <request>` at once. The executor's result file decides `completed` or `failed`; `pkexec` exit 126, or 127 without a polkit-agent message, is `declined` and leaves the setup resumable; no `pkexec` or no polkit agent hands the person the exact `sudo` command and the app waits up to two hours for the result file. The receipt goes to the core's `host-step-result` route, and the folder is removed once the executor has exited. Rejected: `pkexec /bin/sh -c …` (the prompt would authorize a shell, not a program); a helper of the app's own in Rust (a second copy of the recipe).
+- **Consequences:** The polkit prompt shows the copy's path in the runtime directory. A process of the same user could swap the copy between the copy and the prompt; it could equally swap the AppImage itself, which the person already runs, so this adds no attack surface beyond what exists. The runtime directory is cleared at logout, so a copy left by a crash does not outlive the session. The core re-probes the machine after every receipt: a `completed` it cannot confirm fails the operation rather than trusting the app.
+- **Owner:** `team`
+- **Links:** `src-tauri/src/core/atomic_core/host_step.rs`, `src-tauri/src/core/atomic_core/commands.rs` (`atomic_core_run_host_step`); `atomic-chat-core` `src/cli/commands/host-step.ts`, `src/host/recipes/request-file.ts`; `atomic-chat-spec` change `add-tensorrt-llm-linux`.

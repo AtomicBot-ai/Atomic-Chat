@@ -88,6 +88,9 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
+    // NVIDIA's own engine; the same mark as the NVIDIA NIM cloud provider.
+    case 'tensorrt-llm':
+      return '/images/model-provider/nvidia.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -199,6 +202,8 @@ export const getProviderTitle = (provider: string) => {
       return 'llama.cpp server'
     case 'mlx':
       return 'MLX'
+    case 'tensorrt-llm':
+      return 'TensorRT-LLM'
     case 'openai':
       return 'OpenAI'
     case 'chatgpt':

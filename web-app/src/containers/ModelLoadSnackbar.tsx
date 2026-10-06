@@ -13,6 +13,7 @@ import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import i18n from '@/i18n/setup'
 import type { InferenceStatus } from '@/lib/inference-status'
+import { engineStageText } from '@/lib/tensorrt-llm/chat'
 import { cancelModelLoad } from '@/utils/switchModel'
 
 /** How long "Model ready" stays up before Sonner clears it. */
@@ -27,7 +28,14 @@ export function ModelLoadSnackbar() {
   const status = useInferenceStatus()
   const serviceHub = useServiceHub()
   const loading = isLoading(status)
-  const { phase, modelId, cancelling } = status
+  const { phase, modelId, cancelling, progress } = status
+  // A container-backed engine names its stage and the time spent; every other load keeps the
+  // one line it always had.
+  const description = (() => {
+    if (progress?.kind !== 'startingEngine') return i18n.t('common:modelLoad.loadingIntoMemory')
+    const { key, elapsed } = engineStageText(progress)
+    return `${i18n.t(key)} · ${elapsed}`
+  })()
   const latestStatus = useRef(status)
   latestStatus.current = status
 
@@ -35,6 +43,7 @@ export function ModelLoadSnackbar() {
     id: string
     face: 'loading' | 'loaded'
     cancelling: boolean
+    description?: string
   } | null>(null)
   const closedDuringLoadRef = useRef(false)
 
@@ -54,7 +63,8 @@ export function ModelLoadSnackbar() {
       const cancelInProgress = Boolean(cancelling)
       if (
         shownRef.current?.face === 'loading' &&
-        shownRef.current.cancelling === cancelInProgress
+        shownRef.current.cancelling === cancelInProgress &&
+        shownRef.current.description === description
       ) {
         return
       }
@@ -73,7 +83,7 @@ export function ModelLoadSnackbar() {
           actionButton:
             'h-auto! border-0! bg-transparent! p-0! font-normal! text-muted-foreground! shadow-none! hover:bg-transparent! hover:text-foreground! hover:underline underline-offset-4',
         },
-        description: i18n.t('common:modelLoad.loadingIntoMemory'),
+        description,
         duration: Infinity,
         closeButton: true,
         onDismiss,
@@ -88,6 +98,7 @@ export function ModelLoadSnackbar() {
         id,
         face: 'loading',
         cancelling: cancelInProgress,
+        description,
       }
       return
     }
@@ -117,7 +128,7 @@ export function ModelLoadSnackbar() {
     }
 
     if (shownRef.current?.face !== 'loaded' || phase !== 'ready') hide()
-  }, [loading, phase, modelId, cancelling, serviceHub])
+  }, [loading, phase, modelId, cancelling, description, serviceHub])
 
   useEffect(
     () => () => {

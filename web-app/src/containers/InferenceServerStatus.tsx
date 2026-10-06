@@ -13,9 +13,11 @@
  *    being inferred from the colour of a dot.
  */
 import { IconAlertTriangle } from '@tabler/icons-react'
+import { useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -88,6 +90,7 @@ export function InferenceServerStatusStrip({
   const serviceHub = useServiceHub()
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const loadingModel = useAppState((state) => state.loadingModel)
+  const navigate = useNavigate()
 
   if (status.phase !== 'failed') return null
 
@@ -129,6 +132,23 @@ export function InferenceServerStatusStrip({
           }}
         >
           {t('common:inferenceStatus.retry')}
+        </Button>
+      )}
+      {/* A TensorRT-LLM container's log is on its provider page (the core keeps the last
+          failed attempt's). */}
+      {selectedProvider === 'tensorrt-llm' && (
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto shrink-0 p-0 text-xs"
+          onClick={() =>
+            void navigate({
+              to: route.settings.providers,
+              params: { providerName: 'tensorrt-llm' },
+            })
+          }
+        >
+          {t('common:inferenceStatus.logs')}
         </Button>
       )}
     </div>

@@ -326,6 +326,24 @@ describe('DataProvider', () => {
       useAppState.getState().activeModels = []
     })
 
+    it('treats a TensorRT-LLM container that stopped as its engine, not a process', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().activeModels = ['qwen']
+      const invalidate = vi.spyOn(ModelFactory, 'invalidateLocalSessionCache')
+
+      handleCoreSessionDied(
+        { provider: 'tensorrt-llm', pid: null, model_id: 'qwen' },
+        { generating: false, macos: false }
+      )
+
+      expect(invalidate.mock.calls).toEqual([['tensorrt-llm', 'qwen']])
+      expect(mocks.setActiveModels.mock.calls).toEqual([[[]]])
+      expect(toastOptions()?.description).toContain('container')
+      expect(toastOptions()?.description).not.toContain('process')
+      expect(toastOptions()?.description).not.toContain('Vulkan')
+      useAppState.getState().activeModels = []
+    })
+
     it('does not touch the session cache for Foundation Models, which it does not cache', () => {
       const invalidate = vi.spyOn(ModelFactory, 'invalidateLocalSessionCache')
 

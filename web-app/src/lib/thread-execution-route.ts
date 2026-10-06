@@ -1,6 +1,7 @@
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { agentProviderBlockReason } from '@/lib/agent-provider'
+import { agentModelBlockReason } from '@/lib/tensorrt-llm/chat'
 import {
   resolveMessageExecutionRoute,
   type ResolvedMessageExecutionRoute,
@@ -28,6 +29,10 @@ export function resolveThreadExecutionRoute(
     legacyChatEngine: useGeneralSetting.getState().legacyChatEngine,
     agentModeSelected: useGeneralSetting.getState().agentModeEnabled,
     providerBlockReason: agentProviderBlockReason(provider),
+    modelBlockReason: agentModelBlockReason(
+      provider?.provider,
+      providerState.selectedModel ?? undefined
+    ),
     hasAudioAttachment: Boolean(turn.hasAudioAttachment),
     dflashEnabled: shouldSuppressToolsForUpstreamDflash(
       provider?.provider ?? '',

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getHubSearchQuery, setHubSearchQuery } from '../hub-session'
+import { getHubFormat, getHubSearchQuery, setHubFormat, setHubSearchQuery } from '../hub-session'
 
 describe('Hub session state', () => {
   beforeEach(() => {
@@ -14,5 +14,12 @@ describe('Hub session state', () => {
     setHubSearchQuery('')
 
     expect(getHubSearchQuery()).toBe('')
+  })
+
+  it('keeps the picked format for the launch only, none at first', () => {
+    setHubFormat(null)
+    expect(getHubFormat()).toBeNull()
+    setHubFormat('tensorrt-llm')
+    expect(getHubFormat()).toBe('tensorrt-llm')
   })
 })

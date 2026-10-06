@@ -180,7 +180,18 @@ notify-rust = "4"
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
-windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem", "Win32_Globalization"] }
+windows-sys = { version = "0.60.2", features = [
+  "Win32_Storage_FileSystem",
+  "Win32_Globalization",
+  # The UAC executor of the privileged host step (core::atomic_core::host_step_windows).
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
 winreg = "0.52"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

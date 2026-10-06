@@ -808,3 +808,64 @@ async fn the_core_reports_errors_only_under_the_consent_the_app_gives_it() {
 
     supervisor.detach().await;
 }
+
+/// Manual run F-1: the app copied `atomic-chat-app-core`, which accepts only `daemon`, so no
+/// privileged step could ever run. This runs the executor the app would elevate — the CLI core
+/// beside the app core — on a request file laid out exactly as the app lays it out, as this user
+/// with `PKEXEC_UID` standing in for `pkexec`. The digests are made up, so the real executor
+/// refuses the request before any step: nothing on the machine changes, and the result file shows
+/// the subcommand exists and read our request.
+#[cfg(unix)]
+#[tokio::test]
+async fn the_privileged_step_runs_on_the_real_cli_core_and_reads_the_app_request_file() {
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let command = super::launch::CoreCommand {
+        program: binary.to_string_lossy().into_owned(),
+        prefix: Vec::new(),
+        resources_dir: None,
+        cloudflared_bin: None,
+    };
+    let executor = super::host_step::executor_binary(&command).expect("the CLI core beside the app core");
+    let zeros = format!("sha256:{}", "0".repeat(64));
+    let step = super::host_step::HostStep::from_operation(&json!({
+        "operation_id": "op-live",
+        "pending_host_step": {
+            "step_id": "step-live",
+            "action": "linux.install-container-runtime",
+            "recipe_id": "linux.install-container-runtime",
+            "recipe_digest": zeros,
+            "parameters_digest": zeros,
+            "parameters": { "user": "nobody", "arch": "x86_64", "family": "apt",
+                "distro_id": "ubuntu", "version_id": "24.04", "components": ["docker-engine"] },
+            "nonce": "nonce-live",
+            "expected_operation_revision": 1
+        }
+    }))
+    .expect("a pending step");
+    let runtime = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let prepared = super::host_step::prepare(runtime.path(), &executor, &step, data.path()).unwrap();
+
+    let output = std::process::Command::new(&prepared.binary)
+        .arg("host-step")
+        .arg("exec")
+        .arg(&prepared.request)
+        .env("PKEXEC_UID", unsafe { libc::getuid() }.to_string())
+        .env_remove("SUDO_UID")
+        .output()
+        .expect("run the executor");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!stderr.contains("only accepts the daemon"), "{stderr}");
+    assert_eq!(output.status.code(), Some(1), "a refused request exits 1: {stderr}");
+    let result: Value =
+        serde_json::from_str(&std::fs::read_to_string(&prepared.result).expect("a result file")).unwrap();
+    assert_eq!(result["outcome"], "failed");
+    assert_eq!(result["error_code"], "MANAGED_HOST_STEP_INVALID");
+    assert_eq!(result["step_id"], "step-live");
+    assert_eq!(result["nonce"], "nonce-live");
+    prepared.remove();
+}

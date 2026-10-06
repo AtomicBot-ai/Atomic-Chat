@@ -66,5 +66,44 @@
     "neverUpdated": "Aún no cargado",
     "successDescription": "Catálogo de proveedores actualizado.",
     "errorDescription": "No se pudo actualizar el catálogo. Usando caché o proveedores integrados."
+  },
+  "tensorrt": {
+    "checkAgain": "Comprobar de nuevo",
+    "notInstalledWindows": "TensorRT-LLM no está instalado. La instalación activa WSL si hace falta, crea la distribución WSL propia de Atomic Chat con Docker y NVIDIA Container Toolkit dentro y descarga la imagen del motor.",
+    "plan": {
+      "reboot": "Puede que Windows necesite reiniciarse después de activar WSL. Tras el reinicio, abre Atomic Chat: la instalación continuará sola.",
+      "wslDisk": "Disco: {{required}} para la distribución WSL de Atomic Chat en {{path}}; {{free}} libres allí.",
+      "wslDiskNoFree": "Disco: {{required}} para la distribución WSL de Atomic Chat en {{path}}.",
+      "wslDiskNoPath": "Disco: se necesitan {{required}} para la distribución WSL de Atomic Chat; {{free}} libres allí.",
+      "wslDiskUnknown": "Disco: {{required}} para la distribución WSL de Atomic Chat. No se informó la ubicación ni el espacio libre."
+    },
+    "hostStep": {
+      "uac": {
+        "waiting": "Esperando a que apruebes la solicitud de administrador de Windows (UAC) que activa WSL…",
+        "manual": "Windows no puede mostrar aquí una solicitud de administrador para Atomic Chat. Abre una terminal como administrador, ejecuta este comando, reinicia el equipo si lo pide y pulsa «Comprobar de nuevo»:",
+        "retry": "Pedir la aprobación de nuevo",
+        "running": "Windows is installing WSL. This takes several minutes and shows no window of its own; Atomic Chat continues by itself when it finishes."
+      },
+      "running": "Installing Docker and the NVIDIA Container Toolkit; this takes a few minutes, and the installation continues by itself."
+    },
+    "reboot": {
+      "title": "Reinicia el equipo",
+      "body": "WSL está activado y Windows necesita reiniciarse para terminar. Tras el reinicio, abre Atomic Chat: la instalación continuará sola, sin volver a pedir permiso."
+    },
+    "phaseWindows": {
+      "preparing-host": "Activando WSL",
+      "preparing-environment": "Configurando la distribución WSL de Atomic Chat y comprobando que ve tu GPU"
+    },
+    "bar": {
+      "hostStep": "Approve the system password prompt. After that, Docker and the NVIDIA Container Toolkit are installed; this can take a few minutes, and the installation continues by itself.",
+      "hostStepWindows": "Approve the Windows administrator prompt (UAC). After that, Windows downloads and installs WSL; this takes several minutes with no window of its own, and the installation continues by itself.",
+      "reboot": "WSL is turned on. Restart Windows to finish; after the restart, open Atomic Chat and the installation continues by itself.",
+      "relogin": "You were added to the docker group. Sign out and sign back in for it to take effect; then open Atomic Chat and the installation continues by itself.",
+      "restartNow": "Restart now",
+      "signOutNow": "Sign out now",
+      "later": "Later",
+      "details": "Details",
+      "actionFailed": "Could not do it from here ({{error}}). Do it yourself; the installation continues afterwards."
+    }
   }
 }

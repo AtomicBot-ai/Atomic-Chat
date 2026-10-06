@@ -289,16 +289,23 @@ pub fn readdir_sync<R: Runtime>(
     Ok(paths)
 }
 
+/// Where `write_yaml` and `read_yaml` may go: under the data folder, or under the root the core
+/// names for TensorRT-LLM models (`model.yml`; on Windows inside Atomic Chat's WSL distribution).
+async fn yaml_path_allowed<R: Runtime>(app: &tauri::AppHandle<R>, path: &std::path::Path) -> bool {
+    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
+    jan_utils::is_within(path, &jan_data_folder)
+        || super::model_roots::is_under_core_root(app, path).await
+}
+
 #[tauri::command]
-pub fn write_yaml(
-    app: tauri::AppHandle<impl Runtime>,
+pub async fn write_yaml<R: Runtime>(
+    app: tauri::AppHandle<R>,
     data: serde_json::Value,
     save_path: &str,
 ) -> Result<(), String> {
-    // TODO: have an internal function to check scope
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let save_path = jan_utils::normalize_path(&jan_data_folder.join(save_path));
-    if !jan_utils::is_within(&save_path, &jan_data_folder) {
+    if !yaml_path_allowed(&app, &save_path).await {
         return Err(format!(
             "Error: save path {} is not under jan_data_folder {}",
             save_path.to_string_lossy(),
@@ -312,13 +319,13 @@ pub fn write_yaml(
 }
 
 #[tauri::command]
-pub fn read_yaml<R: Runtime>(
+pub async fn read_yaml<R: Runtime>(
     app: tauri::AppHandle<R>,
     path: &str,
 ) -> Result<serde_json::Value, String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !jan_utils::is_within(&path, &jan_data_folder) {
+    if !yaml_path_allowed(&app, &path).await {
         return Err(format!(
             "Error: path {} is not under jan_data_folder {}",
             path.to_string_lossy(),

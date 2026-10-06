@@ -291,6 +291,22 @@ mod tests {
     }
 
     #[test]
+    fn a_journal_entry_without_a_pid_neither_breaks_nor_widens_protection() {
+        // Control protocol 2 lets a session have no host process (a container). The journal only
+        // records host processes, but an entry with `pid: null` must not stop the others from
+        // being protected, nor protect anything by itself.
+        let journal = r#"{
+            "version": 1,
+            "processes": [
+                {"instance_id": "live", "pid": null, "model_id": "container"},
+                {"instance_id": "live", "pid": 4242, "model_id": "a"}
+            ]
+        }"#;
+        let protected = journalled_pids(journal, "live", 100);
+        assert_eq!(protected, [100, 4242].into_iter().collect());
+    }
+
+    #[test]
     fn a_missing_or_broken_journal_still_protects_the_owner() {
         assert_eq!(journalled_pids("", "live", 7), [7].into_iter().collect());
         assert_eq!(

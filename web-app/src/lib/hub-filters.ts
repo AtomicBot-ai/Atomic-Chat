@@ -48,21 +48,58 @@ export const DEFAULT_HUB_FILTERS: HubFilterState = {
 
 export const HUB_FILTERS_STORAGE_KEY = 'atomic_hub_filters_v1'
 
+const ALL_FORMATS: readonly ModelFormat[] = ['gguf', 'mlx', 'tensorrt-llm']
+
 const isFormat = (value: unknown): value is ModelFormat =>
-  value === 'gguf' || value === 'mlx'
+  ALL_FORMATS.includes(value as ModelFormat)
+
+/** How the format filter names each format. */
+export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
+  'gguf': 'GGUF',
+  'mlx': 'MLX',
+  'tensorrt-llm': 'TensorRT-LLM',
+}
+
+/**
+ * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, TensorRT-LLM where its
+ * provider is shown and a card is new enough (`useTensorrtHubState().visible`).
+ */
+export function hubFormats(options: { mlx: boolean; tensorrt: boolean }): ModelFormat[] {
+  return [
+    'gguf',
+    ...(options.mlx ? (['mlx'] as const) : []),
+    ...(options.tensorrt ? (['tensorrt-llm'] as const) : []),
+  ]
+}
+
+/** The `engine` search parameter of `/hub/`: a format name, anything else is ignored. */
+export function parseHubEngine(value: unknown): ModelFormat | undefined {
+  return isFormat(value) ? value : undefined
+}
 
 const isSortKey = (value: unknown): value is HubSortKey =>
   typeof value === 'string' && HUB_SORT_KEYS.includes(value as HubSortKey)
 
-/** Coerce anything (parsed JSON, legacy shape, garbage) into a valid state. */
-export function normalizeHubFilters(raw: unknown): HubFilterState {
+/**
+ * Coerce anything (parsed JSON, legacy shape, garbage) into a valid state. A format this machine
+ * does not offer (`available`) reads as GGUF; the stored value is left alone, so a TensorRT-LLM
+ * filter comes back once the provider is there.
+ */
+export function normalizeHubFilters(
+  raw: unknown,
+  available: readonly ModelFormat[] = ALL_FORMATS
+): HubFilterState {
   if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_HUB_FILTERS }
   const value = raw as Record<string, unknown>
 
   const selectedFormat = Array.isArray(value.formats)
     ? value.formats.find(isFormat)
     : undefined
-  const formats = [selectedFormat ?? DEFAULT_HUB_FILTERS.formats[0]]
+  const formats = [
+    selectedFormat && available.includes(selectedFormat)
+      ? selectedFormat
+      : DEFAULT_HUB_FILTERS.formats[0],
+  ]
 
   return {
     formats,
@@ -93,7 +130,9 @@ export function readHubFilters(storage?: Storage | null): HubFilterState {
   try {
     const raw = ls.getItem(HUB_FILTERS_STORAGE_KEY)
     if (!raw) return { ...DEFAULT_HUB_FILTERS }
-    return normalizeHubFilters(JSON.parse(raw))
+    // Sort and the toggles come back; the format does not — the Hub opens on GGUF on every launch
+    // (`hub-session.ts` keeps a format picked within one launch).
+    return { ...normalizeHubFilters(JSON.parse(raw)), formats: [...DEFAULT_HUB_FILTERS.formats] }
   } catch {
     return { ...DEFAULT_HUB_FILTERS }
   }

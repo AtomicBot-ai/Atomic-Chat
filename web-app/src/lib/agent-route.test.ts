@@ -44,6 +44,16 @@ describe('resolveMessageExecutionRoute', () => {
     ).toEqual({ route: 'chat-transport', reason: 'provider-unsupported' })
   })
 
+  it('falls back for a model that cannot call tools', () => {
+    // spec tensorrt-llm-desktop, "Модель без tools в Agent-режиме": no Agent turn is started.
+    expect(
+      resolveMessageExecutionRoute({
+        ...agentEligible,
+        modelBlockReason: 'model-without-tools',
+      })
+    ).toEqual({ route: 'chat-transport', reason: 'model-without-tools' })
+  })
+
   it('falls back for remote providers with no API key', () => {
     expect(
       resolveMessageExecutionRoute({

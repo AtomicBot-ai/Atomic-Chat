@@ -89,6 +89,7 @@ import {
   toOpenAiTools,
 } from '@/lib/prompt-size'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import { canGrowContext } from '@/lib/tensorrt-llm/chat'
 import { summarizeToolCost } from '@/lib/tool-cost'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
@@ -107,7 +108,7 @@ import {
 } from '@/utils/registerRemoteProvider'
 
 /// Local inference backends (mlx, llamacpp, llamacpp-upstream, atomic-prism,
-/// foundation-models) get special handling at the `streamText` boundary:
+/// foundation-models, tensorrt-llm) get special handling at the `streamText` boundary:
 ///   * when tools are also active, the assistant system prompt is not passed
 ///     as a `system` message — gemma-4 and similar local models reliably
 ///     auto-emit a chain-of-thought block whenever the rendered prompt
@@ -126,6 +127,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'llamacpp-upstream',
   'atomic-prism',
   'foundation-models',
+  'tensorrt-llm',
 ])
 
 /// Engines that constrain sampling with a GBNF grammar compiled from the tool
@@ -1151,7 +1153,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // when it would not fit. Without this a long tool catalogue fails with
     // "exceeds the available context size", the model is reloaded, and the
     // whole prompt is regenerated; with it there is one reload and no error.
-    if (isLocalProvider && modelId) {
+    // TensorRT-LLM is left out: its context is fixed when the container starts (design D9) and its
+    // gateway has no `/tokenize` to measure with.
+    if (isLocalProvider && modelId && canGrowContext(effectiveProviderName)) {
       await this.ensureContextFits({
         providerId: effectiveProviderName,
         modelId,

@@ -193,7 +193,8 @@ export interface modelInfo {
 export type listResult = modelInfo[]
 
 export interface SessionInfo {
-  pid: number // opaque handle for unload/chat
+  /** Host process id, or `null` for a session with none (a container). Opaque: never kill by it. */
+  pid: number | null
   port: number // llama-server output port (corrected from portid)
   model_id: string //name of the model
   model_path: string // path of the loaded model
@@ -221,6 +222,12 @@ export type ModelLoadStage =
    * when that cannot be told.
    */
   | { kind: 'loadingWeights'; cachedFraction: number | null }
+  /**
+   * A container-backed engine (TensorRT-LLM) is starting: the stage the core reports on
+   * `session:load-progress` (`stopping-previous`, `starting-container`, `initializing-engine`,
+   * `ready`) and the time the load has taken so far.
+   */
+  | { kind: 'startingEngine'; stage: string; elapsedMs: number }
 
 export interface ModelLoadOptions {
   onStage?: (stage: ModelLoadStage) => void

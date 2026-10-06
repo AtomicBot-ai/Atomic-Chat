@@ -25,6 +25,9 @@ pub const PROVIDER_MLX: &str = "mlx";
 /// Never searched by default — the proxy does not route to it — but the webview asks the resolver
 /// for its sessions by this name.
 pub const PROVIDER_FOUNDATION_MODELS: &str = "foundation-models";
+/// Linux only. Not in the default search order either: on desktop the core's own `:1337` routes
+/// it; the app asks for it by name (chat, agent).
+pub const PROVIDER_TENSORRT_LLM: &str = "tensorrt-llm";
 
 /// Search order for a request that does not name a provider.
 ///

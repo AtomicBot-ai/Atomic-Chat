@@ -111,6 +111,32 @@ fn put_backends_back(
     }
 }
 
+/// The core's key to this scope's folder in Atomic Chat's WSL distribution, where TensorRT-LLM
+/// models live on Windows (change `add-tensorrt-llm-windows`, core ruling 2.6). Inside
+/// `atomic-core/`, which a reset clears; without the key the models stay on disk but the next core
+/// no longer finds them, and the spec keeps them available across a reset.
+const GUEST_SCOPE_FILE: &str = "atomic-core/managed-runtimes/guest-scope.json";
+
+/// The key's bytes, read before a reset clears the data folder; `None` where there is none
+/// (Linux, macOS, Windows before the distribution).
+fn keep_guest_scope(data_folder: &std::path::Path) -> Option<Vec<u8>> {
+    fs::read(data_folder.join(GUEST_SCOPE_FILE)).ok()
+}
+
+/// Write the kept key into the data folder the app uses after the reset.
+fn put_guest_scope(data_folder: &std::path::Path, kept: Option<Vec<u8>>) {
+    let Some(bytes) = kept else { return };
+    let path = data_folder.join(GUEST_SCOPE_FILE);
+    let written = path
+        .parent()
+        .map_or(Ok(()), fs::create_dir_all)
+        .and_then(|()| fs::write(&path, bytes));
+    match written {
+        Ok(()) => log::info!("Kept the TensorRT-LLM models' scope key across the factory reset"),
+        Err(e) => log::warn!("Failed to keep the TensorRT-LLM models' scope key: {e}"),
+    }
+}
+
 /// Detect the user's default shell and return the appropriate env file path.
 /// Returns (shell_name, env_file_path).
 fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
@@ -197,6 +223,7 @@ pub async fn factory_reset<R: Runtime>(
     #[cfg(windows)]
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
+    let mut guest_scope = None;
     if data_folder.exists() {
         if !is_safe_to_delete(&data_folder) {
             log::error!(
@@ -209,6 +236,7 @@ pub async fn factory_reset<R: Runtime>(
         // Preserve downloaded backends across factory reset so the user doesn't have to
         // re-download CUDA/Vulkan binaries (can be hundreds of MB).
         let preserved = set_backends_aside(&data_folder, &std::env::temp_dir());
+        guest_scope = keep_guest_scope(&data_folder);
 
         remove_jan_data_contents(&data_folder);
 
@@ -219,6 +247,8 @@ pub async fn factory_reset<R: Runtime>(
     let mut default_config = AppConfiguration::default();
     default_config.data_folder = default_data_folder_path(app_handle.clone());
     default_config.autostart_preference = autostart_preference;
+    // Into the folder the app comes back up on, which is the default one now.
+    put_guest_scope(std::path::Path::new(&default_config.data_folder), guest_scope);
     let _ = update_app_configuration(app_handle.clone(), default_config);
 
     restart_app(&app_handle);
@@ -7156,8 +7186,40 @@ mod zcode_tests {
 
 #[cfg(test)]
 mod factory_reset_tests {
-    use super::{put_backends_back, remove_jan_data_contents, set_backends_aside};
+    use super::{
+        keep_guest_scope, put_backends_back, put_guest_scope, remove_jan_data_contents,
+        set_backends_aside, GUEST_SCOPE_FILE,
+    };
     use std::fs;
+
+    #[test]
+    fn a_reset_keeps_the_key_to_the_models_in_the_wsl_distribution() {
+        // Change add-tensorrt-llm-windows: TensorRT-LLM models live in Atomic Chat's WSL
+        // distribution under this scope's key; without the key they would stay on disk, unseen.
+        let data = tempfile::tempdir().unwrap();
+        let next = tempfile::tempdir().unwrap();
+        let root = data.path();
+        fs::create_dir_all(root.join("atomic-core/managed-runtimes")).unwrap();
+        fs::write(root.join("atomic-core/credentials.json"), "{\"openai\":\"sk-secret\"}").unwrap();
+        let key = "{\"schema_version\":1,\"scope_key\":\"0b9e\"}";
+        fs::write(root.join(GUEST_SCOPE_FILE), key).unwrap();
+
+        let kept = keep_guest_scope(root);
+        remove_jan_data_contents(root);
+        // The reset also points the app at the default data folder, which may be another one.
+        put_guest_scope(next.path(), kept);
+
+        assert_eq!(fs::read_to_string(next.path().join(GUEST_SCOPE_FILE)).unwrap(), key);
+        assert!(!root.join("atomic-core/credentials.json").exists());
+    }
+
+    #[test]
+    fn a_reset_without_a_wsl_distribution_writes_no_key() {
+        let data = tempfile::tempdir().unwrap();
+        let kept = keep_guest_scope(data.path());
+        put_guest_scope(data.path(), kept);
+        assert!(!data.path().join("atomic-core").exists());
+    }
 
     #[test]
     fn a_reset_removes_the_cores_keys_and_keeps_both_providers_backends() {

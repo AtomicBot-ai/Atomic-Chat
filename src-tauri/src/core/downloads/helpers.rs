@@ -1,5 +1,6 @@
 use super::disk::{
-    disk_err_to_string, ensure_free_space, ensure_path_within_limit, remaining_bytes,
+    check_reported_free_space, disk_err_to_string, ensure_free_space, ensure_path_within_limit,
+    remaining_bytes,
 };
 use super::models::{DownloadEvent, DownloadItem, DownloadStage, ProgressTracker, ProxyConfig};
 use super::segmented;
@@ -779,8 +780,41 @@ pub async fn _download_files_internal(
     // Create progress tracker
     let progress_tracker = ProgressTracker::new(items, file_sizes.clone());
 
-    // save file under Jan data folder
+    // save file under Jan data folder — or under the root the core names for TensorRT-LLM models,
+    // which on Windows is Atomic Chat's WSL distribution (change `add-tensorrt-llm-windows`).
     let jan_data_folder = get_jan_data_folder_path(app.clone());
+    let save_paths: Vec<PathBuf> = items
+        .iter()
+        .map(|item| normalize_path(&jan_data_folder.join(&item.save_path)))
+        .collect();
+    // Compare the paths as the filesystem sees them, not as they were spelled. On atomic Fedora
+    // variants `/home` is a symlink to `/var/home`, so a target inside the data folder reached
+    // under the other name looked like an escape attempt and blocked the download.
+    let resolved_data_folder = canonicalize_existing_prefix(&jan_data_folder);
+    let in_data_folder: Vec<bool> = save_paths
+        .iter()
+        .map(|path| canonicalize_existing_prefix(path).starts_with(&resolved_data_folder))
+        .collect();
+    // Asked only for a download that leaves the data folder, and asked now: the free space there
+    // is the core's to measure (the volume list cannot see into the WSL guest).
+    let core_location = if in_data_folder.iter().all(|inside| *inside) {
+        None
+    } else {
+        crate::core::filesystem::model_roots::fetch(&app).await
+    };
+    for ((item, save_path), inside_data) in items.iter().zip(&save_paths).zip(&in_data_folder) {
+        let inside = *inside_data
+            || core_location.as_ref().is_some_and(|location| {
+                crate::core::filesystem::model_roots::within(save_path, &location.root)
+            });
+        if !inside {
+            return Err(format!(
+                "Path {} is outside of Jan data folder {}",
+                jan_data_folder.join(&item.save_path).display(),
+                jan_data_folder.display()
+            ));
+        }
+    }
 
     // ATO-467: `disk_io` is the largest failure cause, and two of its subcauses
     // are knowable before the first byte is fetched — the volume cannot hold
@@ -788,40 +822,22 @@ pub async fn _download_files_internal(
     // them here turns a write error at 80% of a 20 GB transfer into an upfront
     // message that names the actual problem.
     let mut already_downloaded = Vec::new();
-    for item in items.iter() {
-        let save_path = normalize_path(&jan_data_folder.join(&item.save_path));
-        ensure_path_within_limit(&save_path)?;
+    for save_path in &save_paths {
+        ensure_path_within_limit(save_path)?;
         if resume {
-            already_downloaded.push(segmented::downloaded_bytes_on_disk(&save_path));
+            already_downloaded.push(segmented::downloaded_bytes_on_disk(save_path));
         }
     }
-    ensure_free_space(
-        &jan_data_folder,
-        remaining_bytes(total_size, &already_downloaded),
-    )?;
+    let needed = remaining_bytes(total_size, &already_downloaded);
+    match &core_location {
+        Some(location) => check_reported_free_space(location.free_bytes, needed)?,
+        None => ensure_free_space(&jan_data_folder, needed)?,
+    }
 
     // Collect download tasks for parallel execution
     let mut download_tasks = Vec::new();
 
-    for (index, item) in items.iter().enumerate() {
-        let save_path = jan_data_folder.join(&item.save_path);
-        let save_path = normalize_path(&save_path);
-
-        // Compare the paths as the filesystem sees them, not as they were
-        // spelled. On atomic Fedora variants `/home` is a symlink to
-        // `/var/home`, so a target inside the data folder reached under the
-        // other name looked like an escape attempt and blocked the download.
-        let resolved_save_path = canonicalize_existing_prefix(&save_path);
-        let resolved_data_folder = canonicalize_existing_prefix(&jan_data_folder);
-
-        if !resolved_save_path.starts_with(&resolved_data_folder) {
-            return Err(format!(
-                "Path {} is outside of Jan data folder {}",
-                save_path.display(),
-                jan_data_folder.display()
-            ));
-        }
-
+    for (index, (item, save_path)) in items.iter().zip(save_paths).enumerate() {
         // Spawn download task for each file
         let item_clone = item.clone();
         let app_clone = app.clone();

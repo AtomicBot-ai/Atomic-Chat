@@ -26,6 +26,7 @@ describe('isAgentLocalProvider', () => {
     expect(isAgentLocalProvider('llamacpp-upstream')).toBe(true)
     expect(isAgentLocalProvider('atomic-prism')).toBe(true)
     expect(isAgentLocalProvider('mlx')).toBe(true)
+    expect(isAgentLocalProvider('tensorrt-llm')).toBe(true)
   })
 
   it('excludes foundation-models and unknown values', () => {
@@ -56,6 +57,13 @@ describe('agentProviderBlockReason', () => {
       // Local engines need no key: the backend drives their sessions directly.
       name: 'mlx with no key',
       provider: provider({ provider: 'mlx', api_key: '' }),
+      expected: null,
+    },
+    {
+      // The session gateway is an OpenAI endpoint the backend drives like
+      // MLX's; whether one model has tools is a model-level check.
+      name: 'tensorrt-llm with no key',
+      provider: provider({ provider: 'tensorrt-llm', api_key: '' }),
       expected: null,
     },
     {

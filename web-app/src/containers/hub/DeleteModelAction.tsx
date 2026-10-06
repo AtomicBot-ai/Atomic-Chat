@@ -13,11 +13,12 @@ import {
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { deleteLocalModel } from '@/lib/model-deletion'
+import { formatBytes } from '@/lib/utils'
 
 export type DeleteModelActionProps = {
   /** Id the engine registered the model under, not the catalog's spelling. */
   modelId: string
-  /** Local provider that owns the files (`llamacpp*` / `mlx`). */
+  /** Local provider that owns the files (`llamacpp*` / `mlx` / `tensorrt-llm`). */
   provider: string
   /** Called after the files are gone, before the provider list is refreshed. */
   onDeleted?: () => void
@@ -44,11 +45,17 @@ export function DeleteModelAction({
   const handleDelete = useCallback(async () => {
     setDeleting(true)
     try {
-      await deleteLocalModel(serviceHub, modelId, provider)
+      const report = await deleteLocalModel(serviceHub, modelId, provider)
       onDeleted?.()
       toast.success(t('common:deleteModel.title', { modelId }), {
         id: `delete-model-${modelId}`,
-        description: t('common:deleteModel.success', { modelId }),
+        // An engine that deletes through the core (TensorRT-LLM) says what it freed.
+        description: report
+          ? t('common:deleteModel.successFreed', {
+              modelId,
+              size: formatBytes(report.freedBytes),
+            })
+          : t('common:deleteModel.success', { modelId }),
       })
       setOpen(false)
     } catch (error) {

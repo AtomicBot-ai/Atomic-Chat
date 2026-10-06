@@ -139,6 +139,8 @@ describe('useVideoGeneration', () => {
     expect(stop).toHaveBeenCalledTimes(1)
 
     act(() => useVideoForm.setState({ prompt: '' }))
+    expect(result.current.canGenerate).toBe(false)
+    expect(result.current.disabledReason).toBe('emptyPrompt')
     await act(() => result.current.generate())
     expect(start).toHaveBeenCalledTimes(1)
   })

@@ -110,3 +110,80 @@ fn test_resolve_path() {
         );
     }
 }
+
+/// An app whose data folder is `data` and whose core last named `models` as its TensorRT-LLM
+/// root (change `add-tensorrt-llm-windows`, design D6): on Windows that root is in the WSL guest,
+/// outside the data folder.
+fn app_with_core_root(data: &std::path::Path, models: Option<&std::path::Path>) -> tauri::App<tauri::test::MockRuntime> {
+    use crate::core::filesystem::model_roots::CoreModelRoot;
+    let builder = tauri::test::mock_builder().manage(crate::test_support::TestDataRoot(data.to_path_buf()));
+    let builder = match models {
+        Some(root) => builder.manage(CoreModelRoot::named(root)),
+        None => builder.manage(CoreModelRoot::default()),
+    };
+    builder
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap()
+}
+
+#[test]
+fn model_yml_is_written_and_read_under_the_root_the_core_names() {
+    let data = tempfile::tempdir().unwrap();
+    let guest = tempfile::tempdir().unwrap();
+    let app = app_with_core_root(data.path(), Some(guest.path()));
+    let model = guest.path().join("nvidia").join("Qwen3-8B-FP8");
+    fs::create_dir_all(&model).unwrap();
+    let yml = model.join("model.yml");
+
+    tauri::async_runtime::block_on(write_yaml(
+        app.handle().clone(),
+        serde_json::json!({ "repository": "nvidia/Qwen3-8B-FP8" }),
+        yml.to_str().unwrap(),
+    ))
+    .unwrap();
+    let read = tauri::async_runtime::block_on(read_yaml(app.handle().clone(), yml.to_str().unwrap())).unwrap();
+
+    assert_eq!(read["repository"], "nvidia/Qwen3-8B-FP8");
+}
+
+#[test]
+fn model_yml_outside_the_data_folder_and_the_core_root_is_refused() {
+    let data = tempfile::tempdir().unwrap();
+    let guest = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let app = app_with_core_root(data.path(), Some(guest.path()));
+    let stray = elsewhere.path().join("model.yml");
+    // `..` out of the core's root is outside it too.
+    let escape = guest.path().join("..").join(elsewhere.path().file_name().unwrap()).join("model.yml");
+
+    for path in [&stray, &escape] {
+        let written = tauri::async_runtime::block_on(write_yaml(
+            app.handle().clone(),
+            serde_json::json!({}),
+            path.to_str().unwrap(),
+        ));
+        assert!(written.is_err(), "{} was written", path.display());
+    }
+    fs::write(&stray, "repository: x\n").unwrap();
+    assert!(tauri::async_runtime::block_on(read_yaml(app.handle().clone(), stray.to_str().unwrap())).is_err());
+}
+
+#[test]
+fn model_yml_under_the_data_folder_needs_no_core_root() {
+    // Linux: the core names `<data>/tensorrt-llm/models`, inside the data folder, as before.
+    let data = tempfile::tempdir().unwrap();
+    let app = app_with_core_root(data.path(), None);
+    let models = data.path().join("tensorrt-llm").join("models").join("m");
+    fs::create_dir_all(&models).unwrap();
+    let yml = models.join("model.yml");
+
+    tauri::async_runtime::block_on(write_yaml(
+        app.handle().clone(),
+        serde_json::json!({ "repository": "m" }),
+        yml.to_str().unwrap(),
+    ))
+    .unwrap();
+    let read = tauri::async_runtime::block_on(read_yaml(app.handle().clone(), "tensorrt-llm/models/m/model.yml")).unwrap();
+
+    assert_eq!(read["repository"], "m");
+}

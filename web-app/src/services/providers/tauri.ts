@@ -17,6 +17,7 @@ import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
+import { isEngineHidden } from '@/lib/provider-visibility'
 
 /**
  * Turn a raw `get_local_http` failure (e.g. `HTTP 404: 404 page not found`,
@@ -220,6 +221,8 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
+        // An engine that cannot run or be set up here (TensorRT-LLM without an NVIDIA GPU).
+        if (isEngineHidden(value)) continue
         const models = await value.list() ?? [] 
         const provider: ModelProvider = {
           active: false,

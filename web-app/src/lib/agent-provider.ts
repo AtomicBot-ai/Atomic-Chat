@@ -12,6 +12,10 @@ import {
  * `/v1/chat/completions`, mirroring what `ModelFactory.createMlxModel` does for
  * regular chat. None of them need the Local API Server.
  *
+ * `tensorrt-llm` is driven like `mlx`, over the session's OpenAI-compatible
+ * endpoint (the core's gateway in front of the container); whether a given
+ * model can call tools is a model-level check made before the run.
+ *
  * `foundation-models` is deliberately absent: Apple's on-device runtime exposes
  * no endpoint the agent can drive.
  */
@@ -20,6 +24,7 @@ export const AGENT_LOCAL_PROVIDERS = [
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'tensorrt-llm',
 ] as const
 
 export type AgentLocalProvider = (typeof AGENT_LOCAL_PROVIDERS)[number]

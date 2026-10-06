@@ -113,5 +113,28 @@
   "prismStage_ready": "Готово",
   "prismStage_failed": "Ошибка",
   "prismStage_cancelled": "Отменено",
-  "prismStage_interrupted": "Прервано"
+  "prismStage_interrupted": "Прервано",
+  "tensorrt": {
+    "checking": "Проверяем, может ли TensorRT-LLM работать на этом компьютере…",
+    "blocked": {
+      "title": "TensorRT-LLM пока нельзя установить на этот компьютер",
+      "body": "Исправьте то, что перечислено ниже, и проверьте снова. На странице настроек TensorRT-LLM расписан каждый шаг.",
+      "openProvider": "Открыть настройки TensorRT-LLM",
+      "checkAgain": "Проверить снова"
+    },
+    "blocker": {
+      "driver-too-old": "TensorRT-LLM нужен драйвер NVIDIA {{required}} или новее; на этом компьютере — {{actual}}.",
+      "driver-too-old-fix": "Установите более новый драйвер для своей карты с сайта NVIDIA или из обновлений системы, перезагрузите компьютер и проверьте снова.",
+      "compute-capability-too-low": "TensorRT-LLM нужна карта NVIDIA поколения Ampere (RTX 30xx) или новее: compute capability {{required}} или выше. У этой карты — {{actual}}."
+    },
+    "curated": "Проверены с TensorRT-LLM",
+    "models": {
+      "fits": "Эта модель может работать здесь ({{size}} весов).",
+      "checking": "Проверяем, может ли эта модель работать на этом компьютере…",
+      "otherCard": "Она поместится на: {{cards}}. Выберите эту карту в настройках TensorRT-LLM.",
+      "gated": "Hugging Face отказал в доступе. Откройте страницу модели, примите её условия (и при необходимости укажите токен Hugging Face в настройках), затем попробуйте снова: {{url}}",
+      "noSpace": "Недостаточно свободного места для этой модели в {{path}}: нужно {{needed}}, свободно {{free}}. Освободите место и попробуйте снова."
+    },
+    "installEngine": "Установить движок"
+  }
 }
