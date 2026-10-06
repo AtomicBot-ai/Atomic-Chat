@@ -227,13 +227,13 @@ describe('the verdicts of several managed engines (ManagedVerdicts)', () => {
     await waitFor(() => expect(models.checkManagedModel).toHaveBeenCalledTimes(2))
   })
 
-  it('waits for an engine whose descriptor is not known yet', () => {
+  it('asks an engine whose plan has not answered (or failed) too, instead of checking forever', async () => {
+    // Review finding: a probe that failed left the row on "checking" for good.
     hubStates.value = [{ engine: TENSORRT_LLM_ENGINE, hub: hub({ state: 'unknown', descriptorId: null }) }]
     const { result } = renderHook(() => useManagedVerdicts(trt('nvidia/Qwen3-8B-FP8')))
-    expect(result.current).toEqual([
-      expect.objectContaining({ verdict: null, checking: true }),
-    ])
-    expect(models.fetchHfRevision).not.toHaveBeenCalled()
+
+    await waitFor(() => expect(result.current[0]?.verdict?.kind).toBe('ok'))
+    expect(result.current[0]?.checking).toBe(false)
   })
 })
 

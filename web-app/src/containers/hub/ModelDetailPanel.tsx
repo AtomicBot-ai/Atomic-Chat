@@ -14,6 +14,7 @@ import {
   formatDownloads,
   getMemoryBudgetBytes,
   modelFormat,
+  type ModelFormat,
   type ModelStats,
 } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
@@ -47,12 +48,15 @@ export type ModelDetailPanelProps = {
   model: CatalogModel | null
   /** Curated metadata when the selection came from staff picks. */
   pick?: StaffPick
+  /** The managed engine's format the Hub shows: a managed checkpoint's format reads as it. */
+  managedFormat?: ModelFormat
   className?: string
 }
 
 export function ModelDetailPanel({
   model,
   pick,
+  managedFormat,
   className,
 }: ModelDetailPanelProps) {
   const { t } = useTranslation()
@@ -159,7 +163,7 @@ export function ModelDetailPanel({
           <div className="rounded-md bg-muted/40 p-3">
             <dt className="text-muted-foreground">{t('hub:formats')}</dt>
             <dd className="mt-1 text-sm font-semibold uppercase text-foreground">
-              {modelFormat(model)}
+              {modelFormat(model, managedFormat)}
             </dd>
           </div>
           <div className="rounded-md bg-muted/40 p-3">

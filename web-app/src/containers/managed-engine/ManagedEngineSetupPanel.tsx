@@ -102,6 +102,10 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
   const installation = useManagedEnvironmentStore((state) => selectInstallation(state, engine.id))
   const operation = useManagedEnvironmentStore((state) => selectSetupOperation(state, engine.id))
   const anyOperation = useManagedEnvironmentStore((state) => selectSetupOperation(state))
+  /** The other managed engines installed here: they keep using the shared models. */
+  const modelUsers = (environment?.installations ?? [])
+    .filter((entry) => entry.engine_id !== engine.id && entry.status === 'ready')
+    .map((entry) => managedEngine(entry.engine_id)?.label ?? entry.engine_id)
   // Another engine's setup or removal: the core runs one at a time, so this install waits.
   const otherOperation = useManagedEnvironmentStore((state) =>
     operation ? undefined : selectOtherEngineOperation(state, engine.id)
@@ -466,14 +470,21 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
               {t(windows ? k('remove.bodyWindows') : k('remove.body'))}
             </DialogDescription>
           </DialogHeader>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={keepModels}
-              onChange={(event) => setKeepModels(event.target.checked)}
-            />
-            {t(k('remove.keepModels'))}
-          </label>
+          {modelUsers.length > 0 ? (
+            // The store's models go only with the last managed engine (design D13).
+            <p className="text-sm text-main-view-fg/70">
+              {t(k('remove.modelsStay'), { engines: modelUsers.join(', ') })}
+            </p>
+          ) : (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={keepModels}
+                onChange={(event) => setKeepModels(event.target.checked)}
+              />
+              {t(k('remove.keepModels'))}
+            </label>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemoveOpen(false)}>
               {t(k('plan.cancel'))}
@@ -503,7 +514,7 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
                     request_id: crypto.randomUUID(),
                     kind: 'remove',
                     target: runtimeTarget(engine.id),
-                    retain_models: keepModels,
+                    retain_models: keepModels || modelUsers.length > 0,
                   })
                 })
               }

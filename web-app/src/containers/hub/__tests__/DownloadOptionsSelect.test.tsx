@@ -69,7 +69,6 @@ vi.mock('@/hooks/useManagedHubState', () => {
     descriptorId: 'tensorrt-llm-1.3.0rc29-r2',
   })
   return {
-    useManagedHubState: state,
     useManagedHubStates: () => [
       { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: state() },
     ],

@@ -1128,7 +1128,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // virtualizer is actually painting, so a fast scroll costs what it shows.
   // Feed entries and list rows when a managed format's page last arrived, and how
   // many pages in a row added no row (see MANAGED_EMPTY_PAGES_LIMIT).
-  const managedFeedPages = useRef({ feed: 0, rows: 0, empty: 0 })
+  const managedFeedPages = useRef({ format: '', feed: 0, rows: 0, empty: 0 })
   const virtualItems = rowVirtualizer.getVirtualItems()
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1
   const visibleFeedRepos = useMemo(
@@ -1165,6 +1165,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     }
     if (isSearchMode) return
     if (managedFormat) {
+      // vLLM and TensorRT-LLM share one feed but not one prefilter: pages one emptied may fill
+      // rows for the other, so the count starts over with the format.
+      const format = managedSelected?.id ?? ''
+      if (managedFeedPages.current.format !== format) {
+        managedFeedPages.current = { format, feed: 0, rows: 0, empty: 0 }
+      }
       const seen = managedFeedPages.current
       if (feed.models.length !== seen.feed) {
         seen.empty = listItems.length > seen.rows ? 0 : seen.empty + 1
@@ -1182,6 +1188,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   }, [
     isSearchMode,
     managedFormat,
+    managedSelected?.id,
     filters.uncensored,
     listItems.length,
     lastVisibleIndex,
@@ -1357,6 +1364,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         <ModelDetailPanel
           model={selectedItem?.model ?? null}
           pick={selectedItem?.pick}
+          managedFormat={managedSelected ? (managedSelected.id as ModelFormat) : undefined}
         />
       </div>
     </div>

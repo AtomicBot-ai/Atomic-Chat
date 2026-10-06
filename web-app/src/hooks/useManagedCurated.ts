@@ -9,7 +9,7 @@ import { managedVerdict, refusedOnEveryCard } from '@/services/managed-models/ve
 /**
  * The curated models of a managed engine's descriptor that run on this machine, as Model Hub cards
  * (change `add-tensorrt-llm-model-hub`, design D3): the installation's descriptor, or the one the
- * plan would install (`useManagedHubState(engine).descriptorId`). Each is checked by that engine at
+ * plan would install (`useManagedHubStates()[…].hub.descriptorId`). Each is checked by that engine at
  * the revision the descriptor pins; one it refuses for every card of this machine is left out. Also
  * the descriptor's `supported_architectures`, which the Hugging Face feed is narrowed by.
  */

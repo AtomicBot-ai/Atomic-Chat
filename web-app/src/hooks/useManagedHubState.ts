@@ -2,11 +2,7 @@ import { useMemo } from 'react'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useEnsureManagedPlans, useHeldManagedPlans } from '@/hooks/useManagedPlan'
-import {
-  managedHubState,
-  UNKNOWN_HUB_STATE,
-  type ManagedHubState,
-} from '@/lib/managed-engine/hub-state'
+import { managedHubState, type ManagedHubState } from '@/lib/managed-engine/hub-state'
 import { managedEngines, type ManagedEngine } from '@/lib/managed-engines'
 import {
   selectEnvironment,
@@ -47,11 +43,4 @@ export function useManagedHubStates(): Array<{ engine: ManagedEngine; hub: Manag
       })),
     [engines, shown, environment, plans]
   )
-}
-
-/** One managed engine in the Model Hub (`useManagedHubStates`). */
-export function useManagedHubState(engineId: string): ManagedHubState {
-  const states = useManagedHubStates()
-  const own = states.find((entry) => entry.engine.id === engineId)
-  return own?.hub ?? UNKNOWN_HUB_STATE
 }

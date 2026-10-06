@@ -39,8 +39,6 @@ const vllmHub = vi.hoisted(() => ({
   },
 }))
 vi.mock('@/hooks/useManagedHubState', () => ({
-  useManagedHubState: (engineId: string) =>
-    engineId === 'vllm' ? vllmHub.value : tensorrtHub.value,
   useManagedHubStates: () => [
     { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: vllmHub.value },
     { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: tensorrtHub.value },

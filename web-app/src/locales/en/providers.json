@@ -166,6 +166,7 @@
       "title": "Remove vLLM?",
       "body": "The engine image, its caches and the installation are deleted. Docker, the NVIDIA Container Toolkit and the docker group stay on this computer.",
       "keepModels": "Keep the downloaded models",
+      "modelsStay": "The downloaded models stay: {{engines}} uses them. They are deleted only with the last engine.",
       "confirm": "Remove",
       "spaceWindows": "The engine image takes about {{size}} inside Atomic Chat's WSL distribution. Uninstalling Atomic Chat removes neither the image nor the distribution; remove the engine and then the environment here first.",
       "bodyWindows": "The engine image, its caches and the installation are deleted. Atomic Chat's WSL distribution, with Docker and the NVIDIA Container Toolkit in it, stays; you can remove it afterwards as the environment."
@@ -325,6 +326,7 @@
       "title": "Remove TensorRT-LLM?",
       "body": "The engine image, its caches and the installation are deleted. Docker, the NVIDIA Container Toolkit and the docker group stay on this computer.",
       "keepModels": "Keep the downloaded TensorRT-LLM models",
+      "modelsStay": "The downloaded models stay: {{engines}} uses them. They are deleted only with the last engine.",
       "confirm": "Remove",
       "spaceWindows": "The engine image takes about {{size}} inside Atomic Chat's WSL distribution. Uninstalling Atomic Chat removes neither the image nor the distribution; remove the engine and then the environment here first.",
       "bodyWindows": "The engine image, its caches and the installation are deleted. Atomic Chat's WSL distribution, with Docker and the NVIDIA Container Toolkit in it, stays; you can remove it afterwards as the environment."

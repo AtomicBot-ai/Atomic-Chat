@@ -963,4 +963,24 @@ describe('ManagedEngineSetupPanel', () => {
       expect(client.beginOperation).not.toHaveBeenCalled()
     })
   })
+
+  it('removing an engine while another is installed says the shared models stay, and offers no deleting them (design D13)', async () => {
+    seed(
+      environment({
+        installations: [
+          installedEngine,
+          { ...installedEngine, installation_id: 'vllm', engine_id: 'vllm', active_descriptor_id: 'vllm-0.31.0-cu129-r1' },
+        ],
+      })
+    )
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.remove.button' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('providers:tensorrt.remove.modelsStay {"engines":"vLLM"}')).toBeInTheDocument()
+    expect(within(dialog).queryByText('providers:tensorrt.remove.keepModels')).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'providers:tensorrt.remove.confirm' }))
+    await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+    expect(client.beginOperation.mock.calls[0][1]).toMatchObject({ kind: 'remove', retain_models: true })
+  })
 })
