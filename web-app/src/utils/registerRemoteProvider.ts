@@ -20,7 +20,9 @@ export const LOCAL_PROVIDER_NAMES = [
   'llamacpp-upstream',
   'mlx',
   'foundation-models',
-  // Linux only: the core runs it in a container behind its session gateway.
+  // The managed engines (Linux, Windows): the core runs them in a container behind its session
+  // gateway. `isLocalProvider` also asks the registry (`lib/managed-engines.ts`).
+  'vllm',
   'tensorrt-llm',
 ] as const
 export type LocalProviderName = (typeof LOCAL_PROVIDER_NAMES)[number]

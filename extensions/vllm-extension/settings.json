@@ -1,0 +1,120 @@
+[
+  {
+    "key": "gpu_id",
+    "title": "GPU",
+    "description": "UUID of the NVIDIA GPU models run on (GPU-… or MIG-…). Leave empty to use the card with the most free memory at load time; if the saved card is gone, the load uses that card and says so. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Card with the most free memory",
+      "type": "text"
+    }
+  },
+  {
+    "key": "context_length",
+    "title": "Context Length",
+    "description": "Maximum prompt plus reply length in tokens, fixed when the model starts. A longer request is refused with context_length_exceeded instead of restarting the model. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8192,
+      "placeholder": "8192",
+      "type": "number",
+      "min": 512,
+      "max": 1048576
+    }
+  },
+  {
+    "key": "max_output_tokens",
+    "title": "Max Output Tokens",
+    "description": "Longest reply per request. Atomic Chat caps each request's max_tokens to this value on its way to the model; it is not an engine setting. Must be less than the context length. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 4096,
+      "placeholder": "4096",
+      "type": "number",
+      "min": 1,
+      "max": 1048576
+    }
+  },
+  {
+    "key": "max_num_seqs",
+    "title": "Parallel Requests",
+    "description": "How many requests the engine serves at once (chat, agent and API together); more wait in a queue. Atomic Chat reserves KV cache memory for that many full contexts unless a KV cache token limit is set. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8,
+      "placeholder": "8",
+      "type": "number",
+      "min": 1,
+      "max": 256
+    }
+  },
+  {
+    "key": "kv_cache_max_tokens",
+    "title": "KV Cache Token Limit",
+    "description": "Upper bound of the KV cache in tokens. 0 sizes it for every parallel request at the full context length. Atomic Chat turns it into bytes for the engine from the model's shape and the KV cache precision. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 16777216
+    }
+  },
+  {
+    "key": "cuda_graphs",
+    "title": "CUDA Graphs",
+    "description": "Speeds up token generation, but takes extra GPU memory and time at the first load (compiled graphs are cached for the next one). Auto turns them on only on cards with 12 GB of memory or more, so a model still fits on a small card. Applies from the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "name": "Auto"
+        },
+        {
+          "value": "on",
+          "name": "On"
+        },
+        {
+          "value": "off",
+          "name": "Off"
+        }
+      ]
+    }
+  },
+  {
+    "key": "kv_cache_dtype",
+    "title": "KV Cache Precision",
+    "description": "FP8 halves the KV cache memory, so a longer context fits, at a small quality cost on very long contexts. Needs an Ada (RTX 40) or newer card; on older cards it is ignored and the model's own precision is used. Applies from the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "name": "Model precision"
+        },
+        {
+          "value": "fp8",
+          "name": "FP8"
+        }
+      ]
+    }
+  },
+  {
+    "key": "load_timeout_seconds",
+    "title": "Load Timeout (seconds)",
+    "description": "How long a load may take before it fails. 0 estimates it from the model's size, with room for the first graph compilation. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 3600
+    }
+  }
+]

@@ -69,6 +69,15 @@ test('Linux and Windows build the TensorRT-LLM extension, macOS does not', () =>
   assert.ok(!names('darwin').includes('@janhq/tensorrt-llm-extension'))
 })
 
+test('Linux and Windows build the vLLM extension, macOS does not (change add-vllm-runtime)', () => {
+  // The core offers vLLM wherever it offers TensorRT-LLM and hides it until conf publishes
+  // `runtimes/vllm.json` (design D15); the build decides only the platforms.
+  const names = (platform) => builtHere(platform).map((pkg) => pkg.name)
+  assert.ok(names('linux').includes('@janhq/vllm-extension'))
+  assert.ok(names('win32').includes('@janhq/vllm-extension'))
+  assert.ok(!names('darwin').includes('@janhq/vllm-extension'))
+})
+
 test('each extension this platform builds has a pre-install tarball under the name the installer looks for', () => {
   const tarballs = readdirSync(PRE_INSTALL).filter((name) => name.endsWith('.tgz'))
 

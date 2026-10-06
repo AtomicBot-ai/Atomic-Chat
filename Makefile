@@ -361,6 +361,7 @@ test-extensions:
 		--include '@janhq/download-extension' \
 		--include '@janhq/vector-db-extension' \
 		--include '@janhq/tensorrt-llm-extension' \
+		--include '@janhq/vllm-extension' \
 		run test:run
 
 # Tauri validates bundle.resources and externalBin paths while compiling the

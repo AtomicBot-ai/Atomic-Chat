@@ -10,7 +10,7 @@ import test from 'node:test'
 const REPO_ROOT = new URL('..', import.meta.url).pathname
 const VENDORED = join(REPO_ROOT, 'web-app/src/lib/core-settings-schema')
 // Every schema the web-app vendors from the core.
-const SCHEMAS = ['llamacpp', 'llamacpp-upstream', 'mlx', 'tensorrt-llm']
+const SCHEMAS = ['llamacpp', 'llamacpp-upstream', 'mlx', 'tensorrt-llm', 'vllm']
 // Each is also registered by its engine extension from that extension's own settings.json.
 const EXTENSION_SCHEMAS = SCHEMAS
 

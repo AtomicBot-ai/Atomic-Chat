@@ -37,6 +37,10 @@ describe('getProviderLogo', () => {
     )
   })
 
+  it('marks vLLM with its own mark', () => {
+    expect(getProviderLogo('vllm')).toBe('/images/model-provider/vllm.svg')
+  })
+
   it('returns undefined for unknown providers', () => {
     expect(getProviderLogo('unknown')).toBeUndefined()
     expect(getProviderLogo('')).toBeUndefined()
@@ -52,6 +56,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('nvidia')).toBe('NVIDIA NIM')
     expect(getProviderTitle('aimlapi')).toBe('AI/ML API')
     expect(getProviderTitle('tensorrt-llm')).toBe('TensorRT-LLM')
+    expect(getProviderTitle('vllm')).toBe('vLLM')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
   })
 

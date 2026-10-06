@@ -65,7 +65,7 @@ describe('DialogDeleteModel', () => {
     fireEvent.click(screen.getByLabelText('providers:deleteModel.delete'))
 
     expect(
-      await screen.findByText('providers:deleteModel.managedShared {"engines":"TensorRT-LLM"}')
+      await screen.findByText('providers:deleteModel.managedShared {"engines":"vLLM, TensorRT-LLM"}')
     ).toBeInTheDocument()
   })
 

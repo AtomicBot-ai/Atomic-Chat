@@ -461,6 +461,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fvllm-extension%40workspace%3Avllm-extension":
+  version: 0.1.10
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=75c147&locator=%40janhq%2Fvllm-extension%40workspace%3Avllm-extension"
+  dependencies:
+    rxjs: "npm:^7.8.1"
+    ulidx: "npm:^2.3.0"
+  peerDependencies:
+    react: 19.0.0
+  checksum: 10c0/6d5b45c610c21054b44b5c8698d74257c36370814c89c325f5b800418297136fcaf755480dc97c44a197f2ac517ade7e540fe2ec7a048ef79a19b3a393c33bba
+  languageName: node
+  linkType: hard
+
 "@janhq/download-extension@workspace:download-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/download-extension@workspace:download-extension"
@@ -657,6 +669,23 @@ __metadata:
     cpx: "npm:1.5.0"
     jsdom: "npm:26.1.0"
     rimraf: "npm:6.0.1"
+    rolldown: "npm:1.0.0-beta.1"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
+"@janhq/vllm-extension@workspace:vllm-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/vllm-extension@workspace:vllm-extension"
+  dependencies:
+    "@janhq/core": ../../core/package.tgz
+    "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-http": "npm:2.5.7"
+    "@tauri-apps/plugin-log": "npm:^2.6.0"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:26.1.0"
+    rimraf: "npm:3.0.2"
     rolldown: "npm:1.0.0-beta.1"
     typescript: "npm:5.9.2"
     vitest: "npm:3.2.4"

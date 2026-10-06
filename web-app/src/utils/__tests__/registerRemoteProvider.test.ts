@@ -8,6 +8,8 @@ describe('isLocalProvider', () => {
     // the proxy under its own name and shadow the session the core serves.
     expect(LOCAL_PROVIDER_NAMES).toContain('tensorrt-llm')
     expect(isLocalProvider('tensorrt-llm')).toBe(true)
+    expect(LOCAL_PROVIDER_NAMES).toContain('vllm')
+    expect(isLocalProvider('vllm')).toBe(true)
     expect(isLocalProvider('nvidia')).toBe(false)
   })
 })

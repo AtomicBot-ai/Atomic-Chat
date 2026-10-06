@@ -60,7 +60,7 @@ describe('ChangeDataFolderLocation', () => {
 
     const line = screen.getByText(/settings:dialogs.changeDataFolder.managedModels/)
     expect(line).toHaveTextContent('AtomicChat')
-    expect(line).toHaveTextContent('"engines":"TensorRT-LLM"')
+    expect(line).toHaveTextContent('"engines":"vLLM, TensorRT-LLM"')
   })
 
   it('names every managed engine whose models live there (change add-vllm-runtime)', () => {

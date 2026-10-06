@@ -27,7 +27,14 @@ export const TENSORRT_LLM_ENGINE: ManagedEngine = {
   i18n: 'tensorrt',
 }
 
-const DEFAULT_ENGINES: readonly ManagedEngine[] = [TENSORRT_LLM_ENGINE]
+export const VLLM_ENGINE: ManagedEngine = {
+  id: 'vllm',
+  label: 'vLLM',
+  i18n: 'vllm',
+}
+
+/** vLLM first (spec `vllm-desktop`: "В списках провайдеров vLLM MUST стоять раньше TensorRT-LLM"). */
+const DEFAULT_ENGINES: readonly ManagedEngine[] = [VLLM_ENGINE, TENSORRT_LLM_ENGINE]
 
 let engines: readonly ManagedEngine[] = DEFAULT_ENGINES
 
