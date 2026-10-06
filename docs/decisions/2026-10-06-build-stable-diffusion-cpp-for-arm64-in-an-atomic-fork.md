@@ -13,7 +13,8 @@ title: "Build stable-diffusion.cpp for arm64 in an Atomic fork, mirrored under t
   host.
 - **Decision:**
   - **The fork.** `AtomicBot-ai/stable-diffusion.cpp` builds four archives from an **unmodified
-    upstream tag**, plus a patch series in `atomic/patches/`, which is empty today. They are
+    upstream tag**, plus a patch series in `atomic/patches/`. Today that series is one build-system
+    patch: libwebm exports its symbols under clang on Windows. No source code differs. The archives are
     `linux-cuda13-arm64` (CUDA 13.0, SBSA), `linux-cpu-arm64`, `win-cuda13-arm64` (CUDA 13.4, the
     first toolkit with Windows on Arm) and `win-cpu-arm64`. CUDA builds carry sm_121 SASS plus a
     Hopper PTX floor, with the CUDA runtime bundled. The workflow is `release-arm64.yml`.
