@@ -27,6 +27,7 @@ import { useManagedVerdicts } from '@/hooks/useManagedVerdicts'
 import { TENSORRT_LLM_ENGINE, type ManagedEngine } from '@/lib/managed-engines'
 import type { ManagedHubState } from '@/lib/managed-engine/hub-state'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   GatedModelError,
   IncompatibleModelError,
@@ -225,6 +226,33 @@ describe('the verdicts of several managed engines (ManagedVerdicts)', () => {
     hubStates.value = [{ engine: TENSORRT_LLM_ENGINE, hub: hub({ descriptorId: 'tensorrt-llm-1.3.0rc29-r4' }) }]
     view.rerender()
     await waitFor(() => expect(models.checkManagedModel).toHaveBeenCalledTimes(2))
+  })
+
+  it("asks again once the engine's settings change, and not for a change to another provider", async () => {
+    // The person lowered the parallel requests of the engine after it refused the model for memory.
+    const withSettings = (provider: string, value: unknown) =>
+      ({
+        provider,
+        active: true,
+        models: [],
+        settings: [
+          { key: 'max_num_seqs', title: '', description: '', controller_type: 'input', controller_props: { value } },
+        ],
+      }) as never
+    useModelProvider.setState({ providers: [withSettings('tensorrt-llm', 8), withSettings('llamacpp', 4)] })
+    const view = renderHook(() => trtVerdict(trt('nvidia/Qwen3-8B-FP8')))
+    await waitFor(() => expect(view.result.current.verdict?.kind).toBe('ok'))
+    expect(models.checkManagedModel).toHaveBeenCalledTimes(1)
+
+    useModelProvider.setState({ providers: [withSettings('tensorrt-llm', 8), withSettings('llamacpp', 1)] })
+    view.rerender()
+    expect(models.checkManagedModel).toHaveBeenCalledTimes(1)
+
+    models.checkManagedModel.mockResolvedValue(incompatible)
+    useModelProvider.setState({ providers: [withSettings('tensorrt-llm', 1), withSettings('llamacpp', 1)] })
+    view.rerender()
+    await waitFor(() => expect(view.result.current.verdict?.kind).toBe('incompatible'))
+    expect(models.checkManagedModel).toHaveBeenCalledTimes(2)
   })
 
   it('asks an engine whose plan has not answered (or failed) too, instead of checking forever', async () => {

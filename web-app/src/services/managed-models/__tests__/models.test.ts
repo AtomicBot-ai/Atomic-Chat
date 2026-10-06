@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }))
+const { engines } = vi.hoisted(() => ({ engines: new Map<string, unknown>() }))
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: { getInstance: () => ({ getEngine: (id: string) => engines.get(id) }) },
+}))
 
 import {
   GatedModelError,
@@ -587,5 +591,30 @@ describe('the core routes of the shared store', () => {
       path: '/models/second-engine/check',
       body: request,
     })
+  })
+})
+
+describe('a check sees the settings the person set', () => {
+  it("hands the engine's settings to the core before asking for the verdict", async () => {
+    const order: string[] = []
+    engines.set('vllm', {
+      prepareCoreSettings: vi.fn(async () => {
+        order.push('settings')
+      }),
+    })
+    invokeMock.mockImplementation(async () => {
+      order.push('check')
+      return verdict(true)
+    })
+    const request = { repository: 'r/m', revision: SHA, config_json: {}, hf_quant_config_json: null, files: [] }
+    await checkManagedModel('vllm', request)
+    expect(order).toEqual(['settings', 'check'])
+    engines.clear()
+  })
+
+  it('asks all the same when the engine is not loaded', async () => {
+    invokeMock.mockResolvedValue(verdict(true))
+    const request = { repository: 'r/m', revision: SHA, config_json: {}, hf_quant_config_json: null, files: [] }
+    await expect(checkManagedModel('vllm', request)).resolves.toEqual(verdict(true))
   })
 })

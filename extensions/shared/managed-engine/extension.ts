@@ -381,6 +381,14 @@ export function managedEngineExtension(spec: ManagedEngineSpec, deps: ManagedEng
       }
     }
 
+    /**
+     * Hand the person's settings to the core when they changed since the last hand-over. A model
+     * check judges memory with the core's copy, so the Model Hub calls this before it asks.
+     */
+    prepareCoreSettings(): Promise<void> {
+      return this.coreSettings.ensureReady()
+    }
+
     private loadModel(modelId: string, overrideSettings?: Record<string, unknown>): Promise<SessionInfo> {
       return this.loadCancel.track(modelId, async () => {
         try {

@@ -4,9 +4,11 @@
  * the repository read at a revision from Hugging Face, then `POST /models/<engine>/check`. Nothing
  * about compatibility is decided here.
  *
- * Kept for the session by engine, the engine's descriptor and `repository@revision` (design D14) —
- * the curated list, a card opened again and the download all ask the same question, and an engine
- * installed or updated to another descriptor asks again. Only the core's own answers are kept (`ok`, `incompatible`):
+ * Kept for the session by engine, the engine's descriptor, the engine's settings and
+ * `repository@revision` (design D14) — the curated list, a card opened again and the download all
+ * ask the same question, and an engine installed or updated to another descriptor asks again. The
+ * settings are part of it because the core judges memory with them: fewer parallel requests or a
+ * shorter context can make a refused model fit. Only the core's own answers are kept (`ok`, `incompatible`):
  * a refusal by Hugging Face changes once the person accepts the model's terms, and a network error
  * is not an answer at all.
  */
@@ -59,9 +61,19 @@ const settled = new Map<string, ManagedVerdict>()
 const keyOf = (
   engineId: string,
   descriptorId: string | null,
+  settingsKey: string,
   repository: string,
   revision: string | undefined
-) => `${engineId}|${descriptorId ?? ''}|${repository}@${revision ?? 'main'}`
+) => `${engineId}|${descriptorId ?? ''}|${settingsKey}|${repository}@${revision ?? 'main'}`
+
+/** The engine's settings as the person set them, as one string: key order does not matter. */
+export function engineSettingsKey(settings: ProviderSetting[] | undefined): string {
+  return JSON.stringify(
+    (settings ?? [])
+      .map((setting) => [setting.key, setting.controller_props?.value ?? null] as const)
+      .sort(([left], [right]) => left.localeCompare(right))
+  )
+}
 
 export function resetManagedVerdictsForTests(): void {
   pending.clear()
@@ -75,25 +87,28 @@ export function resetManagedVerdictsForTests(): void {
 export function heldManagedVerdict(
   engineId: string,
   descriptorId: string | null,
+  settingsKey: string,
   repository: string,
   revision: string | undefined
 ): ManagedVerdict | undefined {
-  return settled.get(keyOf(engineId, descriptorId, repository, revision))
+  return settled.get(keyOf(engineId, descriptorId, settingsKey, repository, revision))
 }
 
 /**
- * The engine's verdict, asked once per engine, descriptor, repository and revision while its answer
- * stands. `descriptorId` is the descriptor the engine checks with — its installation's, else the
- * one its plan would install; the core picks it itself, so it only keys the answer.
+ * The engine's verdict, asked once per engine, descriptor, settings, repository and revision while
+ * its answer stands. `descriptorId` is the descriptor the engine checks with — its installation's,
+ * else the one its plan would install; the core picks it itself, so it only keys the answer, as
+ * `settingsKey` ({@link engineSettingsKey}) does: the check hands the settings over itself.
  */
 export function managedVerdict(
   engineId: string,
   descriptorId: string | null,
+  settingsKey: string,
   repository: string,
   revision: string | undefined,
   token: string | undefined
 ): Promise<ManagedVerdict> {
-  const key = keyOf(engineId, descriptorId, repository, revision)
+  const key = keyOf(engineId, descriptorId, settingsKey, repository, revision)
   const held = settled.get(key)
   if (held) return Promise.resolve(held)
   const asking = pending.get(key)

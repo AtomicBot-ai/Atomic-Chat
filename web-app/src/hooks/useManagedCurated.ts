@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import type { CuratedModel } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
 import { describeDescriptor } from '@/services/managed-models/models'
-import { managedVerdict, refusedOnEveryCard } from '@/services/managed-models/verdict'
+import {
+  engineSettingsKey,
+  managedVerdict,
+  refusedOnEveryCard,
+} from '@/services/managed-models/verdict'
 
 /**
  * The curated models of a managed engine's descriptor that run on this machine, as Model Hub cards
@@ -37,6 +42,10 @@ export function curatedCard(model: CuratedModel, engineId: string): CatalogModel
 
 export function useManagedCurated(engineId: string, descriptorId: string | null): ManagedCurated {
   const token = useGeneralSetting((state) => state.huggingfaceToken) || undefined
+  // A changed setting can make a refused model fit, or the other way round.
+  const settingsKey = useModelProvider((state) =>
+    engineSettingsKey(state.getProviderByName(engineId)?.settings)
+  )
   const [state, setState] = useState<ManagedCurated>(() =>
     descriptorId ? { ...NONE, loading: true } : NONE
   )
@@ -59,7 +68,14 @@ export function useManagedCurated(engineId: string, descriptorId: string | null)
       const checked = await Promise.all(
         summary.curated_models.map(async (model) => ({
           model,
-          verdict: await managedVerdict(engineId, descriptorId, model.repository, model.revision, token),
+          verdict: await managedVerdict(
+            engineId,
+            descriptorId,
+            settingsKey,
+            model.repository,
+            model.revision,
+            token
+          ),
         }))
       )
       if (cancelled) return
@@ -74,7 +90,7 @@ export function useManagedCurated(engineId: string, descriptorId: string | null)
     return () => {
       cancelled = true
     }
-  }, [engineId, descriptorId, token])
+  }, [engineId, descriptorId, settingsKey, token])
 
   return state
 }

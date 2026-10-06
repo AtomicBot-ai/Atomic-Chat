@@ -34,6 +34,7 @@ import type {
   ModelCompatibility,
 } from '@/services/managed-environment/types'
 import { isDownloadCancellationError } from '@/lib/downloadCancellation'
+import { ExtensionManager } from '@/lib/extension'
 import { managedDownloadId } from '@/lib/managed-engine/download-id'
 import {
   isTransferValidationError,
@@ -445,8 +446,17 @@ function coreCall<T>(method: 'GET' | 'POST', path: string, body: unknown = null)
   return invoke<T>('atomic_core_call', { method, path, body })
 }
 
-/** `POST /models/<engine>/check`: the engine's verdict on a checkpoint, by that engine's descriptor. */
-export function checkManagedModel(engineId: string, request: CheckRequest): Promise<ModelCompatibility> {
+/**
+ * `POST /models/<engine>/check`: the engine's verdict on a checkpoint, by that engine's descriptor.
+ * The core judges memory with its own copy of the engine's settings, which the extension otherwise
+ * hands over only when a model loads; it is handed over first, so a verdict follows the settings the
+ * person just changed. An engine whose extension is not loaded is asked all the same.
+ */
+export async function checkManagedModel(engineId: string, request: CheckRequest): Promise<ModelCompatibility> {
+  const engine = ExtensionManager.getInstance().getEngine(engineId) as
+    | { prepareCoreSettings?: () => Promise<void> }
+    | undefined
+  await engine?.prepareCoreSettings?.()
   return coreCall('POST', `/models/${encodeURIComponent(engineId)}/check`, request)
 }
 
