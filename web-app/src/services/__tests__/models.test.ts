@@ -1544,7 +1544,7 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
     } as unknown as Response)
 
     const page = await new DefaultModelsService().listHuggingFaceFeed({
-      format: 'tensorrt-llm',
+      format: 'safetensors',
       sort: 'trending',
       cursor: null,
     })
@@ -1582,7 +1582,7 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
       'Qwen3.5',
       'hf_test',
       10,
-      'tensorrt-llm'
+      'safetensors'
     )
 
     const [requested, init] = vi.mocked(fetch).mock.calls.at(-1)!

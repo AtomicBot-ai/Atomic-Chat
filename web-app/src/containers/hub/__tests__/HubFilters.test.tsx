@@ -28,14 +28,16 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 const tensorrt = vi.hoisted(() => ({ visible: false }))
-vi.mock('@/hooks/useManagedHubState', () => ({
-  useManagedHubState: () => ({
-    visible: tensorrt.visible,
-    state: 'unknown',
-    blockers: [],
-    descriptorId: null,
-  }),
-}))
+const vllm = vi.hoisted(() => ({ visible: false }))
+vi.mock('@/hooks/useManagedHubState', () => {
+  const hub = (visible: boolean) => ({ visible, state: 'unknown', blockers: [], descriptorId: null })
+  return {
+    useManagedHubStates: () => [
+      { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: hub(vllm.visible) },
+      { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: hub(tensorrt.visible) },
+    ],
+  }
+})
 
 import { HubFilters } from '../HubFilters'
 
@@ -83,6 +85,7 @@ describe('HubFilters', () => {
       gpus: [],
     }
     tensorrt.visible = false
+    vllm.visible = false
   })
 
   it('offers no format choice where only GGUF exists (no MLX, no TensorRT-LLM provider)', () => {
@@ -104,6 +107,23 @@ describe('HubFilters', () => {
       expect.objectContaining({ formats: ['tensorrt-llm'] })
     )
     expect(screen.getByRole('button', { name: 'hub:formats' })).toHaveTextContent('TensorRT-LLM')
+  })
+
+  it('offers vLLM before TensorRT-LLM when both providers are shown (spec vllm-desktop)', async () => {
+    tensorrt.visible = true
+    vllm.visible = true
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    await user.click(screen.getByRole('button', { name: 'hub:formats' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      'GGUF',
+      'vLLM',
+      'TensorRT-LLM',
+    ])
+    await user.click(within(menu).getByRole('menuitemradio', { name: 'vLLM' }))
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ formats: ['vllm'] }))
   })
 
   it('shows the current sort and switches on selection', async () => {

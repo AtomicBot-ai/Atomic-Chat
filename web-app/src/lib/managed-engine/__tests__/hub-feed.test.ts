@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   estimateWeightBytes,
   hubListSources,
-  passesTensorrtPrefilter,
-  tensorrtBrowseRows,
-  tensorrtSearchRows,
+  passesManagedPrefilter,
+  managedBrowseRows,
+  managedSearchRows,
 } from '../hub-feed'
 import type { GpuFacts } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
@@ -47,7 +47,7 @@ describe('estimateWeightBytes', () => {
   })
 })
 
-describe('passesTensorrtPrefilter', () => {
+describe('passesManagedPrefilter', () => {
   it.each([
     {
       name: 'a supported architecture that fits the card',
@@ -104,16 +104,34 @@ describe('passesTensorrtPrefilter', () => {
       kept: true,
     },
   ])('$name', ({ model, gpus, kept }) => {
-    expect(passesTensorrtPrefilter(model, { supportedArchitectures: supported, gpus })).toBe(kept)
+    expect(passesManagedPrefilter(model, { engineId: 'tensorrt-llm', supportedArchitectures: supported, gpus })).toBe(kept)
   })
 
   it('without the descriptor architectures, judges only what it knows', () => {
     const model = entry({ architectures: ['MambaForCausalLM'], parameters: { BF16: 1 * GB } })
-    expect(passesTensorrtPrefilter(model, { supportedArchitectures: null, gpus: [card(24 * GB)] })).toBe(
+    expect(passesManagedPrefilter(model, { engineId: 'tensorrt-llm', supportedArchitectures: null, gpus: [card(24 * GB)] })).toBe(
       true
     )
     expect(
-      passesTensorrtPrefilter(entry({}), { supportedArchitectures: null, gpus: [card(24 * GB)] })
+      passesManagedPrefilter(entry({}), { engineId: 'tensorrt-llm', supportedArchitectures: null, gpus: [card(24 * GB)] })
+    ).toBe(false)
+  })
+})
+
+describe('passesManagedPrefilter by engine', () => {
+  it("counts each engine's own overhead beyond the weights", () => {
+    // 22 GB of weights on a 24 GB card: TensorRT-LLM's 1.5 GiB fits, vLLM's 2 GiB does not.
+    const model = entry({ architectures: ['Qwen3ForCausalLM'], parameters: { BF16: 11 * GB } })
+    const gpus = [card(24 * GB)]
+    expect(passesManagedPrefilter(model, { engineId: 'tensorrt-llm', supportedArchitectures: supported, gpus })).toBe(true)
+    expect(passesManagedPrefilter(model, { engineId: 'vllm', supportedArchitectures: supported, gpus })).toBe(false)
+  })
+
+  it("narrows by the engine's own descriptor architectures (spec vllm-desktop 'Архитектура не поддерживается vLLM')", () => {
+    const model = entry({ architectures: ['NemotronHForCausalLM'], parameters: { BF16: 1 * GB } })
+    const gpus = [card(24 * GB)]
+    expect(
+      passesManagedPrefilter(model, { engineId: 'vllm', supportedArchitectures: ['Qwen3ForCausalLM'], gpus })
     ).toBe(false)
   })
 })
@@ -132,9 +150,13 @@ describe('hubListSources', () => {
       staffPicks: false,
       catalog: false,
       curated: true,
-      feedFormat: 'tensorrt-llm',
+      feedFormat: 'safetensors',
       prefilter: true,
     })
+  })
+
+  it('vLLM lists like TensorRT-LLM: its curated models and the same narrowed safetensors feed', () => {
+    expect(hubListSources('vllm')).toEqual(hubListSources('tensorrt-llm'))
   })
 })
 
@@ -142,11 +164,11 @@ const named = (name: string, tensorrt: CatalogModel['managed']): CatalogModel =>
   ...entry(tensorrt),
   model_name: name,
 })
-const context = { supportedArchitectures: supported, gpus: [card(24 * GB)] }
+const context = { engineId: 'tensorrt-llm', supportedArchitectures: supported, gpus: [card(24 * GB)] }
 
-describe('tensorrtBrowseRows', () => {
+describe('managedBrowseRows', () => {
   it('puts the curated models first, then the feed narrowed and without repeats', () => {
-    const rows = tensorrtBrowseRows({
+    const rows = managedBrowseRows({
       curated: [named('nvidia/Qwen3-8B-FP8', { curated: true })],
       feed: [
         named('NVIDIA/qwen3-8b-fp8', { architectures: ['Qwen3ForCausalLM'] }),
@@ -163,9 +185,9 @@ describe('tensorrtBrowseRows', () => {
   })
 })
 
-describe('tensorrtSearchRows', () => {
+describe('managedSearchRows', () => {
   it('shows a repository typed exactly whatever the prefilter says, first, then the narrowed hits', () => {
-    const rows = tensorrtSearchRows({
+    const rows = managedSearchRows({
       exact: named('someone/Mamba-7B', { architectures: ['MambaForCausalLM'] }),
       candidates: [
         named('someone/Mamba-7B', { architectures: ['MambaForCausalLM'] }),

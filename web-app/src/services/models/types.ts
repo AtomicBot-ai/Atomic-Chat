@@ -96,10 +96,11 @@ export type HuggingFaceFeedSort =
   | 'lastModified'
 
 /**
- * `tensorrt-llm` lists every safetensors repository with its architectures and parameters by
- * dtype (change `add-tensorrt-llm-model-hub`, design D4); whether one runs is the core's verdict.
+ * `safetensors` lists every safetensors repository with its architectures and parameters by dtype,
+ * for the managed engines' formats (change `add-tensorrt-llm-model-hub`, design D4); whether one
+ * runs is each engine's verdict.
  */
-export type HuggingFaceFeedFormat = 'gguf' | 'mlx' | 'tensorrt-llm'
+export type HuggingFaceFeedFormat = 'gguf' | 'mlx' | 'safetensors'
 
 export type HuggingFaceFeedParams = {
   format: HuggingFaceFeedFormat

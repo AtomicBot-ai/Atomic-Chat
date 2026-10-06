@@ -181,10 +181,18 @@ export async function fetchModelStats(modelId: string): Promise<ModelStats> {
   return stats
 }
 
-export type ModelFormat = 'mlx' | 'gguf' | 'tensorrt-llm'
+/** A Hub format: a file format, or a managed engine (its provider id) for a safetensors checkpoint. */
+export type ModelFormat = 'mlx' | 'gguf' | 'vllm' | 'tensorrt-llm'
 
-export function modelFormat(model: CatalogModel): ModelFormat {
-  if (model.is_managed) return 'tensorrt-llm'
+/**
+ * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
+ * (change `add-vllm-runtime`): it reads as the managed format the Hub is showing, `managedFormat`.
+ */
+export function modelFormat(
+  model: CatalogModel,
+  managedFormat: ModelFormat = 'tensorrt-llm'
+): ModelFormat {
+  if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'
 }

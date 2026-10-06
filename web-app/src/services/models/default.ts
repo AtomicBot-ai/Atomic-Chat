@@ -2,6 +2,7 @@
  * Default Models Service - Web implementation
  */
 
+import { managedEngines } from '@/lib/managed-engines'
 import {
   sanitizeModelId,
   LOCAL_LLAMACPP_PROVIDER,
@@ -105,16 +106,17 @@ const isTauriRuntime = (): boolean => {
 // `getActiveModels()` reports and what `stopAllModels()` / `stopAllModelsExcept()`
 // unload. An engine missing here is invisible to the provider page's Stop, which
 // then shows its model stopped while it keeps running (task 3.14, F-9).
-const localProviders = [
+// The managed engines (`lib/managed-engines.ts`: vLLM, TensorRT-LLM) are local too.
+const localProviders = (): string[] => [
   'llamacpp',
   'llamacpp-upstream',
   'mlx',
-  'tensorrt-llm',
-] as const
-type LocalProviderName = (typeof localProviders)[number]
+  ...managedEngines().map((engine) => engine.id),
+]
+type LocalProviderName = string
 
 /** What `expand[]=config` and `expand[]=safetensors` add to a listing entry. */
-type HuggingFaceTensorrtExpansion = {
+type HuggingFaceManagedExpansion = {
   config?: { architectures?: unknown }
   safetensors?: { parameters?: unknown }
 }
@@ -123,7 +125,7 @@ type HuggingFaceFeedEntry = Pick<
   HuggingFaceRepo,
   'downloads' | 'likes' | 'tags'
 > &
-  HuggingFaceTensorrtExpansion & {
+  HuggingFaceManagedExpansion & {
     id?: string
     modelId?: string
     createdAt?: string
@@ -135,7 +137,7 @@ type HuggingFaceRepoSearchResult = Pick<
   HuggingFaceRepo,
   'downloads' | 'likes' | 'tags'
 > &
-  HuggingFaceTensorrtExpansion & {
+  HuggingFaceManagedExpansion & {
     id?: string
     modelId?: string
   }
@@ -144,7 +146,7 @@ type HuggingFaceRepoSearchResult = Pick<
  * Asking for any `expand[]` makes Hugging Face answer with only the fields named, so the ones the
  * Hub already reads are named too.
  */
-const TENSORRT_LLM_EXPAND = [
+const MANAGED_LISTING_EXPAND = [
   'config',
   'safetensors',
   'downloads',
@@ -162,17 +164,17 @@ function huggingFaceFormatParams(
 ): URLSearchParams {
   const params = new URLSearchParams({
     ...leading,
-    filter: format === 'tensorrt-llm' ? 'safetensors' : format,
+    filter: format,
     ...trailing,
   })
-  if (format === 'tensorrt-llm') {
-    for (const field of TENSORRT_LLM_EXPAND) params.append('expand[]', field)
+  if (format === 'safetensors') {
+    for (const field of MANAGED_LISTING_EXPAND) params.append('expand[]', field)
   }
   return params
 }
 
 /** A listing entry's architectures and parameters by dtype; anything malformed reads as absent. */
-function tensorrtListingFields(repo: HuggingFaceTensorrtExpansion): Pick<
+function managedListingFields(repo: HuggingFaceManagedExpansion): Pick<
   CatalogModel,
   'is_managed' | 'managed'
 > {
@@ -257,7 +259,7 @@ export class DefaultModelsService implements ModelsService {
     { provider: LocalProviderName; models: string[] }[]
   > {
     const results = await Promise.all(
-      localProviders.map(async (provider) => ({
+      localProviders().map(async (provider) => ({
         provider,
         models: (await this.getEngine(provider)?.getLoadedModels()) ?? [],
       }))
@@ -424,7 +426,7 @@ export class DefaultModelsService implements ModelsService {
           num_safetensors: 0,
           safetensors_files: [],
           is_mlx: format === 'mlx',
-          ...(format === 'tensorrt-llm' ? tensorrtListingFields(repo) : {}),
+          ...(format === 'safetensors' ? managedListingFields(repo) : {}),
           readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,
         } satisfies CatalogModel
       })
@@ -499,7 +501,7 @@ export class DefaultModelsService implements ModelsService {
           is_mlx:
             format === 'mlx' ||
             (format === 'gguf' && tags.some((t) => t.toLowerCase() === 'mlx')),
-          ...(format === 'tensorrt-llm' ? tensorrtListingFields(repo) : {}),
+          ...(format === 'safetensors' ? managedListingFields(repo) : {}),
           created_at: repo.createdAt,
           last_modified: repo.lastModified,
           readme: `https://huggingface.co/${repoId}/resolve/main/README.md`,

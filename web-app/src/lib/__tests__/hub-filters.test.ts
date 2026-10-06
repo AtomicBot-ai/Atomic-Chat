@@ -8,6 +8,7 @@ import {
   hasLikeData,
   HUB_FILTERS_STORAGE_KEY,
   hubFormats,
+  HUB_FORMAT_LABELS,
   huggingFaceQueries,
   modelDownloadSizeText,
   modelFitsBudget,
@@ -191,12 +192,28 @@ describe('hub filter persistence', () => {
 
 describe('hubFormats', () => {
   it('offers GGUF everywhere, MLX on macOS and TensorRT-LLM where its provider is', () => {
-    expect(hubFormats({ mlx: false, tensorrt: false })).toEqual(['gguf'])
-    expect(hubFormats({ mlx: true, tensorrt: false })).toEqual(['gguf', 'mlx'])
-    expect(hubFormats({ mlx: false, tensorrt: true })).toEqual([
+    expect(hubFormats({ mlx: false, managed: [] })).toEqual(['gguf'])
+    expect(hubFormats({ mlx: true, managed: [] })).toEqual(['gguf', 'mlx'])
+    expect(hubFormats({ mlx: false, managed: ['tensorrt-llm'] })).toEqual([
       'gguf',
       'tensorrt-llm',
     ])
+  })
+
+  it('offers each visible managed engine as a format, vLLM before TensorRT-LLM (spec vllm-desktop)', () => {
+    expect(hubFormats({ mlx: false, managed: ['vllm', 'tensorrt-llm'] })).toEqual([
+      'gguf',
+      'vllm',
+      'tensorrt-llm',
+    ])
+    // Registry order whatever order the visible engines came in.
+    expect(hubFormats({ mlx: false, managed: ['tensorrt-llm', 'vllm'] })).toEqual([
+      'gguf',
+      'vllm',
+      'tensorrt-llm',
+    ])
+    expect(hubFormats({ mlx: false, managed: ['vllm'] })).toEqual(['gguf', 'vllm'])
+    expect(HUB_FORMAT_LABELS.vllm).toBe('vLLM')
   })
 })
 
@@ -205,6 +222,7 @@ describe('engine in the Hub URL', () => {
     expect(parseHubEngine('gguf')).toBe('gguf')
     expect(parseHubEngine('mlx')).toBe('mlx')
     expect(parseHubEngine('tensorrt-llm')).toBe('tensorrt-llm')
+    expect(parseHubEngine('vllm')).toBe('vllm')
     expect(parseHubEngine('onnx')).toBeUndefined()
     expect(parseHubEngine(undefined)).toBeUndefined()
     expect(parseHubEngine(['gguf'])).toBeUndefined()
@@ -247,6 +265,10 @@ describe('filterByFormats', () => {
       'nvidia/Qwen3-8B-FP8',
     ])
     expect(filterByFormats(list, ['gguf']).map((m) => m.model_name)).toEqual(['a/gguf'])
+    // One checkpoint for every managed engine: it belongs under vLLM too.
+    expect(filterByFormats(list, ['vllm']).map((m) => m.model_name)).toEqual([
+      'nvidia/Qwen3-8B-FP8',
+    ])
   })
 
   it('recognizes MLX declared only through library_name', () => {

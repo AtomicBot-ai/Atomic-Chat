@@ -30,9 +30,19 @@ const tensorrtHub = vi.hoisted(() => ({
     descriptorId: null as string | null,
   },
 }))
+const vllmHub = vi.hoisted(() => ({
+  value: {
+    visible: false,
+    state: 'unknown',
+    blockers: [] as Array<Record<string, unknown>>,
+    descriptorId: null as string | null,
+  },
+}))
 vi.mock('@/hooks/useManagedHubState', () => ({
-  useManagedHubState: () => tensorrtHub.value,
+  useManagedHubState: (engineId: string) =>
+    engineId === 'vllm' ? vllmHub.value : tensorrtHub.value,
   useManagedHubStates: () => [
+    { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: vllmHub.value },
     { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: tensorrtHub.value },
   ],
 }))
@@ -44,8 +54,16 @@ const tensorrtCurated = vi.hoisted(() => ({
     loading: false,
   },
 }))
+const vllmCurated = vi.hoisted(() => ({
+  value: {
+    models: [] as CatalogModel[],
+    supportedArchitectures: null as string[] | null,
+    loading: false,
+  },
+}))
 vi.mock('@/hooks/useManagedCurated', () => ({
-  useManagedCurated: () => tensorrtCurated.value,
+  useManagedCurated: (engineId: string) =>
+    engineId === 'vllm' ? vllmCurated.value : tensorrtCurated.value,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -288,6 +306,8 @@ describe('/hub route', () => {
       descriptorId: null,
     }
     tensorrtCurated.value = { models: [], supportedArchitectures: null, loading: false }
+    vllmHub.value = { visible: false, state: 'unknown', blockers: [], descriptorId: null }
+    vllmCurated.value = { models: [], supportedArchitectures: null, loading: false }
     mocks.mediaSupported = false
     mocks.decisionSupported = false
     mocks.sources = []
@@ -748,7 +768,7 @@ describe('/hub route', () => {
       expect(screen.queryByText('Mamba-7B')).not.toBeInTheDocument()
       expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
       expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
-        expect.objectContaining({ format: 'tensorrt-llm' })
+        expect.objectContaining({ format: 'safetensors' })
       )
     })
 
@@ -781,7 +801,7 @@ describe('/hub route', () => {
         expect.any(String),
         expect.anything(),
         expect.any(Number),
-        'tensorrt-llm'
+        'safetensors'
       )
       const opened = mocks.navigate.mock.calls
         .map(([options]) => options as { search?: (prev: object) => { model?: string } })
@@ -851,6 +871,108 @@ describe('/hub route', () => {
 
       expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
       expect(screen.queryByText('hub:tensorrt.checking')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('under the vLLM format (spec vllm-desktop "vLLM — формат Model Hub по состоянию провайдера")', () => {
+    const managedEntry = (name: string, architectures: string[]): CatalogModel => ({
+      model_name: name,
+      developer: name.split('/')[0],
+      description: '',
+      downloads: 10,
+      is_managed: true,
+      managed: { architectures, parameters: { BF16: 4e9 } },
+    })
+    const vllmReady = () => {
+      vllmHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'vllm-0.31.0-cu129-r1' }
+      vllmCurated.value = {
+        models: [
+          {
+            model_name: 'Qwen/Qwen3-8B-AWQ',
+            developer: 'Qwen',
+            description: '',
+            downloads: 0,
+            is_managed: true,
+            managed: { curated: true, curatedBy: 'vllm', revision: 'rev-v' },
+          },
+        ],
+        supportedArchitectures: ['Qwen3ForCausalLM'],
+        loading: false,
+      }
+    }
+    const trtBlockedByDriver = () => {
+      tensorrtHub.value = {
+        visible: true,
+        state: 'blocked',
+        blockers: [
+          {
+            code: 'MANAGED_PREREQUISITE_BLOCKED',
+            reason: 'driver-too-old',
+            message: 'TensorRT-LLM needs a newer NVIDIA driver.',
+            params: { required: '615', actual: '580' },
+          },
+        ],
+        descriptorId: 'tensorrt-llm-1.3.0rc29-r3',
+      }
+    }
+
+    it('TensorRT-LLM blocked by the driver: models and verdicts under vLLM, the blocker under TensorRT-LLM', async () => {
+      vllmReady()
+      trtBlockedByDriver()
+      mocks.listHuggingFaceFeed.mockResolvedValue({
+        models: [managedEntry('someone/Qwen3-4B-AWQ', ['Qwen3ForCausalLM'])],
+        nextCursor: null,
+      })
+      setHubFormat('vllm')
+
+      const view = render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-AWQ')).toBeInTheDocument()
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+      expect(headings).toEqual(['hub:vllm.curated', 'hub:feedTitle'])
+      expect(screen.queryByText('TensorRT-LLM needs a newer NVIDIA driver.')).not.toBeInTheDocument()
+      // The row reads as the format shown, not as TensorRT-LLM.
+      expect(screen.getAllByText('vllm').length).toBeGreaterThan(0)
+      view.unmount()
+
+      setHubFormat('tensorrt-llm')
+      render(<HubPage />)
+
+      expect(screen.getByText('hub:tensorrt.blocked.title')).toBeInTheDocument()
+      expect(screen.getByText('TensorRT-LLM needs a newer NVIDIA driver.')).toBeInTheDocument()
+      expect(screen.queryByText('Qwen3-4B-AWQ')).not.toBeInTheDocument()
+    })
+
+    it('an architecture vLLM does not support: that repository is not in the vLLM list', async () => {
+      vllmReady()
+      mocks.listHuggingFaceFeed.mockResolvedValue({
+        models: [
+          managedEntry('someone/Qwen3-4B-AWQ', ['Qwen3ForCausalLM']),
+          managedEntry('someone/Nemotron-H-8B', ['NemotronHForCausalLM']),
+        ],
+        nextCursor: null,
+      })
+      setHubFormat('vllm')
+
+      render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-AWQ')).toBeInTheDocument()
+      expect(screen.queryByText('Nemotron-H-8B')).not.toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ format: 'safetensors' })
+      )
+    })
+
+    it('the vLLM descriptor not published yet: no vLLM format, a vLLM link reads as GGUF, TensorRT-LLM as before', () => {
+      // The core hides the provider until conf publishes runtimes/vllm.json (design D15).
+      tensorrtHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'tensorrt-llm-1.3.0rc29-r3' }
+      mocks.search = { engine: 'vllm' }
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(screen.queryByText('hub:vllm.checking')).not.toBeInTheDocument()
+      expect(screen.queryByText('hub:vllm.curated')).not.toBeInTheDocument()
     })
   })
 
