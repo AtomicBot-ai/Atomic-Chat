@@ -651,5 +651,15 @@
     "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated"
+  },
+  "mlxEngine": {
+    "checkForUpdates": "Проверить обновления движка",
+    "upToDate": "Вы используете последнюю версию движка MLX",
+    "updateAvailable": "Доступен движок MLX {{version}}. Обновить можно в баннере.",
+    "checkFailed": "Не удалось проверить обновление движка MLX",
+    "origin": {
+      "bundled": "Поставляется с приложением",
+      "downloaded": "Загруженное обновление"
+    }
   }
 }
