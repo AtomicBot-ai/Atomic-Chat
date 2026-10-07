@@ -399,8 +399,7 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/bin/atomic-chat-core ] || touch src-tauri/resources/bin/atomic-chat-core
 	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
-	@[ -e src-tauri/resources/bin/mlx-server-version.txt ] || touch src-tauri/resources/bin/mlx-server-version.txt
-	@[ -e src-tauri/resources/bin/mlx-server-backend.txt ] || touch src-tauri/resources/bin/mlx-server-backend.txt
+	@[ -e src-tauri/resources/bin/mlx-server.json ] || touch src-tauri/resources/bin/mlx-server.json
 	@[ -e src-tauri/resources/bin/foundation-models-server ] || touch src-tauri/resources/bin/foundation-models-server
 	@[ -e src-tauri/resources/bin/bun-aarch64-apple-darwin ] || touch src-tauri/resources/bin/bun-aarch64-apple-darwin
 	@[ -e src-tauri/resources/bin/bun-x86_64-apple-darwin ] || touch src-tauri/resources/bin/bun-x86_64-apple-darwin
@@ -429,9 +428,6 @@ test-rust: stub-resources
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp-upstream/Cargo.toml -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-vector-db/Cargo.toml
-ifeq ($(shell uname -s),Darwin)
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-mlx/Cargo.toml
-endif
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
 # Fast local suite: root Vitest, extension Vitest, and every test-bearing
@@ -449,6 +445,7 @@ test-hardening-contracts:
 		tests/registry-contracts.test.mjs \
 		tests/hardware-profiles.test.mjs \
 		tests/upstream-backend-resolver.test.mjs \
+		tests/mlx-server-fetch.test.mjs \
 		tests/core-contracts.test.mjs \
 		tests/core-settings-schema.test.mjs \
 		tests/desktop-legacy-path.test.mjs \
@@ -680,86 +677,44 @@ test-all: install-and-build install-rust-targets
 		--make "$(MAKE)" \
 		$(if $(filter 1,$(REQUIRE)),--require-live,)
 
-# Download MLX server binary (mlx-vlm fork) from GitHub releases (macOS only)
-# Supports GH_TOKEN env var for authenticated GitHub API requests (avoids rate limits in CI)
-# Pinned compatibility baseline. Override only for a dedicated compatibility
-# validation run; normal builds never resolve a moving latest release.
-# Example:
-#   make build-mlx-server MLXVLM_TAG=mlxvlm-macos-arm64-abc1234
-MLXVLM_TAG ?= mlxvlm-macos-arm64-07ba5a1
+# The mlx-server the macOS installer ships, as conf's backends/mlx-manifest.json
+# pins it: release tag, archive, sha256 and size (scripts/fetch-mlx-server.mjs).
+# The archive is checked before it is unpacked, and `mlx-server.json`
+# {tag, published_at} goes beside the binary for the core to order the
+# installer's build against the ones it downloads. A manifest not on conf's
+# main yet, or a local change to it:
+#   make build-mlx-server MLX_MANIFEST=../atomic-chat-conf/backends/mlx-manifest.json
+MLX_MANIFEST ?=
+MLX_FETCH = node scripts/fetch-mlx-server.mjs $(if $(MLX_MANIFEST),--manifest "$(MLX_MANIFEST)",)
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
-	@mkdir -p src-tauri/resources/bin
-	@echo "Downloading MLX server binary (mlx-vlm)..."; \
-	if [ -n "$(MLXVLM_TAG)" ]; then \
-		TAG="$(MLXVLM_TAG)"; \
-		echo "Using pinned release: $$TAG"; \
-	else \
-		echo "Fetching latest mlx-vlm release..."; \
-		API_URL="https://api.github.com/repos/AtomicBot-ai/mlx-vlm/releases?per_page=50"; \
-		TMPREL=$$(mktemp /tmp/mlxvlm-releases-XXXXXX.json); \
-		_gh_get() { \
-			if [ "$$1" = "1" ] && [ -n "$$GH_TOKEN" ]; then \
-				curl -sS -H "Authorization: Bearer $$GH_TOKEN" -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-			else \
-				curl -sS -H "Accept: application/vnd.github+json" -H "User-Agent: atomic-chat-ci" -o "$$2" -w "%{http_code}" "$$3" || echo "000"; \
-			fi; \
-		}; \
-		_gh_fetch() { \
-			HTTP_CODE=""; \
-			for attempt in 1 2 3 4 5; do \
-				HTTP_CODE=$$(_gh_get "$$1" "$$2" "$$3"); \
-				case "$$HTTP_CODE" in \
-					2*) return 0 ;; \
-					403|429|5*|000) \
-						echo "  GitHub API attempt $$attempt/5 (auth=$$1): HTTP $$HTTP_CODE, retrying in $$((attempt * 2))s..."; \
-						sleep $$((attempt * 2)) ;; \
-					*) return 1 ;; \
-				esac; \
-			done; \
-			return 1; \
-		}; \
-		_response_ok() { \
-			[ -s "$$1" ] && jq -e 'type == "array" and length > 0' "$$1" >/dev/null 2>&1; \
-		}; \
-		USE_TOKEN=0; [ -n "$$GH_TOKEN" ] && USE_TOKEN=1; \
-		_gh_fetch "$$USE_TOKEN" "$$TMPREL" "$$API_URL" || true; \
-		FIRST_CODE="$$HTTP_CODE"; \
-		if ! _response_ok "$$TMPREL" && [ "$$USE_TOKEN" = "1" ]; then \
-			echo "Token-authenticated request did not yield usable releases (HTTP $$FIRST_CODE); retrying unauthenticated..."; \
-			_gh_fetch "0" "$$TMPREL" "$$API_URL" || true; \
+	@$(MLX_FETCH)
+	@"$(MAKE)" sign-mlx-server
+else
+	@echo "Skipping MLX server download (macOS only)"
+endif
+
+# Fetch only when resources/bin holds another tag than the manifest's. A dev
+# build that cannot read the manifest (offline, a substituted archive) keeps
+# the build it has; `build-mlx-server` never does.
+build-mlx-server-if-exists:
+ifeq ($(shell uname -s),Darwin)
+	@out=$$($(MLX_FETCH) --if-changed); status=$$?; \
+	if [ $$status -ne 0 ]; then \
+		if [ -f src-tauri/resources/bin/mlx-server ] && [ -f src-tauri/resources/bin/mlx-server.json ]; then \
+			echo "Warning: could not update mlx-server from the manifest; keeping the one in resources/bin"; \
+			exit 0; \
 		fi; \
-		case "$$HTTP_CODE" in \
-			2*) ;; \
-			*) echo "Error: GitHub API failed (last HTTP $$HTTP_CODE)"; \
-			   echo "  body (first 500 bytes):"; head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			   rm -f "$$TMPREL"; exit 1 ;; \
-		esac; \
-		if [ ! -s "$$TMPREL" ] || ! jq -e 'type == "array"' "$$TMPREL" >/dev/null 2>&1; then \
-			echo "Error: GitHub API returned non-array or empty response (HTTP $$HTTP_CODE):"; \
-			head -c 500 "$$TMPREL" 2>/dev/null || true; echo; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		REL_COUNT=$$(jq 'length' "$$TMPREL"); \
-		echo "GitHub API returned $$REL_COUNT release(s)"; \
-		TAG=$$(jq -r '[.[] | select(.tag_name | startswith("mlxvlm-macos-arm64"))] | sort_by(.published_at // .created_at) | reverse | .[0].tag_name // empty' "$$TMPREL"); \
-		if [ -z "$$TAG" ]; then \
-			echo "Error: No mlx-vlm release found matching 'mlxvlm-macos-arm64*'. First 10 tags in response:"; \
-			jq -r '.[0:10] | .[].tag_name' "$$TMPREL" || true; \
-			rm -f "$$TMPREL"; exit 1; \
-		fi; \
-		rm -f "$$TMPREL"; \
+		exit $$status; \
 	fi; \
-	echo "Release: $$TAG"; \
-	URL="https://github.com/AtomicBot-ai/mlx-vlm/releases/download/$$TAG/mlxvlm-mlx-server-macos-arm64.tar.gz"; \
-	echo "Downloading: $$URL"; \
-	curl -fSL "$$URL" -o /tmp/mlxvlm-mlx-server.tar.gz; \
-	tar -xzf /tmp/mlxvlm-mlx-server.tar.gz -C src-tauri/resources/bin/; \
-	rm -f /tmp/mlxvlm-mlx-server.tar.gz; \
-	chmod +x src-tauri/resources/bin/mlx-server; \
-	echo "$$TAG" > src-tauri/resources/bin/mlx-server-version.txt; \
-	echo "macos-arm64" > src-tauri/resources/bin/mlx-server-backend.txt; \
-	echo "MLX server (mlx-vlm) downloaded and extracted successfully ($$TAG)"
+	case "$$out" in *UPDATED=1*) "$(MAKE)" sign-mlx-server ;; esac
+else
+	@echo "Skipping MLX server build (macOS only)"
+endif
+
+# Re-sign the fetched binary with the app's identity (part of notarizing the
+# .app, design D8), then refresh the debug copy.
+sign-mlx-server:
 	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
@@ -770,32 +725,9 @@ ifeq ($(shell uname -s),Darwin)
 		codesign --force --deep --sign - src-tauri/resources/bin/mlx-server; \
 	fi
 	@mkdir -p src-tauri/target/debug/resources/bin; \
-	cp src-tauri/resources/bin/mlx-server src-tauri/target/debug/resources/bin/mlx-server; \
-	cp src-tauri/resources/bin/mlx-server-version.txt src-tauri/target/debug/resources/bin/mlx-server-version.txt; \
-	cp src-tauri/resources/bin/mlx-server-backend.txt src-tauri/target/debug/resources/bin/mlx-server-backend.txt; \
+	cp src-tauri/resources/bin/mlx-server src-tauri/resources/bin/mlx-server.json src-tauri/target/debug/resources/bin/; \
+	rm -f src-tauri/target/debug/resources/bin/mlx-server-version.txt src-tauri/target/debug/resources/bin/mlx-server-backend.txt; \
 	echo "Debug copy updated with signed binary"
-else
-	@echo "Skipping MLX server download (macOS only)"
-endif
-
-# Download MLX server if missing or different from the verified pin.
-build-mlx-server-if-exists:
-ifeq ($(shell uname -s),Darwin)
-	@if [ ! -f "src-tauri/resources/bin/mlx-server" ] || [ ! -f "src-tauri/resources/bin/mlx-server-version.txt" ]; then \
-		echo "MLX server binary or version file missing — downloading..."; \
-		make build-mlx-server; \
-	else \
-		LOCAL_TAG=$$(cat src-tauri/resources/bin/mlx-server-version.txt 2>/dev/null); \
-		if [ "$$LOCAL_TAG" = "$(MLXVLM_TAG)" ]; then \
-			echo "MLX server is up-to-date ($$LOCAL_TAG)"; \
-		else \
-			echo "MLX server differs from verified pin: local=$$LOCAL_TAG pinned=$(MLXVLM_TAG) — updating..."; \
-			make build-mlx-server; \
-		fi; \
-	fi
-else
-	@echo "Skipping MLX server build (macOS only)"
-endif
 
 # Build Apple Foundation Models server (macOS 26+ only) - always builds
 build-foundation-models-server:
