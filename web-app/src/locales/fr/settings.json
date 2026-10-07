@@ -417,5 +417,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Multilingue",
+    "context": "{{tokens}} jetons",
+    "dims": "{{dims}} dimensions",
+    "diskSize": "{{size}} Go sur le disque",
+    "progress": "{{current}} sur {{total}} Go",
+    "start": "Démarrer",
+    "stop": "Arrêter",
+    "remove": "Supprimer",
+    "removeTitle": "Supprimer {{name}} ?",
+    "removeDescription": "Les fichiers du modèle seront supprimés. Si le modèle est en cours d'exécution, il sera d'abord arrêté.",
+    "removed": "{{name}} supprimé",
+    "updateEngine": "Mettre à jour {{engine}}",
+    "engineLatest": "{{engine}} est à jour. Aucune version capable d'exécuter ce modèle d'embedding n'est encore publiée.",
+    "engineInstallFailed": "Impossible de mettre à jour {{engine}}",
+    "requiresEngine": "Nécessite {{engine}} {{version}}+",
+    "requiresEngineNotice": "Ce modèle nécessite {{engine}} {{version}} ou plus récent. Mettez le moteur à jour pour le démarrer.",
+    "state": {
+      "disabled": "Arrêté",
+      "idle": "Démarre à la prochaine requête",
+      "starting": "Démarrage…",
+      "ready": "En cours d'exécution",
+      "restarting": "Redémarrage…",
+      "failed": "Échec",
+      "unsupported": "Moteur non pris en charge"
+    },
+    "errors": {
+      "engineUnsupported": "Le moteur {{engine}} installé ne peut pas exécuter ce modèle d'embedding.",
+      "notConfigured": "Aucun modèle d'embedding n'est sélectionné. Téléchargez un modèle et appuyez sur Démarrer.",
+      "notEmbedding": "Ce fichier n'est pas un modèle d'embedding.",
+      "modelFileNotFound": "Les fichiers du modèle ne sont pas sur le disque. Téléchargez à nouveau le modèle.",
+      "generic": "Le modèle d'embedding n'a pas pu démarrer."
+    },
+    "sectionTitle": "Modèles d'embedding",
+    "noneTitle": "Aucun modèle d'embedding téléchargé",
+    "noneDescription": "Téléchargez-en un dans la catégorie Embedding du Hub",
+    "availableInApi": "Disponible dans l'API",
+    "localModel": "Depuis vos modèles llama.cpp"
   }
 }

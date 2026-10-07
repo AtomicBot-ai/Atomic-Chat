@@ -379,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Multibahasa",
+    "context": "{{tokens}} token",
+    "dims": "{{dims}} dimensi",
+    "diskSize": "{{size}} GB di disk",
+    "progress": "{{current}} dari {{total}} GB",
+    "start": "Mulai",
+    "stop": "Hentikan",
+    "remove": "Hapus",
+    "removeTitle": "Hapus {{name}}?",
+    "removeDescription": "File model akan dihapus. Jika model sedang berjalan, model akan dihentikan terlebih dahulu.",
+    "removed": "{{name}} dihapus",
+    "updateEngine": "Perbarui {{engine}}",
+    "engineLatest": "{{engine}} sudah versi terbaru. Build yang menjalankan model embedding ini belum dirilis.",
+    "engineInstallFailed": "{{engine}} tidak dapat diperbarui",
+    "requiresEngine": "Perlu {{engine}} {{version}}+",
+    "requiresEngineNotice": "Model ini memerlukan {{engine}} {{version}} atau lebih baru. Perbarui mesin untuk memulainya.",
+    "state": {
+      "disabled": "Dihentikan",
+      "idle": "Mulai pada permintaan berikutnya",
+      "starting": "Memulai…",
+      "ready": "Berjalan",
+      "restarting": "Memulai ulang…",
+      "failed": "Gagal",
+      "unsupported": "Mesin tidak didukung"
+    },
+    "errors": {
+      "engineUnsupported": "Mesin {{engine}} yang terpasang tidak dapat menjalankan model embedding ini.",
+      "notConfigured": "Belum ada model embedding yang dipilih. Unduh model lalu tekan Mulai.",
+      "notEmbedding": "File ini bukan model embedding.",
+      "modelFileNotFound": "File model tidak ada di disk. Unduh ulang modelnya.",
+      "generic": "Model embedding tidak dapat dimulai."
+    },
+    "sectionTitle": "Model embedding",
+    "noneTitle": "Belum ada model embedding yang diunduh",
+    "noneDescription": "Unduh di kategori Embedding pada Hub",
+    "availableInApi": "Tersedia di API",
+    "localModel": "Dari model llama.cpp Anda"
   }
 }

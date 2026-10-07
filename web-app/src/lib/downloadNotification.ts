@@ -29,6 +29,13 @@ export function describeFinishedDownload(
             : 'common:desktopNotification.chatEngineReadyBody'
         ),
       }
+    case 'embedding_model':
+      return {
+        title: t('common:desktopNotification.modelReadyTitle'),
+        body: t('common:desktopNotification.modelReadyBody', {
+          name: id.replace(/^embedding-/, ''),
+        }),
+      }
     case 'diffusion_model':
     case 'model':
       return {

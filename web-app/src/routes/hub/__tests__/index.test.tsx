@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   mediaSupported: false,
   decisionSupported: false,
+  embeddingSupported: false,
   search: {} as Record<string, unknown>,
   staffPicks: [] as ResolvedStaffPick[],
   mlxStaffPicks: [] as ResolvedStaffPick[],
@@ -126,6 +127,28 @@ vi.mock('@/containers/hub/DecisionHub', () => ({
   ),
 }))
 
+vi.mock('@/containers/hub/EmbeddingHub', () => ({
+  EmbeddingHub: ({
+    categoryTabs,
+    query,
+    selectedModelId,
+    onSelectModel,
+  }: {
+    categoryTabs?: React.ReactNode
+    query: string
+    selectedModelId: string | null
+    onSelectModel: (id: string) => void
+  }) => (
+    <main data-testid="embedding-hub">
+      {categoryTabs}
+      <span>{`embedding catalog, query "${query}", open ${selectedModelId}`}</span>
+      <button type="button" onClick={() => onSelectModel('bge-m3')}>
+        pick bge-m3
+      </button>
+    </main>
+  ),
+}))
+
 // The Images / Video catalog has tests of its own; here it only has to show
 // what the route handed it, and hand a pick back.
 vi.mock('@/containers/hub/MediaHub', () => ({
@@ -230,6 +253,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
       }),
       providers: () => ({ getProviders: async () => [] }),
       decision: () => ({ isSupported: () => mocks.decisionSupported }),
+      embedding: () => ({ isSupported: () => mocks.embeddingSupported }),
       modelSetup: () => ({
         isSupported: () => true,
         families: mocks.prismFamilies,
@@ -297,6 +321,7 @@ describe('/hub route', () => {
     tensorrtCurated.value = { models: [], supportedArchitectures: null, loading: false }
     mocks.mediaSupported = false
     mocks.decisionSupported = false
+    mocks.embeddingSupported = false
     mocks.sources = []
     mocks.staffPicks = [
       {
@@ -1140,6 +1165,47 @@ describe('/hub route', () => {
       ).toBeInTheDocument()
       expect(picker()).toHaveAttribute('data-mode', 'decision')
       expect(mocks.listHuggingFaceFeed.mock.calls).toEqual([])
+    })
+
+    it('shows the embedding catalog the URL names, with its search and selection', async () => {
+      mocks.embeddingSupported = true
+      mocks.search = { category: 'embedding', q: 'gemma', model: 'bge-m3' }
+      render(<HubPage />)
+
+      expect(
+        screen.getByText('embedding catalog, query "gemma", open bge-m3')
+      ).toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'embedding')
+      expect(mocks.listHuggingFaceFeed.mock.calls).toEqual([])
+
+      await userEvent.click(screen.getByTestId('hub-category-workflow-select'))
+      expect(screen.getByTestId('hub-category-workflow-menu')).toHaveTextContent(
+        'hub:categoryEmbeddingHint'
+      )
+    })
+
+    it('stays the chat catalog where embedding models cannot run', () => {
+      mocks.decisionSupported = true
+      mocks.search = { category: 'embedding' }
+      render(<HubPage />)
+
+      expect(screen.queryByTestId('embedding-hub')).not.toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'chat')
+    })
+
+    it('puts an embedding model picked in its catalog into the URL', async () => {
+      mocks.embeddingSupported = true
+      mocks.search = { category: 'embedding' }
+      render(<HubPage />)
+
+      await userEvent.click(screen.getByRole('button', { name: 'pick bge-m3' }))
+
+      const navigation = lastNavigation()
+      expect(navigation.replace).toBe(false)
+      expect(navigation.search({ category: 'embedding' })).toEqual({
+        category: 'embedding',
+        model: 'bge-m3',
+      })
     })
 
     it('stays the chat catalog where decision models cannot run', () => {

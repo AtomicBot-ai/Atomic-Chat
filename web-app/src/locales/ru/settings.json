@@ -568,6 +568,45 @@
     "noneDescription": "Скачайте модель в категории Decision в Hub",
     "availableInApi": "Доступна в API"
   },
+  "embedding": {
+    "multilingual": "Многоязычная",
+    "context": "{{tokens}} токенов",
+    "dims": "{{dims}} измерений",
+    "diskSize": "{{size}} ГБ на диске",
+    "progress": "{{current}} из {{total}} ГБ",
+    "start": "Запустить",
+    "stop": "Остановить",
+    "remove": "Удалить",
+    "removeTitle": "Удалить {{name}}?",
+    "removeDescription": "Файлы модели будут удалены. Если модель запущена, она сначала остановится.",
+    "removed": "{{name}} удалена",
+    "updateEngine": "Обновить {{engine}}",
+    "engineLatest": "{{engine}} обновлён. Сборка, которая запускает эту модель эмбеддингов, ещё не вышла.",
+    "engineInstallFailed": "Не удалось обновить {{engine}}",
+    "requiresEngine": "Нужен {{engine}} {{version}}+",
+    "requiresEngineNotice": "Этой модели нужен {{engine}} {{version}} или новее. Обновите движок, чтобы её запустить.",
+    "state": {
+      "disabled": "Остановлена",
+      "idle": "Запустится при следующем запросе",
+      "starting": "Запускается…",
+      "ready": "Работает",
+      "restarting": "Перезапускается…",
+      "failed": "Ошибка",
+      "unsupported": "Движок не поддерживается"
+    },
+    "errors": {
+      "engineUnsupported": "Установленный движок {{engine}} не умеет запускать эту модель эмбеддингов.",
+      "notConfigured": "Модель эмбеддингов не выбрана. Скачайте модель и нажмите «Запустить».",
+      "notEmbedding": "Этот файл не является моделью эмбеддингов.",
+      "modelFileNotFound": "Файлов модели нет на диске. Скачайте модель заново.",
+      "generic": "Не удалось запустить модель эмбеддингов."
+    },
+    "sectionTitle": "Модели эмбеддингов",
+    "noneTitle": "Нет загруженных моделей эмбеддингов",
+    "noneDescription": "Скачайте модель в категории «Эмбеддинги» в Хабе",
+    "availableInApi": "Доступна в API",
+    "localModel": "Из ваших моделей llama.cpp"
+  },
   "media": {
     "subtitle": "Local image generation with stable-diffusion.cpp. Everything runs on this computer.",
     "engineTitle": "Engine",

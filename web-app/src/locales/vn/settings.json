@@ -379,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Đa ngôn ngữ",
+    "context": "{{tokens}} token",
+    "dims": "{{dims}} chiều",
+    "diskSize": "{{size}} GB trên ổ đĩa",
+    "progress": "{{current}} / {{total}} GB",
+    "start": "Khởi động",
+    "stop": "Dừng",
+    "remove": "Xóa",
+    "removeTitle": "Xóa {{name}}?",
+    "removeDescription": "Các tệp mô hình sẽ bị xóa. Nếu mô hình đang chạy, nó sẽ được dừng trước.",
+    "removed": "Đã xóa {{name}}",
+    "updateEngine": "Cập nhật {{engine}}",
+    "engineLatest": "{{engine}} đã là bản mới nhất. Bản dựng chạy được mô hình embedding này chưa được phát hành.",
+    "engineInstallFailed": "Không thể cập nhật {{engine}}",
+    "requiresEngine": "Cần {{engine}} {{version}}+",
+    "requiresEngineNotice": "Mô hình này cần {{engine}} {{version}} trở lên. Hãy cập nhật engine để khởi động nó.",
+    "state": {
+      "disabled": "Đã dừng",
+      "idle": "Khởi động ở yêu cầu tiếp theo",
+      "starting": "Đang khởi động…",
+      "ready": "Đang chạy",
+      "restarting": "Đang khởi động lại…",
+      "failed": "Thất bại",
+      "unsupported": "Engine không được hỗ trợ"
+    },
+    "errors": {
+      "engineUnsupported": "Engine {{engine}} đã cài đặt không chạy được mô hình embedding này.",
+      "notConfigured": "Chưa chọn mô hình embedding nào. Hãy tải một mô hình và nhấn Khởi động.",
+      "notEmbedding": "Tệp này không phải là mô hình embedding.",
+      "modelFileNotFound": "Các tệp mô hình không có trên ổ đĩa. Hãy tải lại mô hình.",
+      "generic": "Không thể khởi động mô hình embedding."
+    },
+    "sectionTitle": "Mô hình embedding",
+    "noneTitle": "Chưa tải mô hình embedding nào",
+    "noneDescription": "Tải một mô hình trong danh mục Embedding của Hub",
+    "availableInApi": "Có sẵn trong API",
+    "localModel": "Từ các mô hình llama.cpp của bạn"
   }
 }

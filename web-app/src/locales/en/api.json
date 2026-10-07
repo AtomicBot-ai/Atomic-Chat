@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "Embedding model",
+    "copyEmbeddingModel": "Copy the model id",
+    "copyTextExample": "Copy text example",
+    "copyImageExample": "Copy image example",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

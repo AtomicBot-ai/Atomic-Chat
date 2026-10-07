@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "임베딩 모델",
+    "copyEmbeddingModel": "모델 ID 복사",
+    "copyTextExample": "텍스트 예제 복사",
+    "copyImageExample": "이미지 예제 복사",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

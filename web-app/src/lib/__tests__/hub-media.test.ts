@@ -35,8 +35,10 @@ const catalogOf = (families: DiffusionCatalogFamily[]): DiffusionCatalog =>
   ({ schema_version: 1, families }) as DiffusionCatalog
 
 describe('isHubCategory', () => {
-  it('accepts the three categories and nothing else', () => {
-    expect(['chat', 'image', 'video'].every(isHubCategory)).toBe(true)
+  it('accepts the five categories and nothing else', () => {
+    expect(
+      ['chat', 'image', 'video', 'decision', 'embedding'].every(isHubCategory)
+    ).toBe(true)
     expect([undefined, '', 'images', 'audio', 1].some(isHubCategory)).toBe(
       false
     )

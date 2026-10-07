@@ -42,6 +42,33 @@ vi.mock('@/services/decision-catalog-registry', async (importOriginal) => {
   }
 })
 
+vi.mock('@/lib/embedding/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/embedding/models')>()),
+  isEmbeddingModelInstalled: vi.fn().mockResolvedValue(false),
+}))
+
+vi.mock('@/services/embedding-catalog-registry', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('@/services/embedding-catalog-registry')
+    >()
+  return {
+    ...actual,
+    fetchEmbeddingCatalog: vi.fn(async () => ({
+      catalog: actual.getBaselineEmbeddingCatalog(),
+      source: 'baseline',
+    })),
+  }
+})
+
+const copied = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/clipboard', () => ({
+  copyToClipboard: async (text: string) => {
+    copied(text)
+    return true
+  },
+}))
+
 const { features, sectionServer } = vi.hoisted(() => ({
   features: { localApiServer: true } as Record<string, boolean>,
   sectionServer: vi.fn(),
@@ -118,11 +145,17 @@ vi.mock('@tanstack/react-virtual', () => ({
 }))
 
 import { resetFeedBuffers } from '@/hooks/useApiServerLogFeed'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import type {
   DecisionService,
   DecisionState,
 } from '@/services/decision/types'
+import type {
+  EmbeddingService,
+  EmbeddingStatus,
+} from '@/services/embedding/types'
 import { useDecisionStore } from '@/stores/decision-store'
+import { useEmbeddingStore } from '@/stores/embedding-store'
 import { seedServiceHub } from '@/test/service-hub'
 
 import { ApiPage } from '../index'
@@ -134,6 +167,39 @@ function decisionAs(state: DecisionState, enabled = state !== 'disabled') {
   getDecisionConfig.mockResolvedValue({
     config: { enabled, model_id: 'laya-multilingual' },
     status: { state, enabled, model_path: '/data/decision/models/laya-multilingual', error: null },
+  })
+}
+
+const getEmbeddingConfig = vi.fn()
+const initialEmbedding = useEmbeddingStore.getState()
+
+function embeddingAs(
+  state: EmbeddingStatus['state'],
+  status: Partial<EmbeddingStatus> = {}
+) {
+  const enabled = state !== 'disabled'
+  getEmbeddingConfig.mockResolvedValue({
+    config: { enabled, model_id: status.model_id ?? 'bge-m3' },
+    status: {
+      state,
+      enabled,
+      model_id: 'bge-m3',
+      modalities: [],
+      error: null,
+      ...status,
+    },
+  })
+  seedServiceHub({
+    decision: {
+      isSupported: () => true,
+      getConfig: getDecisionConfig,
+      subscribe: () => () => {},
+    } as unknown as DecisionService,
+    embedding: {
+      isSupported: () => true,
+      getConfig: getEmbeddingConfig,
+      subscribe: () => () => {},
+    } as unknown as EmbeddingService,
   })
 }
 
@@ -164,6 +230,8 @@ describe('ApiPage', () => {
     features.localApiServer = true
     appState.activeModels = ['gemma-4']
     useDecisionStore.setState(initialDecision, true)
+    useEmbeddingStore.setState(initialEmbedding, true)
+    useLocalApiServer.getState().setApiKey('')
     decisionAs('disabled')
     seedServiceHub({
       decision: {
@@ -202,6 +270,56 @@ describe('ApiPage', () => {
     )
     expect(screen.queryByText('api:strip.decisionModel')).not.toBeInTheDocument()
   })
+
+  it('names the embedding model by the id clients pass, with a text example to copy', async () => {
+    appState.activeModels = []
+    embeddingAs('ready', { modalities: ['text'] })
+    render(<ApiPage />)
+
+    expect(await screen.findByText('bge-m3')).toBeInTheDocument()
+    expect(screen.getByText('api:strip.embeddingModel')).toBeInTheDocument()
+    expect(screen.getByText('api:status.ready')).toBeInTheDocument()
+    expect(screen.queryByText('api:strip.copyImageExample')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('api:strip.copyTextExample'))
+    await waitFor(() => expect(copied).toHaveBeenCalledTimes(1))
+    const [curl] = copied.mock.calls[0] as [string]
+    expect(curl).toContain("curl -X POST 'http://127.0.0.1:1337/v1/embeddings'")
+    expect(curl).toContain('"model":"bge-m3","input":"Hello, world"')
+    expect(curl).not.toContain('Authorization')
+  })
+
+  it('adds an image example for a model that reads images, with the key header when the server needs one', async () => {
+    useLocalApiServer.getState().setApiKey('secret')
+    // Until the process reports what it reads, the catalog says.
+    embeddingAs('starting', { model_id: 'embeddinggemma-2' })
+    render(<ApiPage />)
+
+    expect(await screen.findByText('embeddinggemma-2')).toBeInTheDocument()
+    expect(screen.getByText(/api:status\.starting/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('api:strip.copyImageExample'))
+    await waitFor(() => expect(copied).toHaveBeenCalledTimes(1))
+    const [curl] = copied.mock.calls[0] as [string]
+    expect(curl).toContain("-H 'Authorization: Bearer YOUR_API_KEY'")
+    expect(curl).toContain(
+      '"input":[{"content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}]}]'
+    )
+    expect(curl).not.toContain('secret')
+  })
+
+  it.each(['disabled', 'failed'] as const)(
+    'leaves the embedding field out while the module is %s',
+    async (state) => {
+      embeddingAs(state)
+      render(<ApiPage />)
+      await waitFor(() =>
+        expect(useEmbeddingStore.getState().status?.state).toBe(state)
+      )
+      expect(
+        screen.queryByText('api:strip.embeddingModel')
+      ).not.toBeInTheDocument()
+    }
+  )
 
   it('renders the header, the strip and the six stat tiles', () => {
     render(<ApiPage />)

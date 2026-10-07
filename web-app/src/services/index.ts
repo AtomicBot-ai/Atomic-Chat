@@ -38,6 +38,8 @@ import { DefaultDiffusionService } from './diffusion/default'
 import type { DiffusionService } from './diffusion/types'
 import { DefaultDecisionService } from './decision/default'
 import type { DecisionService } from './decision/types'
+import { DefaultEmbeddingService } from './embedding/default'
+import type { EmbeddingService } from './embedding/types'
 import { DefaultModelSetupService } from './model-setup/default'
 import type { ModelSetupService } from './model-setup/types'
 
@@ -90,6 +92,7 @@ export interface ServiceHub {
   voice(): VoiceService
   diffusion(): DiffusionService
   decision(): DecisionService
+  embedding(): EmbeddingService
   modelSetup(): ModelSetupService
 }
 
@@ -119,6 +122,7 @@ class PlatformServiceHub implements ServiceHub {
   private voiceService: VoiceService = new DefaultVoiceService()
   private diffusionService: DiffusionService = new DefaultDiffusionService()
   private decisionService: DecisionService = new DefaultDecisionService()
+  private embeddingService: EmbeddingService = new DefaultEmbeddingService()
   private modelSetupService: ModelSetupService = new DefaultModelSetupService()
   private initialized = false
 
@@ -156,6 +160,7 @@ class PlatformServiceHub implements ServiceHub {
           voiceModule,
           diffusionModule,
           decisionModule,
+          embeddingModule,
           modelSetupModule,
         ] = await Promise.all([
           import('./theme/tauri'),
@@ -175,6 +180,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./voice/tauri'),
           import('./diffusion/tauri'),
           import('./decision/tauri'),
+          import('./embedding/tauri'),
           import('./model-setup/tauri'),
         ])
 
@@ -195,6 +201,7 @@ class PlatformServiceHub implements ServiceHub {
         this.voiceService = new voiceModule.TauriVoiceService()
         this.diffusionService = new diffusionModule.TauriDiffusionService()
         this.decisionService = new decisionModule.TauriDecisionService()
+        this.embeddingService = new embeddingModule.TauriEmbeddingService()
         this.modelSetupService = new modelSetupModule.TauriModelSetupService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
@@ -376,6 +383,11 @@ class PlatformServiceHub implements ServiceHub {
   decision(): DecisionService {
     this.ensureInitialized()
     return this.decisionService
+  }
+
+  embedding(): EmbeddingService {
+    this.ensureInitialized()
+    return this.embeddingService
   }
 
   modelSetup(): ModelSetupService {

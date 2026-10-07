@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "Mô hình embedding",
+    "copyEmbeddingModel": "Sao chép ID mô hình",
+    "copyTextExample": "Sao chép ví dụ văn bản",
+    "copyImageExample": "Sao chép ví dụ hình ảnh",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

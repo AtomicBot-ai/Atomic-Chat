@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "Model embeddingów",
+    "copyEmbeddingModel": "Kopiuj ID modelu",
+    "copyTextExample": "Kopiuj przykład tekstowy",
+    "copyImageExample": "Kopiuj przykład z obrazem",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

@@ -50,6 +50,23 @@ export type DecisionEngineReadiness =
   | { kind: 'needs_update'; required: string }
 
 /**
+ * Whether the configured stock llama.cpp build (`versionBackend`) reaches
+ * `minEngine` (`b<build>`). No floor, or an unknown configured build, is not
+ * held against the model: the core decides. Embedding models share it.
+ */
+export function upstreamEngineReadiness(
+  minEngine: string | undefined,
+  versionBackend: string | undefined
+): DecisionEngineReadiness {
+  if (!minEngine) return { kind: 'ready' }
+  const need = upstreamBuildOf(minEngine)
+  const have = upstreamBuildOf(versionBackend)
+  if (need === undefined || have === undefined || have >= need)
+    return { kind: 'ready' }
+  return { kind: 'needs_update', required: minEngine }
+}
+
+/**
  * Whether `model` can start on the build configured for its engine
  * (`versionBackend`, the provider's `version_backend`). Only stock llama.cpp
  * models are checked here; an unknown configured build is not held against
@@ -59,11 +76,6 @@ export function decisionEngineReadiness(
   model: DecisionCatalogModel,
   versionBackend: string | undefined
 ): DecisionEngineReadiness {
-  if (model.engine !== 'llamacpp-upstream' || !model.min_engine)
-    return { kind: 'ready' }
-  const need = upstreamBuildOf(model.min_engine)
-  const have = upstreamBuildOf(versionBackend)
-  if (need === undefined || have === undefined || have >= need)
-    return { kind: 'ready' }
-  return { kind: 'needs_update', required: model.min_engine }
+  if (model.engine !== 'llamacpp-upstream') return { kind: 'ready' }
+  return upstreamEngineReadiness(model.min_engine, versionBackend)
 }

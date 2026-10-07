@@ -1,6 +1,7 @@
 import { useMemo, type ComponentType } from 'react'
 import {
   IconArrowsSplit,
+  IconChartScatter3d,
   IconMessage,
   IconMovie,
   IconPhoto,
@@ -33,6 +34,11 @@ const CATEGORY: Record<
     icon: IconArrowsSplit,
     title: 'hub:categoryDecision',
     hint: 'hub:categoryDecisionHint',
+  },
+  embedding: {
+    icon: IconChartScatter3d,
+    title: 'hub:categoryEmbedding',
+    hint: 'hub:categoryEmbeddingHint',
   },
 }
 

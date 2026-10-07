@@ -409,5 +409,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Vícejazyčný",
+    "context": "{{tokens}} tokenů",
+    "dims": "{{dims}} dimenzí",
+    "diskSize": "{{size}} GB na disku",
+    "progress": "{{current}} z {{total}} GB",
+    "start": "Spustit",
+    "stop": "Zastavit",
+    "remove": "Odebrat",
+    "removeTitle": "Odebrat {{name}}?",
+    "removeDescription": "Soubory modelu budou smazány. Pokud model běží, nejprve se zastaví.",
+    "removed": "{{name}} odebrán",
+    "updateEngine": "Aktualizovat {{engine}}",
+    "engineLatest": "{{engine}} je aktuální. Verze, která tento embedding model spouští, zatím nevyšla.",
+    "engineInstallFailed": "{{engine}} se nepodařilo aktualizovat",
+    "requiresEngine": "Vyžaduje {{engine}} {{version}}+",
+    "requiresEngineNotice": "Tento model vyžaduje {{engine}} {{version}} nebo novější. Aktualizujte engine, abyste jej mohli spustit.",
+    "state": {
+      "disabled": "Zastaveno",
+      "idle": "Spustí se při dalším požadavku",
+      "starting": "Spouštění…",
+      "ready": "Běží",
+      "restarting": "Restartování…",
+      "failed": "Selhalo",
+      "unsupported": "Engine není podporován"
+    },
+    "errors": {
+      "engineUnsupported": "Nainstalovaný engine {{engine}} nedokáže spustit tento embedding model.",
+      "notConfigured": "Není vybrán žádný embedding model. Stáhněte model a stiskněte Spustit.",
+      "notEmbedding": "Tento soubor není embedding model.",
+      "modelFileNotFound": "Soubory modelu nejsou na disku. Stáhněte model znovu.",
+      "generic": "Embedding model se nepodařilo spustit."
+    },
+    "sectionTitle": "Embedding modely",
+    "noneTitle": "Nejsou staženy žádné embedding modely",
+    "noneDescription": "Stáhněte si model v kategorii Embedding v Centru",
+    "availableInApi": "Dostupné v API",
+    "localModel": "Z vašich modelů llama.cpp"
   }
 }
