@@ -1,3 +1,4 @@
+import { isManagedProvider, managedEngine } from '@/lib/managed-engines'
 import {
   enable as enableAutostart,
   isEnabled as isAutostartEnabled,
@@ -98,14 +99,12 @@ const SESSION_CACHED_PROVIDERS = [
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
-  'tensorrt-llm',
 ] as const
-type SessionCachedProvider = (typeof SESSION_CACHED_PROVIDERS)[number]
 
-const isSessionCachedProvider = (
-  provider: string
-): provider is SessionCachedProvider =>
-  (SESSION_CACHED_PROVIDERS as readonly string[]).includes(provider)
+/** Those, and every managed engine (`isManagedProvider`). */
+const isSessionCachedProvider = (provider: string): boolean =>
+  (SESSION_CACHED_PROVIDERS as readonly string[]).includes(provider) ||
+  isManagedProvider(provider)
 
 /** `atomic-core://session:died`: a loaded session's process exited without being unloaded. */
 export type CoreSessionDiedPayload = {
@@ -155,6 +154,7 @@ export function handleCoreSessionDied(
   // being generated, so the title only says "during generation" when a reply
   // was. The Vulkan advice is for llama.cpp where Vulkan backends exist; on
   // macOS the backend is Metal and there is no CPU backend to switch to.
+  const managed = managedEngine(provider)
   const vulkanAdvice =
     (provider === 'llamacpp' ||
       provider === 'llamacpp-upstream' ||
@@ -168,9 +168,9 @@ export function handleCoreSessionDied(
       id: `session-died-${modelId ?? 'unknown'}`,
       description: vulkanAdvice
         ? "The model's backend process exited unexpectedly. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers."
-        : provider === 'tensorrt-llm'
+        : managed
           ? // A container, not a process on this machine: its log is on the provider's page.
-            "The model's engine container stopped unexpectedly. Try reloading the model; its logs are in Settings → Providers → TensorRT-LLM."
+            `The model's engine container stopped unexpectedly. Try reloading the model; its logs are in Settings → Providers → ${managed.label}.`
           : "The model's backend process exited unexpectedly. Try reloading the model.",
     }
   )

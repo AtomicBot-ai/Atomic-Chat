@@ -24,14 +24,15 @@ vi.mock('@/hooks/useHardware', () => ({
     selector({ hardwareData: { total_memory: 32 * 1024, gpus: [] } }),
 }))
 // The TensorRT-LLM provider is shown: the format menu offers it next to GGUF.
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => ({
-    visible: true,
-    state: 'ready',
-    blockers: [],
-    descriptorId: null,
-  }),
-}))
+vi.mock('@/hooks/useManagedHubState', () => {
+  const hub = { visible: true, state: 'ready', blockers: [], descriptorId: null }
+  return {
+    useManagedHubStates: () => [
+      { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub },
+      { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub },
+    ],
+  }
+})
 // PrismML is shown too: its label is wider than GGUF's, narrower than TensorRT-LLM's.
 vi.mock('@/hooks/useModelSetup', () => ({ usePrismHubVisible: () => true }))
 
@@ -53,7 +54,7 @@ function renderInColumn() {
   render(inColumn({ ...DEFAULT_HUB_FILTERS, formats: ['tensorrt-llm'] }))
 }
 
-const FORMATS: ModelFormat[] = ['gguf', 'atomic-prism', 'tensorrt-llm']
+const FORMATS: ModelFormat[] = ['gguf', 'vllm', 'atomic-prism', 'tensorrt-llm']
 const SORTS: HubSortKey[] = ['recommended', 'downloads', 'last-modified']
 /** The column at its widest, `420px` less `p-3` on both sides. */
 const WIDE_COLUMN_WIDTH = 420 - 2 * 12

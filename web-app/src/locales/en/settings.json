@@ -453,7 +453,7 @@
       "newLocation": "New Location:",
       "cancel": "Cancel",
       "changeLocation": "Change Location",
-      "tensorrtModels": "TensorRT-LLM models are kept in Atomic Chat's WSL distribution \"{{name}}\", not in the data folder: they are not moved and stay available after the change."
+      "managedModels": "Models of the GPU engines ({{engines}}) are kept in Atomic Chat's WSL distribution \"{{name}}\", not in the data folder: they are not moved and stay available after the change."
     }
   },
   "backendUpdater": {

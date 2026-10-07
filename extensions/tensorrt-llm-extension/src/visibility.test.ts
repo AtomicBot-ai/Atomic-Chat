@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { descriptorHint, isProviderHidden } from './visibility'
+import { descriptorHint, isProviderHidden } from '../../shared/managed-engine/visibility'
 
 const blocker = (reason: string, code = 'MANAGED_PREREQUISITE_BLOCKED') => ({
   code,
@@ -62,17 +62,32 @@ describe('descriptorHint', () => {
             { engine_id: 'tensorrt-llm', active_descriptor_id: 'tensorrt-llm-1.2.1-r1' },
           ],
         },
-      ])
+      ], 'tensorrt-llm')
     ).toBe('tensorrt-llm-1.2.1-r1')
   })
 
   it('falls back to the engine id, which core resolves to its newest descriptor', () => {
     // Ruling R-app-4: the probe needs an id before anything is installed.
-    expect(descriptorHint([])).toBe('tensorrt-llm')
+    expect(descriptorHint([], 'tensorrt-llm')).toBe('tensorrt-llm')
     expect(
       descriptorHint([
         { installations: [{ engine_id: 'tensorrt-llm', active_descriptor_id: null }] },
-      ])
+      ], 'tensorrt-llm')
     ).toBe('tensorrt-llm')
+  })
+
+  it('names only the asked engine\'s descriptor: another engine\'s installation is not this one\'s', () => {
+    const environments = [
+      {
+        installations: [
+          { engine_id: 'tensorrt-llm', active_descriptor_id: 'tensorrt-llm-1.3.0rc29-r3' },
+          { engine_id: 'second-engine', active_descriptor_id: 'second-engine-1-r1' },
+        ],
+      },
+    ]
+    expect(descriptorHint(environments, 'second-engine')).toBe('second-engine-1-r1')
+    expect(descriptorHint([{ installations: [environments[0].installations[0]] }], 'second-engine')).toBe(
+      'second-engine'
+    )
   })
 })

@@ -27,6 +27,7 @@ export type CoreProvider =
   | 'mlx'
   | 'foundation-models'
   | 'tensorrt-llm'
+  | 'vllm'
 
 export type Invoke = <T>(
   command: string,

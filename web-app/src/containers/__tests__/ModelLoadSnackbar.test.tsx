@@ -318,5 +318,20 @@ describe('ModelLoadSnackbar for a container-backed engine', () => {
     )
     await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 3:05'))
   })
-})
 
+  it('shows the same for a vLLM load: "starting the engine" with the stage and time (spec vllm-desktop)', async () => {
+    // "Первый старт большой модели": minutes of graph compilation read as a stage, not a spinner.
+    seed({}, 'vllm')
+    renderSnackbar()
+    startLoad()
+
+    act(() =>
+      useAppState.getState().setLoadingModelProgress({
+        kind: 'startingEngine',
+        stage: 'initializing-engine',
+        elapsedMs: 245_000,
+      })
+    )
+    await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 4:05'))
+  })
+})

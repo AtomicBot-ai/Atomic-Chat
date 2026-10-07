@@ -182,13 +182,21 @@ export async function fetchModelStats(modelId: string): Promise<ModelStats> {
 }
 
 /**
- * A Hub format. `atomic-prism` is a list rather than a file format: the Bonsai
- * GGUF files only PrismML's llama.cpp runs, which `modelFormat` reads as GGUF.
+ * A Hub format: a file format, or a managed engine (its provider id) for a safetensors checkpoint.
+ * `atomic-prism` is a list rather than a file format: the Bonsai GGUF files only PrismML's
+ * llama.cpp runs, which `modelFormat` reads as GGUF.
  */
-export type ModelFormat = 'mlx' | 'gguf' | 'tensorrt-llm' | 'atomic-prism'
+export type ModelFormat = 'mlx' | 'gguf' | 'vllm' | 'tensorrt-llm' | 'atomic-prism'
 
-export function modelFormat(model: CatalogModel): ModelFormat {
-  if (model.is_tensorrt_llm) return 'tensorrt-llm'
+/**
+ * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
+ * (change `add-vllm-runtime`): it reads as the managed format the Hub is showing, `managedFormat`.
+ */
+export function modelFormat(
+  model: CatalogModel,
+  managedFormat: ModelFormat = 'tensorrt-llm'
+): ModelFormat {
+  if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'
 }

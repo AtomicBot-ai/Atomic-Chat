@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-391 records, 2026-05-19 → 2026-10-07.
+394 records, 2026-05-19 → 2026-10-07.
 
 ---
 
@@ -33,10 +33,11 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (22)
+## Local image & video generation (23)
 
+- **2026-10-07** — [Move installed media engines onto the fork's build with an `-a<rev>` tag](2026-10-07-move-installed-media-engines-onto-the-fork-build-with-an-atomic-tag.md) — supersedes the no-suffix clause of the 2026-10-06 fork record.
 - **2026-10-06** — [Fall back from a media engine build that fails its probe, and stop shipping Windows ROCm](2026-10-06-fall-back-from-a-media-engine-build-that-fails-its-probe.md)
-- **2026-10-06** — [Build stable-diffusion.cpp for arm64 in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-stable-diffusion-cpp-for-arm64-in-an-atomic-fork.md)
+- **2026-10-06** — [Build every stable-diffusion.cpp engine in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-every-stable-diffusion-cpp-engine-in-an-atomic-fork.md)
 - **2026-09-30** — [Shape the media form for the picked model, and let Generate start it](2026-09-30-shape-the-media-form-for-the-picked-model.md)
 - **2026-09-30** — [Keep image and video models on a discrete GPU](2026-09-30-keep-media-models-on-a-discrete-gpu.md)
 - **2026-09-30** — [Put Reset beside the media knobs, and warn about a swapping clip in the dialog only](2026-09-30-reset-beside-the-media-knobs-and-warn-about-swap-in-the-dialog-only.md) — narrows the 2026-09-28 estimate record: no red line for `exceeds`.
@@ -424,6 +425,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [jan-cli keeps its file name and becomes a copy of the core](2026-09-15-jan-cli-keeps-its-name-and-becomes-the-core.md)
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
+
+## Managed engines (2)
+
+- **2026-10-06** — [Ship vLLM as the second managed engine](2026-10-06-ship-vllm-as-the-second-managed-engine.md)
+- **2026-10-06** — [Drive managed engines from one registry and one model store](2026-10-06-drive-managed-engines-from-one-registry-and-one-model-store.md)
 
 ## TensorRT-LLM on Windows (1)
 

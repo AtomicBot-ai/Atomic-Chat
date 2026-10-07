@@ -21,9 +21,11 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   'llamacpp': 3,
   'atomic-prism': 4,
   'foundation-models': 5,
-  // Linux and Windows only, so it never shares the list with MLX or Foundation
-  // Models: it follows the llama.cpp engines there.
-  'tensorrt-llm': 6,
+  // The managed engines (Linux and Windows), so they never share the list with
+  // MLX or Foundation Models: they follow the llama.cpp engines there, vLLM
+  // first (change add-vllm-runtime).
+  'vllm': 6,
+  'tensorrt-llm': 7,
 }
 
 /**

@@ -91,6 +91,7 @@ export type LoadBackend =
   | 'mlx'
   | 'foundation-models'
   | 'tensorrt-llm'
+  | 'vllm'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -371,7 +372,8 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'atomic-prism' ||
     provider === 'mlx' ||
     provider === 'foundation-models' ||
-    provider === 'tensorrt-llm'
+    provider === 'tensorrt-llm' ||
+    provider === 'vllm'
   )
     return provider
   return 'unknown'

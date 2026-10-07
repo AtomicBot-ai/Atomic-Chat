@@ -95,6 +95,8 @@ export function getProviderLogo(provider: string) {
     // NVIDIA's own engine; the same mark as the NVIDIA NIM cloud provider.
     case 'tensorrt-llm':
       return '/images/model-provider/nvidia.svg'
+    case 'vllm':
+      return '/images/model-provider/vllm.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -211,6 +213,8 @@ export const getProviderTitle = (provider: string) => {
       return 'MLX'
     case 'tensorrt-llm':
       return 'TensorRT-LLM'
+    case 'vllm':
+      return 'vLLM'
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'

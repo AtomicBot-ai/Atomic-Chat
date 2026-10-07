@@ -425,7 +425,8 @@
       "currentLocation": "Текущее расположение:",
       "newLocation": "Новое расположение:",
       "cancel": "Отмена",
-      "changeLocation": "Изменить расположение"
+      "changeLocation": "Изменить расположение",
+      "managedModels": "Модели GPU-движков ({{engines}}) хранятся в WSL-дистрибутиве Atomic Chat «{{name}}», а не в папке данных: они не переносятся и остаются доступны после смены папки."
     }
   },
   "backendUpdater": {

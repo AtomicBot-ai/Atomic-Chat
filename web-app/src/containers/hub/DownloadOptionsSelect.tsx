@@ -3,7 +3,7 @@ import { IconChevronDown, IconChevronUp } from '@tabler/icons-react'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { FitBadge } from '@/containers/hub/FitBadge'
-import { TensorrtDownloadOptions } from '@/containers/hub/TensorrtDownloadOptions'
+import { ManagedDownloadOptions } from '@/containers/hub/ManagedDownloadOptions'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -100,8 +100,8 @@ export function DownloadOptionsSelect({
   const fitKnown = budgetBytes > 0
 
   // One checkpoint, judged by the core rather than by size against memory.
-  if (model.is_tensorrt_llm) {
-    return <TensorrtDownloadOptions model={model} sectionRef={sectionRef} />
+  if (model.is_managed) {
+    return <ManagedDownloadOptions model={model} sectionRef={sectionRef} />
   }
 
   if (model.is_mlx) {

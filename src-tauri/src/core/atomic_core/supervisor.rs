@@ -871,16 +871,19 @@ mod tests {
         )
         .unwrap();
         std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Long enough for the dying script to exit and be seen even on a loaded machine (each poll
+        // refreshes every process on the host); a dead core is waited on until the deadline, so this
+        // is also how long the test takes.
         let supervisor = Supervisor::new(dir.path().join("data"), resources, None)
-            .with_start_timeout(Duration::from_millis(500));
+            .with_start_timeout(Duration::from_secs(2));
 
         let error = supervisor.ensure_attached(true).await.unwrap_err();
 
         assert_eq!(error.code, "CORE_START_FAILED");
-        let warning = recorded
-            .0
-            .lock()
-            .unwrap()
+        // Copied out before asserting: a panic while holding the shared test logger's lock would
+        // poison it, and every later test that logs would fail with it.
+        let records = recorded.0.lock().unwrap().clone();
+        let warning = records
             .iter()
             .find(|(_, text)| text.contains("control port 13381 is taken"))
             .cloned()

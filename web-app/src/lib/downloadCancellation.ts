@@ -3,7 +3,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { isDecisionDownloadTaskId } from '@/lib/decision/models'
 import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
-import { isTensorrtDownloadId } from '@/lib/tensorrt-llm/download-id'
+import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 
 const CANCEL_TTL_MS = 15000
@@ -45,7 +45,7 @@ export function clearDownloadCancellationRequested(id: string) {
  * composer's reply widget) stops the same transfer the panel would: backend
  * binaries (`llamacpp*`), MLX repos (`mlx*`) and diffusion artifacts run
  * through the download extension and are cancelled there; chat-model files
- * go through the model service's abort; TensorRT-LLM models (`tensorrt-llm-*`),
+ * go through the model service's abort; managed models (`managed-*`, TensorRT-LLM and vLLM),
  * decision models (`decision-*`) and embedding models (`embedding-*`) are a
  * plain transfer of their files, stopped by task id. The store is marked first so the row
  * can offer a resume, and so the stop event that follows is read as a cancel,
@@ -70,7 +70,7 @@ export function cancelDownload(
     isDiffusionModelDownloadTaskId(download.id) ||
     isDecisionDownloadTaskId(download.id) ||
     isEmbeddingDownloadTaskId(download.id) ||
-    isTensorrtDownloadId(download.id)
+    isManagedDownloadId(download.id)
   ) {
     void cancelTransfer(download.id)
   } else if (

@@ -31,6 +31,7 @@ import {
 describe('loadBackendFromProvider', () => {
   it('names every local engine as its own backend', () => {
     expect(loadBackendFromProvider('tensorrt-llm')).toBe('tensorrt-llm')
+    expect(loadBackendFromProvider('vllm')).toBe('vllm')
     expect(loadBackendFromProvider('mlx')).toBe('mlx')
     expect(loadBackendFromProvider('openai')).toBe('unknown')
     expect(loadBackendFromProvider(undefined)).toBe('unknown')

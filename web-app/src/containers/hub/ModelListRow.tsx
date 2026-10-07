@@ -1,5 +1,5 @@
 import { ModelLogo } from '@/containers/ModelLogo'
-import { modelFormat } from '@/lib/model-card'
+import { modelFormat, type ModelFormat } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -12,6 +12,8 @@ export type ModelListRowProps = {
   selected?: boolean
   /** Long-tail Hugging Face hit: draw the neutral HF mark, not a letter. */
   fromHuggingFace?: boolean
+  /** The managed engine's format the Hub shows: a managed checkpoint's badge reads as it. */
+  managedFormat?: ModelFormat
   onSelect: () => void
 }
 
@@ -27,12 +29,13 @@ export function ModelListRow({
   pick,
   selected = false,
   fromHuggingFace = false,
+  managedFormat,
   onSelect,
 }: ModelListRowProps) {
   const name =
     pick?.title || extractModelName(model.model_name) || model.model_name
   const summary = pick?.summary || model.developer || ''
-  const format = modelFormat(model)
+  const format = modelFormat(model, managedFormat)
 
   return (
     <button

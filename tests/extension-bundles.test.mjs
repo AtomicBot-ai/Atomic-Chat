@@ -23,6 +23,7 @@ const EXTENSIONS = [
   'mlx-extension',
   'foundation-models-extension',
   'tensorrt-llm-extension',
+  'vllm-extension',
 ]
 
 for (const extension of EXTENSIONS) {

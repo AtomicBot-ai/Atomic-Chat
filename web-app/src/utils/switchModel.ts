@@ -12,8 +12,9 @@ import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import type { ModelLoadProgress } from '@/lib/inference-status'
-import { knownLoadStage } from '@/lib/tensorrt-llm/types'
-import { loadWatchdogMs } from '@/lib/tensorrt-llm/chat'
+import { knownLoadStage } from '@/lib/managed-engine/types'
+import { loadWatchdogMs } from '@/lib/managed-engine/chat'
+import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import {
   isKeylessRemoteProvider,
   isSubscriptionProvider,
@@ -225,18 +226,25 @@ function emitModelLoad(
 }
 
 // Local providers whose models are served by on-device engines.
+// Every managed engine (`isManagedProvider`) is one too: the core serves it from a container.
 const LOCAL_PROVIDERS = [
   'llamacpp',
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
   'foundation-models',
-  'tensorrt-llm',
 ] as const
-type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
+
+/** Every local engine provider, the managed engines last. */
+function localEngineProviders(): string[] {
+  return [...LOCAL_PROVIDERS, ...managedEngines().map((engine) => engine.id)]
+}
 
 function isLocalEngineProvider(providerName: string): boolean {
-  return (LOCAL_PROVIDERS as readonly string[]).includes(providerName)
+  return (
+    (LOCAL_PROVIDERS as readonly string[]).includes(providerName) ||
+    isManagedProvider(providerName)
+  )
 }
 
 // ATO-270: `doSwitchToModel` has no ceiling on how long it waits for the
@@ -408,7 +416,7 @@ export async function stopAllLocalModelsByUser(
   serviceHub: ServiceHub
 ): Promise<void> {
   const loaded = await Promise.all(
-    LOCAL_PROVIDERS.map(async (provider) => {
+    localEngineProviders().map(async (provider) => {
       const models = await serviceHub
         .models()
         .getActiveModels(provider)
@@ -607,8 +615,8 @@ async function isTargetModelAlreadyServing(params: {
         serviceHub.app().getServerStatus().catch(() => false),
         serviceHub.models().getActiveModels(providerName).catch(() => [] as string[]),
         Promise.all(
-          LOCAL_PROVIDERS.filter(
-            (provider) => provider !== (providerName as LocalProviderName)
+          localEngineProviders().filter(
+            (provider) => provider !== providerName
           ).map((provider) =>
             serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
           )
@@ -628,7 +636,7 @@ async function isTargetModelAlreadyServing(params: {
   const [serverRunning, localEngineModels] = await Promise.all([
     serviceHub.app().getServerStatus().catch(() => false),
     Promise.all(
-      LOCAL_PROVIDERS.map((provider) =>
+      localEngineProviders().map((provider) =>
         serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
       )
     ),

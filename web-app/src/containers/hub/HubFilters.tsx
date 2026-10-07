@@ -13,8 +13,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useHardware } from '@/hooks/useHardware'
+import { useManagedHubStates } from '@/hooks/useManagedHubState'
 import { usePrismHubVisible } from '@/hooks/useModelSetup'
-import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HUB_FORMAT_LABELS,
@@ -74,13 +74,16 @@ export function HubFilters({
   )
 
   // MLX only exists on Apple Silicon, so offering the toggle elsewhere would
-  // be a filter that can only ever empty the list. TensorRT-LLM and PrismML
-  // follow their providers: no platform check of the Hub's own.
-  const tensorrtVisible = useTensorrtHubState().visible
+  // be a filter that can only ever empty the list. Each managed engine and
+  // PrismML follow their providers: no platform check of the Hub's own.
+  const managedHubs = useManagedHubStates()
+  const visibleManaged = managedHubs
+    .filter((entry) => entry.hub.visible)
+    .map((entry) => entry.engine.id)
   const prismVisible = usePrismHubVisible()
   const availableFormats = hubFormats({
     mlx: IS_MACOS,
-    tensorrt: tensorrtVisible,
+    managed: visibleManaged,
     prism: prismVisible,
   })
   const sortKeys = HUB_SORT_KEYS.filter(
