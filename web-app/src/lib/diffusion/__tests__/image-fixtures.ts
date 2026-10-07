@@ -9,6 +9,7 @@
 import { vi } from 'vitest'
 
 import { planArtifactDownload } from '@/lib/diffusion/models'
+import type { EngineBuildCatalog } from '@/services/engine-builds/types'
 import type {
   DiffusionEvent,
   DiffusionModelFile,
@@ -255,6 +256,42 @@ type Mocked<T> = {
     : T[K]
 }
 
+/**
+ * The core's sd.cpp catalog for an Apple Silicon host with `tag` installed
+ * and active, or with nothing installed when `tag` is null.
+ */
+export function makeEngineCatalog(
+  overrides: Partial<EngineBuildCatalog> & { tag?: string | null } = {}
+): EngineBuildCatalog {
+  const { tag = 'master-849-d04e895', ...rest } = overrides
+  const active = tag
+    ? {
+        tag,
+        backend_id: 'macos-arm64',
+        origin: 'downloaded' as const,
+        installed_at_ms: 1,
+        removable: true,
+        in_use: false,
+        active: true,
+      }
+    : null
+  return {
+    engine: 'sd-cpp',
+    manifest: {
+      tag: 'master-849-d04e895',
+      source: 'remote',
+      fetched_at: 1,
+      error: null,
+    },
+    manifest_error: null,
+    host_backend_id: 'macos-arm64',
+    host_reason: null,
+    installed: active ? [active] : [],
+    active,
+    ...rest,
+  }
+}
+
 export type FakeDiffusion = Mocked<DiffusionService> & {
   /** Push an event to every subscriber, the way the plugin would. */
   emit: (event: DiffusionEvent) => void
@@ -283,6 +320,14 @@ export function makeFakeDiffusion(
     finalizeBackendInstall: vi.fn(),
     listInstalledBackends: vi.fn(async () => []),
     removeBackend: vi.fn(async () => undefined),
+    engineCatalog: vi.fn(async () => makeEngineCatalog()),
+    checkEngineUpdate: vi.fn(async () => ({
+      update_needed: false,
+      current: null,
+      target: null,
+    })),
+    installEngine: vi.fn(),
+    removeEngineBuild: vi.fn(async () => ({ removed: true })),
     listModelFiles: vi.fn(async () => [] as DiffusionModelFile[]),
     deleteModelFile: vi.fn(async () => undefined),
     loadModel: vi.fn(async (request) => {

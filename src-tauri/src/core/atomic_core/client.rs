@@ -335,15 +335,16 @@ impl ControlClient {
     }
 }
 
-/// Calls whose deadline is the core's own: a model load, an embedding batch and a backend install
-/// can all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
+/// Calls whose deadline is the core's own: a model load, an embedding batch and a backend or
+/// engine-build install can all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
 /// is ready; the core's own budget for that (600 s by default, `startupTimeoutSecs`) starts at the
 /// spawn, after it has cancelled a running job, torn the old session down and checked the files,
 /// so any client deadline of the same length would fire first and hide the core's own error.
 fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration> {
     if method == reqwest::Method::POST
         && ((path.starts_with("/models/") && (path.ends_with("/load") || path.ends_with("/embed")))
-            || (path.starts_with("/backends/") && path.ends_with("/install"))
+            || ((path.starts_with("/backends/") || path.starts_with("/engine-builds/"))
+                && path.ends_with("/install"))
             || path == "/diffusion/model/load")
     {
         None
@@ -469,6 +470,23 @@ mod tests {
         );
         assert_eq!(
             control_call_timeout(&reqwest::Method::POST, "/diffusion/jobs"),
+            Some(CALL_TIMEOUT)
+        );
+        // An engine build (sd.cpp with its CUDA runtime, ~900 MB) downloads inside the call.
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engine-builds/sd-cpp/install"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engine-builds/mlx/install"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engine-builds/sd-cpp/catalog"),
+            Some(CALL_TIMEOUT)
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engine-builds/mlx/updates"),
             Some(CALL_TIMEOUT)
         );
     }

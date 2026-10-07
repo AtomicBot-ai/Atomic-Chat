@@ -17,6 +17,16 @@
  * handed explicit file paths at load time. It never resolves the catalog.
  */
 
+import type {
+  EngineBuildCatalog,
+  EngineBuildCatalogRequest,
+  EngineBuildInstallRequest,
+  EngineBuildInstallResult,
+  EngineBuildRemoveResult,
+  EngineBuildUpdateCheck,
+  EngineBuildUpdateCheckRequest,
+} from '@/services/engine-builds/types'
+
 /** Which native engine serves generation. `diffusers` arrives in phase 1b. */
 export type DiffusionEngineId = 'sd-cpp' | 'diffusers'
 
@@ -676,6 +686,21 @@ export interface DiffusionService {
   listInstalledBackends(): Promise<DiffusionBackendInstallRecord[]>
   /** Refuses (`BACKEND_IN_USE`) while a session runs from that tree, and refuses trees without the ownership marker. */
   removeBackend(dir: string): Promise<void>
+
+  // --- engine builds (the core's `/engine-builds/sd-cpp/*`) ----------------
+  /** The installed builds, the active one, and what this host would install from the manifest. */
+  engineCatalog(request?: EngineBuildCatalogRequest): Promise<EngineBuildCatalog>
+  /** Whether the manifest names a build strictly newer than the active one. */
+  checkEngineUpdate(
+    request?: EngineBuildUpdateCheckRequest
+  ): Promise<EngineBuildUpdateCheck>
+  /**
+   * Download, verify, probe and activate this host's build under the
+   * caller's `task_id`; the core unloads sessions of other builds and removes
+   * the builds nobody runs from.
+   */
+  installEngine(request: EngineBuildInstallRequest): Promise<EngineBuildInstallResult>
+  removeEngineBuild(tag: string, backendId: string): Promise<EngineBuildRemoveResult>
 
   // --- model files ---------------------------------------------------------
   listModelFiles(): Promise<DiffusionModelFile[]>

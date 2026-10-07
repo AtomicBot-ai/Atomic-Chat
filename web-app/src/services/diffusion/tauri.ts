@@ -14,6 +14,21 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import { createSafeUnlisten } from '@/lib/tauriEvent'
+import {
+  checkEngineBuildUpdates,
+  engineBuildCatalog,
+  installEngineBuild,
+  removeEngineBuild,
+} from '@/services/engine-builds/core'
+import type {
+  EngineBuildCatalog,
+  EngineBuildCatalogRequest,
+  EngineBuildInstallRequest,
+  EngineBuildInstallResult,
+  EngineBuildRemoveResult,
+  EngineBuildUpdateCheck,
+  EngineBuildUpdateCheckRequest,
+} from '@/services/engine-builds/types'
 
 import { DefaultDiffusionService } from './default'
 import type {
@@ -40,6 +55,9 @@ import type {
   VideoGenerateRequest,
   VideoJob,
 } from './types'
+
+/** The core's engine-build id for stable-diffusion.cpp. */
+const SD_CPP = 'sd-cpp'
 
 /** The core's control-route prefix for image generation. */
 export const DIFFUSION_PREFIX = '/diffusion'
@@ -123,6 +141,31 @@ export class TauriDiffusionService extends DefaultDiffusionService {
 
   override async removeBackend(dir: string): Promise<void> {
     await coreCall('POST', '/backends/remove', { dir })
+  }
+
+  override async engineCatalog(
+    request: EngineBuildCatalogRequest = {}
+  ): Promise<EngineBuildCatalog> {
+    return engineBuildCatalog(SD_CPP, request)
+  }
+
+  override async checkEngineUpdate(
+    request: EngineBuildUpdateCheckRequest = {}
+  ): Promise<EngineBuildUpdateCheck> {
+    return checkEngineBuildUpdates(SD_CPP, request)
+  }
+
+  override async installEngine(
+    request: EngineBuildInstallRequest
+  ): Promise<EngineBuildInstallResult> {
+    return installEngineBuild(SD_CPP, request)
+  }
+
+  override async removeEngineBuild(
+    tag: string,
+    backendId: string
+  ): Promise<EngineBuildRemoveResult> {
+    return removeEngineBuild(SD_CPP, tag, backendId)
   }
 
   override async listModelFiles(): Promise<DiffusionModelFile[]> {

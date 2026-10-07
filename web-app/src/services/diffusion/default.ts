@@ -11,6 +11,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import type {
+  EngineBuildCatalog,
+  EngineBuildCatalogRequest,
+  EngineBuildInstallRequest,
+  EngineBuildInstallResult,
+  EngineBuildRemoveResult,
+  EngineBuildUpdateCheck,
+  EngineBuildUpdateCheckRequest,
+} from '@/services/engine-builds/types'
+
+import type {
   DiffusionBackend,
   DiffusionBackendInstallRecord,
   DiffusionConfig,
@@ -112,6 +122,31 @@ export class DefaultDiffusionService implements DiffusionService {
   }
 
   async removeBackend(_dir: string): Promise<void> {
+    return unsupported()
+  }
+
+  async engineCatalog(
+    _request?: EngineBuildCatalogRequest
+  ): Promise<EngineBuildCatalog> {
+    return unsupported()
+  }
+
+  async checkEngineUpdate(
+    _request?: EngineBuildUpdateCheckRequest
+  ): Promise<EngineBuildUpdateCheck> {
+    return { update_needed: false, current: null, target: null }
+  }
+
+  async installEngine(
+    _request: EngineBuildInstallRequest
+  ): Promise<EngineBuildInstallResult> {
+    return unsupported()
+  }
+
+  async removeEngineBuild(
+    _tag: string,
+    _backendId: string
+  ): Promise<EngineBuildRemoveResult> {
     return unsupported()
   }
 
