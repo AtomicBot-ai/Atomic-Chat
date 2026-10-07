@@ -390,6 +390,7 @@
   "deleteModel": {
     "title": "Delete Model: {{modelId}}",
     "description": "Are you sure you want to delete this model? This action cannot be undone.",
+    "managedShared": "This model is in the shared store of the GPU engines ({{engines}}): deleting it removes it, with its engine caches, from every one of them.",
     "success": "Model {{modelId}} has been permanently deleted.",
     "successFreed": "Model {{modelId}} has been permanently deleted; {{size}} freed.",
     "cancel": "Cancel",

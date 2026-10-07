@@ -1,6 +1,11 @@
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 
-const LOCAL_ENGINE_PROVIDERS = new Set(['llamacpp', 'llamacpp-upstream', 'mlx'])
+const LOCAL_ENGINE_PROVIDERS = new Set([
+  'llamacpp',
+  'llamacpp-upstream',
+  'atomic-prism',
+  'mlx',
+])
 
 type ProviderLike = {
   provider: string

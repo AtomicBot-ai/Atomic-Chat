@@ -6,6 +6,7 @@
  * state changes here.
  */
 
+import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import {
   estimateFit,
   modelFormat,
@@ -48,7 +49,13 @@ export const DEFAULT_HUB_FILTERS: HubFilterState = {
 
 export const HUB_FILTERS_STORAGE_KEY = 'atomic_hub_filters_v1'
 
-const ALL_FORMATS: readonly ModelFormat[] = ['gguf', 'mlx', 'tensorrt-llm']
+const ALL_FORMATS: readonly ModelFormat[] = [
+  'gguf',
+  'mlx',
+  'vllm',
+  'tensorrt-llm',
+  'atomic-prism',
+]
 
 const isFormat = (value: unknown): value is ModelFormat =>
   ALL_FORMATS.includes(value as ModelFormat)
@@ -57,18 +64,34 @@ const isFormat = (value: unknown): value is ModelFormat =>
 export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'gguf': 'GGUF',
   'mlx': 'MLX',
+  'vllm': 'vLLM',
   'tensorrt-llm': 'TensorRT-LLM',
+  'atomic-prism': 'PrismML',
+}
+
+/** Whether the format is a managed engine's (its provider id): a safetensors checkpoint's. */
+export function isManagedFormat(format: ModelFormat | undefined): boolean {
+  return isManagedProvider(format)
 }
 
 /**
- * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, TensorRT-LLM where its
- * provider is shown and a card is new enough (`useTensorrtHubState().visible`).
+ * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, each managed engine
+ * where its provider is shown and a card is new enough (`useManagedHubStates()[…].hub.visible`),
+ * in registry order — vLLM before TensorRT-LLM — then PrismML where its provider is shown
+ * (`usePrismHubVisible()`): the core hides it where PrismML publishes no build.
  */
-export function hubFormats(options: { mlx: boolean; tensorrt: boolean }): ModelFormat[] {
+export function hubFormats(options: {
+  mlx: boolean
+  managed: readonly string[]
+  prism?: boolean
+}): ModelFormat[] {
   return [
     'gguf',
     ...(options.mlx ? (['mlx'] as const) : []),
-    ...(options.tensorrt ? (['tensorrt-llm'] as const) : []),
+    ...managedEngines()
+      .map((engine) => engine.id)
+      .filter((id): id is ModelFormat => options.managed.includes(id) && isFormat(id)),
+    ...(options.prism ? (['atomic-prism'] as const) : []),
   ]
 }
 
@@ -193,7 +216,9 @@ export function filterByFormats(
   // it the same as "everything selected".
   if (formats.length === 0) return [...models]
   const allowed = new Set(formats)
-  return models.filter((model) => allowed.has(modelFormat(model)))
+  // A managed checkpoint is one for every managed engine: any managed format takes it.
+  const managedFormat = formats.find(isManagedFormat)
+  return models.filter((model) => allowed.has(modelFormat(model, managedFormat)))
 }
 
 const timestamp = (value?: string): number => {

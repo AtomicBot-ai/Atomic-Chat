@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   mediaSupported: false,
   decisionSupported: false,
+  embeddingSupported: false,
   search: {} as Record<string, unknown>,
   staffPicks: [] as ResolvedStaffPick[],
   mlxStaffPicks: [] as ResolvedStaffPick[],
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
     models: [] as CatalogModel[],
     nextCursor: null as string | null,
   })),
+  prismFamilies: vi.fn(async () => ({
+    rules_version: 1,
+    families: [] as unknown[],
+  })),
 }))
 
 const tensorrtHub = vi.hoisted(() => ({
@@ -30,8 +35,19 @@ const tensorrtHub = vi.hoisted(() => ({
     descriptorId: null as string | null,
   },
 }))
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => tensorrtHub.value,
+const vllmHub = vi.hoisted(() => ({
+  value: {
+    visible: false,
+    state: 'unknown',
+    blockers: [] as Array<Record<string, unknown>>,
+    descriptorId: null as string | null,
+  },
+}))
+vi.mock('@/hooks/useManagedHubState', () => ({
+  useManagedHubStates: () => [
+    { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: vllmHub.value },
+    { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: tensorrtHub.value },
+  ],
 }))
 
 const tensorrtCurated = vi.hoisted(() => ({
@@ -41,8 +57,16 @@ const tensorrtCurated = vi.hoisted(() => ({
     loading: false,
   },
 }))
-vi.mock('@/hooks/useTensorrtCurated', () => ({
-  useTensorrtCurated: () => tensorrtCurated.value,
+const vllmCurated = vi.hoisted(() => ({
+  value: {
+    models: [] as CatalogModel[],
+    supportedArchitectures: null as string[] | null,
+    loading: false,
+  },
+}))
+vi.mock('@/hooks/useManagedCurated', () => ({
+  useManagedCurated: (engineId: string) =>
+    engineId === 'vllm' ? vllmCurated.value : tensorrtCurated.value,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -117,6 +141,28 @@ vi.mock('@/containers/hub/DecisionHub', () => ({
       <span>{`decision catalog, query "${query}", open ${selectedModelId}`}</span>
       <button type="button" onClick={() => onSelectModel('laya')}>
         pick laya
+      </button>
+    </main>
+  ),
+}))
+
+vi.mock('@/containers/hub/EmbeddingHub', () => ({
+  EmbeddingHub: ({
+    categoryTabs,
+    query,
+    selectedModelId,
+    onSelectModel,
+  }: {
+    categoryTabs?: React.ReactNode
+    query: string
+    selectedModelId: string | null
+    onSelectModel: (id: string) => void
+  }) => (
+    <main data-testid="embedding-hub">
+      {categoryTabs}
+      <span>{`embedding catalog, query "${query}", open ${selectedModelId}`}</span>
+      <button type="button" onClick={() => onSelectModel('bge-m3')}>
+        pick bge-m3
       </button>
     </main>
   ),
@@ -226,6 +272,11 @@ vi.mock('@/hooks/useServiceHub', () => ({
       }),
       providers: () => ({ getProviders: async () => [] }),
       decision: () => ({ isSupported: () => mocks.decisionSupported }),
+      embedding: () => ({ isSupported: () => mocks.embeddingSupported }),
+      modelSetup: () => ({
+        isSupported: () => true,
+        families: mocks.prismFamilies,
+      }),
   }),
 }))
 
@@ -244,6 +295,8 @@ vi.mock('@/stores/model-catalog-store', () => ({
 }))
 
 import { Route } from '../index'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useModelSetupStore } from '@/stores/model-setup-store'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
@@ -285,8 +338,11 @@ describe('/hub route', () => {
       descriptorId: null,
     }
     tensorrtCurated.value = { models: [], supportedArchitectures: null, loading: false }
+    vllmHub.value = { visible: false, state: 'unknown', blockers: [], descriptorId: null }
+    vllmCurated.value = { models: [], supportedArchitectures: null, loading: false }
     mocks.mediaSupported = false
     mocks.decisionSupported = false
+    mocks.embeddingSupported = false
     mocks.sources = []
     mocks.staffPicks = [
       {
@@ -697,8 +753,8 @@ describe('/hub route', () => {
       developer: name.split('/')[0],
       description: '',
       downloads: 10,
-      is_tensorrt_llm: true,
-      tensorrt: { architectures, parameters: { BF16: 4e9 } },
+      is_managed: true,
+      managed: { architectures, parameters: { BF16: 4e9 } },
     })
 
     const engineReady = () => {
@@ -715,8 +771,8 @@ describe('/hub route', () => {
             developer: 'nvidia',
             description: '',
             downloads: 0,
-            is_tensorrt_llm: true,
-            tensorrt: { curated: true, revision: 'rev-a' },
+            is_managed: true,
+            managed: { curated: true, revision: 'rev-a' },
           },
         ],
         supportedArchitectures: ['Qwen3ForCausalLM'],
@@ -745,7 +801,7 @@ describe('/hub route', () => {
       expect(screen.queryByText('Mamba-7B')).not.toBeInTheDocument()
       expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
       expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
-        expect.objectContaining({ format: 'tensorrt-llm' })
+        expect.objectContaining({ format: 'safetensors' })
       )
     })
 
@@ -774,11 +830,12 @@ describe('/hub route', () => {
       })
       expect(screen.getByText('Qwen3-14B')).toBeInTheDocument()
       expect(screen.queryByText('Mamba-7B-v2')).not.toBeInTheDocument()
+      // A managed format asks for 30 hits: the prefilter narrows them, and 10 left almost nothing.
       expect(mocks.searchHuggingFaceCandidates).toHaveBeenCalledWith(
         expect.any(String),
         expect.anything(),
-        expect.any(Number),
-        'tensorrt-llm'
+        30,
+        'safetensors'
       )
       const opened = mocks.navigate.mock.calls
         .map(([options]) => options as { search?: (prev: object) => { model?: string } })
@@ -848,6 +905,210 @@ describe('/hub route', () => {
 
       expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
       expect(screen.queryByText('hub:tensorrt.checking')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('under the vLLM format (spec vllm-desktop "vLLM — формат Model Hub по состоянию провайдера")', () => {
+    const managedEntry = (name: string, architectures: string[]): CatalogModel => ({
+      model_name: name,
+      developer: name.split('/')[0],
+      description: '',
+      downloads: 10,
+      is_managed: true,
+      managed: { architectures, parameters: { BF16: 4e9 } },
+    })
+    const vllmReady = () => {
+      vllmHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'vllm-0.31.0-cu129-r1' }
+      vllmCurated.value = {
+        models: [
+          {
+            model_name: 'Qwen/Qwen3-8B-AWQ',
+            developer: 'Qwen',
+            description: '',
+            downloads: 0,
+            is_managed: true,
+            managed: { curated: true, curatedBy: 'vllm', revision: 'rev-v' },
+          },
+        ],
+        supportedArchitectures: ['Qwen3ForCausalLM'],
+        loading: false,
+      }
+    }
+    const trtBlockedByDriver = () => {
+      tensorrtHub.value = {
+        visible: true,
+        state: 'blocked',
+        blockers: [
+          {
+            code: 'MANAGED_PREREQUISITE_BLOCKED',
+            reason: 'driver-too-old',
+            message: 'TensorRT-LLM needs a newer NVIDIA driver.',
+            params: { required: '615', actual: '580' },
+          },
+        ],
+        descriptorId: 'tensorrt-llm-1.3.0rc29-r3',
+      }
+    }
+
+    it('TensorRT-LLM blocked by the driver: models and verdicts under vLLM, the blocker under TensorRT-LLM', async () => {
+      vllmReady()
+      trtBlockedByDriver()
+      mocks.listHuggingFaceFeed.mockResolvedValue({
+        models: [managedEntry('someone/Qwen3-4B-AWQ', ['Qwen3ForCausalLM'])],
+        nextCursor: null,
+      })
+      setHubFormat('vllm')
+
+      const view = render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-AWQ')).toBeInTheDocument()
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+      expect(headings).toEqual(['hub:vllm.curated', 'hub:feedTitle'])
+      expect(screen.queryByText('TensorRT-LLM needs a newer NVIDIA driver.')).not.toBeInTheDocument()
+      // The row reads as the format shown, not as TensorRT-LLM.
+      expect(screen.getAllByText('vllm').length).toBeGreaterThan(0)
+      view.unmount()
+
+      setHubFormat('tensorrt-llm')
+      render(<HubPage />)
+
+      expect(screen.getByText('hub:tensorrt.blocked.title')).toBeInTheDocument()
+      expect(screen.getByText('TensorRT-LLM needs a newer NVIDIA driver.')).toBeInTheDocument()
+      expect(screen.queryByText('Qwen3-4B-AWQ')).not.toBeInTheDocument()
+    })
+
+    it('an architecture vLLM does not support: that repository is not in the vLLM list', async () => {
+      vllmReady()
+      mocks.listHuggingFaceFeed.mockResolvedValue({
+        models: [
+          managedEntry('someone/Qwen3-4B-AWQ', ['Qwen3ForCausalLM']),
+          managedEntry('someone/Nemotron-H-8B', ['NemotronHForCausalLM']),
+        ],
+        nextCursor: null,
+      })
+      setHubFormat('vllm')
+
+      render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-AWQ')).toBeInTheDocument()
+      expect(screen.queryByText('Nemotron-H-8B')).not.toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ format: 'safetensors' })
+      )
+    })
+
+    it('the vLLM descriptor not published yet: no vLLM format, a vLLM link reads as GGUF, TensorRT-LLM as before', () => {
+      // The core hides the provider until conf publishes runtimes/vllm.json (design D15).
+      tensorrtHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'tensorrt-llm-1.3.0rc29-r3' }
+      mocks.search = { engine: 'vllm' }
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(screen.queryByText('hub:vllm.checking')).not.toBeInTheDocument()
+      expect(screen.queryByText('hub:vllm.curated')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('under the PrismML format', () => {
+    const family = (
+      id: string,
+      repo: string,
+      file: string,
+      featured = false
+    ) => ({
+      id,
+      title: id,
+      repo,
+      revision: 'rev',
+      ...(featured ? { featured } : {}),
+      files: [
+        {
+          file,
+          size: 2 * 1024 ** 3,
+          sha256: 'a'.repeat(64),
+          treatment: 'prism_required',
+          default: true,
+        },
+      ],
+      projectors: [],
+    })
+    const providers = (names: string[]) => {
+      ;(
+        useModelProvider.getState() as unknown as {
+          providers: Array<{ provider: string }>
+        }
+      ).providers = names.map((provider) => ({ provider }))
+    }
+
+    beforeEach(() => {
+      useModelSetupStore.setState({ families: null })
+      providers(['llamacpp-upstream', 'atomic-prism'])
+      mocks.prismFamilies.mockResolvedValue({
+        rules_version: 1,
+        families: [
+          family('bonsai-8b', 'prism-ml/Bonsai-8B-gguf', 'Bonsai-8B-PQ2_0.gguf'),
+          family(
+            'ternary-bonsai-2-27b',
+            'prism-ml/Ternary-Bonsai-2-27B-gguf',
+            'Ternary-Bonsai-2-27B-PQ2_0.gguf',
+            true
+          ),
+        ],
+      })
+    })
+
+    afterEach(() => providers([]))
+
+    it('lists the Bonsai families under their own heading, featured first, and nothing else', async () => {
+      setHubFormat('atomic-prism')
+
+      render(<HubPage />)
+
+      expect(
+        await screen.findByText('Ternary-Bonsai-2-27B-gguf')
+      ).toBeInTheDocument()
+      expect(
+        screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+      ).toEqual(['hub:prismCurated'])
+      const names = screen
+        .getAllByText(/Bonsai-/)
+        .map((node) => node.textContent)
+      expect(names.indexOf('Ternary-Bonsai-2-27B-gguf')).toBeLessThan(
+        names.indexOf('Bonsai-8B-gguf')
+      )
+      expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).not.toHaveBeenCalled()
+      expect(mocks.prismFamilies).toHaveBeenCalledTimes(1)
+    })
+
+    it('narrows the families by a search and asks Hugging Face for nothing', async () => {
+      setHubFormat('atomic-prism')
+      const user = userEvent.setup()
+      render(<HubPage />)
+      await screen.findByText('Bonsai-8B-gguf')
+
+      await user.type(
+        screen.getByRole('textbox', { name: 'hub:searchPlaceholder' }),
+        'ternary'
+      )
+
+      await waitFor(() =>
+        expect(screen.queryByText('Bonsai-8B-gguf')).not.toBeInTheDocument()
+      )
+      expect(screen.getByText('Ternary-Bonsai-2-27B-gguf')).toBeInTheDocument()
+      expect(mocks.searchHuggingFaceCandidates).not.toHaveBeenCalled()
+      expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+    })
+
+    it('is GGUF where PrismML is not offered', () => {
+      providers(['llamacpp-upstream'])
+      setHubFormat('atomic-prism')
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(mocks.prismFamilies).not.toHaveBeenCalled()
     })
   })
 
@@ -1028,6 +1289,47 @@ describe('/hub route', () => {
       ).toBeInTheDocument()
       expect(picker()).toHaveAttribute('data-mode', 'decision')
       expect(mocks.listHuggingFaceFeed.mock.calls).toEqual([])
+    })
+
+    it('shows the embedding catalog the URL names, with its search and selection', async () => {
+      mocks.embeddingSupported = true
+      mocks.search = { category: 'embedding', q: 'gemma', model: 'bge-m3' }
+      render(<HubPage />)
+
+      expect(
+        screen.getByText('embedding catalog, query "gemma", open bge-m3')
+      ).toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'embedding')
+      expect(mocks.listHuggingFaceFeed.mock.calls).toEqual([])
+
+      await userEvent.click(screen.getByTestId('hub-category-workflow-select'))
+      expect(screen.getByTestId('hub-category-workflow-menu')).toHaveTextContent(
+        'hub:categoryEmbeddingHint'
+      )
+    })
+
+    it('stays the chat catalog where embedding models cannot run', () => {
+      mocks.decisionSupported = true
+      mocks.search = { category: 'embedding' }
+      render(<HubPage />)
+
+      expect(screen.queryByTestId('embedding-hub')).not.toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'chat')
+    })
+
+    it('puts an embedding model picked in its catalog into the URL', async () => {
+      mocks.embeddingSupported = true
+      mocks.search = { category: 'embedding' }
+      render(<HubPage />)
+
+      await userEvent.click(screen.getByRole('button', { name: 'pick bge-m3' }))
+
+      const navigation = lastNavigation()
+      expect(navigation.replace).toBe(false)
+      expect(navigation.search({ category: 'embedding' })).toEqual({
+        category: 'embedding',
+        model: 'bge-m3',
+      })
     })
 
     it('stays the chat catalog where decision models cannot run', () => {

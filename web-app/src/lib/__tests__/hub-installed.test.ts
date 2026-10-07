@@ -8,10 +8,11 @@ import {
   findInstalledLocalModel,
   LLAMACPP_PROVIDERS,
   mlxModelIds,
-  TENSORRT_LLM_PROVIDER,
+  managedProviderIds,
   quantModelIds,
   withStaffPicks,
 } from '../hub-installed'
+import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 
 const gguf = (
   name: string,
@@ -168,14 +169,14 @@ describe('collectInstalledModels — TensorRT-LLM', () => {
   it('lists a downloaded TensorRT-LLM model as its repository, with the TensorRT-LLM badge', () => {
     const rows = collectInstalledModels(
       [],
-      [provider(TENSORRT_LLM_PROVIDER, ['nvidia/Qwen3-8B-FP8'])]
+      [provider('tensorrt-llm', ['nvidia/Qwen3-8B-FP8'])]
     )
 
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       model_name: 'nvidia/Qwen3-8B-FP8',
       developer: 'nvidia',
-      is_tensorrt_llm: true,
+      is_managed: true,
       readme: 'https://huggingface.co/nvidia/Qwen3-8B-FP8/resolve/main/README.md',
     })
     expect(modelFormat(rows[0])).toBe('tensorrt-llm')
@@ -189,7 +190,7 @@ describe('collectInstalledModels — TensorRT-LLM', () => {
     ]
     const rows = collectInstalledModels(catalog, [
       provider('llamacpp', ['nvidia/Qwen3-8B-Q4_K_M']),
-      provider(TENSORRT_LLM_PROVIDER, ['nvidia/Qwen3-8B-FP8']),
+      provider('tensorrt-llm', ['nvidia/Qwen3-8B-FP8']),
     ])
 
     expect(rows.map((row) => [row.model_name, modelFormat(row)])).toEqual([
@@ -201,11 +202,11 @@ describe('collectInstalledModels — TensorRT-LLM', () => {
   it('finds the installed TensorRT-LLM model only under its own provider', () => {
     const providers = [
       provider('llamacpp', ['nvidia/Qwen3-8B-FP8']),
-      provider(TENSORRT_LLM_PROVIDER, ['nvidia/Qwen3-8B-FP8']),
+      provider('tensorrt-llm', ['nvidia/Qwen3-8B-FP8']),
     ]
     expect(
-      findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'], [TENSORRT_LLM_PROVIDER])
-    ).toEqual({ modelId: 'nvidia/Qwen3-8B-FP8', provider: TENSORRT_LLM_PROVIDER })
+      findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'], managedProviderIds())
+    ).toEqual({ modelId: 'nvidia/Qwen3-8B-FP8', provider: 'tensorrt-llm' })
     expect(findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'])).toEqual({
       modelId: 'nvidia/Qwen3-8B-FP8',
       provider: 'llamacpp',
@@ -243,6 +244,20 @@ describe('findInstalledLocalModel', () => {
         quantModelIds(entry, 'Qwen3-4B-Q4_K_M')
       )
     ).toEqual({ modelId: 'Qwen3-4B-Q4_K_M', provider: 'llamacpp-upstream' })
+  })
+
+  it('finds a Bonsai file that only the PrismML provider lists', () => {
+    const bonsai = gguf('prism-ml/Bonsai-8B-gguf', ['Bonsai-8B-PQ2_0'])
+    expect(
+      findInstalledLocalModel(
+        [
+          provider('llamacpp-upstream', []),
+          provider('atomic-prism', ['Bonsai-8B-PQ2_0']),
+        ],
+        quantModelIds(bonsai, 'Bonsai-8B-PQ2_0'),
+        LLAMACPP_PROVIDERS
+      )
+    ).toEqual({ modelId: 'Bonsai-8B-PQ2_0', provider: 'atomic-prism' })
   })
 
   it('reports the id the engine actually registered, not the catalog spelling', () => {
@@ -340,5 +355,26 @@ describe('withStaffPicks', () => {
       providers
     )
     expect(withPicks).toEqual([nanbeige])
+  })
+})
+
+describe('collectInstalledModels — the shared store of several managed engines', () => {
+  it('lists a model every managed provider lists once, and finds it under the first engine', () => {
+    setManagedEnginesForTests([{ id: 'second-engine', label: 'Second', i18n: 'second' }, TENSORRT_LLM_ENGINE])
+    try {
+      const providers = [
+        provider('second-engine', ['nvidia/Qwen3-8B-FP8']),
+        provider('tensorrt-llm', ['nvidia/Qwen3-8B-FP8']),
+      ]
+      const rows = collectInstalledModels([], providers)
+
+      expect(rows.map((row) => row.model_name)).toEqual(['nvidia/Qwen3-8B-FP8'])
+      expect(findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'], managedProviderIds())).toEqual({
+        modelId: 'nvidia/Qwen3-8B-FP8',
+        provider: 'second-engine',
+      })
+    } finally {
+      setManagedEnginesForTests(undefined)
+    }
   })
 })

@@ -1,7 +1,10 @@
-//! The second place model files may be written besides the data folder: the root the core names
-//! for TensorRT-LLM models (change `add-tensorrt-llm-windows`, design D6). On Linux it is
-//! `<data>/tensorrt-llm/models`, inside the data folder anyway; on Windows it is Atomic Chat's own
-//! WSL distribution, `\\wsl.localhost\<distro>\var\lib\atomic-chat\scopes\<key>\models\tensorrt-llm`.
+//! The second place model files may be written besides the data folder: the root of the shared
+//! store of the managed engines' models (TensorRT-LLM, vLLM) the core names (change
+//! `add-tensorrt-llm-windows`, design D6; one store for every managed engine, change
+//! `add-vllm-runtime`, design D4). On Linux it is `<data>/managed-models`, inside the data folder
+//! anyway; on Windows it is Atomic Chat's own WSL distribution,
+//! `\\wsl.localhost\<distro>\var\lib\atomic-chat\scopes\<key>\managed-models`. One root for every
+//! engine, so the checks against it stay one comparison.
 //!
 //! The root comes from the core, asked here — never from the webview, which only ever names a path
 //! for the downloader, `write_yaml` and `read_yaml` to check against it. The last root the core
@@ -14,8 +17,8 @@ use jan_utils::{canonicalize_existing_prefix, is_within, normalize_path};
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime};
 
-/// `GET /atomic/v1/models/tensorrt-llm/location` on the control API.
-pub const LOCATION_ROUTE: &str = "/models/tensorrt-llm/location";
+/// `GET /atomic/v1/managed-models/location` on the control API.
+pub const LOCATION_ROUTE: &str = "/managed-models/location";
 
 /// What the core answers: the root, as this machine opens it, and the free space for new models
 /// there (null when the core could not measure it).
@@ -62,7 +65,7 @@ pub fn within(path: &Path, root: &Path) -> bool {
     )
 }
 
-/// Ask the core where TensorRT-LLM models go, now — for the free space, which changes — and
+/// Ask the core where the managed engines' models go, now — for the free space, which changes — and
 /// remember the root. `None` where the core names none: macOS and Windows on ARM (no provider),
 /// Windows before Atomic Chat's distribution is imported, or no core at all.
 pub async fn fetch<R: Runtime>(app: &AppHandle<R>) -> Option<ModelLocation> {
@@ -72,7 +75,7 @@ pub async fn fetch<R: Runtime>(app: &AppHandle<R>) -> Option<ModelLocation> {
         let answer = match client.call("GET", LOCATION_ROUTE, None).await {
             Ok(answer) => answer,
             Err(error) => {
-                log::info!("[model-roots] the core names no TensorRT-LLM models root: {error:?}");
+                log::info!("[model-roots] the core names no managed models root: {error:?}");
                 return None;
             }
         };
@@ -105,10 +108,16 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn asks_the_shared_store_not_an_engine() {
+        // Change add-vllm-runtime: the core removed `/models/tensorrt-llm/location`.
+        assert_eq!(LOCATION_ROUTE, "/managed-models/location");
+    }
+
+    #[test]
     fn reads_the_root_and_the_free_space_the_core_names() {
         assert_eq!(
-            parse_location(&json!({ "root": "/data/tensorrt-llm/models", "free_bytes": 42 })),
-            Some(ModelLocation { root: PathBuf::from("/data/tensorrt-llm/models"), free_bytes: Some(42) })
+            parse_location(&json!({ "root": "/data/managed-models", "free_bytes": 42 })),
+            Some(ModelLocation { root: PathBuf::from("/data/managed-models"), free_bytes: Some(42) })
         );
         assert_eq!(
             parse_location(&json!({ "root": "/r", "free_bytes": null })).map(|l| l.free_bytes),
@@ -149,14 +158,14 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_unc_root_in_the_wsl_distribution_holds_its_models_and_nothing_else() {
-        let root = Path::new(r"\\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\k1\models\tensorrt-llm");
+        let root = Path::new(r"\\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\k1\managed-models");
         assert!(within(&root.join(r"nvidia\Qwen3-8B-FP8\model.yml"), root));
         // The verbatim spelling Windows hands back for the same place.
         assert!(within(
-            Path::new(r"\\?\UNC\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\k1\models\tensorrt-llm\x"),
+            Path::new(r"\\?\UNC\wsl.localhost\AtomicChat\var\lib\atomic-chat\scopes\k1\managed-models\x"),
             root
         ));
-        assert!(!within(Path::new(r"\\wsl.localhost\Ubuntu\var\lib\atomic-chat\scopes\k1\models\tensorrt-llm\x"), root));
+        assert!(!within(Path::new(r"\\wsl.localhost\Ubuntu\var\lib\atomic-chat\scopes\k1\managed-models\x"), root));
         assert!(!within(&root.join(r"..\..\..\..\etc"), root));
     }
 }

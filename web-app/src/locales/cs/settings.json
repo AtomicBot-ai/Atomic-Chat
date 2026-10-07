@@ -365,10 +365,14 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   },
   "decision": {
-    "multilingual": "100+ languages",
+    "multilingual": "Multilingual",
     "context": "{{tokens}} tokens",
     "diskSize": "{{size}} GB on disk",
     "progress": "{{current}} of {{total}} GB",
@@ -378,9 +382,12 @@
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "The model files and its converted copy will be deleted. If the model is running, it is stopped first.",
     "removed": "{{name}} removed",
-    "installEngine": "Install TurboQuant",
-    "engineLatest": "TurboQuant is up to date. A build that runs decision models is not released yet.",
-    "engineInstallFailed": "TurboQuant could not be installed",
+    "installEngine": "Install {{engine}}",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be installed",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
       "disabled": "Stopped",
       "idle": "Starts on the next request",
@@ -391,7 +398,7 @@
       "unsupported": "Engine not supported"
     },
     "errors": {
-      "engineUnsupported": "The installed TurboQuant engine cannot run decision models.",
+      "engineUnsupported": "The installed {{engine}} engine cannot run this decision model.",
       "notConfigured": "No decision model is selected. Download a model and press Start.",
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
@@ -402,5 +409,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Vícejazyčný",
+    "context": "{{tokens}} tokenů",
+    "dims": "{{dims}} dimenzí",
+    "diskSize": "{{size}} GB na disku",
+    "progress": "{{current}} z {{total}} GB",
+    "start": "Spustit",
+    "stop": "Zastavit",
+    "remove": "Odebrat",
+    "removeTitle": "Odebrat {{name}}?",
+    "removeDescription": "Soubory modelu budou smazány. Pokud model běží, nejprve se zastaví.",
+    "removed": "{{name}} odebrán",
+    "updateEngine": "Aktualizovat {{engine}}",
+    "engineLatest": "{{engine}} je aktuální. Verze, která tento embedding model spouští, zatím nevyšla.",
+    "engineInstallFailed": "{{engine}} se nepodařilo aktualizovat",
+    "requiresEngine": "Vyžaduje {{engine}} {{version}}+",
+    "requiresEngineNotice": "Tento model vyžaduje {{engine}} {{version}} nebo novější. Aktualizujte engine, abyste jej mohli spustit.",
+    "state": {
+      "disabled": "Zastaveno",
+      "idle": "Spustí se při dalším požadavku",
+      "starting": "Spouštění…",
+      "ready": "Běží",
+      "restarting": "Restartování…",
+      "failed": "Selhalo",
+      "unsupported": "Engine není podporován"
+    },
+    "errors": {
+      "engineUnsupported": "Nainstalovaný engine {{engine}} nedokáže spustit tento embedding model.",
+      "notConfigured": "Není vybrán žádný embedding model. Stáhněte model a stiskněte Spustit.",
+      "notEmbedding": "Tento soubor není embedding model.",
+      "modelFileNotFound": "Soubory modelu nejsou na disku. Stáhněte model znovu.",
+      "generic": "Embedding model se nepodařilo spustit."
+    },
+    "sectionTitle": "Embedding modely",
+    "noneTitle": "Nejsou staženy žádné embedding modely",
+    "noneDescription": "Stáhněte si model v kategorii Embedding v Centru",
+    "availableInApi": "Dostupné v API",
+    "localModel": "Z vašich modelů llama.cpp"
   }
 }

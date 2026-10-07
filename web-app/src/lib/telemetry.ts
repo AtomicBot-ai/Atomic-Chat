@@ -35,6 +35,9 @@ export type DownloadKind =
   // A diffusion checkpoint or one of its side files (VAE, text encoder),
   // fetched by `lib/diffusion/models.ts` through the same download pipeline.
   | 'diffusion_model'
+  // A catalog embedding model (`embedding-<id>`, `lib/embedding/models.ts`):
+  // served on /v1/embeddings, never a chat model.
+  | 'embedding_model'
 
 export type DownloadFailureReason =
   | 'http_404'
@@ -84,9 +87,11 @@ export type CpuAvxLevel = 'none' | 'avx' | 'avx2' | 'avx512'
 export type LoadBackend =
   | 'llamacpp'
   | 'llamacpp-upstream'
+  | 'atomic-prism'
   | 'mlx'
   | 'foundation-models'
   | 'tensorrt-llm'
+  | 'vllm'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -250,6 +255,7 @@ export function downloadKind(
   // are not chat models and must not be counted as such.
   if (id.startsWith('diffusion-backend')) return 'gpu_backend'
   if (id.startsWith('diffusion')) return 'diffusion_model'
+  if (id.startsWith('embedding-')) return 'embedding_model'
   if (downloadType === 'Backend' || id.includes('llamacpp-backend'))
     return 'gpu_backend'
   return 'model'
@@ -363,9 +369,11 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
   if (
     provider === 'llamacpp' ||
     provider === 'llamacpp-upstream' ||
+    provider === 'atomic-prism' ||
     provider === 'mlx' ||
     provider === 'foundation-models' ||
-    provider === 'tensorrt-llm'
+    provider === 'tensorrt-llm' ||
+    provider === 'vllm'
   )
     return provider
   return 'unknown'
@@ -605,6 +613,8 @@ export type ModelLoadFailureKind =
   | 'model_file_missing'
   | 'shards_incomplete'
   | 'arch_unsupported'
+  | 'engine_incompatible'
+  | 'format_legacy'
   | 'os_unsupported'
   | 'timeout'
   | 'device_init'
@@ -618,6 +628,8 @@ const LOAD_FAILURE_BY_CODE: Record<string, ModelLoadFailureKind> = {
   MODEL_FILE_CORRUPT: 'model_file_missing',
   MODEL_SHARDS_INCOMPLETE: 'shards_incomplete',
   MODEL_ARCH_NOT_SUPPORTED: 'arch_unsupported',
+  MODEL_ENGINE_INCOMPATIBLE: 'engine_incompatible',
+  MODEL_FORMAT_LEGACY: 'format_legacy',
   OS_VERSION_UNSUPPORTED: 'os_unsupported',
   LOCAL_API_SERVER_START_TIMEOUT: 'timeout',
   OPERATION_TIMED_OUT: 'timeout',
@@ -845,6 +857,10 @@ const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   // A model whose architecture/format this engine build can't parse (e.g. a
   // newer qwen3vl GGUF). A deterministic incompatibility, not a backend crash.
   'MODEL_ARCH_NOT_SUPPORTED',
+  // The core refused the file before any engine started: it needs PrismML (or
+  // a newer build of it), or it is a superseded Bonsai packing.
+  'MODEL_ENGINE_INCOMPATIBLE',
+  'MODEL_FORMAT_LEGACY',
   // ATO-190: deterministic environment incompatibility (macOS too old for the
   // bundled Metal engine), not a code crash — don't flood the crash channel.
   'OS_VERSION_UNSUPPORTED',

@@ -82,7 +82,7 @@ const containerSession = {
   pid: null,
   port: 4001,
   model_id: 'qwen3-8b',
-  model_path: '/data/tensorrt-llm/models/qwen3-8b',
+  model_path: '/data/managed-models/qwen3-8b',
   is_embedding: false,
   api_key: 'gateway-key',
   execution: 'container',
@@ -192,10 +192,10 @@ describe('models', () => {
         'GET /models/tensorrt-llm/qwen3-8b/capabilities': () => ({ tools: true, reasoning: true }),
         'GET /models/tensorrt-llm/gemma/capabilities': () => ({ tools: false, reasoning: false }),
         // On Linux the core still names the data folder's own models folder.
-        'GET /models/tensorrt-llm/location': () => ({ root: '/data/tensorrt-llm/models', free_bytes: 1 }),
+        'GET /managed-models/location': () => ({ root: '/data/managed-models', free_bytes: 1 }),
       },
       {
-        '/data/tensorrt-llm/models/qwen3-8b/model.yml': {
+        '/data/managed-models/qwen3-8b/model.yml': {
           repository: 'Qwen/Qwen3-8B',
           revision: 'abc',
           architectures: ['Qwen3ForCausalLM'],
@@ -204,13 +204,13 @@ describe('models', () => {
             { path: 'config.json', size: 24, sha256: null },
           ],
         },
-        '/data/tensorrt-llm/models/gemma/model.yml': {
+        '/data/managed-models/gemma/model.yml': {
           repository: 'google/gemma',
           files: [],
         },
       }
     )
-    const root = '/data/tensorrt-llm/models'
+    const root = '/data/managed-models'
     // `partial` is a download in progress: files, no model.yml yet.
     fsMock.existsSync.mockImplementation(async (path: string) =>
       [root, `${root}/qwen3-8b/model.yml`, `${root}/gemma/model.yml`].includes(path)
@@ -235,10 +235,10 @@ describe('models', () => {
   })
 
   it('on Windows lists the models in the root the core names in its WSL distribution (change add-tensorrt-llm-windows)', async () => {
-    const root = '//wsl.localhost/AtomicChat/var/lib/atomic-chat/scopes/k1/models/tensorrt-llm'
+    const root = '//wsl.localhost/AtomicChat/var/lib/atomic-chat/scopes/k1/managed-models'
     core(
       {
-        'GET /models/tensorrt-llm/location': () => ({ root, free_bytes: 1 }),
+        'GET /managed-models/location': () => ({ root, free_bytes: 1 }),
         'GET /models/tensorrt-llm/Qwen/Qwen3-8B/capabilities': () => ({ tools: true }),
       },
       { [`${root}/Qwen/Qwen3-8B/model.yml`]: { repository: 'Qwen/Qwen3-8B', files: [{ path: 'a', size: 5 }] } }
@@ -259,7 +259,7 @@ describe('models', () => {
 
   it('lists nothing, and reads no folder, before Atomic Chat’s distribution exists', async () => {
     core({
-      'GET /models/tensorrt-llm/location': () => {
+      'GET /managed-models/location': () => {
         throw { code: 'MANAGED_ADAPTER_UNAVAILABLE', message: 'The managed environment is not set up yet.' }
       },
     })
@@ -270,11 +270,11 @@ describe('models', () => {
 
   it('keeps listing the models it found when the core cannot answer for a moment', async () => {
     // Review finding: a core restarting must not make every model vanish.
-    const root = '/data/tensorrt-llm/models'
+    const root = '/data/managed-models'
     let reachable = true
     core(
       {
-        'GET /models/tensorrt-llm/location': () => {
+        'GET /managed-models/location': () => {
           if (!reachable) throw { code: 'CORE_NOT_RUNNING', message: 'The Atomic Chat core is not running.' }
           return { root, free_bytes: 1 }
         },
@@ -428,7 +428,7 @@ describe('sessions', () => {
 
     it('deletes through the core with the id as it is and reports the space freed', async () => {
       const calls = core({
-        'DELETE /models/tensorrt-llm/Qwen/Qwen3-1.7B': () => ({
+        'DELETE /managed-models/Qwen/Qwen3-1.7B': () => ({
           model_id: repoId,
           was_loaded: true,
           freed_bytes: 4_100_000_000,
@@ -441,15 +441,15 @@ describe('sessions', () => {
       await expect(extension.delete(repoId)).resolves.toBeUndefined()
       // The core stops the model and removes its folder and caches; the extension does nothing else.
       expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
-        'DELETE /models/tensorrt-llm/Qwen/Qwen3-1.7B',
-        'DELETE /models/tensorrt-llm/Qwen/Qwen3-1.7B',
+        'DELETE /managed-models/Qwen/Qwen3-1.7B',
+        'DELETE /managed-models/Qwen/Qwen3-1.7B',
       ])
       expect(fsMock.existsSync).not.toHaveBeenCalled()
     })
 
     it('says the files were not touched when the core could not confirm the stop', async () => {
       core({
-        'DELETE /models/tensorrt-llm/Qwen/Qwen3-1.7B': () => {
+        'DELETE /managed-models/Qwen/Qwen3-1.7B': () => {
           throw { code: 'MANAGED_STOP_UNCONFIRMED', message: 'Docker did not confirm the stop.' }
         },
       })
@@ -463,7 +463,7 @@ describe('sessions', () => {
     it('fails, not succeeds, for a model the core does not have, and logs both ends', async () => {
       const log = await import('@tauri-apps/plugin-log')
       core({
-        'DELETE /models/tensorrt-llm/Qwen/Qwen3-1.7B': () => {
+        'DELETE /managed-models/Qwen/Qwen3-1.7B': () => {
           throw { code: 'MODEL_NOT_FOUND', message: 'Model not found' }
         },
       })
@@ -482,7 +482,7 @@ describe('sessions', () => {
 
     it('passes any other refusal on with the core\'s own words', async () => {
       core({
-        'DELETE /models/tensorrt-llm/Qwen/Qwen3-1.7B': () => {
+        'DELETE /managed-models/Qwen/Qwen3-1.7B': () => {
           throw { code: 'MANAGED_OPERATION_CONFLICT', message: 'The model is being deleted.' }
         },
       })

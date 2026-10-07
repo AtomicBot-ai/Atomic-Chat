@@ -46,6 +46,14 @@ describe('customEngineSettingKeys', () => {
     ).toEqual([])
   })
 
+  it('knows the PrismML defaults, which carry no MTP setting', () => {
+    expect(hasEngineSettingDefaults('atomic-prism')).toBe(true)
+    expect(customEngineSettingKeys('atomic-prism', tuned())).toEqual([
+      'extra_args',
+      'threads',
+    ])
+  })
+
   it('has nothing to say about providers it has no defaults for', () => {
     expect(hasEngineSettingDefaults('openai')).toBe(false)
     expect(hasEngineSettingDefaults('toString')).toBe(false)
@@ -96,5 +104,15 @@ describe('TensorRT-LLM defaults', () => {
         (s) => s.controller_props.value
       )
     ).toEqual(['', 8192, 0.8])
+  })
+
+  it('resets vLLM to its core schema defaults', () => {
+    const settings = [setting('max_num_seqs', 2), setting('kv_cache_dtype', 'auto')]
+
+    expect(hasEngineSettingDefaults('vllm')).toBe(true)
+    expect(customEngineSettingKeys('vllm', settings)).toEqual(['max_num_seqs'])
+    expect(
+      withDefaultEngineSettings('vllm', settings).map((s) => s.controller_props.value)
+    ).toEqual([1, 'auto'])
   })
 })

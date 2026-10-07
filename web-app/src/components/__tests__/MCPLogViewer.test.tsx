@@ -16,12 +16,12 @@ afterEach(() => {
 })
 
 async function renderWith(lines: string[], emitted?: string) {
-  const parser = new TauriAppService()
+  const appService = new TauriAppService()
   let onLog: ((event: unknown) => void) | undefined
   seedServiceHub({
     app: {
-      readLogs: vi.fn().mockResolvedValue(lines.map(parser.parseLogLine)),
-      parseLogLine: parser.parseLogLine,
+      readLogs: vi.fn().mockResolvedValue(lines.map(appService.parseLogLine)),
+      parseLogLine: appService.parseLogLine,
     } as unknown as ReturnType<ServiceHub['app']>,
     events: {
       listen: vi.fn(

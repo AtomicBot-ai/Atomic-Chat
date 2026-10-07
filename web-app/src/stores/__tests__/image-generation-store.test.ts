@@ -20,6 +20,14 @@ import {
   makeVideoCapabilities,
   makeVideoLoadedStatus,
 } from '@/lib/diffusion/__tests__/video-fixtures'
+import { MEDIA_ENGINE_PROVIDER } from '@/lib/diffusion/engineUpdateOffer'
+import {
+  engineUpdateOfferKey,
+  readEngineUpdateOffer,
+  ENGINE_UPDATE_AVAILABLE_EVENT,
+  ENGINE_UPDATE_RETRACTED_EVENT,
+  type EngineUpdateOffer,
+} from '@/lib/engineUpdateOffer'
 import { seedServiceHub } from '@/test/service-hub'
 import { useHardware } from '@/hooks/useHardware'
 import { useImageForm } from '@/hooks/useImageForm'
@@ -73,7 +81,9 @@ const install = vi.hoisted(() => ({
     fetchedAt: 1,
   })),
 }))
-vi.mock('@/services/diffusion/install', () => ({
+// The pure helpers stay real: the engine-update offer is built with them.
+vi.mock('@/services/diffusion/install', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/diffusion/install')>()),
   ensureDiffusionBackend: install.ensure,
   selectDiffusionBackendForHost: install.select,
   resolveSdcppManifest: install.manifest,
@@ -1425,6 +1435,22 @@ describe('engine updates', () => {
     )
   })
 
+  it('offers the fork rebuild of the installed tag, named by its -a<rev> suffix', async () => {
+    install.manifest.mockResolvedValue({
+      manifest: {
+        tag_name: 'master-849-d04e895-a36f1b1a',
+        upstream_repo: 'AtomicBot-ai/stable-diffusion.cpp',
+        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
+      },
+      source: 'remote' as const,
+      fetchedAt: 2,
+    })
+    await useImageGenerationStore.getState().checkEngineUpdate()
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
+      'master-849-d04e895-a36f1b1a'
+    )
+  })
+
   it('unloads the model, installs the new tag and clears the offer', async () => {
     useImageGenerationStore.setState({
       status: makeLoadedStatus(),
@@ -1478,6 +1504,141 @@ describe('engine updates', () => {
       availableTag: null,
       checkedAt: null,
       error: null,
+    })
+  })
+
+  describe('the engine-update banner', () => {
+    const NEWER = 'master-900-abc1234'
+    const newerManifest = (source: 'remote' | 'cache' | 'baseline') => ({
+      manifest: {
+        tag_name: NEWER,
+        assets: [
+          {
+            backend: 'macos-arm64',
+            name: 'sd-macos-arm64.zip',
+            size: 40_000_000,
+          },
+        ],
+      },
+      source,
+      fetchedAt: source === 'baseline' ? null : 2,
+    })
+    const STALE: EngineUpdateOffer = {
+      provider: MEDIA_ENGINE_PROVIDER,
+      currentBackend: 'master-849-d04e895/macos-arm64',
+      targetBackend: 'master-850-0000000/macos-arm64',
+      currentVersion: 'master-849-d04e895',
+      targetVersion: 'master-850-0000000',
+      restartRequired: false,
+    }
+    const persist = (offer: EngineUpdateOffer) =>
+      localStorage.setItem(
+        engineUpdateOfferKey(offer.provider),
+        JSON.stringify(offer)
+      )
+    const offerOnDisk = () => readEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
+    const offerUpdate = () =>
+      useImageGenerationStore.setState({
+        engineUpdate: {
+          checking: false,
+          availableTag: NEWER,
+          checkedAt: 1,
+          error: null,
+        },
+      })
+
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('offers the tag the config manifest names for this host', async () => {
+      install.manifest.mockResolvedValue(newerManifest('remote'))
+      const announced = vi.fn()
+      window.addEventListener(ENGINE_UPDATE_AVAILABLE_EVENT, announced)
+      await useImageGenerationStore.getState().checkEngineUpdate()
+      window.removeEventListener(ENGINE_UPDATE_AVAILABLE_EVENT, announced)
+
+      expect(offerOnDisk()).toEqual({
+        provider: 'sd-cpp',
+        currentBackend: 'master-849-d04e895/macos-arm64',
+        targetBackend: `${NEWER}/macos-arm64`,
+        currentVersion: 'master-849-d04e895',
+        targetVersion: NEWER,
+        downloadSizeBytes: 40_000_000,
+        restartRequired: false,
+        releaseNotesUrl: `https://github.com/leejet/stable-diffusion.cpp/releases/tag/${NEWER}`,
+      })
+      expect(announced).toHaveBeenCalledTimes(1)
+    })
+
+    it('withdraws the offer once the manifest names the installed tag', async () => {
+      persist(STALE)
+      const retracted = vi.fn()
+      window.addEventListener(ENGINE_UPDATE_RETRACTED_EVENT, retracted)
+      await useImageGenerationStore.getState().checkEngineUpdate()
+      window.removeEventListener(ENGINE_UPDATE_RETRACTED_EVENT, retracted)
+
+      expect(offerOnDisk()).toBeNull()
+      expect(retracted).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves the banner alone on the bundled baseline', async () => {
+      persist(STALE)
+      install.manifest.mockResolvedValue({
+        ...newerManifest('baseline'),
+        error: 'offline',
+      })
+      await useImageGenerationStore.getState().checkEngineUpdate()
+
+      // Settings → Media still hears of it; the banner does not.
+      expect(
+        useImageGenerationStore.getState().engineUpdate.availableTag
+      ).toBe(NEWER)
+      expect(offerOnDisk()).toEqual(STALE)
+    })
+
+    it('looks for a newer engine on launch', async () => {
+      install.manifest.mockResolvedValue(newerManifest('cache'))
+      resetImageGenerationForTests()
+      await useImageGenerationStore.getState().bind()
+
+      await waitFor(() => expect(offerOnDisk()?.targetVersion).toBe(NEWER))
+      useImageGenerationStore.getState().unbind()
+    })
+
+    it('shows the download while it runs and withdraws the offer once installed', async () => {
+      persist(STALE)
+      offerUpdate()
+      let during: string | null = null
+      install.ensure.mockImplementation(async () => {
+        during = useImageGenerationStore.getState().engineUpdatingTo
+        return {
+          dir: `/data/diffusion/backends/${NEWER}/macos-arm64`,
+          tag: NEWER,
+          backendId: 'macos-arm64',
+          backend: 'metal',
+          engine: 'sd-cpp',
+        }
+      })
+      await useImageGenerationStore.getState().updateEngine()
+
+      expect(during).toBe(NEWER)
+      const state = useImageGenerationStore.getState()
+      expect(state.engineUpdatingTo).toBeNull()
+      expect(state.engineUpdate.availableTag).toBeNull()
+      expect(offerOnDisk()).toBeNull()
+    })
+
+    it('keeps the offer when the install fails', async () => {
+      persist(STALE)
+      offerUpdate()
+      install.ensure.mockRejectedValue(new Error('connection reset'))
+      await useImageGenerationStore.getState().updateEngine()
+
+      const state = useImageGenerationStore.getState()
+      expect(state.engineUpdatingTo).toBeNull()
+      expect(state.engineUpdate.availableTag).toBe(NEWER)
+      expect(offerOnDisk()).toEqual(STALE)
     })
   })
 })

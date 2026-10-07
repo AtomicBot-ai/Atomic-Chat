@@ -59,4 +59,40 @@ describe('DialogDeleteModel', () => {
     )
     expect(toast.success).not.toHaveBeenCalled()
   })
+
+  it('warns that a model of the shared store goes from every managed engine (spec vllm-desktop)', async () => {
+    render(<DialogDeleteModel provider={trt} modelId="Qwen/Qwen3-1.7B" />)
+    fireEvent.click(screen.getByLabelText('providers:deleteModel.delete'))
+
+    expect(
+      await screen.findByText('providers:deleteModel.managedShared {"engines":"vLLM, TensorRT-LLM"}')
+    ).toBeInTheDocument()
+  })
+
+  it('says nothing about other engines for a provider with its own models', async () => {
+    const llama = { ...trt, provider: 'llamacpp' } as unknown as ModelProvider
+    render(<DialogDeleteModel provider={llama} modelId="Qwen/Qwen3-1.7B" />)
+    fireEvent.click(screen.getByLabelText('providers:deleteModel.delete'))
+
+    await screen.findByRole('button', { name: 'providers:deleteModel.delete' })
+    expect(screen.queryByText(/providers:deleteModel.managedShared/)).not.toBeInTheDocument()
+  })
+
+  it('deleting a model from the vLLM page warns it goes from both engines, and says what was freed', async () => {
+    // spec vllm-desktop "Удаление модели со страницы vLLM".
+    const vllm = { ...trt, provider: 'vllm' } as unknown as ModelProvider
+    deletion.deleteLocalModel.mockResolvedValue({ freedBytes: 5 * 1024 ** 3 })
+    render(<DialogDeleteModel provider={vllm} modelId="Qwen/Qwen3-1.7B" />)
+    fireEvent.click(screen.getByLabelText('providers:deleteModel.delete'))
+
+    expect(
+      await screen.findByText('providers:deleteModel.managedShared {"engines":"vLLM, TensorRT-LLM"}')
+    ).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'providers:deleteModel.delete' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    expect(deletion.deleteLocalModel).toHaveBeenCalledWith(expect.anything(), 'Qwen/Qwen3-1.7B', 'vllm')
+    const [, options] = toast.success.mock.calls[0] as [string, { description: string }]
+    expect(options.description).toContain('"size":"5.0 GB"')
+  })
 })

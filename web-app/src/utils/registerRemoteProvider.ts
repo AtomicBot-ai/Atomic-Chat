@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { isManagedProvider } from '@/lib/managed-engines'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 type ProviderCustomHeaderPayload = {
@@ -17,16 +18,22 @@ type RegisterProviderRequest = {
 export const LOCAL_PROVIDER_NAMES = [
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
   'foundation-models',
-  // Linux only: the core runs it in a container behind its session gateway.
+  // The managed engines (Linux, Windows): the core runs them in a container behind its session
+  // gateway. `isLocalProvider` also asks the registry (`lib/managed-engines.ts`).
+  'vllm',
   'tensorrt-llm',
 ] as const
 export type LocalProviderName = (typeof LOCAL_PROVIDER_NAMES)[number]
 
 export function isLocalProvider(providerName: string | undefined | null): boolean {
   if (!providerName) return false
-  return (LOCAL_PROVIDER_NAMES as readonly string[]).includes(providerName)
+  return (
+    (LOCAL_PROVIDER_NAMES as readonly string[]).includes(providerName) ||
+    isManagedProvider(providerName)
+  )
 }
 
 /**

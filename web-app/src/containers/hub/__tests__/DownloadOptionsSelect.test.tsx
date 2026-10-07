@@ -61,14 +61,19 @@ vi.mock('@/containers/MlxModelDownloadAction', () => ({
 }))
 
 const tensorrtHub = vi.hoisted(() => ({ state: 'ready' as string }))
-vi.mock('@/hooks/useTensorrtHubState', () => ({
-  useTensorrtHubState: () => ({
+vi.mock('@/hooks/useManagedHubState', () => {
+  const state = () => ({
     visible: true,
     state: tensorrtHub.state,
     blockers: [],
     descriptorId: 'tensorrt-llm-1.3.0rc29-r2',
-  }),
-}))
+  })
+  return {
+    useManagedHubStates: () => [
+      { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: state() },
+    ],
+  }
+})
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
@@ -82,18 +87,18 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
 const trtModels = vi.hoisted(() => ({
   fetchHfRevision: vi.fn(),
-  checkTensorrtModel: vi.fn(),
-  installTensorrtModel: vi.fn(),
+  checkManagedModel: vi.fn(),
+  installManagedModel: vi.fn(),
 }))
-vi.mock('@/services/tensorrt-llm/models', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/tensorrt-llm/models')>()),
+vi.mock('@/services/managed-models/models', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/managed-models/models')>()),
   ...trtModels,
 }))
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { resetTensorrtVerdictsForTests } from '@/services/tensorrt-llm/verdict'
+import { resetManagedVerdictsForTests } from '@/services/managed-models/verdict'
 import type { ModelCompatibility } from '@/services/managed-environment/types'
 import { DownloadOptionsSelect } from '../DownloadOptionsSelect'
 
@@ -369,13 +374,13 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
     developer: 'nvidia',
     description: '',
     downloads: 0,
-    is_tensorrt_llm: true,
-    tensorrt: { curated: true, revision: 'rev-a' },
+    is_managed: true,
+    managed: { curated: true, revision: 'rev-a' },
   })
 
   beforeEach(() => {
     vi.clearAllMocks()
-    resetTensorrtVerdictsForTests()
+    resetManagedVerdictsForTests()
     tensorrtHub.state = 'ready'
     useModelProvider.setState({ providers: [] })
     useGeneralSetting.setState({ huggingfaceToken: 'hf_secret' })
@@ -386,12 +391,12 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
       hf_quant_config_json: null,
       files: [],
     }))
-    trtModels.checkTensorrtModel.mockResolvedValue(compatible)
-    trtModels.installTensorrtModel.mockReturnValue(new Promise(() => {}))
+    trtModels.checkManagedModel.mockResolvedValue(compatible)
+    trtModels.installManagedModel.mockReturnValue(new Promise(() => {}))
   })
 
   it('says why the model cannot run here and offers no download', async () => {
-    trtModels.checkTensorrtModel.mockResolvedValue({
+    trtModels.checkManagedModel.mockResolvedValue({
       ...compatible,
       verdict: {
         ok: false,
@@ -425,7 +430,7 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
     expect(screen.getByText('TensorRT-LLM')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'hub:download' }))
 
-    expect(trtModels.installTensorrtModel.mock.calls[0][0]).toMatchObject({
+    expect(trtModels.installManagedModel.mock.calls[0][0]).toMatchObject({
       repository: 'nvidia/Qwen3-8B-FP8',
       revision: 'rev-a-sha',
       token: 'hf_secret',
@@ -433,7 +438,7 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
     // Started: the button gives way to the download's progress, and the panel's row is named.
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     expect(
-      useDownloadStore.getState().downloadOriginByModelId['tensorrt-llm-nvidia_Qwen3-8B-FP8']
+      useDownloadStore.getState().downloadOriginByModelId['managed-nvidia_Qwen3-8B-FP8']
     ).toBe('nvidia/Qwen3-8B-FP8')
   })
 })

@@ -602,6 +602,27 @@ mod tests {
             "m"
         );
 
+        // A model setup's record reaches the webview whole, under its own name: the setup sheet
+        // keeps the highest `revision` it has seen.
+        core.emit(
+            "model-setup:changed",
+            json!({ "setup_id": "s1", "revision": 3, "stage": "downloading_model" }),
+        )
+        .await;
+        wait_for(|| {
+            let sink = Arc::clone(&sink);
+            async move {
+                sink.names()
+                    .iter()
+                    .any(|n| n == "atomic-core://model-setup:changed")
+            }
+        })
+        .await;
+        assert_eq!(
+            sink.payload_of("atomic-core://model-setup:changed").unwrap(),
+            json!({ "setup_id": "s1", "revision": 3, "stage": "downloading_model" })
+        );
+
         let _ = cancel_tx.send(());
         let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
     }

@@ -247,6 +247,7 @@ pub fn backend_label(value: &str) -> &'static str {
     match value {
         "llamacpp" => "llamacpp",
         "llamacpp-upstream" => "llamacpp-upstream",
+        "atomic-prism" => "atomic-prism",
         "mlx" => "mlx",
         "remote" => "remote",
         // `/v1/images/generations`, served by the core's own sd.cpp runner.
@@ -320,6 +321,14 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_local_engine_keeps_its_own_backend_label() {
+        for backend in ["llamacpp", "llamacpp-upstream", "atomic-prism", "mlx"] {
+            assert_eq!(backend_label(backend), backend);
+        }
+        assert_eq!(backend_label("tensorrt"), "unknown");
+    }
 
     fn observation(status: u16, latency_ms: u64) -> ApiRequestObservation {
         ApiRequestObservation {

@@ -780,8 +780,9 @@ pub async fn _download_files_internal(
     // Create progress tracker
     let progress_tracker = ProgressTracker::new(items, file_sizes.clone());
 
-    // save file under Jan data folder — or under the root the core names for TensorRT-LLM models,
-    // which on Windows is Atomic Chat's WSL distribution (change `add-tensorrt-llm-windows`).
+    // save file under Jan data folder — or under the root the core names for the managed engines'
+    // models (TensorRT-LLM, vLLM), which on Windows is Atomic Chat's WSL distribution (change
+    // `add-tensorrt-llm-windows`; one store, change `add-vllm-runtime`).
     let jan_data_folder = get_jan_data_folder_path(app.clone());
     let save_paths: Vec<PathBuf> = items
         .iter()

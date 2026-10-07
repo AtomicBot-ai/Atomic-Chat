@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { BASELINE_DIFFUSION_CATALOG } from '@/services/diffusion-catalog-baseline'
+import { getBaselineDecisionCatalog } from '@/services/decision-catalog-registry'
+import { getBaselineEmbeddingCatalog } from '@/services/embedding-catalog-registry'
 import {
+  decisionIconKey,
   DIFFUSION_FAMILY_ICON_KEYS,
+  embeddingIconKey,
   HUGGINGFACE_LOGO_SRC,
   iconKeyLogoSrc,
   isMonochromeFamilyLogo,
@@ -71,6 +75,16 @@ describe('modelFamilyLogoSrc', () => {
     )
     expect(modelFamilyLogoSrc('AtomicChat/Qwen3.5-4B-GGUF')).toBe(
       '/svg/qwen-color.svg'
+    )
+  })
+
+  it('draws EmbeddingGemma with the Gemma mark, other Gemma models with the Google one', () => {
+    expect(modelFamilyLogoSrc('ggml-org/embeddinggemma-300M-GGUF')).toBe(
+      '/svg/gemma-color.svg'
+    )
+    expect(modelFamilyLogoSrc('EmbeddingGemma 2')).toBe('/svg/gemma-color.svg')
+    expect(modelFamilyLogoSrc('unsloth/gemma-4-12b-it-GGUF')).toBe(
+      '/svg/google-color.svg'
     )
   })
 
@@ -178,9 +192,9 @@ describe('isMonochromeFamilyLogo', () => {
     expect(isMonochromeFamilyLogo('/svg/zai.svg')).toBe(true)
     expect(isMonochromeFamilyLogo('/svg/minimax.svg')).toBe(true)
     // A dark mark on transparency: a plain <img> loses it in dark mode.
-    expect(
-      isMonochromeFamilyLogo('/images/model-provider/prism-ml.webp')
-    ).toBe(true)
+    expect(isMonochromeFamilyLogo('/images/model-provider/prism-ml.webp')).toBe(
+      true
+    )
     expect(isMonochromeFamilyLogo('/images/model-provider/ling.webp')).toBe(
       false
     )
@@ -202,5 +216,71 @@ describe('bundled Google mark', () => {
     )
     expect(svg).toContain('<linearGradient')
     expect(svg).not.toMatch(/#EA4335|#4285F4|#FBBC05|#34A853/i)
+  })
+})
+
+describe('embedding model marks', () => {
+  it('resolves the Gemma mark key without changing the Google one', () => {
+    expect(iconKeyLogoSrc('gemma-mark')).toBe('/svg/gemma-color.svg')
+    expect(iconKeyLogoSrc('gemma')).toBe('/svg/google-color.svg')
+  })
+
+  it('ships every embedding mark as a file', async () => {
+    const { existsSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const key of ['gemma-mark', 'qwen', 'baai', 'nomic']) {
+      const src = iconKeyLogoSrc(key) as string
+      expect(
+        existsSync(resolve(__dirname, '../../../public', `.${src}`)),
+        key
+      ).toBe(true)
+    }
+  })
+
+  it('gives every catalog embedding model a bundled mark of its maker', () => {
+    const { models } = getBaselineEmbeddingCatalog()
+    for (const model of models) {
+      expect(embeddingIconKey(model)).toBe(model.icon)
+      expect(iconKeyLogoSrc(embeddingIconKey(model)), model.id).not.toBeNull()
+    }
+    expect(Object.fromEntries(models.map((m) => [m.id, m.icon]))).toEqual({
+      'embeddinggemma-2': 'gemma-mark',
+      'embeddinggemma-300m': 'gemma-mark',
+      'qwen3-embedding-0.6b': 'qwen',
+      'qwen3-vl-embedding-2b': 'qwen',
+      'nomic-embed-text-v1.5': 'nomic',
+      'bge-m3': 'baai',
+    })
+  })
+
+  it("draws a downloaded bge or Nomic model with its maker's mark, BAAI's tinted like the other one-colour marks", () => {
+    expect(modelFamilyLogoSrc('gpustack/bge-m3-GGUF')).toBe('/svg/baai.svg')
+    expect(modelFamilyLogoSrc('BAAI/bge-small-en-v1.5')).toBe('/svg/baai.svg')
+    expect(modelFamilyLogoSrc('nomic-ai/nomic-embed-text-v2-moe-GGUF')).toBe(
+      '/images/model-provider/nomic.svg'
+    )
+    expect(isMonochromeFamilyLogo('/svg/baai.svg')).toBe(true)
+    // Nomic's mark brings its own white square: drawn as it is.
+    expect(isMonochromeFamilyLogo('/images/model-provider/nomic.svg')).toBe(
+      false
+    )
+  })
+})
+
+describe('decision model marks', () => {
+  it('gives every decision model with an icon a bundled mark', () => {
+    for (const model of getBaselineDecisionCatalog().models) {
+      const key = decisionIconKey(model)
+      if (key) expect(iconKeyLogoSrc(key), model.id).not.toBeNull()
+    }
+  })
+
+  it('falls back to Convai for a laya checkpoint only', () => {
+    expect(decisionIconKey({ format: 'checkpoint' })).toBe('convai')
+    expect(decisionIconKey({ format: 'checkpoint', icon: 'cloudflare' })).toBe(
+      'cloudflare'
+    )
+    // A GGUF without a mark keeps the family logo or a letter, never someone else's.
+    expect(decisionIconKey({ format: 'gguf' })).toBeUndefined()
   })
 })

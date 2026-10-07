@@ -21,6 +21,8 @@ import { fileURLToPath } from 'node:url'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const EXTENSION = join(REPO_ROOT, 'extensions', 'llamacpp-upstream-extension', 'src')
+// The backend updater drives both llama.cpp providers whose packs the app lets the user manage.
+const UPDATER_EXTENSIONS = [EXTENSION, join(REPO_ROOT, 'extensions', 'atomic-prism-extension', 'src')]
 
 /**
  * Methods the app calls that are not on the provider interface.
@@ -41,7 +43,7 @@ function declaredOffContractMethods() {
   return [...block.matchAll(/^\s{2}(\w+)\??\(/gm)].map((match) => match[1])
 }
 
-function extensionSource() {
+function extensionSource(root) {
   const files = []
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
@@ -50,7 +52,7 @@ function extensionSource() {
       else if (name.endsWith('.ts') && !name.endsWith('.test.ts')) files.push(path)
     }
   }
-  walk(EXTENSION)
+  walk(root)
   return files.map((path) => readFileSync(path, 'utf8')).join('\n')
 }
 
@@ -64,10 +66,12 @@ test('the extension implements every method the backend updater calls', () => {
   const expected = declaredOffContractMethods()
   assert.ok(expected.length >= 8, `expected a real list of methods, got ${expected.length}`)
 
-  const source = extensionSource()
-  const missing = expected.filter((name) => !declaresMethod(source, name))
+  for (const root of UPDATER_EXTENSIONS) {
+    const source = extensionSource(root)
+    const missing = expected.filter((name) => !declaresMethod(source, name))
 
-  assert.deepEqual(missing, [], `the app calls these, the extension does not define them: ${missing}`)
+    assert.deepEqual(missing, [], `the app calls these, ${root} does not define them: ${missing}`)
+  }
 })
 
 const SHARED_ADAPTER = join(REPO_ROOT, 'extensions', 'shared')
@@ -77,6 +81,7 @@ const SHARED_ADAPTER = join(REPO_ROOT, 'extensions', 'shared')
 const CORE_ADAPTERS = [
   join(EXTENSION, 'adapter', 'coreRuntime.ts'),
   join(REPO_ROOT, 'extensions', 'llamacpp-extension', 'src', 'adapter', 'coreRuntime.ts'),
+  join(REPO_ROOT, 'extensions', 'atomic-prism-extension', 'src', 'adapter', 'coreRuntime.ts'),
 ]
 
 test('the core adapters exist and never open an HTTP connection of their own', () => {
@@ -147,9 +152,11 @@ test('no extension calls a plugin command that used to own a model process', () 
   for (const extension of [
     'llamacpp-extension',
     'llamacpp-upstream-extension',
+    'atomic-prism-extension',
     'mlx-extension',
     'foundation-models-extension',
     'tensorrt-llm-extension',
+    'vllm-extension',
     'download-extension',
   ]) {
     for (const path of sourcesUnder(join(REPO_ROOT, 'extensions', extension, 'src'))) {
@@ -181,7 +188,7 @@ const RETIRED_DECISION_GUEST_FUNCTIONS = [
   'shouldMigrateBackend', 'handleSettingUpdate', 'fetchManifestHttp1',
 ]
 
-const LLAMACPP_EXTENSIONS = ['llamacpp-extension', 'llamacpp-upstream-extension']
+const LLAMACPP_EXTENSIONS = ['llamacpp-extension', 'llamacpp-upstream-extension', 'atomic-prism-extension']
 
 test('no extension asks the plugins to decide on backends any more', () => {
   const offenders = []
@@ -223,7 +230,7 @@ test('no extension injects hardware facts or reads them from the plugin', () => 
 
 test('no extension asks who owns the runtime any more', () => {
   const offenders = []
-  for (const extension of ['llamacpp-extension', 'llamacpp-upstream-extension', 'mlx-extension', 'foundation-models-extension', 'tensorrt-llm-extension', 'download-extension']) {
+  for (const extension of ['llamacpp-extension', 'llamacpp-upstream-extension', 'atomic-prism-extension', 'mlx-extension', 'foundation-models-extension', 'tensorrt-llm-extension', 'vllm-extension', 'download-extension']) {
     for (const path of sourcesUnder(join(REPO_ROOT, 'extensions', extension, 'src'))) {
       const source = readFileSync(path, 'utf8')
       for (const needle of ['coreOwnsRuntime', 'withRuntimeLoad', 'active_runtime', 'atomic_core_begin_runtime_load', 'get_atomic_core_flags'])

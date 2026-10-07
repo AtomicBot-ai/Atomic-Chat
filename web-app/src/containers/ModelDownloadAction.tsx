@@ -7,6 +7,12 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
+import { ModelSetupSheet } from '@/containers/hub/ModelSetupSheet'
+import {
+  useCompatibilityVerdict,
+  useHubFileSetup,
+  useModelSetupBytes,
+} from '@/hooks/useModelSetup'
 import {
   isDownloadCancellationError,
   markDownloadCancellationRequested,
@@ -17,9 +23,21 @@ import {
   LLAMACPP_PROVIDERS,
   quantModelIds,
 } from '@/lib/hub-installed'
+import {
+  isDownloadOnlyPlan,
+  isDownloadOnlySetup,
+  isFinalSetup,
+  isRunningSetup,
+  parseHubFileUrl,
+  PRISM_PROVIDER,
+  requiresPrism,
+  routeForVerdict,
+  setupErrorText,
+} from '@/lib/model-setup'
 import { CatalogModel } from '@/services/models/types'
+import { useModelSetupStore } from '@/stores/model-setup-store'
 import { switchToModel } from '@/utils/switchModel'
-import { IconDownload, IconX } from '@tabler/icons-react'
+import { IconDownload, IconLoader2, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -44,7 +62,10 @@ export const ModelDownloadAction = ({
   warnTooLarge?: boolean
 }) => {
   const serviceHub = useServiceHub()
-  const [warningOpen, setWarningOpen] = useState(false)
+  // The too-large warning, and which download it holds back until confirmed.
+  const [warningFor, setWarningFor] = useState<'download' | 'setup' | null>(
+    null
+  )
 
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -75,7 +96,7 @@ export const ModelDownloadAction = ({
   const navigate = useNavigate()
 
   const handleUseModel = useCallback(
-    (modelId: string) => {
+    (modelId: string, installedProvider?: string) => {
       // Resolve the target provider at click-time so we always see the
       // freshest providers/models snapshot — not whatever was captured at
       // render. Prefer the vanilla upstream `llama.cpp` provider when it
@@ -94,14 +115,21 @@ export const ModelDownloadAction = ({
       // fresh installs) — the upstream tail of the ternary covers it.
       const forkUsable =
         fork?.active !== false && fork?.models.some((m) => m.id === modelId)
-      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
-        upstreamHasModel
-          ? 'llamacpp-upstream'
-          : forkUsable
-            ? 'llamacpp'
-            : upstream
-              ? 'llamacpp-upstream'
-              : 'llamacpp'
+      // A Bonsai file the core set up lists only under PrismML; no other
+      // engine may run it.
+      const targetLlamaProvider:
+        | 'llamacpp'
+        | 'llamacpp-upstream'
+        | typeof PRISM_PROVIDER =
+        installedProvider === PRISM_PROVIDER
+          ? PRISM_PROVIDER
+          : upstreamHasModel
+            ? 'llamacpp-upstream'
+            : forkUsable
+              ? 'llamacpp'
+              : upstream
+                ? 'llamacpp-upstream'
+                : 'llamacpp'
 
       console.log(
         '[ModelDownloadAction] handleUseModel:',
@@ -196,13 +224,97 @@ export const ModelDownloadAction = ({
     t,
   ])
 
-  const requestDownload = useCallback(() => {
-    if (warnTooLarge) {
-      setWarningOpen(true)
+  const hubFile = useMemo(() => parseHubFileUrl(variant.path), [variant.path])
+  const verdict = useCompatibilityVerdict(variant.path)
+  const setup = useHubFileSetup(hubFile)
+  const setupBytes = useModelSetupBytes(setup)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [setupStarting, setSetupStarting] = useState(false)
+  const setupModelId = quantModelIds(model, variant.model_id)[1]
+
+  // With PrismML already on disk the setup is only a download, so it starts
+  // like one: no sheet, its progress on this row and in the download panel.
+  // A plan that needs the engine, a newer one, or the user's say opens the
+  // sheet instead.
+  const startSetup = useCallback(async () => {
+    if (!hubFile) return
+    const service = serviceHub.modelSetup()
+    const request = {
+      ...hubFile,
+      model_id: setupModelId,
+      include_projector: true,
+    }
+    setSetupStarting(true)
+    try {
+      const plan = await service.plan(request)
+      if (!isDownloadOnlyPlan(plan)) {
+        setSetupOpen(true)
+        return
+      }
+      const started = await service.start({
+        ...request,
+        request_id: crypto.randomUUID(),
+        plan_digest: plan.digest,
+      })
+      useModelSetupStore.getState().apply({ type: 'changed', setup: started })
+    } catch (error) {
+      console.error('[ModelDownloadAction] model setup failed to start:', error)
+      toast.error(t('hub:downloadFailed'), {
+        description: setupErrorText(error),
+      })
+    } finally {
+      setSetupStarting(false)
+    }
+  }, [hubFile, serviceHub, setupModelId, t])
+
+  const handleCancelSetup = useCallback(() => {
+    if (!setup) return
+    serviceHub
+      .modelSetup()
+      .cancel(setup.setup_id)
+      .then((next) =>
+        useModelSetupStore.getState().apply({ type: 'changed', setup: next })
+      )
+      .catch((error) =>
+        console.error('[ModelDownloadAction] setup cancel failed:', error)
+      )
+  }, [serviceHub, setup])
+
+  const requestDownload = useCallback(async () => {
+    // The core's verdict decides the path when the Hub row has one; a row
+    // clicked before its verdict arrived asks now. A core that cannot say
+    // leaves the ordinary download, and the load gate still reads the header.
+    let judged = verdict
+    const service = serviceHub.modelSetup()
+    if (judged === undefined && hubFile && service.isSupported()) {
+      judged = await service
+        .checkCompatibility({ ...hubFile, provider: 'llamacpp-upstream' })
+        .catch(() => null)
+    }
+    const route = judged ? routeForVerdict(judged) : 'download'
+    if (route === 'refuse' && judged) {
+      toast.error(t('hub:prismRefusedTitle'), {
+        description: judged.replacement
+          ? t('hub:prismRefusedReplacement', { file: judged.replacement })
+          : judged.reason,
+      })
       return
     }
-    void handleDownloadModel()
-  }, [warnTooLarge, handleDownloadModel])
+    if (warnTooLarge) {
+      setWarningFor(route === 'setup' ? 'setup' : 'download')
+      return
+    }
+    if (route === 'setup') void startSetup()
+    else void handleDownloadModel()
+  }, [
+    verdict,
+    serviceHub,
+    hubFile,
+    warnTooLarge,
+    handleDownloadModel,
+    startSetup,
+    t,
+  ])
 
   const handleCancelDownload = useCallback(() => {
     markResumableDownload(variant.model_id)
@@ -237,6 +349,96 @@ export const ModelDownloadAction = ({
     [providers, model, variant.model_id]
   )
   const isDownloaded = installed !== null
+  const setupSheet = hubFile ? (
+    <ModelSetupSheet
+      open={setupOpen}
+      onOpenChange={setSetupOpen}
+      file={hubFile}
+      modelName={model.model_name}
+      modelId={setupModelId}
+      installed={isDownloaded}
+      onReady={(modelId) => {
+        setSetupOpen(false)
+        handleUseModel(modelId, PRISM_PROVIDER)
+      }}
+    />
+  ) : null
+
+  // A setup the core is still running (or that waits for `resume`) is this
+  // row's download: the button follows it. One that only downloads cancels
+  // like an ordinary download; one that installs the engine, or waits for
+  // `resume`, opens the sheet.
+  if (setup && !isFinalSetup(setup) && !isDownloaded) {
+    const percent =
+      setupBytes.total > 0
+        ? Math.round((setupBytes.transferred / setupBytes.total) * 100)
+        : 0
+    if (isDownloadOnlySetup(setup) && isRunningSetup(setup)) {
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleCancelSetup}
+          title={t('common:cancelDownload')}
+          aria-label={t('common:cancelDownload')}
+          className="group relative w-24 justify-center overflow-hidden font-semibold"
+          data-testid="model-setup-progress"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+            style={{ width: `${percent}%` }}
+          />
+          <span className="relative z-1 tabular-nums transition-opacity group-hover:opacity-0">
+            {percent}%
+          </span>
+          <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+            <IconX size={14} />
+          </span>
+        </Button>
+      )
+    }
+    return (
+      <>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setSetupOpen(true)}
+          title={t('hub:prismSetupOpen')}
+          aria-label={t('hub:prismSetupOpen')}
+          className="relative w-24 justify-center overflow-hidden font-semibold"
+          data-testid="model-setup-progress"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+            style={{ width: `${percent}%` }}
+          />
+          <span className="relative z-1 tabular-nums">{percent}%</span>
+        </Button>
+        {setupSheet}
+      </>
+    )
+  }
+
+  // Asking the core for the plan, before the setup has a record to follow.
+  if (setupStarting) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled
+        aria-label={t('hub:downloadModel')}
+        className="w-24 justify-center"
+        data-testid="model-setup-starting"
+      >
+        <IconLoader2 size={14} className="animate-spin" />
+      </Button>
+    )
+  }
 
   if (isDownloading) {
     return (
@@ -270,7 +472,7 @@ export const ModelDownloadAction = ({
         <Button
           variant="default"
           size="sm"
-          onClick={() => handleUseModel(installed.modelId)}
+          onClick={() => handleUseModel(installed.modelId, installed.provider)}
           title={t('hub:useModel')}
         >
           {t('hub:newChat')}
@@ -286,24 +488,48 @@ export const ModelDownloadAction = ({
   }
 
   const warningDialog = (
-    <LargeModelWarningDialog
-      open={warningOpen}
-      onOpenChange={setWarningOpen}
-      onConfirm={() => {
-        setWarningOpen(false)
-        void handleDownloadModel()
-      }}
-    />
+    <>
+      <LargeModelWarningDialog
+        open={warningFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setWarningFor(null)
+        }}
+        onConfirm={() => {
+          setWarningFor(null)
+          if (warningFor === 'setup') void startSetup()
+          else void handleDownloadModel()
+        }}
+      />
+      {setupSheet}
+    </>
   )
+  // "Requires PrismML": the file runs only on PrismML's llama.cpp, which the
+  // Download button sets up together with the model.
+  const prismBadge = requiresPrism(verdict) ? (
+    <span
+      className="shrink-0 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+      title={
+        verdict?.outcome === 'engine_update_required'
+          ? t('hub:prismEngineUpdateRequired')
+          : t('hub:prismRequiredHint')
+      }
+      data-testid="requires-prism-badge"
+    >
+      <span data-testid="requires-prism-badge-label">
+        {t('hub:prismRequired')}
+      </span>
+    </span>
+  ) : null
 
   if (asButton) {
     return (
       <>
+        {prismBadge}
         <Button
           type="button"
           variant="default"
           size="sm"
-          onClick={requestDownload}
+          onClick={() => void requestDownload()}
           title={t('hub:downloadModel')}
         >
           {t('hub:download')}
@@ -315,13 +541,14 @@ export const ModelDownloadAction = ({
 
   return (
     <>
+      {prismBadge}
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
         aria-label={t('hub:downloadModel')}
         title={t('hub:downloadModel')}
-        onClick={requestDownload}
+        onClick={() => void requestDownload()}
         className="size-6"
       >
         <IconDownload size={16} className="text-muted-foreground" />

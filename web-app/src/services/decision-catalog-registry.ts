@@ -1,9 +1,12 @@
 /**
  * Decision catalog registry — remote configuration loader.
  *
- * The decision models the app offers (laya checkpoints the TurboQuant
- * `llama-server --decision` converts and serves) live in
- * `AtomicBot-ai/atomic-chat-conf/models/decision.json`. Fetched at runtime,
+ * The decision models the app offers live in
+ * `AtomicBot-ai/atomic-chat-conf/models/decision.json`. Each one runs on one
+ * engine: TurboQuant (`engine: 'llamacpp'`, laya checkpoint folders its
+ * `llama-server --decision` converts) or stock llama.cpp
+ * (`engine: 'llamacpp-upstream'`, a ready GGUF it serves on `/v1/systemone`,
+ * b11370 on). Fetched at runtime,
  * cached for an hour, backed by a generated snapshot
  * ({@link BASELINE_DECISION_CATALOG}) for the offline first launch.
  *
@@ -36,7 +39,24 @@ const CACHE_TS_KEY = 'atomic_decision_catalog_cache_ts_v1'
 
 const FETCH_TIMEOUT_MS = 5000
 
-/** Files the engine needs to convert a checkpoint folder; a model without one is dropped. */
+/** The providers that run decision models. Also the settings page that manages one. */
+export type DecisionEngine = 'llamacpp' | 'llamacpp-upstream'
+
+/** `checkpoint`: a laya folder TurboQuant converts. `gguf`: a ready GGUF (plus an optional projector). */
+export type DecisionFormat = 'checkpoint' | 'gguf'
+
+/** The GGUF `<arch>.decision.type` values stock llama.cpp serves. */
+export const DECISION_TYPES = [
+  'laya',
+  'openjev',
+  'lev',
+  'kev',
+  'nimble',
+  'clef',
+] as const
+export type DecisionType = (typeof DECISION_TYPES)[number]
+
+/** Files TurboQuant needs to convert a checkpoint folder; a checkpoint model without one is dropped. */
 export const REQUIRED_DECISION_FILES = [
   'model.safetensors',
   'rl_agent_config.json',
@@ -49,6 +69,8 @@ export type DecisionCatalogFile = {
   path: string
   bytes: number
   sha256: string
+  /** GGUF models only: the file passed with `-m`, or the projector. */
+  role?: 'model' | 'mmproj'
 }
 
 export type DecisionCatalogModel = {
@@ -63,14 +85,25 @@ export type DecisionCatalogModel = {
   /** `multilingual` or a two-letter language code. */
   languages: string
   context: number
-  /** Whether the router (`/v1/router/score`) has a calibration. */
+  /** Whether the answers are calibrated (for TurboQuant: the router, `/v1/router/score`, too). */
   calibrated: boolean
   license?: string
   default?: boolean
-  /** The oldest TurboQuant release that converts and serves it, `b<build>-<semver>`. */
+  /**
+   * The oldest engine release that serves it: a TurboQuant tag
+   * `b<build>-<semver>`, or an upstream tag `b<build>`.
+   */
   min_engine?: string
-  /** About the size of the GGUF the engine converts the checkpoint into. */
+  /** Checkpoint models: about the size of the GGUF the engine converts the checkpoint into. */
   gguf_cache_bytes?: number
+  /** Defaults to `llamacpp` (TurboQuant), the only engine of the first catalog. */
+  engine: DecisionEngine
+  format: DecisionFormat
+  decision_type?: DecisionType
+  /** Logo key (`ICON_KEY_LOGOS`); without one the row shows the Convai mark. */
+  icon?: string
+  /** The model reads images; it then lists a projector file. */
+  vision?: boolean
   files: DecisionCatalogFile[]
 }
 
@@ -78,6 +111,20 @@ export type DecisionCatalog = {
   schema_version: number
   updated_at: string
   models: DecisionCatalogModel[]
+}
+
+/**
+ * The manifest as published: the fields added after the first catalog
+ * (`engine`, `format`) are optional there and filled in by the parser. The
+ * bundled baseline is typed with it.
+ */
+export type DecisionCatalogManifest = {
+  schema_version: number
+  updated_at: string
+  models: Array<
+    Omit<DecisionCatalogModel, 'engine' | 'format'> &
+      Partial<Pick<DecisionCatalogModel, 'engine' | 'format'>>
+  >
 }
 
 export type DecisionCatalogSource = 'remote' | 'cache' | 'baseline'
@@ -95,6 +142,8 @@ const REVISION_RE = /^[0-9a-f]{40}$/
 const SHA256_RE = /^[0-9a-f]{64}$/
 const LANGUAGES_RE = /^(multilingual|[a-z]{2})$/
 const MIN_ENGINE_RE = /^b[0-9]+-[0-9]+\.[0-9]+\.[0-9]+$/
+const UPSTREAM_MIN_ENGINE_RE = /^b[0-9]+$/
+const ICON_RE = /^[a-z0-9][a-z0-9-]*$/
 const PATH_RE = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -122,13 +171,36 @@ const sanitizeFile = (raw: unknown): DecisionCatalogFile | null => {
     return null
   if (!isPositiveInt(raw.bytes)) return null
   if (typeof raw.sha256 !== 'string' || !SHA256_RE.test(raw.sha256)) return null
-  return { path: raw.path, bytes: raw.bytes, sha256: raw.sha256 }
+  const role =
+    raw.role === 'model' || raw.role === 'mmproj' ? raw.role : undefined
+  return {
+    path: raw.path,
+    bytes: raw.bytes,
+    sha256: raw.sha256,
+    ...(role ? { role } : {}),
+  }
 }
 
 /**
- * Strip unknown keys and reject a model that could not be downloaded or
- * converted as written: a malformed id, repo or revision, a file without its
- * size or hash, a duplicate path, or a missing required file.
+ * The files a GGUF model needs: exactly one `.gguf` with `role: 'model'` and at
+ * most one projector, and nothing else.
+ */
+const isGgufFileSet = (files: DecisionCatalogFile[]): boolean => {
+  const models = files.filter((file) => file.role === 'model')
+  const projectors = files.filter((file) => file.role === 'mmproj')
+  return (
+    models.length === 1 &&
+    projectors.length <= 1 &&
+    models.length + projectors.length === files.length &&
+    files.every((file) => file.path.endsWith('.gguf'))
+  )
+}
+
+/**
+ * Strip unknown keys and reject a model that could not be downloaded or run as
+ * written: a malformed id, repo or revision, a file without its size or hash,
+ * a duplicate path, a checkpoint without its required files, a GGUF model
+ * without exactly one model file, or an upstream model that is not a GGUF.
  */
 export const sanitizeDecisionModel = (
   raw: unknown
@@ -153,16 +225,47 @@ export const sanitizeDecisionModel = (
     paths.add(file.path)
     files.push(file)
   }
-  if (!REQUIRED_DECISION_FILES.every((path) => paths.has(path))) return null
+
+  const engine: DecisionEngine | null =
+    raw.engine === undefined || raw.engine === 'llamacpp'
+      ? 'llamacpp'
+      : raw.engine === 'llamacpp-upstream'
+        ? 'llamacpp-upstream'
+        : null
+  const format: DecisionFormat | null =
+    raw.format === undefined || raw.format === 'checkpoint'
+      ? 'checkpoint'
+      : raw.format === 'gguf'
+        ? 'gguf'
+        : null
+  if (!engine || !format) return null
+  // TurboQuant converts checkpoint folders; stock llama.cpp only reads GGUFs.
+  if (engine === 'llamacpp-upstream' && format !== 'gguf') return null
+  if (format === 'checkpoint') {
+    if (!REQUIRED_DECISION_FILES.every((path) => paths.has(path))) return null
+  } else if (!isGgufFileSet(files)) {
+    return null
+  }
 
   const description = optionalString(raw.description)
   const backbone = optionalString(raw.backbone)
   const params = optionalString(raw.params)
   const license = optionalString(raw.license)
+  const minEngineRe =
+    engine === 'llamacpp-upstream' ? UPSTREAM_MIN_ENGINE_RE : MIN_ENGINE_RE
   const minEngine =
-    typeof raw.min_engine === 'string' && MIN_ENGINE_RE.test(raw.min_engine)
+    typeof raw.min_engine === 'string' && minEngineRe.test(raw.min_engine)
       ? raw.min_engine
       : undefined
+  const decisionType = DECISION_TYPES.find((type) => type === raw.decision_type)
+  const icon =
+    typeof raw.icon === 'string' && ICON_RE.test(raw.icon)
+      ? raw.icon
+      : undefined
+  const vision =
+    format === 'gguf' &&
+    raw.vision === true &&
+    files.some((f) => f.role === 'mmproj')
   return {
     id: raw.id,
     name: raw.name,
@@ -177,9 +280,14 @@ export const sanitizeDecisionModel = (
     ...(license ? { license } : {}),
     ...(raw.default === true ? { default: true } : {}),
     ...(minEngine ? { min_engine: minEngine } : {}),
-    ...(isPositiveInt(raw.gguf_cache_bytes)
+    ...(format === 'checkpoint' && isPositiveInt(raw.gguf_cache_bytes)
       ? { gguf_cache_bytes: raw.gguf_cache_bytes }
       : {}),
+    engine,
+    format,
+    ...(decisionType ? { decision_type: decisionType } : {}),
+    ...(icon ? { icon } : {}),
+    ...(vision ? { vision: true } : {}),
     files,
   }
 }
@@ -331,11 +439,16 @@ const fetchCatalog = async (
 }
 
 /** Tauri's HTTP plugin does not always honour `AbortSignal`; a timer guarantees resolution. */
-const withHardTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+const withHardTimeout = <T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () =>
-        reject(new Error(`Decision catalog fetch timed out after ${timeoutMs}ms`)),
+        reject(
+          new Error(`Decision catalog fetch timed out after ${timeoutMs}ms`)
+        ),
       timeoutMs
     )
     promise
@@ -377,7 +490,11 @@ export const fetchDecisionCatalog = async (
 
   const cached = getCachedDecisionCatalog()
   if (!force && isDecisionCatalogCacheFresh(cached) && cached) {
-    return { catalog: cached.catalog, source: 'cache', fetchedAt: cached.fetchedAt }
+    return {
+      catalog: cached.catalog,
+      source: 'cache',
+      fetchedAt: cached.fetchedAt,
+    }
   }
 
   const controller = new AbortController()
@@ -425,9 +542,41 @@ export const decisionFileUrl = (
 ): string =>
   `https://huggingface.co/${model.repo}/resolve/${model.revision}/${file.path}`
 
-/** Bytes of the checkpoint on disk. */
+/** Bytes of the model's files on disk (the checkpoint, or the GGUF and its projector). */
 export const decisionCheckpointBytes = (model: DecisionCatalogModel): number =>
   model.files.reduce((sum, file) => sum + file.bytes, 0)
+
+/** A GGUF model's `-m` file; `undefined` for a checkpoint. */
+export const decisionModelFile = (
+  model: DecisionCatalogModel
+): DecisionCatalogFile | undefined =>
+  model.format === 'gguf'
+    ? model.files.find((file) => file.role === 'model')
+    : undefined
+
+/** `Clef-Flash-Q4_K_M.gguf` → `Q4_K_M`: what a GGUF model downloads as; `null` for a checkpoint. */
+export const decisionQuantLabel = (
+  model: DecisionCatalogModel
+): string | null => {
+  const file = decisionModelFile(model)
+  if (!file) return null
+  const match = /[-_.]((?:I?Q\d+(?:_[A-Z0-9]+)*)|BF16|F16|F32)\.gguf$/i.exec(
+    file.path
+  )
+  return match ? match[1].toUpperCase() : 'GGUF'
+}
+
+/** A Creative Commons non-commercial license (`cc-by-nc-4.0`, `cc-by-nc-sa-4.0`, …). */
+export const isNonCommercialLicense = (license: string | undefined): boolean =>
+  /(^|-)nc(-|$)/i.test(license ?? '')
+
+/** A GGUF model's projector (`--mmproj`); `undefined` when it has none. */
+export const decisionProjectorFile = (
+  model: DecisionCatalogModel
+): DecisionCatalogFile | undefined =>
+  model.format === 'gguf'
+    ? model.files.find((file) => file.role === 'mmproj')
+    : undefined
 
 /** Disk the model takes once it ran: the checkpoint plus the GGUF the engine converts it into. */
 export const decisionDiskBytes = (model: DecisionCatalogModel): number =>

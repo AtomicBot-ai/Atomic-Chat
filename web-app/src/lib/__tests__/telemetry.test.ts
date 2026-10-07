@@ -9,6 +9,7 @@ import {
   classifyModelLoadFailure,
   ctxUsedBucket,
   ctxUsedPercent,
+  downloadKind,
   execBackend,
   execBackendForModel,
   finalizeChatTurnOnce,
@@ -30,6 +31,7 @@ import {
 describe('loadBackendFromProvider', () => {
   it('names every local engine as its own backend', () => {
     expect(loadBackendFromProvider('tensorrt-llm')).toBe('tensorrt-llm')
+    expect(loadBackendFromProvider('vllm')).toBe('vllm')
     expect(loadBackendFromProvider('mlx')).toBe('mlx')
     expect(loadBackendFromProvider('openai')).toBe('unknown')
     expect(loadBackendFromProvider(undefined)).toBe('unknown')
@@ -305,6 +307,12 @@ describe('classifyModelLoadFailure', () => {
     expect(
       classifyModelLoadFailure('MODEL_ARCH_NOT_SUPPORTED', null, false)
     ).toBe('arch_unsupported')
+    expect(
+      classifyModelLoadFailure('MODEL_ENGINE_INCOMPATIBLE', null, false)
+    ).toBe('engine_incompatible')
+    expect(classifyModelLoadFailure('MODEL_FORMAT_LEGACY', null, false)).toBe(
+      'format_legacy'
+    )
   })
 
   it('still classifies the 68% of failures that carry no code', () => {
@@ -560,6 +568,20 @@ describe('classifyDownloadFailure', () => {
     expect(
       classifyDownloadFailure('No space left on device (os error 28)')
     ).toBe('disk_io')
+  })
+})
+
+describe('downloadKind', () => {
+  it('tells a catalog embedding model from a chat model, an engine and a diffusion file', () => {
+    expect(downloadKind('embedding-embeddinggemma-2')).toBe('embedding_model')
+    expect(downloadKind('embedding-bge-m3', 'Model')).toBe('embedding_model')
+    // The RAG model and an embedding GGUF from Hugging Face stay plain models.
+    expect(downloadKind('sentence-transformer-mini')).toBe('model')
+    expect(downloadKind('ggml-org/embeddinggemma-300M-GGUF')).toBe('model')
+    expect(downloadKind('diffusion-model-z-image')).toBe('diffusion_model')
+    expect(downloadKind('llamacpp-backend-b11463', 'Backend')).toBe(
+      'gpu_backend'
+    )
   })
 })
 

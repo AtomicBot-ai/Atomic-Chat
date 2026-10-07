@@ -89,7 +89,8 @@ import {
   toOpenAiTools,
 } from '@/lib/prompt-size'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
-import { canGrowContext } from '@/lib/tensorrt-llm/chat'
+import { canGrowContext } from '@/lib/managed-engine/chat'
+import { isManagedProvider } from '@/lib/managed-engines'
 import { summarizeToolCost } from '@/lib/tool-cost'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
@@ -107,8 +108,9 @@ import {
   isSubscriptionProvider,
 } from '@/utils/registerRemoteProvider'
 
-/// Local inference backends (mlx, llamacpp, llamacpp-upstream,
-/// foundation-models, tensorrt-llm) get special handling at the `streamText` boundary:
+/// Local inference backends (mlx, llamacpp, llamacpp-upstream, atomic-prism,
+/// foundation-models, and every managed engine — `isManagedProvider`) get special handling at the
+/// `streamText` boundary:
 ///   * when tools are also active, the assistant system prompt is not passed
 ///     as a `system` message — gemma-4 and similar local models reliably
 ///     auto-emit a chain-of-thought block whenever the rendered prompt
@@ -125,9 +127,12 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'mlx',
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'foundation-models',
-  'tensorrt-llm',
 ])
+
+const isLocalInferenceProvider = (provider: string): boolean =>
+  LOCAL_INFERENCE_PROVIDERS.has(provider) || isManagedProvider(provider)
 
 /// Engines that constrain sampling with a GBNF grammar compiled from the tool
 /// schemas — the ones that need `withGrammarSafeToolSchemas`. `llamacpp-server`
@@ -136,6 +141,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
 const GRAMMAR_CONSTRAINED_PROVIDERS = new Set<string>([
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'llamacpp-server',
 ])
 
@@ -733,7 +739,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     let measured = false
     if (
       args.providerId === 'llamacpp' ||
-      args.providerId === 'llamacpp-upstream'
+      args.providerId === 'llamacpp-upstream' ||
+      args.providerId === 'atomic-prism'
     ) {
       const exact = await ModelFactory.countLocalPromptTokens(
         args.providerId,
@@ -876,6 +883,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           switch (effectiveProviderName) {
             case 'llamacpp':
             case 'llamacpp-upstream':
+            case 'atomic-prism':
             case 'mlx': {
               // Some templates (e.g. Hunyuan 3) have no `enable_thinking` and
               // skip thinking only through their own effort value.
@@ -935,6 +943,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } else if (
           effectiveProviderName === 'llamacpp' ||
           effectiveProviderName === 'llamacpp-upstream' ||
+          effectiveProviderName === 'atomic-prism' ||
           effectiveProviderName === 'mlx' ||
           (effectiveProviderName === 'chatgpt' &&
             reasoningControls?.supportsThinking)
@@ -1052,7 +1061,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // the model payload (placeholder) and, for vision models, re-attach the
     // image as a proper multimodal user message. Cloud providers are left
     // untouched (they have large contexts and handle this differently).
-    if (LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)) {
+    if (isLocalInferenceProvider(effectiveProviderName)) {
       const supportsVision =
         useModelProvider
           .getState()
@@ -1084,7 +1093,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // See LOCAL_INFERENCE_PROVIDERS for rationale. Tool inclusion is
     // independent of the reasoning toggle and governed solely by the tools
     // on/off setting (via refreshTools -> useToolAvailable).
-    const isLocalProvider = LOCAL_INFERENCE_PROVIDERS.has(effectiveProviderName)
+    const isLocalProvider = isLocalInferenceProvider(effectiveProviderName)
 
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel

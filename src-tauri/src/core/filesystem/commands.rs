@@ -290,7 +290,8 @@ pub fn readdir_sync<R: Runtime>(
 }
 
 /// Where `write_yaml` and `read_yaml` may go: under the data folder, or under the root the core
-/// names for TensorRT-LLM models (`model.yml`; on Windows inside Atomic Chat's WSL distribution).
+/// names for the managed engines' models (`model.yml`; on Windows inside Atomic Chat's WSL
+/// distribution).
 async fn yaml_path_allowed<R: Runtime>(app: &tauri::AppHandle<R>, path: &std::path::Path) -> bool {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     jan_utils::is_within(path, &jan_data_folder)

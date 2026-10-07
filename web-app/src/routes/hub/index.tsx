@@ -12,6 +12,7 @@ import {
 import { Loader } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
+import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
 import { HubNoResults, HubSearchInput } from '@/containers/hub/HubSearch'
@@ -19,9 +20,9 @@ import { MediaHub } from '@/containers/hub/MediaHub'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
 import { ModelListRow } from '@/containers/hub/ModelListRow'
 import {
-  TensorrtHubBlocked,
-  TensorrtHubChecking,
-} from '@/containers/hub/TensorrtHubStatus'
+  ManagedHubBlocked,
+  ManagedHubChecking,
+} from '@/containers/hub/ManagedHubStatus'
 import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -31,8 +32,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useStaffPicks } from '@/hooks/useStaffPicks'
-import { useTensorrtCurated } from '@/hooks/useTensorrtCurated'
-import { useTensorrtHubState } from '@/hooks/useTensorrtHubState'
+import { useManagedCurated } from '@/hooks/useManagedCurated'
+import { useManagedHubStates } from '@/hooks/useManagedHubState'
+import { usePrismFamilies, usePrismHubVisible } from '@/hooks/useModelSetup'
+import { UNKNOWN_HUB_STATE } from '@/lib/managed-engine/hub-state'
+import { hubKey, managedEngine } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   applyHubFilters,
@@ -55,7 +59,8 @@ import {
   filterInstalledBySearch,
   withStaffPicks,
 } from '@/lib/hub-installed'
-import { isDecisionHostSupported } from '@/lib/decision/platform'
+import { isAnyDecisionHostSupported } from '@/lib/decision/platform'
+import { isEmbeddingHostSupported } from '@/lib/embedding/engine'
 import {
   HUB_CATEGORIES,
   isHubCategory,
@@ -64,17 +69,17 @@ import {
 import { getMemoryBudgetBytes, type ModelFormat } from '@/lib/model-card'
 import {
   hubListSources,
-  tensorrtBrowseRows,
-  tensorrtSearchRows,
-  type TensorrtPrefilterContext,
-} from '@/lib/tensorrt-llm/hub-feed'
+  managedBrowseRows,
+  managedSearchRows,
+  type ManagedPrefilterContext,
+} from '@/lib/managed-engine/hub-feed'
 import { extractModelName } from '@/lib/models'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import type { GpuFacts } from '@/services/managed-environment/types'
-import { normalizeRepository } from '@/services/tensorrt-llm/models'
+import { normalizeRepository } from '@/services/managed-models/models'
 import {
   selectEnvironment,
   useManagedEnvironmentStore,
@@ -101,8 +106,8 @@ type SearchParams = {
   q?: string
   /**
    * Repo id of the model shown in the right-hand detail panel; in the Images
-   * and Video categories, the id of the catalog family; in Decision, the
-   * catalog id of the model.
+   * and Video categories, the id of the catalog family; in Decision and
+   * Embedding, the catalog id of the model.
    */
   model?: string
   /** Absent means Chat: every link into the Hub from a chat asks for one. */
@@ -133,11 +138,11 @@ const NO_GPUS: GpuFacts[] = []
 const FEED_PREFETCH_ROWS = 8
 
 /**
- * TensorRT-LLM's prefilter can leave a whole page with nothing to show; after
+ * A managed engine's prefilter can leave a whole page with nothing to show; after
  * this many such pages in a row the feed stops asking on its own, rather than
  * paging through every safetensors repository on Hugging Face.
  */
-const TENSORRT_EMPTY_PAGES_LIMIT = 3
+const MANAGED_EMPTY_PAGES_LIMIT = 3
 
 // Base (non-instruction-tuned) Gemma 4 MLX builds (e.g.
 // `mlx-community/gemma-4-12B-4bit`, converted from `google/gemma-4-12B`)
@@ -180,24 +185,33 @@ const hubScrollCache: { q: string; offset: number } = { q: '', offset: 0 }
 function HubContent() {
   const navigate = useNavigate()
   const { category: categorySearchParam } = Route.useSearch()
-  const decisionApiSupported = useServiceHub().decision().isSupported()
+  const serviceHub = useServiceHub()
+  const decisionApiSupported = serviceHub.decision().isSupported()
+  const embeddingApiSupported = serviceHub.embedding().isSupported()
   const cpuArch = useHardware((s) => s.hardwareData.cpu.arch)
   // Image and video models need the local media engine, decision models a
-  // TurboQuant build for this machine; with neither the Hub stays the chat
-  // catalog it always was, switch and all.
+  // TurboQuant or llama.cpp build for this machine, embedding models a
+  // llama.cpp one; with none the Hub stays the chat catalog it always was,
+  // switch and all.
   const mediaSupported = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
   const decisionSupported =
     PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
     decisionApiSupported &&
-    isDecisionHostSupported(cpuArch)
+    isAnyDecisionHostSupported(cpuArch)
+  const embeddingSupported =
+    PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
+    embeddingApiSupported &&
+    isEmbeddingHostSupported(cpuArch)
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
         c === 'decision'
           ? decisionSupported
-          : c === 'chat' || mediaSupported
+          : c === 'embedding'
+            ? embeddingSupported
+            : c === 'chat' || mediaSupported
       ),
-    [mediaSupported, decisionSupported]
+    [mediaSupported, decisionSupported, embeddingSupported]
   )
   const category: HubCategory =
     categorySearchParam && categories.includes(categorySearchParam)
@@ -233,6 +247,9 @@ function HubContent() {
   if (category === 'chat') return <ChatHub categoryTabs={categoryTabs} />
   if (category === 'decision') {
     return <DecisionHubContent categoryTabs={categoryTabs} />
+  }
+  if (category === 'embedding') {
+    return <EmbeddingHubContent categoryTabs={categoryTabs} />
   }
   return (
     <MediaHubContent
@@ -277,6 +294,49 @@ function DecisionHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   return (
     <DecisionHub
+      categoryTabs={categoryTabs}
+      query={query}
+      onQueryChange={changeQuery}
+      selectedModelId={modelSearchParam ?? null}
+      onSelectModel={selectModel}
+    />
+  )
+}
+
+function EmbeddingHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
+  const navigate = useNavigate()
+  const { q: querySearchParam, model: modelSearchParam } = Route.useSearch()
+  const [query, setQuery] = useState(querySearchParam ?? getHubSearchQuery())
+
+  const changeQuery = useCallback(
+    (next: string) => {
+      setQuery(next)
+      setHubSearchQuery(next)
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          q: next.trim() || undefined,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const selectModel = useCallback(
+    (modelId: string, options?: { replace?: boolean }) => {
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({ ...prev, model: modelId }),
+        replace: options?.replace ?? false,
+      })
+    },
+    [navigate]
+  )
+
+  return (
+    <EmbeddingHub
       categoryTabs={categoryTabs}
       query={query}
       onQueryChange={changeQuery}
@@ -389,7 +449,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     querySearchParam ?? getHubSearchQuery()
   )
   const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
-  const tensorrtHub = useTensorrtHubState()
+  // Every managed engine's state in the Hub (vLLM, TensorRT-LLM), each by its own plan.
+  const managedHubs = useManagedHubStates()
+  const visibleManaged = managedHubs
+    .filter((entry) => entry.hub.visible)
+    .map((entry) => entry.engine.id)
+    .join(',')
   // Sort and toggles are saved; the format is GGUF on every launch and kept only for this one
   // (`hub-session.ts`). A format this machine does not offer (yet) reads as GGUF.
   const [storedFilters, setFilters] = useState<HubFilterState>(() => {
@@ -397,9 +462,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     const format = getHubFormat()
     return format ? { ...saved, formats: [format] } : saved
   })
+  const prismHubVisible = usePrismHubVisible()
   const availableFormats = useMemo(
-    () => hubFormats({ mlx: IS_MACOS, tensorrt: tensorrtHub.visible }),
-    [tensorrtHub.visible]
+    () =>
+      hubFormats({
+        mlx: IS_MACOS,
+        managed: visibleManaged === '' ? [] : visibleManaged.split(','),
+        prism: prismHubVisible,
+      }),
+    [visibleManaged, prismHubVisible]
   )
   const filters = useMemo(
     () => normalizeHubFilters(storedFilters, availableFormats),
@@ -486,20 +557,29 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       ? 'mlx'
       : 'gguf'
   const staffPickItems = useStaffPicks(sources, picksFormat)
-  // TensorRT-LLM lists the descriptor's curated models and a narrowed feed of
-  // any safetensors repository instead of the picks and the catalog.
+  // A managed engine's format (vLLM, TensorRT-LLM) lists its descriptor's
+  // curated models and a narrowed feed of any safetensors repository instead of
+  // the picks and the catalog.
   const listSources = hubListSources(filters.formats[0] ?? 'gguf')
-  const tensorrtFormat = filters.formats[0] === 'tensorrt-llm'
+  const managedSelected = managedEngine(filters.formats[0])
+  const managedFormat = managedSelected !== undefined
+  const managedHub =
+    managedHubs.find((entry) => entry.engine.id === managedSelected?.id)?.hub ??
+    UNKNOWN_HUB_STATE
+  // PrismML lists the Bonsai families of the core's model rules: no picks, no
+  // catalog, no Hugging Face feed or search.
+  const prismFormat = filters.formats[0] === 'atomic-prism'
+  const prismFamilies = usePrismFamilies(prismFormat)
 
-  // Under the TensorRT-LLM format the engine's state comes first: what blocks
+  // Under a managed engine's format the engine's state comes first: what blocks
   // it, or nothing at all until the core has answered. "Downloaded" lists what
   // is on disk whatever the format, so it is never replaced.
-  const tensorrtPanel: 'blocked' | 'checking' | null =
-    filters.formats[0] !== 'tensorrt-llm' || showOnlyDownloaded
+  const managedPanel: 'blocked' | 'checking' | null =
+    !managedFormat || showOnlyDownloaded
       ? null
-      : tensorrtHub.state === 'blocked'
+      : managedHub.state === 'blocked'
         ? 'blocked'
-        : tensorrtHub.state === 'unknown'
+        : managedHub.state === 'unknown'
           ? 'checking'
           : null
 
@@ -513,7 +593,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const feed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    !isSearchMode && !tensorrtPanel
+    !isSearchMode && !managedPanel && !prismFormat
   )
   const uncensoredQueries = useMemo(
     () => huggingFaceQueries(debouncedSearchValue, true),
@@ -522,30 +602,35 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const uncensoredFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !tensorrtPanel,
+    filters.uncensored && !managedPanel && !prismFormat,
     uncensoredQueries[0] ?? ''
   )
   const abliteratedFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !tensorrtPanel && uncensoredQueries.length > 1,
+    filters.uncensored &&
+      !managedPanel &&
+      !prismFormat &&
+      uncensoredQueries.length > 1,
     uncensoredQueries[1] ?? ''
   )
 
   // The curated models of the engine's descriptor, and what narrows the feed:
   // its architectures and this machine's cards.
-  const tensorrtCurated = useTensorrtCurated(
-    tensorrtFormat && !tensorrtPanel ? tensorrtHub.descriptorId : null
+  const managedCurated = useManagedCurated(
+    managedSelected?.id ?? '',
+    managedFormat && !managedPanel ? managedHub.descriptorId : null
   )
-  const tensorrtGpus = useManagedEnvironmentStore(
+  const managedGpus = useManagedEnvironmentStore(
     (state) => selectEnvironment(state)?.gpus ?? NO_GPUS
   )
-  const tensorrtContext = useMemo<TensorrtPrefilterContext>(
+  const managedContext = useMemo<ManagedPrefilterContext>(
     () => ({
-      supportedArchitectures: tensorrtCurated.supportedArchitectures,
-      gpus: tensorrtGpus,
+      engineId: managedSelected?.id ?? '',
+      supportedArchitectures: managedCurated.supportedArchitectures,
+      gpus: managedGpus,
     }),
-    [tensorrtCurated.supportedArchitectures, tensorrtGpus]
+    [managedSelected?.id, managedCurated.supportedArchitectures, managedGpus]
   )
 
   // ---- Staff picks mode -------------------------------------------------
@@ -619,15 +704,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     [listSources.catalog, searchMatches]
   )
 
-  // A repository typed in full under TensorRT-LLM is shown as it is, whatever
+  // A repository typed in full under a managed engine's format is shown as it is, whatever
   // the prefilter would say: the core's verdict in its card is the answer. A
   // bare word is not one — the lookup behind it finds GGUF repositories.
-  const tensorrtExactRepo = useMemo<CatalogModel | null>(() => {
-    if (!tensorrtFormat || !huggingFaceRepo) return null
+  const managedExactRepo = useMemo<CatalogModel | null>(() => {
+    if (!managedFormat || !huggingFaceRepo) return null
     const typed = normalizeRepository(debouncedSearchValue).toLowerCase()
     if (huggingFaceRepo.model_name.toLowerCase() !== typed) return null
-    return { ...huggingFaceRepo, is_mlx: false, is_tensorrt_llm: true }
-  }, [tensorrtFormat, huggingFaceRepo, debouncedSearchValue])
+    return { ...huggingFaceRepo, is_mlx: false, is_managed: true }
+  }, [managedFormat, huggingFaceRepo, debouncedSearchValue])
 
   // Exact-repo lookup: the user pasted a full `owner/name`.
   const fetchExactRepo = useCallback(
@@ -664,8 +749,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // Uncensored has cursor-based feeds of its own above; keeping it out of this
   // one-shot path removes the old 20-results-per-term ceiling.
   useEffect(() => {
-    // Behind the TensorRT-LLM panel nothing is listed, so nothing is asked.
-    if (showOnlyDownloaded || tensorrtPanel) {
+    // Behind a managed engine's panel nothing is listed, so nothing is asked;
+    // PrismML lists its own families only.
+    if (showOnlyDownloaded || managedPanel || prismFormat) {
       setHfCandidates((current) => (current.length > 0 ? [] : current))
       hfCandidatesFetchedForRef.current = ''
       return
@@ -682,11 +768,13 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return
     }
     const queries = huggingFaceQueries(query, false)
-    const cacheKey = `${listSources.feedFormat}\n${queries.join('\n')}`.toLowerCase()
+    const cacheKey =
+      `${listSources.feedFormat}\n${queries.join('\n')}`.toLowerCase()
     if (hfCandidatesFetchedForRef.current === cacheKey) return
     hfCandidatesFetchedForRef.current = cacheKey
 
-    const limit = 10
+    // A managed format's hits are narrowed by the prefilter afterwards, so it asks for more.
+    const limit = managedFormat ? 30 : 10
     let cancelled = false
     let settled = false
     setHfSearching(true)
@@ -698,7 +786,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
             q,
             huggingfaceToken,
             limit,
-            tensorrtFormat ? 'tensorrt-llm' : undefined
+            managedFormat ? 'safetensors' : undefined
           )
       )
     )
@@ -736,15 +824,16 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     serviceHub,
     huggingfaceToken,
     huggingFaceRepo,
-    tensorrtFormat,
-    tensorrtPanel,
+    managedFormat,
+    managedPanel,
+    prismFormat,
     listSources.feedFormat,
   ])
 
   // ---- Unified list -----------------------------------------------------
 
   const listItems = useMemo<HubListItem[]>(() => {
-    if (tensorrtPanel) return []
+    if (managedPanel) return []
     if (showOnlyDownloaded) {
       // The format and fit filters describe what to look for in the catalog;
       // applied here they would hide models the user already has on disk.
@@ -758,20 +847,46 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }))
     }
 
-    if (!isSearchMode && tensorrtFormat) {
+    if (prismFormat) {
+      // A search narrows the families by name; fit and Uncensored apply as
+      // they do to any GGUF.
+      const query = debouncedSearchValue.trim().toLowerCase()
+      const matching = query
+        ? prismFamilies.models.filter(
+            (model) =>
+              model.model_name.toLowerCase().includes(query) ||
+              model.description.toLowerCase().includes(query)
+          )
+        : prismFamilies.models
+      const filtered = applyHubFilters(
+        matching,
+        { ...filters, formats: ['gguf'] },
+        { budgetBytes, applyFitFilter: true }
+      )
+      return filtered.map((model, index) => ({
+        model,
+        sectionLabel: index === 0 ? t('hub:prismCurated') : undefined,
+      }))
+    }
+
+    if (!isSearchMode && managedFormat) {
       // The feed waits for the descriptor's architectures: narrowed only once
       // they arrive, its rows would vanish under the pointer.
-      const rows = tensorrtBrowseRows({
-        curated: tensorrtCurated.models,
-        feed: tensorrtCurated.loading ? [] : feed.models,
-        context: tensorrtContext,
+      const rows = managedBrowseRows({
+        curated: managedCurated.models,
+        feed: managedCurated.loading ? [] : feed.models,
+        context: managedContext,
       })
       return rows.map((row, index) => ({
         model: row.model,
         fromHuggingFace: row.section !== 'curated',
         sectionLabel:
           index === 0 || rows[index - 1].section !== row.section
-            ? t(row.section === 'curated' ? 'hub:tensorrt.curated' : 'hub:feedTitle')
+            ? t(
+                row.section === 'curated' && managedSelected
+                  ? hubKey(managedSelected)('curated')
+                  : 'hub:feedTitle'
+              )
             : undefined,
       }))
     }
@@ -833,24 +948,24 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         : []
     for (const model of head) seen.add(model.model_name)
 
-    // A TensorRT-LLM row keeps its listing entry: a card fetched for the same
+    // A managed row keeps its listing entry: a card fetched for the same
     // repository as a GGUF or MLX row carries none of its architectures.
     const pagedUncensored = !filters.uncensored
       ? []
-      : tensorrtFormat
+      : managedFormat
         ? [...uncensoredFeed.models, ...abliteratedFeed.models]
         : [...uncensoredFeed.models, ...abliteratedFeed.models].map(
             (model) => uncensoredFeed.details.get(model.model_name) ?? model
           )
 
-    if (tensorrtFormat) {
-      const rows = tensorrtSearchRows({
-        exact: tensorrtExactRepo,
+    if (managedFormat) {
+      const rows = managedSearchRows({
+        exact: managedExactRepo,
         candidates: filters.uncensored ? pagedUncensored : hfCandidates,
-        context: tensorrtContext,
+        context: managedContext,
       })
       const exact = rows.filter((row) => row.section === 'exact').map((row) => row.model)
-      // The memory-budget fit is a GGUF reading of system memory; TensorRT-LLM
+      // The memory-budget fit is a GGUF reading of system memory; managed
       // weights were already weighed against the cards by the prefilter.
       const found = applyHubFilters(
         rows.filter((row) => row.section !== 'exact').map((row) => row.model),
@@ -899,12 +1014,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         filters.uncensored && index === 0 ? t('hub:uncensored') : undefined,
     }))
   }, [
-    tensorrtPanel,
-    tensorrtFormat,
-    tensorrtCurated.models,
-    tensorrtCurated.loading,
-    tensorrtContext,
-    tensorrtExactRepo,
+    managedPanel,
+    managedFormat,
+    prismFormat,
+    prismFamilies.models,
+    debouncedSearchValue,
+    managedCurated.models,
+    managedCurated.loading,
+    managedContext,
+    managedExactRepo,
     isSearchMode,
     showOnlyDownloaded,
     installedResults,
@@ -1000,11 +1118,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     [navigate, searchValue]
   )
 
-  // A repository typed in full under TensorRT-LLM opens its card at once, to
+  // A repository typed in full under a managed format opens its card at once, to
   // show the core's verdict; once per repository, so a row picked afterwards
   // stays picked.
   const openedExactRef = useRef<string | null>(null)
-  const exactRepoName = tensorrtExactRepo?.model_name ?? null
+  const exactRepoName = managedExactRepo?.model_name ?? null
   useEffect(() => {
     if (!exactRepoName || openedExactRef.current === exactRepoName) return
     openedExactRef.current = exactRepoName
@@ -1104,9 +1222,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // The next page is asked for a few rows before the end, and the rows on
   // screen that still lack a size get their card fetched — both from what the
   // virtualizer is actually painting, so a fast scroll costs what it shows.
-  // Feed entries and list rows when a TensorRT-LLM page last arrived, and how
-  // many pages in a row added no row (see TENSORRT_EMPTY_PAGES_LIMIT).
-  const tensorrtFeedPages = useRef({ feed: 0, rows: 0, empty: 0 })
+  // Feed entries and list rows when a managed format's page last arrived, and how
+  // many pages in a row added no row (see MANAGED_EMPTY_PAGES_LIMIT).
+  const managedFeedPages = useRef({ format: '', feed: 0, rows: 0, empty: 0 })
   const virtualItems = rowVirtualizer.getVirtualItems()
   const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1
   const visibleFeedRepos = useMemo(
@@ -1116,8 +1234,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         .filter(
           (item): item is HubListItem =>
             !!item?.fromHuggingFace &&
-            // A TensorRT-LLM row needs no file sizes: its card asks the core.
-            !item.model.is_tensorrt_llm &&
+            // A managed row needs no file sizes: its card asks the engines.
+            !item.model.is_managed &&
             modelDownloadSizeText(item.model) === undefined
         )
         .map((item) => item.model.model_name)
@@ -1142,8 +1260,14 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return
     }
     if (isSearchMode) return
-    if (tensorrtFormat) {
-      const seen = tensorrtFeedPages.current
+    if (managedFormat) {
+      // vLLM and TensorRT-LLM share one feed but not one prefilter: pages one emptied may fill
+      // rows for the other, so the count starts over with the format.
+      const format = managedSelected?.id ?? ''
+      if (managedFeedPages.current.format !== format) {
+        managedFeedPages.current = { format, feed: 0, rows: 0, empty: 0 }
+      }
+      const seen = managedFeedPages.current
       if (feed.models.length !== seen.feed) {
         seen.empty = listItems.length > seen.rows ? 0 : seen.empty + 1
         seen.feed = feed.models.length
@@ -1152,14 +1276,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     }
     if (
       lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS &&
-      !(tensorrtFormat && tensorrtFeedPages.current.empty >= TENSORRT_EMPTY_PAGES_LIMIT)
+      !(managedFormat && managedFeedPages.current.empty >= MANAGED_EMPTY_PAGES_LIMIT)
     ) {
       feed.loadMore()
     }
     if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
   }, [
     isSearchMode,
-    tensorrtFormat,
+    managedFormat,
+    managedSelected?.id,
     filters.uncensored,
     listItems.length,
     lastVisibleIndex,
@@ -1175,7 +1300,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     const model = selectedItem?.model
     if (!model || !('fromHuggingFace' in selectedItem)) return
     if (!selectedItem.fromHuggingFace) return
-    if (model.is_tensorrt_llm) return
+    if (model.is_managed) return
     if (modelDownloadSizeText(model) !== undefined) return
     feed.ensureDetails([model.model_name])
   }, [selectedItem, feed])
@@ -1184,16 +1309,18 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const uncensoredLoading =
     filters.uncensored &&
     (uncensoredFeed.loading || abliteratedFeed.loading)
-  const tensorrtLoading =
-    tensorrtFormat &&
+  const managedLoading =
+    managedFormat &&
     !isSearchMode &&
-    (tensorrtCurated.loading || feed.loading)
+    (managedCurated.loading || feed.loading)
   const showSkeleton =
     isEmpty &&
-    ((loading && !isSearchMode) ||
-      hfSearching ||
-      uncensoredLoading ||
-      tensorrtLoading)
+    (prismFormat
+      ? prismFamilies.loading
+      : (loading && !isSearchMode) ||
+        hfSearching ||
+        uncensoredLoading ||
+        managedLoading)
 
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
@@ -1236,10 +1363,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         </div>
 
         <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto p-2">
-          {tensorrtPanel === 'blocked' ? (
-            <TensorrtHubBlocked blockers={tensorrtHub.blockers} />
-          ) : tensorrtPanel === 'checking' ? (
-            <TensorrtHubChecking />
+          {managedPanel === 'blocked' ? (
+            managedSelected && (
+              <ManagedHubBlocked engine={managedSelected} blockers={managedHub.blockers} />
+            )
+          ) : managedPanel === 'checking' ? (
+            managedSelected && <ManagedHubChecking engine={managedSelected} />
           ) : showSkeleton ? (
             <div className="flex animate-pulse flex-col gap-2">
               {[...Array(6)].map((_, index) => (
@@ -1249,7 +1378,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           ) : isEmpty ? (
             <HubNoResults
               message={
-                !isSearchMode && filters.onlyFitting && !tensorrtFormat
+                !isSearchMode && filters.onlyFitting && !managedFormat
                   ? t('hub:noFittingPicks')
                   : t('hub:noModels')
               }
@@ -1290,6 +1419,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
                     )}
                     <ModelListRow
                       model={item.model}
+                      managedFormat={
+                        managedSelected ? (managedSelected.id as ModelFormat) : undefined
+                      }
                       pick={item.pick}
                       fromHuggingFace={item.fromHuggingFace}
                       selected={item.model.model_name === selectedRepo}
@@ -1330,6 +1462,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         <ModelDetailPanel
           model={selectedItem?.model ?? null}
           pick={selectedItem?.pick}
+          managedFormat={managedSelected ? (managedSelected.id as ModelFormat) : undefined}
         />
       </div>
     </div>

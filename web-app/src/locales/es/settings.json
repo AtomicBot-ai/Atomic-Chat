@@ -553,10 +553,14 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   },
   "decision": {
-    "multilingual": "100+ languages",
+    "multilingual": "Multilingual",
     "context": "{{tokens}} tokens",
     "diskSize": "{{size}} GB on disk",
     "progress": "{{current}} of {{total}} GB",
@@ -566,9 +570,12 @@
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "The model files and its converted copy will be deleted. If the model is running, it is stopped first.",
     "removed": "{{name}} removed",
-    "installEngine": "Install TurboQuant",
-    "engineLatest": "TurboQuant is up to date. A build that runs decision models is not released yet.",
-    "engineInstallFailed": "TurboQuant could not be installed",
+    "installEngine": "Install {{engine}}",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be installed",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
       "disabled": "Stopped",
       "idle": "Starts on the next request",
@@ -579,7 +586,7 @@
       "unsupported": "Engine not supported"
     },
     "errors": {
-      "engineUnsupported": "The installed TurboQuant engine cannot run decision models.",
+      "engineUnsupported": "The installed {{engine}} engine cannot run this decision model.",
       "notConfigured": "No decision model is selected. Download a model and press Start.",
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
@@ -590,5 +597,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Multilingüe",
+    "context": "{{tokens}} tokens",
+    "dims": "{{dims}} dimensiones",
+    "diskSize": "{{size}} GB en disco",
+    "progress": "{{current}} de {{total}} GB",
+    "start": "Iniciar",
+    "stop": "Detener",
+    "remove": "Eliminar",
+    "removeTitle": "¿Eliminar {{name}}?",
+    "removeDescription": "Se eliminarán los archivos del modelo. Si el modelo está en ejecución, primero se detendrá.",
+    "removed": "{{name}} eliminado",
+    "updateEngine": "Actualizar {{engine}}",
+    "engineLatest": "{{engine}} está actualizado. Todavía no se ha publicado una versión que ejecute este modelo de embeddings.",
+    "engineInstallFailed": "No se pudo actualizar {{engine}}",
+    "requiresEngine": "Requiere {{engine}} {{version}}+",
+    "requiresEngineNotice": "Este modelo requiere {{engine}} {{version}} o posterior. Actualiza el motor para iniciarlo.",
+    "state": {
+      "disabled": "Detenido",
+      "idle": "Se inicia con la próxima solicitud",
+      "starting": "Iniciando…",
+      "ready": "En ejecución",
+      "restarting": "Reiniciando…",
+      "failed": "Error",
+      "unsupported": "Motor no compatible"
+    },
+    "errors": {
+      "engineUnsupported": "El motor {{engine}} instalado no puede ejecutar este modelo de embeddings.",
+      "notConfigured": "No hay ningún modelo de embeddings seleccionado. Descarga un modelo y pulsa Iniciar.",
+      "notEmbedding": "Este archivo no es un modelo de embeddings.",
+      "modelFileNotFound": "Los archivos del modelo no están en el disco. Vuelve a descargar el modelo.",
+      "generic": "No se pudo iniciar el modelo de embeddings."
+    },
+    "sectionTitle": "Modelos de embeddings",
+    "noneTitle": "No hay modelos de embeddings descargados",
+    "noneDescription": "Descarga uno en la categoría Embedding del Hub",
+    "availableInApi": "Disponible en la API",
+    "localModel": "De tus modelos de llama.cpp"
   }
 }

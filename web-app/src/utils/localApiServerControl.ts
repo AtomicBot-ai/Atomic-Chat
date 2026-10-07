@@ -11,6 +11,10 @@ import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { SERVER_START_WATCHDOG_MS, withTimeout } from '@/lib/utils'
 import type { DiffusionService } from '@/services/diffusion/types'
+import type {
+  EmbeddingService,
+  EmbeddingState,
+} from '@/services/embedding/types'
 
 /**
  * Starts the proxy with the persisted configuration and returns the port it
@@ -92,6 +96,33 @@ export async function hasResidentMediaModel(
       status.configured &&
       (status.model.state === 'loaded' || status.model.state === 'loading')
     )
+  } catch {
+    return false
+  }
+}
+
+/** An enabled embedding model in these states answers `/v1/embeddings`; `idle` starts on the request. */
+const EMBEDDING_SERVING_STATES: ReadonlySet<EmbeddingState> = new Set([
+  'idle',
+  'starting',
+  'ready',
+  'restarting',
+])
+
+/**
+ * Whether an embedding model is switched on. The core serves
+ * `/v1/embeddings` from it with no chat model loaded, so the server has
+ * something to answer without one — and loading one for it could take the
+ * memory the embedding model runs in. Anything that cannot tell reads as
+ * "no".
+ */
+export async function hasResidentEmbeddingModel(
+  embedding: Pick<EmbeddingService, 'isSupported' | 'getStatus'>
+): Promise<boolean> {
+  try {
+    if (!embedding.isSupported()) return false
+    const status = await embedding.getStatus()
+    return status.enabled && EMBEDDING_SERVING_STATES.has(status.state)
   } catch {
     return false
   }

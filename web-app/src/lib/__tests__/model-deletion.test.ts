@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { deleteLocalModel } from '../model-deletion'
+import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 import { createMockServiceHub } from '@/test/service-hub'
 import { useAppState } from '@/hooks/useAppState'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
@@ -131,6 +132,31 @@ describe('deleteLocalModel', () => {
         useModelProvider.getState().providers[0].models.map((m) => m.id)
       ).toEqual(['Qwen/Qwen3-1.7B'])
     })
+  })
+
+  it('deletes a store model once, through the core, and it leaves every managed provider', async () => {
+    setManagedEnginesForTests([
+      { id: 'second-engine', label: 'Second', i18n: 'second' },
+      TENSORRT_LLM_ENGINE,
+    ])
+    try {
+      const { serviceHub, models } = setup([
+        provider('second-engine', ['Qwen/Qwen3-1.7B']),
+        provider('tensorrt-llm', ['Qwen/Qwen3-1.7B']),
+      ])
+      models.deleteModel.mockResolvedValue({ freedBytes: 1 })
+      useAppState.setState({ activeModels: ['Qwen/Qwen3-1.7B'] })
+
+      await deleteLocalModel(serviceHub, 'Qwen/Qwen3-1.7B', 'second-engine')
+
+      expect(models.stopModel).not.toHaveBeenCalled()
+      expect(models.deleteModel).toHaveBeenCalledTimes(1)
+      expect(
+        useModelProvider.getState().providers.flatMap((entry) => entry.models)
+      ).toEqual([])
+    } finally {
+      setManagedEnginesForTests(undefined)
+    }
   })
 
   it('leaves the store untouched when the local engine refuses', async () => {

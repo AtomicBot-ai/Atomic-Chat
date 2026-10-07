@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "埋め込みモデル",
+    "copyEmbeddingModel": "モデル ID をコピー",
+    "copyTextExample": "テキストの例をコピー",
+    "copyImageExample": "画像の例をコピー",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

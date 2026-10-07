@@ -12,6 +12,7 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
     "logs",
     "llamacpp",
     "llamacpp-upstream",
+    "atomic-prism",
     "mlx",
     "openclaw",
     "models",
@@ -39,8 +40,8 @@ pub const JAN_DATA_FILES: &[&str] = &[
 /// Providers whose downloaded backends a factory reset keeps, so that hundreds of megabytes of
 /// CUDA or Vulkan builds are not fetched again. `llamacpp-upstream` is the default provider; when
 /// only `llamacpp` was kept, a reset threw the default provider's backend away and the next
-/// launch downloaded it anew.
-pub const BACKEND_PRESERVING_PROVIDERS: &[&str] = &["llamacpp", "llamacpp-upstream"];
+/// launch downloaded it anew. `atomic-prism` packs are as large and as slow to fetch.
+pub const BACKEND_PRESERVING_PROVIDERS: &[&str] = &["llamacpp", "llamacpp-upstream", "atomic-prism"];
 
 #[cfg(test)]
 mod tests {

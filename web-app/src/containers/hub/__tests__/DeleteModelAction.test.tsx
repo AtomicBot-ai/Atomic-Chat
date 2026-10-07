@@ -142,4 +142,10 @@ describe('DeleteModelAction', () => {
       useModelProvider.getState().providers[0].models.map((m) => m.id)
     ).toEqual(['Qwen3-4B-Q4_K_M'])
   })
+
+  it('warns that a managed model goes from every managed engine before it is deleted', async () => {
+    render(<DeleteModelAction modelId="Qwen/Qwen3-1.7B" provider="tensorrt-llm" />)
+    await openConfirm()
+    expect(screen.getByText('common:deleteModel.managedShared')).toBeInTheDocument()
+  })
 })

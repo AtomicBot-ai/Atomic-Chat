@@ -36,11 +36,23 @@ describe('sortProvidersForSettings', () => {
     ])
   })
 
+  it('puts PrismML after the general-purpose llama.cpp engines', () => {
+    expect(
+      order(['atomic-prism', 'llamacpp', 'llamacpp-upstream', 'mlx', 'openai'])
+    ).toEqual(['llamacpp-upstream', 'mlx', 'llamacpp', 'atomic-prism', 'openai'])
+  })
+
   it('never leaves turboquant first', () => {
     expect(order(['llamacpp', 'llamacpp-upstream'])[0]).toBe(
       'llamacpp-upstream'
     )
     expect(order(['llamacpp', 'mlx'])[0]).toBe('mlx')
+  })
+
+  it('puts vLLM right before TensorRT-LLM (change add-vllm-runtime)', () => {
+    expect(
+      order(['tensorrt-llm', 'openai', 'vllm', 'llamacpp', 'llamacpp-upstream'])
+    ).toEqual(['llamacpp-upstream', 'llamacpp', 'vllm', 'tensorrt-llm', 'openai'])
   })
 
   it('puts TensorRT-LLM after both llama.cpp engines on Linux', () => {

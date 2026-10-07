@@ -1,13 +1,27 @@
-import { IconWorld } from '@tabler/icons-react'
-import { useEffect, useMemo } from 'react'
+import {
+  IconCheck,
+  IconPhoto,
+  IconTerminal2,
+  IconWorld,
+} from '@tabler/icons-react'
+import { useEffect, useMemo, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { CopyButton } from '@/containers/CopyButton'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import type { DecisionState } from '@/services/decision/types'
+import type { EmbeddingState } from '@/services/embedding/types'
 import { useDecisionStore } from '@/stores/decision-store'
+import { useEmbeddingStore } from '@/stores/embedding-store'
 import { getModelContextLength } from '@/utils/apiServerCapacity'
 import { formatCount } from '@/utils/apiServerStats'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
@@ -66,11 +80,103 @@ function useServedDecisionModel(): {
   }
 }
 
+/** `idle` is an enabled module unloaded for idling: the next request starts it. */
+const EMBEDDING_SERVED_STATES = new Set<EmbeddingState>([
+  'idle',
+  'starting',
+  'ready',
+  'restarting',
+])
+
+/**
+ * The embedding model the server answers `/embeddings` with, by the id
+ * clients pass as `model`, or `null` when none. What it reads comes from the
+ * running process, or from the catalog until the process has said.
+ */
+function useServedEmbeddingModel(): {
+  id: string
+  ready: boolean
+  starting: boolean
+  readsImages: boolean
+} | null {
+  const status = useEmbeddingStore((s) => s.status)
+  const config = useEmbeddingStore((s) => s.config)
+  const catalog = useEmbeddingStore((s) => s.catalog)
+
+  useEffect(() => useEmbeddingStore.getState().bind(), [])
+
+  if (!status?.enabled || !EMBEDDING_SERVED_STATES.has(status.state))
+    return null
+  const id = status.model_id || config?.model_id || ''
+  if (!id) return null
+  const modalities =
+    status.modalities.length > 0
+      ? status.modalities
+      : (catalog.models.find((model) => model.id === id)?.modalities ?? [])
+  return {
+    id,
+    ready: status.state === 'ready',
+    starting: status.state === 'starting' || status.state === 'restarting',
+    readsImages: (modalities as readonly string[]).includes('image'),
+  }
+}
+
+/** Single-quoted for a POSIX shell. */
+const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+
+/** A `POST /embeddings` a client can paste, with the key header when the server needs one. */
+function embeddingCurl(endpoint: string, body: unknown, authRequired: boolean) {
+  return [
+    `curl -X POST ${shellQuote(endpoint)} \\`,
+    `  -H 'Content-Type: application/json' \\`,
+    ...(authRequired ? [`  -H 'Authorization: Bearer YOUR_API_KEY' \\`] : []),
+    `  -d ${shellQuote(JSON.stringify(body))}`,
+  ].join('\n')
+}
+
+/**
+ * An icon that copies `text`, named by its tooltip. The strip's fields stay one
+ * line, so the example commands sit as icons beside the copy icon, not buttons.
+ */
+function CopyIcon({
+  text,
+  label,
+  icon,
+}: {
+  text: string
+  label: string
+  icon: React.ReactNode
+}) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    if (!(await copyToClipboard(text))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0"
+          onClick={copy}
+          aria-label={label}
+        >
+          {copied ? <IconCheck size={16} className="text-primary" /> : icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function ApiConnectionStrip() {
   const { t } = useTranslation()
   const { serverStatus, activeModels } = useAppState()
   const decisionModel = useServedDecisionModel()
-  const { serverHost, serverPort, apiPrefix } = useLocalApiServer()
+  const embeddingModel = useServedEmbeddingModel()
+  const { serverHost, serverPort, apiPrefix, apiKey } = useLocalApiServer()
 
   const url = useMemo(
     () => getLocalApiServerUrl(),
@@ -78,6 +184,9 @@ export function ApiConnectionStrip() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [serverHost, serverPort, apiPrefix]
   )
+
+  const embeddingsEndpoint = `${url.replace(/\/+$/, '')}/embeddings`
+  const authRequired = apiKey.trim().length > 0
 
   const loadedModel = activeModels[0] ?? null
   const contextLength = getModelContextLength(loadedModel)
@@ -87,7 +196,7 @@ export function ApiConnectionStrip() {
       ? { tone: 'idle', label: t('api:status.stopped') }
       : serverStatus === 'pending'
         ? { tone: 'pending', label: t('api:status.starting') }
-        : loadedModel || decisionModel?.ready
+        : loadedModel || decisionModel?.ready || embeddingModel?.ready
           ? { tone: 'ready', label: t('api:status.ready') }
           : { tone: 'idle', label: t('api:status.noModel') }
 
@@ -142,6 +251,60 @@ export function ApiConnectionStrip() {
                 {t('api:status.starting')}
               </span>
             )}
+          </span>
+        </Field>
+      )}
+
+      {embeddingModel && (
+        <Field label={t('api:strip.embeddingModel')} className="max-w-full">
+          <span className="flex min-w-0 items-center gap-1 font-mono text-xs">
+            <span className="min-w-0 truncate" title={embeddingModel.id}>
+              {embeddingModel.id}
+              {embeddingModel.starting && (
+                <span className="font-sans text-muted-foreground">
+                  {' · '}
+                  {t('api:status.starting')}
+                </span>
+              )}
+            </span>
+            <span className="flex shrink-0 items-center">
+              <CopyButton
+                text={embeddingModel.id}
+                ariaLabel={t('api:strip.copyEmbeddingModel')}
+              />
+              <CopyIcon
+                text={embeddingCurl(
+                  embeddingsEndpoint,
+                  { model: embeddingModel.id, input: 'Hello, world' },
+                  authRequired
+                )}
+                label={t('api:strip.copyTextExample')}
+                icon={<IconTerminal2 size={16} />}
+              />
+              {embeddingModel.readsImages && (
+                <CopyIcon
+                  text={embeddingCurl(
+                    embeddingsEndpoint,
+                    {
+                      model: embeddingModel.id,
+                      input: [
+                        {
+                          content: [
+                            {
+                              type: 'image_url',
+                              image_url: { url: 'data:image/png;base64,...' },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    authRequired
+                  )}
+                  label={t('api:strip.copyImageExample')}
+                  icon={<IconPhoto size={16} />}
+                />
+              )}
+            </span>
           </span>
         </Field>
       )}

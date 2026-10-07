@@ -154,6 +154,29 @@ describe('what Start loads before the server comes up', () => {
     expect(setRunning).toHaveBeenCalledWith(true)
   })
 
+  // The embedding model answers /v1/embeddings by itself (an idle one starts on the request), and a
+  // chat model loaded beside it could take the memory it runs in.
+  it('loads no chat model while an embedding model is switched on', async () => {
+    const embedding = {
+      isSupported: () => true,
+      getStatus: vi.fn(async () => ({ state: 'idle', enabled: true })),
+    }
+    initializeServiceHubStore(
+      createMockServiceHub({
+        app: { getServerStatus: vi.fn().mockResolvedValue(false) } as never,
+        models: models as never,
+        diffusion,
+        embedding: embedding as never,
+      })
+    )
+
+    await pressStart()
+
+    expect(embedding.getStatus).toHaveBeenCalled()
+    expect(useLocalApiServer.getState().lastServerModels).toEqual([])
+    expect(setRunning).toHaveBeenCalledWith(true)
+  })
+
   it('still loads the chat model first when nothing else is resident', async () => {
     await pressStart()
 

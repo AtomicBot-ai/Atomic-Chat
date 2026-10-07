@@ -13,24 +13,34 @@
  */
 
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { managedEngines } from '@/lib/managed-engines'
 import { sanitizeModelId } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 
 /**
- * Both llama.cpp providers register downloads: the fork and the upstream
- * build. Upstream first — shared ids resolve to the default engine, not the
- * TurboQuant fork (which may even be deactivated on fresh installs).
+ * Every llama.cpp provider registers downloads: the fork, the upstream build
+ * and PrismML (Bonsai files the core set up, listed only there). Upstream
+ * first — shared ids resolve to the default engine, not the TurboQuant fork
+ * (which may even be deactivated on fresh installs).
  */
-export const LLAMACPP_PROVIDERS = ['llamacpp-upstream', 'llamacpp'] as const
+export const LLAMACPP_PROVIDERS = [
+  'llamacpp-upstream',
+  'llamacpp',
+  'atomic-prism',
+] as const
 export const MLX_PROVIDER = 'mlx'
 /** Every provider whose models the GGUF and MLX rows of the Hub may claim. */
 export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const
 /**
- * TensorRT-LLM models (change `add-tensorrt-llm-model-hub`, design D8): the extension lists each
- * under its repository, as `model.yml` names it. Kept apart from the GGUF and MLX ids, so a GGUF
- * entry can never claim one that happens to be spelled alike.
+ * Models of the managed engines' shared store (change `add-tensorrt-llm-model-hub`, design D8;
+ * change `add-vllm-runtime`, design D4): every managed provider lists each under its repository, as
+ * `model.yml` names it, so one model is listed by every installed engine and shown here once. Kept
+ * apart from the GGUF and MLX ids, so a GGUF entry can never claim one that happens to be spelled
+ * alike.
  */
-export const TENSORRT_LLM_PROVIDER = 'tensorrt-llm'
+export function managedProviderIds(): string[] {
+  return managedEngines().map((engine) => engine.id)
+}
 
 /**
  * The MLX engine sanitizes ids with its own rules (dots survive, spaces become
@@ -40,7 +50,7 @@ export const TENSORRT_LLM_PROVIDER = 'tensorrt-llm'
 const sanitizeMlxId = (id: string): string =>
   id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 
-type InstalledKind = 'gguf' | 'mlx' | 'tensorrt-llm'
+type InstalledKind = 'gguf' | 'mlx' | 'managed'
 type InstalledModel = { model: Model; kind: InstalledKind }
 
 /**
@@ -50,10 +60,10 @@ type InstalledModel = { model: Model; kind: InstalledKind }
  */
 function collectLocalModels(providers: readonly ModelProvider[]): {
   local: Map<string, InstalledModel>
-  tensorrt: Map<string, InstalledModel>
+  managed: Map<string, InstalledModel>
 } {
   const local = new Map<string, InstalledModel>()
-  const tensorrt = new Map<string, InstalledModel>()
+  const managed = new Map<string, InstalledModel>()
 
   const add = (
     out: Map<string, InstalledModel>,
@@ -74,9 +84,9 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
 
   for (const name of LLAMACPP_PROVIDERS) add(local, modelsOf(name), 'gguf')
   add(local, modelsOf(MLX_PROVIDER), 'mlx')
-  add(tensorrt, modelsOf(TENSORRT_LLM_PROVIDER), 'tensorrt-llm')
+  for (const name of managedProviderIds()) add(managed, modelsOf(name), 'managed')
 
-  return { local, tensorrt }
+  return { local, managed }
 }
 
 /**
@@ -104,7 +114,7 @@ export function mlxModelIds(entry: CatalogModel): string[] {
  * Provider model ids a catalog entry would produce once downloaded.
  */
 function candidateIds(entry: CatalogModel): string[] {
-  if (entry.is_tensorrt_llm) return [entry.model_name]
+  if (entry.is_managed) return [entry.model_name]
   if (entry.is_mlx) return mlxModelIds(entry)
 
   return (entry.quants ?? []).flatMap((quant) =>
@@ -156,10 +166,10 @@ function synthesizeEntry(id: string, installed: InstalledModel): CatalogModel {
   }
 
   // The id is the Hugging Face repository: the card reads its README and asks the core again.
-  if (installed.kind === 'tensorrt-llm') {
+  if (installed.kind === 'managed') {
     return {
       ...base,
-      is_tensorrt_llm: true,
+      is_managed: true,
       readme: `https://huggingface.co/${id}/resolve/main/README.md`,
     }
   }
@@ -202,15 +212,15 @@ export function collectInstalledModels(
   catalog: readonly CatalogModel[],
   providers: readonly ModelProvider[]
 ): CatalogModel[] {
-  const { local, tensorrt } = collectLocalModels(providers)
-  if (local.size === 0 && tensorrt.size === 0) return []
+  const { local, managed } = collectLocalModels(providers)
+  if (local.size === 0 && managed.size === 0) return []
 
-  const claimed = { local: new Set<string>(), tensorrt: new Set<string>() }
+  const claimed = { local: new Set<string>(), managed: new Set<string>() }
   const rows: CatalogModel[] = []
 
   for (const entry of catalog) {
-    const [installed, taken] = entry.is_tensorrt_llm
-      ? [tensorrt, claimed.tensorrt]
+    const [installed, taken] = entry.is_managed
+      ? [managed, claimed.managed]
       : [local, claimed.local]
     const matches = candidateIds(entry).filter((id) => installed.has(id))
     if (matches.length === 0) continue
@@ -220,7 +230,7 @@ export function collectInstalledModels(
 
   for (const [installed, taken] of [
     [local, claimed.local],
-    [tensorrt, claimed.tensorrt],
+    [managed, claimed.managed],
   ] as const) {
     for (const [id, model] of installed) {
       if (taken.has(id)) continue

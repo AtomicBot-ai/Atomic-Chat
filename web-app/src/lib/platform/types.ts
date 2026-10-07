@@ -79,7 +79,7 @@ export enum PlatformFeature {
   // access to the local server is not part of it.
   REMOTE_ACCESS = 'remoteAccess',
 
-  // The TurboQuant llama.cpp fork (`llamacpp` provider). It has no Windows
-  // arm64 build, where upstream llama.cpp is the only engine.
+  // The TurboQuant llama.cpp fork (`llamacpp` provider). It is not shipped on
+  // Windows or Linux arm64, where upstream llama.cpp is the only engine.
   TURBOQUANT_ENGINE = 'turboquantEngine',
 }

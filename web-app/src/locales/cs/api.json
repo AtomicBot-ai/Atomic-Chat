@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "Embedding model",
+    "copyEmbeddingModel": "Kopírovat ID modelu",
+    "copyTextExample": "Kopírovat textový příklad",
+    "copyImageExample": "Kopírovat příklad s obrázkem",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

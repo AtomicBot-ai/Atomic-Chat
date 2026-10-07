@@ -44,7 +44,7 @@ import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
-import { TensorrtLlmOperationBar } from '@/containers/tensorrt-llm/TensorrtLlmOperationBar'
+import { ManagedEngineOperationBar } from '@/containers/managed-engine/ManagedEngineOperationBar'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -191,7 +191,7 @@ function RootLayout() {
             <DataProvider />
             <DeferredFirstSendProvider />
             <GlobalEventHandler />
-            <TensorrtLlmOperationBar />
+            <ManagedEngineOperationBar />
             <StartupBackendCoordinator />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>

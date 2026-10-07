@@ -335,10 +335,14 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   },
   "decision": {
-    "multilingual": "100+ languages",
+    "multilingual": "Multilingual",
     "context": "{{tokens}} tokens",
     "diskSize": "{{size}} GB on disk",
     "progress": "{{current}} of {{total}} GB",
@@ -348,9 +352,12 @@
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "The model files and its converted copy will be deleted. If the model is running, it is stopped first.",
     "removed": "{{name}} removed",
-    "installEngine": "Install TurboQuant",
-    "engineLatest": "TurboQuant is up to date. A build that runs decision models is not released yet.",
-    "engineInstallFailed": "TurboQuant could not be installed",
+    "installEngine": "Install {{engine}}",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be installed",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
       "disabled": "Stopped",
       "idle": "Starts on the next request",
@@ -361,7 +368,7 @@
       "unsupported": "Engine not supported"
     },
     "errors": {
-      "engineUnsupported": "The installed TurboQuant engine cannot run decision models.",
+      "engineUnsupported": "The installed {{engine}} engine cannot run this decision model.",
       "notConfigured": "No decision model is selected. Download a model and press Start.",
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
@@ -372,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Đa ngôn ngữ",
+    "context": "{{tokens}} token",
+    "dims": "{{dims}} chiều",
+    "diskSize": "{{size}} GB trên ổ đĩa",
+    "progress": "{{current}} / {{total}} GB",
+    "start": "Khởi động",
+    "stop": "Dừng",
+    "remove": "Xóa",
+    "removeTitle": "Xóa {{name}}?",
+    "removeDescription": "Các tệp mô hình sẽ bị xóa. Nếu mô hình đang chạy, nó sẽ được dừng trước.",
+    "removed": "Đã xóa {{name}}",
+    "updateEngine": "Cập nhật {{engine}}",
+    "engineLatest": "{{engine}} đã là bản mới nhất. Bản dựng chạy được mô hình embedding này chưa được phát hành.",
+    "engineInstallFailed": "Không thể cập nhật {{engine}}",
+    "requiresEngine": "Cần {{engine}} {{version}}+",
+    "requiresEngineNotice": "Mô hình này cần {{engine}} {{version}} trở lên. Hãy cập nhật engine để khởi động nó.",
+    "state": {
+      "disabled": "Đã dừng",
+      "idle": "Khởi động ở yêu cầu tiếp theo",
+      "starting": "Đang khởi động…",
+      "ready": "Đang chạy",
+      "restarting": "Đang khởi động lại…",
+      "failed": "Thất bại",
+      "unsupported": "Engine không được hỗ trợ"
+    },
+    "errors": {
+      "engineUnsupported": "Engine {{engine}} đã cài đặt không chạy được mô hình embedding này.",
+      "notConfigured": "Chưa chọn mô hình embedding nào. Hãy tải một mô hình và nhấn Khởi động.",
+      "notEmbedding": "Tệp này không phải là mô hình embedding.",
+      "modelFileNotFound": "Các tệp mô hình không có trên ổ đĩa. Hãy tải lại mô hình.",
+      "generic": "Không thể khởi động mô hình embedding."
+    },
+    "sectionTitle": "Mô hình embedding",
+    "noneTitle": "Chưa tải mô hình embedding nào",
+    "noneDescription": "Tải một mô hình trong danh mục Embedding của Hub",
+    "availableInApi": "Có sẵn trong API",
+    "localModel": "Từ các mô hình llama.cpp của bạn"
   }
 }

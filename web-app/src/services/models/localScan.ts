@@ -978,7 +978,12 @@ export async function scanLocalModels(
 export function collectImportedModelPaths(
   providers: Array<{ provider: string; models: Array<{ path?: string }> }>
 ): string[] {
-  const localProviders = new Set(['llamacpp', 'llamacpp-upstream', 'mlx'])
+  const localProviders = new Set([
+    'llamacpp',
+    'llamacpp-upstream',
+    'atomic-prism',
+    'mlx',
+  ])
   const paths: string[] = []
 
   for (const p of providers) {

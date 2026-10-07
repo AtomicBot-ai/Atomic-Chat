@@ -1,7 +1,7 @@
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { agentProviderBlockReason } from '@/lib/agent-provider'
-import { agentModelBlockReason } from '@/lib/tensorrt-llm/chat'
+import { agentModelBlockReason } from '@/lib/managed-engine/chat'
 import {
   resolveMessageExecutionRoute,
   type ResolvedMessageExecutionRoute,

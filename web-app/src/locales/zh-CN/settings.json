@@ -335,10 +335,14 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   },
   "decision": {
-    "multilingual": "100+ languages",
+    "multilingual": "Multilingual",
     "context": "{{tokens}} tokens",
     "diskSize": "{{size}} GB on disk",
     "progress": "{{current}} of {{total}} GB",
@@ -348,9 +352,12 @@
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "The model files and its converted copy will be deleted. If the model is running, it is stopped first.",
     "removed": "{{name}} removed",
-    "installEngine": "Install TurboQuant",
-    "engineLatest": "TurboQuant is up to date. A build that runs decision models is not released yet.",
-    "engineInstallFailed": "TurboQuant could not be installed",
+    "installEngine": "Install {{engine}}",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be installed",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
       "disabled": "Stopped",
       "idle": "Starts on the next request",
@@ -361,7 +368,7 @@
       "unsupported": "Engine not supported"
     },
     "errors": {
-      "engineUnsupported": "The installed TurboQuant engine cannot run decision models.",
+      "engineUnsupported": "The installed {{engine}} engine cannot run this decision model.",
       "notConfigured": "No decision model is selected. Download a model and press Start.",
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
@@ -372,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "多语言",
+    "context": "{{tokens}} 个 token",
+    "dims": "{{dims}} 维",
+    "diskSize": "磁盘占用 {{size}} GB",
+    "progress": "{{current}} / {{total}} GB",
+    "start": "启动",
+    "stop": "停止",
+    "remove": "移除",
+    "removeTitle": "移除 {{name}}？",
+    "removeDescription": "模型文件将被删除。如果模型正在运行，会先将其停止。",
+    "removed": "已移除 {{name}}",
+    "updateEngine": "更新 {{engine}}",
+    "engineLatest": "{{engine}} 已是最新版本。能运行此嵌入模型的版本尚未发布。",
+    "engineInstallFailed": "无法更新 {{engine}}",
+    "requiresEngine": "需要 {{engine}} {{version}}+",
+    "requiresEngineNotice": "此模型需要 {{engine}} {{version}} 或更高版本。请更新引擎后再启动。",
+    "state": {
+      "disabled": "已停止",
+      "idle": "将在下次请求时启动",
+      "starting": "正在启动…",
+      "ready": "运行中",
+      "restarting": "正在重启…",
+      "failed": "失败",
+      "unsupported": "引擎不受支持"
+    },
+    "errors": {
+      "engineUnsupported": "已安装的 {{engine}} 引擎无法运行此嵌入模型。",
+      "notConfigured": "未选择嵌入模型。请下载模型并点击“启动”。",
+      "notEmbedding": "此文件不是嵌入模型。",
+      "modelFileNotFound": "磁盘上没有模型文件。请重新下载模型。",
+      "generic": "无法启动嵌入模型。"
+    },
+    "sectionTitle": "嵌入模型",
+    "noneTitle": "尚未下载嵌入模型",
+    "noneDescription": "在中心的“嵌入”类别中下载",
+    "availableInApi": "可在 API 中使用",
+    "localModel": "来自你的 llama.cpp 模型"
   }
 }

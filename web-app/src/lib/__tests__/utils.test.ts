@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   getProviderLogo,
   getProviderTitle,
+  isLlamacppProvider,
   getReadableLanguageName,
   toGigabytes,
   formatMegaBytes,
@@ -11,6 +12,7 @@ import {
   withTimeout,
   OPERATION_TIMED_OUT_CODE,
 } from '../utils'
+import { isMonochromeFamilyLogo } from '../model-logo'
 
 describe('getProviderLogo', () => {
   it('returns correct logo paths for known providers', () => {
@@ -37,9 +39,35 @@ describe('getProviderLogo', () => {
     )
   })
 
+  it('marks vLLM with its own mark', () => {
+    expect(getProviderLogo('vllm')).toBe('/images/model-provider/vllm.svg')
+  })
+
+  it('marks PrismML with its own mark, the one its Bonsai models carry in the Hub', () => {
+    expect(getProviderLogo('atomic-prism')).toBe(
+      '/images/model-provider/prism-ml.webp'
+    )
+    expect(isMonochromeFamilyLogo(getProviderLogo('atomic-prism')!)).toBe(true)
+  })
+
   it('returns undefined for unknown providers', () => {
     expect(getProviderLogo('unknown')).toBeUndefined()
     expect(getProviderLogo('')).toBeUndefined()
+  })
+})
+
+describe('isLlamacppProvider', () => {
+  it('counts tokens for every llama.cpp engine the app starts', () => {
+    expect(isLlamacppProvider('llamacpp')).toBe(true)
+    expect(isLlamacppProvider('llamacpp-upstream')).toBe(true)
+    expect(isLlamacppProvider('atomic-prism')).toBe(true)
+  })
+
+  it('leaves the other engines and the cloud out', () => {
+    expect(isLlamacppProvider('mlx')).toBe(false)
+    expect(isLlamacppProvider('tensorrt-llm')).toBe(false)
+    expect(isLlamacppProvider('llamacpp-server')).toBe(false)
+    expect(isLlamacppProvider('openai')).toBe(false)
   })
 })
 
@@ -52,6 +80,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('nvidia')).toBe('NVIDIA NIM')
     expect(getProviderTitle('aimlapi')).toBe('AI/ML API')
     expect(getProviderTitle('tensorrt-llm')).toBe('TensorRT-LLM')
+    expect(getProviderTitle('vllm')).toBe('vLLM')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
   })
 

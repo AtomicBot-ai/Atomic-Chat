@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "嵌入模型",
+    "copyEmbeddingModel": "複製模型 ID",
+    "copyTextExample": "複製文字範例",
+    "copyImageExample": "複製圖片範例",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

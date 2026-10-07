@@ -967,6 +967,45 @@ describe('describeModelLoadFailure', () => {
     expect(failure.title).toBe('model-errors:modelLoadFailedTitle')
     expect(failure.persistent).toBe(false)
   })
+
+  it("names what the core's compatibility gate asks for, and keeps the toast up", () => {
+    const refusal = (code: string, verdict: Record<string, unknown>) =>
+      describeModelLoadFailure({
+        code,
+        message: 'refused',
+        details: JSON.stringify(verdict),
+      })
+
+    expect(
+      refusal('MODEL_ENGINE_INCOMPATIBLE', {
+        outcome: 'engine_required',
+        reason: 'needs pq2_0',
+      })
+    ).toMatchObject({
+      title: 'model-errors:engineRequiredTitle',
+      details: 'needs pq2_0',
+      persistent: true,
+    })
+    expect(
+      refusal('MODEL_ENGINE_INCOMPATIBLE', {
+        outcome: 'engine_update_required',
+        min_prism_build: 10800,
+      }).title
+    ).toBe('model-errors:engineUpdateRequiredTitle')
+    expect(
+      refusal('MODEL_ENGINE_INCOMPATIBLE', { outcome: 'unsupported' }).title
+    ).toBe('model-errors:engineUnsupportedTitle')
+    expect(
+      refusal('MODEL_FORMAT_LEGACY', { replacement: 'Bonsai-PQ2_0.gguf' })
+        .description
+    ).toBe('model-errors:formatLegacyDescription')
+    expect(
+      describeModelLoadFailure({ code: 'MODEL_FORMAT_LEGACY', details: 'not json' })
+    ).toMatchObject({
+      description: 'model-errors:formatLegacyDescriptionNoReplacement',
+      persistent: true,
+    })
+  })
 })
 
 describe('OOM retry ladder', () => {

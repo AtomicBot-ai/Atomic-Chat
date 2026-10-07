@@ -181,10 +181,22 @@ export async function fetchModelStats(modelId: string): Promise<ModelStats> {
   return stats
 }
 
-export type ModelFormat = 'mlx' | 'gguf' | 'tensorrt-llm'
+/**
+ * A Hub format: a file format, or a managed engine (its provider id) for a safetensors checkpoint.
+ * `atomic-prism` is a list rather than a file format: the Bonsai GGUF files only PrismML's
+ * llama.cpp runs, which `modelFormat` reads as GGUF.
+ */
+export type ModelFormat = 'mlx' | 'gguf' | 'vllm' | 'tensorrt-llm' | 'atomic-prism'
 
-export function modelFormat(model: CatalogModel): ModelFormat {
-  if (model.is_tensorrt_llm) return 'tensorrt-llm'
+/**
+ * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
+ * (change `add-vllm-runtime`): it reads as the managed format the Hub is showing, `managedFormat`.
+ */
+export function modelFormat(
+  model: CatalogModel,
+  managedFormat: ModelFormat = 'tensorrt-llm'
+): ModelFormat {
+  if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'
 }
@@ -283,8 +295,9 @@ export function quantLabel(modelId: string): string {
   // MLX: trailing "<n>bit"
   const bit = seg.match(/(\d+)\s*bit$/i)
   if (bit) return `${bit[1]}BIT`
-  // GGUF: trailing quant token after a separator (I-quants, ternary TQ, plain Q)
-  const gguf = seg.match(/[-_.]((?:[IT]?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i)
+  // GGUF: trailing quant token after a separator (I-quants, ternary TQ,
+  // PrismML's PQ / PTQ packings, plain Q)
+  const gguf = seg.match(/[-_.]((?:(?:[IT]|PT?)?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i)
   if (gguf) return gguf[1].toUpperCase()
   // Fallback: last separator-delimited segment
   return (seg.split(/[-_.]/).pop() ?? seg).toUpperCase()

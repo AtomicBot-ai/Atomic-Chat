@@ -1,5 +1,6 @@
 use crate::core::sessions::resolver::{
-    SessionResolver, PROVIDER_LLAMACPP, PROVIDER_LLAMACPP_UPSTREAM, PROVIDER_MLX,
+    SessionResolver, PROVIDER_ATOMIC_PRISM, PROVIDER_LLAMACPP, PROVIDER_LLAMACPP_UPSTREAM,
+    PROVIDER_MLX,
 };
 use futures_util::StreamExt;
 use hyper::body::Bytes;
@@ -759,6 +760,7 @@ async fn collect_served_models(
         let owned_by = match session.provider.as_str() {
             PROVIDER_LLAMACPP => "llama.cpp",
             PROVIDER_LLAMACPP_UPSTREAM => "llama.cpp-upstream",
+            PROVIDER_ATOMIC_PRISM => "llama.cpp-prism",
             PROVIDER_MLX => "mlx",
             _ => "local",
         };
@@ -848,7 +850,10 @@ fn is_context_limit_error(status: StatusCode, body: &str) -> bool {
 
 /// ATO-112: local on-device engines vs remote cloud providers.
 fn is_local_backend(backend: &str) -> bool {
-    matches!(backend, "llamacpp" | "llamacpp-upstream" | "mlx")
+    matches!(
+        backend,
+        "llamacpp" | "llamacpp-upstream" | "atomic-prism" | "mlx"
+    )
 }
 
 /// ATO-112: error_kind for an upstream that responded with a non-2xx status.
@@ -1339,6 +1344,11 @@ async fn handle_responses_request(
             None
         };
         let mlx = resolve_local_session(PROVIDER_MLX, &model_id, &resolver).await;
+        let prism = if llama.is_none() && upstream.is_none() && mlx.is_none() {
+            resolve_local_session(PROVIDER_ATOMIC_PRISM, &model_id, &resolver).await
+        } else {
+            None
+        };
 
         if let Some((port, key)) = llama {
             state.backend = "llamacpp";
@@ -1356,6 +1366,12 @@ async fn handle_responses_request(
             state.backend = "mlx";
             Target::Passthrough {
                 url: format!("http://127.0.0.1:{port}/v1/responses"),
+                api_key: Some(key),
+            }
+        } else if let Some((port, key)) = prism {
+            state.backend = "atomic-prism";
+            Target::Translate {
+                url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
                 api_key: Some(key),
             }
         } else {
@@ -1714,7 +1730,7 @@ async fn maybe_auto_increase_and_retry<R: Runtime>(
     resolver: &SessionResolver,
     trigger: &str,
 ) -> Option<(i32, String)> {
-    if backend != "llamacpp" && backend != "llamacpp-upstream" && backend != "mlx" {
+    if !is_local_backend(backend) {
         return None;
     }
     if is_embedding_session(backend, model_id, resolver).await {
@@ -2281,6 +2297,12 @@ async fn inner_proxy_request<R: Runtime>(
                             };
 
                             let mlx_session_info = resolver.find_in(PROVIDER_MLX, model_id).await;
+                            let prism_session = resolve_local_session(
+                                PROVIDER_ATOMIC_PRISM,
+                                model_id,
+                                &resolver,
+                            )
+                            .await;
 
                             if let Some((target_port, api_key)) = llama_session {
                                 state.backend = "llamacpp";
@@ -2296,6 +2318,11 @@ async fn inner_proxy_request<R: Runtime>(
                                 state.backend = "mlx";
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
+                                target_base_url =
+                                    Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
+                            } else if let Some((target_port, api_key)) = prism_session {
+                                state.backend = "atomic-prism";
+                                session_api_key = Some(api_key);
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else {
@@ -2471,6 +2498,12 @@ async fn inner_proxy_request<R: Runtime>(
                             .await;
                             let mlx_session_info =
                                 resolver.find_in(PROVIDER_MLX, sessions_find_model).await;
+                            let prism_session = resolve_local_session(
+                                PROVIDER_ATOMIC_PRISM,
+                                sessions_find_model,
+                                &resolver,
+                            )
+                            .await;
 
                             // How the 503 ("nothing is loaded") and the 404 ("that model is not
                             // loaded") are told apart. Counting is the resolver's job now, so the
@@ -2519,6 +2552,13 @@ async fn inner_proxy_request<R: Runtime>(
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
                                 log::debug!("Found MLX session for model_id {model_id}");
+                                target_base_url = Some(format!(
+                                    "http://127.0.0.1:{target_port}/v1{destination_path}"
+                                ));
+                            } else if let Some((target_port, api_key)) = prism_session {
+                                state.backend = "atomic-prism";
+                                session_api_key = Some(api_key);
+                                log::debug!("Found PrismML llama.cpp session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
@@ -2719,11 +2759,20 @@ async fn inner_proxy_request<R: Runtime>(
             .await
             {
                 Some((port, key)) => Some((port, key, PROVIDER_LLAMACPP)),
-                None => {
-                    resolve_local_session(PROVIDER_LLAMACPP_UPSTREAM, &metrics_model_id, &resolver)
-                        .await
-                        .map(|(port, key)| (port, key, PROVIDER_LLAMACPP_UPSTREAM))
-                }
+                None => match resolve_local_session(
+                    PROVIDER_LLAMACPP_UPSTREAM,
+                    &metrics_model_id,
+                    &resolver,
+                )
+                .await
+                {
+                    Some((port, key)) => Some((port, key, PROVIDER_LLAMACPP_UPSTREAM)),
+                    None => {
+                        resolve_local_session(PROVIDER_ATOMIC_PRISM, &metrics_model_id, &resolver)
+                            .await
+                            .map(|(port, key)| (port, key, PROVIDER_ATOMIC_PRISM))
+                    }
+                },
             };
 
             let (port, upstream_api_key, backend_label) = match target_session {
@@ -3243,9 +3292,7 @@ async fn inner_proxy_request<R: Runtime>(
                 // inside `maybe_auto_increase_and_retry`. We keep the original
                 // body/headers so the retry is byte-identical apart from the
                 // rewritten upstream URL + Authorization header.
-                let can_retry_local = (state.backend == "llamacpp"
-                    || state.backend == "llamacpp-upstream"
-                    || state.backend == "mlx")
+                let can_retry_local = is_local_backend(state.backend)
                     && state.model_id.is_some()
                     && buffered_body.is_some();
 
@@ -3325,11 +3372,11 @@ async fn inner_proxy_request<R: Runtime>(
                     log::warn!(
                         "Fatal compute error detected (status={status} backend={backend} model_id={model_id}); recreating backend, not retrying"
                     );
-                    // Only the upstream extension understands the
+                    // Only the upstream extension and its PrismML copy understand the
                     // `compute_error_recovery` trigger (reload same-ctx). Other
                     // local backends would misinterpret it as a context grow, so
                     // we skip the reload for them and only return the clear error.
-                    if backend == "llamacpp-upstream" {
+                    if backend == "llamacpp-upstream" || backend == "atomic-prism" {
                         let _ = maybe_auto_increase_and_retry(
                             &app_handle,
                             &auto_increase_state,
@@ -3394,9 +3441,7 @@ async fn inner_proxy_request<R: Runtime>(
             // trigger a reload and retry once. Streaming responses remain
             // pass-through (can't retry after chunks have been emitted).
             let can_inspect_finish = !state.stream
-                && (state.backend == "llamacpp"
-                    || state.backend == "llamacpp-upstream"
-                    || state.backend == "mlx")
+                && is_local_backend(state.backend)
                 && state.model_id.is_some()
                 && buffered_body.is_some();
 
@@ -4380,6 +4425,16 @@ async fn forward_non_streaming(
 #[cfg(test)]
 mod auto_increase_ctx_tests {
     use super::*;
+
+    #[test]
+    fn every_core_llama_cpp_engine_and_mlx_is_a_local_backend() {
+        for backend in ["llamacpp", "llamacpp-upstream", "atomic-prism", "mlx"] {
+            assert!(is_local_backend(backend), "{backend}");
+            assert_eq!(upstream_error_kind(backend), "local_model_error");
+        }
+        assert!(!is_local_backend("remote"));
+        assert_eq!(upstream_error_kind("remote"), "remote_provider_error");
+    }
 
     // --- is_context_limit_error -------------------------------------------------
 

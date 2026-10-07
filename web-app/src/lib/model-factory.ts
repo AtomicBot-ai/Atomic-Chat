@@ -70,10 +70,15 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
+  isManagedProvider,
+  managedEngine,
+  type ManagedEngine,
+} from '@/lib/managed-engines'
+import {
   asksForStructuredOutput,
   createEngineErrorFetch,
-  tensorrtLlmRequestBody,
-} from '@/lib/tensorrt-llm/request'
+  managedRequestBody,
+} from '@/lib/managed-engine/request'
 
 /**
  * Inactivity budget (seconds) handed to `stream_local_http` on this generic
@@ -348,12 +353,20 @@ export async function findFoundationModelsSession(
  * of date and name a port that now belongs to nothing. `null` and errors are authoritative.
  */
 /** Local engines whose sessions `ModelFactory` resolves through the core's mirror and caches. */
-type CachedLocalProvider = 'llamacpp' | 'llamacpp-upstream' | 'mlx' | 'tensorrt-llm'
+/** A managed engine's provider id (`lib/managed-engines.ts`): `tensorrt-llm`, `vllm`. */
+type ManagedProviderId = ManagedEngine['id']
+type CachedLocalProvider =
+  | 'llamacpp'
+  | 'llamacpp-upstream'
+  | 'atomic-prism'
+  | 'mlx'
+  | ManagedProviderId
 
 /** How an error about a missing session names the engine, e.g. "No running MLX session". */
-const SESSION_ENGINE_LABEL: Partial<Record<CachedLocalProvider, string>> = {
-  mlx: 'MLX ',
-  'tensorrt-llm': 'TensorRT-LLM ',
+function sessionEngineLabel(providerName: CachedLocalProvider): string {
+  if (providerName === 'mlx') return 'MLX '
+  const managed = managedEngine(providerName)
+  return managed ? `${managed.label} ` : ''
 }
 
 export async function findLocalSession(
@@ -771,7 +784,7 @@ export class ModelFactory {
       const sessionInfo = await findLocalSession(providerName, modelId)
       if (!sessionInfo) {
         throw new Error(
-          `No running ${SESSION_ENGINE_LABEL[providerName] ?? ''}session found for model: ${modelId}`
+          `No running ${sessionEngineLabel(providerName)}session found for model: ${modelId}`
         )
       }
       ModelFactory.localSessionCache.set(key, {
@@ -818,7 +831,7 @@ export class ModelFactory {
     if (!sessionInfo) {
       ModelFactory.invalidateLocalSessionCache(providerName, modelId)
       throw new Error(
-        `No running ${SESSION_ENGINE_LABEL[providerName] ?? ''}session found for model: ${modelId}`
+        `No running ${sessionEngineLabel(providerName)}session found for model: ${modelId}`
       )
     }
     ModelFactory.localSessionCache.set(
@@ -848,8 +861,9 @@ export class ModelFactory {
     if (
       lower !== 'llamacpp' &&
       lower !== 'llamacpp-upstream' &&
+      lower !== 'atomic-prism' &&
       lower !== 'mlx' &&
-      lower !== 'tensorrt-llm'
+      !isManagedProvider(lower)
     ) {
       return
     }
@@ -876,7 +890,7 @@ export class ModelFactory {
    * heuristic; both calls are bounded by `timeoutSecs`.
    */
   static async countLocalPromptTokens(
-    engineName: 'llamacpp' | 'llamacpp-upstream',
+    engineName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism',
     modelId: string,
     provider: ProviderObject | undefined,
     body: {
@@ -961,9 +975,15 @@ export class ModelFactory {
       ...override,
     }
 
+    // Every managed engine (TensorRT-LLM, vLLM) is one more session behind the core's gateway.
+    if (isManagedProvider(providerName)) {
+      return this.createManagedModel(providerName, modelId, provider, localInjected)
+    }
+
     switch (providerName) {
       case 'llamacpp':
       case 'llamacpp-upstream':
+      case 'atomic-prism':
         return this.createLlamaCppModel(
           modelId,
           provider,
@@ -980,9 +1000,6 @@ export class ModelFactory {
           provider,
           localInjected
         )
-
-      case 'tensorrt-llm':
-        return this.createTensorrtLlmModel(modelId, provider, localInjected)
 
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, override)
@@ -1033,8 +1050,9 @@ export class ModelFactory {
   /**
    * Create a llamacpp model by starting the model and finding the running session.
    * The `engineName` selects which of the core's llama.cpp runtimes serves it:
-   * `'llamacpp'` (our TurboQuant fork) or `'llamacpp-upstream'` (official
-   * ggml-org/llama.cpp). Both expose an OpenAI-compatible HTTP surface, so the
+   * `'llamacpp'` (our TurboQuant fork), `'llamacpp-upstream'` (official
+   * ggml-org/llama.cpp) or `'atomic-prism'` (PrismML's fork, for Bonsai). All
+   * expose an OpenAI-compatible HTTP surface, so the
    * rest of the factory is identical — only the provider passed to
    * `resolve_local_session` differs.
    */
@@ -1042,7 +1060,7 @@ export class ModelFactory {
     modelId: string,
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {},
-    engineName: 'llamacpp' | 'llamacpp-upstream' = 'llamacpp'
+    engineName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' = 'llamacpp'
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
       engineName,
@@ -1156,47 +1174,46 @@ export class ModelFactory {
   }
 
   /**
-   * Create a TensorRT-LLM model (Linux). The core runs `trtllm-serve` in a
-   * container and serves the session on a loopback gateway that checks the
-   * session's Bearer key, so from here it is one more OpenAI-compatible local
-   * session, resolved and re-resolved the way llama.cpp's is: every load gets a
-   * new gateway port and key, so a model object must not keep the first one.
-   * The IPC streaming fetch is used because the HTTP plugin's stream bridge does
-   * not relay SSE chunks; aborting it drops the connection, which the gateway
+   * Create a managed engine's model (TensorRT-LLM, vLLM; Linux and Windows). The core runs the
+   * engine's server in a container and serves the session on a loopback gateway that checks the
+   * session's Bearer key, so from here it is one more OpenAI-compatible local session, resolved and
+   * re-resolved the way llama.cpp's is: every load gets a new gateway port and key, so a model
+   * object must not keep the first one. The IPC streaming fetch is used because the HTTP plugin's
+   * stream bridge does not relay SSE chunks; aborting it drops the connection, which the gateway
    * passes on to the engine.
    */
-  private static async createTensorrtLlmModel(
+  private static async createManagedModel(
+    engineId: ManagedProviderId,
     modelId: string,
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
-      'tensorrt-llm',
+      engineId,
       modelId,
       provider
     )
 
     // `trtllm-serve` refuses any field it does not know with `400 extra_forbidden`, so the merged
-    // llama.cpp parameter bag is cut down to what it reads (task 3.13). Whether the model's family
-    // has structured output is asked of the core only when a request actually wants it.
+    // llama.cpp parameter bag is cut down to what the managed engines read (task 3.13). Whether the
+    // model's family has structured output is asked of the core only when a request wants it.
     let structuredOutput: Promise<boolean> | undefined
     const shapeBody = async (body: Record<string, unknown>) =>
-      tensorrtLlmRequestBody(body, {
+      managedRequestBody(body, {
         structuredOutput: asksForStructuredOutput(body)
           ? await (structuredOutput ??=
-              ModelFactory.tensorrtLlmStructuredOutput(modelId))
+              ModelFactory.managedStructuredOutput(engineId, modelId))
           : false,
       })
     const liveFetch = createLiveSessionFetch(
       createEngineErrorFetch(
         createLocalStreamingFetch(httpFetch, parameters, shapeBody)
       ),
-      () =>
-        ModelFactory.resolveFreshLocalSession('tensorrt-llm', modelId, provider)
+      () => ModelFactory.resolveFreshLocalSession(engineId, modelId, provider)
     )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
-      provider: 'tensorrt-llm',
+      provider: engineId,
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',
@@ -1218,11 +1235,12 @@ export class ModelFactory {
   }
 
   /**
-   * Whether the model's family has structured output, as the core reads it off the installed
-   * descriptor — the same answer its session gateway refuses `response_format` by. Unknown counts
-   * as no: the request then goes without the format rather than being refused.
+   * Whether the model's family has structured output on this engine, as the core reads it off the
+   * installed descriptor — the same answer its session gateway refuses `response_format` by.
+   * Unknown counts as no: the request then goes without the format rather than being refused.
    */
-  private static async tensorrtLlmStructuredOutput(
+  private static async managedStructuredOutput(
+    engineId: ManagedProviderId,
     modelId: string
   ): Promise<boolean> {
     try {
@@ -1231,14 +1249,14 @@ export class ModelFactory {
         {
           method: 'GET',
           // Ids contain `/`; the core matches on the rest of the path, unencoded.
-          path: `/models/tensorrt-llm/${modelId}/capabilities`,
+          path: `/models/${engineId}/${modelId}/capabilities`,
           body: null,
         }
       )
       return capabilities?.structured_output === true
     } catch (error) {
       console.warn(
-        '[ModelFactory] TensorRT-LLM capabilities unavailable; response_format dropped:',
+        `[ModelFactory] ${engineId} capabilities unavailable; response_format dropped:`,
         error
       )
       return false

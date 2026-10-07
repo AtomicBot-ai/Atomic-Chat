@@ -530,6 +530,39 @@ describe('llamacpp_extension', () => {
         embedding: false,
       })
     })
+
+    it('leaves out a model the core set up for the PrismML engine', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      extension['providerPath'] = '/path/to/jan/llamacpp'
+      const modelsDir = '/path/to/jan/llamacpp/models'
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockImplementation(async (path: string) =>
+        [
+          modelsDir,
+          `${modelsDir}/plain/model.yml`,
+          `${modelsDir}/bonsai/model.yml`,
+        ].includes(path)
+      )
+      vi.mocked(fs.readdirSync).mockResolvedValue(['plain', 'bonsai'])
+      vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 1 })
+      vi.mocked(invoke).mockImplementation(async (_command, args) =>
+        String((args as { path?: string })?.path).includes('/bonsai/')
+          ? {
+              model_path: 'bonsai/model.gguf',
+              name: 'Bonsai',
+              atomic_runtime: { provider: 'atomic-prism' },
+            }
+          : { model_path: 'plain/model.gguf', name: 'Plain' }
+      )
+
+      const result = await extension.list()
+
+      expect(result.map((model) => model.id)).toEqual(['plain'])
+    })
   })
 
   describe('import', () => {

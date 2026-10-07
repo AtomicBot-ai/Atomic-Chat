@@ -86,11 +86,17 @@ export function getProviderLogo(provider: string) {
     case 'llamacpp-upstream':
     case 'llamacpp-server':
       return '/images/model-provider/llamacpp.svg'
+    // PrismML's own fork carries PrismML's mark, the one the Hub shows on
+    // Bonsai models (a monochrome mark, tinted to the text color).
+    case 'atomic-prism':
+      return '/images/model-provider/prism-ml.webp'
     case 'mlx':
       return '/images/model-provider/mlx.png'
     // NVIDIA's own engine; the same mark as the NVIDIA NIM cloud provider.
     case 'tensorrt-llm':
       return '/images/model-provider/nvidia.svg'
+    case 'vllm':
+      return '/images/model-provider/vllm.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -174,12 +180,15 @@ export const LOCAL_LLAMACPP_PROVIDER = 'llamacpp-upstream'
 export const LOCAL_LLAMACPP_EXTENSION_NAME = '@janhq/llamacpp-upstream-extension'
 
 /**
- * Returns true for either llamacpp provider id ('llamacpp' = turboquant,
- * 'llamacpp-upstream' = upstream ggml-org build). Both providers support
- * client-side token counting via their respective getTokensCount() methods.
+ * Returns true for every llamacpp provider id the app starts ('llamacpp' =
+ * turboquant, 'llamacpp-upstream' = upstream ggml-org build, 'atomic-prism' =
+ * PrismML's fork). Each supports client-side token counting via its own
+ * getTokensCount() method.
  */
 export const isLlamacppProvider = (provider: string) =>
-  provider === 'llamacpp' || provider === 'llamacpp-upstream'
+  provider === 'llamacpp' ||
+  provider === 'llamacpp-upstream' ||
+  provider === 'atomic-prism'
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
@@ -193,6 +202,9 @@ export const getProviderTitle = (provider: string) => {
       return 'llama.cpp turboquant'
     case 'llamacpp-upstream':
       return 'llama.cpp'
+    // The PrismML fork: the engine Bonsai's PQ2_0 / PTQ1_0 files need.
+    case 'atomic-prism':
+      return 'PrismML llama.cpp'
     // Named for what it is from here: a llama.cpp server the user runs and
     // connects to, as opposed to the two engines the app starts itself.
     case 'llamacpp-server':
@@ -201,6 +213,11 @@ export const getProviderTitle = (provider: string) => {
       return 'MLX'
     case 'tensorrt-llm':
       return 'TensorRT-LLM'
+    case 'vllm':
+      return 'vLLM'
+    // The media engine, named on the engine-update banner. Not a chat provider.
+    case 'sd-cpp':
+      return 'stable-diffusion.cpp'
     case 'openai':
       return 'OpenAI'
     case 'chatgpt':

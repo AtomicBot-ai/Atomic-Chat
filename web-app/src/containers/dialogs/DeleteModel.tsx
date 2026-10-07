@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import { deleteLocalModel } from '@/lib/model-deletion'
 import { formatBytes } from '@/lib/utils'
 
@@ -107,6 +108,16 @@ export const DialogDeleteModel = ({
             {t('providers:deleteModel.description')}
           </DialogDescription>
         </DialogHeader>
+        {isManagedProvider(provider.provider) && (
+          // One copy in the shared store serves every managed engine (spec `vllm-desktop`).
+          <p className="text-sm text-muted-foreground">
+            {t('providers:deleteModel.managedShared', {
+              engines: managedEngines()
+                .map((engine) => engine.label)
+                .join(', '),
+            })}
+          </p>
+        )}
 
         <DialogFooter className="mt-2">
           <DialogClose asChild>

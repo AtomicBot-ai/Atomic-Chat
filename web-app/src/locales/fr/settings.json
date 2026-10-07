@@ -373,10 +373,14 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   },
   "decision": {
-    "multilingual": "100+ languages",
+    "multilingual": "Multilingual",
     "context": "{{tokens}} tokens",
     "diskSize": "{{size}} GB on disk",
     "progress": "{{current}} of {{total}} GB",
@@ -386,9 +390,12 @@
     "removeTitle": "Remove {{name}}?",
     "removeDescription": "The model files and its converted copy will be deleted. If the model is running, it is stopped first.",
     "removed": "{{name}} removed",
-    "installEngine": "Install TurboQuant",
-    "engineLatest": "TurboQuant is up to date. A build that runs decision models is not released yet.",
-    "engineInstallFailed": "TurboQuant could not be installed",
+    "installEngine": "Install {{engine}}",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be installed",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
       "disabled": "Stopped",
       "idle": "Starts on the next request",
@@ -399,7 +406,7 @@
       "unsupported": "Engine not supported"
     },
     "errors": {
-      "engineUnsupported": "The installed TurboQuant engine cannot run decision models.",
+      "engineUnsupported": "The installed {{engine}} engine cannot run this decision model.",
       "notConfigured": "No decision model is selected. Download a model and press Start.",
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
@@ -410,5 +417,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Multilingue",
+    "context": "{{tokens}} jetons",
+    "dims": "{{dims}} dimensions",
+    "diskSize": "{{size}} Go sur le disque",
+    "progress": "{{current}} sur {{total}} Go",
+    "start": "Démarrer",
+    "stop": "Arrêter",
+    "remove": "Supprimer",
+    "removeTitle": "Supprimer {{name}} ?",
+    "removeDescription": "Les fichiers du modèle seront supprimés. Si le modèle est en cours d'exécution, il sera d'abord arrêté.",
+    "removed": "{{name}} supprimé",
+    "updateEngine": "Mettre à jour {{engine}}",
+    "engineLatest": "{{engine}} est à jour. Aucune version capable d'exécuter ce modèle d'embedding n'est encore publiée.",
+    "engineInstallFailed": "Impossible de mettre à jour {{engine}}",
+    "requiresEngine": "Nécessite {{engine}} {{version}}+",
+    "requiresEngineNotice": "Ce modèle nécessite {{engine}} {{version}} ou plus récent. Mettez le moteur à jour pour le démarrer.",
+    "state": {
+      "disabled": "Arrêté",
+      "idle": "Démarre à la prochaine requête",
+      "starting": "Démarrage…",
+      "ready": "En cours d'exécution",
+      "restarting": "Redémarrage…",
+      "failed": "Échec",
+      "unsupported": "Moteur non pris en charge"
+    },
+    "errors": {
+      "engineUnsupported": "Le moteur {{engine}} installé ne peut pas exécuter ce modèle d'embedding.",
+      "notConfigured": "Aucun modèle d'embedding n'est sélectionné. Téléchargez un modèle et appuyez sur Démarrer.",
+      "notEmbedding": "Ce fichier n'est pas un modèle d'embedding.",
+      "modelFileNotFound": "Les fichiers du modèle ne sont pas sur le disque. Téléchargez à nouveau le modèle.",
+      "generic": "Le modèle d'embedding n'a pas pu démarrer."
+    },
+    "sectionTitle": "Modèles d'embedding",
+    "noneTitle": "Aucun modèle d'embedding téléchargé",
+    "noneDescription": "Téléchargez-en un dans la catégorie Embedding du Hub",
+    "availableInApi": "Disponible dans l'API",
+    "localModel": "Depuis vos modèles llama.cpp"
   }
 }

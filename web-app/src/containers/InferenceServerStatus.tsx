@@ -12,6 +12,7 @@
  *    always there, so "loaded / not loaded" is readable at a glance instead of
  *    being inferred from the colour of a dot.
  */
+import { isManagedProvider } from '@/lib/managed-engines'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
@@ -134,9 +135,9 @@ export function InferenceServerStatusStrip({
           {t('common:inferenceStatus.retry')}
         </Button>
       )}
-      {/* A TensorRT-LLM container's log is on its provider page (the core keeps the last
+      {/* A managed engine's container log is on its provider page (the core keeps the last
           failed attempt's). */}
-      {selectedProvider === 'tensorrt-llm' && (
+      {isManagedProvider(selectedProvider) && (
         <Button
           variant="link"
           size="sm"
@@ -144,7 +145,7 @@ export function InferenceServerStatusStrip({
           onClick={() =>
             void navigate({
               to: route.settings.providers,
-              params: { providerName: 'tensorrt-llm' },
+              params: { providerName: selectedProvider },
             })
           }
         >

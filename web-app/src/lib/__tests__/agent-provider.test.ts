@@ -24,8 +24,10 @@ describe('isAgentLocalProvider', () => {
   it('covers the engines the backend can reach directly', () => {
     expect(isAgentLocalProvider('llamacpp')).toBe(true)
     expect(isAgentLocalProvider('llamacpp-upstream')).toBe(true)
+    expect(isAgentLocalProvider('atomic-prism')).toBe(true)
     expect(isAgentLocalProvider('mlx')).toBe(true)
     expect(isAgentLocalProvider('tensorrt-llm')).toBe(true)
+    expect(isAgentLocalProvider('vllm')).toBe(true)
   })
 
   it('excludes foundation-models and unknown values', () => {
@@ -63,6 +65,11 @@ describe('agentProviderBlockReason', () => {
       // MLX's; whether one model has tools is a model-level check.
       name: 'tensorrt-llm with no key',
       provider: provider({ provider: 'tensorrt-llm', api_key: '' }),
+      expected: null,
+    },
+    {
+      name: 'vllm with no key: its session gateway, like TensorRT-LLM',
+      provider: provider({ provider: 'vllm', api_key: '' }),
       expected: null,
     },
     {

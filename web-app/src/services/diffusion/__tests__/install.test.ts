@@ -15,10 +15,12 @@ import type {
 import {
   assetUrl,
   backendInstallDir,
+  clearFailedDiffusionBackends,
   clearSdcppManifestCache,
   diffusionBackendTaskId,
   ensureDiffusionBackend,
   getBaselineSdcppManifest,
+  getFailedDiffusionBackends,
   parseSdcppManifest,
   resolveSdcppManifest,
   selectDiffusionBackendForHost,
@@ -27,6 +29,8 @@ import {
 } from '../install'
 
 const HASH = 'c'.repeat(64)
+/** The bundled baseline's tag: where a manifest too old for a family migrates. */
+const BASELINE_TAG = getBaselineSdcppManifest().tag_name
 
 const manifest: SdcppManifest = {
   upstream_repo: 'leejet/stable-diffusion.cpp',
@@ -160,18 +164,18 @@ describe('resolveSdcppManifest', () => {
     fetchOk(manifest)
     const options = { url: URL_, family: 'qwen-image-2.1' }
     expect((await resolveSdcppManifest(options)).manifest.tag_name).toBe(
-      'master-883-137f740'
+      BASELINE_TAG
     )
     globalThis.fetch = vi.fn(async () => {
       throw new Error('offline')
     }) as unknown as typeof fetch
     expect((await resolveSdcppManifest(options)).manifest.tag_name).toBe(
-      'master-883-137f740'
+      BASELINE_TAG
     )
     expect(
       (await resolveSdcppManifest({ ...options, force: true })).manifest
         .tag_name
-    ).toBe('master-883-137f740')
+    ).toBe(BASELINE_TAG)
     expect(
       (await resolveSdcppManifest({ url: URL_, family: 'qwen-image' })).manifest
         .tag_name
@@ -179,7 +183,7 @@ describe('resolveSdcppManifest', () => {
     expect(
       (await resolveSdcppManifest({ url: URL_, family: 'krea-2-turbo' }))
         .manifest.tag_name
-    ).toBe('master-883-137f740')
+    ).toBe(BASELINE_TAG)
   })
 
   it('falls back to the bundled baseline with the error attached', async () => {
@@ -193,12 +197,29 @@ describe('resolveSdcppManifest', () => {
   })
 })
 
+/** An AMD host's view: ROCm, Vulkan and CPU builds under the same tag. */
+const amdManifest: SdcppManifest = {
+  ...manifest,
+  assets: [
+    ...manifest.assets,
+    { backend: 'win-rocm-7.14-x64', name: 'sd-master-d04e895-bin-win-rocm-7.14.0-x64.zip', sha256: HASH, size: 192_039_488 },
+    { backend: 'win-vulkan-x64', name: 'sd-master-d04e895-bin-win-vulkan-x64.zip', sha256: HASH, size: 31_890_985 },
+  ],
+}
+
 describe('ensureDiffusionBackend', () => {
   const invoked: Array<[string, InvokeArgs | undefined]> = []
   const transfers: Array<{ items: unknown[]; taskId: string }> = []
   let finalized: unknown
   let removed: string[]
   let installedRecords: DiffusionBackendInstallRecord[]
+  let served: SdcppManifest
+  let features: Record<string, boolean>
+  /** What `finalizeBackendInstall` rejects with for a backend, if anything. */
+  let finalizeFailure: ((backendId: string) => unknown) | undefined
+  let rm: ReturnType<typeof vi.fn>
+  const removedPaths = () =>
+    rm.mock.calls.map(([call]) => (call as { args: string[] }).args[0])
 
   const record = (tag: string, backendId: string): DiffusionBackendInstallRecord => ({
     tag,
@@ -212,23 +233,28 @@ describe('ensureDiffusionBackend', () => {
 
   beforeEach(() => {
     clearSdcppManifestCache()
+    clearFailedDiffusionBackends()
     invoked.length = 0
     transfers.length = 0
     finalized = undefined
     removed = []
     installedRecords = []
+    served = manifest
+    features = { cuda12: true, vulkan: true }
+    finalizeFailure = undefined
+    rm = vi.fn(async () => undefined)
 
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => manifest,
+      json: async () => served,
     })) as unknown as typeof fetch
 
     mockIPC((command: string, args?: InvokeArgs) => {
       invoked.push([command, args])
       if (command === 'plugin:llamacpp-upstream|get_supported_features') {
-        return { cuda12: true, vulkan: true }
+        return features
       }
       if (command === 'atomic_core_call') {
         const call = args as { method: string; path: string; body: unknown }
@@ -244,7 +270,7 @@ describe('ensureDiffusionBackend', () => {
       ...(core.api as Record<string, unknown>),
       existsSync: vi.fn(async () => false),
       mkdir: vi.fn(async () => undefined),
-      rm: vi.fn(async () => undefined),
+      rm,
     }
     core.extensionManager = {
       getByName: (name: string) =>
@@ -279,6 +305,8 @@ describe('ensureDiffusionBackend', () => {
         finalizeBackendInstall: async (args: unknown) => {
           finalized = args
           const a = args as { tag: string; backendId: string }
+          const failure = finalizeFailure?.(a.backendId)
+          if (failure) throw failure
           return record(a.tag, a.backendId)
         },
         removeBackend: async (dir: string) => {
@@ -298,23 +326,23 @@ describe('ensureDiffusionBackend', () => {
   it('installs 883 for Qwen from a stale profile manifest while preserving host backend selection', async () => {
     installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
     const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
-    expect(result.tag).toBe('master-883-137f740')
+    expect(result.tag).toBe(BASELINE_TAG)
     expect(result.backendId).toBe('win-cuda12-x64')
     expect(transfers).toHaveLength(1)
-    expect(finalized).toMatchObject({ tag: 'master-883-137f740', backendId: 'win-cuda12-x64' })
+    expect(finalized).toMatchObject({ tag: BASELINE_TAG, backendId: 'win-cuda12-x64' })
   })
 
   it('reuses an already installed compatible Qwen engine without downloading', async () => {
-    installedRecords = [record('master-883-137f740', 'win-cuda12-x64')]
+    installedRecords = [record(BASELINE_TAG, 'win-cuda12-x64')]
     const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
-    expect(result.tag).toBe('master-883-137f740')
+    expect(result.tag).toBe(BASELINE_TAG)
     expect(transfers).toHaveLength(0)
   })
 
   it('installs 883 for Krea 2 Turbo from a stale profile manifest', async () => {
     installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
     const result = await ensureDiffusionBackend({ family: 'krea-2-turbo' })
-    expect(result.tag).toBe('master-883-137f740')
+    expect(result.tag).toBe(BASELINE_TAG)
     expect(result.backendId).toBe('win-cuda12-x64')
     expect(transfers).toHaveLength(1)
   })
@@ -414,6 +442,89 @@ describe('ensureDiffusionBackend', () => {
       return undefined
     })
     await expect(ensureDiffusionBackend()).resolves.toBeDefined()
+  })
+
+  it('walks down to Vulkan when the ROCm build cannot run here, and remembers that', async () => {
+    served = amdManifest
+    features = { rocm: true, vulkan: true }
+    // Upstream's ROCm archive on a host without the HIP SDK it links against.
+    finalizeFailure = (backendId) =>
+      backendId === 'win-rocm-7.14-x64'
+        ? {
+            code: 'ENGINE_INSTALL_FAILED',
+            message: 'The image engine could not load a library it needs.',
+          }
+        : undefined
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const result = await ensureDiffusionBackend()
+
+    expect(result.backendId).toBe('win-vulkan-x64')
+    expect(transfers.map((t) => t.taskId)).toEqual([
+      'diffusion-backend-master-849-d04e895-win-rocm-7_14-x64',
+      'diffusion-backend-master-849-d04e895-win-vulkan-x64',
+    ])
+    // The unmarked ROCm tree and its archive go; the Vulkan archive as usual.
+    expect(removedPaths()).toEqual([
+      '/data/diffusion/backends/master-849-d04e895/win-rocm-7.14-x64',
+      '/data/diffusion/backends/tmp/sd-master-d04e895-bin-win-rocm-7.14.0-x64.zip',
+      '/data/diffusion/backends/tmp/sd-master-d04e895-bin-win-vulkan-x64.zip',
+    ])
+    expect(getFailedDiffusionBackends()).toEqual(
+      new Set(['master-849-d04e895/win-rocm-7.14-x64'])
+    )
+    // The next look at this host skips ROCm instead of downloading it again.
+    await expect(selectDiffusionBackendForHost()).resolves.toEqual({
+      backendId: 'win-vulkan-x64',
+    })
+  })
+
+  it('surfaces the last build failing, and any failure that is not the probe', async () => {
+    features = {}
+    finalizeFailure = () => ({
+      code: 'ENGINE_INSTALL_FAILED',
+      message: 'The image engine exited without printing anything.',
+    })
+    await expect(ensureDiffusionBackend()).rejects.toMatchObject({
+      code: 'ENGINE_INSTALL_FAILED',
+    })
+    // Nothing below the CPU build: its tree stays and it is not ruled out.
+    expect(transfers).toHaveLength(1)
+    expect(removedPaths()).toEqual([])
+    expect(getFailedDiffusionBackends().size).toBe(0)
+
+    clearSdcppManifestCache()
+    transfers.length = 0
+    served = amdManifest
+    features = { rocm: true, vulkan: true }
+    finalizeFailure = () => ({ code: 'DISK_FULL', message: 'The disk is full.' })
+    await expect(ensureDiffusionBackend()).rejects.toMatchObject({
+      code: 'DISK_FULL',
+    })
+    expect(transfers).toHaveLength(1)
+    expect(getFailedDiffusionBackends().size).toBe(0)
+  })
+
+  it('offers the last build again once every rung failed, and every rung on a new tag', async () => {
+    served = amdManifest
+    features = { rocm: true, vulkan: true }
+    localStorage.setItem(
+      'atomic_sdcpp_failed_backends_v1',
+      JSON.stringify([
+        'master-849-d04e895/win-rocm-7.14-x64',
+        'master-849-d04e895/win-vulkan-x64',
+        'master-849-d04e895/win-cpu-x64',
+      ])
+    )
+    await expect(selectDiffusionBackendForHost()).resolves.toEqual({
+      backendId: 'win-cpu-x64',
+    })
+
+    clearSdcppManifestCache()
+    served = { ...amdManifest, tag_name: 'master-900-0000000' }
+    await expect(selectDiffusionBackendForHost()).resolves.toEqual({
+      backendId: 'win-rocm-7.14-x64',
+    })
   })
 
   it('names the host that no build serves', async () => {

@@ -12,8 +12,9 @@ import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
 import i18n from '@/i18n/setup'
 import type { ServiceHub } from '@/services'
 import type { ModelLoadProgress } from '@/lib/inference-status'
-import { knownLoadStage } from '@/lib/tensorrt-llm/types'
-import { loadWatchdogMs } from '@/lib/tensorrt-llm/chat'
+import { knownLoadStage } from '@/lib/managed-engine/types'
+import { loadWatchdogMs } from '@/lib/managed-engine/chat'
+import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import {
   isKeylessRemoteProvider,
   isSubscriptionProvider,
@@ -225,17 +226,25 @@ function emitModelLoad(
 }
 
 // Local providers whose models are served by on-device engines.
+// Every managed engine (`isManagedProvider`) is one too: the core serves it from a container.
 const LOCAL_PROVIDERS = [
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
   'foundation-models',
-  'tensorrt-llm',
 ] as const
-type LocalProviderName = (typeof LOCAL_PROVIDERS)[number]
+
+/** Every local engine provider, the managed engines last. */
+function localEngineProviders(): string[] {
+  return [...LOCAL_PROVIDERS, ...managedEngines().map((engine) => engine.id)]
+}
 
 function isLocalEngineProvider(providerName: string): boolean {
-  return (LOCAL_PROVIDERS as readonly string[]).includes(providerName)
+  return (
+    (LOCAL_PROVIDERS as readonly string[]).includes(providerName) ||
+    isManagedProvider(providerName)
+  )
 }
 
 // ATO-270: `doSwitchToModel` has no ceiling on how long it waits for the
@@ -320,6 +329,11 @@ const TERMINAL_LOAD_CODES = new Set([
   // ATO-190: the bundled macOS engine requires a newer macOS than the host
   // (missing Metal symbol). This never resolves on retry, so never auto-retry.
   'OS_VERSION_UNSUPPORTED',
+  // The core refused the file before starting anything: it needs another
+  // engine (PrismML) or a newer build of it, or it is a superseded Bonsai
+  // packing. Only the user's choice changes that.
+  'MODEL_ENGINE_INCOMPATIBLE',
+  'MODEL_FORMAT_LEGACY',
 ])
 
 function autoStartKey(providerName: string, modelId: string): string {
@@ -402,7 +416,7 @@ export async function stopAllLocalModelsByUser(
   serviceHub: ServiceHub
 ): Promise<void> {
   const loaded = await Promise.all(
-    LOCAL_PROVIDERS.map(async (provider) => {
+    localEngineProviders().map(async (provider) => {
       const models = await serviceHub
         .models()
         .getActiveModels(provider)
@@ -601,8 +615,8 @@ async function isTargetModelAlreadyServing(params: {
         serviceHub.app().getServerStatus().catch(() => false),
         serviceHub.models().getActiveModels(providerName).catch(() => [] as string[]),
         Promise.all(
-          LOCAL_PROVIDERS.filter(
-            (provider) => provider !== (providerName as LocalProviderName)
+          localEngineProviders().filter(
+            (provider) => provider !== providerName
           ).map((provider) =>
             serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
           )
@@ -622,7 +636,7 @@ async function isTargetModelAlreadyServing(params: {
   const [serverRunning, localEngineModels] = await Promise.all([
     serviceHub.app().getServerStatus().catch(() => false),
     Promise.all(
-      LOCAL_PROVIDERS.map((provider) =>
+      localEngineProviders().map((provider) =>
         serviceHub.models().getActiveModels(provider).catch(() => [] as string[])
       )
     ),
@@ -1493,6 +1507,74 @@ export type ModelLoadFailure = {
   persistent: boolean
 }
 
+/** The core's compatibility verdict, carried as JSON in the refusal's `details`. */
+type CompatibilityRefusal = {
+  outcome?: string
+  min_prism_build?: number
+  replacement?: string
+  reason?: string
+}
+
+function parseCompatibilityRefusal(details: string | undefined): CompatibilityRefusal {
+  if (!details) return {}
+  try {
+    const parsed: unknown = JSON.parse(details)
+    return parsed && typeof parsed === 'object' ? (parsed as CompatibilityRefusal) : {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * `MODEL_ENGINE_INCOMPATIBLE` / `MODEL_FORMAT_LEGACY`: the core refused the
+ * file before starting any engine. Say which engine (or which file) it needs.
+ */
+function describeCompatibilityRefusal(
+  t: typeof i18n.t,
+  err: ErrorObject
+): ModelLoadFailure {
+  const verdict = parseCompatibilityRefusal(err.details)
+  const engine = getProviderTitle('atomic-prism')
+  const details = verdict.reason ?? err.message
+  if (err.code === 'MODEL_FORMAT_LEGACY') {
+    return {
+      title: t('model-errors:formatLegacyTitle'),
+      description: verdict.replacement
+        ? t('model-errors:formatLegacyDescription', {
+            replacement: verdict.replacement,
+          })
+        : t('model-errors:formatLegacyDescriptionNoReplacement'),
+      details,
+      persistent: true,
+    }
+  }
+  if (verdict.outcome === 'engine_update_required') {
+    return {
+      title: t('model-errors:engineUpdateRequiredTitle', { engine }),
+      description: t('model-errors:engineUpdateRequiredDescription', {
+        engine,
+        build: verdict.min_prism_build ?? '',
+      }),
+      details,
+      persistent: true,
+    }
+  }
+  if (verdict.outcome === 'unsupported') {
+    return {
+      title: t('model-errors:engineUnsupportedTitle'),
+      description: t('model-errors:engineUnsupportedDescription'),
+      details,
+      persistent: true,
+    }
+  }
+  return {
+    title: t('model-errors:engineRequiredTitle', { engine }),
+    description: t('model-errors:engineRequiredDescription', { engine }),
+    details,
+    persistent: true,
+  }
+}
+
 export function describeModelLoadFailure(
   rawError: unknown,
   providerName?: string
@@ -1563,6 +1645,9 @@ export function describeModelLoadFailure(
   // is unsupported instead.
   if (err.code === 'CPU_NO_AVX') {
     return simple('cpuNoAvx')
+  }
+  if (err.code === 'MODEL_ENGINE_INCOMPATIBLE' || err.code === 'MODEL_FORMAT_LEGACY') {
+    return describeCompatibilityRefusal(t, err)
   }
 
   const { summary, details } = splitModelLoadError(err)

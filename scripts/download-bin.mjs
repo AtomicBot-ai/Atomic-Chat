@@ -43,7 +43,6 @@ const CLOUDFLARED = {
       size: 39838488,
       sha256: '03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc',
     },
-    // Not bundled (Linux ships x86_64 only); lets an arm64 Linux dev box build.
     'linux-arm64': {
       file: 'cloudflared-linux-arm64',
       size: 37466252,
@@ -384,6 +383,11 @@ function windowsTriple() {
   return os.arch() === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
 }
 
+// The same on Linux.
+function linuxTriple() {
+  return os.arch() === 'arm64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu'
+}
+
 function getPlatformArch() {
   const platform = os.platform() // 'darwin', 'linux', 'win32'
   const arch = os.arch() // 'x64', 'arm64', etc.
@@ -396,10 +400,7 @@ function getPlatformArch() {
       arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
   } else if (platform === 'linux') {
     bunPlatform = arch === 'arm64' ? 'linux-aarch64' : 'linux-x64'
-    uvPlatform =
-      arch === 'arm64'
-        ? 'aarch64-unknown-linux-gnu'
-        : 'x86_64-unknown-linux-gnu'
+    uvPlatform = linuxTriple()
   } else if (platform === 'win32') {
     bunPlatform = arch === 'arm64' ? 'windows-aarch64' : 'windows-x64'
     uvPlatform = windowsTriple()
@@ -503,7 +504,7 @@ async function main() {
     } else if (platform === 'linux') {
       copyFile(
         path.join(binDir, 'bun'),
-        path.join(binDir, 'bun-x86_64-unknown-linux-gnu'),
+        path.join(binDir, `bun-${linuxTriple()}`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)
@@ -582,7 +583,7 @@ async function main() {
     } else if (platform === 'linux') {
       copyFile(
         path.join(binDir, 'uv'),
-        path.join(binDir, 'uv-x86_64-unknown-linux-gnu'),
+        path.join(binDir, `uv-${linuxTriple()}`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)

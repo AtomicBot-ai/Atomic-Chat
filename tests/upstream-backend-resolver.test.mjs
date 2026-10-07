@@ -33,6 +33,14 @@ test('asset names follow the per-platform upstream naming', () => {
     assetNameFor('b10405', 'linux-vulkan-x64'),
     'llama-b10405-bin-ubuntu-vulkan-x64.tar.gz'
   )
+  assert.equal(
+    assetNameFor('b11344', 'linux-cpu-arm64'),
+    'llama-b11344-bin-ubuntu-arm64.tar.gz'
+  )
+  assert.equal(
+    assetNameFor('b11344', 'linux-vulkan-arm64'),
+    'llama-b11344-bin-ubuntu-vulkan-arm64.tar.gz'
+  )
 })
 
 test('a CUDA family id resolves to the highest minor the tag ships', () => {

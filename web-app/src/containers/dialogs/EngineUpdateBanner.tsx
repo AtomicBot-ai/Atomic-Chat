@@ -60,6 +60,7 @@ const EngineUpdateBanner = () => {
       fromVersion={offer.currentVersion || null}
       toVersion={offer.targetVersion}
       subtitle={subtitle}
+      highlights={offer.notes ? [{ headline: offer.notes }] : undefined}
       secondaryAction={
         handleShowNotes
           ? { label: t('updater:engine.showWhatsNew'), onClick: handleShowNotes }

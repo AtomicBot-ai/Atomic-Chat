@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   registry: { error: null as string | null, refresh: vi.fn() },
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+  deletedModels: [] as string[],
 }))
 
 vi.mock('sonner', () => ({ toast: mocks.toast }))
@@ -10,7 +11,12 @@ vi.mock('@/stores/provider-registry-store', () => ({
   useProviderRegistryStore: { getState: () => mocks.registry },
 }))
 vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: { getState: () => ({ getProviderByName: () => undefined }) },
+  useModelProvider: {
+    getState: () => ({
+      getProviderByName: () => undefined,
+      deletedModels: mocks.deletedModels,
+    }),
+  },
 }))
 vi.mock('@/lib/models', () => ({ getModelCapabilities: () => [] }))
 vi.mock('@/utils/registerRemoteProvider', () => ({ isLocalProvider: () => false }))
@@ -41,6 +47,7 @@ describe('refreshProviderModels with the registry unreachable', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.registry.error = 'registry unreachable'
+    mocks.deletedModels = []
   })
 
   it("still asks the provider's own endpoint and adds what it lists", async () => {
@@ -61,5 +68,30 @@ describe('refreshProviderModels with the registry unreachable', () => {
       description: 'registry unreachable',
     })
     expect(mocks.toast.success).not.toHaveBeenCalled()
+  })
+})
+
+describe('refreshProviderModels with deleted models', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.registry.error = null
+    mocks.deletedModels = ['deleted-model']
+  })
+
+  it('does not bring back a model the user deleted while the endpoint still lists it', async () => {
+    const { updateProvider } = await run(['deleted-model', 'served-model'])
+
+    expect(updateProvider.mock.calls[0]?.[1].models.map((m: Model) => m.id)).toEqual([
+      'served-model',
+    ])
+  })
+
+  it('reports no new models when the endpoint only lists deleted ones', async () => {
+    const { updateProvider } = await run(['deleted-model'])
+
+    expect(updateProvider).not.toHaveBeenCalled()
+    expect(mocks.toast.success.mock.calls[0]?.[1]).toEqual({
+      description: 'providers:noNewModels',
+    })
   })
 })

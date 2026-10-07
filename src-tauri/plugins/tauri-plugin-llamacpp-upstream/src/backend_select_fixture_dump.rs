@@ -324,8 +324,11 @@ fn supported_cases() -> Vec<(String, Value)> {
         ("linux_x86_64_nvidia_with_vulkan", supported_input("linux", "x86_64", [true, true, false, true, false])),
         ("linux_x86_64_rocm_flag_ignored", supported_input("linux", "x86_64", [false, false, false, true, true])),
         ("linux_x86_alias_with_vulkan", supported_input("linux", "x86", [false, false, false, true, false])),
-        ("linux_aarch64_cpu_placeholder", supported_input("linux", "aarch64", ALL)),
-        ("linux_arm64_cpu_placeholder", supported_input("linux", "arm64", NONE)),
+        ("linux_aarch64_every_flag", supported_input("linux", "aarch64", ALL)),
+        ("linux_aarch64_with_vulkan", supported_input("linux", "aarch64", [false, false, false, true, false])),
+        ("linux_aarch64_cuda13_family_id", supported_input("linux", "aarch64", [false, true, true, false, false])),
+        ("linux_arm64_opencl_ignored", with_opencl(supported_input("linux", "arm64", NONE))),
+        ("linux_arm64_cpu_only", supported_input("linux", "arm64", NONE)),
         ("macos_x86_64", supported_input("macos", "x86_64", NONE)),
         ("macos_x86_alias", supported_input("macos", "x86", ALL)),
         ("macos_aarch64", supported_input("macos", "aarch64", NONE)),
@@ -399,6 +402,21 @@ fn prioritize_cases() -> Vec<(String, Value)> {
         (
             "windows_arm64_opencl_over_cpu_without_enough_gpu_memory",
             prioritize_input(vec![vb("b11344", "win-cpu-arm64", 0), vb("b11344", "win-opencl-adreno-arm64", 0)], false),
+        ),
+        (
+            "linux_arm64_cuda13_over_vulkan_over_cpu",
+            prioritize_input(
+                vec![
+                    vb("b11344", "linux-cpu-arm64", 0),
+                    vb("b11344", "linux-vulkan-arm64", 0),
+                    vb("b11344", "linux-cuda-13.4-arm64", 0),
+                ],
+                true,
+            ),
+        ),
+        (
+            "linux_arm64_cpu_without_enough_gpu_memory",
+            prioritize_input(vec![vb("b11344", "linux-cpu-arm64", 0), vb("b11344", "linux-vulkan-arm64", 0)], false),
         ),
         (
             "no_category_falls_back_to_first_entry",
@@ -576,6 +594,14 @@ fn migrate_cases() -> Vec<(String, Value)> {
             "win_opencl_adreno_arm64_kept",
             migrate_input("win-opencl-adreno-arm64", vec![vb("b11344", "win-cpu-arm64", 0)]),
         ),
+        (
+            "linux_cuda_13_4_arm64_kept",
+            migrate_input("linux-cuda-13.4-arm64", vec![vb("b11344", "linux-cpu-arm64", 0)]),
+        ),
+        (
+            "ubuntu_cuda_arm64_to_linux_cuda",
+            migrate_input("ubuntu-cuda-13.4-arm64", vec![vb("b11344", "linux-cuda-13.4-arm64", 0)]),
+        ),
         ("empty_catalog_skips", migrate_input("linux-avx2-x64", vec![])),
     ]
     .into_iter()
@@ -637,6 +663,12 @@ fn setting_update_cases() -> Vec<(String, Value)> {
         "linux-common_cpus-arm64",
         "linux-cpu-arm64",
         "linux-vulkan-arm64",
+        "linux-aarch64-vulkan-arm64",
+        "linux-cuda-13-arm64",
+        "linux-cuda-13.4-arm64",
+        "ubuntu-arm64",
+        "ubuntu-cuda-13.4-arm64",
+        "ubuntu-cuda-13.4-x64",
         "macos-arm64",
         "macos-x64",
         "macos-avx2-x64",

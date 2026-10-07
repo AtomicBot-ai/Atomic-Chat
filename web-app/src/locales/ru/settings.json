@@ -425,7 +425,8 @@
       "currentLocation": "Текущее расположение:",
       "newLocation": "Новое расположение:",
       "cancel": "Отмена",
-      "changeLocation": "Изменить расположение"
+      "changeLocation": "Изменить расположение",
+      "managedModels": "Модели GPU-движков ({{engines}}) хранятся в WSL-дистрибутиве Atomic Chat «{{name}}», а не в папке данных: они не переносятся и остаются доступны после смены папки."
     }
   },
   "backendUpdater": {
@@ -530,7 +531,7 @@
     "runSetupAgainDescription": "Ещё раз пройти шаги доступа к микрофону и загрузки модели."
   },
   "decision": {
-    "multilingual": "100+ языков",
+    "multilingual": "Многоязычная",
     "context": "{{tokens}} токенов",
     "diskSize": "{{size}} ГБ на диске",
     "progress": "{{current}} из {{total}} ГБ",
@@ -540,9 +541,12 @@
     "removeTitle": "Удалить {{name}}?",
     "removeDescription": "Файлы модели и её сконвертированная копия будут удалены. Если модель запущена, она сначала остановится.",
     "removed": "{{name}} удалена",
-    "installEngine": "Установить TurboQuant",
-    "engineLatest": "TurboQuant обновлён. Сборка, которая запускает decision-модели, ещё не вышла.",
-    "engineInstallFailed": "Не удалось установить TurboQuant",
+    "installEngine": "Установить {{engine}}",
+    "updateEngine": "Обновить {{engine}}",
+    "engineLatest": "{{engine}} обновлён. Сборка, которая запускает эту decision-модель, ещё не вышла.",
+    "engineInstallFailed": "Не удалось установить {{engine}}",
+    "requiresEngine": "Нужен {{engine}} {{version}}+",
+    "requiresEngineNotice": "Этой модели нужен {{engine}} {{version}} или новее. Обновите движок, чтобы её запустить.",
     "state": {
       "disabled": "Остановлена",
       "idle": "Запустится при следующем запросе",
@@ -553,7 +557,7 @@
       "unsupported": "Движок не поддерживается"
     },
     "errors": {
-      "engineUnsupported": "Установленный движок TurboQuant не умеет запускать decision-модели.",
+      "engineUnsupported": "Установленный движок {{engine}} не умеет запускать эту decision-модель.",
       "notConfigured": "Decision-модель не выбрана. Скачайте модель и нажмите «Запустить».",
       "checkpointIncomplete": "В папке модели не хватает файлов. Удалите модель и скачайте её заново.",
       "modelFileNotFound": "Файлов модели нет на диске. Скачайте модель заново.",
@@ -564,6 +568,45 @@
     "noneTitle": "Decision-модели не скачаны",
     "noneDescription": "Скачайте модель в категории Decision в Hub",
     "availableInApi": "Доступна в API"
+  },
+  "embedding": {
+    "multilingual": "Многоязычная",
+    "context": "{{tokens}} токенов",
+    "dims": "{{dims}} измерений",
+    "diskSize": "{{size}} ГБ на диске",
+    "progress": "{{current}} из {{total}} ГБ",
+    "start": "Запустить",
+    "stop": "Остановить",
+    "remove": "Удалить",
+    "removeTitle": "Удалить {{name}}?",
+    "removeDescription": "Файлы модели будут удалены. Если модель запущена, она сначала остановится.",
+    "removed": "{{name}} удалена",
+    "updateEngine": "Обновить {{engine}}",
+    "engineLatest": "{{engine}} обновлён. Сборка, которая запускает эту модель эмбеддингов, ещё не вышла.",
+    "engineInstallFailed": "Не удалось обновить {{engine}}",
+    "requiresEngine": "Нужен {{engine}} {{version}}+",
+    "requiresEngineNotice": "Этой модели нужен {{engine}} {{version}} или новее. Обновите движок, чтобы её запустить.",
+    "state": {
+      "disabled": "Остановлена",
+      "idle": "Запустится при следующем запросе",
+      "starting": "Запускается…",
+      "ready": "Работает",
+      "restarting": "Перезапускается…",
+      "failed": "Ошибка",
+      "unsupported": "Движок не поддерживается"
+    },
+    "errors": {
+      "engineUnsupported": "Установленный движок {{engine}} не умеет запускать эту модель эмбеддингов.",
+      "notConfigured": "Модель эмбеддингов не выбрана. Скачайте модель и нажмите «Запустить».",
+      "notEmbedding": "Этот файл не является моделью эмбеддингов.",
+      "modelFileNotFound": "Файлов модели нет на диске. Скачайте модель заново.",
+      "generic": "Не удалось запустить модель эмбеддингов."
+    },
+    "sectionTitle": "Модели эмбеддингов",
+    "noneTitle": "Нет загруженных моделей эмбеддингов",
+    "noneDescription": "Скачайте модель в категории «Эмбеддинги» в Хабе",
+    "availableInApi": "Доступна в API",
+    "localModel": "Из ваших моделей llama.cpp"
   },
   "media": {
     "subtitle": "Local image generation with stable-diffusion.cpp. Everything runs on this computer.",
@@ -603,6 +646,10 @@
     "checkUpdate": "Check for updates",
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
-    "updateCheckFailed": "Could not check for updates"
+    "updateCheckFailed": "Could not check for updates",
+    "backgroundUpdateTitle": "Updating the media engine",
+    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
+    "updateComplete": "Media engine updated to {{tag}}",
+    "updateFailed": "The media engine could not be updated"
   }
 }
