@@ -215,14 +215,33 @@ describe('hubFormats', () => {
     expect(hubFormats({ mlx: false, managed: ['vllm'] })).toEqual(['gguf', 'vllm'])
     expect(HUB_FORMAT_LABELS.vllm).toBe('vLLM')
   })
+
+  it('offers PrismML only where its provider is', () => {
+    expect(hubFormats({ mlx: true, managed: [], prism: true })).toEqual([
+      'gguf',
+      'mlx',
+      'atomic-prism',
+    ])
+    expect(hubFormats({ mlx: true, managed: [], prism: false })).toEqual([
+      'gguf',
+      'mlx',
+    ])
+  })
+
+  it('lists PrismML after the managed engines', () => {
+    expect(
+      hubFormats({ mlx: false, managed: ['tensorrt-llm', 'vllm'], prism: true })
+    ).toEqual(['gguf', 'vllm', 'tensorrt-llm', 'atomic-prism'])
+  })
 })
 
 describe('engine in the Hub URL', () => {
-  it('accepts the three formats and nothing else', () => {
+  it('accepts the four formats and nothing else', () => {
     expect(parseHubEngine('gguf')).toBe('gguf')
     expect(parseHubEngine('mlx')).toBe('mlx')
     expect(parseHubEngine('tensorrt-llm')).toBe('tensorrt-llm')
     expect(parseHubEngine('vllm')).toBe('vllm')
+    expect(parseHubEngine('atomic-prism')).toBe('atomic-prism')
     expect(parseHubEngine('onnx')).toBeUndefined()
     expect(parseHubEngine(undefined)).toBeUndefined()
     expect(parseHubEngine(['gguf'])).toBeUndefined()

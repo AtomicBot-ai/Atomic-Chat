@@ -49,7 +49,10 @@ export const ModelSupportStatus = ({
     fit: DeviceFit
   } | null>(null)
 
-  const isLlamacpp = provider === 'llamacpp' || provider === 'llamacpp-upstream'
+  const isLlamacpp =
+    provider === 'llamacpp' ||
+    provider === 'llamacpp-upstream' ||
+    provider === 'atomic-prism'
   const isLocalEngine = isLlamacpp || provider === 'mlx'
 
   // This model's load failed terminally — outranks the memory-fit estimate so

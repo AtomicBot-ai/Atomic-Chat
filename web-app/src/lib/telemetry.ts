@@ -84,6 +84,7 @@ export type CpuAvxLevel = 'none' | 'avx' | 'avx2' | 'avx512'
 export type LoadBackend =
   | 'llamacpp'
   | 'llamacpp-upstream'
+  | 'atomic-prism'
   | 'mlx'
   | 'foundation-models'
   | 'tensorrt-llm'
@@ -364,6 +365,7 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
   if (
     provider === 'llamacpp' ||
     provider === 'llamacpp-upstream' ||
+    provider === 'atomic-prism' ||
     provider === 'mlx' ||
     provider === 'foundation-models' ||
     provider === 'tensorrt-llm' ||
@@ -607,6 +609,8 @@ export type ModelLoadFailureKind =
   | 'model_file_missing'
   | 'shards_incomplete'
   | 'arch_unsupported'
+  | 'engine_incompatible'
+  | 'format_legacy'
   | 'os_unsupported'
   | 'timeout'
   | 'device_init'
@@ -620,6 +624,8 @@ const LOAD_FAILURE_BY_CODE: Record<string, ModelLoadFailureKind> = {
   MODEL_FILE_CORRUPT: 'model_file_missing',
   MODEL_SHARDS_INCOMPLETE: 'shards_incomplete',
   MODEL_ARCH_NOT_SUPPORTED: 'arch_unsupported',
+  MODEL_ENGINE_INCOMPATIBLE: 'engine_incompatible',
+  MODEL_FORMAT_LEGACY: 'format_legacy',
   OS_VERSION_UNSUPPORTED: 'os_unsupported',
   LOCAL_API_SERVER_START_TIMEOUT: 'timeout',
   OPERATION_TIMED_OUT: 'timeout',
@@ -847,6 +853,10 @@ const RECOVERABLE_MODEL_LOAD_CODES = new Set<string>([
   // A model whose architecture/format this engine build can't parse (e.g. a
   // newer qwen3vl GGUF). A deterministic incompatibility, not a backend crash.
   'MODEL_ARCH_NOT_SUPPORTED',
+  // The core refused the file before any engine started: it needs PrismML (or
+  // a newer build of it), or it is a superseded Bonsai packing.
+  'MODEL_ENGINE_INCOMPATIBLE',
+  'MODEL_FORMAT_LEGACY',
   // ATO-190: deterministic environment incompatibility (macOS too old for the
   // bundled Metal engine), not a code crash — don't flood the crash channel.
   'OS_VERSION_UNSUPPORTED',

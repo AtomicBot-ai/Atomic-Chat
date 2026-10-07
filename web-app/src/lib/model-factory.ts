@@ -355,7 +355,12 @@ export async function findFoundationModelsSession(
 /** Local engines whose sessions `ModelFactory` resolves through the core's mirror and caches. */
 /** A managed engine's provider id (`lib/managed-engines.ts`): `tensorrt-llm`, `vllm`. */
 type ManagedProviderId = ManagedEngine['id']
-type CachedLocalProvider = 'llamacpp' | 'llamacpp-upstream' | 'mlx' | ManagedProviderId
+type CachedLocalProvider =
+  | 'llamacpp'
+  | 'llamacpp-upstream'
+  | 'atomic-prism'
+  | 'mlx'
+  | ManagedProviderId
 
 /** How an error about a missing session names the engine, e.g. "No running MLX session". */
 function sessionEngineLabel(providerName: CachedLocalProvider): string {
@@ -856,6 +861,7 @@ export class ModelFactory {
     if (
       lower !== 'llamacpp' &&
       lower !== 'llamacpp-upstream' &&
+      lower !== 'atomic-prism' &&
       lower !== 'mlx' &&
       !isManagedProvider(lower)
     ) {
@@ -884,7 +890,7 @@ export class ModelFactory {
    * heuristic; both calls are bounded by `timeoutSecs`.
    */
   static async countLocalPromptTokens(
-    engineName: 'llamacpp' | 'llamacpp-upstream',
+    engineName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism',
     modelId: string,
     provider: ProviderObject | undefined,
     body: {
@@ -977,6 +983,7 @@ export class ModelFactory {
     switch (providerName) {
       case 'llamacpp':
       case 'llamacpp-upstream':
+      case 'atomic-prism':
         return this.createLlamaCppModel(
           modelId,
           provider,
@@ -1043,8 +1050,9 @@ export class ModelFactory {
   /**
    * Create a llamacpp model by starting the model and finding the running session.
    * The `engineName` selects which of the core's llama.cpp runtimes serves it:
-   * `'llamacpp'` (our TurboQuant fork) or `'llamacpp-upstream'` (official
-   * ggml-org/llama.cpp). Both expose an OpenAI-compatible HTTP surface, so the
+   * `'llamacpp'` (our TurboQuant fork), `'llamacpp-upstream'` (official
+   * ggml-org/llama.cpp) or `'atomic-prism'` (PrismML's fork, for Bonsai). All
+   * expose an OpenAI-compatible HTTP surface, so the
    * rest of the factory is identical — only the provider passed to
    * `resolve_local_session` differs.
    */
@@ -1052,7 +1060,7 @@ export class ModelFactory {
     modelId: string,
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {},
-    engineName: 'llamacpp' | 'llamacpp-upstream' = 'llamacpp'
+    engineName: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism' = 'llamacpp'
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
       engineName,

@@ -7,6 +7,12 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
+import { ModelSetupSheet } from '@/containers/hub/ModelSetupSheet'
+import {
+  useCompatibilityVerdict,
+  useHubFileSetup,
+  useModelSetupBytes,
+} from '@/hooks/useModelSetup'
 import {
   isDownloadCancellationError,
   markDownloadCancellationRequested,
@@ -17,6 +23,13 @@ import {
   LLAMACPP_PROVIDERS,
   quantModelIds,
 } from '@/lib/hub-installed'
+import {
+  isFinalSetup,
+  parseHubFileUrl,
+  PRISM_PROVIDER,
+  requiresPrism,
+  routeForVerdict,
+} from '@/lib/model-setup'
 import { CatalogModel } from '@/services/models/types'
 import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconX } from '@tabler/icons-react'
@@ -75,7 +88,7 @@ export const ModelDownloadAction = ({
   const navigate = useNavigate()
 
   const handleUseModel = useCallback(
-    (modelId: string) => {
+    (modelId: string, installedProvider?: string) => {
       // Resolve the target provider at click-time so we always see the
       // freshest providers/models snapshot — not whatever was captured at
       // render. Prefer the vanilla upstream `llama.cpp` provider when it
@@ -94,14 +107,21 @@ export const ModelDownloadAction = ({
       // fresh installs) — the upstream tail of the ternary covers it.
       const forkUsable =
         fork?.active !== false && fork?.models.some((m) => m.id === modelId)
-      const targetLlamaProvider: 'llamacpp' | 'llamacpp-upstream' =
-        upstreamHasModel
-          ? 'llamacpp-upstream'
-          : forkUsable
-            ? 'llamacpp'
-            : upstream
-              ? 'llamacpp-upstream'
-              : 'llamacpp'
+      // A Bonsai file the core set up lists only under PrismML; no other
+      // engine may run it.
+      const targetLlamaProvider:
+        | 'llamacpp'
+        | 'llamacpp-upstream'
+        | typeof PRISM_PROVIDER =
+        installedProvider === PRISM_PROVIDER
+          ? PRISM_PROVIDER
+          : upstreamHasModel
+            ? 'llamacpp-upstream'
+            : forkUsable
+              ? 'llamacpp'
+              : upstream
+                ? 'llamacpp-upstream'
+                : 'llamacpp'
 
       console.log(
         '[ModelDownloadAction] handleUseModel:',
@@ -196,13 +216,42 @@ export const ModelDownloadAction = ({
     t,
   ])
 
-  const requestDownload = useCallback(() => {
+  const hubFile = useMemo(() => parseHubFileUrl(variant.path), [variant.path])
+  const verdict = useCompatibilityVerdict(variant.path)
+  const setup = useHubFileSetup(hubFile)
+  const setupBytes = useModelSetupBytes(setup)
+  const [setupOpen, setSetupOpen] = useState(false)
+
+  const requestDownload = useCallback(async () => {
+    // The core's verdict decides the path when the Hub row has one; a row
+    // clicked before its verdict arrived asks now. A core that cannot say
+    // leaves the ordinary download, and the load gate still reads the header.
+    let judged = verdict
+    const service = serviceHub.modelSetup()
+    if (judged === undefined && hubFile && service.isSupported()) {
+      judged = await service
+        .checkCompatibility({ ...hubFile, provider: 'llamacpp-upstream' })
+        .catch(() => null)
+    }
+    const route = judged ? routeForVerdict(judged) : 'download'
+    if (route === 'setup') {
+      setSetupOpen(true)
+      return
+    }
+    if (route === 'refuse' && judged) {
+      toast.error(t('hub:prismRefusedTitle'), {
+        description: judged.replacement
+          ? t('hub:prismRefusedReplacement', { file: judged.replacement })
+          : judged.reason,
+      })
+      return
+    }
     if (warnTooLarge) {
       setWarningOpen(true)
       return
     }
     void handleDownloadModel()
-  }, [warnTooLarge, handleDownloadModel])
+  }, [verdict, serviceHub, hubFile, warnTooLarge, handleDownloadModel, t])
 
   const handleCancelDownload = useCallback(() => {
     markResumableDownload(variant.model_id)
@@ -237,6 +286,52 @@ export const ModelDownloadAction = ({
     [providers, model, variant.model_id]
   )
   const isDownloaded = installed !== null
+  const setupModelId = quantModelIds(model, variant.model_id)[1]
+  const setupSheet = hubFile ? (
+    <ModelSetupSheet
+      open={setupOpen}
+      onOpenChange={setSetupOpen}
+      file={hubFile}
+      modelName={model.model_name}
+      modelId={setupModelId}
+      installed={isDownloaded}
+      onReady={(modelId) => {
+        setSetupOpen(false)
+        handleUseModel(modelId, PRISM_PROVIDER)
+      }}
+    />
+  ) : null
+
+  // A setup the core is still running (or that waits for `resume`) is this
+  // row's download: the button follows it and opens the sheet.
+  if (setup && !isFinalSetup(setup) && !isDownloaded) {
+    const percent =
+      setupBytes.total > 0
+        ? Math.round((setupBytes.transferred / setupBytes.total) * 100)
+        : 0
+    return (
+      <>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setSetupOpen(true)}
+          title={t('hub:prismSetupOpen')}
+          aria-label={t('hub:prismSetupOpen')}
+          className="relative w-24 justify-center overflow-hidden font-semibold"
+          data-testid="model-setup-progress"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+            style={{ width: `${percent}%` }}
+          />
+          <span className="relative z-1 tabular-nums">{percent}%</span>
+        </Button>
+        {setupSheet}
+      </>
+    )
+  }
 
   if (isDownloading) {
     return (
@@ -270,7 +365,7 @@ export const ModelDownloadAction = ({
         <Button
           variant="default"
           size="sm"
-          onClick={() => handleUseModel(installed.modelId)}
+          onClick={() => handleUseModel(installed.modelId, installed.provider)}
           title={t('hub:useModel')}
         >
           {t('hub:newChat')}
@@ -286,24 +381,45 @@ export const ModelDownloadAction = ({
   }
 
   const warningDialog = (
-    <LargeModelWarningDialog
-      open={warningOpen}
-      onOpenChange={setWarningOpen}
-      onConfirm={() => {
-        setWarningOpen(false)
-        void handleDownloadModel()
-      }}
-    />
+    <>
+      <LargeModelWarningDialog
+        open={warningOpen}
+        onOpenChange={setWarningOpen}
+        onConfirm={() => {
+          setWarningOpen(false)
+          void handleDownloadModel()
+        }}
+      />
+      {setupSheet}
+    </>
   )
+  // "Requires PrismML": the file runs only on PrismML's llama.cpp, which the
+  // Download button sets up together with the model.
+  const prismBadge = requiresPrism(verdict) ? (
+    <span
+      className="shrink-0 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+      title={
+        verdict?.outcome === 'engine_update_required'
+          ? t('hub:prismEngineUpdateRequired')
+          : t('hub:prismRequiredHint')
+      }
+      data-testid="requires-prism-badge"
+    >
+      <span data-testid="requires-prism-badge-label">
+        {t('hub:prismRequired')}
+      </span>
+    </span>
+  ) : null
 
   if (asButton) {
     return (
       <>
+        {prismBadge}
         <Button
           type="button"
           variant="default"
           size="sm"
-          onClick={requestDownload}
+          onClick={() => void requestDownload()}
           title={t('hub:downloadModel')}
         >
           {t('hub:download')}
@@ -315,13 +431,14 @@ export const ModelDownloadAction = ({
 
   return (
     <>
+      {prismBadge}
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
         aria-label={t('hub:downloadModel')}
         title={t('hub:downloadModel')}
-        onClick={requestDownload}
+        onClick={() => void requestDownload()}
         className="size-6"
       >
         <IconDownload size={16} className="text-muted-foreground" />

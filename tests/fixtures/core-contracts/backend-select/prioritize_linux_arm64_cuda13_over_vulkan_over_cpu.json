@@ -1,0 +1,35 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "backend_string": "b11344/linux-cuda-13.4-arm64",
+    "backend_type": "linux-cuda-13.4-arm64",
+    "version": "b11344"
+  },
+  "input": {
+    "has_enough_gpu_memory": true,
+    "kind": "prioritize",
+    "version_backends": [
+      {
+        "backend": "linux-cpu-arm64",
+        "order": 0,
+        "version": "b11344"
+      },
+      {
+        "backend": "linux-vulkan-arm64",
+        "order": 0,
+        "version": "b11344"
+      },
+      {
+        "backend": "linux-cuda-13.4-arm64",
+        "order": 0,
+        "version": "b11344"
+      }
+    ]
+  },
+  "name": "prioritize_linux_arm64_cuda13_over_vulkan_over_cpu",
+  "source": {
+    "commit": "7379d30d6627a6ec9073403d1efeb8cff9bddf17",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

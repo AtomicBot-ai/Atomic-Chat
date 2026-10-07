@@ -7,6 +7,11 @@
  * sides in sync:
  *   - `extensions/llamacpp-extension/src/engineUpdateOffer.ts`
  *   - `extensions/llamacpp-upstream-extension/src/engineUpdateOffer.ts`
+ *   - `extensions/atomic-prism-extension/src/engineUpdateOffer.ts`
+ *
+ * The media engine (`sd-server`) is the one producer inside the web app: its
+ * install lives in the image-generation store, which publishes through
+ * {@link publishEngineUpdateOffer} below.
  *
  * A DOM `CustomEvent` rather than the `@janhq/core` bus, for the same reason
  * `app:backend-hotswapped` is one: the in-process EventEmitter singleton is
@@ -16,6 +21,13 @@
 
 /** Dispatched on `window` with an {@link EngineUpdateOffer} as its detail. */
 export const ENGINE_UPDATE_AVAILABLE_EVENT = 'app:engine-update-available'
+
+/**
+ * Dispatched on `window` with the provider id as its detail when an offer
+ * stops being true without the banner's involvement: the engine was updated
+ * from its own settings page, or its manifest no longer names a newer build.
+ */
+export const ENGINE_UPDATE_RETRACTED_EVENT = 'app:engine-update-retracted'
 
 /**
  * Per-provider mirror of the last offer, written before the event is
@@ -54,6 +66,11 @@ export interface EngineUpdateOffer {
   restartRequired: boolean
   /** Release page for "Show what's new". Absent renders no link. */
   releaseNotesUrl?: string
+  /**
+   * One line about the target release, where the engine's manifest carries
+   * one (PrismML's does). Absent renders no changelog block.
+   */
+  notes?: string
 }
 
 function isOffer(value: unknown): value is EngineUpdateOffer {
@@ -90,6 +107,32 @@ export function clearEngineUpdateOffer(providerId: string): void {
   } catch {
     // Storage unavailable: the offer simply returns next launch.
   }
+}
+
+/**
+ * Producer side for an engine that lives in the web app. Persists the offer,
+ * then announces it — the same two legs the extensions take.
+ */
+export function publishEngineUpdateOffer(offer: EngineUpdateOffer): void {
+  try {
+    localStorage.setItem(
+      engineUpdateOfferKey(offer.provider),
+      JSON.stringify(offer)
+    )
+  } catch {
+    // Storage unavailable: the event below still reaches a mounted banner.
+  }
+  window.dispatchEvent(
+    new CustomEvent(ENGINE_UPDATE_AVAILABLE_EVENT, { detail: offer })
+  )
+}
+
+/** Producer side of a withdrawal: clears the offer and tells the banner. */
+export function retractEngineUpdateOffer(providerId: string): void {
+  clearEngineUpdateOffer(providerId)
+  window.dispatchEvent(
+    new CustomEvent(ENGINE_UPDATE_RETRACTED_EVENT, { detail: providerId })
+  )
 }
 
 /**

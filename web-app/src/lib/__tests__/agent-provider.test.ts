@@ -24,6 +24,7 @@ describe('isAgentLocalProvider', () => {
   it('covers the engines the backend can reach directly', () => {
     expect(isAgentLocalProvider('llamacpp')).toBe(true)
     expect(isAgentLocalProvider('llamacpp-upstream')).toBe(true)
+    expect(isAgentLocalProvider('atomic-prism')).toBe(true)
     expect(isAgentLocalProvider('mlx')).toBe(true)
     expect(isAgentLocalProvider('tensorrt-llm')).toBe(true)
     expect(isAgentLocalProvider('vllm')).toBe(true)

@@ -230,9 +230,9 @@ export function renderDecisionCatalogModule(baseline) {
 // registry falls back to it when the network and the cache both fail, so it
 // deliberately carries real repos, revisions, byte counts and hashes.
 // Regenerate with \`make sync-upstream-baseline\` after the catalog moves.
-import type { DecisionCatalog } from './decision-catalog-registry'
+import type { DecisionCatalogManifest } from './decision-catalog-registry'
 
-export const BASELINE_DECISION_CATALOG: DecisionCatalog = ${JSON.stringify(
+export const BASELINE_DECISION_CATALOG: DecisionCatalogManifest = ${JSON.stringify(
     baseline,
     null,
     2

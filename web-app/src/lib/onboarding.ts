@@ -18,6 +18,7 @@ type ProviderLike = {
 const LOCAL_MODEL_PROVIDERS = new Set([
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
   'jan',
 ])

@@ -110,6 +110,7 @@ const isTauriRuntime = (): boolean => {
 const localProviders = (): string[] => [
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
   ...managedEngines().map((engine) => engine.id),
 ]

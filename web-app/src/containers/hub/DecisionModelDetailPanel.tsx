@@ -5,11 +5,15 @@ import DecisionModelCard from '@/containers/DecisionModelCard'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { HubReadme } from '@/containers/hub/HubReadme'
 import { route } from '@/constants/routes'
+import { useDecisionEngineReadiness } from '@/hooks/useDecisionEngineReadiness'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { DECISION_ICON_KEY } from '@/lib/model-logo'
+import { DECISION_ENGINE_UI } from '@/lib/decision/engine'
+import { decisionIconKey } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import {
   decisionDiskBytes,
+  decisionQuantLabel,
+  isNonCommercialLicense,
   type DecisionCatalogModel,
 } from '@/services/decision-catalog-registry'
 
@@ -23,28 +27,44 @@ export type DecisionModelDetailPanelProps = {
 /**
  * The right-hand panel for a decision model, shaped like the other
  * categories': the download with its size, or — once the model is on disk —
- * the way to the llama.cpp TurboQuant page that runs it, then the details
- * and the repo's README at the pinned revision.
+ * the way to the provider page of the engine that runs it (llama.cpp
+ * TurboQuant or llama.cpp), then the details and the repo's README at the
+ * pinned revision.
  */
 export function DecisionModelDetailPanel({
   model,
   className,
 }: DecisionModelDetailPanelProps) {
+  if (!model) return <EmptyPanel className={className} />
+  return <ModelPanel model={model} className={className} />
+}
+
+function EmptyPanel({ className }: { className?: string }) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className={cn(
+        'flex h-full items-center justify-center p-6 text-sm text-muted-foreground',
+        className
+      )}
+    >
+      {t('hub:selectModel')}
+    </div>
+  )
+}
+
+function ModelPanel({
+  model,
+  className,
+}: {
+  model: DecisionCatalogModel
+  className?: string
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-
-  if (!model) {
-    return (
-      <div
-        className={cn(
-          'flex h-full items-center justify-center p-6 text-sm text-muted-foreground',
-          className
-        )}
-      >
-        {t('hub:selectModel')}
-      </div>
-    )
-  }
+  const readiness = useDecisionEngineReadiness(model)
+  const engineName = DECISION_ENGINE_UI[model.engine].name
+  const quant = decisionQuantLabel(model)
 
   const languages =
     model.languages === 'multilingual'
@@ -54,7 +74,7 @@ export function DecisionModelDetailPanel({
   const openProvider = () => {
     void navigate({
       to: route.settings.providers,
-      params: { providerName: 'llamacpp' },
+      params: { providerName: model.engine },
     })
   }
 
@@ -62,7 +82,7 @@ export function DecisionModelDetailPanel({
     <div className={cn('flex flex-col gap-4 p-6', className)}>
       <header className="flex items-start gap-3">
         <ModelLogo
-          icon={DECISION_ICON_KEY}
+          icon={decisionIconKey(model)}
           name={model.name}
           author={model.repo.split('/')[0]}
         />
@@ -100,7 +120,7 @@ export function DecisionModelDetailPanel({
         >
           <span className="flex min-w-0 flex-1 basis-56 items-center gap-2 rounded-md bg-muted/40 px-2 py-2">
             <span className="shrink-0 rounded-[5px] bg-secondary px-[7px] py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
-              {t('hub:cpu')}
+              {quant ?? t('hub:cpu')}
             </span>
             <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
               {t('settings:decision.diskSize', {
@@ -112,11 +132,26 @@ export function DecisionModelDetailPanel({
             <DecisionModelCard model={model} onOpen={openProvider} />
           </span>
         </div>
+        {readiness.kind === 'needs_update' && (
+          <p
+            className="mt-3 text-xs text-amber-600 dark:text-amber-400"
+            role="status"
+          >
+            {t('settings:decision.requiresEngineNotice', {
+              engine: engineName,
+              version: readiness.required,
+            })}
+          </p>
+        )}
       </section>
 
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-3 text-sm font-medium">{t('hub:details')}</h2>
         <dl className="grid grid-cols-2 gap-2 text-xs">
+          <DetailCell label={t('hub:decisionEngine')}>
+            {engineName}
+            {model.vision ? ` · ${t('hub:decisionReadsImages')}` : ''}
+          </DetailCell>
           <DetailCell label={t('hub:languages')}>{languages}</DetailCell>
           <DetailCell label={t('hub:context')}>
             {t('settings:decision.context', { tokens: model.context })}
@@ -129,6 +164,9 @@ export function DecisionModelDetailPanel({
           )}
           <DetailCell label={t('hub:license')}>
             {model.license ?? '—'}
+            {isNonCommercialLicense(model.license)
+              ? ` · ${t('hub:licenseNonCommercial')}`
+              : ''}
           </DetailCell>
         </dl>
       </section>

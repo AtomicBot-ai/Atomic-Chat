@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-385 records, 2026-05-19 → 2026-10-06.
+392 records, 2026-05-19 → 2026-10-06.
 
 ---
 
@@ -33,8 +33,10 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (20)
+## Local image & video generation (22)
 
+- **2026-10-06** — [Fall back from a media engine build that fails its probe, and stop shipping Windows ROCm](2026-10-06-fall-back-from-a-media-engine-build-that-fails-its-probe.md)
+- **2026-10-06** — [Build stable-diffusion.cpp for arm64 in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-stable-diffusion-cpp-for-arm64-in-an-atomic-fork.md)
 - **2026-09-30** — [Shape the media form for the picked model, and let Generate start it](2026-09-30-shape-the-media-form-for-the-picked-model.md)
 - **2026-09-30** — [Keep image and video models on a discrete GPU](2026-09-30-keep-media-models-on-a-discrete-gpu.md)
 - **2026-09-30** — [Put Reset beside the media knobs, and warn about a swapping clip in the dialog only](2026-09-30-reset-beside-the-media-knobs-and-warn-about-swap-in-the-dialog-only.md) — narrows the 2026-09-28 estimate record: no red line for `exceeds`.
@@ -159,8 +161,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (51)
+## llama.cpp providers & backend selection (53)
 
+- **2026-10-06** — [Show PrismML only where it has a build, and say what its engine is for until it is installed](2026-10-06-show-prismml-where-it-has-a-build-and-onboard-its-engine.md)
+- **2026-10-05** — [Run Bonsai on PrismML's llama.cpp as a third provider, set up from the Hub](2026-10-05-run-bonsai-on-prismml-llamacpp-as-a-third-provider.md)
 - **2026-09-30** — [Stop offering Concurrent Mode](2026-09-30-stop-offering-concurrent-mode.md)
 - **2026-09-18** — [Honour "Ignore SSL certificates" for proxied plugin requests](2026-09-18-honour-ignore-ssl-for-proxied-plugin-requests.md)
 - **2026-09-18** — [Preserve the resolved backend during provider settings writes](2026-09-18-preserve-resolved-backend-during-settings-writes.md)
@@ -214,9 +218,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (35)
+## Models, Hub & downloads (38)
 
+- **2026-10-06** — [List Bonsai models under a PrismML format in the Hub, and install the engine from its row](2026-10-06-list-bonsai-models-under-a-prismml-format-in-the-hub.md)
+- **2026-10-06** — [List PrismML model setups in the download panel, and set a deleted Bonsai up again](2026-10-06-list-prismml-model-setups-in-the-download-panel.md)
 - **2026-10-03** — [Choose TensorRT-LLM models in the Model Hub, as its third format](2026-10-03-choose-tensorrt-llm-models-in-the-model-hub.md)
+- **2026-10-06** — [Offer stock llama.cpp decision models, each on the page of the engine that runs it](2026-10-06-offer-stock-llamacpp-decision-models-on-the-llamacpp-page.md)
 - **2026-10-01** — [Download decision models in the Hub, run them on the TurboQuant page](2026-10-01-download-decision-models-in-the-hub-and-run-them-on-the-turboquant-page.md)
 - **2026-09-29** — [List image and video models in the Hub, from the curated catalog only](2026-09-29-list-image-and-video-models-in-the-hub.md)
 - **2026-09-29** — [Fetch large files over several connections, and give up on quiet ones](2026-09-29-fetch-large-files-over-several-connections-and-give-up-on-quiet-ones.md)

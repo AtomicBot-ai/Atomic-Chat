@@ -3,6 +3,7 @@ import {
   initializeServiceHubStore,
   useServiceStore,
 } from '@/hooks/useServiceHub'
+import { DefaultModelSetupService } from '@/services/model-setup/default'
 
 type ServiceInstances = {
   [Name in keyof ServiceHub]: ReturnType<ServiceHub[Name]>
@@ -49,6 +50,7 @@ export function createMockServiceHub(
       overrides.diffusion ?? (emptyService as ServiceInstances['diffusion']),
     decision:
       overrides.decision ?? (emptyService as ServiceInstances['decision']),
+    modelSetup: overrides.modelSetup ?? new DefaultModelSetupService(),
   }
 
   return {
@@ -77,6 +79,7 @@ export function createMockServiceHub(
     voice: () => services.voice,
     diffusion: () => services.diffusion,
     decision: () => services.decision,
+    modelSetup: () => services.modelSetup,
   }
 }
 

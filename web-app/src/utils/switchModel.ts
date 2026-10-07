@@ -230,6 +230,7 @@ function emitModelLoad(
 const LOCAL_PROVIDERS = [
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
   'foundation-models',
 ] as const
@@ -328,6 +329,11 @@ const TERMINAL_LOAD_CODES = new Set([
   // ATO-190: the bundled macOS engine requires a newer macOS than the host
   // (missing Metal symbol). This never resolves on retry, so never auto-retry.
   'OS_VERSION_UNSUPPORTED',
+  // The core refused the file before starting anything: it needs another
+  // engine (PrismML) or a newer build of it, or it is a superseded Bonsai
+  // packing. Only the user's choice changes that.
+  'MODEL_ENGINE_INCOMPATIBLE',
+  'MODEL_FORMAT_LEGACY',
 ])
 
 function autoStartKey(providerName: string, modelId: string): string {
@@ -1501,6 +1507,74 @@ export type ModelLoadFailure = {
   persistent: boolean
 }
 
+/** The core's compatibility verdict, carried as JSON in the refusal's `details`. */
+type CompatibilityRefusal = {
+  outcome?: string
+  min_prism_build?: number
+  replacement?: string
+  reason?: string
+}
+
+function parseCompatibilityRefusal(details: string | undefined): CompatibilityRefusal {
+  if (!details) return {}
+  try {
+    const parsed: unknown = JSON.parse(details)
+    return parsed && typeof parsed === 'object' ? (parsed as CompatibilityRefusal) : {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * `MODEL_ENGINE_INCOMPATIBLE` / `MODEL_FORMAT_LEGACY`: the core refused the
+ * file before starting any engine. Say which engine (or which file) it needs.
+ */
+function describeCompatibilityRefusal(
+  t: typeof i18n.t,
+  err: ErrorObject
+): ModelLoadFailure {
+  const verdict = parseCompatibilityRefusal(err.details)
+  const engine = getProviderTitle('atomic-prism')
+  const details = verdict.reason ?? err.message
+  if (err.code === 'MODEL_FORMAT_LEGACY') {
+    return {
+      title: t('model-errors:formatLegacyTitle'),
+      description: verdict.replacement
+        ? t('model-errors:formatLegacyDescription', {
+            replacement: verdict.replacement,
+          })
+        : t('model-errors:formatLegacyDescriptionNoReplacement'),
+      details,
+      persistent: true,
+    }
+  }
+  if (verdict.outcome === 'engine_update_required') {
+    return {
+      title: t('model-errors:engineUpdateRequiredTitle', { engine }),
+      description: t('model-errors:engineUpdateRequiredDescription', {
+        engine,
+        build: verdict.min_prism_build ?? '',
+      }),
+      details,
+      persistent: true,
+    }
+  }
+  if (verdict.outcome === 'unsupported') {
+    return {
+      title: t('model-errors:engineUnsupportedTitle'),
+      description: t('model-errors:engineUnsupportedDescription'),
+      details,
+      persistent: true,
+    }
+  }
+  return {
+    title: t('model-errors:engineRequiredTitle', { engine }),
+    description: t('model-errors:engineRequiredDescription', { engine }),
+    details,
+    persistent: true,
+  }
+}
+
 export function describeModelLoadFailure(
   rawError: unknown,
   providerName?: string
@@ -1571,6 +1645,9 @@ export function describeModelLoadFailure(
   // is unsupported instead.
   if (err.code === 'CPU_NO_AVX') {
     return simple('cpuNoAvx')
+  }
+  if (err.code === 'MODEL_ENGINE_INCOMPATIBLE' || err.code === 'MODEL_FORMAT_LEGACY') {
+    return describeCompatibilityRefusal(t, err)
   }
 
   const { summary, details } = splitModelLoadError(err)

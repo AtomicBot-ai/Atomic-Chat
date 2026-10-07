@@ -137,6 +137,7 @@ pub trait AgentLlmClient: Send + Sync {
 pub enum LlamaBackend {
     Llamacpp,
     LlamacppUpstream,
+    AtomicPrism,
 }
 
 impl LlamaBackend {
@@ -144,6 +145,7 @@ impl LlamaBackend {
         match self {
             Self::Llamacpp => "llamacpp",
             Self::LlamacppUpstream => "llamacpp-upstream",
+            Self::AtomicPrism => "atomic-prism",
         }
     }
 }
@@ -998,7 +1000,11 @@ pub async fn find_session_by_model_id(
     model_id: &str,
     resolver: &SessionResolver,
 ) -> Result<LlamaSessionTarget, LlmClientError> {
-    for backend in [LlamaBackend::Llamacpp, LlamaBackend::LlamacppUpstream] {
+    for backend in [
+        LlamaBackend::Llamacpp,
+        LlamaBackend::LlamacppUpstream,
+        LlamaBackend::AtomicPrism,
+    ] {
         if let Some(session) = resolver.find_in(backend.as_str(), model_id).await {
             return Ok(target_from(session, backend));
         }
@@ -1396,6 +1402,24 @@ mod tests {
             cancellation.cancel();
             Err("cancelled".into())
         }
+    }
+
+    #[tokio::test]
+    async fn a_model_served_only_by_atomic_prism_is_found_and_tagged_with_it() {
+        let mirror = std::sync::Arc::new(crate::core::sessions::mirror::CoreSessions::new());
+        mirror.apply_snapshot(
+            1,
+            "i",
+            &serde_json::json!({ "sessions": [{
+                "pid": 900, "port": 3001, "model_id": "bonsai", "model_path": "/m/bonsai.gguf",
+                "is_embedding": false, "api_key": "k", "provider": "atomic-prism",
+            }] }),
+        );
+        let resolver = SessionResolver::new(mirror);
+        let target = find_session_by_model_id("bonsai", &resolver).await.unwrap();
+        assert_eq!(target.backend, LlamaBackend::AtomicPrism);
+        assert_eq!(target.backend.as_str(), "atomic-prism");
+        assert_eq!(target.port, 3001);
     }
 
     #[test]

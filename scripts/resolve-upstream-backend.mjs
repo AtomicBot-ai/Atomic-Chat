@@ -52,6 +52,8 @@ const SDCPP_TAG_RE = /^master-\d+-[0-9a-f]{7}(-a[0-9a-f]{7})?$/
 const LINUX_ASSET_INFIX = {
   'linux-cpu-x64': 'ubuntu-x64',
   'linux-vulkan-x64': 'ubuntu-vulkan-x64',
+  'linux-cpu-arm64': 'ubuntu-arm64',
+  'linux-vulkan-arm64': 'ubuntu-vulkan-arm64',
 }
 
 const WIN_CUDA_FAMILY_RE = /^win-cuda-(\d+)-(x64|arm64)$/

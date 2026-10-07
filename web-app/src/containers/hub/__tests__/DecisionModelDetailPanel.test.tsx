@@ -40,9 +40,12 @@ import {
   decisionDiskBytes,
   getBaselineDecisionCatalog,
 } from '@/services/decision-catalog-registry'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { DecisionModelDetailPanel } from '../DecisionModelDetailPanel'
 
 const model = getBaselineDecisionCatalog().models[0]
+const byId = (id: string) =>
+  getBaselineDecisionCatalog().models.find((m) => m.id === id)!
 
 describe('DecisionModelDetailPanel', () => {
   it('asks for a pick when no model is open', () => {
@@ -94,5 +97,49 @@ describe('DecisionModelDetailPanel', () => {
       to: '/settings/providers/$providerName',
       params: { providerName: 'llamacpp' },
     })
+  })
+
+  it('opens a stock llama.cpp model on the llama.cpp page, with its quant, engine and license', async () => {
+    navigate.mockClear()
+    const clef = byId('openjev')
+    render(<DecisionModelDetailPanel model={clef} />)
+
+    expect(screen.getByTestId('decision-download-openjev')).toHaveTextContent(
+      'Q4_K_M'
+    )
+    expect(
+      screen.getByText('llama.cpp · hub:decisionReadsImages')
+    ).toBeVisible()
+    expect(
+      screen.getByText('cc-by-nc-4.0 · hub:licenseNonCommercial')
+    ).toBeVisible()
+    await userEvent.click(
+      screen.getByRole('button', { name: 'actions for openjev' })
+    )
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { providerName: 'llamacpp-upstream' } })
+    )
+  })
+
+  it('says which llama.cpp build a model needs when the configured one is older', () => {
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          settings: [
+            {
+              key: 'version_backend',
+              controller_props: { value: 'b11344/macos-arm64' },
+            },
+          ],
+        },
+      ] as never,
+    })
+    render(<DecisionModelDetailPanel model={byId('clef')} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'settings:decision.requiresEngineNotice {"engine":"llama.cpp","version":"b11418"}'
+    )
+    useModelProvider.setState({ providers: [] as never })
   })
 })

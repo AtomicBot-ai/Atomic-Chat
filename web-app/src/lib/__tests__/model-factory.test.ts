@@ -468,7 +468,7 @@ describe('ModelFactory tensorrt-llm provider', () => {
   it('keeps response_format only when the core says the family has structured output', async () => {
     const sent: string[] = []
     let structured = true
-    const format = { type: 'json_object' }
+    const responseFormat = { type: 'json_object' }
     const chatFetch = await tensorrtFetch((command, args) => {
       if (command === 'resolve_local_session') return trtSession
       if (command === 'atomic_core_call') {
@@ -484,11 +484,11 @@ describe('ModelFactory tensorrt-llm provider', () => {
     const send = () =>
       chatFetch('http://localhost:4001/v1/chat/completions', {
         method: 'POST',
-        body: JSON.stringify({ model: 'm', messages: [], response_format: format }),
+        body: JSON.stringify({ model: 'm', messages: [], response_format: responseFormat }),
       })
 
     await send()
-    expect(JSON.parse(sent[0]).response_format).toEqual(format)
+    expect(JSON.parse(sent[0]).response_format).toEqual(responseFormat)
 
     // The answer is kept for the model object's life; a new model asks again.
     structured = false
@@ -507,7 +507,7 @@ describe('ModelFactory tensorrt-llm provider', () => {
     })
     await plainFetch('http://localhost:4001/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ model: 'm', messages: [], response_format: format }),
+      body: JSON.stringify({ model: 'm', messages: [], response_format: responseFormat }),
     })
     expect(JSON.parse(sent[1])).not.toHaveProperty('response_format')
   })

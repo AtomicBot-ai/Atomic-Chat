@@ -100,7 +100,7 @@ async function getCurrentBackendTypeFromSettings(
 
 export type OptimalBackendCacheRecord = {
   schemaVersion: 1
-  provider: 'llamacpp' | 'llamacpp-upstream'
+  provider: 'llamacpp' | 'llamacpp-upstream' | 'atomic-prism'
   detectedAt: number
   detectionKind: 'gpu' | 'cpu-optimal'
   currentBackend: string

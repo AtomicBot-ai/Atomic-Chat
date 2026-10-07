@@ -1,0 +1,22 @@
+{
+  "comparator": "json-exact",
+  "expected": {
+    "backend": "ubuntu-arm64",
+    "backend_type_updated": true,
+    "effective_backend_type": "linux-cpu-arm64",
+    "needs_backend_installation": true,
+    "version": "b10205"
+  },
+  "input": {
+    "key": "version_backend",
+    "kind": "setting_update",
+    "stored_type": null,
+    "value": "b10205/ubuntu-arm64"
+  },
+  "name": "setting_update_maps_ubuntu_arm64",
+  "source": {
+    "commit": "7379d30d6627a6ec9073403d1efeb8cff9bddf17",
+    "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs",
+    "provider": "llamacpp-upstream"
+  }
+}

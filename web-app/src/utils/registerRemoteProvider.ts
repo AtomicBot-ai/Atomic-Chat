@@ -18,6 +18,7 @@ type RegisterProviderRequest = {
 export const LOCAL_PROVIDER_NAMES = [
   'llamacpp',
   'llamacpp-upstream',
+  'atomic-prism',
   'mlx',
   'foundation-models',
   // The managed engines (Linux, Windows): the core runs them in a container behind its session

@@ -4,11 +4,11 @@
 // registry falls back to it when the network and the cache both fail, so it
 // deliberately carries real repos, revisions, byte counts and hashes.
 // Regenerate with `make sync-upstream-baseline` after the catalog moves.
-import type { DecisionCatalog } from './decision-catalog-registry'
+import type { DecisionCatalogManifest } from './decision-catalog-registry'
 
-export const BASELINE_DECISION_CATALOG: DecisionCatalog = {
+export const BASELINE_DECISION_CATALOG: DecisionCatalogManifest = {
   "schema_version": 1,
-  "updated_at": "2026-10-01T12:00:00Z",
+  "updated_at": "2026-10-06T12:00:00Z",
   "models": [
     {
       "id": "laya-multilingual",
@@ -149,6 +149,235 @@ export const BASELINE_DECISION_CATALOG: DecisionCatalog = {
           "path": "README.md",
           "bytes": 6343,
           "sha256": "83e67a995a70a9a9ef6cc1f8c68da654f11eee081c9bb14de07c37b08fcc3113"
+        }
+      ]
+    },
+    {
+      "id": "julia-1",
+      "name": "Julia 1",
+      "description": "Small multilingual decision model. Answers yes/no, choice and score questions about a text, with 2 to 20 options, in one encoder pass.",
+      "repo": "ggml-org/Julia-1-GGUF",
+      "revision": "16fee17949206fbf58da9347daea44d792a81211",
+      "backbone": "mmBERT-small",
+      "params": "144M",
+      "languages": "multilingual",
+      "context": 1024,
+      "calibrated": false,
+      "license": "apache-2.0",
+      "default": true,
+      "min_engine": "b11370",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "laya",
+      "icon": "supersonic",
+      "files": [
+        {
+          "path": "Julia-1-Q8_0.gguf",
+          "role": "model",
+          "bytes": 168166496,
+          "sha256": "1ea6a7e87156eeeda88cb7a36a61265b37ba7b993897b7289b99aea5b5e47069"
+        }
+      ]
+    },
+    {
+      "id": "laya-gguf",
+      "name": "Laya (GGUF)",
+      "description": "English decision model with calibrated answers, as a GGUF for llama.cpp. Short texts, up to 512 tokens.",
+      "repo": "ggml-org/Laya-GGUF",
+      "revision": "22265007700297ba9e128297e82540cf28c5d7d4",
+      "backbone": "ModernBERT-large",
+      "params": "421M",
+      "languages": "en",
+      "context": 512,
+      "calibrated": true,
+      "license": "apache-2.0",
+      "min_engine": "b11370",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "laya",
+      "icon": "convai",
+      "files": [
+        {
+          "path": "Laya-Q8_0.gguf",
+          "role": "model",
+          "bytes": 449397600,
+          "sha256": "c06528c5746d3bb8baa72a27938be95abbfd0b226f8471e8a9e365ed0bb066d2"
+        }
+      ]
+    },
+    {
+      "id": "lev",
+      "name": "lev",
+      "description": "English decision model on Qwen3.5 4B. Reads each answer from the logits, with calibrated probabilities over up to several hundred options.",
+      "repo": "ggml-org/lev-GGUF",
+      "revision": "3e9286a79ae857b4e1de051c92fab6dc574581ce",
+      "backbone": "Qwen3.5-4B",
+      "params": "4.2B",
+      "languages": "en",
+      "context": 8192,
+      "calibrated": true,
+      "license": "apache-2.0",
+      "min_engine": "b11370",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "lev",
+      "icon": "interfaze",
+      "files": [
+        {
+          "path": "lev-Q4_K_M.gguf",
+          "role": "model",
+          "bytes": 3011777440,
+          "sha256": "3f61b27c00a098dbc79ed099cca3985cbe0b63d17ac7fedebf2dca1d84f7f3a8"
+        }
+      ]
+    },
+    {
+      "id": "kev-4b",
+      "name": "Kev 4B",
+      "description": "English decision model on Qwen3.5 4B with a pointer head over the options. Validated on documents up to 8,192 tokens.",
+      "repo": "ggml-org/Kev-4B-GGUF",
+      "revision": "d924f2e2c3872da8b8aaf3eb4453b4126deceb79",
+      "backbone": "Qwen3.5-4B-Base",
+      "params": "4.2B",
+      "languages": "en",
+      "context": 8192,
+      "calibrated": true,
+      "license": "apache-2.0",
+      "min_engine": "b11370",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "kev",
+      "files": [
+        {
+          "path": "Kev-4B-Q4_K_M.gguf",
+          "role": "model",
+          "bytes": 3033489824,
+          "sha256": "33ae6b18926502b2209a1bf7d3b61a350d65938441515c686bb87d226a19eff9"
+        }
+      ]
+    },
+    {
+      "id": "bespoke-nimble-9b",
+      "name": "Bespoke Nimble 9B",
+      "description": "Decision model on Qwen3.5 9B by Bespoke Labs for choice and yes/no questions. Non-commercial license (CC BY-NC 4.0).",
+      "repo": "ggml-org/Bespoke-Nimble-9B-v3-GGUF",
+      "revision": "a72bdbadb355ca3014f7f9d2585380917cc59971",
+      "backbone": "Qwen3.5-9B",
+      "params": "9.0B",
+      "languages": "en",
+      "context": 8192,
+      "calibrated": false,
+      "license": "cc-by-nc-4.0",
+      "min_engine": "b11370",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "nimble",
+      "icon": "bespoke",
+      "files": [
+        {
+          "path": "Bespoke-Nimble-9B-v3-Q4_K_M.gguf",
+          "role": "model",
+          "bytes": 6324185632,
+          "sha256": "613a9b8c77ae1648b234d7202464d2e8e8da632910e9c59fbb22c13e027ca999"
+        }
+      ]
+    },
+    {
+      "id": "clef-flash",
+      "name": "Clef Flash",
+      "description": "Cloudflare decision model on Qwen3.5 9B. Decides all the questions of a request together and reads images.",
+      "repo": "ggml-org/Clef-Flash-GGUF",
+      "revision": "4a192915ef971886004b5b13294f2b4c7a7fc39d",
+      "backbone": "Qwen3.5-9B",
+      "params": "9.1B",
+      "languages": "en",
+      "context": 8192,
+      "calibrated": false,
+      "license": "apache-2.0",
+      "min_engine": "b11418",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "clef",
+      "icon": "cloudflare",
+      "vision": true,
+      "files": [
+        {
+          "path": "Clef-Flash-Q4_K_M.gguf",
+          "role": "model",
+          "bytes": 6486448288,
+          "sha256": "fd3e90605e8103307dca37cb5a8cdb036267e2fe3cb2d908d80a8ceb9ec0638c"
+        },
+        {
+          "path": "mmproj-Clef-Flash-Q8_0.gguf",
+          "role": "mmproj",
+          "bytes": 624229728,
+          "sha256": "3fbc646617c56c35ba48e06f0fbe8693a83bde49eb31e2a3bf59ba0a308c9e25"
+        }
+      ]
+    },
+    {
+      "id": "clef",
+      "name": "Clef",
+      "description": "Cloudflare's large decision model (27B). Decides all the questions of a request together and reads images. Needs about 20 GB of memory.",
+      "repo": "ggml-org/Clef-GGUF",
+      "revision": "63840a1a68cb7084c88610cffc328509356b04cb",
+      "backbone": "Qwen3.8-27B",
+      "params": "27B",
+      "languages": "en",
+      "context": 8192,
+      "calibrated": false,
+      "license": "apache-2.0",
+      "min_engine": "b11418",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "clef",
+      "icon": "cloudflare",
+      "vision": true,
+      "files": [
+        {
+          "path": "Clef-Q4_K_M.gguf",
+          "role": "model",
+          "bytes": 19232219200,
+          "sha256": "bd9b8ae24c5752a2bb5e2733d5168340d5f04457e02b8bf0d1bc9285ec3d4f61"
+        },
+        {
+          "path": "mmproj-Clef-Q8_0.gguf",
+          "role": "mmproj",
+          "bytes": 629247424,
+          "sha256": "0d901ea999ae122ba0afeb4a3f4c4ac9a90baa07f1d120df9c350082db1190a8"
+        }
+      ]
+    },
+    {
+      "id": "openjev",
+      "name": "OpenJev",
+      "description": "Large decision model (27B) for text, web pages and screenshots, with up to 52 options. Needs about 20 GB of memory. Non-commercial license (CC BY-NC 4.0).",
+      "repo": "ggml-org/OpenJev-GGUF",
+      "revision": "10840f375658dea7afc5ff4711127bca8218b560",
+      "backbone": "Qwen3.5-27B",
+      "params": "27B",
+      "languages": "multilingual",
+      "context": 16384,
+      "calibrated": true,
+      "license": "cc-by-nc-4.0",
+      "min_engine": "b11370",
+      "engine": "llamacpp-upstream",
+      "format": "gguf",
+      "decision_type": "openjev",
+      "icon": "openjev",
+      "vision": true,
+      "files": [
+        {
+          "path": "OpenJev-Q4_K_M.gguf",
+          "role": "model",
+          "bytes": 18973872288,
+          "sha256": "38b512277edaeec6cd251d146bff6d97bc328fa9db19755401d6e9ab1ccbcba5"
+        },
+        {
+          "path": "mmproj-OpenJev-Q8_0.gguf",
+          "role": "mmproj",
+          "bytes": 629247232,
+          "sha256": "e372cdbf59fdd6bd2504cb64c988b31c7a42ac406a8f711df4b7a7acd9216f1e"
         }
       ]
     }

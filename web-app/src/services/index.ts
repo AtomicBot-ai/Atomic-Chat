@@ -38,6 +38,8 @@ import { DefaultDiffusionService } from './diffusion/default'
 import type { DiffusionService } from './diffusion/types'
 import { DefaultDecisionService } from './decision/default'
 import type { DecisionService } from './decision/types'
+import { DefaultModelSetupService } from './model-setup/default'
+import type { ModelSetupService } from './model-setup/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -88,6 +90,7 @@ export interface ServiceHub {
   voice(): VoiceService
   diffusion(): DiffusionService
   decision(): DecisionService
+  modelSetup(): ModelSetupService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -116,6 +119,7 @@ class PlatformServiceHub implements ServiceHub {
   private voiceService: VoiceService = new DefaultVoiceService()
   private diffusionService: DiffusionService = new DefaultDiffusionService()
   private decisionService: DecisionService = new DefaultDecisionService()
+  private modelSetupService: ModelSetupService = new DefaultModelSetupService()
   private initialized = false
 
   /**
@@ -152,6 +156,7 @@ class PlatformServiceHub implements ServiceHub {
           voiceModule,
           diffusionModule,
           decisionModule,
+          modelSetupModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -170,6 +175,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./voice/tauri'),
           import('./diffusion/tauri'),
           import('./decision/tauri'),
+          import('./model-setup/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -189,6 +195,7 @@ class PlatformServiceHub implements ServiceHub {
         this.voiceService = new voiceModule.TauriVoiceService()
         this.diffusionService = new diffusionModule.TauriDiffusionService()
         this.decisionService = new decisionModule.TauriDecisionService()
+        this.modelSetupService = new modelSetupModule.TauriModelSetupService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -369,6 +376,11 @@ class PlatformServiceHub implements ServiceHub {
   decision(): DecisionService {
     this.ensureInitialized()
     return this.decisionService
+  }
+
+  modelSetup(): ModelSetupService {
+    this.ensureInitialized()
+    return this.modelSetupService
   }
 }
 

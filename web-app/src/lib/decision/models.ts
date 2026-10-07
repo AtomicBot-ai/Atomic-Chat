@@ -1,13 +1,16 @@
 /**
  * Decision models on disk and in the core.
  *
- * A model is a laya checkpoint folder, downloaded file by file from its
- * pinned Hugging Face revision into `<dataFolder>/decision/models/<id>/`. The
- * core runs it with `llama-server --decision -m <folder>`: the engine converts
- * the folder once into `<dataFolder>/decision/gguf-cache` (the core prunes
- * that cache) and serves `/v1/systemone` behind the Local API Server.
- * Decision models never live under `llamacpp/models`: they are not chat
- * models and must not surface in the model picker or in `/v1/models`.
+ * A model is downloaded file by file from its pinned Hugging Face revision
+ * into `<dataFolder>/decision/models/<id>/`. A TurboQuant model is a laya
+ * checkpoint folder: the core runs it with `llama-server --decision -m
+ * <folder>`, and the engine converts the folder once into
+ * `<dataFolder>/decision/gguf-cache` (the core prunes that cache). A stock
+ * llama.cpp model is a GGUF (plus a projector for one that reads images): the
+ * core finds `<arch>.decision.type` in it and starts the upstream build. Both
+ * serve `/v1/systemone` behind the Local API Server. Decision models never
+ * live under `llamacpp/models`: they are not chat models and must not surface
+ * in the model picker or in `/v1/models`.
  */
 
 import { fs } from '@janhq/core'
@@ -26,6 +29,8 @@ import {
 } from '@/services/diffusion/transfer'
 import {
   decisionFileUrl,
+  decisionModelFile,
+  decisionProjectorFile,
   type DecisionCatalogFile,
   type DecisionCatalogModel,
 } from '@/services/decision-catalog-registry'
@@ -33,9 +38,25 @@ import type { DecisionConfig, DecisionStatus } from '@/services/decision/types'
 
 export const DECISION_MODELS_DIR = 'decision/models'
 
-/** The folder the core is pointed at; relative, the core resolves it against the data folder. */
+/** The model's folder; relative, the core resolves it against the data folder. */
 export const decisionModelDir = (id: string): string =>
   `${DECISION_MODELS_DIR}/${id}`
+
+/** What the core is pointed at: the checkpoint folder, or a GGUF model's `-m` file. */
+export const decisionModelPath = (model: DecisionCatalogModel): string => {
+  const file = decisionModelFile(model)
+  return file
+    ? `${decisionModelDir(model.id)}/${file.path}`
+    : decisionModelDir(model.id)
+}
+
+/**
+ * How long a start may take: a checkpoint is a few hundred MB on the CPU, a
+ * stock llama.cpp model up to 20 GB read from disk onto the GPU.
+ */
+export const decisionStartupTimeoutSecs = (
+  model: DecisionCatalogModel
+): number => (model.engine === 'llamacpp-upstream' ? 600 : 60)
 
 const DECISION_TASK_PREFIX = 'decision-'
 
@@ -125,11 +146,11 @@ export async function downloadDecisionModel(
   emitTransferSuccess(taskId, 'Model', total)
 }
 
-/** Whether the core is configured to run `id` (running or not). */
+/** Whether the core is configured to run `model` (running or not). */
 export const isActiveDecisionModel = (
   config: Pick<DecisionConfig, 'model_path'> | null,
-  id: string
-): boolean => config?.model_path === decisionModelDir(id)
+  model: DecisionCatalogModel
+): boolean => config?.model_path === decisionModelPath(model)
 
 /**
  * Point the core at `model` and start it; resolves once the engine is ready.
@@ -140,10 +161,18 @@ export async function activateDecisionModel(
   model: DecisionCatalogModel
 ): Promise<DecisionStatus> {
   const decision = getServiceHub().decision()
+  const projector = decisionProjectorFile(model)
+  const upstream = model.engine === 'llamacpp-upstream'
   await decision.setConfig({
     enabled: true,
-    model_path: decisionModelDir(model.id),
+    model_path: decisionModelPath(model),
     model_id: model.id,
+    // Cleared for a model without them, so a previous model's never leaks in.
+    mmproj_path: projector
+      ? `${decisionModelDir(model.id)}/${projector.path}`
+      : '',
+    ctx_size: upstream ? model.context : 0,
+    startup_timeout_secs: decisionStartupTimeoutSecs(model),
   })
   return decision.load()
 }
@@ -162,10 +191,15 @@ export async function deleteDecisionModel(
   model: DecisionCatalogModel,
   config: Pick<DecisionConfig, 'model_path'> | null
 ): Promise<void> {
-  if (isActiveDecisionModel(config, model.id)) {
+  if (isActiveDecisionModel(config, model)) {
     await getServiceHub()
       .decision()
-      .setConfig({ enabled: false, model_path: '', model_id: '' })
+      .setConfig({
+        enabled: false,
+        model_path: '',
+        model_id: '',
+        mmproj_path: '',
+      })
   }
   const dir = decisionModelDir(model.id)
   if (await exists(dir)) await fs.rm(dataPath(dir))

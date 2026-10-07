@@ -93,7 +93,7 @@ export interface HubListSources {
   staffPicks: boolean
   /** The app's model catalog, searched locally. */
   catalog: boolean
-  /** The managed engine descriptor's curated models, checked by the core. */
+  /** The engine's curated models: a managed engine descriptor's, or PrismML's Bonsai families. */
   curated: boolean
   feedFormat: HuggingFaceFeedFormat
   /** Narrow feed and search rows with `passesManagedPrefilter`. */
@@ -104,6 +104,10 @@ export function hubListSources(format: ModelFormat): HubListSources {
   // Every managed engine lists the same safetensors feed, narrowed by its own descriptor.
   if (isManagedProvider(format)) {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'safetensors', prefilter: true }
+  }
+  // PrismML lists the Bonsai families of the core's model rules, and nothing else.
+  if (format === 'atomic-prism') {
+    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
   }
   return {
     staffPicks: true,

@@ -152,12 +152,15 @@ export function DownloadOptionsSelect({
     >
       <h2 className="mb-3 text-sm font-medium">{t('hub:downloadOptions')}</h2>
 
-      <div className="flex items-center justify-between gap-3">
+      {/* Wraps rather than squeezes: next to a wide action ("Requires PrismML"
+          and a German Download at Extra Large) the picker shrank below its quant
+          chip. Below its minimum the action moves under it, to the right. */}
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md bg-muted/40 px-2 py-2 text-left hover:bg-muted/60"
+          className="flex min-w-[8rem] flex-1 items-center gap-2 rounded-md bg-muted/40 px-2 py-2 text-left hover:bg-muted/60"
         >
           {fitKnown && (
             <FitBadge
@@ -188,14 +191,17 @@ export function DownloadOptionsSelect({
 
         {/* A quant the estimate calls too large still downloads, past a
             warning: the estimate is size against memory, not a measurement.
-            An installed quant never warns — its button is "New chat". */}
-        <ModelDownloadAction
-          variant={selected}
-          model={model}
-          asButton
-          deletable
-          warnTooLarge={selectedFit === 'no'}
-        />
+            An installed quant never warns — its button is "New chat".
+            One group, so a "Requires PrismML" badge wraps with its button. */}
+        <div className="flex shrink-0 items-center gap-3">
+          <ModelDownloadAction
+            variant={selected}
+            model={model}
+            asButton
+            deletable
+            warnTooLarge={selectedFit === 'no'}
+          />
+        </div>
       </div>
 
       {expanded && (

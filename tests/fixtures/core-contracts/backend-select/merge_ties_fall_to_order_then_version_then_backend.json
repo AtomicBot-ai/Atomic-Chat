@@ -50,7 +50,7 @@
   },
   "name": "merge_ties_fall_to_order_then_version_then_backend",
   "source": {
-    "commit": "7ee71026dfa05e8800bebd587f728ec49b968246",
+    "commit": "7379d30d6627a6ec9073403d1efeb8cff9bddf17",
     "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/backend.rs",
     "provider": "llamacpp-upstream"
   }

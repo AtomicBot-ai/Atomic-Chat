@@ -84,13 +84,13 @@ describe('managedRequestBody', () => {
   })
 
   it('sends a structured response_format only for a family with structured output', () => {
-    const format = { type: 'json_schema', json_schema: { name: 'x', schema: {} } }
+    const responseFormat = { type: 'json_schema', json_schema: { name: 'x', schema: {} } }
 
     expect(
-      managedRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: true })
-    ).toEqual({ ...REQUEST, response_format: format })
+      managedRequestBody({ ...REQUEST, response_format: responseFormat }, { structuredOutput: true })
+    ).toEqual({ ...REQUEST, response_format: responseFormat })
     expect(
-      managedRequestBody({ ...REQUEST, response_format: format }, { structuredOutput: false })
+      managedRequestBody({ ...REQUEST, response_format: responseFormat }, { structuredOutput: false })
     ).toEqual(REQUEST)
     expect(
       managedRequestBody(

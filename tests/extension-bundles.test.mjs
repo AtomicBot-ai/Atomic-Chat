@@ -19,6 +19,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const EXTENSIONS = [
   'llamacpp-extension',
   'llamacpp-upstream-extension',
+  'atomic-prism-extension',
   'mlx-extension',
   'foundation-models-extension',
   'tensorrt-llm-extension',

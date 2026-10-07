@@ -33,6 +33,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useStaffPicks } from '@/hooks/useStaffPicks'
 import { useManagedCurated } from '@/hooks/useManagedCurated'
 import { useManagedHubStates } from '@/hooks/useManagedHubState'
+import { usePrismFamilies, usePrismHubVisible } from '@/hooks/useModelSetup'
 import { UNKNOWN_HUB_STATE } from '@/lib/managed-engine/hub-state'
 import { hubKey, managedEngine } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -57,7 +58,7 @@ import {
   filterInstalledBySearch,
   withStaffPicks,
 } from '@/lib/hub-installed'
-import { isDecisionHostSupported } from '@/lib/decision/platform'
+import { isAnyDecisionHostSupported } from '@/lib/decision/platform'
 import {
   HUB_CATEGORIES,
   isHubCategory,
@@ -185,19 +186,17 @@ function HubContent() {
   const decisionApiSupported = useServiceHub().decision().isSupported()
   const cpuArch = useHardware((s) => s.hardwareData.cpu.arch)
   // Image and video models need the local media engine, decision models a
-  // TurboQuant build for this machine; with neither the Hub stays the chat
-  // catalog it always was, switch and all.
+  // TurboQuant or llama.cpp build for this machine; with neither the Hub stays
+  // the chat catalog it always was, switch and all.
   const mediaSupported = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
   const decisionSupported =
     PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
     decisionApiSupported &&
-    isDecisionHostSupported(cpuArch)
+    isAnyDecisionHostSupported(cpuArch)
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
-        c === 'decision'
-          ? decisionSupported
-          : c === 'chat' || mediaSupported
+        c === 'decision' ? decisionSupported : c === 'chat' || mediaSupported
       ),
     [mediaSupported, decisionSupported]
   )
@@ -404,13 +403,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     const format = getHubFormat()
     return format ? { ...saved, formats: [format] } : saved
   })
+  const prismHubVisible = usePrismHubVisible()
   const availableFormats = useMemo(
     () =>
       hubFormats({
         mlx: IS_MACOS,
         managed: visibleManaged === '' ? [] : visibleManaged.split(','),
+        prism: prismHubVisible,
       }),
-    [visibleManaged]
+    [visibleManaged, prismHubVisible]
   )
   const filters = useMemo(
     () => normalizeHubFilters(storedFilters, availableFormats),
@@ -506,6 +507,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const managedHub =
     managedHubs.find((entry) => entry.engine.id === managedSelected?.id)?.hub ??
     UNKNOWN_HUB_STATE
+  // PrismML lists the Bonsai families of the core's model rules: no picks, no
+  // catalog, no Hugging Face feed or search.
+  const prismFormat = filters.formats[0] === 'atomic-prism'
+  const prismFamilies = usePrismFamilies(prismFormat)
 
   // Under a managed engine's format the engine's state comes first: what blocks
   // it, or nothing at all until the core has answered. "Downloaded" lists what
@@ -529,7 +534,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const feed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    !isSearchMode && !managedPanel
+    !isSearchMode && !managedPanel && !prismFormat
   )
   const uncensoredQueries = useMemo(
     () => huggingFaceQueries(debouncedSearchValue, true),
@@ -538,13 +543,16 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const uncensoredFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !managedPanel,
+    filters.uncensored && !managedPanel && !prismFormat,
     uncensoredQueries[0] ?? ''
   )
   const abliteratedFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !managedPanel && uncensoredQueries.length > 1,
+    filters.uncensored &&
+      !managedPanel &&
+      !prismFormat &&
+      uncensoredQueries.length > 1,
     uncensoredQueries[1] ?? ''
   )
 
@@ -682,8 +690,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // Uncensored has cursor-based feeds of its own above; keeping it out of this
   // one-shot path removes the old 20-results-per-term ceiling.
   useEffect(() => {
-    // Behind a managed engine's panel nothing is listed, so nothing is asked.
-    if (showOnlyDownloaded || managedPanel) {
+    // Behind a managed engine's panel nothing is listed, so nothing is asked;
+    // PrismML lists its own families only.
+    if (showOnlyDownloaded || managedPanel || prismFormat) {
       setHfCandidates((current) => (current.length > 0 ? [] : current))
       hfCandidatesFetchedForRef.current = ''
       return
@@ -700,7 +709,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return
     }
     const queries = huggingFaceQueries(query, false)
-    const cacheKey = `${listSources.feedFormat}\n${queries.join('\n')}`.toLowerCase()
+    const cacheKey =
+      `${listSources.feedFormat}\n${queries.join('\n')}`.toLowerCase()
     if (hfCandidatesFetchedForRef.current === cacheKey) return
     hfCandidatesFetchedForRef.current = cacheKey
 
@@ -757,6 +767,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     huggingFaceRepo,
     managedFormat,
     managedPanel,
+    prismFormat,
     listSources.feedFormat,
   ])
 
@@ -774,6 +785,28 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return sortModels(installed, filters.sort).map((model) => ({
         model,
         pick: pickByRepo.get(model.model_name),
+      }))
+    }
+
+    if (prismFormat) {
+      // A search narrows the families by name; fit and Uncensored apply as
+      // they do to any GGUF.
+      const query = debouncedSearchValue.trim().toLowerCase()
+      const matching = query
+        ? prismFamilies.models.filter(
+            (model) =>
+              model.model_name.toLowerCase().includes(query) ||
+              model.description.toLowerCase().includes(query)
+          )
+        : prismFamilies.models
+      const filtered = applyHubFilters(
+        matching,
+        { ...filters, formats: ['gguf'] },
+        { budgetBytes, applyFitFilter: true }
+      )
+      return filtered.map((model, index) => ({
+        model,
+        sectionLabel: index === 0 ? t('hub:prismCurated') : undefined,
       }))
     }
 
@@ -924,6 +957,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   }, [
     managedPanel,
     managedFormat,
+    prismFormat,
+    prismFamilies.models,
+    debouncedSearchValue,
     managedCurated.models,
     managedCurated.loading,
     managedContext,
@@ -1220,10 +1256,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     (managedCurated.loading || feed.loading)
   const showSkeleton =
     isEmpty &&
-    ((loading && !isSearchMode) ||
-      hfSearching ||
-      uncensoredLoading ||
-      managedLoading)
+    (prismFormat
+      ? prismFamilies.loading
+      : (loading && !isSearchMode) ||
+        hfSearching ||
+        uncensoredLoading ||
+        managedLoading)
 
   return (
     <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">

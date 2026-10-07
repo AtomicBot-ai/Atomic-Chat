@@ -19,6 +19,8 @@ use crate::core::server::proxy::model_ids_match;
 
 pub const PROVIDER_LLAMACPP: &str = "llamacpp";
 pub const PROVIDER_LLAMACPP_UPSTREAM: &str = "llamacpp-upstream";
+/// The PrismML llama.cpp fork: the only engine that runs Bonsai's `PQ2_0` / `PTQ1_0` files.
+pub const PROVIDER_ATOMIC_PRISM: &str = "atomic-prism";
 pub const PROVIDER_MLX: &str = "mlx";
 /// Never searched by default — the proxy does not route to it — but the webview asks the resolver
 /// for its sessions by this name.
@@ -38,8 +40,13 @@ pub fn is_managed_provider(provider: &str) -> bool {
 ///
 /// The order the proxy has always used. It matters when the same model id is loaded under two
 /// backends: the first one found wins, and changing that would silently redirect traffic.
-pub const PROVIDER_SEARCH_ORDER: [&str; 3] =
-    [PROVIDER_LLAMACPP, PROVIDER_LLAMACPP_UPSTREAM, PROVIDER_MLX];
+/// `atomic-prism` came later and is last, so it never takes a model from an older provider.
+pub const PROVIDER_SEARCH_ORDER: [&str; 4] = [
+    PROVIDER_LLAMACPP,
+    PROVIDER_LLAMACPP_UPSTREAM,
+    PROVIDER_MLX,
+    PROVIDER_ATOMIC_PRISM,
+];
 
 /// A resolved session: everything a caller needs to send a request to a running model.
 pub type ResolvedSession = CoreSession;
@@ -160,6 +167,19 @@ mod tests {
         assert_eq!(r.find("qwen").await.unwrap().provider, PROVIDER_MLX);
         // Foundation Models is never searched without naming it: the proxy does not route to it.
         assert!(r.find("apple/on-device").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn atomic_prism_sessions_are_searched_served_and_counted() {
+        let r = SessionResolver::new(core_with(vec![
+            session("bonsai", 3001, PROVIDER_ATOMIC_PRISM, false),
+            session("demo", 3002, PROVIDER_LLAMACPP_UPSTREAM, false),
+        ]));
+        assert_eq!(r.find("bonsai").await.unwrap().provider, PROVIDER_ATOMIC_PRISM);
+        assert_eq!(r.served().await.len(), 2);
+        assert_eq!(PROVIDER_SEARCH_ORDER.last(), Some(&PROVIDER_ATOMIC_PRISM));
+        let prism = session("bonsai", 3001, PROVIDER_ATOMIC_PRISM, false);
+        assert!(SessionResolver::new(core_with(vec![prism])).any_loaded().await);
     }
 
     #[tokio::test]

@@ -27,6 +27,7 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toast } from 'sonner'
 import { getProviderTitle, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
 /// Progress-only view onto the turboquant provider. The recommendation modal
@@ -62,6 +63,15 @@ const BackendUpdater = () => {
 
   const { downloadState: turboquantDownload } = useBackendUpdater(
     TURBOQUANT_PROGRESS_CONFIG
+  )
+
+  /// The media engine updates through the image store, not an extension:
+  /// from the engine-update banner, Settings → Media or the Images page.
+  const mediaEngineUpdatingTo = useImageGenerationStore(
+    (state) => state.engineUpdatingTo
+  )
+  const mediaEngineInstall = useImageGenerationStore(
+    (state) => state.engineInstall
   )
 
   const handleRestart = async () => {
@@ -139,6 +149,24 @@ const BackendUpdater = () => {
     }
   }, [turboquantDownload.status, turboquantDownload.backendName, t])
 
+  /// The store clears `availableTag` only once the new build is installed,
+  /// so it tells the outcome when `engineUpdatingTo` falls back to null.
+  const mediaEngineTargetRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (mediaEngineUpdatingTo) {
+      mediaEngineTargetRef.current = mediaEngineUpdatingTo
+      return
+    }
+    const target = mediaEngineTargetRef.current
+    if (!target) return
+    mediaEngineTargetRef.current = null
+    if (useImageGenerationStore.getState().engineUpdate.availableTag === null) {
+      toast.success(t('settings:media.updateComplete', { tag: target }))
+    } else {
+      toast.error(t('settings:media.updateFailed'))
+    }
+  }, [mediaEngineUpdatingTo, t])
+
   const showRecommendationDialog =
     recommendationPhase === 'recommend' ||
     recommendationPhase === 'downloading' ||
@@ -174,14 +202,40 @@ const BackendUpdater = () => {
         ? turboquantDownload
         : null
 
-  const backgroundBackendLabel = backendLabel(backgroundDownload?.backendName)
+  /// One card for the corner: a llama.cpp transfer, else the media engine's.
+  const mediaEnginePercent =
+    mediaEngineInstall.total > 0
+      ? Math.round(
+          (mediaEngineInstall.transferred / mediaEngineInstall.total) * 100
+        )
+      : null
+  const backgroundCard = backgroundDownload
+    ? {
+        title: t('settings:backendUpdater.backgroundUpdateTitle'),
+        description: t('settings:backendUpdater.backgroundUpdateDesc', {
+          backend: backendLabel(backgroundDownload.backendName),
+        }),
+      }
+    : mediaEngineUpdatingTo
+      ? {
+          title: t('settings:media.backgroundUpdateTitle'),
+          description: [
+            t('settings:media.backgroundUpdateDesc', {
+              tag: mediaEngineUpdatingTo,
+            }),
+            mediaEnginePercent !== null ? `${mediaEnginePercent}%` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        }
+      : null
 
   /// ATO-533: this renders in the same bottom-right corner as the app and
   /// engine update banners. Live transfer progress outranks both offers —
   /// it is over in minutes, while an offer stays up until it is acted on.
   const mayRenderBackgroundDownload = useUpdateBannerSlot(
     'download',
-    !!backgroundDownload
+    !!backgroundCard
   )
 
   return (
@@ -307,20 +361,16 @@ const BackendUpdater = () => {
       </Dialog>
 
       {/* Unattended backend download — non-blocking progress */}
-      {backgroundDownload && mayRenderBackgroundDownload && (
+      {backgroundCard && mayRenderBackgroundDownload && (
         <div className="fixed z-50 bottom-3 right-3 bg-background flex items-start gap-2 border rounded-lg shadow-md px-4 py-3 max-w-[22rem]">
           <IconLoader2
             size={18}
             className="shrink-0 text-blue-500 animate-spin mt-0.5"
           />
           <div>
-            <div className="text-sm font-medium">
-              {t('settings:backendUpdater.backgroundUpdateTitle')}
-            </div>
+            <div className="text-sm font-medium">{backgroundCard.title}</div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              {t('settings:backendUpdater.backgroundUpdateDesc', {
-                backend: backgroundBackendLabel,
-              })}
+              {backgroundCard.description}
             </div>
           </div>
         </div>

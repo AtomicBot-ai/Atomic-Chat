@@ -18,6 +18,16 @@ import { isLocalProvider } from '@/utils/registerRemoteProvider'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
+/**
+ * Ids the user deleted. `deleteModel` tombstones them and the registry merge in
+ * `setProviders` already skips them; a live `/v1/models` pass has to as well,
+ * or every reload brings a deleted model back while the endpoint still lists it.
+ */
+export function deletedModelIds(): Set<string> {
+  const { deletedModels } = useModelProvider.getState()
+  return new Set(Array.isArray(deletedModels) ? deletedModels : [])
+}
+
 export type RefreshProviderModelsParams = {
   provider: ProviderObject
   serviceHub: Pick<ServiceHub, 'providers'>
@@ -56,8 +66,11 @@ export async function refreshProviderModels({
     const fresh = await serviceHub.providers().getProviders()
     const registryProvider = fresh.find((p) => p.provider === provider.provider)
     const existingIds = new Set(provider.models.map((m) => m.id))
+    const deletedIds = deletedModelIds()
     let newCount = registryProvider
-      ? registryProvider.models.filter((m) => !existingIds.has(m.id)).length
+      ? registryProvider.models.filter(
+          (m) => !existingIds.has(m.id) && !deletedIds.has(m.id)
+        ).length
       : 0
 
     // Step 2 — Hybrid: also query the provider's live /v1/models endpoint
@@ -96,7 +109,7 @@ export async function refreshProviderModels({
           ...(registryProvider?.models ?? []).map((m) => m.id),
         ])
         liveNewModels = liveModelIds
-          .filter((id) => !afterRegistryIds.has(id))
+          .filter((id) => !afterRegistryIds.has(id) && !deletedIds.has(id))
           .map((id) => ({
             id,
             model: id,

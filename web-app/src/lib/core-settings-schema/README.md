@@ -2,10 +2,10 @@
 
 Byte-exact copies of the local engines' settings descriptors from
 `atomic-chat-core/src/settings/schema/` (`llamacpp.json`, `llamacpp-upstream.json`,
-`mlx.json`, `tensorrt-llm.json`, `vllm.json`). `vllm.json` comes from the core's
-`change/add-vllm-runtime` branch until the core release with that change is
-pinned (openspec change `add-vllm-runtime`, task 6.3). The copy is pinned to the
-core version named in the root
+`atomic-prism.json`, `mlx.json`, `tensorrt-llm.json`, `vllm.json`). `vllm.json` comes
+from the core's `change/add-vllm-runtime` branch until the core release with that
+change is pinned (openspec change `add-vllm-runtime`, task 6.3). The copy is pinned
+to the core version named in the root
 `package.json` under `atomicCore.version`; when that version changes, copy the
 files again from the matching core source with `cp` (never retype them) and
 recompute `CHECKSUM`. The branch pins `0.7.5`, which is not released yet

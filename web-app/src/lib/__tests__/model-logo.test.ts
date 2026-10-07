@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { BASELINE_DIFFUSION_CATALOG } from '@/services/diffusion-catalog-baseline'
+import { getBaselineDecisionCatalog } from '@/services/decision-catalog-registry'
 import {
+  decisionIconKey,
   DIFFUSION_FAMILY_ICON_KEYS,
   HUGGINGFACE_LOGO_SRC,
   iconKeyLogoSrc,
@@ -178,9 +180,9 @@ describe('isMonochromeFamilyLogo', () => {
     expect(isMonochromeFamilyLogo('/svg/zai.svg')).toBe(true)
     expect(isMonochromeFamilyLogo('/svg/minimax.svg')).toBe(true)
     // A dark mark on transparency: a plain <img> loses it in dark mode.
-    expect(
-      isMonochromeFamilyLogo('/images/model-provider/prism-ml.webp')
-    ).toBe(true)
+    expect(isMonochromeFamilyLogo('/images/model-provider/prism-ml.webp')).toBe(
+      true
+    )
     expect(isMonochromeFamilyLogo('/images/model-provider/ling.webp')).toBe(
       false
     )
@@ -202,5 +204,23 @@ describe('bundled Google mark', () => {
     )
     expect(svg).toContain('<linearGradient')
     expect(svg).not.toMatch(/#EA4335|#4285F4|#FBBC05|#34A853/i)
+  })
+})
+
+describe('decision model marks', () => {
+  it('gives every decision model with an icon a bundled mark', () => {
+    for (const model of getBaselineDecisionCatalog().models) {
+      const key = decisionIconKey(model)
+      if (key) expect(iconKeyLogoSrc(key), model.id).not.toBeNull()
+    }
+  })
+
+  it('falls back to Convai for a laya checkpoint only', () => {
+    expect(decisionIconKey({ format: 'checkpoint' })).toBe('convai')
+    expect(decisionIconKey({ format: 'checkpoint', icon: 'cloudflare' })).toBe(
+      'cloudflare'
+    )
+    // A GGUF without a mark keeps the family logo or a letter, never someone else's.
+    expect(decisionIconKey({ format: 'gguf' })).toBeUndefined()
   })
 })

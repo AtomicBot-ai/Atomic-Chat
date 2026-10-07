@@ -175,7 +175,7 @@ function FilePreview({ tab }: { tab: WorkspaceFilePreviewTab }) {
 
   if (kind === 'text' && text !== undefined) {
     if (isHtml) {
-      return <HtmlArtifact code={text} fill showActions={false} />
+      return <HtmlArtifact code={text} fill />
     }
 
     return (
@@ -279,7 +279,6 @@ export function AgentWorkspacePreview({
                       code={artifact.code}
                       streaming={artifact.streaming}
                       fill
-                      showActions={false}
                     />
                   )}
                 </>

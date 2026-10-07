@@ -91,6 +91,9 @@ describe('quantLabel', () => {
     ['unsloth/UD-Q2_K_XL/Kimi-K3-UD-Q2_K_XL', 'Q2_K_XL'],
     // Ternary quants: without them the badge fell back to the trailing "0".
     ['unsloth/UD-TQ1_0/Kimi-K3-UD-TQ1_0', 'TQ1_0'],
+    // PrismML's packings, which only the atomic-prism engine loads.
+    ['prism-ml/Ternary-Bonsai-2-27B-PQ2_0', 'PQ2_0'],
+    ['prism-ml/Ternary-Bonsai-2-27B-PTQ1_0', 'PTQ1_0'],
     ['model-BF16', 'BF16'],
     ['mlx-community/Qwen3.5-9B-4bit', '4BIT'],
   ])('reads %s as %s', (modelId, label) => {

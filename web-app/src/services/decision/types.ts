@@ -45,6 +45,10 @@ export type DecisionEngineInfo = {
   version_backend: string | null
   fork_version: string | null
   version_gate: boolean | null
+  /** The API the engine runs: the fork's `--decision`, or stock llama.cpp's `/v1/systemone`. */
+  dialect?: 'turboquant' | 'upstream'
+  /** The provider whose pack runs it; `null` for an explicit `engine_path`. */
+  provider?: 'llamacpp' | 'llamacpp-upstream' | null
 }
 
 export type DecisionStatus = {
@@ -64,8 +68,12 @@ export type DecisionStatus = {
 
 export type DecisionConfig = {
   enabled: boolean
-  /** A GGUF or a laya checkpoint folder; relative to the data folder. */
+  /** A GGUF or a laya checkpoint folder; relative to the data folder. The file decides the engine. */
   model_path: string
+  /** `--mmproj` of a stock llama.cpp model that reads images; empty for none. */
+  mmproj_path: string
+  /** `-c` of a stock llama.cpp model; 0 lets the core pick. */
+  ctx_size: number
   model_id: string
   spec_path: string
   threads: number

@@ -2,7 +2,11 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DecisionCatalogModel } from '@/services/decision-catalog-registry'
 
-const mocks = vi.hoisted(() => ({ apiSupported: true, arch: '' }))
+const mocks = vi.hoisted(() => ({
+  apiSupported: true,
+  arch: '',
+  versionBackend: undefined as string | undefined,
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -50,9 +54,19 @@ vi.mock('@/hooks/useBackendUpdater', () => ({
   }),
 }))
 
+vi.mock('@/hooks/useDecisionEngineReadiness', () => ({
+  useEngineVersionBackend: () => mocks.versionBackend,
+}))
+
 vi.mock('@/containers/DecisionModelCard', () => ({
-  default: ({ model }: { model: DecisionCatalogModel }) => (
-    <span>{`actions for ${model.id}`}</span>
+  default: ({
+    model,
+    startBlocked,
+  }: {
+    model: DecisionCatalogModel
+    startBlocked?: boolean
+  }) => (
+    <span>{`actions for ${model.id}${startBlocked ? ' (start blocked)' : ''}`}</span>
   ),
   DecisionModelStatus: ({ model }: { model: DecisionCatalogModel }) => (
     <span>{`status of ${model.id}`}</span>
@@ -69,11 +83,13 @@ describe('DecisionModelsSection', () => {
   beforeEach(() => {
     mocks.apiSupported = true
     mocks.arch = ''
+    mocks.versionBackend = undefined
     bind.mockClear()
     useDecisionStore.setState({
       catalog: getBaselineDecisionCatalog(),
-      installed: { 'laya': true },
+      installed: { laya: true },
       status: null,
+      config: null,
       error: null,
       bind,
     })
@@ -127,5 +143,77 @@ describe('DecisionModelsSection', () => {
 
     expect(container).toBeEmptyDOMElement()
     expect(bind).not.toHaveBeenCalled()
+  })
+
+  it("lists each engine's models on its own page", () => {
+    useDecisionStore.setState({ installed: { 'laya': true, 'julia-1': true } })
+    const { unmount } = render(
+      <DecisionModelsSection provider="llamacpp-upstream" />
+    )
+    expect(screen.getByText('actions for julia-1')).toBeVisible()
+    expect(screen.queryByText('actions for laya')).not.toBeInTheDocument()
+    unmount()
+
+    render(<DecisionModelsSection provider="llamacpp" />)
+    expect(screen.getByText('actions for laya')).toBeVisible()
+    expect(screen.queryByText('actions for julia-1')).not.toBeInTheDocument()
+  })
+
+  it('asks for a newer llama.cpp before a model too new for it can start', () => {
+    mocks.versionBackend = 'b11344/macos-arm64'
+    useDecisionStore.setState({
+      installed: { 'julia-1': true, 'clef-flash': true },
+    })
+    render(<DecisionModelsSection provider="llamacpp-upstream" />)
+
+    expect(
+      screen.getByText('actions for julia-1 (start blocked)')
+    ).toBeVisible()
+    expect(
+      screen.getByText('actions for clef-flash (start blocked)')
+    ).toBeVisible()
+    expect(
+      screen.getAllByText('settings:decision.requiresEngine')
+    ).toHaveLength(2)
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'settings:decision.requiresEngineNotice'
+    )
+    expect(
+      screen.getByRole('button', { name: 'settings:decision.updateEngine' })
+    ).toBeVisible()
+  })
+
+  it('starts as usual once the configured build reaches the floor', () => {
+    mocks.versionBackend = 'b11436/macos-arm64'
+    useDecisionStore.setState({ installed: { 'clef-flash': true } })
+    render(<DecisionModelsSection provider="llamacpp-upstream" />)
+
+    expect(screen.getByText('actions for clef-flash')).toBeVisible()
+    expect(screen.getByText('status of clef-flash')).toBeVisible()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('shows a failure on the page of the engine whose model failed', () => {
+    useDecisionStore.setState({
+      installed: { 'julia-1': true, 'laya': true },
+      config: {
+        model_path: 'decision/models/julia-1/Julia-1-Q8_0.gguf',
+      } as never,
+      error: {
+        code: 'DECISION_ENGINE_UNSUPPORTED',
+        message: 'Update llama.cpp to b11370',
+      },
+    })
+    const { unmount } = render(<DecisionModelsSection provider="llamacpp" />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    unmount()
+
+    render(<DecisionModelsSection provider="llamacpp-upstream" />)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'settings:decision.errors.engineUnsupported'
+    )
+    expect(
+      screen.getByRole('button', { name: 'settings:decision.updateEngine' })
+    ).toBeVisible()
   })
 })

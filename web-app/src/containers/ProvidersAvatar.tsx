@@ -1,6 +1,12 @@
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { isMonochromeFamilyLogo } from '@/lib/model-logo'
 
+// A mark drawn edge to edge in its image reads larger than the padded marks
+// beside it at avatar size; it is scaled down to the same visual footprint.
+const LOGO_SCALE: Readonly<Record<string, string>> = {
+  '/images/model-provider/prism-ml.webp': '78%',
+}
+
 const ProvidersAvatar = ({
   provider,
   className = 'size-4.5',
@@ -45,8 +51,8 @@ const ProvidersAvatar = ({
           WebkitMaskRepeat: 'no-repeat',
           maskPosition: 'center',
           WebkitMaskPosition: 'center',
-          maskSize: 'contain',
-          WebkitMaskSize: 'contain',
+          maskSize: LOGO_SCALE[logoSrc] ?? 'contain',
+          WebkitMaskSize: LOGO_SCALE[logoSrc] ?? 'contain',
         }}
       />
     )

@@ -154,8 +154,18 @@ describe('related chat code surfaces', () => {
       expectWrappedCode(pre)
       const lines = [...pre.querySelectorAll<HTMLElement>('.line')]
       expect(lines).toHaveLength(5)
-      expect(lines[0].textContent).toBe('1<html>')
-      expect(lines[1].textContent).toBe('2<body>')
+      // The number is a `::before` of the gutter, out of the copyable text (#280).
+      expect(lines[0].textContent).toBe('<html>')
+      expect(lines[1].textContent).toBe('<body>')
+      expect(
+        lines.map((line) =>
+          line.querySelector('[data-line-number]')?.getAttribute('data-line-number')
+        )
+      ).toEqual(['1', '2', '3', '4', '5'])
+      expect(
+        getComputedStyle(lines[0].querySelector('[data-line-number]')!, '::before')
+          .content
+      ).toBe('"1"')
       // Numbered rows use display:block; literal newlines must not add blank rows.
       expect(lines[1].getBoundingClientRect().top).toBeCloseTo(
         lines[0].getBoundingClientRect().bottom,

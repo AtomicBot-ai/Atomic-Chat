@@ -246,6 +246,20 @@ describe('findInstalledLocalModel', () => {
     ).toEqual({ modelId: 'Qwen3-4B-Q4_K_M', provider: 'llamacpp-upstream' })
   })
 
+  it('finds a Bonsai file that only the PrismML provider lists', () => {
+    const bonsai = gguf('prism-ml/Bonsai-8B-gguf', ['Bonsai-8B-PQ2_0'])
+    expect(
+      findInstalledLocalModel(
+        [
+          provider('llamacpp-upstream', []),
+          provider('atomic-prism', ['Bonsai-8B-PQ2_0']),
+        ],
+        quantModelIds(bonsai, 'Bonsai-8B-PQ2_0'),
+        LLAMACPP_PROVIDERS
+      )
+    ).toEqual({ modelId: 'Bonsai-8B-PQ2_0', provider: 'atomic-prism' })
+  })
+
   it('reports the id the engine actually registered, not the catalog spelling', () => {
     expect(
       findInstalledLocalModel(

@@ -42,6 +42,7 @@
     "build:tauri:win32": "yarn download:bin && yarn download:core && yarn build:cli && yarn tauri build",
     "build:tauri:win32:arm64": "yarn download:bin && yarn download:core && yarn build:cli && yarn tauri build --target aarch64-pc-windows-msvc --bundles nsis --config src-tauri/tauri.windows-arm64.conf.json",
     "build:tauri:linux": "yarn download:bin && yarn download:core && yarn build:cli && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
+    "build:tauri:linux:arm64": "yarn download:bin && yarn download:core && yarn build:cli && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build --config src-tauri/tauri.linux-arm64.conf.json && ./src-tauri/build-utils/buildAppImage.sh",
     "build:tauri:darwin": "yarn download:bin && yarn download:core && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:cli && yarn tauri build --target universal-apple-darwin",
     "build:tauri:darwin:native": "yarn download:bin && yarn download:core && yarn build:mlx-server && yarn build:foundation-models-server && yarn build:cli && yarn tauri build",
     "build:tauri": "yarn build:icon && yarn copy:assets:tauri && run-script-os",
@@ -73,7 +74,7 @@
   },
   "version": "0.0.0",
   "atomicCore": {
-    "version": "0.9.9",
+    "version": "0.10.0",
     "repo": "AtomicBot-ai/atomic-chat-core"
   },
   "installConfig": {
