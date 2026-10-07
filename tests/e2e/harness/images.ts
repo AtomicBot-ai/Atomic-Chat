@@ -93,24 +93,36 @@ export function imageCatalogFixture(): { schema_version: number; updated_at: str
   }
 }
 
-/** The sd.cpp release manifest the app would have fetched, naming one macOS build. */
-export function imageManifestFixture(options: { tag?: string; asset?: { name: string; sha256: string; size: number } } = {}) {
+export interface ImageManifestOptions {
+  tag?: string
+  /** The archive the core would download; a placeholder no scenario fetches by default. */
+  asset?: { name: string; sha256: string; size: number }
+}
+
+/** The sd.cpp release manifest the core reads, naming one macOS build. */
+export function imageManifestFixture(options: ImageManifestOptions = {}) {
   return {
     tag_name: options.tag ?? IMAGE_ENGINE_TAG,
     upstream_repo: 'leejet/stable-diffusion.cpp',
     assets: [
       options.asset
         ? { backend: IMAGE_BACKEND_ID, ...options.asset }
-        : { backend: IMAGE_BACKEND_ID, name: IMAGE_ENGINE_ASSET, size: 1024 },
+        : { backend: IMAGE_BACKEND_ID, name: IMAGE_ENGINE_ASSET, sha256: '0'.repeat(64), size: 1024 },
     ],
   }
+}
+
+/**
+ * Point the profile's core at an sd.cpp manifest (`ATOMIC_SDCPP_MANIFEST_URL`
+ * is set on every profile). Call it from `prepare`; the last call wins.
+ */
+export async function writeImageManifest(profile: Profile, options: ImageManifestOptions = {}): Promise<void> {
+  await writeFile(profile.manifests.sdcpp, JSON.stringify(imageManifestFixture(options)))
 }
 
 export interface ImageSeedOptions {
   /** The checkpoint the Images page shows as selected; `null` for none. */
   selected?: string | null
-  manifestTag?: string
-  manifestAsset?: { name: string; sha256: string; size: number }
   /** Overrides on the persisted image settings (`useImageSetting`). */
   setting?: Record<string, unknown>
   /** Overrides on the persisted form draft (`useImageForm`): `steps`, `width`, `height`, … */
@@ -119,18 +131,14 @@ export interface ImageSeedOptions {
 
 /**
  * What to put in the webview's localStorage before the first page script: the
- * catalog and manifest caches (fresh, so nothing is fetched) and the image
- * settings with the tour already done.
+ * catalog cache (fresh, so nothing is fetched) and the image settings with the
+ * tour already done. The engine's manifest is the core's: `writeImageManifest`.
  */
 export function imageSeed(options: ImageSeedOptions = {}): Record<string, string> {
   const now = String(Date.now())
   const seed: Record<string, string> = {
     atomic_diffusion_catalog_cache_v1: JSON.stringify(imageCatalogFixture()),
     atomic_diffusion_catalog_cache_ts_v1: now,
-    atomic_sdcpp_manifest_cache_v1: JSON.stringify(
-      imageManifestFixture({ tag: options.manifestTag, asset: options.manifestAsset })
-    ),
-    atomic_sdcpp_manifest_cache_ts_v1: now,
     'setting-images': JSON.stringify({
       state: {
         setupCompleted: true,
@@ -188,8 +196,9 @@ async function coreHelper<T>(file: string): Promise<T> {
 
 /**
  * The scripted `sd-server` installed as an owned engine tree under the data
- * folder, at a tag and backend id the seeded manifest agrees with, so the
- * page sees an engine and no update. Call it from `prepare`.
+ * folder, the way the core's own install leaves it (marker and `install.json`),
+ * with a manifest that names the same tag, so the page sees an engine and no
+ * update. Call it from `prepare`.
  */
 export async function installFakeImageEngine(
   profile: Profile,
@@ -213,6 +222,7 @@ export async function installFakeImageEngine(
     pidFile,
     argvFile,
   })
+  await writeImageManifest(profile, { tag })
   return { dir: record.dir, tag: record.tag, pidFile, argvFile }
 }
 
