@@ -35,7 +35,7 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Local image & video generation (21)
 
-- **2026-10-06** — [Build stable-diffusion.cpp for arm64 in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-stable-diffusion-cpp-for-arm64-in-an-atomic-fork.md)
+- **2026-10-06** — [Build every stable-diffusion.cpp engine in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-every-stable-diffusion-cpp-engine-in-an-atomic-fork.md)
 - **2026-09-30** — [Shape the media form for the picked model, and let Generate start it](2026-09-30-shape-the-media-form-for-the-picked-model.md)
 - **2026-09-30** — [Keep image and video models on a discrete GPU](2026-09-30-keep-media-models-on-a-discrete-gpu.md)
 - **2026-09-30** — [Put Reset beside the media knobs, and warn about a swapping clip in the dialog only](2026-09-30-reset-beside-the-media-knobs-and-warn-about-swap-in-the-dialog-only.md) — narrows the 2026-09-28 estimate record: no red line for `exceeds`.
