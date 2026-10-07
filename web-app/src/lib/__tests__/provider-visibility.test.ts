@@ -35,7 +35,9 @@ describe('refreshManagedProviders', () => {
         return providers
       },
       setProviders(next: ModelProvider[]) {
-        const kept = providers.filter((p) => !next.some((n) => n.provider === p.provider))
+        const kept = providers.filter(
+          (p) => !next.some((n) => n.provider === p.provider)
+        )
         providers = [...next, ...kept]
       },
       deleteProvider(name: string) {
@@ -57,7 +59,10 @@ describe('refreshManagedProviders', () => {
 
     const refreshed = await refreshManagedProviders({
       engines,
-      getProviders: async () => [provider('llamacpp-upstream'), provider('tensorrt-llm')],
+      getProviders: async () => [
+        provider('llamacpp-upstream'),
+        provider('tensorrt-llm'),
+      ],
       store: providers,
     })
 
@@ -111,11 +116,24 @@ describe('refreshManagedProviders', () => {
     // Windows acceptance, 2026-10-06: vLLM was stored with its first 8 settings; the rebuilt
     // extension registered 20, and the provider page kept showing 8.
     const key = (k: string) => ({ key: k })
-    const fresh = ['gpu_id', 'context_length', 'kv_cache_memory_gib', 'gpu_memory_utilization']
+    const fresh = [
+      'gpu_id',
+      'context_length',
+      'kv_cache_memory_gib',
+      'gpu_memory_utilization',
+    ]
     const engine = { ...gated(true), getSettings: async () => fresh.map(key) }
-    let providers = [{ provider: 'vllm', settings: ['gpu_id', 'context_length', 'kv_cache_max_tokens'].map(key) }]
+    let providers = [
+      {
+        provider: 'vllm',
+        settings: ['gpu_id', 'context_length', 'kv_cache_max_tokens'].map(key),
+      },
+    ]
     const getProviders = vi.fn(async () => [
-      { provider: 'vllm', settings: fresh.map(key) } as unknown as ModelProvider,
+      {
+        provider: 'vllm',
+        settings: fresh.map(key),
+      } as unknown as ModelProvider,
     ])
 
     await refreshManagedProviders({
@@ -137,18 +155,30 @@ describe('refreshManagedProviders', () => {
   })
 
   it('does not re-read a shown provider whose stored settings match its extension’s', async () => {
-    const engine = { ...gated(true), getSettings: async () => [{ key: 'gpu_id' }] }
+    const engine = {
+      ...gated(true),
+      getSettings: async () => [{ key: 'gpu_id' }],
+    }
     const getProviders = vi.fn(async () => [])
+    const stored = [{ provider: 'vllm', settings: [{ key: 'gpu_id' }] }]
+    let providers = stored
     await refreshManagedProviders({
       engines: new Map([['vllm', engine]]),
       getProviders,
       store: {
-        providers: [{ provider: 'vllm', settings: [{ key: 'gpu_id' }] }],
-        setProviders() {},
+        get providers() {
+          return providers
+        },
+        setProviders(next) {
+          providers = next as unknown as typeof providers
+        },
         deleteProvider() {},
       },
     })
     expect(getProviders).not.toHaveBeenCalled()
+    // The stored provider, settings included, is left exactly as it was.
+    expect(providers).toBe(stored)
+    expect(providers[0]?.settings?.map((s) => s.key)).toEqual(['gpu_id'])
   })
 
   it('does nothing at all when no engine is gated', async () => {
