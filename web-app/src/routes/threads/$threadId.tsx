@@ -93,6 +93,7 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { downscaleToolResultContent } from '@/lib/toolResultImages'
 import {
   executeChatToolCalls,
+  hasUnresolvedToolCallParts,
   shouldSendToolFollowUp,
 } from '@/lib/execute-chat-tool-calls'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -557,10 +558,15 @@ function ThreadDetail() {
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
 
-      if (!isAbort && sessionData.tools.length === 0) {
+      if (!isAbort && !hasUnresolvedToolCallParts(message)) {
         setIsChatRequestActive(false)
-        // Terminal only when no tool calls are queued: with tools, onFinish
-        // fires once per step and the turn continues after they resolve.
+        // Terminal when nothing in this message waits on a tool result, so no
+        // automatic follow-up will run. The previous gate read
+        // `sessionData.tools.length`, which keeps stale entries from an
+        // earlier step or turn; a plain final answer then never released the
+        // request flag and the "Working..." indicator and stop button stayed
+        // on after the reply was already complete.
+        sessionData.tools = []
         captureTurnOutcome('success', message)
       }
 
