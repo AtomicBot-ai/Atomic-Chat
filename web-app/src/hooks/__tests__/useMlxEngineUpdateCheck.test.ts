@@ -49,6 +49,7 @@ describe('useMlxEngineUpdateCheck', () => {
     await act(() => result.current.check())
     expect(toast.success).toHaveBeenCalledWith('settings:mlxEngine.upToDate')
     expect(toast.info).not.toHaveBeenCalled()
+    expect(result.current.checking).toBe(false)
   })
 
   it('reports a check that failed', async () => {
@@ -58,6 +59,7 @@ describe('useMlxEngineUpdateCheck', () => {
     expect(toast.error).toHaveBeenCalledWith('settings:mlxEngine.checkFailed', {
       description: 'offline',
     })
+    expect(result.current.checking).toBe(false)
   })
 })
 

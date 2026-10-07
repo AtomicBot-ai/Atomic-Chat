@@ -1096,6 +1096,12 @@ describe('image-generation-store', () => {
         task_id: TASK,
         force: true,
       })
+      expect(useImageGenerationStore.getState().engineInstall).toEqual({
+        inFlight: false,
+        transferred: 0,
+        total: 0,
+        error: null,
+      })
     })
 
     it('takes the build the core went down the ladder to as the host\'s', async () => {
