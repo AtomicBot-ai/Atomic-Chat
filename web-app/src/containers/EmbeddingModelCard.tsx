@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { IconLoader2, IconTrash, IconX } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
@@ -86,7 +86,10 @@ function RunStatus({
   )
 }
 
-/** Start, or a red Stop once the model runs — as the chat models beside it. */
+/**
+ * Start, or a red Stop once the model runs — as the chat models beside it. A
+ * model that started is served on the Local API Server, so Start goes there.
+ */
 function StartStop({
   running,
   busy,
@@ -97,7 +100,11 @@ function StartStop({
   startBlocked?: boolean
 }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const anyBusy = useEmbeddingStore((s) => s.busy !== null)
+  const start = async () => {
+    if (await activate()) void navigate({ to: route.api.index })
+  }
   if (running) {
     return (
       <Button
@@ -122,7 +129,7 @@ function StartStop({
       disabled={anyBusy || startBlocked}
       aria-label={t('settings:embedding.start')}
       className="min-w-16 justify-center"
-      onClick={() => void activate()}
+      onClick={() => void start()}
     >
       {busy ? (
         <IconLoader2 size={16} className="animate-spin" />
@@ -206,40 +213,41 @@ const EmbeddingModelCard = memo(function EmbeddingModelCard({
     setConfirmRemove(false)
   }
 
+  // Every state fills the same w-24 slot at the button's height: the bytes
+  // read out beside the size (EmbeddingModelDetailPanel), never under the
+  // button, so starting a download does not move the panel.
   let actions
   if (downloading) {
     actions = (
-      <div className="flex flex-col items-end gap-1">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={cancelDownload}
-          aria-label={t('common:cancelDownload')}
-          className="group relative w-24 justify-center overflow-hidden font-semibold"
-        >
-          <span
-            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
-            style={{ width: `${percent}%` }}
-          />
-          <span className="relative z-10 tabular-nums group-hover:hidden">
-            {percent}%
-          </span>
-          <IconX size={14} className="relative z-10 hidden group-hover:block" />
-        </Button>
-        <p
-          className="text-right text-xs tabular-nums text-muted-foreground"
-          aria-live="polite"
-        >
-          {t('settings:embedding.progress', {
-            current: gb(currentBytes),
-            total: gb(totalBytes),
-          })}
-        </p>
-      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={cancelDownload}
+        aria-label={t('common:cancelDownload')}
+        title={t('settings:embedding.progress', {
+          current: gb(currentBytes),
+          total: gb(totalBytes),
+        })}
+        className="group relative w-24 justify-center overflow-hidden font-semibold"
+      >
+        <span
+          className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+          style={{ width: `${percent}%` }}
+        />
+        <span className="relative z-10 tabular-nums group-hover:hidden">
+          {percent}%
+        </span>
+        <IconX size={14} className="relative z-10 hidden group-hover:block" />
+      </Button>
     )
   } else if (!installed) {
     actions = (
-      <Button variant="outline" size="sm" onClick={() => void download()}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-24 justify-center"
+        onClick={() => void download()}
+      >
         {t('hub:download')}
       </Button>
     )

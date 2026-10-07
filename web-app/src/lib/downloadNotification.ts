@@ -1,6 +1,8 @@
 import { resolveDiffusionDownloadTaskId } from '@/lib/diffusion/models'
+import { embeddingDownloadTaskId } from '@/lib/embedding/models'
 import { downloadKind } from '@/lib/telemetry'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import { useEmbeddingStore } from '@/stores/embedding-store'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
@@ -33,7 +35,11 @@ export function describeFinishedDownload(
       return {
         title: t('common:desktopNotification.modelReadyTitle'),
         body: t('common:desktopNotification.modelReadyBody', {
-          name: id.replace(/^embedding-/, ''),
+          name:
+            useEmbeddingStore
+              .getState()
+              .catalog.models.find((m) => embeddingDownloadTaskId(m.id) === id)
+              ?.name ?? id.replace(/^embedding-/, ''),
         }),
       }
     case 'diffusion_model':

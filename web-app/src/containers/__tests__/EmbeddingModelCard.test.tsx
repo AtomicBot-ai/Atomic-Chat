@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   current: {} as EmbeddingModelState,
   local: {} as EmbeddingRunState,
 }))
+const navigate = vi.hoisted(() => vi.fn())
 
 vi.mock('@/hooks/useEmbeddingModel', () => ({
   useEmbeddingModel: () => state.current,
@@ -17,6 +18,7 @@ vi.mock('@/hooks/useEmbeddingModel', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigate,
   Link: ({
     to,
     className,
@@ -59,8 +61,8 @@ const runState = (
   running: false,
   state: null,
   busy: false,
-  activate: vi.fn(),
-  stop: vi.fn(),
+  activate: vi.fn().mockResolvedValue(true),
+  stop: vi.fn().mockResolvedValue(true),
   ...overrides,
 })
 
@@ -95,6 +97,26 @@ describe('EmbeddingModelCard', () => {
     expect(
       screen.queryByRole('button', { name: 'hub:open' })
     ).not.toBeInTheDocument()
+  })
+
+  it('goes to the API page once the model started, and stays when it did not', async () => {
+    navigate.mockClear()
+    state.current = modelState({})
+    const { unmount } = render(<EmbeddingModelCard model={model} />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'settings:embedding.start' })
+    )
+    expect(navigate).toHaveBeenCalledWith({ to: '/api/' })
+    unmount()
+
+    navigate.mockClear()
+    state.current = modelState({ activate: vi.fn().mockResolvedValue(false) })
+    render(<EmbeddingModelCard model={model} />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'settings:embedding.start' })
+    )
+    expect(state.current.activate).toHaveBeenCalledOnce()
+    expect(navigate).not.toHaveBeenCalled()
   })
 
   it('keeps Start disabled while the engine is too old, or another call is in flight', () => {

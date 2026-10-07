@@ -7,6 +7,7 @@ import { ModelLogo } from '@/containers/ModelLogo'
 import { HubReadme } from '@/containers/hub/HubReadme'
 import { route } from '@/constants/routes'
 import { useEmbeddingEngineReadiness } from '@/hooks/useEmbeddingEngineReadiness'
+import { useEmbeddingModel } from '@/hooks/useEmbeddingModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { EMBEDDING_ENGINE, EMBEDDING_ENGINE_UI } from '@/lib/embedding/engine'
 import { embeddingIconKey } from '@/lib/model-logo'
@@ -32,6 +33,30 @@ export type EmbeddingModelDetailPanelProps = {
  * pooling), the prompts the model expects in front of each text, and the
  * repo's README at the pinned revision.
  */
+/**
+ * The size on disk, or while the model downloads how much of it has arrived:
+ * the readout takes the size's place so the row keeps its height.
+ */
+function DownloadSize({ model }: { model: EmbeddingCatalogModel }) {
+  const { t } = useTranslation()
+  const { downloading, currentBytes, totalBytes } = useEmbeddingModel(model)
+  return (
+    <span
+      className="min-w-0 truncate whitespace-nowrap text-xs tabular-nums text-muted-foreground"
+      aria-live={downloading ? 'polite' : undefined}
+    >
+      {downloading
+        ? t('settings:embedding.progress', {
+            current: gb(currentBytes),
+            total: gb(totalBytes),
+          })
+        : t('settings:embedding.diskSize', {
+            size: gb(embeddingDiskBytes(model)),
+          })}
+    </span>
+  )
+}
+
 export function EmbeddingModelDetailPanel({
   model,
   className,
@@ -124,11 +149,7 @@ function ModelPanel({
             <span className="shrink-0 rounded-[5px] bg-secondary px-[7px] py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
               {embeddingQuantLabel(model)}
             </span>
-            <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-              {t('settings:embedding.diskSize', {
-                size: gb(embeddingDiskBytes(model)),
-              })}
-            </span>
+            <DownloadSize model={model} />
           </span>
           <span className="ml-auto flex shrink-0 items-center">
             <EmbeddingModelCard model={model} onOpen={openProvider} />

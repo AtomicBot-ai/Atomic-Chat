@@ -5,6 +5,15 @@ import type { EmbeddingCatalogModel } from '@/services/embedding-catalog-registr
 
 const navigate = vi.hoisted(() => vi.fn())
 const copied = vi.hoisted(() => vi.fn())
+const download = vi.hoisted(() => ({
+  downloading: false,
+  currentBytes: 0,
+  totalBytes: 0,
+}))
+
+vi.mock('@/hooks/useEmbeddingModel', () => ({
+  useEmbeddingModel: () => download,
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
@@ -63,6 +72,28 @@ afterEach(() => {
 })
 
 describe('EmbeddingModelDetailPanel', () => {
+  it('reads out the bytes in place of the size while the model downloads', () => {
+    Object.assign(download, {
+      downloading: true,
+      currentBytes: 323 * 1024 ** 2,
+      totalBytes: 825 * 1024 ** 2,
+    })
+    try {
+      render(<EmbeddingModelDetailPanel model={gemma2} />)
+      const row = screen.getByTestId('embedding-download-embeddinggemma-2')
+      expect(row).toHaveTextContent(
+        'settings:embedding.progress {"current":"0.32","total":"0.81"}'
+      )
+      expect(row).not.toHaveTextContent('settings:embedding.diskSize')
+    } finally {
+      Object.assign(download, {
+        downloading: false,
+        currentBytes: 0,
+        totalBytes: 0,
+      })
+    }
+  })
+
   it('asks for a pick when no model is open', () => {
     render(<EmbeddingModelDetailPanel model={null} />)
 

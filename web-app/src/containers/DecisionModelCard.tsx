@@ -128,40 +128,41 @@ const DecisionModelCard = memo(function DecisionModelCard({
     setConfirmRemove(false)
   }
 
+  // Every state fills the same w-24 slot at the button's height: the bytes
+  // read out beside the size (DecisionModelDetailPanel), never under the
+  // button, so starting a download does not move the panel.
   let actions
   if (downloading) {
     actions = (
-      <div className="flex flex-col items-end gap-1">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={cancelDownload}
-          aria-label={t('common:cancelDownload')}
-          className="group relative w-24 justify-center overflow-hidden font-semibold"
-        >
-          <span
-            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
-            style={{ width: `${percent}%` }}
-          />
-          <span className="relative z-10 tabular-nums group-hover:hidden">
-            {percent}%
-          </span>
-          <IconX size={14} className="relative z-10 hidden group-hover:block" />
-        </Button>
-        <p
-          className="text-right text-xs tabular-nums text-muted-foreground"
-          aria-live="polite"
-        >
-          {t('settings:decision.progress', {
-            current: gb(currentBytes),
-            total: gb(totalBytes),
-          })}
-        </p>
-      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={cancelDownload}
+        aria-label={t('common:cancelDownload')}
+        title={t('settings:decision.progress', {
+          current: gb(currentBytes),
+          total: gb(totalBytes),
+        })}
+        className="group relative w-24 justify-center overflow-hidden font-semibold"
+      >
+        <span
+          className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+          style={{ width: `${percent}%` }}
+        />
+        <span className="relative z-10 tabular-nums group-hover:hidden">
+          {percent}%
+        </span>
+        <IconX size={14} className="relative z-10 hidden group-hover:block" />
+      </Button>
     )
   } else if (!installed) {
     actions = (
-      <Button variant="outline" size="sm" onClick={() => void download()}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-24 justify-center"
+        onClick={() => void download()}
+      >
         {t('hub:download')}
       </Button>
     )

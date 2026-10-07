@@ -6,6 +6,7 @@ import { ModelLogo } from '@/containers/ModelLogo'
 import { HubReadme } from '@/containers/hub/HubReadme'
 import { route } from '@/constants/routes'
 import { useDecisionEngineReadiness } from '@/hooks/useDecisionEngineReadiness'
+import { useDecisionModel } from '@/hooks/useDecisionModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DECISION_ENGINE_UI } from '@/lib/decision/engine'
 import { decisionIconKey } from '@/lib/model-logo'
@@ -18,6 +19,30 @@ import {
 } from '@/services/decision-catalog-registry'
 
 const gb = (bytes: number) => (bytes / 1024 ** 3).toFixed(2)
+
+/**
+ * The size on disk, or while the model downloads how much of it has arrived:
+ * the readout takes the size's place so the row keeps its height.
+ */
+function DownloadSize({ model }: { model: DecisionCatalogModel }) {
+  const { t } = useTranslation()
+  const { downloading, currentBytes, totalBytes } = useDecisionModel(model)
+  return (
+    <span
+      className="min-w-0 truncate whitespace-nowrap text-xs tabular-nums text-muted-foreground"
+      aria-live={downloading ? 'polite' : undefined}
+    >
+      {downloading
+        ? t('settings:decision.progress', {
+            current: gb(currentBytes),
+            total: gb(totalBytes),
+          })
+        : t('settings:decision.diskSize', {
+            size: gb(decisionDiskBytes(model)),
+          })}
+    </span>
+  )
+}
 
 export type DecisionModelDetailPanelProps = {
   model: DecisionCatalogModel | null
@@ -122,11 +147,7 @@ function ModelPanel({
             <span className="shrink-0 rounded-[5px] bg-secondary px-[7px] py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
               {quant ?? t('hub:cpu')}
             </span>
-            <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-              {t('settings:decision.diskSize', {
-                size: gb(decisionDiskBytes(model)),
-              })}
-            </span>
+            <DownloadSize model={model} />
           </span>
           <span className="ml-auto flex shrink-0 items-center">
             <DecisionModelCard model={model} onOpen={openProvider} />

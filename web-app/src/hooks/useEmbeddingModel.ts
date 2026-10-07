@@ -42,8 +42,9 @@ export type EmbeddingRunState = {
   state: EmbeddingState | null
   /** An activate / stop / remove of this model is in flight. */
   busy: boolean
-  activate: () => Promise<void>
-  stop: () => Promise<void>
+  /** Start this model; `true` once it runs, `false` when it failed (the error is in the store). */
+  activate: () => Promise<boolean>
+  stop: () => Promise<boolean>
 }
 
 export type EmbeddingModelState = EmbeddingRunState & {
@@ -55,7 +56,7 @@ export type EmbeddingModelState = EmbeddingRunState & {
   totalBytes: number
   download: () => Promise<void>
   cancelDownload: () => void
-  remove: () => Promise<void>
+  remove: () => Promise<boolean>
 }
 
 /**
@@ -64,14 +65,17 @@ export type EmbeddingModelState = EmbeddingRunState & {
  */
 function useEmbeddingAction(busyKey: string) {
   return useCallback(
-    async (action: () => Promise<void>) => {
+    /** `true` when `action` succeeded; a failure is kept in the store. */
+    async (action: () => Promise<void>): Promise<boolean> => {
       const store = useEmbeddingStore.getState()
       store.setBusy(busyKey)
       try {
         await action()
         store.setError(null)
+        return true
       } catch (error) {
         store.setError(toEmbeddingError(error))
+        return false
       } finally {
         store.setBusy(null)
         await store.refresh()

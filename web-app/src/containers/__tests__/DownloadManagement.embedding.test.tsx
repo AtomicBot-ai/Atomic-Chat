@@ -118,6 +118,15 @@ describe('DownloadManagement — a catalog embedding model download', () => {
     })
   }
 
+  it('names the row by the model, not by its task id', () => {
+    render(<DownloadManagement />)
+    downloading()
+
+    const row = screen.getByTestId(`row-${DOWNLOAD_ID}`)
+    expect(row).toHaveTextContent('EmbeddingGemma 2')
+    expect(row).not.toHaveTextContent(DOWNLOAD_ID)
+  })
+
   it('offers Cancel and no Pause', () => {
     render(<DownloadManagement />)
     downloading()

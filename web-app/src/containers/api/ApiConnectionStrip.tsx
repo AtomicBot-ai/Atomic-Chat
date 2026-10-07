@@ -1,10 +1,22 @@
-import { IconWorld } from '@tabler/icons-react'
-import { useEffect, useMemo } from 'react'
+import {
+  IconCheck,
+  IconPhoto,
+  IconTerminal2,
+  IconWorld,
+} from '@tabler/icons-react'
+import { useEffect, useMemo, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { CopyButton } from '@/containers/CopyButton'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import type { DecisionState } from '@/services/decision/types'
 import type { EmbeddingState } from '@/services/embedding/types'
@@ -122,6 +134,43 @@ function embeddingCurl(endpoint: string, body: unknown, authRequired: boolean) {
   ].join('\n')
 }
 
+/**
+ * An icon that copies `text`, named by its tooltip. The strip's fields stay one
+ * line, so the example commands sit as icons beside the copy icon, not buttons.
+ */
+function CopyIcon({
+  text,
+  label,
+  icon,
+}: {
+  text: string
+  label: string
+  icon: React.ReactNode
+}) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    if (!(await copyToClipboard(text))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0"
+          onClick={copy}
+          aria-label={label}
+        >
+          {copied ? <IconCheck size={16} className="text-primary" /> : icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function ApiConnectionStrip() {
   const { t } = useTranslation()
   const { serverStatus, activeModels } = useAppState()
@@ -207,12 +256,9 @@ export function ApiConnectionStrip() {
       )}
 
       {embeddingModel && (
-        <Field label={t('api:strip.embeddingModel')} className="flex-1">
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span
-              className="min-w-0 truncate font-mono text-xs"
-              title={embeddingModel.id}
-            >
+        <Field label={t('api:strip.embeddingModel')} className="max-w-full">
+          <span className="flex min-w-0 items-center gap-1 font-mono text-xs">
+            <span className="min-w-0 truncate" title={embeddingModel.id}>
               {embeddingModel.id}
               {embeddingModel.starting && (
                 <span className="font-sans text-muted-foreground">
@@ -221,40 +267,44 @@ export function ApiConnectionStrip() {
                 </span>
               )}
             </span>
-            <CopyButton
-              text={embeddingModel.id}
-              ariaLabel={t('api:strip.copyEmbeddingModel')}
-            />
-            <CopyButton
-              text={embeddingCurl(
-                embeddingsEndpoint,
-                { model: embeddingModel.id, input: 'Hello, world' },
-                authRequired
-              )}
-              label={t('api:strip.copyTextExample')}
-            />
-            {embeddingModel.readsImages && (
+            <span className="flex shrink-0 items-center">
               <CopyButton
+                text={embeddingModel.id}
+                ariaLabel={t('api:strip.copyEmbeddingModel')}
+              />
+              <CopyIcon
                 text={embeddingCurl(
                   embeddingsEndpoint,
-                  {
-                    model: embeddingModel.id,
-                    input: [
-                      {
-                        content: [
-                          {
-                            type: 'image_url',
-                            image_url: { url: 'data:image/png;base64,...' },
-                          },
-                        ],
-                      },
-                    ],
-                  },
+                  { model: embeddingModel.id, input: 'Hello, world' },
                   authRequired
                 )}
-                label={t('api:strip.copyImageExample')}
+                label={t('api:strip.copyTextExample')}
+                icon={<IconTerminal2 size={16} />}
               />
-            )}
+              {embeddingModel.readsImages && (
+                <CopyIcon
+                  text={embeddingCurl(
+                    embeddingsEndpoint,
+                    {
+                      model: embeddingModel.id,
+                      input: [
+                        {
+                          content: [
+                            {
+                              type: 'image_url',
+                              image_url: { url: 'data:image/png;base64,...' },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    authRequired
+                  )}
+                  label={t('api:strip.copyImageExample')}
+                  icon={<IconPhoto size={16} />}
+                />
+              )}
+            </span>
           </span>
         </Field>
       )}

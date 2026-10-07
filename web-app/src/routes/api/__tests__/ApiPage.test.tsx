@@ -127,7 +127,9 @@ vi.mock('@/containers/remote-lan/RemoteLanSection', () => ({
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }))
 
 vi.mock('@tanstack/react-virtual', () => ({
@@ -146,10 +148,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 
 import { resetFeedBuffers } from '@/hooks/useApiServerLogFeed'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import type {
-  DecisionService,
-  DecisionState,
-} from '@/services/decision/types'
+import type { DecisionService, DecisionState } from '@/services/decision/types'
 import type {
   EmbeddingService,
   EmbeddingStatus,
@@ -166,7 +165,12 @@ const initialDecision = useDecisionStore.getState()
 function decisionAs(state: DecisionState, enabled = state !== 'disabled') {
   getDecisionConfig.mockResolvedValue({
     config: { enabled, model_id: 'laya-multilingual' },
-    status: { state, enabled, model_path: '/data/decision/models/laya-multilingual', error: null },
+    status: {
+      state,
+      enabled,
+      model_path: '/data/decision/models/laya-multilingual',
+      error: null,
+    },
   })
 }
 
@@ -203,7 +207,10 @@ function embeddingAs(
   })
 }
 
-function request(id: string, overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {
+function request(
+  id: string,
+  overrides: Partial<ApiRequestEntry> = {}
+): ApiRequestEntry {
   return {
     kind: 'request',
     id,
@@ -268,7 +275,9 @@ describe('ApiPage', () => {
     await waitFor(() =>
       expect(useDecisionStore.getState().status?.state).toBe('disabled')
     )
-    expect(screen.queryByText('api:strip.decisionModel')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('api:strip.decisionModel')
+    ).not.toBeInTheDocument()
   })
 
   it('names the embedding model by the id clients pass, with a text example to copy', async () => {
@@ -279,9 +288,13 @@ describe('ApiPage', () => {
     expect(await screen.findByText('bge-m3')).toBeInTheDocument()
     expect(screen.getByText('api:strip.embeddingModel')).toBeInTheDocument()
     expect(screen.getByText('api:status.ready')).toBeInTheDocument()
-    expect(screen.queryByText('api:strip.copyImageExample')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'api:strip.copyImageExample' })
+    ).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('api:strip.copyTextExample'))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'api:strip.copyTextExample' })
+    )
     await waitFor(() => expect(copied).toHaveBeenCalledTimes(1))
     const [curl] = copied.mock.calls[0] as [string]
     expect(curl).toContain("curl -X POST 'http://127.0.0.1:1337/v1/embeddings'")
@@ -297,7 +310,9 @@ describe('ApiPage', () => {
 
     expect(await screen.findByText('embeddinggemma-2')).toBeInTheDocument()
     expect(screen.getByText(/api:status\.starting/)).toBeInTheDocument()
-    fireEvent.click(screen.getByText('api:strip.copyImageExample'))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'api:strip.copyImageExample' })
+    )
     await waitFor(() => expect(copied).toHaveBeenCalledTimes(1))
     const [curl] = copied.mock.calls[0] as [string]
     expect(curl).toContain("-H 'Authorization: Bearer YOUR_API_KEY'")
@@ -339,7 +354,9 @@ describe('ApiPage', () => {
 
   it('hosts Remote & LAN on the same server control as the header button', () => {
     render(<ApiPage />)
-    expect(screen.getByRole('region', { name: 'remote-lan' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: 'remote-lan' })
+    ).toBeInTheDocument()
     expect(sectionServer).toHaveBeenCalledWith(control)
   })
 

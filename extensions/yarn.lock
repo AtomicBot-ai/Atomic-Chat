@@ -498,7 +498,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fvllm-extension%40workspace%3Avllm-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=75c147&locator=%40janhq%2Fvllm-extension%40workspace%3Avllm-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=16e65a&locator=%40janhq%2Fvllm-extension%40workspace%3Avllm-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"

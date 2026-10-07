@@ -45,9 +45,17 @@ import {
   resolveDiffusionDownloadTaskId,
 } from '@/lib/diffusion/models'
 import { cancelTransfer } from '@/services/diffusion/transfer'
-import { isDecisionDownloadTaskId } from '@/lib/decision/models'
-import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
+import {
+  decisionDownloadTaskId,
+  isDecisionDownloadTaskId,
+} from '@/lib/decision/models'
+import {
+  embeddingDownloadTaskId,
+  isEmbeddingDownloadTaskId,
+} from '@/lib/embedding/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
+import { useDecisionStore } from '@/stores/decision-store'
+import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useImageForm } from '@/hooks/useImageForm'
 import { notifyWhenAway } from '@/lib/notifications'
@@ -245,11 +253,25 @@ export function DownloadManagement() {
     })
   }, [t])
 
+  const decisionCatalog = useDecisionStore((s) => s.catalog)
+  const embeddingCatalog = useEmbeddingStore((s) => s.catalog)
+
   const downloadProcesses = useMemo(() => {
     // A managed model's id spells its repository with `_`; the Hub's Download
-    // recorded the repository itself as the download's origin.
+    // recorded the repository itself as the download's origin. A decision or
+    // embedding model's task id is its catalog id behind a prefix: the row
+    // shows the model's name instead.
     const rowName = (id: string) =>
-      (isManagedDownloadId(id) && downloadOriginByModelId[id]) || id
+      (isManagedDownloadId(id) && downloadOriginByModelId[id]) ||
+      (isEmbeddingDownloadTaskId(id) &&
+        embeddingCatalog.models.find(
+          (model) => embeddingDownloadTaskId(model.id) === id
+        )?.name) ||
+      (isDecisionDownloadTaskId(id) &&
+        decisionCatalog.models.find(
+          (model) => decisionDownloadTaskId(model.id) === id
+        )?.name) ||
+      id
     // Get downloads with progress data
     const downloadsWithProgress = Object.entries(downloads).map(
       ([downloadKey, download]) => {
@@ -285,7 +307,13 @@ export function DownloadManagement() {
       }))
 
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
-  }, [downloads, localDownloadingModels, downloadOriginByModelId])
+  }, [
+    downloads,
+    localDownloadingModels,
+    downloadOriginByModelId,
+    decisionCatalog,
+    embeddingCatalog,
+  ])
 
   // A PrismML model setup runs its downloads in the core, which sends no
   // download events, so its rows come from the setups themselves.

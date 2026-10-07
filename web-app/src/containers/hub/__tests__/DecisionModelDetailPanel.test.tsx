@@ -16,6 +16,14 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
+vi.mock('@/hooks/useDecisionModel', () => ({
+  useDecisionModel: () => ({
+    downloading: false,
+    currentBytes: 0,
+    totalBytes: 0,
+  }),
+}))
+
 vi.mock('@/containers/hub/HubReadme', () => ({
   HubReadme: ({ url }: { url: string }) => (
     <div data-testid="readme">{url}</div>
