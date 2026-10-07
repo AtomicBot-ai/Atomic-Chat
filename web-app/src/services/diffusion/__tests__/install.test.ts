@@ -29,6 +29,8 @@ import {
 } from '../install'
 
 const HASH = 'c'.repeat(64)
+/** The bundled baseline's tag: where a manifest too old for a family migrates. */
+const BASELINE_TAG = getBaselineSdcppManifest().tag_name
 
 const manifest: SdcppManifest = {
   upstream_repo: 'leejet/stable-diffusion.cpp',
@@ -162,18 +164,18 @@ describe('resolveSdcppManifest', () => {
     fetchOk(manifest)
     const options = { url: URL_, family: 'qwen-image-2.1' }
     expect((await resolveSdcppManifest(options)).manifest.tag_name).toBe(
-      'master-883-137f740'
+      BASELINE_TAG
     )
     globalThis.fetch = vi.fn(async () => {
       throw new Error('offline')
     }) as unknown as typeof fetch
     expect((await resolveSdcppManifest(options)).manifest.tag_name).toBe(
-      'master-883-137f740'
+      BASELINE_TAG
     )
     expect(
       (await resolveSdcppManifest({ ...options, force: true })).manifest
         .tag_name
-    ).toBe('master-883-137f740')
+    ).toBe(BASELINE_TAG)
     expect(
       (await resolveSdcppManifest({ url: URL_, family: 'qwen-image' })).manifest
         .tag_name
@@ -181,7 +183,7 @@ describe('resolveSdcppManifest', () => {
     expect(
       (await resolveSdcppManifest({ url: URL_, family: 'krea-2-turbo' }))
         .manifest.tag_name
-    ).toBe('master-883-137f740')
+    ).toBe(BASELINE_TAG)
   })
 
   it('falls back to the bundled baseline with the error attached', async () => {
@@ -324,23 +326,23 @@ describe('ensureDiffusionBackend', () => {
   it('installs 883 for Qwen from a stale profile manifest while preserving host backend selection', async () => {
     installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
     const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
-    expect(result.tag).toBe('master-883-137f740')
+    expect(result.tag).toBe(BASELINE_TAG)
     expect(result.backendId).toBe('win-cuda12-x64')
     expect(transfers).toHaveLength(1)
-    expect(finalized).toMatchObject({ tag: 'master-883-137f740', backendId: 'win-cuda12-x64' })
+    expect(finalized).toMatchObject({ tag: BASELINE_TAG, backendId: 'win-cuda12-x64' })
   })
 
   it('reuses an already installed compatible Qwen engine without downloading', async () => {
-    installedRecords = [record('master-883-137f740', 'win-cuda12-x64')]
+    installedRecords = [record(BASELINE_TAG, 'win-cuda12-x64')]
     const result = await ensureDiffusionBackend({ family: 'qwen-image-2.1' })
-    expect(result.tag).toBe('master-883-137f740')
+    expect(result.tag).toBe(BASELINE_TAG)
     expect(transfers).toHaveLength(0)
   })
 
   it('installs 883 for Krea 2 Turbo from a stale profile manifest', async () => {
     installedRecords = [record('master-849-d04e895', 'win-cuda12-x64')]
     const result = await ensureDiffusionBackend({ family: 'krea-2-turbo' })
-    expect(result.tag).toBe('master-883-137f740')
+    expect(result.tag).toBe(BASELINE_TAG)
     expect(result.backendId).toBe('win-cuda12-x64')
     expect(transfers).toHaveLength(1)
   })
