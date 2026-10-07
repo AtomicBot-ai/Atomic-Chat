@@ -33,9 +33,11 @@ import {
   makeStatus,
 } from '@/lib/diffusion/__tests__/image-fixtures'
 import type { DiffusionStatus } from '@/services/diffusion/types'
+import type { EmbeddingStatus } from '@/services/embedding/types'
 
 import {
   getLocalApiServerUrl,
+  hasResidentEmbeddingModel,
   hasResidentMediaModel,
   raiseLocalApiServerForMediaModel,
   setLocalApiServerRunning,
@@ -170,6 +172,54 @@ describe('localApiServerControl', () => {
         }),
       }
       await expect(hasResidentMediaModel(diffusion)).resolves.toBe(false)
+    })
+  })
+
+  describe('hasResidentEmbeddingModel', () => {
+    const embeddingWith = (
+      status: Pick<EmbeddingStatus, 'state' | 'enabled'>,
+      supported = true
+    ) => ({
+      isSupported: () => supported,
+      getStatus: vi.fn(async () => status as EmbeddingStatus),
+    })
+
+    it.each([
+      ['a running model', true, { state: 'ready', enabled: true }],
+      [
+        'one that starts on the next request',
+        true,
+        { state: 'idle', enabled: true },
+      ],
+      ['one starting', true, { state: 'starting', enabled: true }],
+      ['one switched off', false, { state: 'disabled', enabled: false }],
+      ['one that failed', false, { state: 'failed', enabled: true }],
+      [
+        'one the engine cannot run',
+        false,
+        { state: 'unsupported', enabled: true },
+      ],
+    ] as const)(
+      'reads %s as resident: %s',
+      async (_label, expected, status) => {
+        await expect(
+          hasResidentEmbeddingModel(embeddingWith(status))
+        ).resolves.toBe(expected)
+      }
+    )
+
+    it('never asks off the desktop, and reads a status it cannot get as none', async () => {
+      const offDesktop = embeddingWith({ state: 'ready', enabled: true }, false)
+      await expect(hasResidentEmbeddingModel(offDesktop)).resolves.toBe(false)
+      expect(offDesktop.getStatus).not.toHaveBeenCalled()
+      await expect(
+        hasResidentEmbeddingModel({
+          isSupported: () => true,
+          getStatus: vi.fn(async () => {
+            throw new Error('core is gone')
+          }),
+        })
+      ).resolves.toBe(false)
     })
   })
 

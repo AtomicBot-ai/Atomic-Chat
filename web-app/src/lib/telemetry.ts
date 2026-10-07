@@ -35,6 +35,9 @@ export type DownloadKind =
   // A diffusion checkpoint or one of its side files (VAE, text encoder),
   // fetched by `lib/diffusion/models.ts` through the same download pipeline.
   | 'diffusion_model'
+  // A catalog embedding model (`embedding-<id>`, `lib/embedding/models.ts`):
+  // served on /v1/embeddings, never a chat model.
+  | 'embedding_model'
 
 export type DownloadFailureReason =
   | 'http_404'
@@ -252,6 +255,7 @@ export function downloadKind(
   // are not chat models and must not be counted as such.
   if (id.startsWith('diffusion-backend')) return 'gpu_backend'
   if (id.startsWith('diffusion')) return 'diffusion_model'
+  if (id.startsWith('embedding-')) return 'embedding_model'
   if (downloadType === 'Backend' || id.includes('llamacpp-backend'))
     return 'gpu_backend'
   return 'model'

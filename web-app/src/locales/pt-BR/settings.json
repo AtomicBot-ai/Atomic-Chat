@@ -411,5 +411,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Multilíngue",
+    "context": "{{tokens}} tokens",
+    "dims": "{{dims}} dimensões",
+    "diskSize": "{{size}} GB em disco",
+    "progress": "{{current}} de {{total}} GB",
+    "start": "Iniciar",
+    "stop": "Parar",
+    "remove": "Remover",
+    "removeTitle": "Remover {{name}}?",
+    "removeDescription": "Os arquivos do modelo serão excluídos. Se o modelo estiver em execução, ele será parado primeiro.",
+    "removed": "{{name}} removido",
+    "updateEngine": "Atualizar {{engine}}",
+    "engineLatest": "{{engine}} está atualizado. Ainda não foi lançada uma versão que execute este modelo de embedding.",
+    "engineInstallFailed": "Não foi possível atualizar {{engine}}",
+    "requiresEngine": "Requer {{engine}} {{version}}+",
+    "requiresEngineNotice": "Este modelo requer {{engine}} {{version}} ou mais recente. Atualize o motor para iniciá-lo.",
+    "state": {
+      "disabled": "Parado",
+      "idle": "Inicia na próxima requisição",
+      "starting": "Iniciando…",
+      "ready": "Em execução",
+      "restarting": "Reiniciando…",
+      "failed": "Falhou",
+      "unsupported": "Motor não suportado"
+    },
+    "errors": {
+      "engineUnsupported": "O motor {{engine}} instalado não consegue executar este modelo de embedding.",
+      "notConfigured": "Nenhum modelo de embedding selecionado. Baixe um modelo e clique em Iniciar.",
+      "notEmbedding": "Este arquivo não é um modelo de embedding.",
+      "modelFileNotFound": "Os arquivos do modelo não estão no disco. Baixe o modelo novamente.",
+      "generic": "Não foi possível iniciar o modelo de embedding."
+    },
+    "sectionTitle": "Modelos de embedding",
+    "noneTitle": "Nenhum modelo de embedding baixado",
+    "noneDescription": "Baixe um na categoria Embedding do Hub",
+    "availableInApi": "Disponível na API",
+    "localModel": "Dos seus modelos llama.cpp"
   }
 }

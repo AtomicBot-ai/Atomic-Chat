@@ -12,6 +12,7 @@ import {
 import { Loader } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
+import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
 import { HubNoResults, HubSearchInput } from '@/containers/hub/HubSearch'
@@ -59,6 +60,7 @@ import {
   withStaffPicks,
 } from '@/lib/hub-installed'
 import { isAnyDecisionHostSupported } from '@/lib/decision/platform'
+import { isEmbeddingHostSupported } from '@/lib/embedding/engine'
 import {
   HUB_CATEGORIES,
   isHubCategory,
@@ -104,8 +106,8 @@ type SearchParams = {
   q?: string
   /**
    * Repo id of the model shown in the right-hand detail panel; in the Images
-   * and Video categories, the id of the catalog family; in Decision, the
-   * catalog id of the model.
+   * and Video categories, the id of the catalog family; in Decision and
+   * Embedding, the catalog id of the model.
    */
   model?: string
   /** Absent means Chat: every link into the Hub from a chat asks for one. */
@@ -183,22 +185,33 @@ const hubScrollCache: { q: string; offset: number } = { q: '', offset: 0 }
 function HubContent() {
   const navigate = useNavigate()
   const { category: categorySearchParam } = Route.useSearch()
-  const decisionApiSupported = useServiceHub().decision().isSupported()
+  const serviceHub = useServiceHub()
+  const decisionApiSupported = serviceHub.decision().isSupported()
+  const embeddingApiSupported = serviceHub.embedding().isSupported()
   const cpuArch = useHardware((s) => s.hardwareData.cpu.arch)
   // Image and video models need the local media engine, decision models a
-  // TurboQuant or llama.cpp build for this machine; with neither the Hub stays
-  // the chat catalog it always was, switch and all.
+  // TurboQuant or llama.cpp build for this machine, embedding models a
+  // llama.cpp one; with none the Hub stays the chat catalog it always was,
+  // switch and all.
   const mediaSupported = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
   const decisionSupported =
     PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
     decisionApiSupported &&
     isAnyDecisionHostSupported(cpuArch)
+  const embeddingSupported =
+    PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
+    embeddingApiSupported &&
+    isEmbeddingHostSupported(cpuArch)
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
-        c === 'decision' ? decisionSupported : c === 'chat' || mediaSupported
+        c === 'decision'
+          ? decisionSupported
+          : c === 'embedding'
+            ? embeddingSupported
+            : c === 'chat' || mediaSupported
       ),
-    [mediaSupported, decisionSupported]
+    [mediaSupported, decisionSupported, embeddingSupported]
   )
   const category: HubCategory =
     categorySearchParam && categories.includes(categorySearchParam)
@@ -234,6 +247,9 @@ function HubContent() {
   if (category === 'chat') return <ChatHub categoryTabs={categoryTabs} />
   if (category === 'decision') {
     return <DecisionHubContent categoryTabs={categoryTabs} />
+  }
+  if (category === 'embedding') {
+    return <EmbeddingHubContent categoryTabs={categoryTabs} />
   }
   return (
     <MediaHubContent
@@ -278,6 +294,49 @@ function DecisionHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   return (
     <DecisionHub
+      categoryTabs={categoryTabs}
+      query={query}
+      onQueryChange={changeQuery}
+      selectedModelId={modelSearchParam ?? null}
+      onSelectModel={selectModel}
+    />
+  )
+}
+
+function EmbeddingHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
+  const navigate = useNavigate()
+  const { q: querySearchParam, model: modelSearchParam } = Route.useSearch()
+  const [query, setQuery] = useState(querySearchParam ?? getHubSearchQuery())
+
+  const changeQuery = useCallback(
+    (next: string) => {
+      setQuery(next)
+      setHubSearchQuery(next)
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          q: next.trim() || undefined,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const selectModel = useCallback(
+    (modelId: string, options?: { replace?: boolean }) => {
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({ ...prev, model: modelId }),
+        replace: options?.replace ?? false,
+      })
+    },
+    [navigate]
+  )
+
+  return (
+    <EmbeddingHub
       categoryTabs={categoryTabs}
       query={query}
       onQueryChange={changeQuery}

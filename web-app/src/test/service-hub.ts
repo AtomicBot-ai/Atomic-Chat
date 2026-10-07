@@ -3,6 +3,7 @@ import {
   initializeServiceHubStore,
   useServiceStore,
 } from '@/hooks/useServiceHub'
+import { DefaultEmbeddingService } from '@/services/embedding/default'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 
 type ServiceInstances = {
@@ -50,6 +51,9 @@ export function createMockServiceHub(
       overrides.diffusion ?? (emptyService as ServiceInstances['diffusion']),
     decision:
       overrides.decision ?? (emptyService as ServiceInstances['decision']),
+    // Unsupported unless a test says otherwise: the API page and the server
+    // control ask it on every render.
+    embedding: overrides.embedding ?? new DefaultEmbeddingService(),
     modelSetup: overrides.modelSetup ?? new DefaultModelSetupService(),
   }
 
@@ -79,6 +83,7 @@ export function createMockServiceHub(
     voice: () => services.voice,
     diffusion: () => services.diffusion,
     decision: () => services.decision,
+    embedding: () => services.embedding,
     modelSetup: () => services.modelSetup,
   }
 }

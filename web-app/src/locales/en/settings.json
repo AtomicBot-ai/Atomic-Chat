@@ -625,6 +625,45 @@
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
   },
+  "embedding": {
+    "multilingual": "Multilingual",
+    "context": "{{tokens}} tokens",
+    "dims": "{{dims}} dimensions",
+    "diskSize": "{{size}} GB on disk",
+    "progress": "{{current}} of {{total}} GB",
+    "start": "Start",
+    "stop": "Stop",
+    "remove": "Remove",
+    "removeTitle": "Remove {{name}}?",
+    "removeDescription": "The model files will be deleted. If the model is running, it is stopped first.",
+    "removed": "{{name}} removed",
+    "updateEngine": "Update {{engine}}",
+    "engineLatest": "{{engine}} is up to date. A build that runs this embedding model is not released yet.",
+    "engineInstallFailed": "{{engine}} could not be updated",
+    "requiresEngine": "Needs {{engine}} {{version}}+",
+    "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
+    "state": {
+      "disabled": "Stopped",
+      "idle": "Starts on the next request",
+      "starting": "Starting…",
+      "ready": "Running",
+      "restarting": "Restarting…",
+      "failed": "Failed",
+      "unsupported": "Engine not supported"
+    },
+    "errors": {
+      "engineUnsupported": "The installed {{engine}} engine cannot run this embedding model.",
+      "notConfigured": "No embedding model is selected. Download a model and press Start.",
+      "notEmbedding": "This file is not an embedding model.",
+      "modelFileNotFound": "The model files are not on disk. Download the model again.",
+      "generic": "The embedding model could not start."
+    },
+    "sectionTitle": "Embedding models",
+    "noneTitle": "No embedding models downloaded",
+    "noneDescription": "Download one in the Embedding category of the Hub",
+    "availableInApi": "Available in the API",
+    "localModel": "From your llama.cpp models"
+  },
   "media": {
     "subtitle": "Local image generation with stable-diffusion.cpp. Everything runs on this computer.",
     "engineTitle": "Engine",

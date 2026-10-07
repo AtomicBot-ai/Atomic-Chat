@@ -46,6 +46,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { cancelDownload } from '@/lib/downloadCancellation'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
+import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { prettyModelName } from '@/lib/model-display-name'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
@@ -502,12 +503,14 @@ type InFlightDownload = {
  * Is this transfer a model the composer could answer with once it lands?
  *
  * The panel lists every download; this widget lists only the ones that would
- * settle the question it asks. So no embedding model, no projector on its
- * own, no diffusion checkpoint, no backend binary — and not the voice model,
- * whose import is silent and never becomes the selected model.
+ * settle the question it asks. So no embedding model (the RAG one, or one
+ * from the Hub's Embedding category), no projector on its own, no diffusion
+ * checkpoint, no backend binary — and not the voice model, whose import is
+ * silent and never becomes the selected model.
  */
 function isChatModelDownload(id: string): boolean {
   if (id === EMBEDDING_MODEL_ID || id === VOICE_MODEL_ID) return false
+  if (isEmbeddingDownloadTaskId(id)) return false
   if (id.startsWith('mmproj') || id.startsWith('llamacpp')) return false
   return downloadKind(id) === 'model'
 }

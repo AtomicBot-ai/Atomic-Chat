@@ -379,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Mehrsprachig",
+    "context": "{{tokens}} Token",
+    "dims": "{{dims}} Dimensionen",
+    "diskSize": "{{size}} GB auf dem Datenträger",
+    "progress": "{{current}} von {{total}} GB",
+    "start": "Starten",
+    "stop": "Stoppen",
+    "remove": "Entfernen",
+    "removeTitle": "{{name}} entfernen?",
+    "removeDescription": "Die Modelldateien werden gelöscht. Läuft das Modell, wird es vorher gestoppt.",
+    "removed": "{{name}} entfernt",
+    "updateEngine": "{{engine}} aktualisieren",
+    "engineLatest": "{{engine}} ist auf dem neuesten Stand. Eine Version, die dieses Embedding-Modell ausführt, ist noch nicht erschienen.",
+    "engineInstallFailed": "{{engine}} konnte nicht aktualisiert werden",
+    "requiresEngine": "Benötigt {{engine}} {{version}}+",
+    "requiresEngineNotice": "Dieses Modell benötigt {{engine}} {{version}} oder neuer. Aktualisiere die Engine, um es zu starten.",
+    "state": {
+      "disabled": "Gestoppt",
+      "idle": "Startet bei der nächsten Anfrage",
+      "starting": "Wird gestartet…",
+      "ready": "Läuft",
+      "restarting": "Wird neu gestartet…",
+      "failed": "Fehlgeschlagen",
+      "unsupported": "Engine nicht unterstützt"
+    },
+    "errors": {
+      "engineUnsupported": "Die installierte {{engine}}-Engine kann dieses Embedding-Modell nicht ausführen.",
+      "notConfigured": "Kein Embedding-Modell ausgewählt. Lade ein Modell herunter und klicke auf Starten.",
+      "notEmbedding": "Diese Datei ist kein Embedding-Modell.",
+      "modelFileNotFound": "Die Modelldateien sind nicht auf dem Datenträger. Lade das Modell erneut herunter.",
+      "generic": "Das Embedding-Modell konnte nicht gestartet werden."
+    },
+    "sectionTitle": "Embedding-Modelle",
+    "noneTitle": "Keine Embedding-Modelle heruntergeladen",
+    "noneDescription": "Lade eines in der Kategorie Embedding im Hub herunter",
+    "availableInApi": "In der API verfügbar",
+    "localModel": "Aus deinen llama.cpp-Modellen"
   }
 }

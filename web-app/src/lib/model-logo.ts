@@ -8,6 +8,8 @@ import type { DiffusionFamilyId } from '@/services/diffusion/types'
 // "DeepSeek-R1-Distill-Qwen" should resolve to DeepSeek).
 const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/deepseek/i, '/svg/deepseek-color.svg'],
+  // EmbeddingGemma carries the Gemma mark itself, not Google's "G".
+  [/embeddinggemma/i, '/svg/gemma-color.svg'],
   [/gemma/i, '/svg/google-color.svg'],
   [/\bglm\b|chatglm/i, '/svg/zai.svg'],
   [/bonsai/i, '/images/model-provider/prism-ml.webp'],
@@ -25,6 +27,9 @@ const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
   [/nemotron/i, '/images/model-provider/nvidia.svg'],
   [/gpt-oss/i, '/svg/openai-mark.svg'],
   [/granite/i, '/svg/ibm.svg'],
+  // Embedding models: BAAI's bge family and Nomic's embed models.
+  [/\bbge\b|bge-/i, '/svg/baai.svg'],
+  [/nomic/i, '/images/model-provider/nomic.svg'],
   [/olmo/i, '/svg/ai2-color.svg'],
   [/hermes/i, '/svg/nousresearch.svg'],
   [/seed-oss/i, '/svg/bytedance-color.svg'],
@@ -52,6 +57,7 @@ const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set([
   '/images/model-provider/prism-ml.webp',
   '/svg/liquid.svg',
   '/svg/ibm.svg',
+  '/svg/baai.svg',
   '/svg/nousresearch.svg',
   '/svg/zai.svg',
   '/svg/minimax.svg',
@@ -67,6 +73,7 @@ const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set([
 const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   'deepseek': '/svg/deepseek-color.svg',
   'gemma': '/svg/google-color.svg',
+  'gemma-mark': '/svg/gemma-color.svg',
   'google': '/svg/google-color.svg',
   'glm': '/svg/zai.svg',
   'qwen': '/svg/qwen-color.svg',
@@ -80,6 +87,10 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   'nvidia': '/images/model-provider/nvidia.svg',
   'openai': '/svg/openai-mark.svg',
   'ibm': '/svg/ibm.svg',
+  // BAAI (bge) from @lobehub/icons-static-svg 1.95.1; Nomic's own favicon mark,
+  // a black N on its white square, which reads on either theme as it is.
+  'baai': '/svg/baai.svg',
+  'nomic': '/images/model-provider/nomic.svg',
   'allenai': '/svg/ai2-color.svg',
   'nous': '/svg/nousresearch.svg',
   'bytedance': '/svg/bytedance-color.svg',
@@ -147,6 +158,14 @@ export function decisionIconKey(model: {
     model.icon ??
     (model.format === 'checkpoint' ? DECISION_ICON_KEY : undefined)
   )
+}
+
+/**
+ * The logo key of an embedding model: its catalog `icon`, which every entry
+ * carries (atomic-chat-conf models/embedding.json).
+ */
+export function embeddingIconKey(model: { icon: string }): string {
+  return model.icon
 }
 
 /** The Hugging Face mark, used as the neutral avatar for long-tail results. */

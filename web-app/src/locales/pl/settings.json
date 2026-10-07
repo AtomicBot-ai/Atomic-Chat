@@ -379,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Wielojęzyczny",
+    "context": "{{tokens}} tokenów",
+    "dims": "{{dims}} wymiarów",
+    "diskSize": "{{size}} GB na dysku",
+    "progress": "{{current}} z {{total}} GB",
+    "start": "Uruchom",
+    "stop": "Zatrzymaj",
+    "remove": "Usuń",
+    "removeTitle": "Usunąć {{name}}?",
+    "removeDescription": "Pliki modelu zostaną usunięte. Jeśli model działa, najpierw zostanie zatrzymany.",
+    "removed": "Usunięto {{name}}",
+    "updateEngine": "Zaktualizuj {{engine}}",
+    "engineLatest": "{{engine}} jest aktualny. Wersja, która uruchamia ten model embeddingów, nie została jeszcze wydana.",
+    "engineInstallFailed": "Nie udało się zaktualizować {{engine}}",
+    "requiresEngine": "Wymaga {{engine}} {{version}}+",
+    "requiresEngineNotice": "Ten model wymaga {{engine}} {{version}} lub nowszego. Zaktualizuj silnik, aby go uruchomić.",
+    "state": {
+      "disabled": "Zatrzymany",
+      "idle": "Uruchomi się przy następnym żądaniu",
+      "starting": "Uruchamianie…",
+      "ready": "Działa",
+      "restarting": "Ponowne uruchamianie…",
+      "failed": "Błąd",
+      "unsupported": "Silnik nieobsługiwany"
+    },
+    "errors": {
+      "engineUnsupported": "Zainstalowany silnik {{engine}} nie może uruchomić tego modelu embeddingów.",
+      "notConfigured": "Nie wybrano modelu embeddingów. Pobierz model i kliknij Uruchom.",
+      "notEmbedding": "Ten plik nie jest modelem embeddingów.",
+      "modelFileNotFound": "Plików modelu nie ma na dysku. Pobierz model ponownie.",
+      "generic": "Nie udało się uruchomić modelu embeddingów."
+    },
+    "sectionTitle": "Modele embeddingów",
+    "noneTitle": "Brak pobranych modeli embeddingów",
+    "noneDescription": "Pobierz model w kategorii Embedding w Centrum Modeli",
+    "availableInApi": "Dostępny w API",
+    "localModel": "Z Twoich modeli llama.cpp"
   }
 }

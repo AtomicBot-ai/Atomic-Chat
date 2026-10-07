@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardItem } from '@/containers/Card'
 import { DecisionModelsSection } from '@/containers/DecisionModelsSection'
+import { EmbeddingModelsSection } from '@/containers/EmbeddingModelsSection'
 import HeaderPage from '@/containers/HeaderPage'
 import { ManagedEngineSetupPanel } from '@/containers/managed-engine/ManagedEngineSetupPanel'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
@@ -2712,6 +2713,13 @@ function ProviderDetail() {
 
                 <DeleteProvider provider={provider} />
               </Card>
+
+              {/* Embedding models: stock llama.cpp only, and before the
+                  decision models in the reversed column, so it shows under
+                  them. */}
+              {providerName === 'llamacpp-upstream' && (
+                <EmbeddingModelsSection />
+              )}
 
               {/* Decision models: the column is reversed for llama.cpp, so
                   this shows under the chat models. TurboQuant runs the laya

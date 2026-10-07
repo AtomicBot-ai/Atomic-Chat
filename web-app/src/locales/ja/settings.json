@@ -539,5 +539,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "多言語",
+    "context": "{{tokens}} トークン",
+    "dims": "{{dims}} 次元",
+    "diskSize": "ディスク上 {{size}} GB",
+    "progress": "{{current}} / {{total}} GB",
+    "start": "開始",
+    "stop": "停止",
+    "remove": "削除",
+    "removeTitle": "{{name}} を削除しますか？",
+    "removeDescription": "モデルファイルが削除されます。モデルが実行中の場合は、先に停止されます。",
+    "removed": "{{name}} を削除しました",
+    "updateEngine": "{{engine}} を更新",
+    "engineLatest": "{{engine}} は最新です。この埋め込みモデルを実行できるビルドはまだリリースされていません。",
+    "engineInstallFailed": "{{engine}} を更新できませんでした",
+    "requiresEngine": "{{engine}} {{version}} 以降が必要",
+    "requiresEngineNotice": "このモデルには {{engine}} {{version}} 以降が必要です。開始するにはエンジンを更新してください。",
+    "state": {
+      "disabled": "停止中",
+      "idle": "次のリクエストで開始",
+      "starting": "開始中…",
+      "ready": "実行中",
+      "restarting": "再起動中…",
+      "failed": "失敗",
+      "unsupported": "エンジン非対応"
+    },
+    "errors": {
+      "engineUnsupported": "インストール済みの {{engine}} エンジンではこの埋め込みモデルを実行できません。",
+      "notConfigured": "埋め込みモデルが選択されていません。モデルをダウンロードして「開始」を押してください。",
+      "notEmbedding": "このファイルは埋め込みモデルではありません。",
+      "modelFileNotFound": "モデルファイルがディスク上にありません。モデルを再度ダウンロードしてください。",
+      "generic": "埋め込みモデルを開始できませんでした。"
+    },
+    "sectionTitle": "埋め込みモデル",
+    "noneTitle": "ダウンロード済みの埋め込みモデルはありません",
+    "noneDescription": "ハブの「埋め込み」カテゴリーからダウンロードしてください",
+    "availableInApi": "API で利用可能",
+    "localModel": "llama.cpp モデルから"
   }
 }

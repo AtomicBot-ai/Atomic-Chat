@@ -379,5 +379,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "多語言",
+    "context": "{{tokens}} 個 token",
+    "dims": "{{dims}} 維",
+    "diskSize": "磁碟佔用 {{size}} GB",
+    "progress": "{{current}} / {{total}} GB",
+    "start": "啟動",
+    "stop": "停止",
+    "remove": "移除",
+    "removeTitle": "移除 {{name}}？",
+    "removeDescription": "模型檔案將被刪除。如果模型正在執行，會先將其停止。",
+    "removed": "已移除 {{name}}",
+    "updateEngine": "更新 {{engine}}",
+    "engineLatest": "{{engine}} 已是最新版本。能執行此嵌入模型的版本尚未發布。",
+    "engineInstallFailed": "無法更新 {{engine}}",
+    "requiresEngine": "需要 {{engine}} {{version}}+",
+    "requiresEngineNotice": "此模型需要 {{engine}} {{version}} 或更新版本。請更新引擎後再啟動。",
+    "state": {
+      "disabled": "已停止",
+      "idle": "將在下次請求時啟動",
+      "starting": "正在啟動…",
+      "ready": "執行中",
+      "restarting": "正在重新啟動…",
+      "failed": "失敗",
+      "unsupported": "引擎不受支援"
+    },
+    "errors": {
+      "engineUnsupported": "已安裝的 {{engine}} 引擎無法執行此嵌入模型。",
+      "notConfigured": "尚未選擇嵌入模型。請下載模型並點選「啟動」。",
+      "notEmbedding": "此檔案不是嵌入模型。",
+      "modelFileNotFound": "磁碟上沒有模型檔案。請重新下載模型。",
+      "generic": "無法啟動嵌入模型。"
+    },
+    "sectionTitle": "嵌入模型",
+    "noneTitle": "尚未下載嵌入模型",
+    "noneDescription": "在中心的「嵌入」類別中下載",
+    "availableInApi": "可在 API 中使用",
+    "localModel": "來自你的 llama.cpp 模型"
   }
 }

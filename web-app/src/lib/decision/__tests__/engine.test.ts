@@ -6,6 +6,7 @@ import {
   DECISION_ENGINE_UI,
   decisionEngineReadiness,
   upstreamBuildOf,
+  upstreamEngineReadiness,
 } from '../engine'
 
 const byId = (id: string) =>
@@ -21,6 +22,24 @@ describe('upstreamBuildOf', () => {
     expect(upstreamBuildOf('b10269-1.7.0/macos-arm64')).toBeUndefined()
     expect(upstreamBuildOf('none')).toBeUndefined()
     expect(upstreamBuildOf(undefined)).toBeUndefined()
+  })
+})
+
+describe('upstreamEngineReadiness', () => {
+  it('compares a b<build> floor with the configured build', () => {
+    expect(upstreamEngineReadiness('b11454', 'b11443/macos-arm64')).toEqual({
+      kind: 'needs_update',
+      required: 'b11454',
+    })
+    expect(upstreamEngineReadiness('b11454', 'b11454').kind).toBe('ready')
+  })
+
+  it('holds no floor, an unknown build or a fork tag against the model', () => {
+    expect(upstreamEngineReadiness(undefined, 'b1/macos-arm64').kind).toBe(
+      'ready'
+    )
+    expect(upstreamEngineReadiness('b11454', undefined).kind).toBe('ready')
+    expect(upstreamEngineReadiness('b10269-1.7.0', 'b1').kind).toBe('ready')
   })
 })
 

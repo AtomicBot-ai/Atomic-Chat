@@ -494,5 +494,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "다국어",
+    "context": "{{tokens}} 토큰",
+    "dims": "{{dims}}차원",
+    "diskSize": "디스크 {{size}} GB",
+    "progress": "{{current}} / {{total}} GB",
+    "start": "시작",
+    "stop": "중지",
+    "remove": "제거",
+    "removeTitle": "{{name}}을(를) 제거할까요?",
+    "removeDescription": "모델 파일이 삭제됩니다. 모델이 실행 중이면 먼저 중지됩니다.",
+    "removed": "{{name}} 제거됨",
+    "updateEngine": "{{engine}} 업데이트",
+    "engineLatest": "{{engine}}이(가) 최신 버전입니다. 이 임베딩 모델을 실행하는 빌드는 아직 출시되지 않았습니다.",
+    "engineInstallFailed": "{{engine}}을(를) 업데이트하지 못했습니다",
+    "requiresEngine": "{{engine}} {{version}}+ 필요",
+    "requiresEngineNotice": "이 모델에는 {{engine}} {{version}} 이상이 필요합니다. 시작하려면 엔진을 업데이트하세요.",
+    "state": {
+      "disabled": "중지됨",
+      "idle": "다음 요청 시 시작",
+      "starting": "시작 중…",
+      "ready": "실행 중",
+      "restarting": "다시 시작 중…",
+      "failed": "실패",
+      "unsupported": "엔진 미지원"
+    },
+    "errors": {
+      "engineUnsupported": "설치된 {{engine}} 엔진으로는 이 임베딩 모델을 실행할 수 없습니다.",
+      "notConfigured": "선택된 임베딩 모델이 없습니다. 모델을 다운로드하고 시작을 누르세요.",
+      "notEmbedding": "이 파일은 임베딩 모델이 아닙니다.",
+      "modelFileNotFound": "모델 파일이 디스크에 없습니다. 모델을 다시 다운로드하세요.",
+      "generic": "임베딩 모델을 시작하지 못했습니다."
+    },
+    "sectionTitle": "임베딩 모델",
+    "noneTitle": "다운로드한 임베딩 모델이 없습니다",
+    "noneDescription": "허브의 임베딩 카테고리에서 다운로드하세요",
+    "availableInApi": "API에서 사용 가능",
+    "localModel": "내 llama.cpp 모델에서"
   }
 }

@@ -42,6 +42,15 @@ describe('describeFinishedDownload', () => {
     })
   })
 
+  it('names a catalog embedding model by its id', () => {
+    expect(
+      describeFinishedDownload('embedding-bge-m3', 'Model', null, t)
+    ).toEqual({
+      title: 'Model downloaded',
+      body: 'bge-m3 is ready to use.',
+    })
+  })
+
   it('tells the llama.cpp engine from the image and video engine', () => {
     expect(
       describeFinishedDownload(

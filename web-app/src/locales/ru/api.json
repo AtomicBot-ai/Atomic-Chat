@@ -16,6 +16,10 @@
     "status": "Status",
     "loadedModel": "Loaded model",
     "decisionModel": "Decision model",
+    "embeddingModel": "Модель эмбеддингов",
+    "copyEmbeddingModel": "Скопировать ID модели",
+    "copyTextExample": "Скопировать пример с текстом",
+    "copyImageExample": "Скопировать пример с изображением",
     "noModel": "None",
     "ctx": "{{count}} ctx"
   },

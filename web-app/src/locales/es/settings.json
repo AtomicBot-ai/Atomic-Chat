@@ -597,5 +597,44 @@
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
     "availableInApi": "Available in the API"
+  },
+  "embedding": {
+    "multilingual": "Multilingüe",
+    "context": "{{tokens}} tokens",
+    "dims": "{{dims}} dimensiones",
+    "diskSize": "{{size}} GB en disco",
+    "progress": "{{current}} de {{total}} GB",
+    "start": "Iniciar",
+    "stop": "Detener",
+    "remove": "Eliminar",
+    "removeTitle": "¿Eliminar {{name}}?",
+    "removeDescription": "Se eliminarán los archivos del modelo. Si el modelo está en ejecución, primero se detendrá.",
+    "removed": "{{name}} eliminado",
+    "updateEngine": "Actualizar {{engine}}",
+    "engineLatest": "{{engine}} está actualizado. Todavía no se ha publicado una versión que ejecute este modelo de embeddings.",
+    "engineInstallFailed": "No se pudo actualizar {{engine}}",
+    "requiresEngine": "Requiere {{engine}} {{version}}+",
+    "requiresEngineNotice": "Este modelo requiere {{engine}} {{version}} o posterior. Actualiza el motor para iniciarlo.",
+    "state": {
+      "disabled": "Detenido",
+      "idle": "Se inicia con la próxima solicitud",
+      "starting": "Iniciando…",
+      "ready": "En ejecución",
+      "restarting": "Reiniciando…",
+      "failed": "Error",
+      "unsupported": "Motor no compatible"
+    },
+    "errors": {
+      "engineUnsupported": "El motor {{engine}} instalado no puede ejecutar este modelo de embeddings.",
+      "notConfigured": "No hay ningún modelo de embeddings seleccionado. Descarga un modelo y pulsa Iniciar.",
+      "notEmbedding": "Este archivo no es un modelo de embeddings.",
+      "modelFileNotFound": "Los archivos del modelo no están en el disco. Vuelve a descargar el modelo.",
+      "generic": "No se pudo iniciar el modelo de embeddings."
+    },
+    "sectionTitle": "Modelos de embeddings",
+    "noneTitle": "No hay modelos de embeddings descargados",
+    "noneDescription": "Descarga uno en la categoría Embedding del Hub",
+    "availableInApi": "Disponible en la API",
+    "localModel": "De tus modelos de llama.cpp"
   }
 }

@@ -46,6 +46,7 @@ import {
 } from '@/lib/diffusion/models'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import { isDecisionDownloadTaskId } from '@/lib/decision/models'
+import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useImageForm } from '@/hooks/useImageForm'
@@ -853,13 +854,15 @@ export function DownloadManagement() {
   // ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
   // Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
   // which start with `mlx`) get cancel-only, matching Jan's gating.
-  // Decision models resume from their settings card, not from here.
+  // Decision and embedding models resume from their Hub or settings card,
+  // not from here.
   // Managed models are cancel-only too: Download again in the Hub resumes
   // from the files on disk (change add-tensorrt-llm-model-hub, design D6).
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
+    !isEmbeddingDownloadTaskId(id) &&
     !isManagedDownloadId(id)
 
   const handlePauseDownload = useCallback(
