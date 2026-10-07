@@ -737,6 +737,27 @@ describe('image-generation-store', () => {
       )
     })
 
+    it('says no newer engine is published when the core installs nothing, and leaves the model blocked', async () => {
+      useImageGenerationStore.setState({
+        catalog: makeCatalog([{ ...Z_IMAGE, id: 'qwen-image-2.1' }]),
+      })
+      await useImageGenerationStore
+        .getState()
+        .loadModel('qwen-image-2.1:q4_k_m')
+      // conf's manifest still names the installed 849 build.
+      fake.installEngine.mockResolvedValue({
+        ...installed('master-849-d04e895'),
+        installed: false,
+        reason: 'already-installed',
+      })
+      await useImageGenerationStore.getState().updateEngine()
+      const state = useImageGenerationStore.getState()
+      expect(fake.loadModel).not.toHaveBeenCalled()
+      expect(state.lastError?.code).toBe('ENGINE_UPDATE_REQUIRED')
+      expect(state.lastError?.message).toMatch(/no newer media engine/i)
+      expect(state.pendingEngineArtifactId).toBe('qwen-image-2.1:q4_k_m')
+    })
+
     it('loads Qwen with an already compatible engine without requesting an update', async () => {
       const status = makeStatus()
       if (status.install.state !== 'installed') throw new Error('fixture')

@@ -47,6 +47,7 @@ import {
   installDiffusionEngine,
 } from '@/services/diffusion/engine'
 import { engineBuildProxy } from '@/services/engine-builds/core'
+import type { EngineBuildInstallResult } from '@/services/engine-builds/types'
 import type {
   DiffusionError,
   DiffusionEvent,
@@ -268,6 +269,8 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 ) => {
   const diffusion = () => getServiceHub().diffusion()
   let updatingEngine = false
+  /** What the core answered the last `installEngine`; null after a failure. */
+  let lastInstall: EngineBuildInstallResult | null = null
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<ImageJob> =>
@@ -642,6 +645,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
     installEngine: async ({ force } = {}) => {
       if (get().engineInstall.inFlight) return
+      lastInstall = null
       const startedAt = Date.now()
       set({ engineInstall: { ...emptyInstall, inFlight: true } })
       captureImageEngineInstall({
@@ -658,6 +662,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
               engineInstall: { ...state.engineInstall, transferred, total },
             })),
         })
+        lastInstall = result
         captureImageEngineInstall({
           install_status: 'completed',
           backend: result.build.backend_id,
@@ -748,7 +753,25 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         // The core activates the new build under its load lock: it unloads
         // every session of another build and cancels the running job.
         await get().installEngine()
-        if (get().engineInstall.error === null) {
+        if (get().engineInstall.error === null && lastInstall?.installed === false) {
+          // The core had nothing newer to install (`already-installed`, or the
+          // active build is newer than the manifest's): the offer is no longer
+          // true, and a model waiting for a newer engine still cannot load.
+          set({
+            engineUpdate: { ...noUpdate, checkedAt: Date.now() },
+            engineUpdatingTo: null,
+          })
+          retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
+          if (pending) {
+            set({
+              lastError: {
+                code: 'ENGINE_UPDATE_REQUIRED',
+                message:
+                  'No newer media engine is published yet; this model needs a newer one than the installed build.',
+              },
+            })
+          }
+        } else if (get().engineInstall.error === null) {
           // One set: whoever watches `engineUpdatingTo` fall reads the outcome
           // from `availableTag`, which is cleared only on success.
           set({

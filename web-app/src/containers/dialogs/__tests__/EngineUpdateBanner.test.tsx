@@ -37,6 +37,11 @@ vi.mock('@/stores/image-generation-store', () => ({
 // MLX is installed by the core, under a download task of the app's.
 const engineBuilds = vi.hoisted(() => ({
   installEngineBuildWithProgress: vi.fn(),
+  checkEngineBuildUpdates: vi.fn(),
+}))
+vi.mock('@/services/engine-builds/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/engine-builds/core')>()),
+  checkEngineBuildUpdates: engineBuilds.checkEngineBuildUpdates,
 }))
 vi.mock('@/services/engine-builds/install', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/engine-builds/install')>()),
@@ -72,6 +77,11 @@ describe('EngineUpdateBanner', () => {
     imageStore.checkEngineUpdate.mockResolvedValue(undefined)
     imageStore.updateEngine.mockResolvedValue(undefined)
     engineBuilds.installEngineBuildWithProgress.mockResolvedValue(undefined)
+    engineBuilds.checkEngineBuildUpdates.mockResolvedValue({
+      update_needed: true,
+      current: { tag: 'mlxvlm-macos-arm64-07ba5a1', backend_id: 'macos-arm64', origin: 'bundled' },
+      target: { tag: 'mlxvlm-macos-arm64-abc1234', backend_id: 'macos-arm64', download_bytes: 1 },
+    })
   })
 
   it('renders nothing when no engine update is on offer', () => {
@@ -353,6 +363,27 @@ describe('EngineUpdateBanner', () => {
         { taskId: 'engine-build-mlx-mlxvlm-macos-arm64-abc1234' }
       )
       expect(getByName).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(
+          screen.queryByText('updater:engine.title')
+        ).not.toBeInTheDocument()
+      )
+    })
+
+    it('asks the core again first, and installs nothing when the offer is no longer true', async () => {
+      const user = userEvent.setup()
+      engineBuilds.checkEngineBuildUpdates.mockResolvedValue({
+        update_needed: false,
+        current: { tag: 'mlxvlm-macos-arm64-abc1234', backend_id: 'macos-arm64', origin: 'bundled' },
+        target: null,
+      })
+      publish(MLX_OFFER)
+      render(<EngineUpdateBanner />)
+      await screen.findByText('updater:engine.title')
+      await user.click(screen.getByRole('button', { name: 'updater:update' }))
+
+      expect(engineBuilds.checkEngineBuildUpdates).toHaveBeenCalledWith('mlx', {})
+      expect(engineBuilds.installEngineBuildWithProgress).not.toHaveBeenCalled()
       await waitFor(() =>
         expect(
           screen.queryByText('updater:engine.title')

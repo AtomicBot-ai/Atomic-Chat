@@ -6,6 +6,7 @@ import {
   dismissEngineUpdate,
   isEngineUpdateSnoozed,
   readEngineUpdateOffer,
+  retractEngineUpdateOffer,
   snoozeEngineUpdate,
   ENGINE_UPDATE_AVAILABLE_EVENT,
   ENGINE_UPDATE_RETRACTED_EVENT,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/engineUpdateOffer'
 import { ExtensionManager } from '@/lib/extension'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import { checkEngineBuildUpdates } from '@/services/engine-builds/core'
 import {
   engineBuildTaskId,
   installEngineBuildWithProgress,
@@ -61,15 +63,21 @@ const throughImageStore = async (offer: EngineUpdateOffer): Promise<void> => {
 }
 
 /**
- * "Update" for MLX: the core installs the offered build (its manifest names
- * it; the offer only says which). The download shows in the panel under the
- * app's task id; the core unloads MLX sessions of the old build when the new
- * one is in place, and `mlx-extension` follows its `engine-build:changed`.
- * Not awaited, as for the media engine: the banner comes down once it starts.
+ * "Update" for MLX: the core installs the build its manifest names. It is
+ * asked again first, so an offer persisted on an earlier launch that is no
+ * longer true installs nothing and comes down; the download task is named
+ * after the build the core names now. The panel shows the download; the core
+ * unloads MLX sessions of the old build, and `mlx-extension` follows its
+ * `engine-build:changed`. Not awaited, as for the media engine.
  */
 const throughCoreInstall = async (offer: EngineUpdateOffer): Promise<void> => {
+  const check = await checkEngineBuildUpdates('mlx', {})
+  if (!check.update_needed || !check.target) {
+    retractEngineUpdateOffer(offer.provider)
+    return
+  }
   void installEngineBuildWithProgress('mlx', {
-    taskId: engineBuildTaskId('mlx', offer.targetVersion),
+    taskId: engineBuildTaskId('mlx', check.target.tag),
   }).catch((error) => {
     // The panel already shows the failure; the next launch offers it again.
     console.error('MLX engine update failed:', error)
