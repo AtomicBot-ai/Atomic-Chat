@@ -44,6 +44,7 @@ import {
   isDiffusionModelDownloadTaskId,
   resolveDiffusionDownloadTaskId,
 } from '@/lib/diffusion/models'
+import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import {
   decisionDownloadTaskId,
@@ -888,6 +889,7 @@ export function DownloadManagement() {
   // from the files on disk (change add-tensorrt-llm-model-hub, design D6).
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
+    !isDiffusionEngineTaskId(id) &&
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&

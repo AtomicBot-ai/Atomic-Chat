@@ -61,6 +61,14 @@ export function removeEngineBuild(
   )
 }
 
+/**
+ * Stop the download an install runs under `taskId`. The install then rejects
+ * with `CANCELLED` and leaves nothing on disk; a new install starts over.
+ */
+export async function cancelEngineBuildDownload(taskId: string): Promise<void> {
+  await call('POST', `/downloads/${encodeURIComponent(taskId)}/cancel`)
+}
+
 /** The app's HTTPS proxy setting in the core's `ProxyConfig` shape, or `undefined` when off. */
 export function engineBuildProxy(): EngineBuildProxy | undefined {
   const state = useProxyConfig.getState()
