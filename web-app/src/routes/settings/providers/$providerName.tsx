@@ -2773,7 +2773,9 @@ function ProviderDetail() {
                                   engine:
                                     provider.provider === 'mlx'
                                       ? 'mlx'
-                                      : 'gguf',
+                                      : provider.provider === 'atomic-prism'
+                                        ? 'atomic-prism'
+                                        : 'gguf',
                                 },
                               })
                             }

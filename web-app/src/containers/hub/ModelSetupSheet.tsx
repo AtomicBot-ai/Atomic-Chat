@@ -2,27 +2,36 @@ import { useCallback, useEffect, useState } from 'react'
 import { IconAlertTriangle, IconLoader2 } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
+import { FamilyLogoMark } from '@/containers/ModelLogo'
 import { useHubFileSetup, useModelSetupBytes } from '@/hooks/useModelSetup'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { formatBytes, formatProgressPair } from '@/lib/downloadFormat'
+import {
+  bytesUnit,
+  formatBytes,
+  formatProgressPair,
+  shortModelName,
+} from '@/lib/downloadFormat'
 import {
   isFinalSetup,
   isRunningSetup,
   isStandingReadySetup,
+  PRISM_PROVIDER,
+  setupErrorText as errorText,
   type HubFile,
 } from '@/lib/model-setup'
+import { getProviderLogo } from '@/lib/utils'
 import type {
   ModelSetupError,
   ModelSetupPlan,
@@ -48,13 +57,8 @@ export type ModelSetupSheetProps = {
 
 const STALE_PLAN = 'MODEL_SETUP_PLAN_STALE'
 
-function errorText(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const { message, details } = error as ModelSetupError
-    return details ? `${message} (${details})` : message
-  }
-  return String(error)
-}
+/** `442 MB`, `16.50 GB`: a size with its unit, for one value on its own. */
+const sizeText = (bytes: number) => `${formatBytes(bytes)} ${bytesUnit(bytes)}`
 
 /**
  * "Set up Bonsai": the one step between a PrismML-only file in the Hub and a
@@ -161,19 +165,33 @@ export function ModelSetupSheet({
     (plan ?? setup?.plan)?.verdict.outcome === 'engine_update_required'
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-md" data-testid="model-setup-sheet">
-        <SheetHeader>
-          <SheetTitle>
-            {t('hub:prismSetupTitle', { model: modelName })}
-          </SheetTitle>
-          <SheetDescription>{t('hub:prismSetupDescription')}</SheetDescription>
-        </SheetHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
+        data-testid="model-setup-sheet"
+      >
+        <DialogHeader className="min-w-0 items-center text-center sm:text-center">
+          <div className="mb-2 grid size-14 place-items-center rounded-2xl border bg-secondary/60 shadow-sm">
+            <FamilyLogoMark
+              src={getProviderLogo(PRISM_PROVIDER)!}
+              className="size-7"
+            />
+          </div>
+          <DialogTitle
+            className="max-w-full leading-snug break-words"
+            title={modelName}
+          >
+            {t('hub:prismSetupTitle', { model: shortModelName(modelName) })}
+          </DialogTitle>
+          <DialogDescription className="text-pretty">
+            {t('hub:prismSetupDescription')}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 text-sm">
+        <div className="flex min-w-0 flex-col gap-3 text-sm">
           {engineUpdate && (
             <p
-              className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
               data-testid="model-setup-engine-update"
             >
               {t('hub:prismEngineUpdateRequired')}
@@ -181,13 +199,19 @@ export function ModelSetupSheet({
           )}
 
           {setup && !showPlan && (
-            <div className="flex flex-col gap-2" aria-live="polite">
+            <div
+              className="flex flex-col gap-2 rounded-lg border bg-secondary/50 p-3"
+              aria-live="polite"
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium" data-testid="model-setup-stage">
+                <span
+                  className="min-w-0 truncate font-medium"
+                  data-testid="model-setup-stage"
+                >
                   {t(`hub:prismStage_${setup.stage}`)}
                 </span>
                 {isRunningSetup(setup) && (
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
                     {percent}%
                   </span>
                 )}
@@ -214,18 +238,18 @@ export function ModelSetupSheet({
           )}
 
           {showPlan && !plan && !planError && (
-            <p className="flex items-center gap-2 text-muted-foreground">
+            <p className="flex items-center justify-center gap-2 rounded-lg border bg-secondary/50 p-3 text-muted-foreground">
               <IconLoader2 size={14} className="animate-spin" />
               {t('hub:prismSetupPlanning')}
             </p>
           )}
 
           {showPlan && plan && (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg border bg-secondary/50 p-3">
               <dt className="text-muted-foreground">
                 {t('hub:prismSetupEngine')}
               </dt>
-              <dd data-testid="model-setup-engine">
+              <dd className="break-words" data-testid="model-setup-engine">
                 {plan.engine
                   ? plan.engine.installed
                     ? t('hub:prismSetupEngineInstalled', {
@@ -233,7 +257,7 @@ export function ModelSetupSheet({
                       })
                     : t('hub:prismSetupEngineDownload', {
                         version: plan.engine.version,
-                        size: formatBytes(plan.engine.download_size),
+                        size: sizeText(plan.engine.download_size),
                       })
                   : t('hub:prismSetupEngineNone')}
               </dd>
@@ -242,7 +266,7 @@ export function ModelSetupSheet({
               </dt>
               <dd className="break-all">
                 {plan.model.file}
-                {plan.model.size > 0 && ` · ${formatBytes(plan.model.size)}`}
+                {plan.model.size > 0 && ` · ${sizeText(plan.model.size)}`}
               </dd>
               {plan.projector && (
                 <>
@@ -252,24 +276,24 @@ export function ModelSetupSheet({
                   <dd className="break-all">
                     {plan.projector.file}
                     {plan.projector.size > 0 &&
-                      ` · ${formatBytes(plan.projector.size)}`}
+                      ` · ${sizeText(plan.projector.size)}`}
                   </dd>
                 </>
               )}
               <dt className="text-muted-foreground">
                 {t('hub:prismSetupTotal')}
               </dt>
-              <dd data-testid="model-setup-total">
-                {formatBytes(plan.total_download_bytes)}
+              <dd className="tabular-nums" data-testid="model-setup-total">
+                {sizeText(plan.total_download_bytes)}
                 {plan.free_bytes !== null &&
-                  ` · ${t('hub:prismSetupFree', { size: formatBytes(plan.free_bytes) })}`}
+                  ` · ${t('hub:prismSetupFree', { size: sizeText(plan.free_bytes) })}`}
               </dd>
             </dl>
           )}
 
           {showPlan && offersProjector && (
-            <label className="flex items-center justify-between gap-3">
-              <span>{t('hub:prismSetupVision')}</span>
+            <label className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+              <span className="min-w-0">{t('hub:prismSetupVision')}</span>
               <Switch
                 checked={includeProjector}
                 onCheckedChange={setIncludeProjector}
@@ -298,15 +322,16 @@ export function ModelSetupSheet({
           )}
 
           {planError && (
-            <p className="text-xs text-destructive" role="alert">
+            <p className="text-xs break-words text-destructive" role="alert">
               {planError}
             </p>
           )}
         </div>
 
-        <SheetFooter className="flex-row justify-end gap-2">
+        <DialogFooter className="mt-2">
           {setup && ready ? (
             <Button
+              size="sm"
               onClick={() => onReady(setup.plan.model_id)}
               data-testid="model-setup-new-chat"
             >
@@ -315,20 +340,26 @@ export function ModelSetupSheet({
           ) : setup && !showPlan ? (
             <>
               <Button
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 disabled={busy}
                 onClick={() => void act('cancel')}
               >
                 {t('common:cancel')}
               </Button>
               {setup.stage === 'interrupted' && (
-                <Button disabled={busy} onClick={() => void act('resume')}>
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void act('resume')}
+                >
                   {t('hub:prismSetupResume')}
                 </Button>
               )}
             </>
           ) : (
             <Button
+              size="sm"
               disabled={busy || !plan || blocked}
               onClick={() => void start()}
               data-testid="model-setup-start"
@@ -338,8 +369,8 @@ export function ModelSetupSheet({
                 : t('hub:prismSetupStart')}
             </Button>
           )}
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
