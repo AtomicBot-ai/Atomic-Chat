@@ -33,7 +33,6 @@
     "llamacpp:default",
     "llamacpp-upstream:default",
     "atomic-audio:default",
-    "mlx:default",
     "updater:default",
     "updater:allow-check",
     "autostart:default",

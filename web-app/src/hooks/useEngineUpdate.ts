@@ -13,6 +13,10 @@ import {
 } from '@/lib/engineUpdateOffer'
 import { ExtensionManager } from '@/lib/extension'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+import {
+  engineBuildTaskId,
+  installEngineBuildWithProgress,
+} from '@/services/engine-builds/install'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 
 interface BackendDownloadCapableExtension {
@@ -57,16 +61,27 @@ const throughImageStore = async (offer: EngineUpdateOffer): Promise<void> => {
 }
 
 /**
+ * "Update" for MLX: the core installs the offered build (its manifest names
+ * it; the offer only says which). The download shows in the panel under the
+ * app's task id; the core unloads MLX sessions of the old build when the new
+ * one is in place, and `mlx-extension` follows its `engine-build:changed`.
+ * Not awaited, as for the media engine: the banner comes down once it starts.
+ */
+const throughCoreInstall = async (offer: EngineUpdateOffer): Promise<void> => {
+  void installEngineBuildWithProgress('mlx', {
+    taskId: engineBuildTaskId('mlx', offer.targetVersion),
+  }).catch((error) => {
+    // The panel already shows the failure; the next launch offers it again.
+    console.error('MLX engine update failed:', error)
+  })
+}
+
+/**
  * Providers that can offer an engine update, most-preferred first, each with
  * what "Update" does for it. The llama.cpp providers ship side by side, and
  * only one banner may be on screen — the default provider's offer wins, the
- * others wait until the first is dealt with. The media engine comes last: a
- * chat engine is what most sessions use.
- *
- * MLX is deliberately absent: its sidecar ships inside the app bundle and has
- * no independent release stream to compare against, so there is nothing to
- * offer until one exists. Adding it is a matter of publishing an offer from
- * `mlx-extension` — nothing in this hook or the banner is llama.cpp-specific.
+ * others wait until the first is dealt with. MLX follows them; the media
+ * engine comes last: a chat engine is what most sessions use.
  */
 const ENGINE_PROVIDERS: {
   provider: string
@@ -84,6 +99,7 @@ const ENGINE_PROVIDERS: {
     provider: 'atomic-prism',
     apply: throughExtension('@janhq/atomic-prism-extension'),
   },
+  { provider: 'mlx', apply: throughCoreInstall },
   { provider: MEDIA_ENGINE_PROVIDER, apply: throughImageStore },
 ]
 

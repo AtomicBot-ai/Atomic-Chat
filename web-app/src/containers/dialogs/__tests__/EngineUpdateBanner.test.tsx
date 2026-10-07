@@ -34,6 +34,15 @@ vi.mock('@/stores/image-generation-store', () => ({
   useImageGenerationStore: { getState: () => imageStore },
 }))
 
+// MLX is installed by the core, under a download task of the app's.
+const engineBuilds = vi.hoisted(() => ({
+  installEngineBuildWithProgress: vi.fn(),
+}))
+vi.mock('@/services/engine-builds/install', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/engine-builds/install')>()),
+  ...engineBuilds,
+}))
+
 const OFFER: EngineUpdateOffer = {
   provider: 'llamacpp-upstream',
   currentBackend: 'b10840/macos-arm64',
@@ -62,6 +71,7 @@ describe('EngineUpdateBanner', () => {
     imageStore.engineUpdate.availableTag = null
     imageStore.checkEngineUpdate.mockResolvedValue(undefined)
     imageStore.updateEngine.mockResolvedValue(undefined)
+    engineBuilds.installEngineBuildWithProgress.mockResolvedValue(undefined)
   })
 
   it('renders nothing when no engine update is on offer', () => {
@@ -311,6 +321,60 @@ describe('EngineUpdateBanner', () => {
           screen.queryByText('updater:engine.title')
         ).not.toBeInTheDocument()
       )
+    })
+  })
+
+  describe('MLX', () => {
+    const MLX_OFFER: EngineUpdateOffer = {
+      provider: 'mlx',
+      currentBackend: 'mlxvlm-macos-arm64-07ba5a1/macos-arm64',
+      targetBackend: 'mlxvlm-macos-arm64-abc1234/macos-arm64',
+      currentVersion: 'mlxvlm-macos-arm64-07ba5a1',
+      targetVersion: 'mlxvlm-macos-arm64-abc1234',
+      downloadSizeBytes: 210_000_000,
+      restartRequired: false,
+      releaseNotesUrl:
+        'https://github.com/AtomicBot-ai/mlx-vlm/releases/tag/mlxvlm-macos-arm64-abc1234',
+    }
+
+    it('installs the offered MLX build through the core once the user accepts', async () => {
+      const user = userEvent.setup()
+      publish(MLX_OFFER)
+      render(<EngineUpdateBanner />)
+
+      expect(
+        await screen.findByText('mlxvlm-macos-arm64-abc1234')
+      ).toBeInTheDocument()
+      expect(engineBuilds.installEngineBuildWithProgress).not.toHaveBeenCalled()
+      await user.click(screen.getByRole('button', { name: 'updater:update' }))
+
+      expect(engineBuilds.installEngineBuildWithProgress).toHaveBeenCalledWith(
+        'mlx',
+        { taskId: 'engine-build-mlx-mlxvlm-macos-arm64-abc1234' }
+      )
+      expect(getByName).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(
+          screen.queryByText('updater:engine.title')
+        ).not.toBeInTheDocument()
+      )
+    })
+
+    it('waits behind a llama.cpp offer and goes ahead of the media engine', async () => {
+      publish(MLX_OFFER)
+      publish({ ...OFFER, provider: 'sd-cpp', targetVersion: 'master-900-abc1234' })
+      const first = render(<EngineUpdateBanner />)
+      expect(
+        await screen.findByText('mlxvlm-macos-arm64-abc1234')
+      ).toBeInTheDocument()
+      first.unmount()
+
+      publish()
+      render(<EngineUpdateBanner />)
+      expect(await screen.findByText('b10909-mix-bea84f7')).toBeInTheDocument()
+      expect(
+        screen.queryByText('mlxvlm-macos-arm64-abc1234')
+      ).not.toBeInTheDocument()
     })
   })
 })

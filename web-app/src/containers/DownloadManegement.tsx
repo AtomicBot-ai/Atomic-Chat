@@ -45,6 +45,7 @@ import {
   resolveDiffusionDownloadTaskId,
 } from '@/lib/diffusion/models'
 import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
+import { isEngineBuildTaskId } from '@/services/engine-builds/install'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import {
   decisionDownloadTaskId,
@@ -890,6 +891,7 @@ export function DownloadManagement() {
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&
+    !isEngineBuildTaskId(id) &&
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&

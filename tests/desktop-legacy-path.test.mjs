@@ -87,7 +87,6 @@ const PLUGIN_UTILITY_COMMANDS = {
     'install_bundled_backend',
     'fetch_manifest_http1',
   ],
-  mlx: ['get_mlx_server_version'],
 }
 
 test('the runtime plugins register only utility commands', () => {
@@ -110,6 +109,19 @@ test('the Foundation Models plugin is gone', () => {
   )
   const cargo = readFileSync(join(ROOT, 'src-tauri', 'Cargo.toml'), 'utf8')
   assert.ok(!cargo.includes('tauri-plugin-foundation-models'), 'Cargo.toml still depends on it')
+})
+
+// The core reports the MLX build (`/engine-builds/mlx/catalog`); the plugin's one command read the
+// installer's version file (change move-sdcpp-mlx-install-to-core, task 6.2).
+test('the MLX plugin is gone', () => {
+  assert.throws(() => statSync(join(ROOT, 'src-tauri', 'plugins', 'tauri-plugin-mlx', 'src')))
+  const cargo = readFileSync(join(ROOT, 'src-tauri', 'Cargo.toml'), 'utf8')
+  assert.ok(!cargo.includes('tauri-plugin-mlx'), 'Cargo.toml still depends on it')
+  for (const capability of readdirSync(join(ROOT, 'src-tauri', 'capabilities')))
+    assert.ok(
+      !readFileSync(join(ROOT, 'src-tauri', 'capabilities', capability), 'utf8').includes('"mlx:'),
+      `${capability} still grants the MLX plugin`
+    )
 })
 
 test('the webview calls no plugin command outside the utilities', () => {

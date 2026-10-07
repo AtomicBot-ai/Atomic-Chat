@@ -9,7 +9,6 @@ export default defineConfig({
   // Tests mock them, but Vite resolves the entry first; the sources resolve without a build.
   resolve: {
     alias: {
-      '@janhq/tauri-plugin-mlx-api': plugin('tauri-plugin-mlx'),
       '@janhq/tauri-plugin-llamacpp-api': plugin('tauri-plugin-llamacpp'),
     },
   },

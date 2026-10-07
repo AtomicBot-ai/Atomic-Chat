@@ -41,6 +41,10 @@ import {
   useParams,
 } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import {
+  describeMlxBuild,
+  useMlxEngineUpdateCheck,
+} from '@/hooks/useMlxEngineUpdateCheck'
 import Capabilities from '@/containers/Capabilities'
 import {
   ModelSourceBadge,
@@ -167,6 +171,7 @@ function ProviderDetail() {
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
   const [isCheckingEngineUpdate, setIsCheckingEngineUpdate] = useState(false)
+  const mlxEngineCheck = useMlxEngineUpdateCheck()
   /// localStorage key holding the pending backend of the provider this page
   /// shows. Each llama provider writes its own key, so reading the upstream
   /// one on the turboquant page would show a foreign backend as pending.
@@ -2511,6 +2516,21 @@ function ProviderDetail() {
                               </div>
                             )}
                           {setting.key === 'version_backend' &&
+                            provider?.provider === 'mlx' &&
+                            (() => {
+                              const build = describeMlxBuild(
+                                String(setting.controller_props?.value ?? '')
+                              )
+                              return build ? (
+                                <div
+                                  className="mt-1 text-sm text-muted-foreground"
+                                  data-testid="mlx-build-origin"
+                                >
+                                  {t(`settings:mlxEngine.origin.${build.origin}`)}
+                                </div>
+                              ) : null
+                            })()}
+                          {setting.key === 'version_backend' &&
                             runningBackendNotice && (
                               <div className="mt-1 flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500">
                                 <IconAlertTriangle size={14} />
@@ -2548,6 +2568,34 @@ function ProviderDetail() {
                                       {isInstallingBackend
                                         ? 'Installing Backend...'
                                         : 'Install Backend from File'}
+                                    </span>
+                                  </Button>
+                                )}
+                                {/* MLX: the core compares the active
+                                    build with conf's manifest; a newer one
+                                    becomes the banner's offer (design D10). */}
+                                {provider?.provider === 'mlx' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void mlxEngineCheck.check()}
+                                    disabled={mlxEngineCheck.checking}
+                                    className="w-[16rem]"
+                                    data-testid="mlx-engine-check"
+                                  >
+                                    {mlxEngineCheck.checking ? (
+                                      <IconLoader
+                                        size={12}
+                                        className="animate-spin text-muted-foreground"
+                                      />
+                                    ) : (
+                                      <IconRefresh
+                                        size={12}
+                                        className="text-muted-foreground"
+                                      />
+                                    )}
+                                    <span>
+                                      {t('settings:mlxEngine.checkForUpdates')}
                                     </span>
                                   </Button>
                                 )}

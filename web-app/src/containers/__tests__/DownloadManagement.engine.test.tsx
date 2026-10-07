@@ -145,4 +145,22 @@ describe('DownloadManagement — the media engine install (task 5.3)', () => {
     )
     expect(toast.error.mock.calls).toEqual([])
   })
+
+  it('cancels an MLX engine install in the core too, with no Pause', () => {
+    const MLX_TASK = 'engine-build-mlx-mlxvlm-macos-arm64-abc1234'
+    render(<DownloadManagement />)
+    act(() =>
+      emit(DownloadEvent.onFileDownloadUpdate, {
+        modelId: MLX_TASK,
+        percent: 0.1,
+        size: { transferred: 21_000_000, total: 210_000_000 },
+        downloadType: 'Backend',
+      })
+    )
+    expect(screen.queryByRole('button', { name: 'pause' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(core.cancelEngineBuildDownload).toHaveBeenCalledWith(MLX_TASK)
+    expect(abortDownload).not.toHaveBeenCalled()
+  })
 })
