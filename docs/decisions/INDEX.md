@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-392 records, 2026-05-19 → 2026-10-06.
+393 records, 2026-05-19 → 2026-10-07.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (22)
+## Local image & video generation (23)
 
+- **2026-10-07** — [Move installed media engines onto the fork's build with an `-a<rev>` tag](2026-10-07-move-installed-media-engines-onto-the-fork-build-with-an-atomic-tag.md) — supersedes the no-suffix clause of the 2026-10-06 fork record.
 - **2026-10-06** — [Fall back from a media engine build that fails its probe, and stop shipping Windows ROCm](2026-10-06-fall-back-from-a-media-engine-build-that-fails-its-probe.md)
 - **2026-10-06** — [Build every stable-diffusion.cpp engine in an Atomic fork, mirrored under the upstream tag](2026-10-06-build-every-stable-diffusion-cpp-engine-in-an-atomic-fork.md)
 - **2026-09-30** — [Shape the media form for the picked model, and let Generate start it](2026-09-30-shape-the-media-form-for-the-picked-model.md)

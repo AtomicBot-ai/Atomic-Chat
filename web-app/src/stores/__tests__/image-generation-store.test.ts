@@ -1435,6 +1435,22 @@ describe('engine updates', () => {
     )
   })
 
+  it('offers the fork rebuild of the installed tag, named by its -a<rev> suffix', async () => {
+    install.manifest.mockResolvedValue({
+      manifest: {
+        tag_name: 'master-849-d04e895-a36f1b1a',
+        upstream_repo: 'AtomicBot-ai/stable-diffusion.cpp',
+        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
+      },
+      source: 'remote' as const,
+      fetchedAt: 2,
+    })
+    await useImageGenerationStore.getState().checkEngineUpdate()
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
+      'master-849-d04e895-a36f1b1a'
+    )
+  })
+
   it('unloads the model, installs the new tag and clears the offer', async () => {
     useImageGenerationStore.setState({
       status: makeLoadedStatus(),
