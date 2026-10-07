@@ -1649,6 +1649,8 @@ jobs:
         uses: dcarbone/install-jq-action@v2.0.1
 
       - name: Install Linux system dependencies
+        # Unlike the full x64 image, ubuntu-22.04-arm ships without xdg-utils,
+        # and tauri-bundler copies xdg-open into the AppImage.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -1668,7 +1670,8 @@ jobs:
             pkg-config \
             patchelf \
             squashfs-tools \
-            unzip
+            unzip \
+            xdg-utils
 
       - name: Install Python dependencies
         # See build-linux-x64 (`yarn build:icon` imports PIL).
