@@ -1,4 +1,4 @@
-type Language = 'en' | 'fr' | 'id' | 'vn' | 'pl' | 'zh-CN' | 'zh-TW' | 'de-DE' | 'cs' | 'ko'
+type Language = 'en' | 'fr' | 'id' | 'vn' | 'pl' | 'zh-CN' | 'zh-TW' | 'de-DE' | 'cs' | 'ko' | 'hi'
 interface LogEntry {
   timestamp: string | number
   level: 'info' | 'warn' | 'error' | 'debug'

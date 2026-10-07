@@ -25,6 +25,7 @@ const LANGUAGES = [
   { value: 'ja', label: '日本語' },
   { value: 'ko', label: '한국어' },
   { value: 'ru', label: 'Русский' },
+  { value: 'hi', label: 'हिन्दी' },
 ]
 
 export default function LanguageSwitcher() {

@@ -1,0 +1,523 @@
+{
+  "assistants": "असिस्टेंट",
+  "hardware": "हार्डवेयर",
+  "mcp-servers": "MCP सर्वर",
+  "local_api_server": "लोकल API सर्वर",
+  "remote_access": "रिमोट एक्सेस",
+  "integrations": "इंटीग्रेशन",
+  "experimental": "एक्सपेरिमेंटल",
+  "claude_code": "Claude Code",
+  "hermes_agent": "Hermes Agent",
+  "https_proxy": "HTTPS प्रॉक्सी",
+  "extensions": "एक्सटेंशन",
+  "attachments": "अटैचमेंट्स",
+  "general": "जनरल",
+  "settings": "सेटिंग्स",
+  "modelProviders": "मॉडल प्रोवाइडर्स",
+  "manageProviders": "प्रोवाइडर्स मैनेज करें",
+  "hiddenProviders": "{{count}} डिसेबल",
+  "hideProvider": "प्रोवाइडर छिपाएं",
+  "showProvider": "प्रोवाइडर दिखाएं",
+  "interface": "इंटरफ़ेस",
+  "privacy": "प्राइवेसी",
+  "keyboardShortcuts": "शॉर्टकट्स",
+  "newChat": "नई चैट",
+  "newTask": "नया टास्क",
+  "newBadge": "नया",
+  "newAgentChat": "नई एजेंट चैट",
+  "chats": "चैट्स",
+  "agentChats": "एजेंट चैट्स",
+  "searchChats": "चैट्स सर्च करें",
+  "searchAgentChats": "एजेंट चैट्स सर्च करें",
+  "favorites": "फ़ेवरेट्स",
+  "recents": "हाल की",
+  "hub": "हब",
+  "models": "मॉडल",
+  "launch": "इंटीग्रेशन",
+  "skills": "स्किल्स",
+  "agentSkill": {
+    "selected": "स्किल: {{name}}",
+    "remove": "चुनी हुई स्किल हटाएं",
+    "loading": "स्किल्स लोड हो रही हैं…",
+    "noMatches": "कोई मैचिंग एनेबल्ड स्किल नहीं"
+  },
+  "skillsEmpty": "कोई स्किल इंस्टॉल नहीं है।",
+  "selectSkill": "इंस्ट्रक्शन देखने के लिए एक स्किल चुनें।",
+  "enableSkill": "स्किल एनेबल करें",
+  "skillEnabled": "एनेबल्ड",
+  "skillDisabled": "डिसेबल्ड",
+  "bundled": "बंडल्ड",
+  "incompatible": "इनकंपैटिबल",
+  "dangerous": "सेंसिटिव",
+  "scriptsCount": "{{count}} स्क्रिप्ट",
+  "scriptsCount_other": "{{count}} स्क्रिप्ट्स",
+  "refresh": "रीफ़्रेश करें",
+  "createNewSkill": "नई बनाएं",
+  "writeSkillInstructions": "स्किल के इंस्ट्रक्शन लिखें",
+  "uploadASkill": "एक स्किल अपलोड करें",
+  "uploadSkill": "स्किल अपलोड करें",
+  "uploadSkillDescription": "स्किल की डेफिनिशन अपलोड करें।",
+  "dropSkillToUpload": "ड्रैग-ड्रॉप करें या अपलोड करने के लिए क्लिक करें",
+  "uploadingSkill": "स्किल अपलोड हो रही है…",
+  "uploadOneSkill": "एक बार में एक ही स्किल अपलोड करें",
+  "skillFiles": "स्किल फ़ाइलें",
+  "skillFileRequirements": "फ़ाइल की ज़रूरतें",
+  "skillMarkdownRequirement": ".md फ़ाइल में स्किल का नाम और डिस्क्रिप्शन YAML फ़ॉर्मेट में होना चाहिए",
+  "skillArchiveRequirement": ".zip या .skill फ़ाइल में एक SKILL.md फ़ाइल होनी चाहिए",
+  "createSkillDescription": "एजेंट मोड के लिए एक रीयूज़ेबल वर्कफ़्लो बनाएं।",
+  "skillName": "स्किल का नाम",
+  "skillNamePlaceholder": "weekly-status-report",
+  "description": "डिस्क्रिप्शन",
+  "skillDescriptionPlaceholder": "हाल के काम से वीकली स्टेटस रिपोर्ट जनरेट करें। अपडेट या प्रोग्रेस समरी मांगे जाने पर इस्तेमाल करें।",
+  "instructions": "इंस्ट्रक्शन",
+  "skillInstructionsPlaceholder": "मेरे हाल के काम को तीन पार्ट में समराइज़ करें: क्या अच्छा हुआ, क्या अटका, और आगे क्या करना है। टोन प्रोफेशनल पर नैचुरल रखें…",
+  "skillActions": "स्किल एक्शन",
+  "downloadSkill": "डाउनलोड करें",
+  "skillExported": "स्किल एक्सपोर्ट हो गई",
+  "tryInChat": "चैट में ट्राई करें",
+  "editSkill": "स्किल एडिट करें",
+  "editSkillDescription": "डिस्क्रिप्शन और इंस्ट्रक्शन अपडेट करें। स्किल का नाम नहीं बदल सकते।",
+  "uninstallSkill": "अनइंस्टॉल करें",
+  "skillUnavailable": "उपलब्ध नहीं",
+  "skillError": "स्किल एरर",
+  "skillInstructions": "इंस्ट्रक्शन",
+  "deleteSkill": "स्किल डिलीट करें",
+  "deleteSkillDescription": "कस्टम स्किल “{{name}}” डिलीट करनी है? इसे बाद में वापस नहीं लाया जा सकेगा।",
+  "helpSupport": "हेल्प और सपोर्ट",
+  "helpUsImproveJan": "Atomic Bot को बेहतर बनाने में मदद करें",
+  "unstarAll": "सभी से स्टार हटाएं",
+  "unstar": "स्टार हटाएं",
+  "deleteAll": "सभी डिलीट करें",
+  "star": "स्टार करें",
+  "rename": "रीनेम करें",
+  "delete": "डिलीट करें",
+  "copied": "कॉपी हो गया!",
+  "dataFolder": "डेटा फ़ोल्डर",
+  "others": "अन्य",
+  "language": "लैंग्वेज",
+  "login": "लॉग इन करें",
+  "loginWith": "{{provider}} से लॉग इन करें",
+  "loginFailed": "लॉग इन नहीं हो सका",
+  "logout": "लॉग आउट करें",
+  "loggingOut": "लॉग आउट हो रहा है...",
+  "loggedOut": "लॉग आउट हो गए",
+  "logoutFailed": "लॉग आउट नहीं हो सका",
+  "profile": "प्रोफ़ाइल",
+  "reset": "रीसेट करें",
+  "search": "सर्च करें",
+  "searchThreads": "थ्रेड्स सर्च करें...",
+  "toNavigate": "नेविगेट करने के लिए",
+  "toSelect": "सिलेक्ट करने के लिए",
+  "toClose": "बंद करने के लिए",
+  "clearRecent": "क्लियर करें",
+  "name": "नाम",
+  "cancel": "रद्द करें",
+  "create": "बनाएं",
+  "save": "सेव करें",
+  "edit": "एडिट करें",
+  "copy": "कॉपी करें",
+  "back": "वापस",
+  "close": "बंद करें",
+  "done": "हो गया",
+  "next": "अगला",
+  "finish": "फिनिश",
+  "skip": "स्किप करें",
+  "allow": "अनुमति दें",
+  "deny": "मना करें",
+  "start": "स्टार्ट करें",
+  "stop": "रोकें",
+  "preview": "प्रीव्यू",
+  "compactWidth": "कॉम्पैक्ट विड्थ",
+  "fullWidth": "फ़ुल विड्थ",
+  "dark": "डार्क",
+  "light": "लाइट",
+  "system": "सिस्टम",
+  "auto": "ऑटो",
+  "english": "इंग्लिश",
+  "medium": "मीडियम",
+  "newThread": "नया थ्रेड",
+  "noResultsFound": "कोई रिज़ल्ट नहीं मिला",
+  "noThreadsYet": "अभी तक कोई थ्रेड नहीं",
+  "noThreadsYetDesc": "यहां अपनी थ्रेड हिस्ट्री देखने के लिए एक नई चैट शुरू करें।",
+  "downloads": "डाउनलोड्स",
+  "downloading": "डाउनलोड हो रहा है",
+  "cancelDownload": "डाउनलोड कैंसल करें",
+  "pauseDownload": "डाउनलोड रोकें",
+  "resumeDownload": "डाउनलोड फिर से शुरू करें",
+  "downloadCancelled": "डाउनलोड कैंसल हो गया",
+  "downloadComplete": "डाउनलोड पूरा हुआ",
+  "thinking": "सोच रहा है...",
+  "working": "काम चल रहा है...",
+  "thought": "सोचा",
+  "callingTool": "टूल कॉल हो रहा है",
+  "completed": "पूरा हुआ",
+  "image": "इमेज",
+  "vision": "विज़न",
+  "embeddings": "एम्बेडिंग्स",
+  "tools": "टूल्स",
+  "webSearch": "वेब सर्च",
+  "reasoning": "रीज़निंग",
+  "reasoningToggleEnabled": "रीज़निंग ऑन",
+  "reasoningToggleDisabled": "रीज़निंग ऑफ़",
+  "proactive": "प्रोएक्टिव",
+  "selectAModel": "एक मॉडल चुनें",
+  "downloadModel": "एक मॉडल डाउनलोड करें",
+  "noToolsAvailable": "कोई टूल उपलब्ध नहीं है",
+  "noModelsFoundFor": "\"{{searchValue}}\" के लिए कोई मॉडल नहीं मिला",
+  "failedToLoadModels": "मॉडल लोड नहीं हो सके",
+  "failedToLoadModelsTimeout": "मॉडल लोड नहीं हो सके (टाइमआउट)",
+  "retry": "फिर से कोशिश करें",
+  "noModels": "कोई मॉडल नहीं मिला",
+  "customAvatar": "कस्टम अवतार",
+  "editAssistant": "असिस्टेंट एडिट करें",
+  "jan": "Atomic Bot",
+  "metadata": "मेटाडेटा",
+  "regenerate": "फिर से जनरेट करें",
+  "threadImage": "थ्रेड इमेज",
+  "editMessage": "मैसेज एडिट करें",
+  "deleteMessage": "मैसेज डिलीट करें",
+  "deleteThread": "थ्रेड डिलीट करें",
+  "renameThread": "थ्रेड रीनेम करें",
+  "threadTitle": "थ्रेड टाइटल",
+  "deleteAllThreads": "सभी थ्रेड डिलीट करें",
+  "allThreadsUnfavorited": "सभी थ्रेड फ़ेवरेट से हटाए गए",
+  "deleteAllThreadsConfirm": "क्या आप वाकई सभी थ्रेड डिलीट करना चाहते हैं? इसे बाद में वापस नहीं लाया जा सकेगा।",
+  "addProvider": "प्रोवाइडर जोड़ें",
+  "addOpenAIProvider": "OpenAI प्रोवाइडर जोड़ें",
+  "enterNameForProvider": "अपने प्रोवाइडर का नाम लिखें",
+  "providerAlreadyExists": "\"{{name}}\" नाम का प्रोवाइडर पहले से मौजूद है। कोई दूसरा नाम चुनें।",
+  "adjustFontSize": "फ़ॉन्ट साइज़ बदलें",
+  "changeLanguage": "लैंग्वेज बदलें",
+  "editTheme": "थीम एडिट करें",
+  "editCodeBlockStyle": "कोड ब्लॉक स्टाइल एडिट करें",
+  "editServerHost": "सर्वर होस्ट एडिट करें",
+  "pickColorWindowBackground": "विंडो बैकग्राउंड कलर चुनें",
+  "pickColorAppMainView": "ऐप मेन व्यू कलर चुनें",
+  "pickColorAppPrimary": "ऐप प्राइमरी कलर चुनें",
+  "pickColorAppAccent": "ऐप एक्सेंट कलर चुनें",
+  "pickColorAppDestructive": "ऐप डिस्ट्रक्टिव कलर चुनें",
+  "apiKeyRequired": "API की ज़रूरी है",
+  "enterTrustedHosts": "इस सर्वर का एड्रेस, जैसे 192.168.1.100, my-host (या सभी के लिए *)",
+  "placeholder": {
+    "chatInput": "मुझसे कुछ भी पूछें..."
+  },
+  "confirm": "कन्फ़र्म करें",
+  "ok": "OK",
+  "continue": "जारी रखें",
+  "loading": "लोड हो रहा है...",
+  "error": "एरर",
+  "success": "सक्सेस",
+  "warning": "वॉर्निंग",
+  "conversationNotAvailable": "यह चैट उपलब्ध नहीं है",
+  "conversationNotAvailableDescription": "जो चैट आप खोलने की कोशिश कर रहे हैं, वह या तो उपलब्ध नहीं है या डिलीट हो चुकी है।",
+  "temporaryChat": "टेम्पररी चैट",
+  "temporaryChatTooltip": "टेम्पररी चैट आपकी हिस्ट्री में नहीं दिखेगी",
+  "noResultsFoundDesc": "आपकी सर्च से मैच करती कोई चैट नहीं मिली। कोई दूसरा कीवर्ड ट्राई करें।",
+  "searchModels": "मॉडल सर्च करें...",
+  "searchStyles": "स्टाइल्स सर्च करें...",
+  "createAssistant": "असिस्टेंट बनाएं",
+  "enterApiKey": "API की लिखें",
+  "scrollToBottom": "नीचे स्क्रॉल करें",
+  "generateAiResponse": "AI रिस्पॉन्स जनरेट करें",
+  "continueAiResponse": "AI रिस्पॉन्स जारी रखें",
+  "addModel": {
+    "title": "मॉडल जोड़ें",
+    "modelId": "मॉडल ID",
+    "enterModelId": "मॉडल ID लिखें",
+    "addModel": "मॉडल जोड़ें",
+    "description": "प्रोवाइडर में एक नया मॉडल जोड़ें",
+    "exploreModels": "प्रोवाइडर की मॉडल लिस्ट देखें"
+  },
+  "mcpServers": {
+    "editServer": "सर्वर एडिट करें",
+    "addServer": "सर्वर जोड़ें",
+    "serverName": "सर्वर का नाम",
+    "enterServerName": "सर्वर का नाम लिखें",
+    "command": "कमांड",
+    "enterCommand": "कमांड लिखें",
+    "arguments": "आर्ग्युमेंट्स",
+    "argument": "आर्ग्युमेंट {{index}}",
+    "envVars": "एनवायरनमेंट वेरिएबल्स",
+    "key": "Key",
+    "value": "Value",
+    "save": "सेव करें"
+  },
+  "deleteServer": {
+    "title": "सर्वर डिलीट करें",
+    "delete": "डिलीट करें"
+  },
+  "editJson": {
+    "errorParse": "JSON पार्स नहीं हो सका",
+    "errorPaste": "JSON पेस्ट नहीं हो सका",
+    "errorFormat": "JSON फ़ॉर्मेट गलत है",
+    "titleAll": "सभी सर्वर कॉन्फ़िगरेशन एडिट करें",
+    "placeholder": "JSON कॉन्फ़िगरेशन लिखें...",
+    "save": "सेव करें"
+  },
+  "editModel": {
+    "title": "मॉडल एडिट करें: {{modelId}}",
+    "description": "नीचे दिए ऑप्शन टॉगल करके मॉडल की क्षमताएं कॉन्फ़िगर करें।",
+    "capabilities": "क्षमताएं",
+    "tools": "टूल्स",
+    "vision": "विज़न",
+    "embeddings": "एम्बेडिंग्स",
+    "notAvailable": "अभी उपलब्ध नहीं है"
+  },
+  "outOfContextError": {
+    "truncateInput": "इनपुट छोटा करें",
+    "title": "कॉन्टेक्स्ट लिमिट से बाहर की एरर",
+    "description": "यह चैट AI की मेमोरी लिमिट तक पहुंच रही है, जैसे कोई व्हाइटबोर्ड फुल हो रहा हो। हम मेमोरी विंडो (यानी कॉन्टेक्स्ट साइज़) बढ़ा सकते हैं ताकि यह ज़्यादा याद रख सके, लेकिन इससे आपके कंप्यूटर की ज़्यादा मेमोरी लगेगी। हम इनपुट को छोटा भी कर सकते हैं, यानी नए मैसेज के लिए जगह बनाने को यह कुछ पुरानी चैट हिस्ट्री भूल जाएगा।",
+    "increaseContextSizeDescription": "क्या आप कॉन्टेक्स्ट साइज़ बढ़ाना चाहते हैं?",
+    "increaseContextSize": "कॉन्टेक्स्ट साइज़ बढ़ाएं"
+  },
+  "toolApproval": {
+    "title": "टूल परमिशन रिक्वेस्ट",
+    "description": "असिस्टेंट <strong>{{toolName}}</strong> इस्तेमाल करना चाहता है",
+    "securityNotice": "सिर्फ़ उन्हीं टूल्स को अनुमति दें जिन पर आपको भरोसा है। टूल्स आपके सिस्टम और डेटा तक पहुंच सकते हैं।",
+    "deny": "मना करें",
+    "allowOnce": "एक बार अनुमति दें",
+    "alwaysAllow": "हमेशा अनुमति दें"
+  },
+  "deleteModel": {
+    "title": "मॉडल डिलीट करें: {{modelId}}",
+    "description": "क्या आप वाकई इस मॉडल को डिलीट करना चाहते हैं? इसे बाद में वापस नहीं लाया जा सकेगा।",
+    "success": "मॉडल {{modelId}} परमानेंटली डिलीट हो गया।",
+    "cancel": "रद्द करें",
+    "delete": "डिलीट करें"
+  },
+  "deleteProvider": {
+    "title": "प्रोवाइडर डिलीट करें",
+    "description": "इस प्रोवाइडर और इसके सभी मॉडल डिलीट करें। इसे बाद में वापस नहीं लाया जा सकेगा।",
+    "success": "प्रोवाइडर {{provider}} परमानेंटली डिलीट हो गया।",
+    "confirmTitle": "प्रोवाइडर डिलीट करें: {{provider}}",
+    "confirmDescription": "क्या आप वाकई इस प्रोवाइडर को डिलीट करना चाहते हैं? इसे बाद में वापस नहीं लाया जा सकेगा।",
+    "cancel": "रद्द करें",
+    "delete": "डिलीट करें"
+  },
+  "modelSettings": {
+    "title": "मॉडल सेटिंग्स - {{modelId}}",
+    "description": "परफ़ॉर्मेंस और बर्ताव को ऑप्टिमाइज़ करने के लिए मॉडल सेटिंग्स कॉन्फ़िगर करें।"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "डेटा फ़ोल्डर की लोकेशन बदलें",
+      "description": "क्या आप वाकई डेटा फ़ोल्डर की लोकेशन बदलना चाहते हैं? इससे आपका सारा डेटा नई लोकेशन पर मूव हो जाएगा और ऐप रीस्टार्ट होगा।",
+      "currentLocation": "करंट लोकेशन:",
+      "newLocation": "नई लोकेशन:",
+      "cancel": "रद्द करें",
+      "changeLocation": "लोकेशन बदलें"
+    },
+    "deleteAllThreads": {
+      "title": "सभी थ्रेड डिलीट करें",
+      "description": "सभी थ्रेड डिलीट हो जाएंगे। इसे बाद में वापस नहीं लाया जा सकेगा।"
+    },
+    "deleteAllAgentThreads": {
+      "title": "सभी एजेंट चैट डिलीट करें",
+      "description": "सभी एजेंट चैट डिलीट हो जाएंगी। इसे बाद में वापस नहीं लाया जा सकेगा।"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "सभी चैट डिलीट करें",
+      "description": "\"{{projectName}}\" की {{count}} चैट डिलीट हो जाएंगी। इसे बाद में वापस नहीं लाया जा सकेगा।"
+    },
+    "deleteThread": {
+      "description": "क्या आप वाकई इस थ्रेड को डिलीट करना चाहते हैं? इसे बाद में वापस नहीं लाया जा सकेगा।"
+    },
+    "messageMetadata": {
+      "title": "मैसेज मेटाडेटा"
+    }
+  },
+  "projects": {
+    "title": "प्रोजेक्ट्स",
+    "new": "नया प्रोजेक्ट",
+    "addProject": "प्रोजेक्ट जोड़ें",
+    "addToProject": "प्रोजेक्ट में जोड़ें",
+    "removeFromProject": "प्रोजेक्ट से हटाएं",
+    "createNewProject": "नया प्रोजेक्ट बनाएं",
+    "editProject": "प्रोजेक्ट एडिट करें",
+    "deleteProject": "प्रोजेक्ट डिलीट करें",
+    "projectName": "प्रोजेक्ट का नाम",
+    "enterProjectName": "प्रोजेक्ट का नाम लिखें...",
+    "noProjectsAvailable": "कोई प्रोजेक्ट उपलब्ध नहीं है",
+    "noProjectsYet": "अभी तक कोई प्रोजेक्ट नहीं",
+    "noProjectsYetDesc": "प्रोजेक्ट जोड़ें बटन दबाकर एक नया प्रोजेक्ट शुरू करें।",
+    "projectNotFound": "प्रोजेक्ट नहीं मिला",
+    "projectNotFoundDesc": "जो प्रोजेक्ट आप ढूंढ रहे हैं वह मौजूद नहीं है या डिलीट हो चुका है।",
+    "selectAssistant": "असिस्टेंट चुनें",
+    "noAssistantAssigned": "इस प्रोजेक्ट को कोई असिस्टेंट असाइन नहीं है",
+    "files": "फ़ाइलें",
+    "filesDescription": "इस प्रोजेक्ट में रेफ़र करने के लिए PDF, डॉक्युमेंट या कोई और टेक्स्ट जोड़ें।",
+    "deleteProjectDialog": {
+      "title": "प्रोजेक्ट डिलीट करें",
+      "permanentDelete": "इससे सारे थ्रेड परमानेंटली डिलीट हो जाएंगे।",
+      "permanentDeleteWarning": "यह एक्शन प्रोजेक्ट के अंदर के सभी थ्रेड परमानेंटली डिलीट कर देगा!",
+      "deleteEmptyProject": "यह एक्शन \"{{projectName}}\" प्रोजेक्ट को डिलीट कर देगा।",
+      "saveThreadsAdvice": "थ्रेड सेव रखने के लिए, डिलीट करने से पहले उन्हें अपनी थ्रेड लिस्ट या किसी और प्रोजेक्ट में मूव कर दें।",
+      "starredWarning": "इस प्रोजेक्ट में आपके कुछ फ़ेवरेट थ्रेड अभी भी हैं।",
+      "deleteButton": "डिलीट करें",
+      "successWithName": "प्रोजेक्ट \"{{projectName}}\" डिलीट हो गया",
+      "successWithoutName": "प्रोजेक्ट डिलीट हो गया",
+      "error": "प्रोजेक्ट डिलीट नहीं हो सका। फिर से कोशिश करें।",
+      "ariaLabel": "{{projectName}} डिलीट करें"
+    },
+    "addProjectDialog": {
+      "createTitle": "नया प्रोजेक्ट बनाएं",
+      "editTitle": "प्रोजेक्ट एडिट करें",
+      "nameLabel": "प्रोजेक्ट का नाम",
+      "namePlaceholder": "प्रोजेक्ट का नाम लिखें...",
+      "assistant": "असिस्टेंट",
+      "selectAssistant": "एक असिस्टेंट चुनें (ऑप्शनल)",
+      "noAssistant": "कोई असिस्टेंट नहीं",
+      "addAssistant": "असिस्टेंट जोड़ें",
+      "createButton": "बनाएं",
+      "updateButton": "अपडेट करें",
+      "alreadyExists": "प्रोजेक्ट \"{{projectName}}\" पहले से मौजूद है",
+      "createSuccess": "प्रोजेक्ट \"{{projectName}}\" बन गया",
+      "updateSuccess": "प्रोजेक्ट \"{{projectName}}\" अपडेट हो गया"
+    },
+    "noConversationsIn": "{{projectName}} में कोई चैट नहीं",
+    "startNewConversation": "नीचे {{projectName}} के साथ एक नई चैट शुरू करें",
+    "conversationsIn": "{{projectName}} की चैट्स",
+    "conversationsDescription": "चैट जारी रखने के लिए किसी भी चैट पर क्लिक करें, या नीचे एक नई शुरू करें।",
+    "conversation": "चैट",
+    "instructions": "इंस्ट्रक्शन",
+    "setup": "सेटअप",
+    "instructionsDescription": "रिस्पॉन्स का टोन और स्टाइल कस्टमाइज़ करें",
+    "manageInstructions": "इंस्ट्रक्शन मैनेज करें",
+    "thread": "थ्रेड",
+    "threads": "थ्रेड्स",
+    "updated": "अपडेट हुआ:",
+    "collapseProject": "प्रोजेक्ट कोलैप्स करें",
+    "expandProject": "प्रोजेक्ट एक्सपैंड करें",
+    "update": "अपडेट करें",
+    "searchProjects": "प्रोजेक्ट्स सर्च करें...",
+    "noProjectsFound": "कोई प्रोजेक्ट नहीं मिला",
+    "tryDifferentSearch": "कोई दूसरा सर्च टर्म ट्राई करें"
+  },
+  "attachmentsIngestion": {
+    "title": "चुनें कि अटैचमेंट कैसे यूज़ हों",
+    "description": "चुनें कि इन फ़ाइलों को सीधे चैट में शामिल करना है या इनके बजाय एम्बेडिंग्स के तौर पर इंडेक्स करना है।",
+    "inline": "चैट में जोड़ें",
+    "embeddings": "एम्बेडिंग्स इस्तेमाल करें"
+  },
+  "attachmentInjectedIndicator": "चैट में जोड़ा गया",
+  "attachmentEmbeddedIndicator": "RAG के लिए एम्बेड किया गया",
+  "viewInjectedContent": "जोड़ा गया कॉन्टेंट देखें",
+  "injectedContentTitle": "जोड़ी गई फ़ाइल का कॉन्टेंट",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "सभी थ्रेड फ़ेवरेट से हटाए गए",
+      "description": "सभी थ्रेड आपके फ़ेवरेट्स से हटा दिए गए हैं।"
+    },
+    "deleteAllThreads": {
+      "title": "सभी थ्रेड डिलीट करें",
+      "description": "सभी थ्रेड परमानेंटली डिलीट हो गए हैं।"
+    },
+    "deleteAllAgentThreads": {
+      "title": "सभी एजेंट चैट डिलीट करें",
+      "description": "सभी एजेंट चैट परमानेंटली डिलीट हो गई हैं।"
+    },
+    "renameThread": {
+      "title": "थ्रेड रीनेम करें",
+      "description": "थ्रेड का टाइटल बदलकर '{{title}}' कर दिया गया है"
+    },
+    "deleteThread": {
+      "title": "थ्रेड डिलीट करें",
+      "description": "यह थ्रेड परमानेंटली डिलीट हो गया है।"
+    },
+    "editMessage": {
+      "title": "मैसेज एडिट करें",
+      "description": "मैसेज एडिट हो गया। मॉडल के जवाब का इंतज़ार करें।"
+    },
+    "appUpdateDownloaded": {
+      "title": "ऐप अपडेट डाउनलोड हुआ",
+      "description": "ऐप अपडेट सक्सेसफुली डाउनलोड हो गया है।"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "ऐप अपडेट डाउनलोड नहीं हो सका",
+      "description": "ऐप अपडेट डाउनलोड नहीं हो सका। फिर से कोशिश करें।"
+    },
+    "downloadComplete": {
+      "title": "डाउनलोड पूरा हुआ",
+      "description": "{{item}} डाउनलोड हो गया"
+    },
+    "downloadCancelled": {
+      "title": "डाउनलोड कैंसल हुआ",
+      "description": "डाउनलोड प्रोसेस कैंसल कर दिया गया था"
+    },
+    "downloadFailed": {
+      "title": "डाउनलोड फ़ेल हुआ",
+      "description": "{{item}} डाउनलोड नहीं हो सका"
+    },
+    "modelValidationStarted": {
+      "title": "मॉडल वेरिफ़ाई हो रहा है",
+      "description": "मॉडल \"{{modelId}}\" डाउनलोड हो गया। इंटीग्रिटी वेरिफ़ाई हो रही है..."
+    },
+    "modelValidationFailed": {
+      "title": "मॉडल वेरिफिकेशन फ़ेल हुआ",
+      "description": "डाउनलोड किया गया मॉडल \"{{modelId}}\" इंटीग्रिटी वेरिफिकेशन में फ़ेल हो गया और हटा दिया गया। यह फ़ाइल करप्ट हो सकती है या इसके साथ छेड़छाड़ हुई हो सकती है।"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "डाउनलोड पूरा हुआ",
+      "description": "मॉडल \"{{item}}\" डाउनलोड और वेरिफ़ाई हो गया"
+    },
+    "projectCreated": {
+      "title": "प्रोजेक्ट बन गया",
+      "description": "प्रोजेक्ट \"{{projectName}}\" बन गया"
+    },
+    "projectRenamed": {
+      "title": "प्रोजेक्ट रीनेम हुआ",
+      "description": "प्रोजेक्ट का नाम \"{{oldName}}\" से \"{{newName}}\" कर दिया गया"
+    },
+    "projectDeleted": {
+      "title": "प्रोजेक्ट डिलीट हुआ",
+      "description": "प्रोजेक्ट \"{{projectName}}\" डिलीट हो गया"
+    },
+    "projectAlreadyExists": {
+      "title": "प्रोजेक्ट पहले से मौजूद है",
+      "description": "प्रोजेक्ट \"{{projectName}}\" पहले से मौजूद है"
+    },
+    "projectDeleteFailed": {
+      "title": "डिलीट नहीं हो सका",
+      "description": "प्रोजेक्ट डिलीट नहीं हो सका। फिर से कोशिश करें।"
+    },
+    "threadAssignedToProject": {
+      "title": "थ्रेड असाइन हुआ",
+      "description": "थ्रेड \"{{projectName}}\" को असाइन हो गया"
+    },
+    "threadRemovedFromProject": {
+      "title": "थ्रेड हटाया गया",
+      "description": "थ्रेड \"{{projectName}}\" से हटा दिया गया"
+    },
+    "fileUploaded": {
+      "title": "फ़ाइल अपलोड हुई",
+      "description": "फ़ाइल अपलोड और इंडेक्स हो गई है"
+    },
+    "uploadFailed": {
+      "title": "अपलोड फ़ेल हुआ",
+      "description": "फ़ाइल अपलोड नहीं हो सकी"
+    },
+    "fileDeleted": {
+      "title": "फ़ाइल डिलीट हुई",
+      "description": "फ़ाइल प्रोजेक्ट से हटा दी गई है"
+    },
+    "deleteFailed": {
+      "title": "डिलीट नहीं हो सका",
+      "description": "फ़ाइल डिलीट नहीं हो सकी"
+    },
+    "fileAlreadyExists": {
+      "title": "फ़ाइल पहले से मौजूद है",
+      "description": "यह फ़ाइल पहले से इस प्रोजेक्ट से अटैच है"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "अटैचमेंट्स डिसेबल हैं",
+      "description": "सेटिंग्स में अटैचमेंट्स डिसेबल हैं"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "फ़ाइल बहुत बड़ी है",
+    "fileTooLargeDescription": "{{fileName}} {{maxFileSizeMB}}MB की लिमिट से बड़ी है"
+  },
+  "files": {
+    "chunksCount": "{{count}} चंक्स"
+  }
+}
