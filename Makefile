@@ -582,7 +582,6 @@ build-app-e2e:
 		VITE_RECOMMENDED_MODELS_REGISTRY_URL=$(E2E_DEAD_URL)/recommended.json \
 		VITE_STAFF_PICKS_REGISTRY_URL=$(E2E_FIXTURE_URL)/staff-picks.json \
 		VITE_DIFFUSION_CATALOG_URL=$(E2E_DEAD_URL)/diffusion.json \
-		VITE_SDCPP_MANIFEST_URL=$(E2E_DEAD_URL)/sdcpp-manifest.json \
 		./node_modules/.bin/tauri build --debug --no-bundle --features e2e \
 		--config src-tauri/tauri.e2e.conf.json
 

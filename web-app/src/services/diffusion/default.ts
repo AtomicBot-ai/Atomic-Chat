@@ -21,10 +21,7 @@ import type {
 } from '@/services/engine-builds/types'
 
 import type {
-  DiffusionBackend,
-  DiffusionBackendInstallRecord,
   DiffusionConfig,
-  DiffusionEngineId,
   DiffusionEvent,
   DiffusionModelFile,
   DiffusionService,
@@ -104,25 +101,6 @@ export class DefaultDiffusionService implements DiffusionService {
 
   async getStatus(): Promise<DiffusionStatus> {
     return { ...INERT_STATUS }
-  }
-
-  async finalizeBackendInstall(_args: {
-    dir: string
-    tag: string
-    backendId: string
-    backend: DiffusionBackend
-    engine: DiffusionEngineId
-    sha256?: string
-  }): Promise<DiffusionBackendInstallRecord> {
-    return unsupported()
-  }
-
-  async listInstalledBackends(): Promise<DiffusionBackendInstallRecord[]> {
-    return []
-  }
-
-  async removeBackend(_dir: string): Promise<void> {
-    return unsupported()
   }
 
   async engineCatalog(

@@ -59,8 +59,6 @@ describe('TauriDiffusionService commands', () => {
           return { job: null }
         case 'POST /diffusion/jobs/job-1/cancel':
           return { cancelled: true, serverStopped: false }
-        case 'GET /diffusion/backends':
-          return { backends: [{ tag: 't', backendId: 'macos-arm64' }] }
         case 'GET /diffusion/model-files':
           return { files: [{ relativePath: 'z-image/x.gguf' }] }
         case 'GET /diffusion/gallery':
@@ -97,15 +95,6 @@ describe('TauriDiffusionService commands', () => {
   it('calls one core route per operation, with the interface parameters as the body', async () => {
     await service.configure({ dataFolder: '/data', idleUnloadSecs: 600 })
     await service.getStatus()
-    await service.finalizeBackendInstall({
-      dir: '/data/diffusion/backends/t/macos-arm64',
-      tag: 't',
-      backendId: 'macos-arm64',
-      backend: 'metal',
-      engine: 'sd-cpp',
-    })
-    await service.listInstalledBackends()
-    await service.removeBackend('/old')
     await service.listModelFiles()
     await service.deleteModelFile('/data/diffusion/models/z-image/x.gguf')
     await service.unloadModel()
@@ -123,19 +112,6 @@ describe('TauriDiffusionService commands', () => {
     expect(calls).toEqual([
       { method: 'PUT', path: '/diffusion/config', body: { dataFolder: '/data', idleUnloadSecs: 600 } },
       { method: 'GET', path: '/diffusion/status', body: null },
-      {
-        method: 'POST',
-        path: '/diffusion/backends/finalize',
-        body: {
-          dir: '/data/diffusion/backends/t/macos-arm64',
-          tag: 't',
-          backendId: 'macos-arm64',
-          backend: 'metal',
-          engine: 'sd-cpp',
-        },
-      },
-      { method: 'GET', path: '/diffusion/backends', body: null },
-      { method: 'POST', path: '/diffusion/backends/remove', body: { dir: '/old' } },
       { method: 'GET', path: '/diffusion/model-files', body: null },
       {
         method: 'POST',
@@ -302,14 +278,13 @@ describe('TauriDiffusionService commands', () => {
     ])
   })
 
-  it('returns what the core answers, unwrapping the four envelopes', async () => {
+  it('returns what the core answers, unwrapping the envelopes', async () => {
     await expect(service.getStatus()).resolves.toEqual(status)
     await expect(service.cancelJob('job-1')).resolves.toEqual({
       cancelled: true,
       serverStopped: false,
     })
     await expect(service.getJob('job-1')).resolves.toBeNull()
-    await expect(service.listInstalledBackends()).resolves.toEqual([{ tag: 't', backendId: 'macos-arm64' }])
     await expect(service.listModelFiles()).resolves.toEqual([{ relativePath: 'z-image/x.gguf' }])
     await expect(service.getGalleryItem('job-1-00')).resolves.toEqual({ id: 'job-1-00' })
   })

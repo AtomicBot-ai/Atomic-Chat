@@ -1231,6 +1231,28 @@ describe('image-generation-store', () => {
     })
   })
 
+  describe('caches of the desktop sd.cpp installer', () => {
+    it('erases the manifest cache and the failed-build list on start: the core keeps both now', async () => {
+      for (const key of [
+        'atomic_sdcpp_manifest_cache_v1',
+        'atomic_sdcpp_manifest_cache_ts_v1',
+        'atomic_sdcpp_failed_backends_v1',
+      ])
+        localStorage.setItem(key, '1')
+      localStorage.setItem('atomic_engine_update_offer_llamacpp', '{}')
+      resetImageGenerationForTests()
+      await useImageGenerationStore.getState().bind()
+      expect(localStorage.getItem('atomic_sdcpp_manifest_cache_v1')).toBeNull()
+      expect(localStorage.getItem('atomic_sdcpp_manifest_cache_ts_v1')).toBeNull()
+      expect(localStorage.getItem('atomic_sdcpp_failed_backends_v1')).toBeNull()
+      // Not a cache of the installer: another engine's offer stays.
+      expect(
+        localStorage.getItem('atomic_engine_update_offer_llamacpp')
+      ).not.toBeNull()
+      localStorage.clear()
+    })
+  })
+
   describe('host without an engine build', () => {
     it('records the reason and never binds the event stream on an unsupported build', async () => {
       resetImageGenerationForTests()

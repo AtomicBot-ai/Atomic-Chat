@@ -4,10 +4,11 @@
  * A thin wrapper over the core's `/atomic/v1/diffusion/*` routes, reached
  * through the Rust relay (`atomic_core_call`): every method is one call with
  * the interface's parameter names as the camelCase JSON body, because the
- * core is written against the same contract (`./types.ts`). Four routes wrap
- * their answer so a `null` never stands alone as a body (`{backends}`,
- * `{files}`, `{job}`, `{item}`); they are unwrapped here. Events arrive as the
- * relayed `atomic-core://diffusion:*` events.
+ * core is written against the same contract (`./types.ts`). Three routes wrap
+ * their answer so a `null` never stands alone as a body (`{files}`, `{job}`,
+ * `{item}`); they are unwrapped here. Events arrive as the relayed
+ * `atomic-core://diffusion:*` events. The engine itself is installed through
+ * the core's `/engine-builds/sd-cpp/*`, snake_case like every engine build.
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -32,10 +33,7 @@ import type {
 
 import { DefaultDiffusionService } from './default'
 import type {
-  DiffusionBackend,
-  DiffusionBackendInstallRecord,
   DiffusionConfig,
-  DiffusionEngineId,
   DiffusionEvent,
   DiffusionModelFile,
   DiffusionStatus,
@@ -113,34 +111,6 @@ export class TauriDiffusionService extends DefaultDiffusionService {
 
   override async getStatus(): Promise<DiffusionStatus> {
     return coreCall<DiffusionStatus>('GET', '/status')
-  }
-
-  override async finalizeBackendInstall(args: {
-    dir: string
-    tag: string
-    backendId: string
-    backend: DiffusionBackend
-    engine: DiffusionEngineId
-    sha256?: string
-  }): Promise<DiffusionBackendInstallRecord> {
-    return coreCall<DiffusionBackendInstallRecord>(
-      'POST',
-      '/backends/finalize',
-      args
-    )
-  }
-
-  override async listInstalledBackends(): Promise<
-    DiffusionBackendInstallRecord[]
-  > {
-    const { backends } = await coreCall<{
-      backends: DiffusionBackendInstallRecord[]
-    }>('GET', '/backends')
-    return backends
-  }
-
-  override async removeBackend(dir: string): Promise<void> {
-    await coreCall('POST', '/backends/remove', { dir })
   }
 
   override async engineCatalog(

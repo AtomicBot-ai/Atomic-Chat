@@ -3,8 +3,7 @@
  *
  * The llama.cpp extensions ask their release index whether a newer build
  * exists; the media engine asks the core (`POST /engine-builds/sd-cpp/updates`),
- * which reads `atomic-chat-conf/backends/sdcpp-manifest.json` and orders the
- * tags. Whatever build the core names for this host is the one users are
+ * which reads conf's sd.cpp manifest and orders the tags. Whatever build the core names for this host is the one users are
  * offered — never upstream's latest, never an older one.
  */
 

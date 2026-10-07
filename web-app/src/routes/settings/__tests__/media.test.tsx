@@ -44,18 +44,10 @@ vi.mock('@/lib/diffusion/config', async (importOriginal) => ({
   configureDiffusion: vi.fn(async () => makeStatus({ idleUnloadSecs: 0 })),
   getDiffusionPaths: vi.fn(),
 }))
-const manifest = vi.hoisted(() => ({
-  tag: 'master-849-d04e895',
-  assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
-}))
-vi.mock('@/services/diffusion/install', () => ({
-  ensureDiffusionBackend: vi.fn(),
-  selectDiffusionBackendForHost: vi.fn(async () => ({ backendId: 'macos-arm64' })),
-  resolveSdcppManifest: vi.fn(async () => ({
-    manifest: { tag_name: manifest.tag, assets: manifest.assets },
-    source: 'cache',
-    fetchedAt: 1,
-  })),
+// The engine install listens for the core's progress under its task id.
+vi.mock('@tauri-apps/api/event', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tauri-apps/api/event')>()),
+  listen: vi.fn(async () => () => {}),
 }))
 
 import { useImageSetting } from '@/hooks/useImageSetting'
@@ -210,35 +202,35 @@ describe('Media settings', () => {
     expect(screen.getByText('settings:media.install')).toBeEnabled()
   })
 
-  it('offers Update when the manifest publishes a newer tag, and Check otherwise', async () => {
-    const { resolveSdcppManifest } = await import('@/services/diffusion/install')
+  it('offers Update when the core names a newer build, and Check otherwise', async () => {
     const first = render(<Component />)
-    // The page looks for an update on open; the installed tag is current.
-    await waitFor(() => expect(resolveSdcppManifest).toHaveBeenCalled())
+    // The page asks the core on open; the installed build is current.
+    await waitFor(() => expect(fake.checkEngineUpdate).toHaveBeenCalled())
     expect(screen.getByTestId('media-engine-check')).toBeInTheDocument()
     expect(screen.queryByTestId('media-engine-update')).not.toBeInTheDocument()
     first.unmount()
 
-    manifest.tag = 'master-900-abc1234'
+    fake.checkEngineUpdate.mockResolvedValue({
+      update_needed: true,
+      current: { tag: 'master-849-d04e895', backend_id: 'macos-arm64', origin: 'downloaded' },
+      target: { tag: 'master-900-abc1234', backend_id: 'macos-arm64', download_bytes: 1 },
+    })
     useImageGenerationStore.setState({ engineUpdate: { checking: false, availableTag: null, checkedAt: null, error: null } })
     render(<Component />)
     const update = await screen.findByTestId('media-engine-update')
     expect(update).toHaveTextContent('settings:media.update')
     expect(screen.getByText(/settings:media.updateAvailable/)).toBeInTheDocument()
 
-    const { ensureDiffusionBackend } = await import('@/services/diffusion/install')
-    vi.mocked(ensureDiffusionBackend).mockResolvedValue({
-      dir: '/data/diffusion/backends/master-900-abc1234/macos-arm64',
-      tag: 'master-900-abc1234',
-      backendId: 'macos-arm64',
-      backend: 'metal',
-      engine: 'sd-cpp',
-    } as never)
+    fake.installEngine.mockResolvedValue({
+      installed: true,
+      build: { tag: 'master-900-abc1234', backend_id: 'macos-arm64', origin: 'downloaded' },
+      retired: [],
+      kept_in_use: [],
+    })
     await act(async () => {
       await userEvent.click(update)
     })
-    expect(ensureDiffusionBackend).toHaveBeenCalled()
-    manifest.tag = 'master-849-d04e895'
+    expect(fake.installEngine).toHaveBeenCalled()
   })
 
   it('hides the engine override while only one engine can serve this host', () => {

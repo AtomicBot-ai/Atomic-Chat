@@ -43,6 +43,7 @@ import {
 } from '@/services/diffusion/compatibility'
 import {
   engineInstallError,
+  forgetDesktopInstallerCaches,
   installDiffusionEngine,
 } from '@/services/diffusion/engine'
 import { engineBuildProxy } from '@/services/engine-builds/core'
@@ -412,6 +413,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     bind: async () => {
       if (get().bound) return
       set({ bound: true })
+      forgetDesktopInstallerCaches()
       const service = diffusion()
       if (!service.isSupported()) return
 

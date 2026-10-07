@@ -317,9 +317,6 @@ export function makeFakeDiffusion(
     isSupported: vi.fn(() => true),
     configure: vi.fn(async () => status),
     getStatus: vi.fn(async () => status),
-    finalizeBackendInstall: vi.fn(),
-    listInstalledBackends: vi.fn(async () => []),
-    removeBackend: vi.fn(async () => undefined),
     engineCatalog: vi.fn(async () => makeEngineCatalog()),
     checkEngineUpdate: vi.fn(async () => ({
       update_needed: false,

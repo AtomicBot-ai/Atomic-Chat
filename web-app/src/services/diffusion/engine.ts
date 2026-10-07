@@ -147,6 +147,25 @@ export async function installDiffusionEngine(
   }
 }
 
+/**
+ * What the desktop's own sd.cpp installer kept in `localStorage`: the conf
+ * manifest with its fetch time and the builds that failed their probe. The
+ * core keeps both on disk now (`<data>/diffusion/`); the keys only cost space.
+ */
+const INSTALLER_CACHE_KEYS = [
+  'atomic_sdcpp_manifest_cache_v1',
+  'atomic_sdcpp_manifest_cache_ts_v1',
+  'atomic_sdcpp_failed_backends_v1',
+]
+
+export function forgetDesktopInstallerCaches(): void {
+  try {
+    for (const key of INSTALLER_CACHE_KEYS) window.localStorage.removeItem(key)
+  } catch {
+    // No storage (a private window, a blocked origin): nothing to forget.
+  }
+}
+
 const describe = (error: unknown): string => {
   if (error instanceof Error) return error.message
   const message = (error as { message?: unknown } | null | undefined)?.message

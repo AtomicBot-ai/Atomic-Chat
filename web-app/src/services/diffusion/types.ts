@@ -434,16 +434,6 @@ export type DiffusionModelFile = {
   bytes: number
 }
 
-export type DiffusionBackendInstallRecord = {
-  tag: string
-  backendId: string
-  backend: DiffusionBackend
-  engine: DiffusionEngineId
-  sha256: string | null
-  installedAtMs: number
-  dir: string
-}
-
 /**
  * The core's image-generation configuration. It lives only in the core's
  * memory and each `configure` replaces all of it, so the app sends every
@@ -668,24 +658,6 @@ export interface DiffusionService {
   /** Must be called before anything else; idempotent, and replaces the whole config. */
   configure(config: DiffusionConfig): Promise<DiffusionStatus>
   getStatus(): Promise<DiffusionStatus>
-
-  // --- engine binary --------------------------------------------------------
-  /**
-   * Called after the archive has been downloaded and decompressed into `dir`:
-   * sets the executable bits, writes the ownership marker and install record,
-   * and probes `sd-cli --help` to make sure this really is stable-diffusion.cpp.
-   */
-  finalizeBackendInstall(args: {
-    dir: string
-    tag: string
-    backendId: string
-    backend: DiffusionBackend
-    engine: DiffusionEngineId
-    sha256?: string
-  }): Promise<DiffusionBackendInstallRecord>
-  listInstalledBackends(): Promise<DiffusionBackendInstallRecord[]>
-  /** Refuses (`BACKEND_IN_USE`) while a session runs from that tree, and refuses trees without the ownership marker. */
-  removeBackend(dir: string): Promise<void>
 
   // --- engine builds (the core's `/engine-builds/sd-cpp/*`) ----------------
   /** The installed builds, the active one, and what this host would install from the manifest. */
