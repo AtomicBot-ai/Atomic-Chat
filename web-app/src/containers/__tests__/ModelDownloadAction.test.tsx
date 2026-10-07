@@ -11,6 +11,7 @@ import { DefaultModelSetupService } from '@/services/model-setup/default'
 import type {
   CompatibilityVerdict,
   ModelSetup,
+  ModelSetupPlan,
 } from '@/services/model-setup/types'
 import { useModelSetupStore } from '@/stores/model-setup-store'
 
@@ -19,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   switchToModel: vi.fn(() => Promise.resolve()),
   toastError: vi.fn(),
   checkCompatibility: vi.fn(),
+  plan: vi.fn(),
+  start: vi.fn(),
+  cancel: vi.fn(),
 }))
 
 vi.mock('@/utils/switchModel', () => ({
@@ -202,17 +206,64 @@ describe('ModelDownloadAction', () => {
       reason: 'needs PQ2_0',
     })
 
+    const plan = (engineInstalled: boolean): ModelSetupPlan => ({
+      digest: 'digest-1',
+      model_id: 'prism-ml/Bonsai-8B-PQ2_0',
+      provider: 'atomic-prism',
+      verdict: verdict(engineInstalled ? 'compatible' : 'engine_required'),
+      engine: {
+        provider: 'atomic-prism',
+        version: 'prism-b9000-abcdef0',
+        backend: 'macos-arm64',
+        installed: engineInstalled,
+        download_size: engineInstalled ? 0 : 20_000_000,
+      },
+      model: {
+        repo: 'prism-ml/Bonsai-8B-gguf',
+        file: 'Bonsai-8B-PQ2_0.gguf',
+        revision: 'main',
+        size: 100,
+      },
+      projector: null,
+      total_download_bytes: 100,
+      free_bytes: null,
+      blockers: [],
+    })
+
+    const running = (engineInstalled: boolean, stage = 'downloading_model') =>
+      ({
+        setup_id: 's1',
+        revision: 1,
+        stage,
+        request: {
+          repo: 'prism-ml/Bonsai-8B-gguf',
+          file: 'Bonsai-8B-PQ2_0.gguf',
+        },
+        plan: plan(engineInstalled),
+        task_ids: { model: 'tm' },
+        updated_at: 1,
+      }) as unknown as ModelSetup
+
     class FakeService extends DefaultModelSetupService {
       override isSupported() {
         return true
       }
       override checkCompatibility = mocks.checkCompatibility
-      override plan = vi.fn(() => new Promise<never>(() => {}))
+      override plan = mocks.plan
+      override start = mocks.start
+      override cancel = mocks.cancel
     }
 
     beforeEach(() => {
       useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
       mocks.checkCompatibility.mockResolvedValue(verdict('compatible', null))
+      mocks.plan.mockResolvedValue(plan(false))
+      mocks.start.mockResolvedValue(running(true, 'queued'))
+      mocks.cancel.mockResolvedValue({
+        ...running(true),
+        stage: 'cancelled',
+        revision: 2,
+      })
       seedServiceHub({
         models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
         modelSetup: new FakeService(),
@@ -288,36 +339,86 @@ describe('ModelDownloadAction', () => {
       expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
     })
 
-    it('shows the progress of a setup the core is running for the file', () => {
+    it('downloads without the sheet when PrismML is already installed', async () => {
       useModelSetupStore.setState({
-        setups: {
-          s1: {
-            setup_id: 's1',
-            revision: 1,
-            stage: 'downloading_model',
-            request: {
-              repo: 'prism-ml/Bonsai-8B-gguf',
-              file: 'Bonsai-8B-PQ2_0.gguf',
-            },
-            plan: {
-              verdict: verdict('engine_required'),
-              engine: null,
-              projector: null,
-              model: { size: 100 },
-            },
-            task_ids: { model: 'tm' },
-            updated_at: 1,
-          } as unknown as ModelSetup,
-        },
+        verdicts: { [bonsai.path]: verdict('compatible') },
+      })
+      mocks.plan.mockResolvedValue(plan(true))
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+
+      await waitFor(() => expect(mocks.start).toHaveBeenCalled())
+      const [request] = mocks.start.mock.calls[0] as unknown as [
+        Record<string, unknown>,
+      ]
+      expect(request).toMatchObject({
+        repo: 'prism-ml/Bonsai-8B-gguf',
+        file: 'Bonsai-8B-PQ2_0.gguf',
+        include_projector: true,
+        plan_digest: 'digest-1',
+      })
+      expect(await screen.findByTestId('model-setup-progress')).toBeEnabled()
+      expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+    })
+
+    it('says so when the setup cannot start, as a failed download does', async () => {
+      useModelSetupStore.setState({
+        verdicts: { [bonsai.path]: verdict('compatible') },
+      })
+      mocks.plan.mockResolvedValue(plan(true))
+      mocks.start.mockRejectedValue({ code: 'X', message: 'core is down' })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith('hub:downloadFailed', {
+          description: 'core is down',
+        })
+      )
+      expect(
+        await screen.findByRole('button', { name: 'hub:download' })
+      ).toBeEnabled()
+      expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
+    })
+
+    it('cancels a running download-only setup from the row, like a download', async () => {
+      useModelSetupStore.setState({
+        setups: { s1: running(true) },
         progress: { tm: { transferred: 25, total: 100 } },
       })
       render(
         <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
 
-      expect(screen.getByTestId('model-setup-progress')).toHaveTextContent(
-        '25%'
+      const progress = screen.getByTestId('model-setup-progress')
+      expect(progress).toHaveTextContent('25%')
+      expect(progress).toHaveAccessibleName('common:cancelDownload')
+      fireEvent.click(progress)
+
+      await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith('s1'))
+      expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
+    })
+
+    it('opens the sheet from the progress of a setup that installs the engine', async () => {
+      useModelSetupStore.setState({
+        setups: { s1: running(false) },
+        progress: { tm: { transferred: 25, total: 100 } },
+      })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
+
+      const progress = screen.getByTestId('model-setup-progress')
+      expect(progress).toHaveAccessibleName('hub:prismSetupOpen')
+      fireEvent.click(progress)
+
+      expect(await screen.findByTestId('model-setup-sheet')).toBeInTheDocument()
+      expect(mocks.cancel).not.toHaveBeenCalled()
     })
   })
 })

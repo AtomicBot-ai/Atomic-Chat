@@ -9,6 +9,8 @@ import {
   MODEL_SETUP_FINAL_STAGES,
   type CompatibilityVerdict,
   type ModelSetup,
+  type ModelSetupError,
+  type ModelSetupPlan,
   type ModelSetupStage,
   type PrismFamily,
 } from '@/services/model-setup/types'
@@ -71,6 +73,33 @@ export function requiresPrism(
   verdict: CompatibilityVerdict | null | undefined
 ) {
   return !!verdict && routeForVerdict(verdict) === 'setup'
+}
+
+/**
+ * Whether a plan asks nothing of the user: PrismML is on disk, new enough, and
+ * nothing blocks the download. Such a setup starts like an ordinary download;
+ * any other plan is shown in the setup sheet first.
+ */
+export function isDownloadOnlyPlan(plan: ModelSetupPlan): boolean {
+  return (
+    !!plan.engine?.installed &&
+    plan.verdict.outcome !== 'engine_update_required' &&
+    plan.blockers.length === 0
+  )
+}
+
+/** A setup that installs no engine: the model and its projector only. */
+export function isDownloadOnlySetup(setup: Pick<ModelSetup, 'plan'>): boolean {
+  return !setup.plan.engine || setup.plan.engine.installed
+}
+
+/** What the core said went wrong, with its details when it gave any. */
+export function setupErrorText(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const { message, details } = error as ModelSetupError
+    return details ? `${message} (${details})` : message
+  }
+  return String(error)
 }
 
 export function isFinalSetup(setup: ModelSetup): boolean {

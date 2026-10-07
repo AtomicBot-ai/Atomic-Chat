@@ -24,15 +24,20 @@ import {
   quantModelIds,
 } from '@/lib/hub-installed'
 import {
+  isDownloadOnlyPlan,
+  isDownloadOnlySetup,
   isFinalSetup,
+  isRunningSetup,
   parseHubFileUrl,
   PRISM_PROVIDER,
   requiresPrism,
   routeForVerdict,
+  setupErrorText,
 } from '@/lib/model-setup'
 import { CatalogModel } from '@/services/models/types'
+import { useModelSetupStore } from '@/stores/model-setup-store'
 import { switchToModel } from '@/utils/switchModel'
-import { IconDownload, IconX } from '@tabler/icons-react'
+import { IconDownload, IconLoader2, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -57,7 +62,10 @@ export const ModelDownloadAction = ({
   warnTooLarge?: boolean
 }) => {
   const serviceHub = useServiceHub()
-  const [warningOpen, setWarningOpen] = useState(false)
+  // The too-large warning, and which download it holds back until confirmed.
+  const [warningFor, setWarningFor] = useState<'download' | 'setup' | null>(
+    null
+  )
 
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -221,6 +229,56 @@ export const ModelDownloadAction = ({
   const setup = useHubFileSetup(hubFile)
   const setupBytes = useModelSetupBytes(setup)
   const [setupOpen, setSetupOpen] = useState(false)
+  const [setupStarting, setSetupStarting] = useState(false)
+  const setupModelId = quantModelIds(model, variant.model_id)[1]
+
+  // With PrismML already on disk the setup is only a download, so it starts
+  // like one: no sheet, its progress on this row and in the download panel.
+  // A plan that needs the engine, a newer one, or the user's say opens the
+  // sheet instead.
+  const startSetup = useCallback(async () => {
+    if (!hubFile) return
+    const service = serviceHub.modelSetup()
+    const request = {
+      ...hubFile,
+      model_id: setupModelId,
+      include_projector: true,
+    }
+    setSetupStarting(true)
+    try {
+      const plan = await service.plan(request)
+      if (!isDownloadOnlyPlan(plan)) {
+        setSetupOpen(true)
+        return
+      }
+      const started = await service.start({
+        ...request,
+        request_id: crypto.randomUUID(),
+        plan_digest: plan.digest,
+      })
+      useModelSetupStore.getState().apply({ type: 'changed', setup: started })
+    } catch (error) {
+      console.error('[ModelDownloadAction] model setup failed to start:', error)
+      toast.error(t('hub:downloadFailed'), {
+        description: setupErrorText(error),
+      })
+    } finally {
+      setSetupStarting(false)
+    }
+  }, [hubFile, serviceHub, setupModelId, t])
+
+  const handleCancelSetup = useCallback(() => {
+    if (!setup) return
+    serviceHub
+      .modelSetup()
+      .cancel(setup.setup_id)
+      .then((next) =>
+        useModelSetupStore.getState().apply({ type: 'changed', setup: next })
+      )
+      .catch((error) =>
+        console.error('[ModelDownloadAction] setup cancel failed:', error)
+      )
+  }, [serviceHub, setup])
 
   const requestDownload = useCallback(async () => {
     // The core's verdict decides the path when the Hub row has one; a row
@@ -234,10 +292,6 @@ export const ModelDownloadAction = ({
         .catch(() => null)
     }
     const route = judged ? routeForVerdict(judged) : 'download'
-    if (route === 'setup') {
-      setSetupOpen(true)
-      return
-    }
     if (route === 'refuse' && judged) {
       toast.error(t('hub:prismRefusedTitle'), {
         description: judged.replacement
@@ -247,11 +301,20 @@ export const ModelDownloadAction = ({
       return
     }
     if (warnTooLarge) {
-      setWarningOpen(true)
+      setWarningFor(route === 'setup' ? 'setup' : 'download')
       return
     }
-    void handleDownloadModel()
-  }, [verdict, serviceHub, hubFile, warnTooLarge, handleDownloadModel, t])
+    if (route === 'setup') void startSetup()
+    else void handleDownloadModel()
+  }, [
+    verdict,
+    serviceHub,
+    hubFile,
+    warnTooLarge,
+    handleDownloadModel,
+    startSetup,
+    t,
+  ])
 
   const handleCancelDownload = useCallback(() => {
     markResumableDownload(variant.model_id)
@@ -286,7 +349,6 @@ export const ModelDownloadAction = ({
     [providers, model, variant.model_id]
   )
   const isDownloaded = installed !== null
-  const setupModelId = quantModelIds(model, variant.model_id)[1]
   const setupSheet = hubFile ? (
     <ModelSetupSheet
       open={setupOpen}
@@ -303,12 +365,40 @@ export const ModelDownloadAction = ({
   ) : null
 
   // A setup the core is still running (or that waits for `resume`) is this
-  // row's download: the button follows it and opens the sheet.
+  // row's download: the button follows it. One that only downloads cancels
+  // like an ordinary download; one that installs the engine, or waits for
+  // `resume`, opens the sheet.
   if (setup && !isFinalSetup(setup) && !isDownloaded) {
     const percent =
       setupBytes.total > 0
         ? Math.round((setupBytes.transferred / setupBytes.total) * 100)
         : 0
+    if (isDownloadOnlySetup(setup) && isRunningSetup(setup)) {
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleCancelSetup}
+          title={t('common:cancelDownload')}
+          aria-label={t('common:cancelDownload')}
+          className="group relative w-24 justify-center overflow-hidden font-semibold"
+          data-testid="model-setup-progress"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+            style={{ width: `${percent}%` }}
+          />
+          <span className="relative z-1 tabular-nums transition-opacity group-hover:opacity-0">
+            {percent}%
+          </span>
+          <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+            <IconX size={14} />
+          </span>
+        </Button>
+      )
+    }
     return (
       <>
         <Button
@@ -330,6 +420,23 @@ export const ModelDownloadAction = ({
         </Button>
         {setupSheet}
       </>
+    )
+  }
+
+  // Asking the core for the plan, before the setup has a record to follow.
+  if (setupStarting) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled
+        aria-label={t('hub:downloadModel')}
+        className="w-24 justify-center"
+        data-testid="model-setup-starting"
+      >
+        <IconLoader2 size={14} className="animate-spin" />
+      </Button>
     )
   }
 
@@ -383,11 +490,14 @@ export const ModelDownloadAction = ({
   const warningDialog = (
     <>
       <LargeModelWarningDialog
-        open={warningOpen}
-        onOpenChange={setWarningOpen}
+        open={warningFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setWarningFor(null)
+        }}
         onConfirm={() => {
-          setWarningOpen(false)
-          void handleDownloadModel()
+          setWarningFor(null)
+          if (warningFor === 'setup') void startSetup()
+          else void handleDownloadModel()
         }}
       />
       {setupSheet}
