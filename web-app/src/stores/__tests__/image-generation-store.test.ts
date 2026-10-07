@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
+import { DownloadEvent, events } from '@janhq/core'
 
 import {
   Z_IMAGE,
   makeCapabilities,
   makeCatalog,
+  makeEngineCatalog,
   makeFakeDiffusion,
   makeItem,
   makeJob,
@@ -66,27 +68,19 @@ const raiseServer = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@/utils/localApiServerControl', () => ({
   raiseLocalApiServerForMediaModel: raiseServer,
 }))
-const install = vi.hoisted(() => ({
-  ensure: vi.fn(),
-  select: vi.fn(async () => ({
-    backendId: 'macos-arm64' as string | null,
-    reason: undefined as string | undefined,
-  })),
-  manifest: vi.fn(async () => ({
-    manifest: {
-      tag_name: 'master-849-d04e895',
-      assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
-    },
-    source: 'cache' as const,
-    fetchedAt: 1,
-  })),
+// The core relays its download progress under the task id
+// (`download-<task_id>`); the engine install listens there.
+const relay = vi.hoisted(() => ({
+  handlers: new Map<string, (event: { payload: unknown }) => void>(),
 }))
-// The pure helpers stay real: the engine-update offer is built with them.
-vi.mock('@/services/diffusion/install', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/services/diffusion/install')>()),
-  ensureDiffusionBackend: install.ensure,
-  selectDiffusionBackendForHost: install.select,
-  resolveSdcppManifest: install.manifest,
+vi.mock('@tauri-apps/api/event', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tauri-apps/api/event')>()),
+  listen: vi.fn(
+    async (name: string, handler: (event: { payload: unknown }) => void) => {
+      relay.handlers.set(name, handler)
+      return () => relay.handlers.delete(name)
+    }
+  ),
 }))
 vi.mock('@/lib/notifications', () => ({ notifyWhenAway: vi.fn() }))
 const captured = vi.hoisted(() => ({
@@ -110,6 +104,22 @@ const emitLater = (
   jobs: () => Parameters<FakeDiffusion['emit']>[0]
 ) => setTimeout(() => fake.emit(jobs()), 0)
 
+const QWEN_TAG = 'master-883-137f740-a36f1b1a'
+
+/** The core's answer to an install that put `tag` in place on this Mac. */
+const installed = (tag: string, backendId = 'macos-arm64') => ({
+  installed: true,
+  build: { tag, backend_id: backendId, origin: 'downloaded' as const },
+  retired: [],
+  kept_in_use: [],
+})
+
+/** Push a progress frame the core sent for `taskId`, the way the relay does. */
+const relayProgress = (taskId: string, transferred: number, total: number) =>
+  relay.handlers.get(`download-${taskId}`)?.({
+    payload: { transferred, total },
+  })
+
 describe('image-generation-store', () => {
   let fake: FakeDiffusion
 
@@ -117,11 +127,7 @@ describe('image-generation-store', () => {
     vi.useRealTimers()
     captured.events.length = 0
     raiseServer.mockClear()
-    install.ensure.mockReset()
-    install.select.mockResolvedValue({
-      backendId: 'macos-arm64',
-      reason: undefined,
-    })
+    relay.handlers.clear()
     useImageSetting.setState({
       selectedArtifactId: null,
       keepModelLoaded: false,
@@ -669,18 +675,30 @@ describe('image-generation-store', () => {
       expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
         'master-883-137f740'
       )
-      install.ensure.mockImplementation(async () => {
+      // The config manifest names the fork's 883 build; the core installs it
+      // and unloads what ran from the old one itself.
+      fake.engineCatalog.mockResolvedValue(
+        makeEngineCatalog({
+          manifest: {
+            tag: QWEN_TAG,
+            source: 'remote',
+            fetched_at: 2,
+            error: null,
+          },
+        })
+      )
+      fake.installEngine.mockImplementation(async () => {
         const status = makeStatus()
         if (status.install.state !== 'installed') throw new Error('fixture')
-        status.install.tag = 'master-883-137f740'
+        status.install.tag = QWEN_TAG
         fake.emit({ type: 'state', status })
-        return status.install
+        return installed(QWEN_TAG)
       })
       await useImageGenerationStore.getState().updateEngine()
-      expect(fake.unloadModel).toHaveBeenCalledTimes(1)
-      expect(install.ensure).toHaveBeenCalledWith(
-        expect.objectContaining({ family: 'qwen-image-2.1' })
-      )
+      expect(fake.unloadModel).not.toHaveBeenCalled()
+      expect(fake.installEngine).toHaveBeenCalledWith({
+        task_id: `diffusion-backend-${QWEN_TAG}-macos-arm64`,
+      })
       expect(fake.loadModel).toHaveBeenCalledTimes(1)
       expect(fake.loadModel.mock.calls[0][0].modelId).toBe(
         'qwen-image-2.1:q4_k_m'
@@ -698,11 +716,12 @@ describe('image-generation-store', () => {
       await useImageGenerationStore
         .getState()
         .loadModel('qwen-image-2.1:q4_k_m')
-      install.ensure.mockRejectedValue({
+      fake.installEngine.mockRejectedValue({
         code: 'ENGINE_INSTALL_FAILED',
         message: 'offline',
       })
       await useImageGenerationStore.getState().updateEngine()
+      expect(fake.installEngine).toHaveBeenCalledTimes(1)
       expect(fake.loadModel).not.toHaveBeenCalled()
       expect(useImageGenerationStore.getState().pendingEngineArtifactId).toBe(
         'qwen-image-2.1:q4_k_m'
@@ -730,7 +749,7 @@ describe('image-generation-store', () => {
         .getState()
         .loadModel('qwen-image-2.1:q4_k_m')
       expect(fake.loadModel).toHaveBeenCalledTimes(1)
-      expect(install.ensure).not.toHaveBeenCalled()
+      expect(fake.installEngine).not.toHaveBeenCalled()
       // Qwen is the resident model, and nothing is left waiting on an engine
       // update: no error, no parked artifact, no update on offer.
       expect(fake.loadModel.mock.calls[0][0].modelId).toBe(
@@ -990,22 +1009,25 @@ describe('image-generation-store', () => {
   })
 
   describe('engine install', () => {
-    it('tracks progress, then reads the installed status and reports the backend', async () => {
-      install.ensure.mockImplementation(async ({ onProgress }) => {
-        onProgress?.({ transferred: 50, total: 100 })
-        fake.getStatus.mockResolvedValue(makeStatus())
-        return {
-          tag: 'master-849-d04e895',
-          backendId: 'macos-arm64',
-          backend: 'metal',
-          engine: 'sd-cpp',
-          sha256: null,
-          installedAtMs: 1,
-          dir: '/x',
-        }
-      })
+    const TASK = 'diffusion-backend-master-849-d04e895-macos-arm64'
+
+    beforeEach(() => {
+      fake.engineCatalog.mockResolvedValue(makeEngineCatalog({ tag: null }))
       useImageGenerationStore.setState({
         status: makeStatus({ install: { state: 'not-installed' } }),
+      })
+    })
+
+    it('installs through the core under its task id, tracks the core\'s progress, then reads the installed status', async () => {
+      const emit = vi.spyOn(events, 'emit')
+      let finish: () => void = () => {}
+      fake.installEngine.mockImplementation(async () => {
+        relayProgress(TASK, 50, 100)
+        await new Promise<void>((resolve) => {
+          finish = resolve
+        })
+        fake.getStatus.mockResolvedValue(makeStatus())
+        return installed('master-849-d04e895')
       })
       const run = useImageGenerationStore.getState().installEngine()
       await waitFor(() =>
@@ -1013,10 +1035,27 @@ describe('image-generation-store', () => {
           useImageGenerationStore.getState().engineInstall.transferred
         ).toBe(50)
       )
+      finish()
       await run
+      const panel = emit.mock.calls
+        .filter(([name]) => name === DownloadEvent.onFileDownloadUpdate)
+        .map(([, state]) => state)
+      emit.mockRestore()
+
+      expect(fake.installEngine).toHaveBeenCalledWith({ task_id: TASK })
+      // The download panel's row is the same task, fed by the same frames.
+      expect(panel).toContainEqual(
+        expect.objectContaining({
+          modelId: TASK,
+          downloadType: 'Backend',
+          size: { transferred: 50, total: 100 },
+        })
+      )
       const state = useImageGenerationStore.getState()
       expect(state.engineInstall.inFlight).toBe(false)
+      expect(state.engineInstall.error).toBeNull()
       expect(state.status?.install.state).toBe('installed')
+      expect(relay.handlers.has(`download-${TASK}`)).toBe(false)
       expect(
         captured.events.map(([name, props]) => [
           name,
@@ -1029,37 +1068,114 @@ describe('image-generation-store', () => {
       ])
     })
 
-    it('keeps the failure on the install row and reports its code', async () => {
-      install.ensure.mockRejectedValue({
-        code: 'UNSUPPORTED_BACKEND',
-        message: 'no build',
+    it('reinstalls with force', async () => {
+      fake.installEngine.mockResolvedValue(installed('master-849-d04e895'))
+      await useImageGenerationStore.getState().installEngine({ force: true })
+      expect(fake.installEngine).toHaveBeenCalledWith({
+        task_id: TASK,
+        force: true,
+      })
+    })
+
+    it('takes the build the core went down the ladder to as the host\'s', async () => {
+      fake.engineCatalog.mockResolvedValue(
+        makeEngineCatalog({ tag: null, host_backend_id: 'win-rocm-x64' })
+      )
+      fake.installEngine.mockResolvedValue({
+        ...installed('master-849-d04e895', 'win-vulkan-x64'),
+        failed_backend_ids: ['win-rocm-x64'],
+      })
+      await useImageGenerationStore.getState().installEngine()
+      expect(fake.installEngine).toHaveBeenCalledWith({
+        task_id: 'diffusion-backend-master-849-d04e895-win-rocm-x64',
+      })
+      expect(useImageGenerationStore.getState().hostBackendId).toBe(
+        'win-vulkan-x64'
+      )
+    })
+
+    it('turns the core\'s refusal into the diffusion code the card routes on', async () => {
+      fake.installEngine.mockRejectedValue({
+        code: 'BACKEND_INSUFFICIENT_DISK_SPACE',
+        message: 'Not enough free disk space.',
       })
       await useImageGenerationStore.getState().installEngine({ force: true })
       const state = useImageGenerationStore.getState()
-      expect(state.engineInstall.error?.code).toBe('UNSUPPORTED_BACKEND')
+      expect(state.engineInstall.error).toMatchObject({
+        code: 'DISK_FULL',
+        message: 'Not enough free disk space.',
+      })
       expect(state.engineInstall.inFlight).toBe(false)
       expect(captured.events.at(-1)?.[1]).toMatchObject({
         install_status: 'failed',
-        error_code: 'UNSUPPORTED_BACKEND',
+        error_code: 'DISK_FULL',
       })
+    })
+
+    it('never asks the core to install on a host it has no build for', async () => {
+      fake.engineCatalog.mockResolvedValue(
+        makeEngineCatalog({
+          tag: null,
+          host_backend_id: null,
+          host_reason: 'Intel Macs are not supported.',
+        })
+      )
+      await useImageGenerationStore.getState().installEngine()
+      expect(fake.installEngine).not.toHaveBeenCalled()
+      expect(useImageGenerationStore.getState().engineInstall.error).toEqual({
+        code: 'UNSUPPORTED_BACKEND',
+        message: 'Intel Macs are not supported.',
+      })
+    })
+
+    it('goes back to "not installed" with no error when the user cancels', async () => {
+      const emit = vi.spyOn(events, 'emit')
+      fake.installEngine.mockImplementation(async () => {
+        relayProgress(TASK, 10, 100)
+        throw { code: 'CANCELLED', message: 'The engine install was cancelled.' }
+      })
+      await useImageGenerationStore.getState().installEngine()
+      const stopped = emit.mock.calls.filter(
+        ([name]) => name === DownloadEvent.onFileDownloadStopped
+      )
+      const failed = emit.mock.calls.filter(
+        ([name]) => name === DownloadEvent.onFileDownloadError
+      )
+      emit.mockRestore()
+
+      expect(useImageGenerationStore.getState().engineInstall).toEqual({
+        inFlight: false,
+        transferred: 0,
+        total: 0,
+        error: null,
+      })
+      // The panel closes the row as a cancel, not as a failure.
+      expect(stopped).toEqual([
+        [
+          DownloadEvent.onFileDownloadStopped,
+          { modelId: TASK, downloadType: 'Backend' },
+        ],
+      ])
+      expect(failed).toEqual([])
     })
 
     it('does not start a second install while one is running', async () => {
       let release: () => void = () => {}
-      install.ensure.mockImplementation(
+      fake.installEngine.mockImplementation(
         () =>
           new Promise((resolve) => {
-            release = () => resolve({} as never)
+            release = () => resolve(installed('master-849-d04e895'))
           })
       )
       const first = useImageGenerationStore.getState().installEngine()
       await useImageGenerationStore.getState().installEngine()
-      expect(install.ensure).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(fake.installEngine).toHaveBeenCalledTimes(1))
       expect(useImageGenerationStore.getState().engineInstall.inFlight).toBe(
         true
       )
       release()
       await first
+      expect(fake.installEngine).toHaveBeenCalledTimes(1)
       expect(useImageGenerationStore.getState().engineInstall.inFlight).toBe(
         false
       )
@@ -1118,10 +1234,13 @@ describe('image-generation-store', () => {
   describe('host without an engine build', () => {
     it('records the reason and never binds the event stream on an unsupported build', async () => {
       resetImageGenerationForTests()
-      install.select.mockResolvedValue({
-        backendId: null,
-        reason: 'Intel Macs are not supported.',
-      })
+      fake.engineCatalog.mockResolvedValue(
+        makeEngineCatalog({
+          tag: null,
+          host_backend_id: null,
+          host_reason: 'Intel Macs are not supported.',
+        })
+      )
       await useImageGenerationStore.getState().bind()
       expect(useImageGenerationStore.getState()).toMatchObject({
         hostBackendId: null,
@@ -1377,20 +1496,28 @@ describe('image-generation-store', () => {
 
 describe('engine updates', () => {
   let fake: FakeDiffusion
+  const NEWER = 'master-900-abc1234'
+  /** The core's answer when the manifest names `tag`, newer than the installed 849. */
+  const newer = (tag = NEWER, downloadBytes = 40_000_000) => ({
+    update_needed: true,
+    current: {
+      tag: 'master-849-d04e895',
+      backend_id: 'macos-arm64',
+      origin: 'downloaded' as const,
+    },
+    target: { tag, backend_id: 'macos-arm64', download_bytes: downloadBytes },
+  })
+  const current = (tag = 'master-849-d04e895') => ({
+    update_needed: false,
+    current: { tag, backend_id: 'macos-arm64', origin: 'downloaded' as const },
+    target: null,
+  })
 
   beforeEach(() => {
-    install.ensure.mockReset()
-    install.manifest.mockReset()
-    install.manifest.mockResolvedValue({
-      manifest: {
-        tag_name: 'master-849-d04e895',
-        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
-      },
-      source: 'cache' as const,
-      fetchedAt: 1,
-    })
+    relay.handlers.clear()
     resetImageGenerationForTests()
     fake = makeFakeDiffusion()
+    fake.checkEngineUpdate.mockResolvedValue(current())
     seedServiceHub({ diffusion: fake })
     useImageGenerationStore.setState({
       status: makeStatus(),
@@ -1398,81 +1525,61 @@ describe('engine updates', () => {
     })
   })
 
-  it('finds nothing when the manifest names the installed tag', async () => {
+  it('finds nothing when the core says the active build is current', async () => {
     await useImageGenerationStore.getState().checkEngineUpdate()
     const { engineUpdate } = useImageGenerationStore.getState()
     expect(engineUpdate.availableTag).toBeNull()
     expect(engineUpdate.checkedAt).not.toBeNull()
-    expect(install.manifest).toHaveBeenCalledWith({ force: undefined })
+    expect(fake.checkEngineUpdate).toHaveBeenCalledWith({})
   })
 
-  it('reports a newer tag only when it is published for this host', async () => {
-    install.manifest.mockResolvedValue({
-      manifest: {
-        tag_name: 'master-900-abc1234',
-        assets: [{ backend: 'win-cuda12-x64', name: 'x.zip' }],
-      },
-      source: 'remote' as const,
-      fetchedAt: 2,
+  it('reports the build the core names as newer; the button re-reads the manifest', async () => {
+    fake.checkEngineUpdate.mockResolvedValue(newer())
+    await useImageGenerationStore.getState().checkEngineUpdate({ force: true })
+    expect(fake.checkEngineUpdate).toHaveBeenLastCalledWith({ force: true })
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
+      NEWER
+    )
+  })
+
+  it('offers nothing when the manifest was rolled back below the installed build', async () => {
+    // master-900 is installed, conf publishes master-883 again: the core
+    // orders the tags and answers that no update is needed.
+    useImageGenerationStore.setState({
+      status: makeStatus({
+        install: {
+          state: 'installed',
+          engine: 'sd-cpp',
+          backend: 'metal',
+          tag: NEWER,
+          backendId: 'macos-arm64',
+          dir: `/data/diffusion/backends/${NEWER}/macos-arm64`,
+        },
+      }),
     })
+    fake.checkEngineUpdate.mockResolvedValue(current(NEWER))
     await useImageGenerationStore.getState().checkEngineUpdate({ force: true })
     expect(
       useImageGenerationStore.getState().engineUpdate.availableTag
     ).toBeNull()
-    expect(install.manifest).toHaveBeenLastCalledWith({ force: true })
-
-    install.manifest.mockResolvedValue({
-      manifest: {
-        tag_name: 'master-900-abc1234',
-        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
-      },
-      source: 'remote' as const,
-      fetchedAt: 2,
-    })
-    await useImageGenerationStore.getState().checkEngineUpdate()
-    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
-      'master-900-abc1234'
-    )
   })
 
-  it('offers the fork rebuild of the installed tag, named by its -a<rev> suffix', async () => {
-    install.manifest.mockResolvedValue({
-      manifest: {
-        tag_name: 'master-849-d04e895-a36f1b1a',
-        upstream_repo: 'AtomicBot-ai/stable-diffusion.cpp',
-        assets: [{ backend: 'macos-arm64', name: 'sd-macos-arm64.zip' }],
-      },
-      source: 'remote' as const,
-      fetchedAt: 2,
-    })
-    await useImageGenerationStore.getState().checkEngineUpdate()
-    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(
-      'master-849-d04e895-a36f1b1a'
-    )
-  })
-
-  it('unloads the model, installs the new tag and clears the offer', async () => {
+  it('installs the new build through the core, leaving the unload to it, and clears the offer', async () => {
     useImageGenerationStore.setState({
       status: makeLoadedStatus(),
       capabilities: makeCapabilities(),
       engineUpdate: {
         checking: false,
-        availableTag: 'master-900-abc1234',
+        availableTag: NEWER,
         checkedAt: 1,
         error: null,
       },
     })
-    install.ensure.mockResolvedValue({
-      dir: '/data/diffusion/backends/master-900-abc1234/macos-arm64',
-      tag: 'master-900-abc1234',
-      backendId: 'macos-arm64',
-      backend: 'metal',
-      engine: 'sd-cpp',
-    })
+    fake.installEngine.mockResolvedValue(installed(NEWER))
     await useImageGenerationStore.getState().updateEngine()
-    expect(fake.unloadModel).toHaveBeenCalled()
-    expect(install.ensure).toHaveBeenCalledTimes(1)
-    expect(install.ensure.mock.calls[0][0]).toMatchObject({ force: undefined })
+    expect(fake.unloadModel).not.toHaveBeenCalled()
+    expect(fake.installEngine).toHaveBeenCalledTimes(1)
+    expect(fake.installEngine.mock.calls[0][0]).not.toHaveProperty('force')
     expect(
       useImageGenerationStore.getState().engineUpdate.availableTag
     ).toBeNull()
@@ -1481,7 +1588,7 @@ describe('engine updates', () => {
   it('does nothing without an offer or an installed engine', async () => {
     captured.events.length = 0
     await useImageGenerationStore.getState().updateEngine()
-    expect(install.ensure).not.toHaveBeenCalled()
+    expect(fake.installEngine).not.toHaveBeenCalled()
     // No install ran: the install row is untouched (an attempt would leave
     // an error or progress there) and no install run was reported.
     expect(useImageGenerationStore.getState().engineInstall).toEqual({
@@ -1496,7 +1603,7 @@ describe('engine updates', () => {
       status: makeStatus({ install: { state: 'not-installed' } }),
     })
     await useImageGenerationStore.getState().checkEngineUpdate()
-    expect(install.manifest).not.toHaveBeenCalled()
+    expect(fake.checkEngineUpdate).not.toHaveBeenCalled()
     // No check happened: nothing is offered and no check time is recorded
     // (a check that ran stamps checkedAt even when it finds nothing).
     expect(useImageGenerationStore.getState().engineUpdate).toEqual({
@@ -1508,21 +1615,6 @@ describe('engine updates', () => {
   })
 
   describe('the engine-update banner', () => {
-    const NEWER = 'master-900-abc1234'
-    const newerManifest = (source: 'remote' | 'cache' | 'baseline') => ({
-      manifest: {
-        tag_name: NEWER,
-        assets: [
-          {
-            backend: 'macos-arm64',
-            name: 'sd-macos-arm64.zip',
-            size: 40_000_000,
-          },
-        ],
-      },
-      source,
-      fetchedAt: source === 'baseline' ? null : 2,
-    })
     const STALE: EngineUpdateOffer = {
       provider: MEDIA_ENGINE_PROVIDER,
       currentBackend: 'master-849-d04e895/macos-arm64',
@@ -1551,8 +1643,8 @@ describe('engine updates', () => {
       localStorage.clear()
     })
 
-    it('offers the tag the config manifest names for this host', async () => {
-      install.manifest.mockResolvedValue(newerManifest('remote'))
+    it('offers the build the core names for this host', async () => {
+      fake.checkEngineUpdate.mockResolvedValue(newer())
       const announced = vi.fn()
       window.addEventListener(ENGINE_UPDATE_AVAILABLE_EVENT, announced)
       await useImageGenerationStore.getState().checkEngineUpdate()
@@ -1571,7 +1663,15 @@ describe('engine updates', () => {
       expect(announced).toHaveBeenCalledTimes(1)
     })
 
-    it('withdraws the offer once the manifest names the installed tag', async () => {
+    it('links the fork build to the fork release of its upstream tag', async () => {
+      fake.checkEngineUpdate.mockResolvedValue(newer(QWEN_TAG))
+      await useImageGenerationStore.getState().checkEngineUpdate()
+      expect(offerOnDisk()?.releaseNotesUrl).toBe(
+        'https://github.com/AtomicBot-ai/stable-diffusion.cpp/releases/tag/master-883-137f740'
+      )
+    })
+
+    it('withdraws the offer once the core says the build is current', async () => {
       persist(STALE)
       const retracted = vi.fn()
       window.addEventListener(ENGINE_UPDATE_RETRACTED_EVENT, retracted)
@@ -1582,23 +1682,22 @@ describe('engine updates', () => {
       expect(retracted).toHaveBeenCalledTimes(1)
     })
 
-    it('leaves the banner alone on the bundled baseline', async () => {
+    it('leaves the banner alone when the check fails', async () => {
       persist(STALE)
-      install.manifest.mockResolvedValue({
-        ...newerManifest('baseline'),
-        error: 'offline',
+      fake.checkEngineUpdate.mockRejectedValue({
+        code: 'UPSTREAM_ERROR',
+        message: 'The sd-cpp manifest is unavailable.',
       })
       await useImageGenerationStore.getState().checkEngineUpdate()
 
-      // Settings → Media still hears of it; the banner does not.
-      expect(
-        useImageGenerationStore.getState().engineUpdate.availableTag
-      ).toBe(NEWER)
+      expect(useImageGenerationStore.getState().engineUpdate.error).toBe(
+        'The sd-cpp manifest is unavailable.'
+      )
       expect(offerOnDisk()).toEqual(STALE)
     })
 
     it('looks for a newer engine on launch', async () => {
-      install.manifest.mockResolvedValue(newerManifest('cache'))
+      fake.checkEngineUpdate.mockResolvedValue(newer())
       resetImageGenerationForTests()
       await useImageGenerationStore.getState().bind()
 
@@ -1610,15 +1709,9 @@ describe('engine updates', () => {
       persist(STALE)
       offerUpdate()
       let during: string | null = null
-      install.ensure.mockImplementation(async () => {
+      fake.installEngine.mockImplementation(async () => {
         during = useImageGenerationStore.getState().engineUpdatingTo
-        return {
-          dir: `/data/diffusion/backends/${NEWER}/macos-arm64`,
-          tag: NEWER,
-          backendId: 'macos-arm64',
-          backend: 'metal',
-          engine: 'sd-cpp',
-        }
+        return installed(NEWER)
       })
       await useImageGenerationStore.getState().updateEngine()
 
@@ -1632,12 +1725,16 @@ describe('engine updates', () => {
     it('keeps the offer when the install fails', async () => {
       persist(STALE)
       offerUpdate()
-      install.ensure.mockRejectedValue(new Error('connection reset'))
+      fake.installEngine.mockRejectedValue({
+        code: 'ENGINE_INSTALL_FAILED',
+        message: 'Could not download the engine.',
+      })
       await useImageGenerationStore.getState().updateEngine()
 
       const state = useImageGenerationStore.getState()
       expect(state.engineUpdatingTo).toBeNull()
       expect(state.engineUpdate.availableTag).toBe(NEWER)
+      expect(state.lastError?.code).toBe('ENGINE_INSTALL_FAILED')
       expect(offerOnDisk()).toEqual(STALE)
     })
   })

@@ -2,53 +2,49 @@
  * The media engine's entry on the shared engine-update banner (ATO-528).
  *
  * The llama.cpp extensions ask their release index whether a newer build
- * exists; the media engine asks `atomic-chat-conf/backends/sdcpp-manifest.json`
- * the same question through `checkEngineUpdate()`. Whatever tag that manifest
- * names for this host is the build users are offered — never upstream's latest.
+ * exists; the media engine asks the core (`POST /engine-builds/sd-cpp/updates`),
+ * which reads `atomic-chat-conf/backends/sdcpp-manifest.json` and orders the
+ * tags. Whatever build the core names for this host is the one users are
+ * offered — never upstream's latest, never an older one.
  */
 
 import type { EngineUpdateOffer } from '@/lib/engineUpdateOffer'
-import { companionFor } from '@/services/diffusion/backendMatrix'
-import {
-  DEFAULT_UPSTREAM_REPO,
-  stripAtomicTagSuffix,
-  type SdcppManifest,
-} from '@/services/diffusion/install'
+import type { EngineBuildUpdateCheck } from '@/services/engine-builds/types'
 
 /** The media engine's provider id on the banner. */
 export const MEDIA_ENGINE_PROVIDER = 'sd-cpp'
 
+const UPSTREAM_REPO = 'leejet/stable-diffusion.cpp'
+/** Builds with an `-a<rev>` tag come from the fork, which keeps upstream's tag for its releases. */
+const FORK_REPO = 'AtomicBot-ai/stable-diffusion.cpp'
+const ATOMIC_TAG_SUFFIX_RE = /-a[0-9a-f]{7,}$/
+
+/** Where to read what changed in `tag`. */
+export function mediaEngineReleaseNotesUrl(tag: string): string {
+  const repo = ATOMIC_TAG_SUFFIX_RE.test(tag) ? FORK_REPO : UPSTREAM_REPO
+  return `https://github.com/${repo}/releases/tag/${tag.replace(ATOMIC_TAG_SUFFIX_RE, '')}`
+}
+
 /**
- * The offer for moving the installed `sd-server` to the manifest's tag. The
- * size counts the companion runtime too: a new tag installs into a directory
- * of its own, so `ensureDiffusionBackend()` downloads that archive again.
+ * The offer for moving the active `sd-server` to the build the core named,
+ * or null when the core named none. The size is what the core will download,
+ * the CUDA runtime companion included.
  */
 export function buildMediaEngineUpdateOffer(
-  installed: { tag: string; backendId: string },
-  hostBackendId: string,
-  manifest: SdcppManifest
-): EngineUpdateOffer {
-  const sizeOf = (backendId: string | null): number =>
-    (backendId &&
-      manifest.assets.find((asset) => asset.backend === backendId)?.size) ||
-    0
-  const archiveSize = sizeOf(hostBackendId)
-  const repo = manifest.upstream_repo ?? DEFAULT_UPSTREAM_REPO
-
+  check: EngineBuildUpdateCheck
+): EngineUpdateOffer | null {
+  const { current, target } = check
+  if (!check.update_needed || !current || !target) return null
   return {
     provider: MEDIA_ENGINE_PROVIDER,
-    currentBackend: `${installed.tag}/${installed.backendId}`,
-    targetBackend: `${manifest.tag_name}/${hostBackendId}`,
-    currentVersion: installed.tag,
-    targetVersion: manifest.tag_name,
+    currentBackend: `${current.tag}/${current.backend_id}`,
+    targetBackend: `${target.tag}/${target.backend_id}`,
+    currentVersion: current.tag,
+    targetVersion: target.tag,
     downloadSizeBytes:
-      archiveSize > 0
-        ? archiveSize + sizeOf(companionFor(hostBackendId))
-        : undefined,
-    // `updateEngine()` unloads the resident model and swaps the binary.
+      target.download_bytes > 0 ? target.download_bytes : undefined,
+    // The core unloads the resident model and swaps the binary on install.
     restartRequired: false,
-    releaseNotesUrl: `https://github.com/${repo}/releases/tag/${stripAtomicTagSuffix(
-      manifest.tag_name
-    )}`,
+    releaseNotesUrl: mediaEngineReleaseNotesUrl(target.tag),
   }
 }
