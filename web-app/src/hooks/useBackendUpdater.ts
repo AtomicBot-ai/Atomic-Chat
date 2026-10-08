@@ -74,7 +74,6 @@ interface LlamacppExtension {
   installBackend?(filePath: string): Promise<void>
   configureBackends?(): Promise<void>
   recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
-  checkForEngineUpdate?(): Promise<EngineUpdateResult>
   /** `latest/<variant>` → the concrete `<version>/<variant>` it means here. */
   resolveBackendSelection?(selection: string): Promise<string>
   getCachedOptimalBackend?(): OptimalBackendCacheRecord | null
@@ -534,26 +533,25 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
     return result ?? null
   }, [extensionName])
 
-  /// Manual engine-update check: refetches the release index and reports the
-  /// newest stable release for the backend type in use. Without it the only
-  /// way to pick up a release published while the app was open is a restart.
-  /// Bounded on the extension side, so it always settles.
+  /// Manual engine-update check: asks the core about every engine again with
+  /// each source re-read (`useEngineVersionsStore.refresh({force})`) and
+  /// reports this provider's offer. The core decides — a newer build of
+  /// another family or an unstable tag is never offered — and the same answer
+  /// feeds the update banner. Rejects with the core's reason when it could not
+  /// read this engine's source.
   const checkForEngineUpdate =
     useCallback(async (): Promise<EngineUpdateResult> => {
-      const extensionToUse =
-        ExtensionManager.getInstance().getByName(extensionName)
-
-      if (!extensionToUse || !('checkForEngineUpdate' in extensionToUse)) {
-        throw new Error('Extension does not support checkForEngineUpdate')
+      await useEngineVersionsStore.getState().refresh({ force: true })
+      const { engines, error } = useEngineVersionsStore.getState()
+      const entry = engines[providerId as EngineId]
+      const failure = entry?.error ?? (entry ? null : error)
+      if (failure) throw Object.assign(new Error(failure.message), failure)
+      const target = entry?.update.needed ? entry.update.target : null
+      return {
+        updateAvailable: target !== null,
+        targetBackend: target ? `${target.version}/${target.variant}` : null,
       }
-
-      const extension = extensionToUse as LlamacppExtension
-      const result = await extension.checkForEngineUpdate?.()
-      if (!result) {
-        throw new Error('checkForEngineUpdate returned no result')
-      }
-      return result
-    }, [extensionName])
+    }, [providerId])
 
   /// Rebuilds the version list from the extension's catalog. An engine update
   /// can install a release that was not in the list registered at load, and

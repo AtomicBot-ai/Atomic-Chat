@@ -256,33 +256,6 @@ type BetterBackendPayload = {
 }
 
 /**
- * The core's update check for this provider. The shared type predates the
- * PrismML fields, so they are declared here and read defensively: the core
- * leaves out whatever the manifest does not carry.
- */
-type PrismBackendUpdateCheck = coreRuntime.CoreBackendUpdateCheck & {
-  reason?: 'newer' | 'withdrawn' | 'model_requires'
-  notes_url?: string
-  notes?: string
-  download_size?: number
-  current_withdrawn?: { reason?: string }
-}
-
-/** `checkBackendForUpdates()`'s answer, in the app's words. */
-type BackendUpdateCheckResult = {
-  updateNeeded: boolean
-  newVersion: string
-  targetBackend?: string
-  sameFamily: boolean
-  reason?: string
-  notesUrl?: string
-  notes?: string
-  downloadSize?: number
-  /** Why the release in use was pulled, when it was. */
-  currentWithdrawn?: string
-}
-
-/**
  * Bound on one `recommendation` round trip to the core. Above the core's own
  * 20 s detection guard, so the core decides `detection_failed` first and this
  * only catches a core that stopped answering altogether.
@@ -1332,95 +1305,6 @@ export default class atomic_prism_extension extends AIEngine {
       this.lastRecheckOutcome = 'threw'
       return null
     }
-  }
-
-  /**
-   * Whether a newer build of the current backend's type exists, as the core
-   * judges it from the PrismML manifest. `sameFamily` is the core's verdict on
-   * whether taking the target would change backend type; the callers refuse
-   * when it is false. A missing or malformed `version_backend` is answered
-   * locally as "no update" without asking.
-   */
-  async checkBackendForUpdates(options?: {
-    force?: boolean
-  }): Promise<BackendUpdateCheckResult> {
-    const noUpdate = { updateNeeded: false, newVersion: '0', sameFamily: false }
-    try {
-      const currentBackend = stripBom(this.config.version_backend || '')
-      if (!currentBackend || !currentBackend.includes('/')) {
-        return noUpdate
-      }
-
-      const result = (await coreRuntime.checkBackendUpdates({
-        current: currentBackend,
-        force: options?.force ?? false,
-        app_version: await appVersion(),
-        proxy: (getProxyConfig() as unknown as coreRuntime.CoreProxyConfig | null) ?? null,
-      })) as PrismBackendUpdateCheck
-      const text = (value: unknown): string | undefined =>
-        typeof value === 'string' && value ? value : undefined
-      const withdrawn = result.current_withdrawn
-      return {
-        updateNeeded: result.update_needed,
-        newVersion: result.new_version,
-        targetBackend: result.target_backend ?? undefined,
-        sameFamily: result.same_family,
-        reason: text(result.reason),
-        notesUrl: text(result.notes_url),
-        notes: text(result.notes),
-        downloadSize:
-          typeof result.download_size === 'number' && result.download_size > 0
-            ? result.download_size
-            : undefined,
-        currentWithdrawn:
-          withdrawn && typeof withdrawn === 'object'
-            ? (text(withdrawn.reason) ?? 'withdrawn')
-            : undefined,
-      }
-    } catch (err) {
-      logger.warn('checkBackendForUpdates failed:', err)
-      return noUpdate
-    }
-  }
-
-  /**
-   * Manual engine-update check behind the "check for engine updates" button.
-   * Forces the core to re-read the manifest, so a release published while the
-   * app was open becomes visible. Only the decision happens here, and every
-   * leg of it is bounded; the caller starts the download.
-   */
-  async checkForEngineUpdate(): Promise<{
-    updateAvailable: boolean
-    targetBackend: string | null
-  }> {
-    const noUpdate = { updateAvailable: false, targetBackend: null }
-
-    // A configuration pass started at load may still be fetching the catalog.
-    if (this.configureBackendsPromise) {
-      await this.withTimeout(this.configureBackendsPromise, 20_000, undefined)
-    }
-
-    const current = stripBom(this.config.version_backend || '')
-    const currentType = current.split('/')[1]?.trim()
-    if (!current || current === 'none' || !currentType) return noUpdate
-
-    const { updateNeeded, targetBackend, sameFamily } = await this.withTimeout(
-      this.checkBackendForUpdates({ force: true }),
-      20_000,
-      { updateNeeded: false, newVersion: '0', sameFamily: false }
-    )
-    const targetType = targetBackend?.split('/')[1]?.trim()
-    if (!updateNeeded || !targetBackend || !targetType) return noUpdate
-
-    if (!sameFamily) {
-      logger.warn(
-        `checkForEngineUpdate: refusing to switch backend type ${currentType} -> ${targetType}`
-      )
-      return noUpdate
-    }
-
-    logger.info(`checkForEngineUpdate: ${current} -> ${targetBackend}`)
-    return { updateAvailable: true, targetBackend }
   }
 
   async listInstalledBackends(): Promise<InstalledBackendPack[]> {

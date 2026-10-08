@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { events } from '@janhq/core'
 import { useBackendUpdater } from '../useBackendUpdater'
 import { localStorageKey } from '@/constants/localStorage'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
 const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 const RECOMMENDATION = {
@@ -41,7 +42,9 @@ vi.mock('@janhq/core', () => {
   }
 })
 
-// Every switch is the core's (`POST /engines/:engine/update`).
+// Every check and switch is the core's (`POST /engines/versions`, `POST /engines/:engine/update`).
+const engineVersions = vi.hoisted(() => vi.fn())
+vi.mock('@/services/engines/core', () => ({ engineVersions }))
 const switchBackendThroughCore = vi.hoisted(() => vi.fn())
 vi.mock('@/services/engines/update', () => ({ switchBackendThroughCore }))
 
@@ -516,6 +519,92 @@ describe('useBackendUpdater', () => {
 
       expect(result.current.downloadState.isDownloading).toBe(false)
       expect(result.current.downloadState.backendName).toBeNull()
+    })
+  })
+
+  describe('"Check for updates"', () => {
+    const versions = (patch: Record<string, unknown> = {}) => ({
+      engine: 'llamacpp-upstream',
+      kind: 'llamacpp',
+      active_choice: 'client',
+      builds: [],
+      active: { version: 'b10205', variant: 'win-vulkan-x64' },
+      latest: null,
+      update: { needed: false, target: null, apply: 'swap' },
+      source: 'remote',
+      source_error: null,
+      error: null,
+      ...patch,
+    })
+
+    beforeEach(() => {
+      useEngineVersionsStore.getState().reset()
+    })
+
+    it('asks the core again with every source re-read and names what it offers', async () => {
+      engineVersions.mockResolvedValue({
+        engines: [
+          versions({
+            update: {
+              needed: true,
+              target: { version: 'b10300', variant: 'win-vulkan-x64' },
+              apply: 'swap',
+            },
+          }),
+        ],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      let answer: unknown
+      await act(async () => {
+        answer = await result.current.checkForEngineUpdate()
+      })
+
+      expect(engineVersions).toHaveBeenCalledWith(
+        expect.objectContaining({ force: true })
+      )
+      expect(answer).toEqual({
+        updateAvailable: true,
+        targetBackend: 'b10300/win-vulkan-x64',
+      })
+    })
+
+    it('offers nothing the core blocks', async () => {
+      engineVersions.mockResolvedValue({
+        engines: [
+          versions({
+            update: {
+              needed: false,
+              target: { version: 'b10300', variant: 'win-cuda-13.3-x64' },
+              apply: 'swap',
+              blocked_reason: 'family-change',
+            },
+          }),
+        ],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      let answer: unknown
+      await act(async () => {
+        answer = await result.current.checkForEngineUpdate()
+      })
+
+      expect(answer).toEqual({ updateAvailable: false, targetBackend: null })
+    })
+
+    it('fails with the core’s reason when it could not read this engine’s source', async () => {
+      engineVersions.mockResolvedValue({
+        engines: [
+          versions({ error: { code: 'UPSTREAM_ERROR', message: 'manifest unreachable' } }),
+        ],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      await expect(
+        act(async () => {
+          await result.current.checkForEngineUpdate()
+        })
+      ).rejects.toMatchObject({ message: 'manifest unreachable' })
     })
   })
 

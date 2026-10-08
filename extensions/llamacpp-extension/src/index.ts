@@ -38,7 +38,6 @@ import {
   getLocalInstalledBackends,
   getIndexedAssetName,
   isTurboQuantRelease,
-  isStableReleaseTag,
   compareBackendVersions,
   assertDeletableBackendPack,
   mergeBackendOptions,
@@ -1964,103 +1963,6 @@ export default class llamacpp_extension extends AIEngine {
       this.lastRecheckOutcome = 'threw'
       return null
     }
-  }
-
-  /**
-   * Whether a newer release of the backend type in use exists, asked of the
-   * core. `sameFamily` is the core's verdict that the target keeps the backend
-   * family (legacy ids may land on their migrated form); the callers refuse a
-   * target that would cross families.
-   */
-  async checkBackendForUpdates(options: { force?: boolean } = {}): Promise<{
-    updateNeeded: boolean
-    newVersion: string
-    targetBackend?: string
-    sameFamily?: boolean
-  }> {
-    try {
-      const currentBackend = stripBom(this.config.version_backend || '')
-      if (!currentBackend || !currentBackend.includes('/')) {
-        return { updateNeeded: false, newVersion: '0' }
-      }
-
-      const result = await this.core.checkBackendUpdates({
-        ...(await catalogRequestContext()),
-        current: currentBackend,
-        ...(options.force ? { force: true } : {}),
-      })
-      return {
-        updateNeeded: result.update_needed,
-        newVersion: result.new_version,
-        targetBackend: result.target_backend ?? undefined,
-        sameFamily: result.same_family,
-      }
-    } catch (err) {
-      logger.warn('checkBackendForUpdates failed:', err)
-      return { updateNeeded: false, newVersion: '0' }
-    }
-  }
-
-  /**
-   * Manual counterpart to the startup reconciliation, behind the "check for
-   * engine updates" button.
-   *
-   * The release index is cached and the version list is a snapshot taken at
-   * load, so a fork release published mid-session stays invisible until the
-   * next launch. This forces the catalog read through the complete remote
-   * resolution chain and resolves the newest stable release of the backend
-   * type already in use.
-   *
-   * Only the decision happens here, and every leg of it is bounded: the
-   * catalog lookup goes through the same 20s race as `recheckOptimalBackend`,
-   * so a slow, unreachable or rate-limited GitHub can never leave the button
-   * spinning. The caller starts the download without awaiting it — a release
-   * archive takes minutes — and the shared `<BackendUpdater />` owns that
-   * progress UI.
-   */
-  async checkForEngineUpdate(): Promise<{
-    updateAvailable: boolean
-    targetBackend: string | null
-  }> {
-    const noUpdate = { updateAvailable: false, targetBackend: null }
-
-    // A configuration pass started at load may still be fetching the catalog.
-    // Its early phase registers a placeholder option list, so acting on
-    // `config` before it finishes would compare against a half-built state.
-    if (this.configureBackendsPromise) {
-      await this.withTimeout(this.configureBackendsPromise, 20_000, undefined)
-    }
-
-    const current = stripBom(this.config.version_backend || '')
-    const currentType = current.split('/')[1]?.trim()
-    if (!current || current === 'none' || !currentType) return noUpdate
-
-    const { updateNeeded, targetBackend, sameFamily } = await this.withTimeout(
-      this.checkBackendForUpdates({ force: true }),
-      20_000,
-      { updateNeeded: false, newVersion: '0' }
-    )
-    const targetType = targetBackend?.split('/')[1]?.trim()
-    if (!updateNeeded || !targetBackend || !targetType) return noUpdate
-
-    // The same two guards the startup reconciliation applies: never adopt a
-    // legacy prerelease that only exists on disk, never cross backend
-    // families.
-    if (!isStableReleaseTag(targetBackend)) {
-      logger.info(
-        `checkForEngineUpdate: newest candidate '${targetBackend}' is not a stable release`
-      )
-      return noUpdate
-    }
-    if (sameFamily !== true) {
-      logger.warn(
-        `checkForEngineUpdate: refusing to switch backend type ${currentType} -> ${targetType}`
-      )
-      return noUpdate
-    }
-
-    logger.info(`checkForEngineUpdate: ${current} -> ${targetBackend}`)
-    return { updateAvailable: true, targetBackend }
   }
 
   /**
