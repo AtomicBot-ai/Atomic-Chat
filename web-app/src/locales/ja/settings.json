@@ -514,6 +514,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -531,6 +535,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -556,10 +563,10 @@
     "requiresEngine": "{{engine}} {{version}} 以降が必要",
     "requiresEngineNotice": "このモデルには {{engine}} {{version}} 以降が必要です。開始するにはエンジンを更新してください。",
     "state": {
-      "disabled": "停止中",
-      "idle": "次のリクエストで開始",
+      "disabled": "停止中: リクエストでは読み込まれません",
+      "idle": "待機中: 次のリクエストで読み込み",
       "starting": "開始中…",
-      "ready": "実行中",
+      "ready": "読み込み済み",
       "restarting": "再起動中…",
       "failed": "失敗",
       "unsupported": "エンジン非対応"
@@ -575,6 +582,12 @@
     "noneTitle": "ダウンロード済みの埋め込みモデルはありません",
     "noneDescription": "ハブの「埋め込み」カテゴリーからダウンロードしてください",
     "availableInApi": "API で利用可能",
-    "localModel": "llama.cpp モデルから"
+    "localModel": "llama.cpp モデルから",
+    "startHint": "このモデルをローカル API サーバーの /v1/embeddings で提供します。「停止」を押すまでオンのままです。",
+    "stopHint": "モデルをアンロードし、API の埋め込みサービスをオフにします。リクエストで読み込まれなくなります。",
+    "sectionDescription": "「開始」はモデルを一つ、その名前でローカル API サーバーの /v1/embeddings で提供します。オンのままになり、再起動後は待機して次のリクエストで読み込まれます。「停止」はサービスをオフにし、リクエストで読み込まれなくなります。",
+    "documentSearchNote": "チャットのドキュメント検索は専用のモデル sentence-transformer-mini を使い、「開始」なしで必要なときに読み込みます。",
+    "documentSearchModel": "ドキュメント検索用モデル · llama.cpp モデルから",
+    "engineUpdateCheckFailed": "{{engine}} の更新を確認できませんでした"
   }
 }

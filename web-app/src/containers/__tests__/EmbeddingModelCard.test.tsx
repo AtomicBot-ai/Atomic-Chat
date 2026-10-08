@@ -131,6 +131,9 @@ describe('EmbeddingModelCard', () => {
     expect(
       screen.getByRole('button', { name: 'settings:embedding.start' })
     ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'settings:embedding.start' })
+    ).toHaveAttribute('title', 'settings:embedding.startHint')
 
     act(() => useEmbeddingStore.setState({ busy: 'bge-m3' }))
     rerender(<EmbeddingModelCard model={model} />)
@@ -147,6 +150,8 @@ describe('EmbeddingModelCard', () => {
       name: 'settings:embedding.stop',
     })
     expect(stop).toHaveAttribute('data-variant', 'destructive')
+    // Stop turns the service off, not just the process: the tooltip says so.
+    expect(stop).toHaveAttribute('title', 'settings:embedding.stopHint')
     await userEvent.click(stop)
     expect(state.current.stop).toHaveBeenCalledOnce()
   })
@@ -205,19 +210,41 @@ describe('EmbeddingModelCard', () => {
     expect(state.current.cancelDownload).toHaveBeenCalledOnce()
   })
 
-  it('says a served model is available in the API, and what a starting one is doing', () => {
-    state.current = modelState({ running: true, state: 'idle' })
+  it('says whether a served model is loaded or idle, and that it is in the API', () => {
+    state.current = modelState({ active: true, running: true, state: 'idle' })
     const { rerender } = render(<EmbeddingModelStatus model={model} />)
+    const status = () => screen.getByTestId('embedding-run-status')
+    expect(status()).toHaveTextContent('settings:embedding.state.idle')
     expect(
       screen.getByRole('link', { name: 'settings:embedding.availableInApi' })
     ).toHaveAttribute('href', '/api/')
 
-    state.current = modelState({ running: true, state: 'failed' })
-    rerender(<EmbeddingModelStatus model={model} key="failed" />)
+    state.current = modelState({ active: true, running: true, state: 'ready' })
+    rerender(<EmbeddingModelStatus model={model} key="ready" />)
+    expect(status()).toHaveTextContent('settings:embedding.state.ready')
+    expect(
+      screen.getByRole('link', { name: 'settings:embedding.availableInApi' })
+    ).toBeVisible()
+  })
+
+  it('says what a starting or failed one is doing, and that a stopped one is off', () => {
+    state.current = modelState({ active: true, running: true, state: 'failed' })
+    const { rerender } = render(<EmbeddingModelStatus model={model} />)
     expect(screen.getByText('settings:embedding.state.failed')).toBeVisible()
 
-    state.current = modelState({ running: false, state: null })
+    // Stopped: requests no longer load it, and it is not in the API.
+    state.current = modelState({ active: true, running: false, state: null })
     rerender(<EmbeddingModelStatus model={model} key="stopped" />)
+    expect(screen.getByTestId('embedding-run-status')).toHaveTextContent(
+      'settings:embedding.state.disabled'
+    )
+    expect(
+      screen.queryByText('settings:embedding.availableInApi')
+    ).not.toBeInTheDocument()
+
+    // Another model is the service's: nothing to say about this one.
+    state.current = modelState({ active: false, running: false, state: null })
+    rerender(<EmbeddingModelStatus model={model} key="other" />)
     expect(
       screen.queryByText(/settings:embedding\.(availableInApi|state)/)
     ).not.toBeInTheDocument()
@@ -249,7 +276,7 @@ describe('a llama.cpp model served as the embedding model', () => {
   })
 
   it('says when it is served', () => {
-    state.local = runState({ running: true, state: 'ready' })
+    state.local = runState({ active: true, running: true, state: 'ready' })
     render(<LocalEmbeddingModelStatus model={local} />)
     expect(
       screen.getByRole('link', { name: 'settings:embedding.availableInApi' })

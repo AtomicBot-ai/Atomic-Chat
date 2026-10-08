@@ -280,29 +280,38 @@ describe('ApiPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('names the embedding model by the id clients pass, with a text example to copy', async () => {
+  it('names the embedding model by the id clients pass, with a text test to copy', async () => {
     appState.activeModels = []
-    embeddingAs('ready', { modalities: ['text'] })
+    embeddingAs('ready', { modalities: ['text'], dims: 1024 })
     render(<ApiPage />)
 
     expect(await screen.findByText('bge-m3')).toBeInTheDocument()
     expect(screen.getByText('api:strip.embeddingModel')).toBeInTheDocument()
     expect(screen.getByText('api:status.ready')).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: 'api:strip.copyImageExample' })
+      screen.queryByRole('button', { name: 'api:strip.copyImageTest' })
     ).not.toBeInTheDocument()
 
     fireEvent.click(
-      screen.getByRole('button', { name: 'api:strip.copyTextExample' })
+      screen.getByRole('button', { name: 'api:strip.copyEmbeddingModel' })
     )
     await waitFor(() => expect(copied).toHaveBeenCalledTimes(1))
-    const [curl] = copied.mock.calls[0] as [string]
+    expect(copied).toHaveBeenLastCalledWith('bge-m3')
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'api:strip.copyTextTest' })
+    )
+    await waitFor(() => expect(copied).toHaveBeenCalledTimes(2))
+    const [curl] = copied.mock.calls[1] as [string]
     expect(curl).toContain("curl -X POST 'http://127.0.0.1:1337/v1/embeddings'")
-    expect(curl).toContain('"model":"bge-m3","input":"Hello, world"')
+    // BGE-M3 has no query prefix: none is forced on it.
+    expect(curl).toContain(
+      '"model":"bge-m3","input":"Why is the sky blue?","encoding_format":"float"'
+    )
     expect(curl).not.toContain('Authorization')
   })
 
-  it('adds an image example for a model that reads images, with the key header when the server needs one', async () => {
+  it('reads a local image file for a model that reads images, and uses its query prefix, with the key header when the server needs one', async () => {
     useLocalApiServer.getState().setApiKey('secret')
     // Until the process reports what it reads, the catalog says.
     embeddingAs('starting', { model_id: 'embeddinggemma-2' })
@@ -311,15 +320,25 @@ describe('ApiPage', () => {
     expect(await screen.findByText('embeddinggemma-2')).toBeInTheDocument()
     expect(screen.getByText(/api:status\.starting/)).toBeInTheDocument()
     fireEvent.click(
-      screen.getByRole('button', { name: 'api:strip.copyImageExample' })
+      screen.getByRole('button', { name: 'api:strip.copyImageTest' })
     )
     await waitFor(() => expect(copied).toHaveBeenCalledTimes(1))
-    const [curl] = copied.mock.calls[0] as [string]
-    expect(curl).toContain("-H 'Authorization: Bearer YOUR_API_KEY'")
-    expect(curl).toContain(
-      '"input":[{"content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}]}]'
+    const [command] = copied.mock.calls[0] as [string]
+    expect(command).toMatch(/^IMAGE=photo\.jpg\n/)
+    expect(command).toContain('base64 < "$IMAGE"')
+    expect(command).toContain('--data-binary @-')
+    expect(command).toContain("-H 'Authorization: Bearer YOUR_API_KEY'")
+    // No placeholder ever goes out as if it were an image.
+    expect(command).not.toContain('base64,...')
+    expect(command).not.toContain('secret')
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'api:strip.copyTextTest' })
     )
-    expect(curl).not.toContain('secret')
+    await waitFor(() => expect(copied).toHaveBeenCalledTimes(2))
+    expect(copied.mock.calls[1]?.[0]).toContain(
+      '"input":"task: search result | query: Why is the sky blue?"'
+    )
   })
 
   it.each(['disabled', 'failed'] as const)(

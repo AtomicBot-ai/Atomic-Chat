@@ -10,6 +10,7 @@ import EmbeddingModelCard, {
   LocalEmbeddingModelActions,
   LocalEmbeddingModelStatus,
 } from '@/containers/EmbeddingModelCard'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { useEngineVersionBackend } from '@/hooks/useDecisionEngineReadiness'
@@ -62,8 +63,23 @@ function UpdateEngineButton() {
   const install = useCallback(async () => {
     setInstalling(true)
     try {
-      const update = await checkForEngineUpdate().catch(() => null)
-      let target = update?.updateAvailable ? update.targetBackend : null
+      let update
+      try {
+        update = await checkForEngineUpdate()
+      } catch (error) {
+        // A check that failed is no evidence the engine is up to date.
+        console.error('[embedding] engine update check failed:', error)
+        toast.error(
+          t('settings:embedding.engineUpdateCheckFailed', {
+            engine: EMBEDDING_ENGINE_UI.name,
+          }),
+          {
+            description: error instanceof Error ? error.message : undefined,
+          }
+        )
+        return
+      }
+      let target = update.updateAvailable ? update.targetBackend : null
       if (!target)
         target = (await recheckOptimalBackend())?.recommendedBackend ?? null
       if (!target) {
@@ -185,13 +201,16 @@ function modelDescription(
   )
 }
 
+/** Where a llama.cpp model comes from; the document-search model says what it is for. */
 function localModelDescription(
   model: LocalEmbeddingModel,
   t: (key: string) => string
 ) {
   return (
     <span className="text-xs">
-      {t('settings:embedding.localModel')}
+      {model.id === EMBEDDING_MODEL_ID
+        ? t('settings:embedding.documentSearchModel')
+        : t('settings:embedding.localModel')}
       <LocalEmbeddingModelStatus model={model} />
     </span>
   )
@@ -209,9 +228,10 @@ function newestRequirement(requirements: string[]): string | undefined {
  * models: the downloaded catalog models, then the llama.cpp models the
  * extension flagged as embedding GGUFs. Start serves one on the Local API
  * Server's `/v1/embeddings` under its id, Stop and the trash do what they
- * say. One embedding model runs at a time. Downloading happens in the Hub's
- * Embedding category. Renders nothing where llama.cpp has no build or there
- * is no core.
+ * say. One embedding model runs at a time. The header says how that service
+ * loads its model, and that document search in chats loads its own model by
+ * itself. Downloading happens in the Hub's Embedding category. Renders
+ * nothing where llama.cpp has no build or there is no core.
  */
 export function EmbeddingModelsSection() {
   const { t } = useTranslation()
@@ -254,9 +274,18 @@ export function EmbeddingModelsSection() {
   return (
     <Card
       header={
-        <h1 className="mb-4 text-base font-medium text-foreground">
-          {t('settings:embedding.sectionTitle')}
-        </h1>
+        <div className="mb-4">
+          <h1 className="text-base font-medium text-foreground">
+            {t('settings:embedding.sectionTitle')}
+          </h1>
+          <p
+            className="mt-1 text-xs text-muted-foreground"
+            data-testid="embedding-section-help"
+          >
+            {t('settings:embedding.sectionDescription')}{' '}
+            {t('settings:embedding.documentSearchNote')}
+          </p>
+        </div>
       }
     >
       {shownError && <EmbeddingError error={shownError} />}

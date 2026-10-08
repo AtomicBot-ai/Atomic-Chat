@@ -356,6 +356,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -373,6 +377,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -398,10 +405,10 @@
     "requiresEngine": "Benötigt {{engine}} {{version}}+",
     "requiresEngineNotice": "Dieses Modell benötigt {{engine}} {{version}} oder neuer. Aktualisiere die Engine, um es zu starten.",
     "state": {
-      "disabled": "Gestoppt",
-      "idle": "Startet bei der nächsten Anfrage",
+      "disabled": "Gestoppt: Anfragen laden es nicht",
+      "idle": "Inaktiv: lädt bei der nächsten Anfrage",
       "starting": "Wird gestartet…",
-      "ready": "Läuft",
+      "ready": "Geladen",
       "restarting": "Wird neu gestartet…",
       "failed": "Fehlgeschlagen",
       "unsupported": "Engine nicht unterstützt"
@@ -417,6 +424,12 @@
     "noneTitle": "Keine Embedding-Modelle heruntergeladen",
     "noneDescription": "Lade eines in der Kategorie Embedding im Hub herunter",
     "availableInApi": "In der API verfügbar",
-    "localModel": "Aus deinen llama.cpp-Modellen"
+    "localModel": "Aus deinen llama.cpp-Modellen",
+    "startHint": "Dieses Modell über /v1/embeddings des lokalen API-Servers bereitstellen. Es bleibt an, bis du auf „Stoppen“ klickst.",
+    "stopHint": "Modell entladen und den Embedding-Dienst der API ausschalten: Anfragen laden es nicht mehr.",
+    "sectionDescription": "„Starten“ stellt ein Modell unter seinem Namen über /v1/embeddings des lokalen API-Servers bereit. Es bleibt an: Nach einem Neustart wartet es inaktiv und lädt bei der nächsten Anfrage. „Stoppen“ schaltet den Dienst aus, dann laden Anfragen es nicht mehr.",
+    "documentSearchNote": "Die Dokumentsuche in Chats nutzt ihr eigenes Modell, sentence-transformer-mini, und lädt es bei Bedarf selbst, ohne „Starten“.",
+    "documentSearchModel": "Modell der Dokumentsuche · aus deinen llama.cpp-Modellen",
+    "engineUpdateCheckFailed": "Updates für {{engine}} konnten nicht geprüft werden"
   }
 }

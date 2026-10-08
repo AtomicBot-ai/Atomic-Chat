@@ -356,6 +356,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -373,6 +377,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -398,10 +405,10 @@
     "requiresEngine": "需要 {{engine}} {{version}}+",
     "requiresEngineNotice": "此模型需要 {{engine}} {{version}} 或更新版本。請更新引擎後再啟動。",
     "state": {
-      "disabled": "已停止",
-      "idle": "將在下次請求時啟動",
+      "disabled": "已停止：請求不會載入它",
+      "idle": "閒置：下次請求時載入",
       "starting": "正在啟動…",
-      "ready": "執行中",
+      "ready": "已載入",
       "restarting": "正在重新啟動…",
       "failed": "失敗",
       "unsupported": "引擎不受支援"
@@ -417,6 +424,12 @@
     "noneTitle": "尚未下載嵌入模型",
     "noneDescription": "在中心的「嵌入」類別中下載",
     "availableInApi": "可在 API 中使用",
-    "localModel": "來自你的 llama.cpp 模型"
+    "localModel": "來自你的 llama.cpp 模型",
+    "startHint": "透過本機 API 伺服器的 /v1/embeddings 提供此模型。在你按下「停止」前會保持開啟。",
+    "stopHint": "卸載模型並關閉 API 嵌入服務：請求將不再載入它。",
+    "sectionDescription": "「啟動」會以模型名稱透過本機 API 伺服器的 /v1/embeddings 提供一個模型。它會保持開啟：重新啟動後處於閒置狀態，並在下次請求時載入。「停止」會關閉該服務，請求將不再載入它。",
+    "documentSearchNote": "聊天中的文件搜尋使用自己的模型 sentence-transformer-mini，並在需要時自行載入，不需要「啟動」。",
+    "documentSearchModel": "文件搜尋模型 · 來自你的 llama.cpp 模型",
+    "engineUpdateCheckFailed": "無法檢查 {{engine}} 更新"
   }
 }

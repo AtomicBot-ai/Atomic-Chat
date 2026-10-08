@@ -574,6 +574,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -591,6 +595,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -616,10 +623,10 @@
     "requiresEngine": "Requiere {{engine}} {{version}}+",
     "requiresEngineNotice": "Este modelo requiere {{engine}} {{version}} o posterior. Actualiza el motor para iniciarlo.",
     "state": {
-      "disabled": "Detenido",
-      "idle": "Se inicia con la próxima solicitud",
+      "disabled": "Detenido: las solicitudes no lo cargan",
+      "idle": "Inactivo: se carga con la próxima solicitud",
       "starting": "Iniciando…",
-      "ready": "En ejecución",
+      "ready": "Cargado",
       "restarting": "Reiniciando…",
       "failed": "Error",
       "unsupported": "Motor no compatible"
@@ -635,6 +642,12 @@
     "noneTitle": "No hay modelos de embeddings descargados",
     "noneDescription": "Descarga uno en la categoría Embedding del Hub",
     "availableInApi": "Disponible en la API",
-    "localModel": "De tus modelos de llama.cpp"
+    "localModel": "De tus modelos de llama.cpp",
+    "startHint": "Servir este modelo en /v1/embeddings del servidor de API local. Sigue activo hasta que pulses Detener.",
+    "stopHint": "Descargar el modelo y apagar el servicio de embeddings de la API: las solicitudes ya no lo cargan.",
+    "sectionDescription": "Iniciar sirve un modelo en /v1/embeddings del servidor de API local, con su nombre. Sigue activo: tras un reinicio espera inactivo y se carga con la próxima solicitud. Detener apaga el servicio, así que las solicitudes ya no lo cargan.",
+    "documentSearchNote": "La búsqueda en documentos de los chats usa su propio modelo, sentence-transformer-mini, y lo carga cuando hace falta, sin Iniciar.",
+    "documentSearchModel": "Modelo de búsqueda en documentos · de tus modelos de llama.cpp",
+    "engineUpdateCheckFailed": "No se pudieron buscar actualizaciones de {{engine}}"
   }
 }

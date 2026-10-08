@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LocalEmbeddingModel } from '@/lib/embedding/models'
 import type { EmbeddingCatalogModel } from '@/services/embedding-catalog-registry'
@@ -8,7 +9,13 @@ const mocks = vi.hoisted(() => ({
   arch: '',
   versionBackend: undefined as string | undefined,
   local: [] as LocalEmbeddingModel[],
+  checkForEngineUpdate: vi.fn(),
+  recheckOptimalBackend: vi.fn(),
+  downloadRecommendedBackend: vi.fn(),
+  toast: { error: vi.fn(), info: vi.fn() },
 }))
+
+vi.mock('sonner', () => ({ toast: mocks.toast }))
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -51,9 +58,9 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
 
 vi.mock('@/hooks/useBackendUpdater', () => ({
   useBackendUpdater: () => ({
-    checkForEngineUpdate: vi.fn(),
-    recheckOptimalBackend: vi.fn(),
-    downloadRecommendedBackend: vi.fn(),
+    checkForEngineUpdate: mocks.checkForEngineUpdate,
+    recheckOptimalBackend: mocks.recheckOptimalBackend,
+    downloadRecommendedBackend: mocks.downloadRecommendedBackend,
   }),
 }))
 
@@ -98,6 +105,7 @@ describe('EmbeddingModelsSection', () => {
     mocks.arch = ''
     mocks.versionBackend = undefined
     mocks.local = []
+    vi.clearAllMocks()
     bind.mockClear()
     useEmbeddingStore.setState({
       catalog: getBaselineEmbeddingCatalog(),
@@ -115,6 +123,10 @@ describe('EmbeddingModelsSection', () => {
     expect(
       screen.getByRole('heading', { name: 'settings:embedding.sectionTitle' })
     ).toBeVisible()
+    // How the API service loads its model, apart from document search's own.
+    expect(screen.getByTestId('embedding-section-help')).toHaveTextContent(
+      'settings:embedding.sectionDescription settings:embedding.documentSearchNote'
+    )
     expect(screen.getByText('BGE-M3')).toBeVisible()
     expect(screen.getByText('actions for bge-m3')).toBeVisible()
     expect(screen.getByText('status of bge-m3')).toBeVisible()
@@ -141,7 +153,13 @@ describe('EmbeddingModelsSection', () => {
       'actions for bge-m3',
       'local actions for sentence-transformer-mini',
     ])
-    expect(screen.getByText('settings:embedding.localModel')).toBeVisible()
+    // The document-search model says what it is for.
+    expect(
+      screen.getByText('settings:embedding.documentSearchModel')
+    ).toBeVisible()
+    expect(
+      screen.queryByText('settings:embedding.localModel')
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByText('settings:embedding.noneTitle')
     ).not.toBeInTheDocument()
@@ -217,6 +235,30 @@ describe('EmbeddingModelsSection', () => {
     expect(
       screen.getByRole('button', { name: 'settings:embedding.updateEngine' })
     ).toBeVisible()
+  })
+
+  it('says the update check failed instead of calling the engine up to date', async () => {
+    mocks.checkForEngineUpdate.mockRejectedValueOnce(new Error('timed out'))
+    useEmbeddingStore.setState({
+      error: { code: 'EMBEDDING_ENGINE_UNSUPPORTED', message: 'm' },
+    })
+    render(<EmbeddingModelsSection />)
+
+    const update = screen.getByRole('button', {
+      name: 'settings:embedding.updateEngine',
+    })
+    await userEvent.click(update)
+    await waitFor(() =>
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        'settings:embedding.engineUpdateCheckFailed',
+        { description: 'timed out' }
+      )
+    )
+    expect(mocks.toast.info).not.toHaveBeenCalled()
+    expect(mocks.recheckOptimalBackend).not.toHaveBeenCalled()
+    expect(mocks.downloadRecommendedBackend).not.toHaveBeenCalled()
+    // Nothing is left installing: the button can be pressed again.
+    expect(update).toBeEnabled()
   })
 
   it('renders nothing where embedding models cannot run', () => {

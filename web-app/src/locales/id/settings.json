@@ -356,6 +356,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -373,6 +377,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -398,10 +405,10 @@
     "requiresEngine": "Perlu {{engine}} {{version}}+",
     "requiresEngineNotice": "Model ini memerlukan {{engine}} {{version}} atau lebih baru. Perbarui mesin untuk memulainya.",
     "state": {
-      "disabled": "Dihentikan",
-      "idle": "Mulai pada permintaan berikutnya",
+      "disabled": "Dihentikan: permintaan tidak memuatnya",
+      "idle": "Menganggur: dimuat pada permintaan berikutnya",
       "starting": "Memulai…",
-      "ready": "Berjalan",
+      "ready": "Dimuat",
       "restarting": "Memulai ulang…",
       "failed": "Gagal",
       "unsupported": "Mesin tidak didukung"
@@ -417,6 +424,12 @@
     "noneTitle": "Belum ada model embedding yang diunduh",
     "noneDescription": "Unduh di kategori Embedding pada Hub",
     "availableInApi": "Tersedia di API",
-    "localModel": "Dari model llama.cpp Anda"
+    "localModel": "Dari model llama.cpp Anda",
+    "startHint": "Sajikan model ini di /v1/embeddings Server API Lokal. Model tetap aktif sampai Anda menekan Hentikan.",
+    "stopHint": "Bongkar model dan matikan layanan embedding API: permintaan tidak lagi memuatnya.",
+    "sectionDescription": "Mulai menyajikan satu model di /v1/embeddings Server API Lokal dengan namanya. Model tetap aktif: setelah dimulai ulang, model menunggu dan dimuat pada permintaan berikutnya. Hentikan mematikan layanan, sehingga permintaan tidak lagi memuatnya.",
+    "documentSearchNote": "Pencarian dokumen di obrolan memakai modelnya sendiri, sentence-transformer-mini, dan memuatnya saat dibutuhkan, tanpa Mulai.",
+    "documentSearchModel": "Model pencarian dokumen · dari model llama.cpp Anda",
+    "engineUpdateCheckFailed": "Tidak dapat memeriksa pembaruan {{engine}}"
   }
 }

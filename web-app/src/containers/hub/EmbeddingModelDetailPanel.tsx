@@ -7,9 +7,12 @@ import { ModelLogo } from '@/containers/ModelLogo'
 import { HubReadme } from '@/containers/hub/HubReadme'
 import { route } from '@/constants/routes'
 import { useEmbeddingEngineReadiness } from '@/hooks/useEmbeddingEngineReadiness'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useEmbeddingModel } from '@/hooks/useEmbeddingModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { EMBEDDING_ENGINE, EMBEDDING_ENGINE_UI } from '@/lib/embedding/engine'
+import { EMBEDDING_EXAMPLE_TEXT } from '@/lib/embedding/examples'
+import type { LocalEmbeddingModel } from '@/lib/embedding/models'
 import { embeddingIconKey } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import {
@@ -19,6 +22,10 @@ import {
 } from '@/services/embedding-catalog-registry'
 
 const gb = (bytes: number) => (bytes / 1024 ** 3).toFixed(2)
+const tokens = (count: number) => count.toLocaleString()
+
+/** A document prefix with a title slot, as EmbeddingGemma's `title: none | text: `. */
+const hasTitleSlot = (prefix: string) => /title:\s*none/i.test(prefix)
 
 export type EmbeddingModelDetailPanelProps = {
   model: EmbeddingCatalogModel | null
@@ -29,9 +36,10 @@ export type EmbeddingModelDetailPanelProps = {
  * The right-hand panel for an embedding model, shaped like the other
  * categories': the download with its size (projector included), or — once
  * the model is on disk — the way to the llama.cpp provider page that starts
- * it; then what goes in and comes out (inputs, vector length, context,
- * pooling), the prompts the model expects in front of each text, and the
- * repo's README at the pinned revision.
+ * it; then what goes in and comes out (inputs, vector length and the shorter
+ * lengths a client may cut it to, the context it is started with against the
+ * model's maximum, pooling), the prefixes the model expects in front of each
+ * text with an example of each, and the repo's README at the pinned revision.
  */
 /**
  * The size on disk, or while the model downloads how much of it has arrived:
@@ -63,6 +71,85 @@ export function EmbeddingModelDetailPanel({
 }: EmbeddingModelDetailPanelProps) {
   if (!model) return <EmptyPanel className={className} />
   return <ModelPanel model={model} className={className} />
+}
+
+/**
+ * The right-hand panel for an embedding GGUF among the user's llama.cpp
+ * models: what it is (for the document-search model, that chats load it by
+ * themselves), where it lies, and the way to the llama.cpp provider page,
+ * where Start serves it on the API like a catalog model.
+ */
+export function LocalEmbeddingModelDetailPanel({
+  model,
+  className,
+}: {
+  model: LocalEmbeddingModel
+  className?: string
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const documentSearch = model.id === EMBEDDING_MODEL_ID
+  const openProvider = () => {
+    void navigate({
+      to: route.settings.providers,
+      params: { providerName: EMBEDDING_ENGINE },
+    })
+  }
+
+  return (
+    <div
+      className={cn('flex flex-col gap-4 p-6', className)}
+      data-testid={`embedding-local-panel-${model.id}`}
+    >
+      <header className="flex items-start gap-3">
+        <ModelLogo name={model.name} />
+        <div className="min-w-0 flex-1">
+          <h1
+            className="min-w-0 truncate text-xl font-semibold"
+            title={model.name}
+          >
+            {model.name}
+          </h1>
+          <p className="truncate text-xs text-muted-foreground">
+            {documentSearch
+              ? t('settings:embedding.documentSearchModel')
+              : t('settings:embedding.localModel')}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={openProvider}
+        >
+          {t('hub:open')}
+        </Button>
+      </header>
+
+      <p className="text-sm text-muted-foreground">
+        {documentSearch
+          ? t('hub:embeddingLocalDocumentSearch')
+          : t('hub:embeddingLocalModel')}{' '}
+        {t('hub:embeddingLocalServe', { engine: EMBEDDING_ENGINE_UI.name })}
+      </p>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-3 text-sm font-medium">{t('hub:details')}</h2>
+        <dl className="grid grid-cols-2 gap-2 text-xs">
+          <DetailCell label={t('hub:embeddingModelId')}>
+            <span className="font-mono" title={model.id}>
+              {model.id}
+            </span>
+          </DetailCell>
+          <DetailCell label={t('hub:embeddingFile')}>
+            <span className="font-mono font-normal" title={model.model_path}>
+              {model.model_path}
+            </span>
+          </DetailCell>
+        </dl>
+      </section>
+    </div>
+  )
 }
 
 function EmptyPanel({ className }: { className?: string }) {
@@ -106,6 +193,12 @@ function ModelPanel({
     const text = model.prompts?.[kind]
     return text ? [{ kind, text }] : []
   })
+  const prefixesNote =
+    prompts.length > 1
+      ? 'hub:embeddingPrefixesNote.both'
+      : prompts[0]?.kind === 'query'
+        ? 'hub:embeddingPrefixesNote.query'
+        : 'hub:embeddingPrefixesNote.document'
 
   return (
     <div className={cn('flex flex-col gap-4 p-6', className)}>
@@ -188,24 +281,36 @@ function ModelPanel({
           </DetailCell>
           <DetailCell label={t('hub:embeddingDimensions')}>
             {model.dims}
-            {model.matryoshka_dims && (
-              <span className="font-normal text-muted-foreground">
-                {' · '}
-                {t('hub:embeddingMatryoshka', {
-                  dims: model.matryoshka_dims.join(', '),
-                })}
+          </DetailCell>
+          <DetailCell
+            label={t('hub:embeddingConfiguredContext')}
+            hint={
+              model.max_context > model.context
+                ? t('hub:embeddingContextMax', {
+                    tokens: tokens(model.max_context),
+                  })
+                : t('hub:embeddingContextIsMax')
+            }
+          >
+            {t('settings:embedding.context', {
+              tokens: tokens(model.context),
+            })}
+          </DetailCell>
+          {model.matryoshka_dims && (
+            <DetailCell
+              label={t('hub:embeddingShorterDims')}
+              hint={t('hub:embeddingShorterDimsNote', { dims: model.dims })}
+              className="col-span-2"
+            >
+              <span data-testid={`embedding-shorter-dims-${model.id}`}>
+                {model.matryoshka_dims.join(', ')}
               </span>
-            )}
-          </DetailCell>
-          <DetailCell label={t('hub:context')}>
-            {model.max_context > model.context
-              ? t('hub:embeddingContextOfMax', {
-                  tokens: model.context,
-                  max: model.max_context,
-                })
-              : t('settings:embedding.context', { tokens: model.context })}
-          </DetailCell>
-          <DetailCell label={t('hub:embeddingPooling')}>
+            </DetailCell>
+          )}
+          <DetailCell
+            label={t('hub:embeddingPooling')}
+            hint={t('hub:embeddingPoolingHint')}
+          >
             <span className="font-mono">{model.pooling}</span>
           </DetailCell>
           <DetailCell label={t('hub:parameters')}>{model.params}</DetailCell>
@@ -220,10 +325,10 @@ function ModelPanel({
           data-testid={`embedding-prompts-${model.id}`}
         >
           <h2 className="mb-1 text-sm font-medium">
-            {t('hub:embeddingPrompts')}
+            {t('hub:embeddingPrefixes')}
           </h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            {t('hub:embeddingPromptsNote')}
+            {t(prefixesNote)}
           </p>
           <div className="flex flex-col gap-2">
             {prompts.map(({ kind, text }) => {
@@ -235,16 +340,29 @@ function ModelPanel({
                 <div
                   key={kind}
                   className="flex items-start gap-2 rounded-md bg-muted/40 p-3"
+                  data-testid={`embedding-prefix-${kind}`}
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">{label}</p>
                     <code className="mt-1 block whitespace-pre-wrap break-all font-mono text-xs text-foreground">
                       {text}
                     </code>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {t('hub:embeddingPrefixExample')}{' '}
+                      <code className="whitespace-pre-wrap break-all font-mono text-foreground">
+                        {text}
+                        {EMBEDDING_EXAMPLE_TEXT[kind]}
+                      </code>
+                    </p>
+                    {kind === 'document' && hasTitleSlot(text) && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t('hub:embeddingPrefixTitleHint')}
+                      </p>
+                    )}
                   </div>
                   <CopyButton
                     text={text}
-                    ariaLabel={t('hub:embeddingCopyPrompt', { name: label })}
+                    ariaLabel={t('hub:embeddingCopyPrefix', { name: label })}
                   />
                 </div>
               )
@@ -260,19 +378,25 @@ function ModelPanel({
   )
 }
 
+/** One fact; `hint` says what it means for a client, under the value. */
 function DetailCell({
   label,
+  hint,
+  className,
   children,
 }: {
   label: string
+  hint?: string
+  className?: string
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-md bg-muted/40 p-3">
+    <div className={cn('rounded-md bg-muted/40 p-3', className)}>
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="mt-1 truncate text-sm font-semibold text-foreground">
         {children}
       </dd>
+      {hint && <dd className="mt-1 text-muted-foreground">{hint}</dd>}
     </div>
   )
 }

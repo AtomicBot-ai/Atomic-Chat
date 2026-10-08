@@ -82,8 +82,8 @@ describe.each(['light', 'dark'] as const)(
         expectOneLine(id)
         for (const name of [
           'api:strip.copyEmbeddingModel',
-          'api:strip.copyTextExample',
-          'api:strip.copyImageExample',
+          'api:strip.copyTextTest',
+          'api:strip.copyImageTest',
         ]) {
           expectVerticallyCentered(screen.getByRole('button', { name }), id)
         }

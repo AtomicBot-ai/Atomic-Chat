@@ -1,5 +1,6 @@
 import {
   IconCheck,
+  IconCopy,
   IconPhoto,
   IconTerminal2,
   IconWorld,
@@ -17,6 +18,12 @@ import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { copyToClipboard } from '@/lib/clipboard'
+import {
+  API_KEY_PLACEHOLDER,
+  IMAGE_FILE_PLACEHOLDER,
+  embeddingImageCommand,
+  embeddingTextCommand,
+} from '@/lib/embedding/examples'
 import { cn } from '@/lib/utils'
 import type { DecisionState } from '@/services/decision/types'
 import type { EmbeddingState } from '@/services/embedding/types'
@@ -90,14 +97,18 @@ const EMBEDDING_SERVED_STATES = new Set<EmbeddingState>([
 
 /**
  * The embedding model the server answers `/embeddings` with, by the id
- * clients pass as `model`, or `null` when none. What it reads comes from the
- * running process, or from the catalog until the process has said.
+ * clients pass as `model`, or `null` when none. What it reads and the length
+ * of its vectors come from the running process, or from the catalog until the
+ * process has said; its query prefix from the catalog (a llama.cpp model has
+ * none to show).
  */
 function useServedEmbeddingModel(): {
   id: string
   ready: boolean
   starting: boolean
   readsImages: boolean
+  dims: number | null
+  queryPrefix: string
 } | null {
   const status = useEmbeddingStore((s) => s.status)
   const config = useEmbeddingStore((s) => s.config)
@@ -109,42 +120,33 @@ function useServedEmbeddingModel(): {
     return null
   const id = status.model_id || config?.model_id || ''
   if (!id) return null
+  const entry = catalog.models.find((model) => model.id === id)
   const modalities =
-    status.modalities.length > 0
-      ? status.modalities
-      : (catalog.models.find((model) => model.id === id)?.modalities ?? [])
+    status.modalities.length > 0 ? status.modalities : (entry?.modalities ?? [])
   return {
     id,
     ready: status.state === 'ready',
     starting: status.state === 'starting' || status.state === 'restarting',
     readsImages: (modalities as readonly string[]).includes('image'),
+    dims: status.dims ?? entry?.dims ?? null,
+    queryPrefix: entry?.prompts?.query ?? '',
   }
 }
 
-/** Single-quoted for a POSIX shell. */
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
-
-/** A `POST /embeddings` a client can paste, with the key header when the server needs one. */
-function embeddingCurl(endpoint: string, body: unknown, authRequired: boolean) {
-  return [
-    `curl -X POST ${shellQuote(endpoint)} \\`,
-    `  -H 'Content-Type: application/json' \\`,
-    ...(authRequired ? [`  -H 'Authorization: Bearer YOUR_API_KEY' \\`] : []),
-    `  -d ${shellQuote(JSON.stringify(body))}`,
-  ].join('\n')
-}
-
 /**
- * An icon that copies `text`, named by its tooltip. The strip's fields stay one
- * line, so the example commands sit as icons beside the copy icon, not buttons.
+ * An icon that copies `text`, named by its tooltip: what it copies, and what
+ * to do with it. The strip's fields stay one line, so the copies sit as icons
+ * beside the model id, not buttons.
  */
 function CopyIcon({
   text,
   label,
+  description,
   icon,
 }: {
   text: string
   label: string
+  description?: string
   icon: React.ReactNode
 }) {
   const [copied, setCopied] = useState(false)
@@ -166,7 +168,10 @@ function CopyIcon({
           {copied ? <IconCheck size={16} className="text-primary" /> : icon}
         </Button>
       </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
+      <TooltipContent className="max-w-xs">
+        <p className="font-medium">{label}</p>
+        {description && <p className="mt-0.5 opacity-80">{description}</p>}
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -187,6 +192,7 @@ export function ApiConnectionStrip() {
 
   const embeddingsEndpoint = `${url.replace(/\/+$/, '')}/embeddings`
   const authRequired = apiKey.trim().length > 0
+  const apiKeyHint = t('api:strip.apiKeyHint', { key: API_KEY_PLACEHOLDER })
 
   const loadedModel = activeModels[0] ?? null
   const contextLength = getModelContextLength(loadedModel)
@@ -268,39 +274,44 @@ export function ApiConnectionStrip() {
               )}
             </span>
             <span className="flex shrink-0 items-center">
-              <CopyButton
+              <CopyIcon
                 text={embeddingModel.id}
-                ariaLabel={t('api:strip.copyEmbeddingModel')}
+                label={t('api:strip.copyEmbeddingModel')}
+                description={t('api:strip.copyEmbeddingModelHint')}
+                icon={<IconCopy size={16} />}
               />
               <CopyIcon
-                text={embeddingCurl(
+                text={embeddingTextCommand(
                   embeddingsEndpoint,
-                  { model: embeddingModel.id, input: 'Hello, world' },
+                  embeddingModel.id,
+                  embeddingModel.queryPrefix,
                   authRequired
                 )}
-                label={t('api:strip.copyTextExample')}
+                label={t('api:strip.copyTextTest')}
+                description={[
+                  embeddingModel.dims
+                    ? t('api:strip.copyTextTestHint', {
+                        dims: embeddingModel.dims,
+                      })
+                    : t('api:strip.copyTextTestHintNoDims'),
+                  ...(authRequired ? [apiKeyHint] : []),
+                ].join(' ')}
                 icon={<IconTerminal2 size={16} />}
               />
               {embeddingModel.readsImages && (
                 <CopyIcon
-                  text={embeddingCurl(
+                  text={embeddingImageCommand(
                     embeddingsEndpoint,
-                    {
-                      model: embeddingModel.id,
-                      input: [
-                        {
-                          content: [
-                            {
-                              type: 'image_url',
-                              image_url: { url: 'data:image/png;base64,...' },
-                            },
-                          ],
-                        },
-                      ],
-                    },
+                    embeddingModel.id,
                     authRequired
                   )}
-                  label={t('api:strip.copyImageExample')}
+                  label={t('api:strip.copyImageTest')}
+                  description={[
+                    t('api:strip.copyImageTestHint', {
+                      file: IMAGE_FILE_PLACEHOLDER,
+                    }),
+                    ...(authRequired ? [apiKeyHint] : []),
+                  ].join(' ')}
                   icon={<IconPhoto size={16} />}
                 />
               )}

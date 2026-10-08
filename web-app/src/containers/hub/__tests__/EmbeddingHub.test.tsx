@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { LocalEmbeddingModel } from '@/lib/embedding/models'
 import type { EmbeddingCatalogModel } from '@/services/embedding-catalog-registry'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -19,7 +20,24 @@ vi.mock('@/containers/hub/EmbeddingModelDetailPanel', () => ({
   }: {
     model: EmbeddingCatalogModel | null
   }) => <aside data-testid="detail">{model?.id ?? 'none'}</aside>,
+  LocalEmbeddingModelDetailPanel: ({
+    model,
+  }: {
+    model: LocalEmbeddingModel
+  }) => <aside data-testid="detail">{`local ${model.id}`}</aside>,
 }))
+
+const local = vi.hoisted(() => ({ models: [] as LocalEmbeddingModel[] }))
+vi.mock('@/hooks/useEmbeddingModel', () => ({
+  useLocalEmbeddingModels: () => local.models,
+}))
+
+const miniLm: LocalEmbeddingModel = {
+  id: 'sentence-transformer-mini',
+  name: 'sentence-transformer-mini',
+  model_path: 'llamacpp/models/sentence-transformer-mini/model.gguf',
+  mmproj_path: '',
+}
 
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { getBaselineEmbeddingCatalog } from '@/services/embedding-catalog-registry'
@@ -56,6 +74,7 @@ const listedRepos = () =>
 describe('EmbeddingHub', () => {
   beforeEach(() => {
     bind.mockClear()
+    local.models = []
     useEmbeddingStore.setState({ catalog, installed: {}, bind })
   })
 
@@ -119,6 +138,51 @@ describe('EmbeddingHub', () => {
     expect(onSelectModel).toHaveBeenCalledWith('embeddinggemma-2', {
       replace: true,
     })
+  })
+
+  it('lists the embedding GGUFs among the llama.cpp models after the downloaded ones, the document-search model among them', async () => {
+    local.models = [miniLm]
+    useEmbeddingStore.setState({ installed: { 'bge-m3': true } })
+    const { onSelectModel } = renderHub()
+
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+    ).toEqual([
+      'hub:downloaded',
+      'settings:embedding.localModel',
+      'hub:available',
+    ])
+    const section = screen.getByTestId('embedding-local-models')
+    expect(section).toHaveTextContent('sentence-transformer-mini')
+    expect(section).toHaveTextContent('settings:embedding.documentSearchModel')
+
+    await userEvent.click(
+      within(section).getByRole('button', { name: /sentence-transformer-mini/ })
+    )
+    expect(onSelectModel).toHaveBeenCalledWith(
+      'llamacpp:sentence-transformer-mini'
+    )
+  })
+
+  it('opens a llama.cpp model the URL names, and keeps its key while the models are read', () => {
+    local.models = [miniLm]
+    const { onSelectModel } = renderHub({
+      selectedModelId: 'llamacpp:sentence-transformer-mini',
+    })
+    expect(screen.getByTestId('detail')).toHaveTextContent(
+      'local sentence-transformer-mini'
+    )
+    expect(screen.getByRole('button', { current: true })).toHaveTextContent(
+      'sentence-transformer-mini'
+    )
+    expect(onSelectModel).not.toHaveBeenCalled()
+  })
+
+  it('finds a llama.cpp model by the search too', () => {
+    local.models = [miniLm]
+    renderHub({ query: 'mini' })
+    expect(screen.getByTestId('embedding-local-models')).toBeVisible()
+    expect(screen.queryByText('hub:noModels')).not.toBeInTheDocument()
   })
 
   it('narrows the list by the search and offers to clear an empty one', async () => {

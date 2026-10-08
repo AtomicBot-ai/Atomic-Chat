@@ -629,6 +629,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -646,6 +650,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -671,10 +678,10 @@
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
-      "disabled": "Stopped",
-      "idle": "Starts on the next request",
+      "disabled": "Stopped: requests do not load it",
+      "idle": "Idle: loads on the next request",
       "starting": "Starting…",
-      "ready": "Running",
+      "ready": "Loaded",
       "restarting": "Restarting…",
       "failed": "Failed",
       "unsupported": "Engine not supported"
@@ -690,7 +697,13 @@
     "noneTitle": "No embedding models downloaded",
     "noneDescription": "Download one in the Embedding category of the Hub",
     "availableInApi": "Available in the API",
-    "localModel": "From your llama.cpp models"
+    "localModel": "From your llama.cpp models",
+    "startHint": "Serve this model on the Local API Server's /v1/embeddings. It stays on until you press Stop.",
+    "stopHint": "Unload the model and turn the API embedding service off: requests no longer load it.",
+    "sectionDescription": "Start serves one model on the Local API Server's /v1/embeddings, under its name. It stays on: after a restart it waits idle and loads on the next request. Stop turns the service off, so requests no longer load it.",
+    "documentSearchNote": "Document search in chats uses its own model, sentence-transformer-mini, and loads it when needed, without Start.",
+    "documentSearchModel": "Document search model · from your llama.cpp models",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates"
   },
   "media": {
     "subtitle": "Local image generation with stable-diffusion.cpp. Everything runs on this computer.",

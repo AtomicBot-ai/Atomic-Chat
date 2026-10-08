@@ -7,236 +7,217 @@
 import type { EmbeddingCatalogManifest } from './embedding-catalog-registry'
 
 export const BASELINE_EMBEDDING_CATALOG: EmbeddingCatalogManifest = {
-  "schema_version": 1,
-  "updated_at": "2026-10-07T11:25:06Z",
-  "models": [
+  schema_version: 1,
+  updated_at: '2026-10-08T10:00:00Z',
+  models: [
     {
-      "id": "embeddinggemma-2",
-      "name": "EmbeddingGemma 2",
-      "description": "Google multimodal embedding model: text, images and audio share one 768-dimension space, so a text query finds pictures and recordings. Multilingual; vectors can be cut to 512, 256 or 128.",
-      "repo": "unsloth/embeddinggemma-2-GGUF",
-      "revision": "031f0d4b35536f69ab3509d4893c923264fcf253",
-      "params": "740M",
-      "languages": "multilingual",
-      "context": 4096,
-      "max_context": 8192,
-      "dims": 768,
-      "matryoshka_dims": [
-        512,
-        256,
-        128
-      ],
-      "pooling": "mean",
-      "modalities": [
-        "text",
-        "image",
-        "audio"
-      ],
-      "image_max_tokens": 280,
-      "prompts": {
-        "query": "task: search result | query: ",
-        "document": "title: none | text: "
+      id: 'embeddinggemma-2',
+      name: 'EmbeddingGemma 2',
+      description:
+        'Google multimodal embedding model: text, images and audio share one 768-dimension space, so a text query finds pictures and recordings. Multilingual.',
+      repo: 'unsloth/embeddinggemma-2-GGUF',
+      revision: '031f0d4b35536f69ab3509d4893c923264fcf253',
+      params: '740M',
+      languages: 'multilingual',
+      context: 4096,
+      max_context: 8192,
+      dims: 768,
+      matryoshka_dims: [512, 256, 128],
+      pooling: 'mean',
+      modalities: ['text', 'image', 'audio'],
+      image_max_tokens: 280,
+      prompts: {
+        query: 'task: search result | query: ',
+        document: 'title: none | text: ',
       },
-      "license": "apache-2.0",
-      "default": true,
-      "min_engine": "b11454",
-      "engine": "llamacpp-upstream",
-      "format": "gguf",
-      "icon": "gemma-mark",
-      "files": [
+      license: 'apache-2.0',
+      default: true,
+      min_engine: 'b11454',
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      icon: 'gemma-mark',
+      files: [
         {
-          "path": "embeddinggemma-2-Q8_0.gguf",
-          "role": "model",
-          "bytes": 309855520,
-          "sha256": "6f1bd4ac6c5df7444f9cca7ca36cafe6cfa34cd6f49fefb1e0b4be8143aed8bc"
+          path: 'embeddinggemma-2-Q8_0.gguf',
+          role: 'model',
+          bytes: 309855520,
+          sha256:
+            '6f1bd4ac6c5df7444f9cca7ca36cafe6cfa34cd6f49fefb1e0b4be8143aed8bc',
         },
         {
-          "path": "mmproj-Q8_0.gguf",
-          "role": "mmproj",
-          "bytes": 554821120,
-          "sha256": "90e7b0238009e2954f856f2081dcf7f35af026b64c765e98f4777053e1754460"
-        }
-      ]
+          path: 'mmproj-Q8_0.gguf',
+          role: 'mmproj',
+          bytes: 554821120,
+          sha256:
+            '90e7b0238009e2954f856f2081dcf7f35af026b64c765e98f4777053e1754460',
+        },
+      ],
     },
     {
-      "id": "embeddinggemma-300m",
-      "name": "EmbeddingGemma 300M",
-      "description": "Small Google text embedding model for search and retrieval in over 100 languages. 768 dimensions, can be cut to 512, 256 or 128.",
-      "repo": "ggml-org/embeddinggemma-300M-GGUF",
-      "revision": "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
-      "params": "308M",
-      "languages": "multilingual",
-      "context": 2048,
-      "max_context": 2048,
-      "dims": 768,
-      "matryoshka_dims": [
-        512,
-        256,
-        128
-      ],
-      "pooling": "mean",
-      "modalities": [
-        "text"
-      ],
-      "prompts": {
-        "query": "task: search result | query: ",
-        "document": "title: none | text: "
+      id: 'embeddinggemma-300m',
+      name: 'EmbeddingGemma 300M',
+      description:
+        'Small Google text embedding model for search and retrieval in over 100 languages. 768 dimensions.',
+      repo: 'ggml-org/embeddinggemma-300M-GGUF',
+      revision: '0f741b5a6585bd53aeb15cd1372c56f2a0f65e12',
+      params: '308M',
+      languages: 'multilingual',
+      context: 2048,
+      max_context: 2048,
+      dims: 768,
+      matryoshka_dims: [512, 256, 128],
+      pooling: 'mean',
+      modalities: ['text'],
+      prompts: {
+        query: 'task: search result | query: ',
+        document: 'title: none | text: ',
       },
-      "license": "gemma",
-      "min_engine": "b11443",
-      "engine": "llamacpp-upstream",
-      "format": "gguf",
-      "icon": "gemma-mark",
-      "files": [
+      license: 'gemma',
+      min_engine: 'b11443',
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      icon: 'gemma-mark',
+      files: [
         {
-          "path": "embeddinggemma-300M-Q8_0.gguf",
-          "role": "model",
-          "bytes": 333590944,
-          "sha256": "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
-        }
-      ]
+          path: 'embeddinggemma-300M-Q8_0.gguf',
+          role: 'model',
+          bytes: 333590944,
+          sha256:
+            'b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63',
+        },
+      ],
     },
     {
-      "id": "qwen3-embedding-0.6b",
-      "name": "Qwen3 Embedding 0.6B",
-      "description": "Compact Qwen text embedding model, strong on multilingual and code retrieval, with long inputs. 1024 dimensions.",
-      "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
-      "revision": "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
-      "params": "0.6B",
-      "languages": "multilingual",
-      "context": 8192,
-      "max_context": 32768,
-      "dims": 1024,
-      "matryoshka_dims": [
-        768,
-        512,
-        256,
-        128
-      ],
-      "pooling": "last",
-      "modalities": [
-        "text"
-      ],
-      "prompts": {
-        "query": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"
+      id: 'qwen3-embedding-0.6b',
+      name: 'Qwen3 Embedding 0.6B',
+      description:
+        'Compact Qwen text embedding model, strong on multilingual and code retrieval, with long inputs. 1024 dimensions.',
+      repo: 'Qwen/Qwen3-Embedding-0.6B-GGUF',
+      revision: '370f27d7550e0def9b39c1f16d3fbaa13aa67728',
+      params: '0.6B',
+      languages: 'multilingual',
+      context: 8192,
+      max_context: 32768,
+      dims: 1024,
+      matryoshka_dims: [768, 512, 256, 128],
+      pooling: 'last',
+      modalities: ['text'],
+      prompts: {
+        query:
+          'Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:',
       },
-      "license": "apache-2.0",
-      "min_engine": "b11443",
-      "engine": "llamacpp-upstream",
-      "format": "gguf",
-      "icon": "qwen",
-      "files": [
+      license: 'apache-2.0',
+      min_engine: 'b11443',
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      icon: 'qwen',
+      files: [
         {
-          "path": "Qwen3-Embedding-0.6B-Q8_0.gguf",
-          "role": "model",
-          "bytes": 639150592,
-          "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439"
-        }
-      ]
+          path: 'Qwen3-Embedding-0.6B-Q8_0.gguf',
+          role: 'model',
+          bytes: 639150592,
+          sha256:
+            '06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439',
+        },
+      ],
     },
     {
-      "id": "qwen3-vl-embedding-2b",
-      "name": "Qwen3-VL Embedding 2B",
-      "description": "Qwen vision-language embedding model: text and images share one 2048-dimension space, for finding photos, screenshots and scanned pages by a text query.",
-      "repo": "mradermacher/Qwen3-VL-Embedding-2B-GGUF",
-      "revision": "bf4d4a2678123d5c0c1b6bd1c6fd72cba753c0b9",
-      "params": "2B",
-      "languages": "multilingual",
-      "context": 8192,
-      "max_context": 32768,
-      "dims": 2048,
-      "pooling": "last",
-      "modalities": [
-        "text",
-        "image"
-      ],
-      "license": "apache-2.0",
-      "min_engine": "b11443",
-      "engine": "llamacpp-upstream",
-      "format": "gguf",
-      "icon": "qwen",
-      "files": [
+      id: 'qwen3-vl-embedding-2b',
+      name: 'Qwen3-VL Embedding 2B',
+      description:
+        'Qwen vision-language embedding model: text and images share one 2048-dimension space, for finding photos, screenshots and scanned pages by a text query.',
+      repo: 'mradermacher/Qwen3-VL-Embedding-2B-GGUF',
+      revision: 'bf4d4a2678123d5c0c1b6bd1c6fd72cba753c0b9',
+      params: '2B',
+      languages: 'multilingual',
+      context: 8192,
+      max_context: 32768,
+      dims: 2048,
+      pooling: 'last',
+      modalities: ['text', 'image'],
+      license: 'apache-2.0',
+      min_engine: 'b11443',
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      icon: 'qwen',
+      files: [
         {
-          "path": "Qwen3-VL-Embedding-2B.Q8_0.gguf",
-          "role": "model",
-          "bytes": 1834428576,
-          "sha256": "26fadde153b2266d244de4752c2dcba35be78872bdeeb005390b74689d45d851"
+          path: 'Qwen3-VL-Embedding-2B.Q8_0.gguf',
+          role: 'model',
+          bytes: 1834428576,
+          sha256:
+            '26fadde153b2266d244de4752c2dcba35be78872bdeeb005390b74689d45d851',
         },
         {
-          "path": "Qwen3-VL-Embedding-2B.mmproj-Q8_0.gguf",
-          "role": "mmproj",
-          "bytes": 445053568,
-          "sha256": "fa5a22b400fcfa32453656fdc7063bd2c80007030a79cb4f07f7c19cb1e40e8e"
-        }
-      ]
+          path: 'Qwen3-VL-Embedding-2B.mmproj-Q8_0.gguf',
+          role: 'mmproj',
+          bytes: 445053568,
+          sha256:
+            'fa5a22b400fcfa32453656fdc7063bd2c80007030a79cb4f07f7c19cb1e40e8e',
+        },
+      ],
     },
     {
-      "id": "nomic-embed-text-v1.5",
-      "name": "Nomic Embed Text v1.5",
-      "description": "Fast, small English text embedding model. 768 dimensions, can be cut down to 64.",
-      "repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
-      "revision": "0188c9bf409793f810680a5a431e7b899c46104c",
-      "params": "137M",
-      "languages": "en",
-      "context": 2048,
-      "max_context": 2048,
-      "dims": 768,
-      "matryoshka_dims": [
-        512,
-        256,
-        128,
-        64
-      ],
-      "pooling": "mean",
-      "modalities": [
-        "text"
-      ],
-      "prompts": {
-        "query": "search_query: ",
-        "document": "search_document: "
+      id: 'nomic-embed-text-v1.5',
+      name: 'Nomic Embed Text v1.5',
+      description: 'Fast, small English text embedding model. 768 dimensions.',
+      repo: 'nomic-ai/nomic-embed-text-v1.5-GGUF',
+      revision: '0188c9bf409793f810680a5a431e7b899c46104c',
+      params: '137M',
+      languages: 'en',
+      context: 2048,
+      max_context: 2048,
+      dims: 768,
+      matryoshka_dims: [512, 256, 128, 64],
+      pooling: 'mean',
+      modalities: ['text'],
+      prompts: {
+        query: 'search_query: ',
+        document: 'search_document: ',
       },
-      "license": "apache-2.0",
-      "min_engine": "b11443",
-      "engine": "llamacpp-upstream",
-      "format": "gguf",
-      "icon": "nomic",
-      "files": [
+      license: 'apache-2.0',
+      min_engine: 'b11443',
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      icon: 'nomic',
+      files: [
         {
-          "path": "nomic-embed-text-v1.5.Q8_0.gguf",
-          "role": "model",
-          "bytes": 146146432,
-          "sha256": "3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7"
-        }
-      ]
+          path: 'nomic-embed-text-v1.5.Q8_0.gguf',
+          role: 'model',
+          bytes: 146146432,
+          sha256:
+            '3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7',
+        },
+      ],
     },
     {
-      "id": "bge-m3",
-      "name": "BGE-M3",
-      "description": "BAAI multilingual embedding model for over 100 languages and long documents, up to 8K tokens per input. 1024 dimensions.",
-      "repo": "ggml-org/bge-m3-Q8_0-GGUF",
-      "revision": "9eba04c5d75ba5a1595e45de734d36bef4e5cb98",
-      "params": "568M",
-      "languages": "multilingual",
-      "context": 8192,
-      "max_context": 8192,
-      "dims": 1024,
-      "pooling": "cls",
-      "modalities": [
-        "text"
-      ],
-      "license": "mit",
-      "min_engine": "b11443",
-      "engine": "llamacpp-upstream",
-      "format": "gguf",
-      "icon": "baai",
-      "files": [
+      id: 'bge-m3',
+      name: 'BGE-M3',
+      description:
+        'BAAI multilingual embedding model for over 100 languages and long documents, up to 8K tokens per input. 1024 dimensions.',
+      repo: 'ggml-org/bge-m3-Q8_0-GGUF',
+      revision: '9eba04c5d75ba5a1595e45de734d36bef4e5cb98',
+      params: '568M',
+      languages: 'multilingual',
+      context: 8192,
+      max_context: 8192,
+      dims: 1024,
+      pooling: 'cls',
+      modalities: ['text'],
+      license: 'mit',
+      min_engine: 'b11443',
+      engine: 'llamacpp-upstream',
+      format: 'gguf',
+      icon: 'baai',
+      files: [
         {
-          "path": "bge-m3-q8_0.gguf",
-          "role": "model",
-          "bytes": 634553760,
-          "sha256": "aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173"
-        }
-      ]
-    }
-  ]
+          path: 'bge-m3-q8_0.gguf',
+          role: 'model',
+          bytes: 634553760,
+          sha256:
+            'aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173',
+        },
+      ],
+    },
+  ],
 }

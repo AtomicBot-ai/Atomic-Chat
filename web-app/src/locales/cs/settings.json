@@ -386,6 +386,10 @@
     "updateEngine": "Update {{engine}}",
     "engineLatest": "{{engine}} is up to date. A build that runs this decision model is not released yet.",
     "engineInstallFailed": "{{engine}} could not be installed",
+    "retry": "Retry",
+    "viewLogs": "View logs",
+    "engineLatestUnsupported": "{{engine}} is up to date. Its check shows the installed build cannot run this decision model, and no newer build is released yet.",
+    "engineUpdateCheckFailed": "Could not check for {{engine}} updates",
     "requiresEngine": "Needs {{engine}} {{version}}+",
     "requiresEngineNotice": "This model needs {{engine}} {{version}} or newer. Update the engine to start it.",
     "state": {
@@ -403,6 +407,9 @@
       "checkpointIncomplete": "The model folder is missing files. Remove the model and download it again.",
       "modelFileNotFound": "The model files are not on disk. Download the model again.",
       "notChat": "A decision model cannot be used as a chat model.",
+      "timedOut": "Starting the decision model timed out. That does not mean {{engine}} cannot run it: retry.",
+      "startFailed": "The decision model could not start. Retry, or open the logs to see why.",
+      "engineNotChecked": "{{engine}} could not be checked in time. That does not mean it cannot run this model: retry.",
       "generic": "The decision model could not start."
     },
     "sectionTitle": "Decision models",
@@ -428,10 +435,10 @@
     "requiresEngine": "Vyžaduje {{engine}} {{version}}+",
     "requiresEngineNotice": "Tento model vyžaduje {{engine}} {{version}} nebo novější. Aktualizujte engine, abyste jej mohli spustit.",
     "state": {
-      "disabled": "Zastaveno",
-      "idle": "Spustí se při dalším požadavku",
+      "disabled": "Zastaveno: požadavky ho nenačtou",
+      "idle": "Nečinný: načte se při dalším požadavku",
       "starting": "Spouštění…",
-      "ready": "Běží",
+      "ready": "Načteno",
       "restarting": "Restartování…",
       "failed": "Selhalo",
       "unsupported": "Engine není podporován"
@@ -447,6 +454,12 @@
     "noneTitle": "Nejsou staženy žádné embedding modely",
     "noneDescription": "Stáhněte si model v kategorii Embedding v Centru",
     "availableInApi": "Dostupné v API",
-    "localModel": "Z vašich modelů llama.cpp"
+    "localModel": "Z vašich modelů llama.cpp",
+    "startHint": "Poskytovat tento model přes /v1/embeddings lokálního API serveru. Zůstane zapnutý, dokud nestisknete Zastavit.",
+    "stopHint": "Uvolnit model a vypnout embedding službu API: požadavky ho už nenačtou.",
+    "sectionDescription": "Spustit poskytuje jeden model přes /v1/embeddings lokálního API serveru pod jeho názvem. Zůstane zapnutý: po restartu čeká nečinný a načte se při dalším požadavku. Zastavit službu vypne, takže ho požadavky už nenačtou.",
+    "documentSearchNote": "Vyhledávání v dokumentech v chatech používá vlastní model, sentence-transformer-mini, a samo ho načte, když je potřeba, bez Spustit.",
+    "documentSearchModel": "Model vyhledávání v dokumentech · z vašich modelů llama.cpp",
+    "engineUpdateCheckFailed": "Nepodařilo se zkontrolovat aktualizace {{engine}}"
   }
 }
