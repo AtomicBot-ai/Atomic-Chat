@@ -691,6 +691,50 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  // ATO-550: an abort ended the iterator only; Rust kept the connection open and llama-server
+  // went on generating the abandoned answer while the next request queued behind it.
+  describe('streaming chat abort', () => {
+    it('asks Rust to drop the connection of the aborted stream, once', async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      type ChunkChannel = { onmessage: (message: { data: string }) => void }
+      let streamId: string | undefined
+      vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+        const payload = args as { requestId: string; onChunk: ChunkChannel }
+        if (command === 'stream_local_http') {
+          streamId = payload.requestId
+          queueMicrotask(() =>
+            payload.onChunk.onmessage({
+              data: 'data: {"choices":[{"index":0,"delta":{"content":"Hi"}}]}\n\n',
+            })
+          )
+          return new Promise(() => {})
+        }
+        if (command === 'cancel_local_stream') return undefined
+        return {
+          sessions: [
+            { model_id: 'test-model', pid: 1, port: 3000, api_key: 'k', provider: 'llamacpp' },
+          ],
+        }
+      })
+      const abortController = new AbortController()
+      const stream = (await extension.chat(
+        { model: 'test-model', messages: [{ role: 'user', content: 'Hello' }], stream: true },
+        abortController
+      )) as AsyncIterable<unknown>
+      const chunks = stream[Symbol.asyncIterator]()
+      const first = await chunks.next()
+      expect(first.value).toMatchObject({ choices: [{ delta: { content: 'Hi' } }] })
+
+      abortController.abort()
+      await expect(chunks.next()).rejects.toThrow('Request aborted')
+
+      const cancels = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === 'cancel_local_stream')
+      expect(cancels).toEqual([['cancel_local_stream', { requestId: streamId }]])
+    })
+  })
+
   describe('delete', () => {
     it('should throw error if model does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')

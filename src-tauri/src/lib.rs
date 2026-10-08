@@ -260,6 +260,7 @@ pub fn run() {
         core::http::post_local_http,
         core::http::get_local_http,
         core::http::stream_local_http,
+        core::http::cancel_local_stream,
         // HTML artifact preview (served via the artifact:// protocol)
         core::artifact::set_artifact_html,
         core::artifact::clear_artifact_html,
@@ -436,6 +437,7 @@ pub fn run() {
         core::http::post_local_http,
         core::http::get_local_http,
         core::http::stream_local_http,
+        core::http::cancel_local_stream,
         // HTML artifact preview (served via the artifact:// protocol)
         core::artifact::set_artifact_html,
         core::artifact::clear_artifact_html,

@@ -574,11 +574,26 @@ export function createLocalStreamingFetch(
     }
     // #endregion
 
+    // Stop has to reach the Rust read loop: it alone holds the connection, and
+    // llama-server cancels a generation only when that connection closes. An
+    // abort that ended just this stream left a one-slot server finishing the
+    // abandoned answer while the next message waited behind it (ATO-550).
+    const requestId = crypto.randomUUID()
+    let cancelSent = false
+    const cancelRequest = () => {
+      if (cancelSent || done) return
+      cancelSent = true
+      void invoke('cancel_local_stream', { requestId }).catch(() => {
+        // An app without the command still ends the stream on this side.
+      })
+    }
+
     const cmdPromise = invoke<number>('stream_local_http', {
       url: urlStr,
       headers: hdrs,
       body: bodyStr,
       timeoutSecs: LOCAL_STREAM_IDLE_TIMEOUT_SECS,
+      requestId,
       onChunk: channel,
     })
 
@@ -597,6 +612,7 @@ export function createLocalStreamingFetch(
 
     if (init?.signal) {
       const onAbort = () => {
+        cancelRequest()
         if (!error) error = 'Request aborted'
         markDone()
       }
@@ -647,6 +663,11 @@ export function createLocalStreamingFetch(
           if (error) controller.error(new Error(error))
           else controller.close()
         }
+      },
+      // A reader that walks away (the SDK's own abort) stops the request too.
+      cancel() {
+        cancelRequest()
+        markDone()
       },
     })
 
@@ -1133,8 +1154,8 @@ export class ModelFactory {
     //
     // Cancellation: mlx-vlm has no `/v1/cancel` endpoint (the legacy dflash
     // server did, but the new backend cancels in-flight generation when the
-    // client TCP connection drops). The IPC streaming bridge propagates
-    // `AbortSignal` to the underlying socket teardown for us, so we simply
+    // client TCP connection drops). The IPC streaming bridge turns an abort
+    // into `cancel_local_stream`, which drops that connection, so we simply
     // forward `init` and rely on the backend's disconnect handler.
     const streamingFetch = createLocalStreamingFetch(httpFetch, parameters)
     // Re-attach audio attachments as `input_audio` on the request body the

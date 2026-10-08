@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-395 records, 2026-05-19 → 2026-10-08.
+396 records, 2026-05-19 → 2026-10-08.
 
 ---
 
@@ -262,8 +262,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (8)
+## Local API server & OpenAI compatibility (9)
 
+- **2026-10-08** — [Stop closes the local stream's connection in Rust](2026-10-08-stop-closes-the-local-stream-connection-in-rust.md)
 - **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
 - **2026-09-19** — [Reload the served model when the API listener is recovered](2026-09-19-reload-the-served-model-when-the-api-listener-is-recovered.md)
 - **2026-09-18** — [Bind the API inspector's emitter on the core event path](2026-09-18-bind-the-api-inspector-emitter-on-the-core-event-path.md)
