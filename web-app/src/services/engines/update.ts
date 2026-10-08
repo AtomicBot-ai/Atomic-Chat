@@ -11,6 +11,8 @@
  * the "waiting for restart" pill keep working unchanged.
  */
 
+import { AppEvent, events } from '@janhq/core'
+
 import { sanitizeTaskId } from '@/services/diffusion/transfer'
 import { engineBuildProxy } from '@/services/engine-builds/core'
 import { followCoreDownload } from '@/services/engine-builds/install'
@@ -52,8 +54,15 @@ function announceBackendSwitched(engine: EngineId, active: EngineBuildKey) {
   )
 }
 
+const isLlamacpp = (engine: EngineId) => ENGINE_KINDS[engine] === 'llamacpp'
+
 export type EngineUpdateOptions = {
   taskId: string
+  /**
+   * What the backend dialog knows this switch by (`<version>/<variant>`, or a
+   * `latest/<variant>` pick); the target's own pair by default.
+   */
+  backend?: string
   /** llama.cpp only: the build to move to; without `version`, the newest of the variant. */
   target?: { version?: string; variant: string }
   /** Reinstall a target already on disk. */
@@ -65,28 +74,95 @@ export type EngineUpdateOptions = {
  * Update a llama.cpp, sd.cpp or MLX engine through the core and show the
  * download. Resolves with the core's answer once the new build is active (or
  * nothing changed); rejects with the core's error as it came.
+ *
+ * For a llama.cpp provider the backend dialog hears the download start and
+ * finish (`AppEvent.onBackendDownloadStarted/Finished`), then the switch
+ * (`app:backend-hotswapped`) — in that order: the finish arms its "restart
+ * required" fallback, which the switch right after closes.
  */
 export async function updateEngineWithProgress(
   engine: EngineId,
   options: EngineUpdateOptions
 ): Promise<EngineUpdateResult> {
   const proxy = engineBuildProxy()
-  const result = await followCoreDownload(
-    options.taskId,
-    () =>
-      updateEngine(engine, {
-        task_id: options.taskId,
-        ...(options.target ? { target: options.target } : {}),
-        ...(options.force ? { force: true } : {}),
-        ...(proxy ? { proxy } : {}),
-        app_version: VERSION,
-      }),
-    options.onProgress
-  )
-  if (result.updated && result.active) {
-    announceBackendSwitched(engine, result.active)
+  const target = options.target
+  const backend =
+    options.backend ??
+    (target ? `${target.version ?? 'latest'}/${target.variant}` : engine)
+  const [version, backendId] = backend.split('/')
+  const announce = (status?: 'completed' | 'failed', error?: string) => {
+    if (!isLlamacpp(engine)) return
+    events.emit(
+      status
+        ? AppEvent.onBackendDownloadFinished
+        : AppEvent.onBackendDownloadStarted,
+      {
+        backend,
+        status: status ?? 'downloading',
+        ...(error ? { error } : {}),
+        provider: engine,
+        version,
+        backendId,
+      }
+    )
   }
+
+  announce()
+  let result: EngineUpdateResult
+  try {
+    result = await followCoreDownload(
+      options.taskId,
+      () =>
+        updateEngine(engine, {
+          task_id: options.taskId,
+          ...(target ? { target } : {}),
+          ...(options.force ? { force: true } : {}),
+          ...(proxy ? { proxy } : {}),
+          app_version: VERSION,
+        }),
+      options.onProgress
+    )
+  } catch (error) {
+    const message = (error as { message?: unknown } | null)?.message
+    announce('failed', typeof message === 'string' ? message : String(error))
+    throw error
+  }
+  announce('completed')
+  // `already-active` and `no-update` leave the provider on `active` too.
+  if (result.active) announceBackendSwitched(engine, result.active)
   return result
+}
+
+/**
+ * Move a llama.cpp provider to `backend`: a `<version>/<variant>` it may
+ * already have, or a `latest/<variant>` pick — the newest build of that
+ * variant the core's catalog names. The core downloads what is missing,
+ * switches and unloads the provider's models.
+ */
+export function switchBackendThroughCore(
+  engine: EngineId,
+  backend: string,
+  options: Pick<EngineUpdateOptions, 'onProgress'> & {
+    /** What the backend dialog opened on, when not `backend` itself (a `latest/` pick). */
+    announceAs?: string
+  } = {}
+): Promise<EngineUpdateResult> {
+  const [version, variant, ...rest] = backend
+    .replace(/\uFEFF/g, '')
+    .trim()
+    .split('/')
+  if (!version || !variant || rest.length > 0) {
+    return Promise.reject(
+      new Error(`Not a backend: "${backend}". Expected "<version>/<variant>".`)
+    )
+  }
+  const latest = version === 'latest'
+  return updateEngineWithProgress(engine, {
+    taskId: engineUpdateTaskId(engine, latest ? `latest-${variant}` : version),
+    target: latest ? { variant } : { version, variant },
+    backend: options.announceAs ?? backend,
+    onProgress: options.onProgress,
+  })
 }
 
 /** Make an installed llama.cpp build the active one through the core. */

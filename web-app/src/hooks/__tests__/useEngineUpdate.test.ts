@@ -169,6 +169,7 @@ describe('useEngineUpdate', () => {
 
     expect(imageStore.updateEngine).toHaveBeenCalledTimes(1)
     expect(updateEngineWithProgress).not.toHaveBeenCalled()
+    expect(result.current.offer).toBeNull()
   })
 
   it('opens the managed engine’s page instead of reinstalling from the banner', async () => {

@@ -338,8 +338,6 @@
     "alreadyOptimal": "このデバイスに最適なバックエンドが既に使用されています。",
     "findOptimalFailed": "最適なバックエンドを確認できませんでした。後でもう一度お試しください。",
     "detectionUnavailable": "バックエンドのリリース情報（GitHub）にアクセスできませんでした。現在のバックエンドを維持します — 接続またはプロキシを確認して再試行してください。",
-    "pendingBackendLabel": "保留中:",
-    "pendingBackendHint": "再起動後に有効化されます",
     "hotSwapping": "バックエンドを切り替え中",
     "hotSwappingDesc": "再起動なしで {{backend}} を有効化しています…",
     "hotSwapSuccess": "バックエンドを切り替えました",

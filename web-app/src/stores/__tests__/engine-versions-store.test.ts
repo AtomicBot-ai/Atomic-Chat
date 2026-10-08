@@ -166,6 +166,12 @@ describe('engine versions store', () => {
       const unbind = useEngineVersionsStore.getState().bind()
       await flush()
       expect(engineVersions).toHaveBeenCalledTimes(1)
+      expect(
+        selectEngineVersions(
+          useEngineVersionsStore.getState(),
+          'llamacpp-upstream'
+        )
+      ).toBeDefined()
       unbind()
     })
 
@@ -186,10 +192,23 @@ describe('engine versions store', () => {
       await flush()
       engineVersions.mockClear()
 
+      engineVersions.mockResolvedValue({
+        engines: [
+          entry('llamacpp-upstream', {
+            active: { version: 'b11500', variant: 'macos-arm64' },
+          }),
+        ],
+      })
       emit(name, payload)
       await flush()
 
       expect(engineVersions).toHaveBeenCalledTimes(1)
+      expect(
+        selectEngineVersions(
+          useEngineVersionsStore.getState(),
+          'llamacpp-upstream'
+        )?.active?.version
+      ).toBe('b11500')
       unbind()
     })
 
@@ -206,6 +225,7 @@ describe('engine versions store', () => {
       await flush()
 
       expect(engineVersions).not.toHaveBeenCalled()
+      expect(useEngineVersionsStore.getState().loading).toBe(false)
       unbind()
     })
 

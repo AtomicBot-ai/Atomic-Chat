@@ -847,33 +847,49 @@ describe('atomic_prism_extension', () => {
       expect(invoke).not.toHaveBeenCalled()
     })
 
-    it('prunes older releases of the same type through the core after an update', async () => {
-      stubSettings(extension)
+    // Change unify-engine-lifecycle: the core installs, switches and retires old builds; the
+    // extension writes no version and removes nothing.
+    it('has the core switch to the build a `latest/` pick resolves to', async () => {
       extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(isBackendInstalled).mockResolvedValue(true)
-      vi.mocked(invoke).mockImplementation(async (command, args) => {
-        if (command !== 'atomic_core_call') return undefined
-        const { method, path } = args as { method: string; path: string }
-        if (method === 'GET' && path.startsWith('/backends/atomic-prism')) {
-          return {
-            backends: [
-              { version: TAG, backend: 'linux-cpu-x64', path: '/a', active: false },
-              { version: TAG, backend: 'linux-vulkan-x64', path: '/b', active: false },
-              { version: NEXT_TAG, backend: 'linux-cpu-x64', path: '/c', active: true },
-            ],
-          }
-        }
-        return { removed: true }
+      extension['resolveLatestBackendString'] = vi
+        .fn()
+        .mockResolvedValue(`${NEXT_TAG}/linux-cpu-x64`)
+      vi.mocked(listen).mockResolvedValue(vi.fn())
+      vi.mocked(invoke).mockResolvedValue({
+        updated: true,
+        active: { version: NEXT_TAG, variant: 'linux-cpu-x64' },
+        retired: [{ version: TAG, variant: 'linux-cpu-x64' }],
+        kept_in_use: [],
       })
 
-      const result = await extension.updateBackend(`${NEXT_TAG}/linux-cpu-x64`)
+      await extension['switchThroughCore']('latest/linux-cpu-x64')
 
-      expect(result).toEqual({ wasUpdated: true, newBackend: `${NEXT_TAG}/linux-cpu-x64` })
-      const deletes = vi
-        .mocked(invoke)
-        .mock.calls.filter(([, a]) => (a as { method?: string })?.method === 'DELETE')
-        .map(([, a]) => (a as { path: string }).path)
-      expect(deletes).toEqual([`/backends/atomic-prism/${TAG}/linux-cpu-x64`])
+      expect(vi.mocked(invoke).mock.calls).toEqual([
+        [
+          'atomic_core_call',
+          {
+            method: 'POST',
+            path: '/engines/atomic-prism/update',
+            body: {
+              task_id: 'engine-update-atomic-prism-latest_linux-cpu-x64',
+              target: { version: NEXT_TAG, variant: 'linux-cpu-x64' },
+            },
+          },
+        ],
+      ])
+      expect(extension['config'].version_backend).toBe(`${TAG}/linux-cpu-x64`)
+    })
+
+    it('resolves a pick it can neither find in the catalog nor on disk to an actionable error', async () => {
+      extension['resolveLatestBackendString'] = vi.fn().mockResolvedValue(null)
+      extension['newestInstalledOfFamily'] = vi.fn().mockResolvedValue(null)
+
+      await expect(
+        extension.resolveBackendSelection('latest/linux-rocm-7.2-x64')
+      ).rejects.toThrow(/Install backend from file/)
+      await expect(
+        extension.resolveBackendSelection(`${TAG}/linux-cpu-x64`)
+      ).resolves.toBe(`${TAG}/linux-cpu-x64`)
     })
 
     it('installs an archive from a file under the id the core looks it up by', async () => {

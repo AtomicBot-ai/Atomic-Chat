@@ -45,6 +45,7 @@ import {
   describeMlxBuild,
   useMlxEngineUpdateCheck,
 } from '@/hooks/useMlxEngineUpdateCheck'
+import { useVersionBackendActivation } from '@/hooks/useVersionBackendActivation'
 import Capabilities from '@/containers/Capabilities'
 import {
   ModelSourceBadge,
@@ -117,7 +118,7 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
-import { AppEvent, EngineManager, events } from '@janhq/core'
+import { EngineManager } from '@janhq/core'
 import debounce from 'lodash.debounce'
 import { restartLocalModel } from '@/utils/restartLocalModel'
 
@@ -179,51 +180,21 @@ function ProviderDetail() {
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
   const [isCheckingEngineUpdate, setIsCheckingEngineUpdate] = useState(false)
   const mlxEngineCheck = useMlxEngineUpdateCheck()
-  /// localStorage key holding the pending backend of the provider this page
-  /// shows. Each llama provider writes its own key, so reading the upstream
-  /// one on the turboquant page would show a foreign backend as pending.
-  const pendingBackendKey =
-    providerName === 'llamacpp'
-      ? 'turboquant_pending_backend'
-      : providerName === 'atomic-prism'
-        ? 'atomic_prism_pending_backend'
-        : 'llama_cpp_pending_backend'
-  /// Mirrors the provider's pending-backend key so the provider settings
-  /// page can surface a "restart to activate" pill next to the (still-old)
-  /// `version_backend` value once a recommended GPU backend has finished
-  /// downloading. Updated reactively via
-  /// `AppEvent.onBackendDownloadFinished` so the user gets feedback
-  /// without having to refresh.
-  const [pendingBackend, setPendingBackend] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null
-    const raw = localStorage.getItem(pendingBackendKey)
-    return raw ? raw.replace(/\uFEFF/g, '').trim() : null
-  })
-
+  const { choose: activateVersionBackend } =
+    useVersionBackendActivation(providerName)
+  /// A switch the core made (an update, an activation, another client's) is
+  /// announced as `app:backend-hotswapped`: pull fresh provider settings so the
+  /// `version_backend` row reflects the new value without a tab refresh.
+  ///
+  /// We deliberately read `setProviders` from the Zustand store via
+  /// `getState()` instead of capturing the destructured binding from
+  /// `useModelProvider()` — that destructuring happens later in the
+  /// component body, so referencing it here would hit a TDZ
+  /// `ReferenceError` on the very first render.
   useEffect(() => {
-    const refresh = () => {
-      const raw = localStorage.getItem(pendingBackendKey)
-      setPendingBackend(raw ? raw.replace(/\uFEFF/g, '').trim() : null)
-    }
-    refresh()
-    const onFinished = (payload: { status: string; provider?: string }) => {
-      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
-      if (payload?.status === 'completed') refresh()
-    }
-    /// Hot-swap path: the extension already cleared its pending key and
-    /// updated `version_backend` settings.
-    /// Drop the pill immediately and pull fresh provider settings so the
-    /// `version_backend` row reflects the new value without a tab refresh.
-    ///
-    /// We deliberately read `setProviders` from the Zustand store via
-    /// `getState()` instead of capturing the destructured binding from
-    /// `useModelProvider()` — that destructuring happens later in the
-    /// component body, so referencing it here would hit a TDZ
-    /// `ReferenceError` on the very first render.
     const onHotswapped = (event: Event) => {
       const detail = (event as CustomEvent<{ provider?: string }>).detail
       if ((detail?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
-      setPendingBackend(null)
       void serviceHub
         .providers()
         .getProviders()
@@ -234,23 +205,11 @@ function ProviderDetail() {
           console.warn('Failed to refresh providers after hot-swap:', err)
         })
     }
-    events.on(AppEvent.onBackendDownloadFinished, onFinished)
-    window.addEventListener('storage', refresh)
     window.addEventListener('app:backend-hotswapped', onHotswapped)
     return () => {
-      events.off(AppEvent.onBackendDownloadFinished, onFinished)
-      window.removeEventListener('storage', refresh)
       window.removeEventListener('app:backend-hotswapped', onHotswapped)
     }
-  }, [serviceHub, providerName, pendingBackendKey])
-
-  const handleRestartForPendingBackend = useCallback(async () => {
-    try {
-      await window.core?.api?.relaunch()
-    } catch (err) {
-      console.error('Failed to relaunch for pending backend:', err)
-    }
-  }, [])
+  }, [serviceHub, providerName])
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [isTogglingDflash, setIsTogglingDflash] = useState(false)
   /// `isTogglingDflash` covers fast operations (lookup + MLX reload) and
@@ -2324,6 +2283,20 @@ function ProviderDetail() {
                               )
                               return
                             }
+                            // An installed build picked in a llama.cpp
+                            // provider's version list is made active by the
+                            // core, which writes `version_backend` and unloads
+                            // this provider's models itself.
+                            if (
+                              setting.key === 'version_backend' &&
+                              typeof newValue === 'string' &&
+                              (providerName === 'llamacpp' ||
+                                providerName === 'llamacpp-upstream' ||
+                                providerName === 'atomic-prism')
+                            ) {
+                              void activateVersionBackend(newValue)
+                              return
+                            }
                             if (provider) {
                               const newSettings = [...provider.settings]
                               const changedSettingKeys = new Set([setting.key])
@@ -2701,50 +2674,6 @@ function ProviderDetail() {
                                       <span>{optimalBackendLabel}</span>
                                     </Button>
                                   )}
-                              </div>
-                            )}
-                          {/* Pending-backend banner: appears as soon as
-                              the just-downloaded backend is sitting in
-                              this provider's pending key and waiting
-                              for `activatePendingBackend()` on the
-                              next launch. The `version_backend`
-                              setting itself can't be hot-swapped while
-                              the llama-server is running, so without
-                              this pill the user sees no change
-                              between "I clicked Find optimal" and "I
-                              restarted the app". */}
-                          {setting.key === 'version_backend' &&
-                            (provider?.provider === 'llamacpp' ||
-                              provider?.provider === LOCAL_LLAMACPP_PROVIDER) &&
-                            pendingBackend && (
-                              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs">
-                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                  {t(
-                                    'settings:backendUpdater.pendingBackendLabel'
-                                  )}
-                                </span>
-                                <code className="font-mono text-foreground/80">
-                                  {pendingBackend}
-                                </code>
-                                <span className="text-muted-foreground">
-                                  {t(
-                                    'settings:backendUpdater.pendingBackendHint'
-                                  )}
-                                </span>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="ml-auto"
-                                  onClick={handleRestartForPendingBackend}
-                                >
-                                  <IconRefresh
-                                    size={12}
-                                    className="text-muted-foreground"
-                                  />
-                                  <span>
-                                    {t('settings:backendUpdater.restartNow')}
-                                  </span>
-                                </Button>
                               </div>
                             )}
                         </>

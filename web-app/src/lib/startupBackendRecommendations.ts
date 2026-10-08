@@ -10,8 +10,10 @@ type OptimalBackendExtension = {
   refreshOptimalBackendCache?: (options?: {
     hardwareHasNoGpu?: boolean
   }) => Promise<OptimalBackendCacheRecord | null>
-  downloadRecommendedBackend?: (backendString: string) => Promise<void>
 }
+
+/** Moves a llama.cpp provider to a build through the core (`switchBackendThroughCore`). */
+type SwitchBackend = (engine: 'llamacpp-upstream', backend: string) => Promise<unknown>
 
 type ExtensionLookup = {
   getByName: (name: string) => unknown
@@ -156,16 +158,17 @@ export function planStartupBackendUpgrade(
 }
 
 /**
- * Downloads and hot-swaps the tier detection picked for this host, without any
- * confirmation UI. `downloadRecommendedBackend()` emits the same download
- * events as the manual path, so the progress banner in `BackendUpdater` covers
- * this too.
+ * Moves the upstream provider to the tier detection picked for this host,
+ * without any confirmation UI: the core downloads it, switches and unloads
+ * (`switchBackend`, `POST /engines/llamacpp-upstream/update`). The switch
+ * reports the same download events as the manual path, so the progress banner
+ * in `BackendUpdater` covers this too.
  *
  * The attempt is recorded before the download starts: a failure (or a crash
  * mid-download) must not retry on every single launch.
  */
 export async function applyStartupBackendUpgrade(
-  extensions: ExtensionLookup,
+  switchBackend: SwitchBackend,
   records: Partial<
     Record<OptimalBackendCacheRecord['provider'], OptimalBackendCacheRecord>
   >,
@@ -173,11 +176,6 @@ export async function applyStartupBackendUpgrade(
 ): Promise<string | null> {
   const target = planStartupBackendUpgrade(records['llamacpp-upstream'], now)
   if (!target) return null
-
-  const extension = extensions.getByName(
-    '@janhq/llamacpp-upstream-extension'
-  ) as OptimalBackendExtension | null
-  if (!extension?.downloadRecommendedBackend) return null
 
   try {
     localStorage.setItem(
@@ -190,7 +188,7 @@ export async function applyStartupBackendUpgrade(
       backendTo: target,
       trigger: 'startup',
     })
-    await extension.downloadRecommendedBackend(target)
+    await switchBackend('llamacpp-upstream', target)
     return target
   } catch (error) {
     console.info(

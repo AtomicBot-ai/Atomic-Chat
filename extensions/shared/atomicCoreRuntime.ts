@@ -316,6 +316,25 @@ export interface CoreEngineBuildInstallResult {
   kept_in_use: CoreEngineBuildRef[]
 }
 
+/** `POST /engines/:engine/update` for a llama.cpp provider (openspec change `unify-engine-lifecycle`). */
+export interface CoreEngineUpdateRequest {
+  task_id: string
+  /** The build to move to; without `version`, the newest of `variant` in the catalog. */
+  target?: { version?: string; variant: string }
+  force?: boolean
+  proxy?: CoreProxyConfig | null
+  app_version?: string | null
+}
+
+export interface CoreEngineUpdateResult {
+  updated: boolean
+  reason?: 'already-active' | 'no-update'
+  /** The build the next load runs from. */
+  active: { version: string; variant: string } | null
+  retired: { version: string; variant: string }[]
+  kept_in_use: { version: string; variant: string }[]
+}
+
 export interface CoreModelCapabilities {
   modelId: string
   maxCtxTrain?: number
@@ -617,6 +636,14 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
     })
   }
 
+  /**
+   * Have the core install a build of this provider and make it the active one: it writes
+   * `version_backend` and unloads the provider's models (`POST /engines/:engine/update`).
+   */
+  async function updateEngine(request: CoreEngineUpdateRequest): Promise<CoreEngineUpdateResult> {
+    return call('POST', `/engines/${provider}/update`, request)
+  }
+
   async function cancelBackendDownload(taskId: string): Promise<boolean> {
     const response = await call<{ cancelled: boolean }>(
       'POST',
@@ -729,6 +756,7 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
     checkBackendUpdates,
     listInstalledBackends,
     installBackend,
+    updateEngine,
     cancelBackendDownload,
     removeBackend,
     engineBuildCatalog,

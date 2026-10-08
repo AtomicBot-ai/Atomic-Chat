@@ -9,8 +9,13 @@ const BUILD = 'prism-b10754-2459f68/macos-arm64'
 /** The PrismML extension as the hook sees it. */
 const extension = {
   getEngineStatus: vi.fn<() => Promise<PrismEngineStatus>>(),
-  downloadRecommendedBackend: vi.fn<(backend: string) => Promise<void>>(),
 }
+
+/** The core installs the build and makes it PrismML's (`POST /engines/atomic-prism/update`). */
+const switchBackendThroughCore = vi.hoisted(() =>
+  vi.fn<(engine: string, backend: string) => Promise<unknown>>()
+)
+vi.mock('@/services/engines/update', () => ({ switchBackendThroughCore }))
 
 /** `@janhq/core`'s event bus, which the extension's `settingsChanged` travels on. */
 const handlers = new Map<string, Set<(payload: unknown) => void>>()
@@ -64,7 +69,7 @@ describe('usePrismEngine', () => {
 
   it('installs the build the core recommends, then reads the status again', async () => {
     extension.getEngineStatus.mockResolvedValueOnce(notInstalled())
-    extension.downloadRecommendedBackend.mockResolvedValue()
+    switchBackendThroughCore.mockResolvedValue({ updated: true })
     const { result } = renderHook(() => usePrismEngine(true))
     await waitFor(() => expect(result.current.status).not.toBeNull())
 
@@ -74,16 +79,19 @@ describe('usePrismEngine', () => {
     })
     await act(() => result.current.install())
 
-    expect(extension.downloadRecommendedBackend.mock.calls).toEqual([[BUILD]])
+    expect(switchBackendThroughCore.mock.calls).toEqual([
+      ['atomic-prism', BUILD],
+    ])
     await waitFor(() => expect(result.current.status?.installed).toBe(true))
     expect(result.current.installing).toBe(false)
   })
 
   it('says why an install failed', async () => {
     extension.getEngineStatus.mockResolvedValue(notInstalled())
-    extension.downloadRecommendedBackend.mockRejectedValue(
-      new Error('disk full')
-    )
+    switchBackendThroughCore.mockRejectedValue({
+      code: 'BACKEND_INSUFFICIENT_DISK_SPACE',
+      message: 'disk full',
+    })
     const { result } = renderHook(() => usePrismEngine(true))
     await waitFor(() => expect(result.current.status).not.toBeNull())
 

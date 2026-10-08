@@ -219,9 +219,7 @@ describe('startup tier upgrade', () => {
   it('leaves turboquant to its manual button', async () => {
     const download = vi.fn()
     const applied = await applyStartupBackendUpgrade(
-      {
-        getByName: () => ({ downloadRecommendedBackend: download }),
-      },
+      (_engine: string, backend: string) => download(backend),
       { llamacpp: gpuRecord('llamacpp') },
       NOW
     )
@@ -271,12 +269,17 @@ describe('startup tier upgrade', () => {
 
   it('records the attempt before downloading and does not retry it for a day', async () => {
     const download = vi.fn().mockRejectedValue(new Error('offline'))
-    const extensions = { getByName: () => ({ downloadRecommendedBackend: download }) }
+    const extensions = (engine: string, backend: string) =>
+      download(engine, backend)
 
     expect(
       await applyStartupBackendUpgrade(extensions, upstreamRecords(), NOW)
     ).toBeNull()
-    expect(download).toHaveBeenCalledTimes(1)
+    // The core switches the upstream provider to the build detection picked.
+    expect(download).toHaveBeenCalledWith(
+      'llamacpp-upstream',
+      'b10405/win-cuda-13.3-x64'
+    )
     expect(
       JSON.parse(
         localStorage.getItem(localStorageKey.startupBackendUpgradeAttempt) ?? '{}'
@@ -304,7 +307,8 @@ describe('startup tier upgrade', () => {
 
   it('retries immediately when detection picks a different tier', async () => {
     const download = vi.fn().mockResolvedValue(undefined)
-    const extensions = { getByName: () => ({ downloadRecommendedBackend: download }) }
+    const extensions = (engine: string, backend: string) =>
+      download(engine, backend)
 
     expect(
       await applyStartupBackendUpgrade(extensions, upstreamRecords(), NOW)

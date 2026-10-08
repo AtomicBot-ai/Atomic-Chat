@@ -333,5 +333,7 @@ describe('EngineUpdateBanner', () => {
       params: { providerName: 'vllm' },
       search: { engineUpdate: true },
     })
+    // Nothing began: the offer stays until the reinstall is confirmed.
+    expect(screen.getByText('updater:engine.title')).toBeInTheDocument()
   })
 })

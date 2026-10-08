@@ -65,7 +65,6 @@ import {
   EmbeddingResponse,
   DeviceList,
   mapOldBackendToNew,
-  removeOldBackendVersions,
   installBundledBackend,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 import type {
@@ -86,6 +85,7 @@ import type {
   Invoke,
 } from '../../shared/atomicCoreRuntime'
 import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import { updateEngineThroughCore } from '../../shared/coreEngineUpdate'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
@@ -374,9 +374,8 @@ export const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 /// Provider-specific localStorage keys for the turboquant "Find optimal
 /// backend" flow. Kept distinct from the upstream provider's `llama_cpp_*`
 /// keys so both providers can ship side-by-side on Windows/Linux without
-/// clobbering each other's recommendation / pending-backend state.
+/// clobbering each other's recommendation state.
 const TURBOQUANT_RECOMMENDATION_KEY = 'turboquant_better_backend_recommendation'
-const TURBOQUANT_PENDING_KEY = 'turboquant_pending_backend'
 const TURBOQUANT_OPTIMAL_BACKEND_CACHE_KEY =
   'atomic_llamacpp_turboquant_optimal_backend_v1'
 
@@ -404,7 +403,6 @@ export default class llamacpp_extension extends AIEngine {
   private config: LlamacppConfig
   private providerPath!: string
   private isConfiguringBackends: boolean = false
-  private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
   /// In-flight first-run download of the hardware-optimal backend, `null`
@@ -567,9 +565,6 @@ export default class llamacpp_extension extends AIEngine {
 
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
-
-    // Activate a pending backend that was downloaded before the last restart.
-    await this.activatePendingBackend()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -747,44 +742,6 @@ export default class llamacpp_extension extends AIEngine {
     logger.info(
       'Switched Concurrent Mode off: the settings UI no longer offers it'
     )
-  }
-
-  private async activatePendingBackend(): Promise<void> {
-    const pending = localStorage.getItem(TURBOQUANT_PENDING_KEY)
-    if (!pending) return
-
-    const cleaned = stripBom(pending)
-    const parts = cleaned.split('/')
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      logger.warn(`Invalid pending backend string "${cleaned}", clearing`)
-      localStorage.removeItem(TURBOQUANT_PENDING_KEY)
-      return
-    }
-
-    const [version, backend] = [parts[0].trim(), parts[1].trim()]
-
-    try {
-      const installed = await isBackendInstalled(backend, version)
-      if (!installed) {
-        logger.warn(`Pending backend ${cleaned} not found on disk, clearing`)
-        localStorage.removeItem(TURBOQUANT_PENDING_KEY)
-        return
-      }
-
-      logger.info(
-        `Activating pending backend from previous download: ${cleaned}`
-      )
-      const result = await this.updateBackend(cleaned)
-      if (result.wasUpdated) {
-        logger.info(`Pending backend ${cleaned} activated successfully`)
-      } else {
-        logger.warn(`Failed to activate pending backend ${cleaned}`)
-      }
-    } catch (err) {
-      logger.error('Error activating pending backend:', err)
-    } finally {
-      localStorage.removeItem(TURBOQUANT_PENDING_KEY)
-    }
   }
 
   private async tryInstallBundledBackend(): Promise<string | null> {
@@ -1143,8 +1100,8 @@ export default class llamacpp_extension extends AIEngine {
         // the stored value to `options[0]` whenever the stored value is missing
         // from the incoming options, and `options[0]` is an arbitrary older
         // release. A saved tag lives in the list through its copy on disk, and
-        // that copy is what `removeOldBackendVersions` prunes after an update,
-        // so the pin cannot be gated on the build still being installed.
+        // that copy is what the core retires after an update, so the pin
+        // cannot be gated on the build still being installed.
         if (
           !!savedVbVer?.trim() &&
           !!savedVbBack?.trim() &&
@@ -1426,7 +1383,7 @@ export default class llamacpp_extension extends AIEngine {
    *
    * The bundled backend stays active throughout: the download is not awaited,
    * so the first model load is never held up behind a multi-hundred-megabyte
-   * archive, and `downloadRecommendedBackend` hot-swaps once it lands. On a
+   * archive, and the core switches to the new build once it lands. On a
    * discrete-NVIDIA host that means a CUDA archive starts downloading on first
    * launch without asking — the price of "the right build, immediately".
    *
@@ -1508,9 +1465,9 @@ export default class llamacpp_extension extends AIEngine {
     logger.info(
       `adoptOptimalBackendOnFirstRun: fetching ${target} for this hardware; '${active}' keeps serving until it lands`
     )
-    // Not awaited on purpose, and the stored preference is left to
-    // `updateBackend` — it is only recorded once the archive is really on disk.
-    this.firstRunAdoption = this.downloadRecommendedBackend(target)
+    // Not awaited on purpose. The core installs the build and makes it the
+    // active one only once the archive is really on disk.
+    this.firstRunAdoption = this.switchThroughCore(target)
       .catch((err) => {
         logger.warn(
           `adoptOptimalBackendOnFirstRun: failed to install ${target}, staying on '${active}':`,
@@ -1520,6 +1477,31 @@ export default class llamacpp_extension extends AIEngine {
       .finally(() => {
         this.firstRunAdoption = null
       })
+  }
+
+  /**
+   * Has the core install `backend` (`<version>/<variant>`) and make it this
+   * provider's active build: it writes `version_backend` and unloads the
+   * provider's models. The new value reaches this extension as a mirror of the
+   * core's settings.
+   */
+  private async switchThroughCore(backend: string): Promise<void> {
+    const [version, variant] = stripBom(backend).split('/')
+    if (!version || !variant) throw new Error(`Invalid backend string: ${backend}`)
+    await updateEngineThroughCore({
+      core: this.core,
+      provider: this.providerId,
+      backend,
+      target: { version, variant },
+      proxy: getProxyConfig() as unknown as CoreProxyConfig | null,
+      listen,
+      emit: (name, payload) => events.emit(name, payload),
+      dispatch: (event) => {
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(event)
+        }
+      },
+    })
   }
 
   /**
@@ -1582,247 +1564,6 @@ export default class llamacpp_extension extends AIEngine {
           }
         })
     })
-  }
-
-  async updateBackend(
-    targetBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    targetBackendString = stripBom(targetBackendString)
-    if (this.isUpdatingBackend) {
-      logger.warn(
-        'Backend update already in progress, skipping new update request'
-      )
-      // Treat concurrent update requests as a benign no-op and report that no new update
-      // was performed, while still returning the current backend value.
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    this.isUpdatingBackend = true
-
-    try {
-      if (!targetBackendString)
-        throw new Error(
-          `Invalid backend string: ${targetBackendString} supplied to update function`
-        )
-
-      const backendParts = targetBackendString.split('/')
-
-      if (
-        backendParts.length !== 2 ||
-        !backendParts[0]?.trim() ||
-        !backendParts[1]?.trim()
-      ) {
-        throw new Error(
-          `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
-        )
-      }
-
-      const [rawVersion, rawBackend] = backendParts
-      const version = rawVersion.trim()
-      const backend = rawBackend.trim()
-
-      // Normalize the target backend string to use trimmed values
-      targetBackendString = `${version}/${backend}`
-
-      logger.info(
-        `Updating backend to ${targetBackendString} (backend type: ${backend})`
-      )
-
-      // Download new backend using the original asset/backend name
-      await this.ensureBackendReady(backend, version)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      // Map backend type for stored preference only (not for download/config)
-      const effectiveBackendType = await mapOldBackendToNew(backend)
-      const currentStoredBackend = this.getStoredBackendType()
-
-      // Persist settings and stored preference before mutating in-memory config,
-      // so that if any of these steps fail, config remains consistent.
-
-      // Update settings first — if this fails, we haven't mutated any state yet
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      // Store the backend type preference only if it changed
-      if (currentStoredBackend !== effectiveBackendType) {
-        this.setStoredBackendType(effectiveBackendType)
-        logger.info(
-          `Updated stored backend type preference: ${effectiveBackendType}`
-        )
-      }
-
-      // All critical side effects succeeded — now commit to in-memory config
-      this.config.version_backend = targetBackendString
-      this.config.device = ''
-
-      logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-      // Emit for updating frontend
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions — best-effort, don't fail the update if this errors
-      try {
-        const janDataFolderPath = await getJanDataFolderPath()
-        const backendsDir = await joinPath([
-          janDataFolderPath,
-          'llamacpp',
-          'backends',
-        ])
-
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-
-        await removeOldBackendVersions(backendsDir, version, backend)
-      } catch (cleanupError) {
-        logger.warn('Failed to remove old backend versions:', cleanupError)
-      }
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Backend update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    } finally {
-      this.isUpdatingBackend = false
-    }
-  }
-
-  /**
-   * Downloads a recommended GPU backend and applies it without restarting
-   * the app whenever possible. Called by the frontend when the user
-   * confirms the better-backend popup.
-   *
-   * Sequencing rationale:
-   *   1. Persist the turboquant pending-backend key BEFORE the download so any
-   *      observer reacting to `AppEvent.onBackendDownloadFinished` sees the
-   *      pending key already on disk (the download-finished event is emitted
-   *      from inside `downloadAndInstallBackend` and previously beat the
-   *      pending write, leaving the provider settings page without its
-   *      "Restart to activate" pill until a tab refresh).
-   *      `activatePendingBackend()` already gates on `isBackendInstalled()`,
-   *      so a partial download leaves no harmful state.
-   *   2. After a successful download, attempt `applyBackendLive()` for a
-   *      hot-swap. On success the pending key is dropped and the UI reacts
-   *      to `app:backend-hotswapped`. On failure the pending key stays put
-   *      and the user falls back to the classic "restart required" flow.
-   */
-  async downloadRecommendedBackend(backendString: string): Promise<void> {
-    backendString = stripBom(backendString)
-    logger.info(`downloadRecommendedBackend: downloading ${backendString}`)
-    localStorage.setItem(TURBOQUANT_PENDING_KEY, backendString)
-    try {
-      await this.downloadAndInstallBackend(backendString)
-    } catch (err) {
-      // Download failed — drop the pending marker so the next app launch
-      // doesn't try to "activate" a backend that was never installed.
-      localStorage.removeItem(TURBOQUANT_PENDING_KEY)
-      throw err
-    }
-    localStorage.removeItem(TURBOQUANT_RECOMMENDATION_KEY)
-
-    try {
-      await this.applyBackendLive(backendString)
-      logger.info(
-        `downloadRecommendedBackend: applied backend ${backendString} live (no restart needed)`
-      )
-    } catch (err) {
-      logger.warn(
-        `downloadRecommendedBackend: hot-swap failed for ${backendString}, falling back to pending-restart flow:`,
-        err
-      )
-    }
-  }
-
-  /**
-   * Apply a freshly-downloaded backend to the running process: swap
-   * `version_backend` via `updateBackend()` first, then stop any loaded
-   * llama.cpp models, clear the pending marker, and notify the UI via a
-   * window event.
-   *
-   * Order matters: `updateBackend()` must commit the new `version_backend`
-   * into `this.config` *before* any model is unloaded. Unloading flips the
-   * model's status to stopped, which the web-app's local-model auto-start
-   * effect (`ChatInput.tsx`) reacts to by immediately reloading it via
-   * `switchToModel()`. A load hands the settings as they are at call time to
-   * the core, so an unload-before-update ordering let that auto-reload race
-   * ahead of `updateBackend()` and respawn `llama-server` against the *old*
-   * backend — the UI would then report the switch as complete while
-   * the running process silently stayed on the previous (e.g. CPU) build.
-   *
-   * Failure modes:
-   *   - `updateBackend()` throws → we propagate without touching any loaded
-   *     model, so a failed hot-swap never kills a working session. Caller
-   *     leaves the pending marker in place so `activatePendingBackend()`
-   *     retries on next launch.
-   *   - `unload()` throws when a session can't be cleanly stopped → we log
-   *     and continue; the new backend is already persisted, so the next
-   *     load (auto or manual) picks it up regardless.
-   */
-  private async applyBackendLive(backendString: string): Promise<void> {
-    let loaded: string[] = []
-    try {
-      loaded = await this.getLoadedModels()
-    } catch (err) {
-      logger.warn('applyBackendLive: getLoadedModels failed (continuing):', err)
-    }
-
-    const result = await this.updateBackend(backendString)
-    if (!result.wasUpdated) {
-      throw new Error(
-        `updateBackend reported wasUpdated=false for ${backendString}`
-      )
-    }
-
-    for (const modelId of loaded) {
-      try {
-        await this.unload(modelId)
-      } catch (err) {
-        logger.warn(
-          `applyBackendLive: failed to unload model ${modelId} (continuing):`,
-          err
-        )
-      }
-    }
-
-    localStorage.removeItem(TURBOQUANT_PENDING_KEY)
-
-    // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
-    // a pure UI concern (the dialog/pill in the web app) and does not
-    // need to traverse the cross-extension event bus. `window` is always
-    // available inside the Tauri WebView2 context where this extension
-    // runs.
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
-      const [swappedVersion, swappedId] = backendString.split('/')
-      window.dispatchEvent(
-        new CustomEvent('app:backend-hotswapped', {
-          detail: {
-            backend: backendString,
-            provider: this.providerId,
-            version: swappedVersion,
-            backendId: swappedId,
-          },
-        })
-      )
-    }
   }
 
   /**
@@ -2385,12 +2126,6 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
     if (key === 'version_backend') {
-      // Skip entirely if updateBackend() is already handling it —
-      // updateBackend() will commit to in-memory config itself after all
-      // side effects succeed.
-      if (this.isUpdatingBackend) {
-        return
-      }
       // During initialization, configureBackends handles all backend
       // setup; any updateSettings calls (e.g. BOM migration) should
       // only touch in-memory config without triggering downloads.

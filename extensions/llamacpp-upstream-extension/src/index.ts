@@ -79,6 +79,7 @@ import { basename } from '@tauri-apps/api/path'
 import * as coreRuntime from './adapter/coreRuntime'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import { isPrismModel } from '../../shared/atomicCoreRuntime'
+import { updateEngineThroughCore } from '../../shared/coreEngineUpdate'
 import {
   readGgufMetadata,
   isModelSupported,
@@ -88,7 +89,6 @@ import {
   EmbeddingResponse,
   DeviceList,
   mapOldBackendToNew,
-  removeOldBackendVersions,
   installBundledBackend,
   checkSpecTypeSupport,
 } from '../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
@@ -381,7 +381,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private config: LlamacppConfig
   private providerPath!: string
   private isConfiguringBackends: boolean = false
-  private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
   /// Successful readiness is scoped to one attachment generation and one legacy settings image.
@@ -604,15 +603,10 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
 
-    // Activate a pending backend that was downloaded before the last restart.
-    await this.activatePendingBackend()
-
     // ATO-179 (AC3): sweep orphan / incomplete backend folders (exist on disk
     // but carry no llama-server exe — e.g. empty stubs from a failed download)
     // so they neither masquerade as installed nor block a clean re-download.
-    // Best-effort; runs after activatePendingBackend (a completed pending
-    // backend has a valid exe and is therefore never removed) and before
-    // configureBackends.
+    // Best-effort; runs before configureBackends.
     try {
       const removed = await cleanupIncompleteBackends()
       if (removed.length > 0) {
@@ -916,44 +910,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
     )
   }
 
-  private async activatePendingBackend(): Promise<void> {
-    const pending = localStorage.getItem('llama_cpp_pending_backend')
-    if (!pending) return
-
-    const cleaned = stripBom(pending)
-    const parts = cleaned.split('/')
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      logger.warn(`Invalid pending backend string "${cleaned}", clearing`)
-      localStorage.removeItem('llama_cpp_pending_backend')
-      return
-    }
-
-    const [version, backend] = [parts[0].trim(), parts[1].trim()]
-
-    try {
-      const installed = await isBackendInstalled(backend, version)
-      if (!installed) {
-        logger.warn(`Pending backend ${cleaned} not found on disk, clearing`)
-        localStorage.removeItem('llama_cpp_pending_backend')
-        return
-      }
-
-      logger.info(
-        `Activating pending backend from previous download: ${cleaned}`
-      )
-      const result = await this.updateBackend(cleaned)
-      if (result.wasUpdated) {
-        logger.info(`Pending backend ${cleaned} activated successfully`)
-      } else {
-        logger.warn(`Failed to activate pending backend ${cleaned}`)
-      }
-    } catch (err) {
-      logger.error('Error activating pending backend:', err)
-    } finally {
-      localStorage.removeItem('llama_cpp_pending_backend')
-    }
-  }
-
   private async tryInstallBundledBackend(): Promise<string | null> {
     try {
       const janDataFolderPath = await getJanDataFolderPath()
@@ -1041,8 +997,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
       //
       // Detection is now driven from outside the extension:
       //   1. `StartupBackendCoordinator` calls `refreshOptimalBackendCache()`
-      //      once per launch (cached for 24h) and applies the resulting tier
-      //      through `downloadRecommendedBackend()`. ROCm is excluded from that
+      //      once per launch (cached for 24h) and has the core apply the
+      //      resulting tier (`POST /engines/:engine/update`). ROCm is excluded from that
       //      silent path because of its size.
       //   2. `SetupBackendStep` on first-launch onboarding and the manual
       //      "Find optimal backend" button, both via
@@ -1357,7 +1313,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // `resolveParkedBackendSentinel` can only recover from by downloading. The
         // manifest carries the newest tag alone, so an older saved tag survives
         // in the list purely through its copy on disk, and that copy is what
-        // `removeOldBackendVersions` prunes after an update: gating this pin on
+        // the core retires after an update: gating this pin on
         // installed-ness is what let one launch in that window park the provider
         // on the sentinel while the UI read "Latest <variant>".
         if (
@@ -1614,6 +1570,59 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
+   * The concrete `<version>/<variant>` a version-list pick means. A concrete
+   * pick is itself; a "Latest <variant>" pick (`latest/<variant>`) is the
+   * newest build of it the core's catalog names — a minor-less family id
+   * (`win-cuda-12-x64`, `win-rocm-x64`) resolving to its newest concrete
+   * asset — and, with the release stream unreachable, the newest copy of that
+   * family already on disk. Rejects with what to do when neither exists.
+   */
+  async resolveBackendSelection(selection: string): Promise<string> {
+    const pick = stripBom(selection).trim()
+    if (!pick.startsWith('latest/')) return pick
+    const backendId = pick.slice('latest/'.length).trim()
+    // The core bounds its own manifest read; this outer cap is only a
+    // last-resort net against a wedged promise and must sit well above it.
+    const resolved =
+      (await this.withTimeout(
+        this.resolveLatestBackendString(backendId),
+        20000,
+        null
+      )) ?? (await this.newestInstalledOfFamily(backendId))
+    if (!resolved) {
+      // ATO-174: actionable dead-end message.
+      throw new Error(
+        `Could not download the ${friendlyBackendLabel(backendId)} backend: the backend manifest stream (raw.githubusercontent.com) is unreachable or slow, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
+      )
+    }
+    return resolved
+  }
+
+  /**
+   * Has the core move this provider to the build `selection` means
+   * (`resolveBackendSelection`): it installs what is missing, writes
+   * `version_backend` and unloads the provider's models. The new value
+   * reaches this extension as a mirror of the core's settings.
+   */
+  private async switchThroughCore(selection: string): Promise<void> {
+    const [version, variant] = (await this.resolveBackendSelection(selection)).split('/')
+    await updateEngineThroughCore({
+      core: coreRuntime,
+      provider: this.providerId,
+      backend: selection,
+      target: { version, variant },
+      proxy: getProxyConfig() as unknown as coreRuntime.CoreProxyConfig | null,
+      listen,
+      emit: (name, payload) => events.emit(name, payload),
+      dispatch: (event) => {
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(event)
+        }
+      },
+    })
+  }
+
+  /**
    * Resolves a `latest/<variant>` parked in the config to a concrete build.
    *
    * Not an update: core's `registerSettings()` parks the value there when the
@@ -1629,7 +1638,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       logger.info(
         `resolveParkedBackendSentinel: resolving parked sentinel '${current}'`
       )
-      await this.downloadRecommendedBackend(current)
+      await this.switchThroughCore(current)
     } catch (err) {
       logger.error(
         'resolveParkedBackendSentinel: failed to resolve the parked sentinel (keeping current backend):',
@@ -1668,13 +1677,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
    *
    * `Extension.updateSettings()` (core) only copies `controllerProps.value`,
    * never `controllerProps.options`, and the option list is otherwise rebuilt
-   * solely by `configureBackends()` (startup / "Install from file"). The
-   * "Find optimal backend" hot-swap goes download -> `applyBackendLive` ->
-   * `updateBackend` and never re-runs `configureBackends()`, so the freshly
-   * downloaded backend (e.g. a concrete CUDA tag) ended up active but missing
-   * from the picker (ATO-218). We append the option here, before the value is
-   * written, so it survives the subsequent `updateSettings` (which re-reads
-   * the full settings from storage and only overwrites `value`).
+   * solely by `configureBackends()` (startup / "Install from file"). A build
+   * the core switched to (an update, an activation) never re-runs
+   * `configureBackends()`, so it would be active but missing from the picker
+   * (ATO-218). We append the option here, before the value is written, so it
+   * survives the subsequent `updateSettings` (which re-reads the full settings
+   * from storage and only overwrites `value`).
    */
   private async ensureBackendOption(backendString: string): Promise<void> {
     if (!this.name || !backendString) return
@@ -1700,283 +1708,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
       localStorage.setItem(this.name, JSON.stringify(settings))
       logger.info(
         `[ensureBackendOption] Added ${backendString} to version_backend options`
-      )
-    }
-  }
-
-  async updateBackend(
-    targetBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    targetBackendString = stripBom(targetBackendString)
-    if (this.isUpdatingBackend) {
-      logger.warn(
-        'Backend update already in progress, skipping new update request'
-      )
-      // Treat concurrent update requests as a benign no-op and report that no new update
-      // was performed, while still returning the current backend value.
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    this.isUpdatingBackend = true
-
-    try {
-      if (!targetBackendString)
-        throw new Error(
-          `Invalid backend string: ${targetBackendString} supplied to update function`
-        )
-
-      const backendParts = targetBackendString.split('/')
-
-      if (
-        backendParts.length !== 2 ||
-        !backendParts[0]?.trim() ||
-        !backendParts[1]?.trim()
-      ) {
-        throw new Error(
-          `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
-        )
-      }
-
-      const [rawVersion, rawBackend] = backendParts
-      const version = rawVersion.trim()
-      const backend = rawBackend.trim()
-
-      // Normalize the target backend string to use trimmed values
-      targetBackendString = `${version}/${backend}`
-
-      logger.info(
-        `Updating backend to ${targetBackendString} (backend type: ${backend})`
-      )
-
-      // Download new backend using the original asset/backend name
-      await this.ensureBackendReady(backend, version)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      // Map backend type for stored preference only (not for download/config)
-      const effectiveBackendType = await mapOldBackendToNew(backend)
-      const currentStoredBackend = this.getStoredBackendType()
-
-      // Persist settings and stored preference before mutating in-memory config,
-      // so that if any of these steps fail, config remains consistent.
-
-      // ATO-218: make sure the freshly-downloaded backend appears as a
-      // dropdown option. `updateSettings` only persists `value`, never
-      // `options`, so write the appended option to storage first; the
-      // `updateSettings` below then sets the value while preserving the
-      // options array it re-reads from storage.
-      await this.ensureBackendOption(targetBackendString)
-
-      // Update settings first — if this fails, we haven't mutated any state yet
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      // Store the backend type preference only if it changed
-      if (currentStoredBackend !== effectiveBackendType) {
-        this.setStoredBackendType(effectiveBackendType)
-        logger.info(
-          `Updated stored backend type preference: ${effectiveBackendType}`
-        )
-      }
-
-      // All critical side effects succeeded — now commit to in-memory config
-      this.config.version_backend = targetBackendString
-      this.config.device = ''
-
-      logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-      // Emit for updating frontend
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions — best-effort, don't fail the update if this errors.
-      // MUST target this provider's own backends tree (`llamacpp-upstream`),
-      // never the shared/turboquant `llamacpp` dir — otherwise the upstream
-      // auto-upgrade wipes turboquant backends (none of which match the
-      // upstream `latest_version`), bricking turboquant-bound models (ATO-153).
-      try {
-        const janDataFolderPath = await getJanDataFolderPath()
-        const backendsDir = await joinPath([
-          janDataFolderPath,
-          this.providerId,
-          'backends',
-        ])
-
-        if (IS_WINDOWS) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-
-        await removeOldBackendVersions(backendsDir, version, backend)
-      } catch (cleanupError) {
-        logger.warn('Failed to remove old backend versions:', cleanupError)
-      }
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Backend update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    } finally {
-      this.isUpdatingBackend = false
-    }
-  }
-
-  /**
-   * Downloads a recommended GPU backend and applies it without restarting
-   * the app whenever possible. Called by the frontend when the user
-   * confirms the better-backend popup.
-   *
-   * Sequencing rationale:
-   *   1. Persist `llama_cpp_pending_backend` BEFORE the download so that any
-   *      observer reacting to `AppEvent.onBackendDownloadFinished` sees the
-   *      pending key already on disk (the download-finished event is emitted
-   *      from inside `downloadAndInstallBackend` and previously beat the
-   *      pending write, leaving the provider settings page without its
-   *      "Restart to activate" pill until a tab refresh).
-   *      `activatePendingBackend()` already gates on `isBackendInstalled()`,
-   *      so a partial download leaves no harmful state.
-   *   2. After a successful download, attempt `applyBackendLive()` for a
-   *      hot-swap. On success the pending key is dropped and the UI reacts
-   *      to `app:backend-hotswapped`. On failure the pending key stays put
-   *      and the user falls back to the classic "restart required" flow.
-   */
-  async downloadRecommendedBackend(backendString: string): Promise<void> {
-    backendString = stripBom(backendString)
-
-    // The recommendation can carry a `latest/<backend>` sentinel (the
-    // static "Latest <variant>" dropdown entries, and the offline fallback
-    // in `recheckOptimalBackend`). `downloadAndInstallBackend` →
-    // `getBackendDownloadUrl` would otherwise build a 404 URL with the
-    // literal `latest` tag (ggml-org tags releases as `bXXXX`, never
-    // `latest`). Resolve it to a concrete `<tag>/<backend>` here — mirroring
-    // what `downloadManualBackend` already does — before anything touches
-    // the download URL. (ATO-95)
-    if (backendString.startsWith('latest/')) {
-      const backendId = backendString.slice('latest/'.length).trim()
-      const resolved =
-        (await this.resolveLatestBackendString(backendId)) ??
-        (await this.newestInstalledOfFamily(backendId))
-      if (!resolved) {
-        throw new Error(
-          `Could not resolve a release for '${backendId}': the ggml-org release stream is unreachable and no version of this backend is installed locally.`
-        )
-      }
-      logger.info(
-        `downloadRecommendedBackend: resolved sentinel ${backendString} -> ${resolved}`
-      )
-      backendString = resolved
-    }
-
-    logger.info(`downloadRecommendedBackend: downloading ${backendString}`)
-    localStorage.setItem('llama_cpp_pending_backend', backendString)
-    try {
-      await this.downloadAndInstallBackend(backendString)
-    } catch (err) {
-      // Download failed — drop the pending marker so the next app launch
-      // doesn't try to "activate" a backend that was never installed.
-      localStorage.removeItem('llama_cpp_pending_backend')
-      throw err
-    }
-    localStorage.removeItem('llama_cpp_better_backend_recommendation')
-
-    try {
-      await this.applyBackendLive(backendString)
-      logger.info(
-        `downloadRecommendedBackend: applied backend ${backendString} live (no restart needed)`
-      )
-    } catch (err) {
-      logger.warn(
-        `downloadRecommendedBackend: hot-swap failed for ${backendString}, falling back to pending-restart flow:`,
-        err
-      )
-    }
-  }
-
-  /**
-   * Apply a freshly-downloaded backend to the running process: swap
-   * `version_backend` via `updateBackend()` first, then stop any loaded
-   * llama.cpp models, clear the pending marker, and notify the UI via a
-   * window event.
-   *
-   * Order matters: `updateBackend()` must commit the new `version_backend`
-   * into `this.config` *before* any model is unloaded. Unloading flips the
-   * model's status to stopped, which the web-app's local-model auto-start
-   * effect (`ChatInput.tsx`) reacts to by immediately reloading it via
-   * `switchToModel()`. `load()` hands the app's persisted settings to the core
-   * on the way in, so an unload-before-update ordering let that auto-reload
-   * race ahead of `updateBackend()` and start `llama-server` on the *old*
-   * backend — the UI would then report the switch as complete while the
-   * running process silently stayed on the previous (e.g. CPU) build.
-   *
-   * Failure modes:
-   *   - `updateBackend()` throws → we propagate without touching any loaded
-   *     model, so a failed hot-swap never kills a working session. Caller
-   *     leaves the pending marker in place so `activatePendingBackend()`
-   *     retries on next launch.
-   *   - `unload()` throws when a session can't be cleanly stopped → we log
-   *     and continue; the new backend is already persisted, so the next
-   *     load (auto or manual) picks it up regardless.
-   */
-  private async applyBackendLive(backendString: string): Promise<void> {
-    let loaded: string[] = []
-    try {
-      loaded = await this.getLoadedModels()
-    } catch (err) {
-      logger.warn('applyBackendLive: getLoadedModels failed (continuing):', err)
-    }
-
-    const result = await this.updateBackend(backendString)
-    if (!result.wasUpdated) {
-      throw new Error(
-        `updateBackend reported wasUpdated=false for ${backendString}`
-      )
-    }
-
-    for (const modelId of loaded) {
-      try {
-        await this.unload(modelId)
-      } catch (err) {
-        logger.warn(
-          `applyBackendLive: failed to unload model ${modelId} (continuing):`,
-          err
-        )
-      }
-    }
-
-    localStorage.removeItem('llama_cpp_pending_backend')
-
-    // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
-    // a pure UI concern (the dialog/pill in the web app) and does not
-    // need to traverse the cross-extension event bus. `window` is always
-    // available inside the Tauri WebView2 context where this extension
-    // runs.
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
-      const [swappedVersion, swappedId] = backendString.split('/')
-      window.dispatchEvent(
-        new CustomEvent('app:backend-hotswapped', {
-          detail: {
-            backend: backendString,
-            provider: this.providerId,
-            version: swappedVersion,
-            backendId: swappedId,
-          },
-        })
       )
     }
   }
@@ -2350,12 +2081,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
       return
     }
     if (key === 'version_backend') {
-      // Skip entirely if updateBackend() is already handling it —
-      // updateBackend() will commit to in-memory config itself after all
-      // side effects succeed.
-      if (this.isUpdatingBackend) {
-        return
-      }
       // During initialization, configureBackends handles all backend
       // setup; any updateSettings calls (e.g. BOM migration) should
       // only touch in-memory config without triggering downloads.
@@ -2395,21 +2120,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
       ;(async () => {
         try {
           // "Latest <variant>" dropdown entries carry a `latest/<backend>`
-          // sentinel (they are listed statically, even offline). Resolve the
-          // sentinel to the newest concrete release tag now, then route
-          // through updateBackend() so the resolved tag is downloaded,
-          // persisted, and reflected back into the dropdown selection.
+          // sentinel (they are listed statically, even offline). The core
+          // switches to the newest build of that variant and writes the
+          // concrete value, which comes back as a mirror of its settings.
           if (valueStr.startsWith('latest/')) {
-            const backendId = valueStr.slice('latest/'.length).trim()
-            const resolved = await this.resolveLatestBackendString(backendId)
-            if (!resolved) {
-              logger.error(
-                `Could not resolve the latest release for '${backendId}' — the ggml-org release stream is unreachable. Backend left unchanged.`
-              )
-              this.config.version_backend = previousVersionBackend ?? ''
-              return
-            }
-            await this.updateBackend(resolved)
+            this.config.version_backend = previousVersionBackend ?? ''
+            await this.switchThroughCore(valueStr)
             return
           }
 
@@ -2539,148 +2255,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
     } catch (err) {
       logger.warn(`newestInstalledOfFamily('${backendId}') failed:`, err)
       return null
-    }
-  }
-
-  /**
-   * Drives a manual "Latest <variant>" dropdown selection (sentinel
-   * `latest/<backend>`) through the same download → hot-swap → completed
-   * dialog the "Find optimal backend" button uses — but triggered by hand.
-   *
-   * The whole flow is keyed on the sentinel string so the globally-mounted
-   * `<BackendUpdater />` dialog (a separate `useBackendUpdater` instance) can
-   * follow it via Tauri events alone:
-   *   1. Emit `onManualBackendDownloading` immediately so the dialog opens in
-   *      its spinning "downloading" state the instant the user picks a variant
-   *      — no dead air while we resolve the release tag over the (sometimes
-   *      slow) network.
-   *   2. Resolve the concrete `<tag>/<backend>`: prefer the newest ggml-org
-   *      release; if that stream is unreachable / rate-limited, fall back to
-   *      the newest copy of this family already installed locally.
-   *   3. Download only when the resolved target is NOT already installed —
-   *      an already-installed pick just hot-swaps (no redundant fetch).
-   *   4. `onBackendDownloadFinished` advances the dialog to "hot-swapping",
-   *      then `applyBackendLive()` unloads running models, persists the
-   *      resolved `version_backend` (emitting `settingsChanged` so the
-   *      dropdown reflects the concrete tag), and dispatches
-   *      `app:backend-hotswapped` which the dialog turns into its green
-   *      "completed" state.
-   *
-   * Throws (after emitting `onManualBackendFailed` to dismiss the dialog)
-   * when the target can be neither resolved online nor satisfied from a local
-   * install, so the caller can surface a toast.
-   */
-  async downloadManualBackend(selection: string): Promise<void> {
-    const sentinel = stripBom(selection)
-    const isSentinel = sentinel.startsWith('latest/')
-    const backendId = isSentinel
-      ? sentinel.slice('latest/'.length).trim()
-      : (sentinel.split('/')[1] || '').trim()
-    const dialogKey = sentinel
-    const label = friendlyBackendLabel(backendId)
-    const current = stripBom(this.config.version_backend || '')
-
-    // 1. Instant feedback: open the global recommendation dialog straight
-    //    into its "downloading" spinner via a dedicated event the hook turns
-    //    into `recommendation = payload` + `phase = 'downloading'` in a single
-    //    handler. Going through `onBetterBackendDetected` + a separate
-    //    `onBackendDownloadStarted` would race (the started handler reads a
-    //    not-yet-committed `recommendation`) and leave the dialog stuck on
-    //    the "recommend" confirm screen. The payload is keyed on the sentinel
-    //    so the later finish / hot-swap events line up.
-    if (events && typeof events.emit === 'function') {
-      events.emit('onManualBackendDownloading', {
-        currentBackend: current,
-        recommendedBackend: dialogKey,
-        recommendedCategory: label,
-        provider: this.providerId,
-        backendId,
-      })
-    }
-
-    try {
-      // 2. Resolve a concrete <tag>/<backend>: ggml-org latest first, then
-      //    fall back to the newest locally-installed copy of this family.
-      //    The core bounds its own manifest read and routes it through the
-      //    configured proxy, so this outer cap is only a last-resort safety
-      //    net against a wedged promise. It MUST sit comfortably above the
-      //    core's fetch budget — a short cap here would preempt a
-      //    slow-but-valid proxied lookup and force backends with no local
-      //    copy (e.g. win-vulkan-x64) to dead-end even though the release
-      //    stream would have answered in time.
-      const MANUAL_RESOLVE_TIMEOUT_MS = 20000
-      let concrete: string | null = null
-      if (isSentinel) {
-        concrete = await this.withTimeout(
-          this.resolveLatestBackendString(backendId),
-          MANUAL_RESOLVE_TIMEOUT_MS,
-          null
-        )
-        if (!concrete) {
-          concrete = await this.newestInstalledOfFamily(backendId)
-          if (concrete) {
-            logger.warn(
-              `downloadManualBackend: ggml-org unreachable/slow for '${backendId}', falling back to newest installed ${concrete}`
-            )
-          }
-        }
-      } else {
-        concrete = sentinel
-      }
-
-      if (!concrete) {
-        // ATO-174: actionable dead-end message. The backend manifest stream
-        // (raw.githubusercontent.com) is unreachable/slow and there is no
-        // local copy of this backend family to fall back to. Point the user
-        // at the concrete remedies instead of a bare failure.
-        throw new Error(
-          `Could not download the ${friendlyBackendLabel(backendId)} backend: the backend manifest stream (raw.githubusercontent.com) is unreachable or slow, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
-        )
-      }
-
-      // 3. Download only if the resolved target isn't already on disk.
-      const [tag, btype] = concrete.split('/')
-      const alreadyInstalled = await isBackendInstalled(btype, tag)
-      if (alreadyInstalled) {
-        logger.info(
-          `downloadManualBackend: ${concrete} already installed — switching without download`
-        )
-      } else {
-        logger.info(`downloadManualBackend: downloading ${concrete}`)
-        await this.downloadAndInstallBackend(concrete)
-      }
-
-      // 4. Advance the dialog to "hot-swapping" (no-op if the inner
-      //    download already emitted a concrete finish that moved us there).
-      if (events && typeof events.emit === 'function') {
-        events.emit(AppEvent.onBackendDownloadFinished, {
-          backend: dialogKey,
-          status: 'completed',
-          provider: this.providerId,
-          backendId,
-        })
-      }
-
-      // 5. Live hot-swap: unload models, persist version_backend (emits
-      //    settingsChanged → dropdown updates), dispatch app:backend-hotswapped
-      //    (→ dialog "completed"). updateBackend()'s own ensureBackendReady()
-      //    is a no-op here since the backend is now installed.
-      await this.applyBackendLive(concrete)
-      logger.info(`downloadManualBackend: applied ${concrete} live`)
-    } catch (err) {
-      logger.error('downloadManualBackend failed:', err)
-      // Dismiss the dialog cleanly (back to idle) rather than dropping into
-      // the "recommend" confirm screen a generic `failed` download event
-      // would trigger. The caller surfaces the error toast.
-      if (events && typeof events.emit === 'function') {
-        events.emit('onManualBackendFailed', {
-          backend: dialogKey,
-          error: err instanceof Error ? err.message : String(err),
-          provider: this.providerId,
-          backendId,
-        })
-      }
-      throw err
     }
   }
 

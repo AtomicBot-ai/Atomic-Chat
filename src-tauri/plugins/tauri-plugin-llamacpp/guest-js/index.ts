@@ -150,18 +150,6 @@ export async function checkBackendForUpdates(
   })
 }
 
-export async function removeOldBackendVersions(
-  backendsDir: string,
-  latestVersion: string,
-  backendType: string
-): Promise<string[]> {
-  return invoke('plugin:llamacpp|remove_old_backend_versions', {
-    backendsDir,
-    latestVersion,
-    backendType,
-  })
-}
-
 /**
  * @deprecated Decided by atomic-chat-core since 2026-09-27 (ADR 2026-09-27-the-core-is-the-only-source-of-hardware-facts-and-backend-decisions); the Rust command is kept as the fixture source for the core's contract tests.
  */

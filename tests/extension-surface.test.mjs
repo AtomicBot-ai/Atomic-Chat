@@ -64,7 +64,9 @@ test('the extension implements every method the backend updater calls', () => {
   // A missing one is invisible at the call site: `extension.method?.()` on an absent method is a
   // no-op that resolves to undefined, so the button simply does nothing.
   const expected = declaredOffContractMethods()
-  assert.ok(expected.length >= 8, `expected a real list of methods, got ${expected.length}`)
+  // Applying an update and switching a build went to the core (change unify-engine-lifecycle);
+  // what is left is detection, the catalog, install from file and the pick resolution.
+  assert.ok(expected.length >= 5, `expected a real list of methods, got ${expected.length}`)
 
   for (const root of UPDATER_EXTENSIONS) {
     const source = extensionSource(root)
