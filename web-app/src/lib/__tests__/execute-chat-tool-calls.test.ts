@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   executeChatToolCalls,
+  hasUnresolvedToolCallParts,
   shouldSendToolFollowUp,
   type ChatToolCall,
   type ChatToolOutput,
@@ -145,5 +146,69 @@ describe('shouldSendToolFollowUp', () => {
       false
     )
     expect(shouldSendToolFollowUp([completedToolMessage], null)).toBe(false)
+  })
+})
+
+// The thread page's terminal check (PR #335, ATO-538): the finished message is
+// the judge, not a tool queue that can keep entries from an earlier step.
+describe('hasUnresolvedToolCallParts', () => {
+  const messageWithParts = (parts: UIMessage['parts']) =>
+    ({ id: 'assistant-1', role: 'assistant', parts }) as UIMessage
+
+  it('flags a tool call that is still waiting on its output', () => {
+    expect(
+      hasUnresolvedToolCallParts(
+        messageWithParts([
+          { type: 'text', text: 'Working on it' },
+          {
+            type: 'tool-search',
+            toolCallId: 'call-1',
+            state: 'input-available',
+            input: { query: 'alpha' },
+          },
+        ])
+      )
+    ).toBe(true)
+  })
+
+  it('counts a failed tool call as resolved — the error output is delivered', () => {
+    expect(
+      hasUnresolvedToolCallParts(
+        messageWithParts([
+          {
+            type: 'tool-search',
+            toolCallId: 'call-1',
+            state: 'output-error',
+            input: { query: 'alpha' },
+            errorText: 'boom',
+          },
+        ])
+      )
+    ).toBe(false)
+  })
+
+  it('treats answered tool calls plus a final text as terminal', () => {
+    expect(
+      hasUnresolvedToolCallParts(
+        messageWithParts([
+          {
+            type: 'tool-search',
+            toolCallId: 'call-1',
+            state: 'output-available',
+            input: { query: 'alpha' },
+            output: { ok: true },
+          },
+          { type: 'text', text: 'All done' },
+        ])
+      )
+    ).toBe(false)
+  })
+
+  it('treats a plain answer with no tool parts as terminal', () => {
+    expect(
+      hasUnresolvedToolCallParts(
+        messageWithParts([{ type: 'text', text: 'EDIT_OK' }])
+      )
+    ).toBe(false)
   })
 })

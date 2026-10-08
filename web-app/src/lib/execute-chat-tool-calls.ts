@@ -136,6 +136,22 @@ export async function executeChatToolCalls({
   }
 }
 
+/**
+ * True when the message still contains tool calls waiting on their results,
+ * i.e. the turn will continue once they resolve. Tool parts with a delivered
+ * output (`output-available` / `output-error`) count as resolved — a final
+ * answer that follows answered tool calls is still terminal.
+ */
+export function hasUnresolvedToolCallParts(message: UIMessage): boolean {
+  return message.parts.some((part) => {
+    const isToolPart =
+      part.type.startsWith('tool-') || part.type === 'dynamic-tool'
+    if (!isToolPart) return false
+    const state = (part as { state?: string }).state
+    return state !== 'output-available' && state !== 'output-error'
+  })
+}
+
 export function shouldSendToolFollowUp(
   messages: UIMessage[],
   controller: AbortController | null
