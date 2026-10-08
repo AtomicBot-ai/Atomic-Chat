@@ -92,6 +92,7 @@ import type {
   Invoke,
 } from '../../shared/atomicCoreRuntime'
 import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
+import { withEngineUpdateDeadline } from '../../shared/engineUpdateCheck'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 
@@ -2184,7 +2185,13 @@ export default class llamacpp_extension extends AIEngine {
    * family (legacy ids may land on their migrated form); the callers refuse a
    * target that would cross families.
    */
-  async checkBackendForUpdates(options: { force?: boolean } = {}): Promise<{
+  /**
+   * `throwOnError`: a failed lookup rejects instead of reading as "no update"
+   * (the manual check, which must not call an unchecked engine up to date).
+   */
+  async checkBackendForUpdates(
+    options: { force?: boolean; throwOnError?: boolean } = {}
+  ): Promise<{
     updateNeeded: boolean
     newVersion: string
     targetBackend?: string
@@ -2209,6 +2216,7 @@ export default class llamacpp_extension extends AIEngine {
       }
     } catch (err) {
       logger.warn('checkBackendForUpdates failed:', err)
+      if (options.throwOnError) throw err
       return { updateNeeded: false, newVersion: '0' }
     }
   }
@@ -2224,9 +2232,10 @@ export default class llamacpp_extension extends AIEngine {
    * type already in use.
    *
    * Only the decision happens here, and every leg of it is bounded: the
-   * catalog lookup goes through the same 20s race as `recheckOptimalBackend`,
-   * so a slow, unreachable or rate-limited GitHub can never leave the button
-   * spinning. The caller starts the download without awaiting it — a release
+   * catalog lookup has a 20s deadline, so a slow, unreachable or rate-limited
+   * GitHub can never leave the button spinning. A lookup that fails or misses
+   * the deadline rejects rather than answering "no update": the caller says
+   * the check failed instead of calling the engine up to date. The caller starts the download without awaiting it — a release
    * archive takes minutes — and the shared `<BackendUpdater />` owns that
    * progress UI.
    */
@@ -2247,11 +2256,11 @@ export default class llamacpp_extension extends AIEngine {
     const currentType = current.split('/')[1]?.trim()
     if (!current || current === 'none' || !currentType) return noUpdate
 
-    const { updateNeeded, targetBackend, sameFamily } = await this.withTimeout(
-      this.checkBackendForUpdates({ force: true }),
-      20_000,
-      { updateNeeded: false, newVersion: '0' }
-    )
+    // A lookup that fails or never answers rejects: it is not "up to date".
+    const { updateNeeded, targetBackend, sameFamily } =
+      await withEngineUpdateDeadline(
+        this.checkBackendForUpdates({ force: true, throwOnError: true })
+      )
     const targetType = targetBackend?.split('/')[1]?.trim()
     if (!updateNeeded || !targetBackend || !targetType) return noUpdate
 

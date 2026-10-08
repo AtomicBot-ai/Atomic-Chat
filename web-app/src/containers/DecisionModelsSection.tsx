@@ -17,8 +17,13 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   DECISION_ENGINE_UI,
   decisionEngineReadiness,
+  decisionErrorAction,
+  isUncheckedEngineError,
 } from '@/lib/decision/engine'
-import { isActiveDecisionModel } from '@/lib/decision/models'
+import {
+  isActiveDecisionModel,
+  retryDecisionModel,
+} from '@/lib/decision/models'
 import { isDecisionHostSupported } from '@/lib/decision/platform'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -28,7 +33,7 @@ import {
   type DecisionEngine,
 } from '@/services/decision-catalog-registry'
 import type { DecisionCoreError } from '@/services/decision/types'
-import { useDecisionStore } from '@/stores/decision-store'
+import { toDecisionError, useDecisionStore } from '@/stores/decision-store'
 
 const ERROR_TEXT: Record<string, string> = {
   DECISION_ENGINE_UNSUPPORTED: 'settings:decision.errors.engineUnsupported',
@@ -37,6 +42,15 @@ const ERROR_TEXT: Record<string, string> = {
     'settings:decision.errors.checkpointIncomplete',
   MODEL_FILE_NOT_FOUND: 'settings:decision.errors.modelFileNotFound',
   DECISION_MODEL_NOT_CHAT: 'settings:decision.errors.notChat',
+  MODEL_LOAD_TIMED_OUT: 'settings:decision.errors.timedOut',
+  MODEL_LOAD_FAILED: 'settings:decision.errors.startFailed',
+}
+
+function errorHeadlineKey(error: DecisionCoreError): string {
+  // An older core's word for an engine it could not check.
+  if (isUncheckedEngineError(error))
+    return 'settings:decision.errors.engineNotChecked'
+  return ERROR_TEXT[error.code] ?? 'settings:decision.errors.generic'
 }
 
 function gb(bytes: number): string {
@@ -46,10 +60,19 @@ function gb(bytes: number): string {
 /**
  * Brings the engine to a build that runs decision models: the newest release
  * when one is out, otherwise the build that fits this machine when none is
- * installed. Mounted next to `DECISION_ENGINE_UNSUPPORTED`, and on the
- * llama.cpp page next to models that need a newer build.
+ * installed. Mounted next to `DECISION_ENGINE_UNSUPPORTED` (`reason`
+ * `unsupported`: the core checked the installed build and it cannot run the
+ * model), and on the llama.cpp page next to models that need a newer build
+ * (`too_old`). A check for updates that fails says so: it is no evidence the
+ * engine is up to date.
  */
-function InstallEngineButton({ provider }: { provider: DecisionEngine }) {
+function InstallEngineButton({
+  provider,
+  reason,
+}: {
+  provider: DecisionEngine
+  reason: 'unsupported' | 'too_old'
+}) {
   const { t } = useTranslation()
   const engine = DECISION_ENGINE_UI[provider]
   const {
@@ -62,12 +85,31 @@ function InstallEngineButton({ provider }: { provider: DecisionEngine }) {
   const install = useCallback(async () => {
     setInstalling(true)
     try {
-      const update = await checkForEngineUpdate().catch(() => null)
-      let target = update?.updateAvailable ? update.targetBackend : null
+      let update: Awaited<ReturnType<typeof checkForEngineUpdate>>
+      try {
+        update = await checkForEngineUpdate()
+      } catch (error) {
+        console.error('[decision] engine update check failed:', error)
+        toast.error(
+          t('settings:decision.engineUpdateCheckFailed', {
+            engine: engine.name,
+          }),
+          { description: error instanceof Error ? error.message : undefined }
+        )
+        return
+      }
+      let target = update.updateAvailable ? update.targetBackend : null
       if (!target)
         target = (await recheckOptimalBackend())?.recommendedBackend ?? null
       if (!target) {
-        toast.info(t('settings:decision.engineLatest', { engine: engine.name }))
+        toast.info(
+          t(
+            reason === 'unsupported'
+              ? 'settings:decision.engineLatestUnsupported'
+              : 'settings:decision.engineLatest',
+            { engine: engine.name }
+          )
+        )
         return
       }
       await downloadRecommendedBackend(target)
@@ -84,6 +126,7 @@ function InstallEngineButton({ provider }: { provider: DecisionEngine }) {
     recheckOptimalBackend,
     downloadRecommendedBackend,
     engine.name,
+    reason,
     t,
   ])
 
@@ -105,6 +148,43 @@ function InstallEngineButton({ provider }: { provider: DecisionEngine }) {
   )
 }
 
+/**
+ * Starts the configured model again, for a start that timed out or failed.
+ * The alert goes as the start begins: the model's row shows it starting, and
+ * a second failure brings the alert back.
+ */
+function RetryStartButton() {
+  const { t } = useTranslation()
+  const anyBusy = useDecisionStore((s) => s.busy !== null)
+  const [retrying, setRetrying] = useState(false)
+
+  const retry = useCallback(async () => {
+    const store = useDecisionStore.getState()
+    setRetrying(true)
+    store.setError(null)
+    try {
+      await retryDecisionModel()
+    } catch (error) {
+      store.setError(toDecisionError(error))
+    } finally {
+      setRetrying(false)
+      await store.refresh()
+    }
+  }, [])
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={anyBusy || retrying}
+      onClick={() => void retry()}
+    >
+      {retrying && <IconLoader2 size={14} className="animate-spin" />}
+      {t('settings:decision.retry')}
+    </Button>
+  )
+}
+
 function DecisionError({
   error,
   provider,
@@ -113,7 +193,8 @@ function DecisionError({
   provider: DecisionEngine
 }) {
   const { t } = useTranslation()
-  const key = ERROR_TEXT[error.code]
+  const serviceHub = useServiceHub()
+  const action = decisionErrorAction(error)
   return (
     <div
       role="alert"
@@ -121,17 +202,29 @@ function DecisionError({
     >
       <div className="space-y-1">
         <p className="font-medium text-destructive">
-          {key
-            ? t(key, { engine: DECISION_ENGINE_UI[provider].name })
-            : t('settings:decision.errors.generic')}
+          {t(errorHeadlineKey(error), {
+            engine: DECISION_ENGINE_UI[provider].name,
+          })}
         </p>
         <p className="text-xs text-muted-foreground break-all">
           {error.message}
           {error.details ? ` — ${error.details}` : ''}
         </p>
       </div>
-      {error.code === 'DECISION_ENGINE_UNSUPPORTED' && (
-        <InstallEngineButton provider={provider} />
+      {action === 'install' && (
+        <InstallEngineButton provider={provider} reason="unsupported" />
+      )}
+      {action === 'retry' && (
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void serviceHub.window().openLogsWindow()}
+          >
+            {t('settings:decision.viewLogs')}
+          </Button>
+          <RetryStartButton />
+        </div>
       )}
     </div>
   )
@@ -157,7 +250,7 @@ function EngineUpdateNotice({
           version: required,
         })}
       </p>
-      <InstallEngineButton provider={provider} />
+      <InstallEngineButton provider={provider} reason="too_old" />
     </div>
   )
 }

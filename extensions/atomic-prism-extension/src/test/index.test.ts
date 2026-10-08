@@ -930,6 +930,12 @@ describe('atomic_prism_extension', () => {
       })
     })
 
+    it('fails the manual check when the core fails, instead of reporting no update', async () => {
+      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
+      vi.mocked(coreRuntime.checkBackendUpdates).mockRejectedValue(new Error('down'))
+      await expect(extension.checkForEngineUpdate()).rejects.toThrow('down')
+    })
+
     it('feeds the manual check, which only decides', async () => {
       extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
       vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({

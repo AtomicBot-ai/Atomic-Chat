@@ -77,6 +77,7 @@ import {
 } from './dflashRegistry'
 import { basename } from '@tauri-apps/api/path'
 import * as coreRuntime from './adapter/coreRuntime'
+import { withEngineUpdateDeadline } from '../../shared/engineUpdateCheck'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import { isPrismModel } from '../../shared/atomicCoreRuntime'
 import {
@@ -2252,7 +2253,14 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * is false. A missing or malformed `version_backend` is answered locally as
    * "no update" without asking.
    */
-  async checkBackendForUpdates(options?: { force?: boolean }): Promise<{
+  /**
+   * `throwOnError`: a failed lookup rejects instead of reading as "no update"
+   * (the manual check, which must not call an unchecked engine up to date).
+   */
+  async checkBackendForUpdates(options?: {
+    force?: boolean
+    throwOnError?: boolean
+  }): Promise<{
     updateNeeded: boolean
     newVersion: string
     targetBackend?: string
@@ -2279,6 +2287,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
       }
     } catch (err) {
       logger.warn('checkBackendForUpdates failed:', err)
+      if (options?.throwOnError) throw err
       return noUpdate
     }
   }
@@ -2315,11 +2324,11 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const currentType = current.split('/')[1]?.trim()
     if (!current || current === 'none' || !currentType) return noUpdate
 
-    const { updateNeeded, targetBackend, sameFamily } = await this.withTimeout(
-      this.checkBackendForUpdates({ force: true }),
-      20_000,
-      { updateNeeded: false, newVersion: '0', sameFamily: false }
-    )
+    // A lookup that fails or never answers rejects: it is not "up to date".
+    const { updateNeeded, targetBackend, sameFamily } =
+      await withEngineUpdateDeadline(
+        this.checkBackendForUpdates({ force: true, throwOnError: true })
+      )
     const targetType = targetBackend?.split('/')[1]?.trim()
     if (!updateNeeded || !targetBackend || !targetType) return noUpdate
 

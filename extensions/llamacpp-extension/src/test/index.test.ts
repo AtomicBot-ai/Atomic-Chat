@@ -2172,6 +2172,7 @@ describe('llamacpp_extension', () => {
 
       expect(extension.checkBackendForUpdates).toHaveBeenCalledWith({
         force: true,
+        throwOnError: true,
       })
       expect(result).toEqual({
         updateAvailable: true,
@@ -2232,8 +2233,9 @@ describe('llamacpp_extension', () => {
     })
 
     /// An unreachable or rate-limited GitHub used to leave the button
-    /// spinning forever, because the catalog lookup had no deadline.
-    it('settles on a deadline when the catalog never answers', async () => {
+    /// spinning forever, because the catalog lookup had no deadline. Missing
+    /// the deadline is a failed check, not "up to date" (ATO-543).
+    it('fails on a deadline when the catalog never answers', async () => {
       vi.useFakeTimers()
       try {
         extension.checkBackendForUpdates = vi
@@ -2241,15 +2243,22 @@ describe('llamacpp_extension', () => {
           .mockReturnValue(new Promise(() => {}))
 
         const pending = extension.checkForEngineUpdate()
+        const outcome = expect(pending).rejects.toThrow(/did not answer/)
         await vi.advanceTimersByTimeAsync(20_000)
-
-        await expect(pending).resolves.toEqual({
-          updateAvailable: false,
-          targetBackend: null,
-        })
+        await outcome
       } finally {
         vi.useRealTimers()
       }
+    })
+
+    it('fails when the catalog lookup fails, instead of reporting no update', async () => {
+      extension.checkBackendForUpdates = vi
+        .fn()
+        .mockRejectedValue(new Error('rate limited'))
+
+      await expect(extension.checkForEngineUpdate()).rejects.toThrow(
+        'rate limited'
+      )
     })
   })
 

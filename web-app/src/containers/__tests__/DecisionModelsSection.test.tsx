@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DecisionCatalogModel } from '@/services/decision-catalog-registry'
 
@@ -6,6 +6,18 @@ const mocks = vi.hoisted(() => ({
   apiSupported: true,
   arch: '',
   versionBackend: undefined as string | undefined,
+  load: vi.fn(),
+  getConfig: vi.fn(),
+  openLogsWindow: vi.fn(),
+  checkForEngineUpdate: vi.fn(),
+  recheckOptimalBackend: vi.fn(),
+  downloadRecommendedBackend: vi.fn(),
+  toastInfo: vi.fn(),
+  toastError: vi.fn(),
+}))
+
+vi.mock('sonner', () => ({
+  toast: { info: mocks.toastInfo, error: mocks.toastError },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -26,11 +38,17 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({
-    decision: () => ({ isSupported: () => mocks.apiSupported }),
-  }),
-}))
+vi.mock('@/hooks/useServiceHub', () => {
+  const hub = () => ({
+    decision: () => ({
+      isSupported: () => mocks.apiSupported,
+      load: mocks.load,
+      getConfig: mocks.getConfig,
+    }),
+    window: () => ({ openLogsWindow: mocks.openLogsWindow }),
+  })
+  return { useServiceHub: hub, getServiceHub: hub }
+})
 
 vi.mock('@/hooks/useHardware', () => ({
   useHardware: (
@@ -48,9 +66,9 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
 
 vi.mock('@/hooks/useBackendUpdater', () => ({
   useBackendUpdater: () => ({
-    checkForEngineUpdate: vi.fn(),
-    recheckOptimalBackend: vi.fn(),
-    downloadRecommendedBackend: vi.fn(),
+    checkForEngineUpdate: mocks.checkForEngineUpdate,
+    recheckOptimalBackend: mocks.recheckOptimalBackend,
+    downloadRecommendedBackend: mocks.downloadRecommendedBackend,
   }),
 }))
 
@@ -84,6 +102,18 @@ describe('DecisionModelsSection', () => {
     mocks.apiSupported = true
     mocks.arch = ''
     mocks.versionBackend = undefined
+    for (const fn of [
+      mocks.load,
+      mocks.getConfig,
+      mocks.openLogsWindow,
+      mocks.checkForEngineUpdate,
+      mocks.recheckOptimalBackend,
+      mocks.downloadRecommendedBackend,
+      mocks.toastInfo,
+      mocks.toastError,
+    ])
+      fn.mockReset()
+    mocks.getConfig.mockResolvedValue({ config: null, status: null })
     bind.mockClear()
     useDecisionStore.setState({
       catalog: getBaselineDecisionCatalog(),
@@ -91,6 +121,7 @@ describe('DecisionModelsSection', () => {
       status: null,
       config: null,
       error: null,
+      busy: null,
       bind,
     })
   })
@@ -135,6 +166,129 @@ describe('DecisionModelsSection', () => {
     expect(
       screen.getByRole('button', { name: 'settings:decision.installEngine' })
     ).toBeVisible()
+  })
+
+  it('offers a retry and the logs, not an install, when the start timed out', async () => {
+    useDecisionStore.setState({
+      error: {
+        code: 'MODEL_LOAD_TIMED_OUT',
+        message:
+          'Could not check whether the installed engine serves the decision model: Timed out while probing llama.cpp backend capabilities.',
+      },
+    })
+    mocks.load.mockResolvedValue({ state: 'ready' })
+    render(<DecisionModelsSection />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'settings:decision.errors.timedOut'
+    )
+    expect(
+      screen.queryByRole('button', { name: 'settings:decision.installEngine' })
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.viewLogs' })
+    )
+    expect(mocks.openLogsWindow).toHaveBeenCalledOnce()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.retry' })
+    )
+    await waitFor(() => expect(mocks.load).toHaveBeenCalledOnce())
+    await waitFor(() => expect(useDecisionStore.getState().error).toBeNull())
+  })
+
+  it('keeps the failure of a retry that failed again', async () => {
+    useDecisionStore.setState({
+      error: { code: 'MODEL_LOAD_FAILED', message: 'exited while loading' },
+    })
+    mocks.load.mockRejectedValue({
+      code: 'MODEL_LOAD_FAILED',
+      message: 'exited again',
+    })
+    render(<DecisionModelsSection />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.retry' })
+    )
+    await waitFor(() =>
+      expect(useDecisionStore.getState().error).toEqual({
+        code: 'MODEL_LOAD_FAILED',
+        message: 'exited again',
+      })
+    )
+  })
+
+  it('treats an older core calling an unchecked engine unsupported as a retry', () => {
+    useDecisionStore.setState({
+      error: {
+        code: 'DECISION_ENGINE_UNSUPPORTED',
+        message:
+          'No installed engine build can run the decision model. Install TurboQuant 1.7.0 or newer.',
+        details:
+          'b10298-2.0.0/macos-arm64: probe failed: Timed out while probing llama.cpp backend capabilities.',
+      },
+    })
+    render(<DecisionModelsSection />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'settings:decision.errors.engineNotChecked'
+    )
+    expect(
+      screen.getByRole('button', { name: 'settings:decision.retry' })
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'settings:decision.installEngine' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('says the update check failed instead of calling the engine up to date', async () => {
+    useDecisionStore.setState({
+      error: { code: 'DECISION_ENGINE_UNSUPPORTED', message: 'no --decision' },
+    })
+    mocks.checkForEngineUpdate.mockRejectedValue(new Error('offline'))
+    render(<DecisionModelsSection />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    )
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        'settings:decision.engineUpdateCheckFailed',
+        { description: 'offline' }
+      )
+    )
+    expect(mocks.toastInfo).not.toHaveBeenCalled()
+    expect(mocks.recheckOptimalBackend).not.toHaveBeenCalled()
+    // Nothing is left installing: the button can be pressed again.
+    expect(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    ).toBeEnabled()
+  })
+
+  it('names the check as the evidence when the newest engine cannot run the model', async () => {
+    useDecisionStore.setState({
+      error: { code: 'DECISION_ENGINE_UNSUPPORTED', message: 'no --decision' },
+    })
+    mocks.checkForEngineUpdate.mockResolvedValue({
+      updateAvailable: false,
+      targetBackend: null,
+    })
+    mocks.recheckOptimalBackend.mockResolvedValue(null)
+    render(<DecisionModelsSection />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    )
+    await waitFor(() =>
+      expect(mocks.toastInfo).toHaveBeenCalledWith(
+        'settings:decision.engineLatestUnsupported'
+      )
+    )
+    expect(mocks.downloadRecommendedBackend).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    ).toBeEnabled()
   })
 
   it('renders nothing where decision models cannot run', () => {

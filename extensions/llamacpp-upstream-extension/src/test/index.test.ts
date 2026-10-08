@@ -1976,7 +1976,21 @@ describe('llamacpp_extension', () => {
         // while the app was open, so the check must bypass it.
         expect(extension.checkBackendForUpdates).toHaveBeenCalledWith({
           force: true,
+          throwOnError: true,
         })
+      })
+
+      it('fails when the catalog lookup fails, instead of reporting no update', async () => {
+        extension['config'] = {
+          version_backend: 'b10344/win-cpu-x64',
+        } as any
+        extension.checkBackendForUpdates = vi
+          .fn()
+          .mockRejectedValue(new Error('offline'))
+
+        await expect(extension.checkForEngineUpdate()).rejects.toThrow(
+          'offline'
+        )
       })
 
       it('reports no update when the catalog has nothing newer', async () => {

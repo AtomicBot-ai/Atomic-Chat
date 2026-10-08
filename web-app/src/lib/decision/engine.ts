@@ -18,6 +18,7 @@ import type {
   DecisionCatalogModel,
   DecisionEngine,
 } from '@/services/decision-catalog-registry'
+import type { DecisionCoreError } from '@/services/decision/types'
 
 /** Per engine: its backend updater and its name in the UI. */
 export const DECISION_ENGINE_UI: Readonly<
@@ -78,4 +79,49 @@ export function decisionEngineReadiness(
 ): DecisionEngineReadiness {
   if (model.engine !== 'llamacpp-upstream') return { kind: 'ready' }
   return upstreamEngineReadiness(model.min_engine, versionBackend)
+}
+
+/**
+ * What the user can do about a failed start: install or update the engine,
+ * start again, or neither (the model or the settings are wrong, and the
+ * message says how to fix them).
+ */
+export type DecisionErrorAction = 'install' | 'retry' | 'none'
+
+/** Failures a second start cannot fix. */
+const CONFIGURATION_CODES: ReadonlySet<string> = new Set([
+  'DECISION_NOT_CONFIGURED',
+  'DECISION_CHECKPOINT_INCOMPLETE',
+  'MODEL_FILE_NOT_FOUND',
+  'DECISION_MODEL_NOT_CHAT',
+])
+
+/**
+ * A `DECISION_ENGINE_UNSUPPORTED` whose evidence is a `-h` probe that could
+ * not run (`<build>: probe failed: …` in the details). Cores up to 0.11.2
+ * reported a probe that timed out or crashed this way; later ones fail the
+ * start with the probe's own code instead. Either way nothing shows the
+ * engine cannot run the model.
+ */
+export function isUncheckedEngineError(error: DecisionCoreError): boolean {
+  return (
+    error.code === 'DECISION_ENGINE_UNSUPPORTED' &&
+    (error.details ?? '')
+      .split('\n')
+      .some((line) => line.includes(': probe failed: '))
+  )
+}
+
+/**
+ * `install` only when the core finished checking the engine and it cannot run
+ * the model; a start that timed out or failed (`MODEL_LOAD_TIMED_OUT`,
+ * `MODEL_LOAD_FAILED`, an engine that could not be checked) is worth a retry.
+ */
+export function decisionErrorAction(
+  error: DecisionCoreError
+): DecisionErrorAction {
+  if (CONFIGURATION_CODES.has(error.code)) return 'none'
+  if (error.code === 'DECISION_ENGINE_UNSUPPORTED')
+    return isUncheckedEngineError(error) ? 'retry' : 'install'
+  return 'retry'
 }

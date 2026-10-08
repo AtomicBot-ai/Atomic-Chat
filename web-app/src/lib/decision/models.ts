@@ -177,6 +177,14 @@ export async function activateDecisionModel(
   return decision.load()
 }
 
+/**
+ * Start the configured decision model again, after a start that timed out or
+ * failed. The core checks again every engine it could not check before.
+ */
+export async function retryDecisionModel(): Promise<DecisionStatus> {
+  return getServiceHub().decision().load()
+}
+
 /** Stop the decision model and keep it from starting on the next call. */
 export async function stopDecisionModel(): Promise<void> {
   await getServiceHub().decision().setConfig({ enabled: false })
