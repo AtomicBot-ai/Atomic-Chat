@@ -335,8 +335,9 @@ impl ControlClient {
     }
 }
 
-/// Calls whose deadline is the core's own: a model load, an embedding batch and a backend or
-/// engine-build install can all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
+/// Calls whose deadline is the core's own: a model load, an embedding batch, a backend or
+/// engine-build install and an engine update (which downloads the new build inside the call) can
+/// all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
 /// is ready; the core's own budget for that (600 s by default, `startupTimeoutSecs`) starts at the
 /// spawn, after it has cancelled a running job, torn the old session down and checked the files,
 /// so any client deadline of the same length would fire first and hide the core's own error.
@@ -345,6 +346,7 @@ fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration
         && ((path.starts_with("/models/") && (path.ends_with("/load") || path.ends_with("/embed")))
             || ((path.starts_with("/backends/") || path.starts_with("/engine-builds/"))
                 && path.ends_with("/install"))
+            || (path.starts_with("/engines/") && path.ends_with("/update"))
             || path == "/diffusion/model/load")
     {
         None
@@ -487,6 +489,26 @@ mod tests {
         );
         assert_eq!(
             control_call_timeout(&reqwest::Method::POST, "/engine-builds/mlx/updates"),
+            Some(CALL_TIMEOUT)
+        );
+        // An engine update downloads the new build inside the call, then switches and unloads.
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engines/llamacpp-upstream/update"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engines/sd-cpp/update"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engines/versions"),
+            Some(CALL_TIMEOUT)
+        );
+        assert_eq!(
+            control_call_timeout(
+                &reqwest::Method::POST,
+                "/engines/llamacpp/builds/b9100/win-cuda-12-x64/activate"
+            ),
             Some(CALL_TIMEOUT)
         );
     }

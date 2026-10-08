@@ -11,6 +11,13 @@ import {
 
 const abortDownload = vi.fn(() => Promise.resolve())
 const extensionCancel = vi.fn()
+const cancelEngineBuildDownload = vi.fn<(taskId: string) => Promise<void>>(() =>
+  Promise.resolve()
+)
+vi.mock('@/services/engine-builds/core', () => ({
+  cancelEngineBuildDownload: (taskId: string) =>
+    cancelEngineBuildDownload(taskId),
+}))
 
 const serviceHub = {
   models: () => ({ abortDownload }),
@@ -79,6 +86,18 @@ describe('cancelDownload', () => {
     cancelDownload({ id, name: id }, serviceHub)
 
     expect(extensionCancel).toHaveBeenCalledWith(id)
+    expect(abortDownload).not.toHaveBeenCalled()
+    expect(useDownloadStore.getState().resumableDownloads.has(id)).toBe(true)
+    expect(wasDownloadCancellationRequested(id)).toBe(true)
+  })
+
+  it('stops an engine update in the core by its task id', () => {
+    const id = 'engine-update-llamacpp-upstream-b11500'
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    expect(cancelEngineBuildDownload).toHaveBeenCalledWith(id)
+    expect(extensionCancel).not.toHaveBeenCalled()
     expect(abortDownload).not.toHaveBeenCalled()
     expect(useDownloadStore.getState().resumableDownloads.has(id)).toBe(true)
     expect(wasDownloadCancellationRequested(id)).toBe(true)

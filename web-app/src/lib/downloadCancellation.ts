@@ -8,6 +8,7 @@ import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import { cancelEngineBuildDownload } from '@/services/engine-builds/core'
 import { isEngineBuildTaskId } from '@/services/engine-builds/install'
+import { isEngineUpdateTaskId } from '@/services/engines/update'
 
 const CANCEL_TTL_MS = 15000
 
@@ -52,7 +53,8 @@ export function clearDownloadCancellationRequested(id: string) {
  * decision models (`decision-*`) and embedding models (`embedding-*`) are a
  * plain transfer of their files, stopped by task id. The media engine
  * (`diffusion-backend-*`) is downloaded by the core, which stops it by task id
- * too, as are the other engine builds it installs (`engine-build-*`, MLX).
+ * too, as are the other engine builds it installs (`engine-build-*`, MLX) and
+ * every engine update it applies (`engine-update-*`).
  * The store is marked first so the row
  * can offer a resume, and so the stop event that follows is read as a cancel,
  * not a failure.
@@ -72,7 +74,11 @@ export function cancelDownload(
     clearPausedDownload(key)
     clearResumeParams(key)
   }
-  if (isDiffusionEngineTaskId(download.id) || isEngineBuildTaskId(download.id)) {
+  if (
+    isDiffusionEngineTaskId(download.id) ||
+    isEngineBuildTaskId(download.id) ||
+    isEngineUpdateTaskId(download.id)
+  ) {
     void cancelEngineBuildDownload(download.id)
   } else if (
     isDiffusionModelDownloadTaskId(download.id) ||
