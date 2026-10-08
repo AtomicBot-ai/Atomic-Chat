@@ -39,6 +39,7 @@ import {
   redirect,
   useNavigate,
   useParams,
+  useSearch,
 } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -169,6 +170,8 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 function ProviderDetail() {
   const { t } = useTranslation()
   const { providerName } = useParams({ from: Route.id })
+  /// The engine update banner's "Update" for a managed engine lands here.
+  const { engineUpdate } = useSearch({ from: Route.id })
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const [activeModels, setActiveModels] = useAppState(
@@ -1968,7 +1971,12 @@ function ProviderDetail() {
             </div>
 
             {/* A managed engine: setting it up comes before its settings and models. */}
-            {managed && <ManagedEngineSetupPanel engine={managed} />}
+            {managed && (
+              <ManagedEngineSetupPanel
+                engine={managed}
+                askToUpdate={engineUpdate === true}
+              />
+            )}
             {managed && <ManagedEngineTroubleshooting engine={managed} />}
             {managed && provider && (
               <ManagedEngineSettingsCard
