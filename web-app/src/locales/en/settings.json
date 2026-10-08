@@ -456,6 +456,34 @@
       "managedModels": "Models of the GPU engines ({{engines}}) are kept in Atomic Chat's WSL distribution \"{{name}}\", not in the data folder: they are not moved and stay available after the change."
     }
   },
+  "engineBuilds": {
+    "title": "Installed builds",
+    "active": "active",
+    "inUse": "in use",
+    "origin": {
+      "downloaded": "downloaded",
+      "bundled": "comes with the app",
+      "managed": "managed"
+    },
+    "notRemovable": {
+      "active": "the active build",
+      "bundled": "comes with the app",
+      "in-use": "a model runs from it"
+    },
+    "makeActive": "Make active",
+    "remove": "Remove",
+    "unloadWarning": "Making another build active unloads this provider's loaded models.",
+    "confirmRemoveTitle": "Remove this build?",
+    "confirmRemoveDescription": "{{build}} will be deleted from this computer. You can download it again later.",
+    "confirmRemove": "Remove",
+    "cancel": "Cancel",
+    "removeFailed": "Could not remove the build",
+    "activateFailed": "Could not make the build active",
+    "error": {
+      "inUse": "A model still runs from this build: {{message}}",
+      "invalid": "This build cannot be removed: {{message}}"
+    }
+  },
   "backendUpdater": {
     "newBackendVersion": "New Backend Version {{version}}",
     "backendUpdateAvailable": "Backend Update Available",

@@ -46,6 +46,7 @@ import {
   useMlxEngineUpdateCheck,
 } from '@/hooks/useMlxEngineUpdateCheck'
 import { useVersionBackendActivation } from '@/hooks/useVersionBackendActivation'
+import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import Capabilities from '@/containers/Capabilities'
 import {
   ModelSourceBadge,
@@ -2675,6 +2676,22 @@ function ProviderDetail() {
                                     </Button>
                                   )}
                               </div>
+                            )}
+                          {/* The builds of this engine on disk: remove one,
+                              or (llama.cpp) make another active, through
+                              the core. */}
+                          {setting.key === 'version_backend' &&
+                            provider &&
+                            (provider.provider === 'llamacpp' ||
+                              provider.provider === 'llamacpp-upstream' ||
+                              provider.provider === 'atomic-prism' ||
+                              provider.provider === 'mlx') && (
+                              <InstalledEngineBuilds
+                                engine={provider.provider}
+                                hasLoadedModels={provider.models.some((model) =>
+                                  activeModels.includes(model.id)
+                                )}
+                              />
                             )}
                         </>
                       }

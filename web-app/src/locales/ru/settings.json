@@ -429,6 +429,34 @@
       "managedModels": "Модели GPU-движков ({{engines}}) хранятся в WSL-дистрибутиве Atomic Chat «{{name}}», а не в папке данных: они не переносятся и остаются доступны после смены папки."
     }
   },
+  "engineBuilds": {
+    "title": "Установленные сборки",
+    "active": "активна",
+    "inUse": "используется",
+    "origin": {
+      "downloaded": "скачана",
+      "bundled": "поставляется с приложением",
+      "managed": "управляемая"
+    },
+    "notRemovable": {
+      "active": "активная сборка",
+      "bundled": "поставляется с приложением",
+      "in-use": "из неё запущена модель"
+    },
+    "makeActive": "Сделать активной",
+    "remove": "Удалить",
+    "unloadWarning": "Смена активной сборки выгрузит загруженные модели этого провайдера.",
+    "confirmRemoveTitle": "Удалить эту сборку?",
+    "confirmRemoveDescription": "{{build}} будет удалена с этого компьютера. Её можно скачать снова.",
+    "confirmRemove": "Удалить",
+    "cancel": "Отмена",
+    "removeFailed": "Не удалось удалить сборку",
+    "activateFailed": "Не удалось сделать сборку активной",
+    "error": {
+      "inUse": "Из этой сборки ещё запущена модель: {{message}}",
+      "invalid": "Эту сборку нельзя удалить: {{message}}"
+    }
+  },
   "backendUpdater": {
     "newBackendVersion": "Новая версия бэкенда {{version}}",
     "backendUpdateAvailable": "Доступно обновление бэкенда",
