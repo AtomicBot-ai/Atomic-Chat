@@ -40,7 +40,7 @@
     "titleKey": "settings:attachments.topK",
     "descriptionKey": "settings:attachments.topKDesc",
     "controllerType": "input",
-    "controllerProps": { "value": 3, "type": "number", "min": 1, "max": 20, "step": 1, "textAlign": "right" }
+    "controllerProps": { "value": 5, "type": "number", "min": 1, "max": 10, "step": 1, "textAlign": "right" }
   },
   {
     "key": "retrieval_threshold",

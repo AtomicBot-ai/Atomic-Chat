@@ -156,6 +156,7 @@ pub async fn search_collection<R: tauri::Runtime>(
     threshold: f32,
     mode: Option<String>,
     file_ids: Option<Vec<String>>,
+    query_text: Option<String>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
     let path = db::collection_path(&state.base_dir, &collection);
     let conn = db::open_or_init_conn(&path)?;
@@ -168,6 +169,7 @@ pub async fn search_collection<R: tauri::Runtime>(
         mode,
         vec_loaded,
         file_ids,
+        query_text.as_deref(),
     )
 }
 

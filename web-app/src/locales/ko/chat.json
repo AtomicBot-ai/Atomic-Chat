@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "로컬 모델이나 API 키가 설정된 클라우드 제공자를 선택하세요.",
     "providerKeyMissing": "설정에서 이 제공자의 API 키를 추가한 뒤 다시 시도하세요.",
     "localServerRequired": "클라우드 모델로 에이전트 모드를 사용하려면 로컬 API 서버가 필요합니다. 설정에서 시작하세요."
+  },
+  "docCitation": {
+    "document": "문서",
+    "removedDocument": "삭제된 문서",
+    "passage": "구절 {{passage}}",
+    "passageOf": "구절 {{passage}} / {{total}}",
+    "removedFromProject": "이 문서는 프로젝트에서 삭제되었습니다. 아래는 답변의 근거가 된 구절입니다.",
+    "removedFromChat": "이 문서는 채팅에서 삭제되었습니다. 아래는 답변의 근거가 된 구절입니다.",
+    "open": "문서 열기",
+    "showInFolder": "폴더에서 보기",
+    "openFailed": "{{name}}을(를) 열 수 없습니다",
+    "openFailedDescription": "파일이 이동되었거나 삭제되었을 수 있습니다.",
+    "chipLabel": "출처: {{name}}, 구절 {{passage}}"
   }
 }

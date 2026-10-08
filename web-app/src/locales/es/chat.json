@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "Elige un modelo local o un proveedor en la nube con clave de API.",
     "providerKeyMissing": "Añade una clave de API para este proveedor en Ajustes e inténtalo de nuevo.",
     "localServerRequired": "El modo agente con un modelo en la nube necesita el servidor API local. Inícialo en Ajustes."
+  },
+  "docCitation": {
+    "document": "Documento",
+    "removedDocument": "Documento eliminado",
+    "passage": "Fragmento {{passage}}",
+    "passageOf": "Fragmento {{passage}} de {{total}}",
+    "removedFromProject": "Este documento se eliminó del proyecto. Abajo está el fragmento en el que se basó la respuesta.",
+    "removedFromChat": "Este documento se eliminó del chat. Abajo está el fragmento en el que se basó la respuesta.",
+    "open": "Abrir documento",
+    "showInFolder": "Mostrar en la carpeta",
+    "openFailed": "No se pudo abrir {{name}}",
+    "openFailedDescription": "Es posible que el archivo se haya movido o eliminado.",
+    "chipLabel": "Fuente: {{name}}, fragmento {{passage}}"
   }
 }

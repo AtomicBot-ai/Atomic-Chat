@@ -340,6 +340,9 @@ pub fn delete_file(conn: &Connection, file_id: &str) -> Result<(), VectorDBError
 // Search Operations
 // ============================================================================
 
+/// `query_text` adds a lexical boost on the linear path (see `search_linear`);
+/// the ANN path ignores it.
+#[allow(clippy::too_many_arguments)]
 pub fn search_collection(
     conn: &Connection,
     query_embedding: &[f32],
@@ -348,6 +351,7 @@ pub fn search_collection(
     mode: Option<String>,
     vec_loaded: bool,
     file_ids: Option<Vec<String>>,
+    query_text: Option<&str>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
     let has_vec = if vec_loaded {
         conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'")
@@ -368,7 +372,14 @@ pub fn search_collection(
     if has_vec && prefer_ann {
         search_ann(conn, query_embedding, limit, file_ids)
     } else {
-        search_linear(conn, query_embedding, limit, threshold, file_ids)
+        search_linear(
+            conn,
+            query_embedding,
+            limit,
+            threshold,
+            file_ids,
+            query_text,
+        )
     }
 }
 
@@ -453,13 +464,23 @@ fn search_ann(
     Ok(results)
 }
 
+/// Cosine similarity, plus `LEXICAL_WEIGHT` times the share of the query's
+/// terms the chunk contains when `query_text` is given. Small embedding models
+/// blur exact tokens — times, ids, numbers — so a passage that literally
+/// carries `06:48:48 UTC` can rank below prose about timeouts in general. A
+/// chunk is kept when its cosine clears `threshold` or it holds at least
+/// `LEXICAL_KEEP` of the terms. Without `query_text` the scores are plain
+/// cosines, as before.
 fn search_linear(
     conn: &Connection,
     query_embedding: &[f32],
     limit: usize,
     threshold: f32,
     file_ids: Option<Vec<String>>,
+    query_text: Option<&str>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
+    let query_terms = query_text.map(distinct_terms).unwrap_or_default();
+
     let (query, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(ids) = file_ids {
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query_str = format!(
@@ -499,13 +520,14 @@ fn search_linear(
         let chunk_file_order: i64 = row.get(4)?;
 
         let emb = from_le_bytes_vec(&embedding_bytes);
-        let score = cosine_similarity(query_embedding, &emb)?;
+        let cosine = cosine_similarity(query_embedding, &emb)?;
+        let lexical = lexical_overlap(&query_terms, &text);
 
-        if score >= threshold {
+        if cosine >= threshold || lexical >= LEXICAL_KEEP {
             results.push(SearchResult {
                 id,
                 text,
-                score: Some(score),
+                score: Some(cosine + LEXICAL_WEIGHT * lexical),
                 file_id,
                 chunk_file_order,
             });
@@ -523,6 +545,72 @@ fn search_linear(
     let take: Vec<SearchResult> = results.into_iter().take(limit).collect();
     println!("[VectorDB] Linear search returned {} results", take.len());
     Ok(take)
+}
+
+/// Score added for a chunk that contains every query term.
+const LEXICAL_WEIGHT: f32 = 0.2;
+/// Share of the query terms that keeps a chunk below the cosine threshold.
+const LEXICAL_KEEP: f32 = 0.5;
+
+const STOPWORDS: &[&str] = &[
+    "about", "an", "and", "are", "as", "at", "be", "by", "can", "did", "do", "does", "for", "from",
+    "has", "have", "how", "in", "is", "it", "its", "me", "of", "on", "or", "tell", "that", "the",
+    "their", "there", "this", "to", "was", "were", "what", "when", "where", "which", "who", "why",
+    "with", "you",
+];
+
+/// Lowercased runs of letters or of digits. `:` and `.` between two digits
+/// stay inside the term, so `06:48:48` and `3.14` are one term each, and a
+/// letter/digit boundary splits one (`08T06:48:48Z` gives `08`, `06:48:48`).
+/// Single characters and stopwords are dropped.
+fn lexical_terms(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut terms = Vec::new();
+    let mut current = String::new();
+    let mut current_is_digit = false;
+    for (index, &c) in chars.iter().enumerate() {
+        if c.is_alphanumeric() {
+            let is_digit = c.is_numeric();
+            if !current.is_empty() && is_digit != current_is_digit {
+                terms.push(std::mem::take(&mut current));
+            }
+            current_is_digit = is_digit;
+            current.extend(c.to_lowercase());
+        } else if (c == ':' || c == '.')
+            && current_is_digit
+            && !current.is_empty()
+            && chars.get(index + 1).is_some_and(|next| next.is_numeric())
+        {
+            current.push(c);
+        } else if !current.is_empty() {
+            terms.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        terms.push(current);
+    }
+    terms.retain(|term| term.chars().count() > 1 && !STOPWORDS.contains(&term.as_str()));
+    terms
+}
+
+fn distinct_terms(text: &str) -> Vec<String> {
+    let mut terms = lexical_terms(text);
+    let mut seen = std::collections::HashSet::new();
+    terms.retain(|term| seen.insert(term.clone()));
+    terms
+}
+
+/// Share of `query_terms` that occur as terms of `text`, 0 when there are none.
+fn lexical_overlap(query_terms: &[String], text: &str) -> f32 {
+    if query_terms.is_empty() {
+        return 0.0;
+    }
+    let text_terms: std::collections::HashSet<String> = lexical_terms(text).into_iter().collect();
+    let found = query_terms
+        .iter()
+        .filter(|term| text_terms.contains(*term))
+        .count();
+    found as f32 / query_terms.len() as f32
 }
 
 // ============================================================================
@@ -653,4 +741,31 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lexical_terms_keep_times_and_drop_stopwords() {
+        assert_eq!(
+            lexical_terms("What vector size did the MiniLM test return?"),
+            ["vector", "size", "minilm", "test", "return"]
+        );
+        assert_eq!(
+            lexical_terms("Probe timed out at 2026-10-08T06:48:48Z (UTC), v3.14."),
+            ["probe", "timed", "out", "2026", "10", "08", "06:48:48", "utc", "3.14"]
+        );
+    }
+
+    #[test]
+    fn lexical_overlap_is_the_share_of_distinct_query_terms_found() {
+        let terms = distinct_terms("UTC timeout, UTC");
+        assert_eq!(terms, ["utc", "timeout"]);
+        assert_eq!(lexical_overlap(&terms, "timeout at 06:54:59 UTC"), 1.0);
+        assert_eq!(lexical_overlap(&terms, "an outcome of the timeouts"), 0.0);
+        assert_eq!(lexical_overlap(&terms, "the UTC clock"), 0.5);
+        assert_eq!(lexical_overlap(&[], "anything"), 0.0);
+    }
 }

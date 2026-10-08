@@ -52,6 +52,19 @@
     "thinkingFor": "Думаю {{count}} с…",
     "thoughtFor": "Обдумано за {{count}} с"
   },
+  "docCitation": {
+    "document": "Документ",
+    "removedDocument": "Удалённый документ",
+    "passage": "Фрагмент {{passage}}",
+    "passageOf": "Фрагмент {{passage}} из {{total}}",
+    "removedFromProject": "Этот документ удалён из проекта. Ниже — фрагмент, на который опирался ответ.",
+    "removedFromChat": "Этот документ удалён из чата. Ниже — фрагмент, на который опирался ответ.",
+    "open": "Открыть документ",
+    "showInFolder": "Показать в папке",
+    "openFailed": "Не удалось открыть {{name}}",
+    "openFailedDescription": "Возможно, файл перемещён или удалён.",
+    "chipLabel": "Источник: {{name}}, фрагмент {{passage}}"
+  },
   "toolCall": {
     "result": "Найдено: {{count}}",
     "results": "Найдено: {{count}}",

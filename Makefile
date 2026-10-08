@@ -361,6 +361,7 @@ test-extensions:
 		--include '@janhq/mlx-extension' \
 		--include '@janhq/download-extension' \
 		--include '@janhq/vector-db-extension' \
+		--include '@janhq/rag-extension' \
 		--include '@janhq/tensorrt-llm-extension' \
 		--include '@janhq/vllm-extension' \
 		run test:run

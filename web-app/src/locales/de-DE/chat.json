@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "Wählen Sie ein lokales Modell oder einen Cloud-Anbieter mit API-Schlüssel.",
     "providerKeyMissing": "Fügen Sie in den Einstellungen einen API-Schlüssel für diesen Anbieter hinzu und versuchen Sie es erneut.",
     "localServerRequired": "Der Agentenmodus mit einem Cloud-Modell benötigt den lokalen API-Server. Starten Sie ihn in den Einstellungen."
+  },
+  "docCitation": {
+    "document": "Dokument",
+    "removedDocument": "Entferntes Dokument",
+    "passage": "Abschnitt {{passage}}",
+    "passageOf": "Abschnitt {{passage}} von {{total}}",
+    "removedFromProject": "Dieses Dokument wurde aus dem Projekt entfernt. Unten steht der Abschnitt, auf dem die Antwort beruht.",
+    "removedFromChat": "Dieses Dokument wurde aus dem Chat entfernt. Unten steht der Abschnitt, auf dem die Antwort beruht.",
+    "open": "Dokument öffnen",
+    "showInFolder": "Im Ordner anzeigen",
+    "openFailed": "{{name}} konnte nicht geöffnet werden",
+    "openFailedDescription": "Die Datei wurde möglicherweise verschoben oder gelöscht.",
+    "chipLabel": "Quelle: {{name}}, Abschnitt {{passage}}"
   }
 }

@@ -398,6 +398,7 @@ impl DocsBridge for ScriptedDocsBridge {
         Ok(vec![DocsAttachment {
             id: format!("{}-file", scope.as_str()),
             name: Some(format!("{}.pdf", scope.as_str())),
+            path: Some(format!("/docs/{}.pdf", scope.as_str())),
             file_type: Some("pdf".into()),
             size: Some(1024),
             chunk_count: 4,
@@ -411,6 +412,7 @@ impl DocsBridge for ScriptedDocsBridge {
         _query_embedding: &[f32],
         _top_k: usize,
         _file_ids: Option<&[String]>,
+        _query_text: Option<&str>,
     ) -> Result<Vec<DocsChunk>, String> {
         let score = match scope {
             DocsScope::Thread => 0.9,
@@ -506,10 +508,44 @@ async fn docs_retrieve_merges_scopes_and_feeds_citations_back() {
     assert!(prompt.contains("a.pdf"));
     let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
     assert!(grammar.contains("docs-retrieve"));
-    // The observation feeds both scopes' citations back, thread first.
+    // The observation feeds both scopes' citations back, thread first, each
+    // with a readable label instead of its chunk id.
     let followup = run.requests[1]["prompt"].as_str().expect("prompt");
     assert!(followup.contains("passage from the thread index"));
     assert!(followup.contains("passage from the project index"));
+    assert!(followup.contains("[thread.pdf §1]"));
+    assert!(followup.contains("[project.pdf §1]"));
+    assert!(!followup.contains("thread-chunk"));
+}
+
+#[tokio::test]
+async fn docs_retrieve_embeds_one_query_per_fact() {
+    let bridge = ScriptedDocsBridge::thread_only();
+    let run = run_docs_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"docs.retrieve","args":{"queries":["probe timeout UTC time","MiniLM vector dimension"]}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"both"}}]"#),
+        ],
+        Some(&bridge),
+        Some("1 indexed document(s): a.pdf."),
+        &std::collections::BTreeSet::new(),
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [("docs.retrieve", ToolStatus::Ok), ("reply", ToolStatus::Ok)]
+    );
+    assert_eq!(
+        bridge.embeds(),
+        ["probe timeout UTC time", "MiniLM vector dimension"]
+    );
+    // Both queries found the same scripted passage: it is cited once.
+    let followup = run.requests[1]["prompt"].as_str().expect("prompt");
+    assert_eq!(followup.matches("passage from the thread index").count(), 1);
 }
 
 #[tokio::test]

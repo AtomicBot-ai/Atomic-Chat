@@ -144,7 +144,12 @@ browser automation, window control, and filesystem watchers are deferred.
   (never creating one), with a 5s busy timeout against concurrent ingestion.
 - All three are `PureRead` (batchable, parallel); `docs.retrieve` and
   `docs.chunks` participate in observation spill. `top_k` clamps to 1..=10
-  (default 3); chunk ranges cap at 100.
+  (default 5); chunk ranges cap at 100.
+- `docs.retrieve` takes `query` and/or up to 5 `queries` (one per fact),
+  embeds each, passes the query text for the plugin's lexical boost, and
+  merges by chunk with every query's best passage kept. Citations carry a
+  readable `cite` label (`[FINDINGS.md §13]`, 1-based passage) instead of the
+  chunk id; `sources` holds name and path for the UI's citation chips.
 
 ### Per-turn parity inputs
 

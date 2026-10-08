@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-397 records, 2026-05-19 → 2026-10-08.
+398 records, 2026-05-19 → 2026-10-08.
 
 ---
 
@@ -311,8 +311,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (85)
+## UI / UX (86)
 
+- **2026-10-08** — [Cite documents by name, and retrieve one query per fact (ATO-551, ATO-552)](2026-10-08-cite-documents-by-name-and-retrieve-one-query-per-fact.md)
 - **2026-10-08** — [A thread's Chat calls back into the page mounted now](2026-10-08-a-threads-chat-calls-back-into-the-page-mounted-now.md)
 - **2026-10-05** — [Keep desktop internal links in the app router](2026-10-05-keep-desktop-internal-links-in-the-app-router.md)
 - **2026-09-29** — [Notify the desktop when a download or a generation finishes](2026-09-29-notify-the-desktop-when-a-download-or-generation-finishes.md)

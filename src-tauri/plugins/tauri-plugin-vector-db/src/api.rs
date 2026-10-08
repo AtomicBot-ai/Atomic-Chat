@@ -38,7 +38,9 @@ fn open_existing(base_dir: &Path, collection: &str) -> Result<Option<Connection>
 /// extension dance entirely and returns cosine similarities (higher = better);
 /// other modes may take the ANN path, whose `score` is a distance (lower =
 /// better) and ignores `threshold` — callers merging results across
-/// collections should force linear.
+/// collections should force linear. `query_text` adds the linear path's
+/// lexical boost to those similarities.
+#[allow(clippy::too_many_arguments)]
 pub fn search_collection(
     base_dir: &Path,
     collection: &str,
@@ -47,6 +49,7 @@ pub fn search_collection(
     threshold: f32,
     mode: Option<String>,
     file_ids: Option<Vec<String>>,
+    query_text: Option<&str>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
     let Some(conn) = open_existing(base_dir, collection)? else {
         return Ok(Vec::new());
@@ -65,6 +68,7 @@ pub fn search_collection(
         mode,
         vec_loaded,
         file_ids,
+        query_text,
     )
 }
 
@@ -129,12 +133,46 @@ mod tests {
         file_id
     }
 
+    /// Two chunks with one embedding between them: only their text differs.
+    fn tied_collection(base: &Path, name: &str) {
+        let path = db::collection_path(&base.to_path_buf(), name);
+        let conn = db::open_or_init_conn(&path).expect("open collection");
+        db::create_schema(&conn, 4).expect("schema");
+        let file = db::create_file(
+            &conn,
+            "/tmp/FINDINGS.md",
+            Some("FINDINGS.md"),
+            Some("md"),
+            Some(1024),
+        )
+        .expect("create file");
+        let chunks = vec![
+            MinimalChunkInput {
+                text: "Timeouts were raised for slow model loads.".into(),
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+            },
+            MinimalChunkInput {
+                text: "Capability probe timeout at 06:48:48 UTC.".into(),
+                embedding: vec![1.0, 0.0, 0.0, 0.0],
+            },
+        ];
+        db::insert_chunks(&conn, &file.id, chunks, false).expect("insert");
+    }
+
     #[test]
     fn missing_collection_returns_empty_without_creating_a_db_file() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let results =
-            search_collection(temp.path(), "attachments_missing", &[1.0, 0.0, 0.0, 0.0], 3, 0.0, Some("linear".into()), None)
-                .expect("search");
+        let results = search_collection(
+            temp.path(),
+            "attachments_missing",
+            &[1.0, 0.0, 0.0, 0.0],
+            3,
+            0.0,
+            Some("linear".into()),
+            None,
+            None,
+        )
+        .expect("search");
         assert!(results.is_empty());
         assert!(list_attachments(temp.path(), "attachments_missing", None)
             .expect("list")
@@ -172,6 +210,7 @@ mod tests {
             0.0,
             Some("linear".into()),
             None,
+            None,
         )
         .expect("search");
 
@@ -195,6 +234,7 @@ mod tests {
             0.0,
             Some("linear".into()),
             Some(vec!["not-a-file".into()]),
+            None,
         )
         .expect("search");
         assert!(filtered.is_empty());
@@ -204,6 +244,63 @@ mod tests {
         assert_eq!(chunks.len(), 2, "range is inclusive and 0-indexed");
         assert_eq!(chunks[0].chunk_file_order, 0);
         assert_eq!(chunks[1].chunk_file_order, 1);
+    }
+
+    #[test]
+    fn query_text_ranks_the_chunk_with_the_exact_terms_first() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        tied_collection(temp.path(), "project_lexical");
+        let search = |query_text: Option<&str>| {
+            search_collection(
+                temp.path(),
+                "project_lexical",
+                &[1.0, 0.0, 0.0, 0.0],
+                2,
+                0.3,
+                Some("linear".into()),
+                None,
+                query_text,
+            )
+            .expect("search")
+        };
+
+        let boosted = search(Some("UTC timeout"));
+        assert_eq!(boosted[0].text, "Capability probe timeout at 06:48:48 UTC.");
+        let top = boosted[0].score.expect("score");
+        assert!(
+            (top - 1.2).abs() < 1e-5,
+            "cosine 1 plus the full boost, got {top}"
+        );
+        assert!((boosted[1].score.expect("score") - 1.0).abs() < 1e-5);
+
+        let plain = search(None);
+        assert_eq!(plain[0].text, "Timeouts were raised for slow model loads.");
+        assert_eq!(plain[1].text, "Capability probe timeout at 06:48:48 UTC.");
+        assert!((plain[1].score.expect("score") - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn query_text_keeps_a_lexical_match_below_the_cosine_threshold() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        tied_collection(temp.path(), "project_lexical_keep");
+        let search = |query_text: Option<&str>| {
+            search_collection(
+                temp.path(),
+                "project_lexical_keep",
+                &[0.0, 1.0, 0.0, 0.0],
+                5,
+                0.3,
+                Some("linear".into()),
+                None,
+                query_text,
+            )
+            .expect("search")
+        };
+
+        assert!(search(None).is_empty(), "both chunks are orthogonal");
+        let kept = search(Some("What happened at 06:48:48 UTC?"));
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].text, "Capability probe timeout at 06:48:48 UTC.");
     }
 
     #[test]
@@ -218,6 +315,7 @@ mod tests {
             3,
             0.0,
             Some("linear".into()),
+            None,
             None,
         );
         assert!(result.is_err());

@@ -38,6 +38,19 @@
     "thinkingFor": "{{count}}秒間思考中…",
     "thoughtFor": "{{count}}秒間考えました"
   },
+  "docCitation": {
+    "document": "ドキュメント",
+    "removedDocument": "削除されたドキュメント",
+    "passage": "箇所 {{passage}}",
+    "passageOf": "箇所 {{passage}} / {{total}}",
+    "removedFromProject": "このドキュメントはプロジェクトから削除されました。回答の根拠となった箇所を下に表示しています。",
+    "removedFromChat": "このドキュメントはチャットから削除されました。回答の根拠となった箇所を下に表示しています。",
+    "open": "ドキュメントを開く",
+    "showInFolder": "フォルダーで表示",
+    "openFailed": "{{name}} を開けませんでした",
+    "openFailedDescription": "ファイルが移動または削除された可能性があります。",
+    "chipLabel": "出典: {{name}}、箇所 {{passage}}"
+  },
   "toolCall": {
     "result": "{{count}}件の結果",
     "results": "{{count}}件の結果",

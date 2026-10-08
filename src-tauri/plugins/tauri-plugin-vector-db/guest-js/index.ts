@@ -57,13 +57,16 @@ export async function deleteFile(
   return await invoke('plugin:vector-db|delete_file', { collection, fileId })
 }
 
+// `queryText` boosts linear-mode scores by the share of its terms a chunk
+// contains (see `search_linear` in src/db.rs); ANN ignores it.
 export async function searchCollection(
   collection: string,
   queryEmbedding: number[],
   limit: number,
   threshold: number,
   mode?: SearchMode,
-  fileIds?: string[]
+  fileIds?: string[],
+  queryText?: string
 ): Promise<SearchResult[]> {
   return await invoke('plugin:vector-db|search_collection', {
     collection,
@@ -72,6 +75,7 @@ export async function searchCollection(
     threshold,
     mode,
     fileIds,
+    queryText,
   })
 }
 

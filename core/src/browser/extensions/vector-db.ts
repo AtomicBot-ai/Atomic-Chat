@@ -61,13 +61,15 @@ export abstract class VectorDBExtension extends BaseExtension {
     file: VectorDBFileInput,
     opts: VectorDBIngestOptions
   ): Promise<AttachmentFileInfo>
+  /** `queryText` adds a lexical boost to linear-mode scores. */
   abstract searchCollection(
     threadId: string,
     query_embedding: number[],
     limit: number,
     threshold: number,
     mode?: SearchMode,
-    fileIds?: string[]
+    fileIds?: string[],
+    queryText?: string
   ): Promise<VectorSearchResult[]>
   abstract deleteChunks(threadId: string, ids: string[]): Promise<void>
   abstract deleteFile(threadId: string, fileId: string): Promise<void>
@@ -98,7 +100,8 @@ export abstract class VectorDBExtension extends BaseExtension {
     limit: number,
     threshold: number,
     mode?: SearchMode,
-    fileIds?: string[]
+    fileIds?: string[],
+    queryText?: string
   ): Promise<VectorSearchResult[]>
   abstract deleteChunksForProject(projectId: string, ids: string[]): Promise<void>
   abstract deleteFileForProject(projectId: string, fileId: string): Promise<void>

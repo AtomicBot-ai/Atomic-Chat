@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "請選擇本機模型，或已設定 API 金鑰的雲端供應商。",
     "providerKeyMissing": "請在設定中為此供應商加入 API 金鑰後重試。",
     "localServerRequired": "以雲端模型執行智慧代理需要本機 API 伺服器，請在設定中啟動。"
+  },
+  "docCitation": {
+    "document": "文件",
+    "removedDocument": "已移除的文件",
+    "passage": "第 {{passage}} 段",
+    "passageOf": "第 {{passage}} 段，共 {{total}} 段",
+    "removedFromProject": "此文件已從專案中移除。下方是回答所依據的段落。",
+    "removedFromChat": "此文件已從對話中移除。下方是回答所依據的段落。",
+    "open": "開啟文件",
+    "showInFolder": "在資料夾中顯示",
+    "openFailed": "無法開啟 {{name}}",
+    "openFailedDescription": "檔案可能已被移動或刪除。",
+    "chipLabel": "來源：{{name}}，第 {{passage}} 段"
   }
 }

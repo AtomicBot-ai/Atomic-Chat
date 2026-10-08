@@ -76,7 +76,8 @@ export default class VectorDBExt extends VectorDBExtension {
     limit: number,
     threshold: number,
     mode?: SearchMode,
-    fileIds?: string[]
+    fileIds?: string[],
+    queryText?: string
   ): Promise<VectorSearchResult[]> {
     return (await vecdb.searchCollection(
       this.collectionForThread(threadId),
@@ -84,7 +85,8 @@ export default class VectorDBExt extends VectorDBExtension {
       limit,
       threshold,
       mode,
-      fileIds
+      fileIds,
+      queryText
     )) as VectorSearchResult[]
   }
 
@@ -114,7 +116,8 @@ export default class VectorDBExt extends VectorDBExtension {
     limit: number,
     threshold: number,
     mode?: SearchMode,
-    fileIds?: string[]
+    fileIds?: string[],
+    queryText?: string
   ): Promise<VectorSearchResult[]> {
     return (await vecdb.searchCollection(
       this.collectionForProject(projectId),
@@ -122,7 +125,8 @@ export default class VectorDBExt extends VectorDBExtension {
       limit,
       threshold,
       mode,
-      fileIds
+      fileIds,
+      queryText
     )) as VectorSearchResult[]
   }
 
