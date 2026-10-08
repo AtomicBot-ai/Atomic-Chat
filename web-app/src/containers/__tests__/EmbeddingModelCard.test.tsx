@@ -117,6 +117,10 @@ describe('EmbeddingModelCard', () => {
     )
     expect(state.current.activate).toHaveBeenCalledOnce()
     expect(navigate).not.toHaveBeenCalled()
+    // The user stays on the card, with Start offered again for another try.
+    expect(
+      screen.getByRole('button', { name: 'settings:embedding.start' })
+    ).toBeEnabled()
   })
 
   it('keeps Start disabled while the engine is too old, or another call is in flight', () => {
