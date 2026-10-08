@@ -1053,6 +1053,65 @@ describe('atomic_prism_extension', () => {
       expect(mirror).toHaveBeenCalledOnce()
     })
 
+    // Change unify-engine-lifecycle (6.3): the core writes `version_backend` on an update or an
+    // activation, from this app or another client.
+    it('takes a build the core switched to: adds it to the list, records its type and tells the page', async () => {
+      stubSettings(extension, { version_backend: `${TAG}/linux-cpu-x64` })
+      const addOption = vi
+        .spyOn(extension as any, 'ensureBackendOption')
+        .mockResolvedValue(undefined)
+      vi.mocked(invoke).mockImplementation(async (_command, args) => {
+        const { method, path } = args as { method: string; path: string }
+        if (method === 'GET' && path === '/settings/atomic-prism') {
+          return {
+            provider: 'atomic-prism',
+            revision: 4,
+            values: { version_backend: `${NEXT_TAG}/linux-vulkan-x64` },
+          }
+        }
+        return undefined
+      })
+      vi.mocked(events.emit).mockClear()
+
+      await extension['coreSettings'].mirror()
+
+      expect(addOption).toHaveBeenCalledWith(`${NEXT_TAG}/linux-vulkan-x64`)
+      const stored = (await extension.getSettings()).find(
+        (s: { key: string }) => s.key === 'version_backend'
+      )
+      expect(stored?.controllerProps.value).toBe(`${NEXT_TAG}/linux-vulkan-x64`)
+      expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+        key: 'version_backend',
+        value: `${NEXT_TAG}/linux-vulkan-x64`,
+      })
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'atomic_prism_backend_type',
+        'linux-vulkan-x64'
+      )
+    })
+
+    it('says nothing to the page when the core’s version is the one it holds', async () => {
+      stubSettings(extension, { version_backend: `${TAG}/linux-cpu-x64` })
+      vi.mocked(invoke).mockImplementation(async (_command, args) => {
+        const { method, path } = args as { method: string; path: string }
+        if (method === 'GET' && path === '/settings/atomic-prism') {
+          return {
+            provider: 'atomic-prism',
+            revision: 4,
+            values: { version_backend: `${TAG}/linux-cpu-x64` },
+          }
+        }
+        return undefined
+      })
+      vi.mocked(events.emit).mockClear()
+
+      await extension['coreSettings'].mirror()
+
+      expect(
+        vi.mocked(events.emit).mock.calls.filter(([name]) => name === 'settingsChanged')
+      ).toEqual([])
+    })
+
     it('follows the core’s optimal-backend record for this provider only', async () => {
       await extension.onLoad()
       const listener = listeners.get('atomic-core://backend:optimal-changed')!

@@ -386,7 +386,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /// Successful readiness is scoped to one attachment generation and one legacy settings image.
   /// A core restart starts from its own defaults again, while an app-side settings change needs
   /// a new three-way import even when the process stayed up.
-  private coreReady: { key: string; promise: Promise<void> } | undefined
+  private coreReady:
+    | { attachment: string; fingerprint: string; promise: Promise<void> }
+    | undefined
   private coreSettingsMirror: Promise<void> = Promise.resolve()
   private isMirroringCoreSettings = false
   /// A model's trained context length as the core reads it from the GGUF
@@ -4185,19 +4187,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * with values the user never agreed to, while the settings screen shows the others.
    */
   private async ensureCoreIsReady(): Promise<void> {
+    // A mirror in flight is writing the core's values: read them once it is done.
+    await this.coreSettingsMirror
     const [values, status] = await Promise.all([
       this.currentSettingValues(),
       coreRuntime.getStatus(),
     ])
-    const attachment = status.attached
-    if (!attachment?.instance_id || attachment.generation === undefined) {
+    const attached = status.attached
+    if (!attached?.instance_id || attached.generation === undefined) {
       throw new Error('Atomic core has no ready attachment generation')
     }
-    const key = `${attachment.instance_id}:${attachment.generation}:${stableSettingsFingerprint(values)}`
-    if (this.coreReady?.key === key) return await this.coreReady.promise
+    const attachment = `${attached.instance_id}:${attached.generation}`
+    const fingerprint = stableSettingsFingerprint(values)
+    if (
+      this.coreReady?.attachment === attachment &&
+      this.coreReady.fingerprint === fingerprint
+    ) {
+      return await this.coreReady.promise
+    }
 
     const promise = this.prepareCore(values)
-    this.coreReady = { key, promise }
+    this.coreReady = { attachment, fingerprint, promise }
     try {
       await promise
     } catch (error) {
@@ -4232,10 +4242,22 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
   private async mirrorCoreSettings(): Promise<void> {
     const snapshot = await coreRuntime.getSettings()
+    // The core switched `version_backend` (an update or an activation, from
+    // this app or another client): the dropdown must have it as an option, or
+    // core's `registerSettings()` would replace a value it cannot find.
+    const switchedTo = snapshot.values['version_backend']
+    if (typeof switchedTo === 'string' && isConcreteVersionBackend(stripBom(switchedTo))) {
+      await this.ensureBackendOption(stripBom(switchedTo))
+    }
     const persisted = await this.getSettings()
+    let versionBackendChanged = false
     const mirrored = persisted.map((setting) => {
       if (Object.prototype.hasOwnProperty.call(snapshot.values, setting.key)) {
-        setting.controllerProps.value = snapshot.values[setting.key] as never
+        const value = snapshot.values[setting.key]
+        if (setting.key === 'version_backend' && setting.controllerProps.value !== value) {
+          versionBackendChanged = true
+        }
+        setting.controllerProps.value = value as never
       }
       return setting
     })
@@ -4245,7 +4267,24 @@ export default class llamacpp_upstream_extension extends AIEngine {
     } finally {
       this.isMirroringCoreSettings = false
     }
+    // What was just written is the core's own: the next load must not import
+    // it back as the app's change, let alone an older value from before it.
+    if (this.coreReady) {
+      this.coreReady = {
+        ...this.coreReady,
+        fingerprint: stableSettingsFingerprint(await this.currentSettingValues()),
+      }
+    }
     await coreRuntime.acknowledgeSettings(snapshot.revision)
+    if (versionBackendChanged && typeof switchedTo === 'string') {
+      // Remember the type as the user's preference, as a switch always did,
+      // and tell the provider page so its dropdown shows the build now.
+      const backend = stripBom(switchedTo)
+      if (isConcreteVersionBackend(backend)) {
+        this.setStoredBackendType(backend.slice(backend.indexOf('/') + 1))
+      }
+      events.emit('settingsChanged', { key: 'version_backend', value: backend })
+    }
   }
 
   /** This provider's settings as the app currently holds them, for the import. */

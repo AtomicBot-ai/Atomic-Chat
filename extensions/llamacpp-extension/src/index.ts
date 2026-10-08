@@ -143,6 +143,10 @@ const logger = {
 }
 
 const TURBOQUANT_BACKEND_TYPE_KEY = 'atomic_llamacpp_turboquant_backend_type'
+
+/** A `<tag>/<backend>` pair, not `none` or a `latest/<backend>` pick. */
+const isConcreteBackend = (value: string): boolean =>
+  /^[^/\s]+\/[^/\s]+$/.test(value) && !value.startsWith('latest/')
 const LEGACY_SHARED_BACKEND_TYPE_KEY = 'llama_cpp_backend_type'
 
 function isTurboquantBackendType(value: string): boolean {
@@ -447,6 +451,8 @@ export default class llamacpp_extension extends AIEngine {
     setMirroring: (active) => {
       this.isMirroringCoreSettings = active
     },
+    beforeMirror: (values) => this.beforeCoreMirror(values),
+    afterMirror: (changed) => this.afterCoreMirror(changed),
   })
   private unlistenCoreSettingsChanged?: () => void
   private unlistenCoreOptimalChanged?: () => void
@@ -641,7 +647,60 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private clearStoredBackendType(): void {
+  /**
+   * The core switched `version_backend` (an update or an activation, from
+   * this app or another client) and the mirror is about to write it: make sure
+   * the dropdown has it as an option, or core's `registerSettings()` would
+   * replace a value it cannot find with `options[0]`.
+   */
+  private async beforeCoreMirror(values: Record<string, unknown>): Promise<void> {
+    const value = values['version_backend']
+    if (typeof value === 'string' && isConcreteBackend(stripBom(value))) {
+      await this.ensureBackendOption(stripBom(value))
+    }
+  }
+
+  /**
+   * After a mirror wrote a `version_backend` the core chose: remember its
+   * type as the user's preference, as a switch always did, and tell the
+   * provider page so its dropdown shows the build without a restart.
+   */
+  private afterCoreMirror(changed: Record<string, unknown>): void {
+    const value = changed['version_backend']
+    if (typeof value !== 'string') return
+    const backend = stripBom(value)
+    if (isConcreteBackend(backend)) this.setStoredBackendType(backend.split('/')[1])
+    events.emit('settingsChanged', { key: 'version_backend', value: backend })
+  }
+
+  /**
+   * Ensure a concrete `<tag>/<backend>` string is among the `version_backend`
+   * dropdown options, persisting directly to localStorage: `updateSettings()`
+   * only copies `controllerProps.value`, and the options are otherwise rebuilt
+   * by `configureBackends()` alone.
+   */
+  private async ensureBackendOption(backendString: string): Promise<void> {
+    if (!this.name || !backendString) return
+    const settings = await this.getSettings()
+    let changed = false
+    for (const item of settings) {
+      if (item.key !== 'version_backend') continue
+      const props = item.controllerProps as {
+        options?: Array<{ value: string; name: string }>
+      }
+      const options = Array.isArray(props.options) ? props.options : (props.options = [])
+      if (!options.some((option) => option.value === backendString)) {
+        options.push({ value: backendString, name: backendString })
+        changed = true
+      }
+    }
+    if (changed) {
+      localStorage.setItem(this.name, JSON.stringify(settings))
+      logger.info(`[ensureBackendOption] Added ${backendString} to version_backend options`)
+    }
+  }
+
+    private clearStoredBackendType(): void {
     try {
       localStorage.removeItem(TURBOQUANT_BACKEND_TYPE_KEY)
       logger.info('Cleared stored backend type preference')

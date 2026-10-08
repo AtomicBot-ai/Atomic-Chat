@@ -1281,6 +1281,83 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  // Change unify-engine-lifecycle (6.3): the core writes `version_backend` on an update or an
+  // activation, from this app or another client. The extension follows it without a restart, and
+  // its next load imports nothing older.
+  describe('a version_backend the core switched to', () => {
+    const OLD = 'b10200/win-vulkan-x64'
+    const NEW = 'b10300/win-cuda-13.3-x64'
+
+    const setup = (coreValue = NEW) => {
+      let stored = [
+        {
+          key: 'version_backend',
+          controllerProps: { value: OLD, options: [{ value: OLD, name: OLD }] },
+        },
+      ]
+      Object.assign(extension, {
+        name: '@janhq/llamacpp-upstream-extension',
+        getSettings: vi.fn(async () => structuredClone(stored)),
+        updateSettings: vi.fn(async (next: typeof stored) => {
+          stored = structuredClone(next)
+        }),
+      })
+      vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+        if (key === '@janhq/llamacpp-upstream-extension') stored = JSON.parse(value)
+      })
+      let values: Record<string, unknown> = { version_backend: OLD }
+      const imports: unknown[] = []
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === 'atomic_core_status') {
+          return { attached: { instance_id: 'i', generation: 1 } }
+        }
+        const call = args as { method: string; path: string; body?: { values?: unknown } }
+        if (call.method === 'POST' && call.path === '/settings/llamacpp-upstream/import') {
+          imports.push(call.body?.values)
+          return { status: 'imported', applied: [], conflicts: [], revision: 1 }
+        }
+        if (call.method === 'GET' && call.path === '/settings/llamacpp-upstream') {
+          return { provider: 'llamacpp-upstream', revision: 2, values }
+        }
+        return undefined
+      })
+      return {
+        stored: () => stored,
+        imports,
+        switchInCore: () => {
+          values = { version_backend: coreValue }
+        },
+      }
+    }
+
+    it('shows it in the list, records its type and tells the page', async () => {
+      const h = setup()
+      h.switchInCore()
+      vi.mocked(events.emit).mockClear()
+
+      await extension['enqueueCoreSettingsMirror']()
+
+      const setting = h.stored()[0]
+      expect(setting.controllerProps.value).toBe(NEW)
+      expect(setting.controllerProps.options).toContainEqual({ value: NEW, name: NEW })
+      expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+        key: 'version_backend',
+        value: NEW,
+      })
+    })
+
+    it('does not import the old value on the next load', async () => {
+      const h = setup()
+      await extension['ensureCoreIsReady']()
+      h.switchInCore()
+
+      await extension['enqueueCoreSettingsMirror']()
+      await extension['ensureCoreIsReady']()
+
+      expect(h.imports).toEqual([{ version_backend: OLD }])
+    })
+  })
+
   describe('configureBackends', () => {
     // Mirrors `settings.json`: `version_backend` ships with an empty options
     // list, so the list this method assembles is the only thing standing

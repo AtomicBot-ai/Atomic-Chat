@@ -363,6 +363,8 @@ export default class atomic_prism_extension extends AIEngine {
     setMirroring: (active) => {
       this.isMirroringCoreSettings = active
     },
+    beforeMirror: (values) => this.beforeCoreMirror(values),
+    afterMirror: (changed) => this.afterCoreMirror(changed),
   })
   /// A model's trained context length as the core reads it from the GGUF
   /// (`{general.architecture}.context_length`). It is a property of the file,
@@ -1136,6 +1138,35 @@ export default class atomic_prism_extension extends AIEngine {
     } finally {
       this.isConfiguringBackends = false
     }
+  }
+
+  /**
+   * The core switched `version_backend` (an update or an activation, from
+   * this app or another client) and the mirror is about to write it: make sure
+   * the dropdown has it as an option, or core's `registerSettings()` would
+   * replace a value it cannot find.
+   */
+  private async beforeCoreMirror(values: Record<string, unknown>): Promise<void> {
+    const value = values['version_backend']
+    if (typeof value === 'string' && isConcreteVersionBackend(stripBom(value))) {
+      await this.ensureBackendOption(stripBom(value))
+    }
+  }
+
+  /**
+   * After a mirror wrote a `version_backend` the core chose: remember its
+   * type as the user's preference, as a switch always did, and tell the
+   * provider page so its dropdown shows the build without a restart.
+   */
+  private afterCoreMirror(changed: Record<string, unknown>): void {
+    const value = changed['version_backend']
+    if (typeof value !== 'string') return
+    const backend = stripBom(value)
+    const backendType = backend.split('/')[1]?.trim()
+    if (backendType && isConcreteVersionBackend(backend)) {
+      this.setStoredBackendType(backendType)
+    }
+    events.emit('settingsChanged', { key: 'version_backend', value: backend })
   }
 
   /**

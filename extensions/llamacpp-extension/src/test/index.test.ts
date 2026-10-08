@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
+import { events } from '@janhq/core'
 import type {
   CoreBackendRecommendation,
   CoreBackendUpdateCheck,
@@ -971,6 +972,88 @@ describe('llamacpp_extension', () => {
         path: '/sessions',
         body: null,
       })
+    })
+  })
+
+  // Change unify-engine-lifecycle (6.3): the core writes `version_backend` on an update or an
+  // activation, from this app or another client. The extension follows it without a restart, and
+  // its next load imports nothing older.
+  describe('a version_backend the core switched to', () => {
+    const OLD = 'b10018-1.3.0/windows-x64-cpu'
+    const NEW = 'b10269-1.4.0/windows-x64-cuda-13.3'
+
+    const setup = () => {
+      let stored = [
+        {
+          key: 'version_backend',
+          controllerProps: { value: OLD, options: [{ value: OLD, name: OLD }] },
+        },
+      ]
+      Object.assign(extension, {
+        name: '@janhq/llamacpp-extension',
+        getSettings: vi.fn(async () => structuredClone(stored)),
+        updateSettings: vi.fn(async (next: typeof stored) => {
+          stored = structuredClone(next)
+        }),
+      })
+      vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+        if (key === '@janhq/llamacpp-extension') stored = JSON.parse(value)
+      })
+      const core = extension['core']
+      vi.spyOn(core, 'getStatus').mockResolvedValue({
+        attached: { instance_id: 'i', generation: 1 },
+      } as never)
+      const imports = vi
+        .spyOn(core, 'importSettings')
+        .mockResolvedValue({ status: 'imported', applied: [], conflicts: [], revision: 1 } as never)
+      const snapshot = vi.spyOn(core, 'getSettings').mockResolvedValue({
+        provider: 'llamacpp',
+        revision: 1,
+        values: { version_backend: OLD },
+      } as never)
+      vi.spyOn(core, 'acknowledgeSettings').mockResolvedValue(undefined)
+      return { stored: () => stored, imports, snapshot }
+    }
+
+    it('shows it in the list, records its type and tells the page', async () => {
+      const { stored, snapshot } = setup()
+      snapshot.mockResolvedValue({
+        provider: 'llamacpp',
+        revision: 2,
+        values: { version_backend: NEW },
+      } as never)
+      vi.mocked(events.emit).mockClear()
+
+      await extension['coreSettings'].mirror()
+
+      const setting = stored()[0]
+      expect(setting.controllerProps.value).toBe(NEW)
+      expect(setting.controllerProps.options).toContainEqual({ value: NEW, name: NEW })
+      expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+        key: 'version_backend',
+        value: NEW,
+      })
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'atomic_llamacpp_turboquant_backend_type',
+        'windows-x64-cuda-13.3'
+      )
+    })
+
+    it('does not import the old value on the next load', async () => {
+      const { imports, snapshot } = setup()
+      await extension['coreSettings'].ensureReady()
+      snapshot.mockResolvedValue({
+        provider: 'llamacpp',
+        revision: 2,
+        values: { version_backend: NEW },
+      } as never)
+
+      await extension['coreSettings'].mirror()
+      await extension['coreSettings'].ensureReady()
+
+      expect(imports.mock.calls.map(([values]) => values)).toEqual([
+        { version_backend: OLD },
+      ])
     })
   })
 
