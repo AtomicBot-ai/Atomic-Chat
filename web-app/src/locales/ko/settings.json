@@ -520,10 +520,10 @@
     "requiresEngine": "{{engine}} {{version}}+ 필요",
     "requiresEngineNotice": "이 모델에는 {{engine}} {{version}} 이상이 필요합니다. 시작하려면 엔진을 업데이트하세요.",
     "state": {
-      "disabled": "중지됨",
-      "idle": "다음 요청 시 시작",
+      "disabled": "중지됨: 요청이 불러오지 않음",
+      "idle": "대기 중: 다음 요청 시 불러옴",
       "starting": "시작 중…",
-      "ready": "실행 중",
+      "ready": "불러옴",
       "restarting": "다시 시작 중…",
       "failed": "실패",
       "unsupported": "엔진 미지원"
@@ -539,6 +539,12 @@
     "noneTitle": "다운로드한 임베딩 모델이 없습니다",
     "noneDescription": "허브의 임베딩 카테고리에서 다운로드하세요",
     "availableInApi": "API에서 사용 가능",
-    "localModel": "내 llama.cpp 모델에서"
+    "localModel": "내 llama.cpp 모델에서",
+    "startHint": "이 모델을 로컬 API 서버의 /v1/embeddings로 제공합니다. 중지를 누를 때까지 켜져 있습니다.",
+    "stopHint": "모델을 언로드하고 API 임베딩 서비스를 끕니다. 요청이 더 이상 불러오지 않습니다.",
+    "sectionDescription": "시작은 모델 하나를 그 이름으로 로컬 API 서버의 /v1/embeddings에서 제공합니다. 켜진 상태로 유지되며, 재시작 후에는 대기하다가 다음 요청 시 불러옵니다. 중지는 서비스를 꺼서 요청이 더 이상 불러오지 않습니다.",
+    "documentSearchNote": "채팅의 문서 검색은 자체 모델인 sentence-transformer-mini를 사용하며, 시작 없이 필요할 때 불러옵니다.",
+    "documentSearchModel": "문서 검색 모델 · 내 llama.cpp 모델에서",
+    "engineUpdateCheckFailed": "{{engine}} 업데이트를 확인하지 못했습니다"
   }
 }

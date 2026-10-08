@@ -435,10 +435,10 @@
     "requiresEngine": "Vyžaduje {{engine}} {{version}}+",
     "requiresEngineNotice": "Tento model vyžaduje {{engine}} {{version}} nebo novější. Aktualizujte engine, abyste jej mohli spustit.",
     "state": {
-      "disabled": "Zastaveno",
-      "idle": "Spustí se při dalším požadavku",
+      "disabled": "Zastaveno: požadavky ho nenačtou",
+      "idle": "Nečinný: načte se při dalším požadavku",
       "starting": "Spouštění…",
-      "ready": "Běží",
+      "ready": "Načteno",
       "restarting": "Restartování…",
       "failed": "Selhalo",
       "unsupported": "Engine není podporován"
@@ -454,6 +454,12 @@
     "noneTitle": "Nejsou staženy žádné embedding modely",
     "noneDescription": "Stáhněte si model v kategorii Embedding v Centru",
     "availableInApi": "Dostupné v API",
-    "localModel": "Z vašich modelů llama.cpp"
+    "localModel": "Z vašich modelů llama.cpp",
+    "startHint": "Poskytovat tento model přes /v1/embeddings lokálního API serveru. Zůstane zapnutý, dokud nestisknete Zastavit.",
+    "stopHint": "Uvolnit model a vypnout embedding službu API: požadavky ho už nenačtou.",
+    "sectionDescription": "Spustit poskytuje jeden model přes /v1/embeddings lokálního API serveru pod jeho názvem. Zůstane zapnutý: po restartu čeká nečinný a načte se při dalším požadavku. Zastavit službu vypne, takže ho požadavky už nenačtou.",
+    "documentSearchNote": "Vyhledávání v dokumentech v chatech používá vlastní model, sentence-transformer-mini, a samo ho načte, když je potřeba, bez Spustit.",
+    "documentSearchModel": "Model vyhledávání v dokumentech · z vašich modelů llama.cpp",
+    "engineUpdateCheckFailed": "Nepodařilo se zkontrolovat aktualizace {{engine}}"
   }
 }

@@ -437,10 +437,10 @@
     "requiresEngine": "Requer {{engine}} {{version}}+",
     "requiresEngineNotice": "Este modelo requer {{engine}} {{version}} ou mais recente. Atualize o motor para iniciá-lo.",
     "state": {
-      "disabled": "Parado",
-      "idle": "Inicia na próxima requisição",
+      "disabled": "Parado: as requisições não o carregam",
+      "idle": "Ocioso: carrega na próxima requisição",
       "starting": "Iniciando…",
-      "ready": "Em execução",
+      "ready": "Carregado",
       "restarting": "Reiniciando…",
       "failed": "Falhou",
       "unsupported": "Motor não suportado"
@@ -456,6 +456,12 @@
     "noneTitle": "Nenhum modelo de embedding baixado",
     "noneDescription": "Baixe um na categoria Embedding do Hub",
     "availableInApi": "Disponível na API",
-    "localModel": "Dos seus modelos llama.cpp"
+    "localModel": "Dos seus modelos llama.cpp",
+    "startHint": "Servir este modelo em /v1/embeddings do Servidor de API Local. Ele fica ligado até você clicar em Parar.",
+    "stopHint": "Descarregar o modelo e desligar o serviço de embeddings da API: as requisições deixam de carregá-lo.",
+    "sectionDescription": "Iniciar serve um modelo em /v1/embeddings do Servidor de API Local, com o nome dele. Ele fica ligado: depois de reiniciar, espera ocioso e carrega na próxima requisição. Parar desliga o serviço, e as requisições deixam de carregá-lo.",
+    "documentSearchNote": "A busca em documentos dos chats usa o próprio modelo, sentence-transformer-mini, e o carrega quando necessário, sem Iniciar.",
+    "documentSearchModel": "Modelo de busca em documentos · dos seus modelos llama.cpp",
+    "engineUpdateCheckFailed": "Não foi possível verificar atualizações do {{engine}}"
   }
 }

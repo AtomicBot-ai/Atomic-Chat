@@ -40,18 +40,23 @@ const STATE_LABEL: Record<EmbeddingState, string> = {
 }
 
 /**
- * What a running model is doing, at the end of its facts line: starting,
- * failed, or served through the Local API Server (a link to the API page).
- * Nothing while it is stopped.
+ * What the model the service is set to is doing, at the end of its facts
+ * line: loaded, or idle until the next request loads it (both served through
+ * the Local API Server, a link to the API page), starting, failed, or stopped
+ * so that requests no longer load it. Nothing for any other model.
  */
 function RunStatus({
+  active,
   running,
   state,
-}: Pick<EmbeddingRunState, 'running' | 'state'>) {
+}: Pick<EmbeddingRunState, 'active' | 'running' | 'state'>) {
   const { t } = useTranslation()
-  if (!running || !state || state === 'disabled') return null
-  const served = state === 'ready' || state === 'idle'
-  const failed = state === 'failed' || state === 'unsupported'
+  if (!active) return null
+  const shown: EmbeddingState | null = running ? state : 'disabled'
+  if (!shown) return null
+  const served = shown === 'ready' || shown === 'idle'
+  const failed = shown === 'failed' || shown === 'unsupported'
+  const stopped = shown === 'disabled'
   return (
     <span className="inline-flex items-center">
       <span className="mx-1.5 text-muted-foreground/50" aria-hidden>
@@ -60,26 +65,31 @@ function RunStatus({
       <span
         className={cn(
           'inline-flex items-center gap-1.5 font-medium',
-          served && 'text-emerald-600 dark:text-emerald-400',
+          shown === 'ready' && 'text-emerald-600 dark:text-emerald-400',
           failed && 'text-destructive',
-          !served && !failed && 'text-muted-foreground'
+          !failed && shown !== 'ready' && 'text-muted-foreground'
         )}
+        data-testid="embedding-run-status"
       >
         {served && (
           <span className="size-1.5 rounded-full bg-current" aria-hidden />
         )}
-        {!served && !failed && (
+        {!served && !failed && !stopped && (
           <IconLoader2 size={12} className="animate-spin" />
         )}
-        {served ? (
-          <Link
-            to={route.api.index}
-            className="underline-offset-2 hover:underline"
-          >
-            {t('settings:embedding.availableInApi')}
-          </Link>
-        ) : (
-          t(STATE_LABEL[state])
+        {t(STATE_LABEL[shown])}
+        {served && (
+          <>
+            <span className="text-muted-foreground/50" aria-hidden>
+              ·
+            </span>
+            <Link
+              to={route.api.index}
+              className="underline-offset-2 hover:underline"
+            >
+              {t('settings:embedding.availableInApi')}
+            </Link>
+          </>
         )}
       </span>
     </span>
@@ -89,6 +99,8 @@ function RunStatus({
 /**
  * Start, or a red Stop once the model runs — as the chat models beside it. A
  * model that started is served on the Local API Server, so Start goes there.
+ * Stop unloads the model and turns the service off, so no request loads it
+ * again until the next Start; its tooltip says so.
  */
 function StartStop({
   running,
@@ -112,6 +124,7 @@ function StartStop({
         variant="destructive"
         disabled={anyBusy}
         aria-label={t('settings:embedding.stop')}
+        title={t('settings:embedding.stopHint')}
         className="min-w-16 justify-center"
         onClick={() => void stop()}
       >
@@ -128,6 +141,7 @@ function StartStop({
       size="sm"
       disabled={anyBusy || startBlocked}
       aria-label={t('settings:embedding.start')}
+      title={t('settings:embedding.startHint')}
       className="min-w-16 justify-center"
       onClick={() => void start()}
     >
@@ -146,8 +160,8 @@ export function EmbeddingModelStatus({
 }: {
   model: EmbeddingCatalogModel
 }) {
-  const { running, state } = useEmbeddingModel(model)
-  return <RunStatus running={running} state={state} />
+  const { active, running, state } = useEmbeddingModel(model)
+  return <RunStatus active={active} running={running} state={state} />
 }
 
 /** The state of a llama.cpp model served as the embedding model. */
@@ -156,8 +170,8 @@ export function LocalEmbeddingModelStatus({
 }: {
   model: LocalEmbeddingModel
 }) {
-  const { running, state } = useLocalEmbeddingModel(model)
-  return <RunStatus running={running} state={state} />
+  const { active, running, state } = useLocalEmbeddingModel(model)
+  return <RunStatus active={active} running={running} state={state} />
 }
 
 /**

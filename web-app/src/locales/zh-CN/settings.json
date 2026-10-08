@@ -405,10 +405,10 @@
     "requiresEngine": "需要 {{engine}} {{version}}+",
     "requiresEngineNotice": "此模型需要 {{engine}} {{version}} 或更高版本。请更新引擎后再启动。",
     "state": {
-      "disabled": "已停止",
-      "idle": "将在下次请求时启动",
+      "disabled": "已停止：请求不会加载它",
+      "idle": "空闲：下次请求时加载",
       "starting": "正在启动…",
-      "ready": "运行中",
+      "ready": "已加载",
       "restarting": "正在重启…",
       "failed": "失败",
       "unsupported": "引擎不受支持"
@@ -424,6 +424,12 @@
     "noneTitle": "尚未下载嵌入模型",
     "noneDescription": "在中心的“嵌入”类别中下载",
     "availableInApi": "可在 API 中使用",
-    "localModel": "来自你的 llama.cpp 模型"
+    "localModel": "来自你的 llama.cpp 模型",
+    "startHint": "通过本地 API 服务器的 /v1/embeddings 提供此模型。在你点击“停止”之前它会保持开启。",
+    "stopHint": "卸载模型并关闭 API 嵌入服务：请求将不再加载它。",
+    "sectionDescription": "“启动”会以模型名称通过本地 API 服务器的 /v1/embeddings 提供一个模型。它会保持开启：重启后处于空闲状态，并在下次请求时加载。“停止”会关闭该服务，请求将不再加载它。",
+    "documentSearchNote": "聊天中的文档搜索使用自己的模型 sentence-transformer-mini，并在需要时自行加载，无需“启动”。",
+    "documentSearchModel": "文档搜索模型 · 来自你的 llama.cpp 模型",
+    "engineUpdateCheckFailed": "无法检查 {{engine}} 更新"
   }
 }

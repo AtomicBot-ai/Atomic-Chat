@@ -405,10 +405,10 @@
     "requiresEngine": "Wymaga {{engine}} {{version}}+",
     "requiresEngineNotice": "Ten model wymaga {{engine}} {{version}} lub nowszego. Zaktualizuj silnik, aby go uruchomić.",
     "state": {
-      "disabled": "Zatrzymany",
-      "idle": "Uruchomi się przy następnym żądaniu",
+      "disabled": "Zatrzymany: żądania go nie ładują",
+      "idle": "Bezczynny: załaduje się przy następnym żądaniu",
       "starting": "Uruchamianie…",
-      "ready": "Działa",
+      "ready": "Załadowany",
       "restarting": "Ponowne uruchamianie…",
       "failed": "Błąd",
       "unsupported": "Silnik nieobsługiwany"
@@ -424,6 +424,12 @@
     "noneTitle": "Brak pobranych modeli embeddingów",
     "noneDescription": "Pobierz model w kategorii Embedding w Centrum Modeli",
     "availableInApi": "Dostępny w API",
-    "localModel": "Z Twoich modeli llama.cpp"
+    "localModel": "Z Twoich modeli llama.cpp",
+    "startHint": "Udostępniaj ten model przez /v1/embeddings lokalnego serwera API. Pozostaje włączony, dopóki nie naciśniesz Zatrzymaj.",
+    "stopHint": "Wyładuj model i wyłącz usługę embeddingów w API: żądania nie będą go już ładować.",
+    "sectionDescription": "Uruchom udostępnia jeden model przez /v1/embeddings lokalnego serwera API pod jego nazwą. Pozostaje włączony: po ponownym uruchomieniu czeka bezczynny i ładuje się przy następnym żądaniu. Zatrzymaj wyłącza usługę, więc żądania nie ładują go już.",
+    "documentSearchNote": "Wyszukiwanie w dokumentach w czatach używa własnego modelu, sentence-transformer-mini, i ładuje go, gdy jest potrzebny, bez Uruchom.",
+    "documentSearchModel": "Model wyszukiwania w dokumentach · z Twoich modeli llama.cpp",
+    "engineUpdateCheckFailed": "Nie udało się sprawdzić aktualizacji {{engine}}"
   }
 }

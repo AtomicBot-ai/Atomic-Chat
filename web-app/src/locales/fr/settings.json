@@ -443,10 +443,10 @@
     "requiresEngine": "Nécessite {{engine}} {{version}}+",
     "requiresEngineNotice": "Ce modèle nécessite {{engine}} {{version}} ou plus récent. Mettez le moteur à jour pour le démarrer.",
     "state": {
-      "disabled": "Arrêté",
-      "idle": "Démarre à la prochaine requête",
+      "disabled": "Arrêté : les requêtes ne le chargent pas",
+      "idle": "Inactif : se charge à la prochaine requête",
       "starting": "Démarrage…",
-      "ready": "En cours d'exécution",
+      "ready": "Chargé",
       "restarting": "Redémarrage…",
       "failed": "Échec",
       "unsupported": "Moteur non pris en charge"
@@ -462,6 +462,12 @@
     "noneTitle": "Aucun modèle d'embedding téléchargé",
     "noneDescription": "Téléchargez-en un dans la catégorie Embedding du Hub",
     "availableInApi": "Disponible dans l'API",
-    "localModel": "Depuis vos modèles llama.cpp"
+    "localModel": "Depuis vos modèles llama.cpp",
+    "startHint": "Servir ce modèle sur /v1/embeddings du serveur d'API local. Il reste actif jusqu'à ce que vous cliquiez sur Arrêter.",
+    "stopHint": "Décharger le modèle et couper le service d'embeddings de l'API : les requêtes ne le chargent plus.",
+    "sectionDescription": "Démarrer sert un modèle sur /v1/embeddings du serveur d'API local, sous son nom. Il reste actif : après un redémarrage, il attend inactif et se charge à la prochaine requête. Arrêter coupe le service, et les requêtes ne le chargent plus.",
+    "documentSearchNote": "La recherche dans les documents des chats utilise son propre modèle, sentence-transformer-mini, et le charge quand il le faut, sans Démarrer.",
+    "documentSearchModel": "Modèle de recherche dans les documents · depuis vos modèles llama.cpp",
+    "engineUpdateCheckFailed": "Impossible de vérifier les mises à jour de {{engine}}"
   }
 }

@@ -405,10 +405,10 @@
     "requiresEngine": "Cần {{engine}} {{version}}+",
     "requiresEngineNotice": "Mô hình này cần {{engine}} {{version}} trở lên. Hãy cập nhật engine để khởi động nó.",
     "state": {
-      "disabled": "Đã dừng",
-      "idle": "Khởi động ở yêu cầu tiếp theo",
+      "disabled": "Đã dừng: yêu cầu không tải nó",
+      "idle": "Đang chờ: tải ở yêu cầu tiếp theo",
       "starting": "Đang khởi động…",
-      "ready": "Đang chạy",
+      "ready": "Đã tải",
       "restarting": "Đang khởi động lại…",
       "failed": "Thất bại",
       "unsupported": "Engine không được hỗ trợ"
@@ -424,6 +424,12 @@
     "noneTitle": "Chưa tải mô hình embedding nào",
     "noneDescription": "Tải một mô hình trong danh mục Embedding của Hub",
     "availableInApi": "Có sẵn trong API",
-    "localModel": "Từ các mô hình llama.cpp của bạn"
+    "localModel": "Từ các mô hình llama.cpp của bạn",
+    "startHint": "Cung cấp mô hình này qua /v1/embeddings của Máy chủ API cục bộ. Nó vẫn bật cho đến khi bạn nhấn Dừng.",
+    "stopHint": "Gỡ tải mô hình và tắt dịch vụ embedding của API: yêu cầu không còn tải nó nữa.",
+    "sectionDescription": "Khởi động cung cấp một mô hình qua /v1/embeddings của Máy chủ API cục bộ, theo tên của nó. Mô hình vẫn bật: sau khi khởi động lại, nó chờ và được tải ở yêu cầu tiếp theo. Dừng sẽ tắt dịch vụ, nên yêu cầu không còn tải nó nữa.",
+    "documentSearchNote": "Tìm kiếm tài liệu trong cuộc trò chuyện dùng mô hình riêng, sentence-transformer-mini, và tải nó khi cần, không cần Khởi động.",
+    "documentSearchModel": "Mô hình tìm kiếm tài liệu · từ các mô hình llama.cpp của bạn",
+    "engineUpdateCheckFailed": "Không thể kiểm tra bản cập nhật {{engine}}"
   }
 }
