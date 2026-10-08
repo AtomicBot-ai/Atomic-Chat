@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-395 records, 2026-05-19 → 2026-10-07.
+396 records, 2026-05-19 → 2026-10-08.
 
 ---
 
@@ -163,8 +163,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (53)
+## llama.cpp providers & backend selection (54)
 
+- **2026-10-08** — [Take engine versions from the core, and update and switch engine builds only through it](2026-10-08-take-engine-versions-from-the-core-and-update-through-it.md) — supersedes the 2026-07-01 hot-swap ordering record; refines 2026-09-14 (offers come from the core).
 - **2026-10-06** — [Show PrismML only where it has a build, and say what its engine is for until it is installed](2026-10-06-show-prismml-where-it-has-a-build-and-onboard-its-engine.md)
 - **2026-10-05** — [Run Bonsai on PrismML's llama.cpp as a third provider, set up from the Hub](2026-10-05-run-bonsai-on-prismml-llamacpp-as-a-third-provider.md)
 - **2026-09-30** — [Stop offering Concurrent Mode](2026-09-30-stop-offering-concurrent-mode.md)
