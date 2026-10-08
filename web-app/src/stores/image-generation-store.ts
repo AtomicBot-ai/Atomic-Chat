@@ -699,8 +699,12 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       set({ engineUpdate: { ...engineUpdate, checking: true, error: null } })
       // The core's answer about every engine is the one source of update
       // offers; the banner reads the same answer.
+      // The answer held is kept current by the core's events; only the button
+      // (force) or an answer not yet received asks again.
       const versions = useEngineVersionsStore.getState()
-      await versions.refresh(force ? { force: true } : {})
+      if (force || !versions.engines['sd-cpp']) {
+        await versions.refresh(force ? { force: true } : {})
+      }
       const { engines, error } = useEngineVersionsStore.getState()
       const sd = engines['sd-cpp']
       const failure = sd?.error?.message ?? (sd ? null : error?.message)

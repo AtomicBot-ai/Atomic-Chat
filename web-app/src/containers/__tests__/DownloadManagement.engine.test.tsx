@@ -163,4 +163,24 @@ describe('DownloadManagement — the media engine install (task 5.3)', () => {
     expect(core.cancelEngineBuildDownload).toHaveBeenCalledWith(MLX_TASK)
     expect(abortDownload).not.toHaveBeenCalled()
   })
+
+  // Change unify-engine-lifecycle: an engine update the core applies runs under
+  // `engine-update-*`; the core stops it, and there is nothing to pause.
+  it('cancels an engine update in the core, with no Pause', () => {
+    const UPDATE_TASK = 'engine-update-llamacpp-upstream-b11500'
+    render(<DownloadManagement />)
+    act(() =>
+      emit(DownloadEvent.onFileDownloadUpdate, {
+        modelId: UPDATE_TASK,
+        percent: 0.1,
+        size: { transferred: 4_000_000, total: 40_000_000 },
+        downloadType: 'Backend',
+      })
+    )
+    expect(screen.queryByRole('button', { name: 'pause' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(core.cancelEngineBuildDownload).toHaveBeenCalledWith(UPDATE_TASK)
+    expect(abortDownload).not.toHaveBeenCalled()
+  })
 })

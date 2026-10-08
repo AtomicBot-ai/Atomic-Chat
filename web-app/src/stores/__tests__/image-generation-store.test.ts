@@ -1618,6 +1618,17 @@ describe('engine updates', () => {
     )
   })
 
+  it('reads the answer the app already holds instead of asking the core again', async () => {
+    useEngineVersionsStore.setState({
+      engines: { 'sd-cpp': sdVersions(NEWER).engines[0] },
+    })
+
+    await useImageGenerationStore.getState().checkEngineUpdate()
+
+    expect(engines.engineVersions).not.toHaveBeenCalled()
+    expect(useImageGenerationStore.getState().engineUpdate.availableTag).toBe(NEWER)
+  })
+
   it('reports the build the core offers; the button asks it to re-read every source', async () => {
     engines.engineVersions.mockResolvedValue(sdVersions(NEWER))
     await useImageGenerationStore.getState().checkEngineUpdate({ force: true })

@@ -274,6 +274,25 @@ describe('InstalledEngineBuilds', () => {
     ).toBeInTheDocument()
   })
 
+  it('says a build to activate is gone, not that it cannot be removed', async () => {
+    const user = userEvent.setup()
+    activateEngineBuildThroughCore.mockRejectedValue({
+      code: 'INVALID_REQUEST',
+      message: 'b11400/win-vulkan-x64 is not installed.',
+      details: 'not-installed',
+    })
+    render(<InstalledEngineBuilds engine="llamacpp-upstream" />)
+
+    await user.click(
+      within(row('b11400')).getByRole('button', { name: 'settings:engineBuilds.makeActive' })
+    )
+
+    expect(
+      await screen.findByText(/settings:engineBuilds\.error\.notInstalled/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/settings:engineBuilds\.error\.invalid/)).not.toBeInTheDocument()
+  })
+
   it('offers no "Make active" where the core picks the build', () => {
     hold({
       engine: 'sd-cpp',

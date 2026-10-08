@@ -24,7 +24,11 @@ vi.mock('@/services/engines/update', async (importOriginal) => ({
 }))
 
 // The media engine's update runs through the image store, which calls the core.
-const imageStore = vi.hoisted(() => ({ updateEngine: vi.fn() }))
+const imageStore = vi.hoisted(() => ({
+  engineUpdate: { availableTag: 'master-900-abc1234' as string | null },
+  checkEngineUpdate: vi.fn(),
+  updateEngine: vi.fn(),
+}))
 vi.mock('@/stores/image-generation-store', () => ({
   useImageGenerationStore: { getState: () => imageStore },
 }))
@@ -147,6 +151,7 @@ describe('EngineUpdateBanner', () => {
 
     expect(updateEngineWithProgress).toHaveBeenCalledWith('llamacpp-upstream', {
       taskId: 'engine-update-llamacpp-upstream-b10909',
+      backend: 'b10909/macos-arm64',
     })
     // The transfer's progress belongs to the download panel, so the banner
     // steps aside instead of growing a progress bar.
@@ -175,6 +180,7 @@ describe('EngineUpdateBanner', () => {
 
     expect(updateEngineWithProgress).toHaveBeenCalledWith('atomic-prism', {
       taskId: 'engine-update-atomic-prism-prism-b9100-1234567',
+      backend: 'prism-b9100-1234567/macos-arm64',
     })
   })
 
@@ -289,6 +295,7 @@ describe('EngineUpdateBanner', () => {
 
     expect(updateEngineWithProgress).toHaveBeenCalledWith('mlx', {
       taskId: 'engine-update-mlx-mlxvlm-macos-arm64-abc1234',
+      backend: 'mlxvlm-macos-arm64-abc1234/macos-arm64',
     })
   })
 

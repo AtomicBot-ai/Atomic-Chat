@@ -238,9 +238,12 @@ describe('Media settings', () => {
     expect(screen.queryByTestId('media-engine-update')).not.toBeInTheDocument()
     first.unmount()
 
+    // A newer build is published: the core's next answer (on `engine:changed`
+    // or the button) offers it.
     engines.engineVersions.mockResolvedValue({
       engines: [sdCpp('master-900-abc1234')],
     })
+    useEngineVersionsStore.getState().reset()
     useImageGenerationStore.setState({ engineUpdate: { checking: false, availableTag: null, checkedAt: null, error: null } })
     render(<Component />)
     const update = await screen.findByTestId('media-engine-update')

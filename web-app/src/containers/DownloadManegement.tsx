@@ -46,6 +46,7 @@ import {
 } from '@/lib/diffusion/models'
 import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { isEngineBuildTaskId } from '@/services/engine-builds/install'
+import { isEngineUpdateTaskId } from '@/services/engines/update'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import {
   decisionDownloadTaskId,
@@ -886,12 +887,14 @@ export function DownloadManagement() {
   // which start with `mlx`) get cancel-only, matching Jan's gating.
   // Decision and embedding models resume from their Hub or settings card,
   // not from here.
+  // Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
   // Managed models are cancel-only too: Download again in the Hub resumes
   // from the files on disk (change add-tensorrt-llm-model-hub, design D6).
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&
     !isEngineBuildTaskId(id) &&
+    !isEngineUpdateTaskId(id) &&
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&

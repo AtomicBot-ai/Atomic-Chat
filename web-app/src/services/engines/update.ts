@@ -56,6 +56,27 @@ function announceBackendSwitched(engine: EngineId, active: EngineBuildKey) {
 
 const isLlamacpp = (engine: EngineId) => ENGINE_KINDS[engine] === 'llamacpp'
 
+/**
+ * Where each llama.cpp extension persists its better-backend recommendation.
+ * Applying any build drops it, as the extensions did after their own download:
+ * otherwise a restart during onboarding offers the build already running.
+ */
+const RECOMMENDATION_KEYS: Partial<Record<EngineId, string>> = {
+  'llamacpp-upstream': 'llama_cpp_better_backend_recommendation',
+  'llamacpp': 'turboquant_better_backend_recommendation',
+  'atomic-prism': 'atomic_prism_better_backend_recommendation',
+}
+
+function forgetRecommendation(engine: EngineId) {
+  const key = RECOMMENDATION_KEYS[engine]
+  if (!key) return
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // Storage unavailable: nothing was persisted either.
+  }
+}
+
 export type EngineUpdateOptions = {
   taskId: string
   /**
@@ -75,10 +96,12 @@ export type EngineUpdateOptions = {
  * download. Resolves with the core's answer once the new build is active (or
  * nothing changed); rejects with the core's error as it came.
  *
- * For a llama.cpp provider the backend dialog hears the download start and
- * finish (`AppEvent.onBackendDownloadStarted/Finished`), then the switch
- * (`app:backend-hotswapped`) — in that order: the finish arms its "restart
- * required" fallback, which the switch right after closes.
+ * For a llama.cpp provider the backend dialog hears the download start (on
+ * the first progress frame) and finish (`AppEvent.onBackendDownloadStarted/
+ * Finished`), then the switch (`app:backend-hotswapped`) — in that order: the
+ * finish arms its "restart required" fallback, which the switch right after
+ * closes. A build already on disk is only a switch; an answer that changed
+ * nothing (`already-active`, `no-update`) is reported as nothing.
  */
 export async function updateEngineWithProgress(
   engine: EngineId,
@@ -107,7 +130,7 @@ export async function updateEngineWithProgress(
     )
   }
 
-  announce()
+  let downloading = false
   let result: EngineUpdateResult
   try {
     result = await followCoreDownload(
@@ -120,16 +143,26 @@ export async function updateEngineWithProgress(
           ...(proxy ? { proxy } : {}),
           app_version: VERSION,
         }),
-      options.onProgress
+      (progress) => {
+        if (!downloading) {
+          downloading = true
+          announce()
+        }
+        options.onProgress?.(progress)
+      }
     )
   } catch (error) {
     const message = (error as { message?: unknown } | null)?.message
-    announce('failed', typeof message === 'string' ? message : String(error))
+    if (downloading) {
+      announce('failed', typeof message === 'string' ? message : String(error))
+    }
     throw error
   }
-  announce('completed')
-  // `already-active` and `no-update` leave the provider on `active` too.
-  if (result.active) announceBackendSwitched(engine, result.active)
+  if (downloading) announce('completed')
+  if (result.updated && result.active) {
+    if (isLlamacpp(engine)) forgetRecommendation(engine)
+    announceBackendSwitched(engine, result.active)
+  }
   return result
 }
 

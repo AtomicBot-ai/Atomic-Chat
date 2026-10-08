@@ -420,7 +420,15 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       setRecommendationPhase('downloading')
 
       try {
-        await switchBackendThroughCore(providerId as EngineId, targetBackend)
+        const result = await switchBackendThroughCore(
+          providerId as EngineId,
+          targetBackend
+        )
+        // Already on it, or nothing newer: no switch will be reported, so
+        // every instance's dialog closes here.
+        if (!result.updated) {
+          events.emit('onManualBackendFailed', { provider: providerId })
+        }
       } catch (error) {
         console.error('Error downloading recommended backend:', error)
         setRecommendationPhase('recommend')
@@ -462,9 +470,14 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
         const concrete = extension?.resolveBackendSelection
           ? await extension.resolveBackendSelection(selection)
           : selection
-        await switchBackendThroughCore(providerId as EngineId, concrete, {
-          announceAs: selection,
-        })
+        const result = await switchBackendThroughCore(
+          providerId as EngineId,
+          concrete,
+          { announceAs: selection }
+        )
+        if (!result.updated) {
+          events.emit('onManualBackendFailed', { provider: providerId })
+        }
       } catch (error) {
         const message = (error as { message?: unknown } | null)?.message
         events.emit('onManualBackendFailed', {

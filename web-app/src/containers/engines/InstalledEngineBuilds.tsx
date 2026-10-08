@@ -50,14 +50,25 @@ export function InstalledEngineBuilds({
   if (!versions || versions.builds.length === 0) return null
   const clientPicks = versions.active_choice === 'client'
 
-  const describeRefusal = (refusal: unknown, fallback: string): string => {
+  const describeRefusal = (
+    refusal: unknown,
+    action: 'remove' | 'activate'
+  ): string => {
     const { code, message } = (refusal ?? {}) as CoreRefusal
     const text = typeof message === 'string' ? message : String(refusal)
     if (code === 'BACKEND_IN_USE')
       return t('settings:engineBuilds.error.inUse', { message: text })
+    // A removal is refused for the active or the installer's build; an
+    // activation for a build no longer on disk.
     if (code === 'INVALID_REQUEST')
-      return t('settings:engineBuilds.error.invalid', { message: text })
-    return `${fallback}: ${text}`
+      return action === 'remove'
+        ? t('settings:engineBuilds.error.invalid', { message: text })
+        : t('settings:engineBuilds.error.notInstalled', { message: text })
+    return `${t(
+      action === 'remove'
+        ? 'settings:engineBuilds.removeFailed'
+        : 'settings:engineBuilds.activateFailed'
+    )}: ${text}`
   }
 
   const remove = async (build: EngineBuild) => {
@@ -67,9 +78,7 @@ export function InstalledEngineBuilds({
     try {
       await deleteEngineBuild(engine, build.version, build.variant)
     } catch (refusal) {
-      setError(
-        describeRefusal(refusal, t('settings:engineBuilds.removeFailed'))
-      )
+      setError(describeRefusal(refusal, 'remove'))
     } finally {
       setBusy(null)
       void useEngineVersionsStore.getState().refresh()
@@ -82,9 +91,7 @@ export function InstalledEngineBuilds({
     try {
       await activateEngineBuildThroughCore(engine, build.version, build.variant)
     } catch (refusal) {
-      setError(
-        describeRefusal(refusal, t('settings:engineBuilds.activateFailed'))
-      )
+      setError(describeRefusal(refusal, 'activate'))
     } finally {
       setBusy(null)
       void useEngineVersionsStore.getState().refresh()

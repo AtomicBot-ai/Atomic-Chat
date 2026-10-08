@@ -481,7 +481,8 @@
     "activateFailed": "Could not make the build active",
     "error": {
       "inUse": "A model still runs from this build: {{message}}",
-      "invalid": "This build cannot be removed: {{message}}"
+      "invalid": "This build cannot be removed: {{message}}",
+      "notInstalled": "This build is no longer on this computer: {{message}}"
     }
   },
   "backendUpdater": {

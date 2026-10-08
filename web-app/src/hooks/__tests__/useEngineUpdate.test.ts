@@ -20,7 +20,11 @@ vi.mock('@/services/engines/update', async (importOriginal) => ({
 
 // The media engine's update runs through the image store, which keeps the
 // Settings → Media state of it.
-const imageStore = vi.hoisted(() => ({ updateEngine: vi.fn() }))
+const imageStore = vi.hoisted(() => ({
+  engineUpdate: { availableTag: null as string | null },
+  checkEngineUpdate: vi.fn(),
+  updateEngine: vi.fn(),
+}))
 vi.mock('@/stores/image-generation-store', () => ({
   useImageGenerationStore: { getState: () => imageStore },
 }))
@@ -70,7 +74,12 @@ describe('useEngineUpdate', () => {
       retired: [],
       kept_in_use: [],
     })
+    imageStore.engineUpdate.availableTag = null
     imageStore.updateEngine.mockResolvedValue(undefined)
+    // The image store learns of the offer from the same answer.
+    imageStore.checkEngineUpdate.mockImplementation(async () => {
+      imageStore.engineUpdate.availableTag = 'b11500'
+    })
   })
 
   it('offers what the core says is needed, with the size from its answer', () => {
@@ -156,20 +165,35 @@ describe('useEngineUpdate', () => {
 
     expect(updateEngineWithProgress).toHaveBeenCalledWith('llamacpp-upstream', {
       taskId: 'engine-update-llamacpp-upstream-b11500',
+      // What the dialog and its toasts name the download by.
+      backend: 'b11500/macos-arm64',
     })
     expect(result.current.offer).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it('updates the media engine through the image store', async () => {
+  it('updates the media engine through the image store, once it has seen the offer', async () => {
     hold(versions('sd-cpp', { kind: 'engine-build', active_choice: 'core' }))
     const { result } = renderHook(() => useEngineUpdate())
 
     await act(() => result.current.applyUpdate())
 
+    expect(imageStore.checkEngineUpdate).toHaveBeenCalledTimes(1)
     expect(imageStore.updateEngine).toHaveBeenCalledTimes(1)
     expect(updateEngineWithProgress).not.toHaveBeenCalled()
     expect(result.current.offer).toBeNull()
+  })
+
+  it('puts the media engine offer back when the image store finds nothing to install', async () => {
+    imageStore.checkEngineUpdate.mockResolvedValue(undefined)
+    hold(versions('sd-cpp', { kind: 'engine-build', active_choice: 'core' }))
+    const { result } = renderHook(() => useEngineUpdate())
+
+    // Said, not swallowed: the banner shows its failure toast.
+    await expect(act(() => result.current.applyUpdate())).rejects.toThrow()
+
+    expect(imageStore.updateEngine).not.toHaveBeenCalled()
+    await waitFor(() => expect(result.current.offer?.provider).toBe('sd-cpp'))
   })
 
   it('opens the managed engine’s page instead of reinstalling from the banner', async () => {

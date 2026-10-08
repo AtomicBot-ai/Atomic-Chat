@@ -93,11 +93,20 @@ export const useEngineUpdate = (): EngineUpdateState => {
     setApplyingCount((n) => n + 1)
     try {
       if (offer.provider === 'sd-cpp') {
-        // The image store keeps Settings → Media's view of the update.
+        // The image store keeps Settings → Media's view of the update and
+        // installs what it has seen offered: let it read this offer first.
+        const images = useImageGenerationStore.getState()
+        if (images.engineUpdate.availableTag !== offer.targetVersion) {
+          await images.checkEngineUpdate()
+        }
+        if (!useImageGenerationStore.getState().engineUpdate.availableTag) {
+          throw new Error('The media engine has no update to install.')
+        }
         await useImageGenerationStore.getState().updateEngine()
       } else {
         await updateEngineWithProgress(offer.provider, {
           taskId: engineUpdateTaskId(offer.provider, offer.targetVersion),
+          backend: offer.targetBackend,
         })
       }
     } catch (error) {

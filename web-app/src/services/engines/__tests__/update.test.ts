@@ -26,10 +26,23 @@ vi.mock('@janhq/core', () => {
   }
 })
 
-const listen = vi.fn(async () => () => {})
+// The relay's progress frames, by event name, for the core's answer to send.
+const relayed = new Map<string, (event: { payload: unknown }) => void>()
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: (...args: unknown[]) => listen(...(args as [])),
+  listen: async (name: string, handler: (event: { payload: unknown }) => void) => {
+    relayed.set(name, handler)
+    return () => relayed.delete(name)
+  },
 }))
+/** The core downloads under `taskId` and then answers `result`. */
+const downloadsThen =
+  (result: unknown) =>
+  async (_engine: string, request: { task_id: string }) => {
+    relayed.get(`download-${request.task_id}`)?.({
+      payload: { transferred: 5, total: 10 },
+    })
+    return result
+  }
 
 const core = vi.hoisted(() => ({
   updateEngine: vi.fn(),
@@ -80,6 +93,8 @@ describe('engine updates through the core', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    relayed.clear()
+    localStorage.clear()
     recorder = record()
   })
   afterEach(() => recorder.stop())
@@ -91,7 +106,7 @@ describe('engine updates through the core', () => {
   })
 
   it('tells the backend dialog a llama.cpp download started, finished, then that the provider switched', async () => {
-    core.updateEngine.mockResolvedValue(UPDATED)
+    core.updateEngine.mockImplementation(downloadsThen(UPDATED))
 
     await updateEngineWithProgress('llamacpp-upstream', {
       taskId: 'engine-update-llamacpp-upstream-b11500',
@@ -113,9 +128,9 @@ describe('engine updates through the core', () => {
   })
 
   it('says the download failed and switches nothing when the core refuses', async () => {
-    core.updateEngine.mockRejectedValue({
-      code: 'ENGINE_INSTALL_FAILED',
-      message: 'download failed',
+    core.updateEngine.mockImplementation(async (_engine: string, request: { task_id: string }) => {
+      relayed.get(`download-${request.task_id}`)?.({ payload: { transferred: 1, total: 10 } })
+      throw { code: 'ENGINE_INSTALL_FAILED', message: 'download failed' }
     })
 
     await expect(
@@ -131,6 +146,45 @@ describe('engine updates through the core', () => {
     ])
   })
 
+  it('only reports the switch when the build was already on disk', async () => {
+    core.updateEngine.mockResolvedValue(UPDATED)
+
+    await updateEngineWithProgress('llamacpp-upstream', {
+      taskId: 't',
+      target: { version: 'b11500', variant: 'macos-arm64' },
+    })
+
+    expect(recorder.heard).toEqual(['hotswapped llamacpp-upstream b11500/macos-arm64'])
+  })
+
+  it('reports nothing when the core changed nothing', async () => {
+    core.updateEngine.mockResolvedValue({
+      ...UPDATED,
+      updated: false,
+      reason: 'no-update',
+      retired: [],
+    })
+
+    const result = await updateEngineWithProgress('llamacpp-upstream', { taskId: 't' })
+
+    expect(result.updated).toBe(false)
+    expect(recorder.heard).toEqual([])
+  })
+
+  it('drops the provider’s persisted backend recommendation once the core switched', async () => {
+    localStorage.setItem('turboquant_better_backend_recommendation', '{}')
+    localStorage.setItem('llama_cpp_better_backend_recommendation', '{}')
+    core.updateEngine.mockResolvedValue({
+      ...UPDATED,
+      active: { version: 'b10269-1.4.0', variant: 'windows-x64-cuda-13.3' },
+    })
+
+    await updateEngineWithProgress('llamacpp', { taskId: 't' })
+
+    expect(localStorage.getItem('turboquant_better_backend_recommendation')).toBeNull()
+    expect(localStorage.getItem('llama_cpp_better_backend_recommendation')).toBe('{}')
+  })
+
   it('sends no llama.cpp events for MLX or sd.cpp', async () => {
     core.updateEngine.mockResolvedValue({
       ...UPDATED,
@@ -141,10 +195,12 @@ describe('engine updates through the core', () => {
   })
 
   it('switches to the newest build of a variant for a `latest/<variant>` pick, keyed on the pick', async () => {
-    core.updateEngine.mockResolvedValue({
-      ...UPDATED,
-      active: { version: 'b11500', variant: 'win-vulkan-x64' },
-    })
+    core.updateEngine.mockImplementation(
+      downloadsThen({
+        ...UPDATED,
+        active: { version: 'b11500', variant: 'win-vulkan-x64' },
+      })
+    )
 
     const result = await switchBackendThroughCore(
       'llamacpp-upstream',

@@ -454,7 +454,8 @@
     "activateFailed": "Не удалось сделать сборку активной",
     "error": {
       "inUse": "Из этой сборки ещё запущена модель: {{message}}",
-      "invalid": "Эту сборку нельзя удалить: {{message}}"
+      "invalid": "Эту сборку нельзя удалить: {{message}}",
+      "notInstalled": "Этой сборки больше нет на компьютере: {{message}}"
     }
   },
   "backendUpdater": {

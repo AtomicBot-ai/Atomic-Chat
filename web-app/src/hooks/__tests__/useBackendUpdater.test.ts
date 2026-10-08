@@ -235,6 +235,28 @@ describe('useBackendUpdater', () => {
       expect(result.current.recommendationPhase).toBe('downloading')
     })
 
+    it('closes the dialog everywhere when the core had nothing to change', async () => {
+      switchBackendThroughCore.mockResolvedValue({
+        updated: false,
+        reason: 'already-active',
+        active: { version: 'b10205', variant: 'win-cuda-13.3-x64' },
+        retired: [],
+        kept_in_use: [],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+      // Another mounted instance — the global dialog — saw the recommendation too.
+      const dialog = renderHook(() => useBackendUpdater())
+      detect()
+
+      await act(async () => {
+        await result.current.downloadRecommendedBackend()
+      })
+
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(dialog.result.current.recommendationPhase).toBe('idle')
+      expect(dialog.result.current.recommendation).toBeNull()
+    })
+
     it('reverts to the prompt when the core refuses the switch', async () => {
       switchBackendThroughCore.mockRejectedValue(new Error('asset 404'))
 
