@@ -50,7 +50,15 @@ vi.mock('@tauri-apps/api/event', async (importOriginal) => ({
   listen: vi.fn(async () => () => {}),
 }))
 
+// The engine's update check and its update are the core's `/engines` routes.
+const engines = vi.hoisted(() => ({
+  engineVersions: vi.fn(),
+  updateEngine: vi.fn(),
+}))
+vi.mock('@/services/engines/core', () => engines)
+
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -58,6 +66,24 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { listInstalledArtifacts } from '@/lib/diffusion/models'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { Route } from '../media'
+
+/** The core's versions answer for sd.cpp, offering `target` (or nothing). */
+const sdCpp = (target: string | null) => ({
+  engine: 'sd-cpp',
+  kind: 'engine-build',
+  active_choice: 'core',
+  builds: [],
+  active: { version: 'master-849-d04e895', variant: 'macos-arm64' },
+  latest: null,
+  update: {
+    needed: target !== null,
+    target: target ? { version: target, variant: 'macos-arm64' } : null,
+    apply: 'swap',
+  },
+  source: 'remote',
+  source_error: null,
+  error: null,
+})
 
 class MockResizeObserver {
   observe() {}
@@ -79,6 +105,8 @@ describe('Media settings', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     localStorage.clear()
+    useEngineVersionsStore.getState().reset()
+    engines.engineVersions.mockResolvedValue({ engines: [sdCpp(null)] })
     await useImageSetting.persist.rehydrate()
     await useVideoSetting.persist.rehydrate()
     useImageSetting.setState({ outputDir: null })
@@ -205,15 +233,13 @@ describe('Media settings', () => {
   it('offers Update when the core names a newer build, and Check otherwise', async () => {
     const first = render(<Component />)
     // The page asks the core on open; the installed build is current.
-    await waitFor(() => expect(fake.checkEngineUpdate).toHaveBeenCalled())
+    await waitFor(() => expect(engines.engineVersions).toHaveBeenCalled())
     expect(screen.getByTestId('media-engine-check')).toBeInTheDocument()
     expect(screen.queryByTestId('media-engine-update')).not.toBeInTheDocument()
     first.unmount()
 
-    fake.checkEngineUpdate.mockResolvedValue({
-      update_needed: true,
-      current: { tag: 'master-849-d04e895', backend_id: 'macos-arm64', origin: 'downloaded' },
-      target: { tag: 'master-900-abc1234', backend_id: 'macos-arm64', download_bytes: 1 },
+    engines.engineVersions.mockResolvedValue({
+      engines: [sdCpp('master-900-abc1234')],
     })
     useImageGenerationStore.setState({ engineUpdate: { checking: false, availableTag: null, checkedAt: null, error: null } })
     render(<Component />)
@@ -221,16 +247,21 @@ describe('Media settings', () => {
     expect(update).toHaveTextContent('settings:media.update')
     expect(screen.getByText(/settings:media.updateAvailable/)).toBeInTheDocument()
 
-    fake.installEngine.mockResolvedValue({
-      installed: true,
-      build: { tag: 'master-900-abc1234', backend_id: 'macos-arm64', origin: 'downloaded' },
+    engines.updateEngine.mockResolvedValue({
+      updated: true,
+      active: { version: 'master-900-abc1234', variant: 'macos-arm64' },
       retired: [],
       kept_in_use: [],
     })
     await act(async () => {
       await userEvent.click(update)
     })
-    expect(fake.installEngine).toHaveBeenCalled()
+    // Applied by the core, not installed by the page.
+    expect(engines.updateEngine).toHaveBeenCalledWith(
+      'sd-cpp',
+      expect.objectContaining({ task_id: expect.stringMatching(/^diffusion-backend-/) })
+    )
+    expect(fake.installEngine).not.toHaveBeenCalled()
   })
 
   it('hides the engine override while only one engine can serve this host', () => {

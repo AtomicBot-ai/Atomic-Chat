@@ -44,12 +44,6 @@ import {
 } from './buildMlxConfig'
 import { mlxMainWeightFileName } from './weightFileName'
 import {
-  buildMlxEngineUpdateOffer,
-  MLX_PROVIDER,
-  publishEngineUpdateOffer,
-  retractEngineUpdateOffer,
-} from './engineUpdateOffer'
-import {
   createCoreRuntime,
   describeCoreError,
 } from '../../shared/atomicCoreRuntime'
@@ -71,8 +65,9 @@ const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 /// (`src-tauri/src/core/server/proxy.rs`) talks to backend extensions about
 /// a mid-flight context-window overflow.
 const AUTO_INCREASE_CTX_EVENT = 'local_backend://auto_increase_ctx'
-/** The core's `engine-build:changed {engine, reason}`, as the relay names it. */
-const ENGINE_BUILD_CHANGED_EVENT = 'atomic-core://engine-build:changed'
+/** The core's `engine:changed {engine, reason}`, as the relay names it. */
+const ENGINE_CHANGED_EVENT = 'atomic-core://engine:changed'
+const MLX_PROVIDER = 'mlx'
 const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
 /// Parallel Tauri-level broadcast so the web-app can subscribe without
 /// routing through the `@janhq/core` in-process EventEmitter.
@@ -158,7 +153,7 @@ export default class mlx_extension extends AIEngine {
 
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenCoreSettingsChanged?: () => void
-  private unlistenEngineBuildChanged?: () => void
+  private unlistenEngineChanged?: () => void
 
   /// MLX in `atomic-chat-core` (PLAN.md §4). The core starts, stops and grows the mlx-server
   /// processes; the model catalogue, downloads (drafters included) and settings UI stay here.
@@ -225,13 +220,10 @@ export default class mlx_extension extends AIEngine {
     void this.detectBackendVersion().catch((err) => {
       logger.warn('Failed to detect MLX backend version:', err)
     })
-    // The core advises, the user decides: a newer build only becomes an offer.
-    void this.checkForEngineUpdate().catch((err) => {
-      logger.warn('Could not check for an MLX engine update:', err)
-    })
-    // An install or the start-up cleanup moved the active build: the version follows it.
-    this.unlistenEngineBuildChanged = await listen<{ engine?: string }>(
-      ENGINE_BUILD_CHANGED_EVENT,
+    // An update, an install or the start-up cleanup moved the active build:
+    // the version follows it. Update offers are the desktop's, from the core.
+    this.unlistenEngineChanged = await listen<{ engine?: string }>(
+      ENGINE_CHANGED_EVENT,
       (event) => {
         if (event.payload?.engine === MLX_PROVIDER) void this.detectBackendVersion()
       }
@@ -285,31 +277,9 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
-  /**
-   * Ask the core whether conf's manifest names an MLX build newer than the
-   * active one, and publish or withdraw the banner's offer accordingly. `force`
-   * re-reads the manifest (the provider page's button).
-   */
-  async checkForEngineUpdate(
-    options: { force?: boolean } = {}
-  ): Promise<{ updateAvailable: boolean; targetVersion: string | null }> {
-    const check = await this.core.checkEngineBuildUpdates(
-      'mlx',
-      options.force ? { force: true } : {}
-    )
-    const offer = buildMlxEngineUpdateOffer(check)
-    if (!offer) {
-      retractEngineUpdateOffer(MLX_PROVIDER)
-      return { updateAvailable: false, targetVersion: null }
-    }
-    publishEngineUpdateOffer(offer)
-    logger.info(`MLX engine update: ${offer.currentBackend} -> ${offer.targetBackend}`)
-    return { updateAvailable: true, targetVersion: offer.targetVersion }
-  }
-
   override async onUnload(): Promise<void> {
-    this.unlistenEngineBuildChanged?.()
-    this.unlistenEngineBuildChanged = undefined
+    this.unlistenEngineChanged?.()
+    this.unlistenEngineChanged = undefined
     this.unlistenCoreSettingsChanged?.()
     this.unlistenCoreSettingsChanged = undefined
     if (this.unlistenAutoIncreaseCtx) {

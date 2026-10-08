@@ -8,10 +8,6 @@ import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { acquireGpuForDiffusion } from '@/lib/diffusion/arbiter'
 import { configureDiffusion, getDiffusionPaths } from '@/lib/diffusion/config'
-import {
-  buildMediaEngineUpdateOffer,
-  MEDIA_ENGINE_PROVIDER,
-} from '@/lib/diffusion/engineUpdateOffer'
 import { toDiffusionError } from '@/lib/diffusion/errors'
 import { autoOffload, fitForQuant } from '@/lib/diffusion/fit'
 import {
@@ -31,10 +27,6 @@ import {
   captureImageGenerate,
 } from '@/lib/diffusion/telemetry'
 import { validateImageRequest } from '@/lib/diffusion/validate'
-import {
-  publishEngineUpdateOffer,
-  retractEngineUpdateOffer,
-} from '@/lib/engineUpdateOffer'
 import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
 import { notifyWhenAway } from '@/lib/notifications'
 import {
@@ -42,12 +34,14 @@ import {
   MODERN_IMAGE_ENGINE_TAG,
 } from '@/services/diffusion/compatibility'
 import {
+  diffusionBackendTaskId,
   engineInstallError,
   forgetDesktopInstallerCaches,
   installDiffusionEngine,
 } from '@/services/diffusion/engine'
 import { engineBuildProxy } from '@/services/engine-builds/core'
-import type { EngineBuildInstallResult } from '@/services/engine-builds/types'
+import { updateEngineWithProgress } from '@/services/engines/update'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import type {
   DiffusionError,
   DiffusionEvent,
@@ -269,8 +263,6 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 ) => {
   const diffusion = () => getServiceHub().diffusion()
   let updatingEngine = false
-  /** What the core answered the last `installEngine`; null after a failure. */
-  let lastInstall: EngineBuildInstallResult | null = null
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<ImageJob> =>
@@ -645,7 +637,6 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
     installEngine: async ({ force } = {}) => {
       if (get().engineInstall.inFlight) return
-      lastInstall = null
       const startedAt = Date.now()
       set({ engineInstall: { ...emptyInstall, inFlight: true } })
       captureImageEngineInstall({
@@ -662,7 +653,6 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
               engineInstall: { ...state.engineInstall, transferred, total },
             })),
         })
-        lastInstall = result
         captureImageEngineInstall({
           install_status: 'completed',
           backend: result.build.backend_id,
@@ -704,64 +694,82 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       if (engineUpdate.checking) return
       if (status?.install.state !== 'installed' || !hostBackendId) {
         set({ engineUpdate: noUpdate })
-        retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
         return
       }
       set({ engineUpdate: { ...engineUpdate, checking: true, error: null } })
-      try {
-        const check = await diffusion().checkEngineUpdate({
-          ...(force ? { force: true } : {}),
-          ...proxyRequest(),
-        })
-        // The core orders the tags: an older manifest (a rollback) is never
-        // an update.
-        const offer = buildMediaEngineUpdateOffer(check)
-        set({
-          engineUpdate: {
-            checking: false,
-            availableTag: offer ? offer.targetVersion : null,
-            checkedAt: Date.now(),
-            error: null,
-          },
-        })
-        if (offer) publishEngineUpdateOffer(offer)
-        else retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
-      } catch (err) {
-        // No answer is not news: the banner keeps what it had.
-        set({
-          engineUpdate: {
-            ...get().engineUpdate,
-            checking: false,
-            checkedAt: Date.now(),
-            error: toDiffusionError(err).message || String(err),
-          },
-        })
-      }
+      // The core's answer about every engine is the one source of update
+      // offers; the banner reads the same answer.
+      const versions = useEngineVersionsStore.getState()
+      await versions.refresh(force ? { force: true } : {})
+      const { engines, error } = useEngineVersionsStore.getState()
+      const sd = engines['sd-cpp']
+      const failure = sd?.error?.message ?? (sd ? null : error?.message)
+      // The core orders the tags: an older manifest (a rollback) is never
+      // an update, and a blocked one is not offered.
+      const target = sd?.update.needed ? sd.update.target : null
+      set({
+        engineUpdate: {
+          checking: false,
+          availableTag: target?.version ?? null,
+          checkedAt: Date.now(),
+          error: failure ?? null,
+        },
+      })
     },
 
     updateEngine: async () => {
+      const { engineUpdate, hostBackendId } = get()
       if (
         updatingEngine ||
-        !get().engineUpdate.availableTag ||
+        !engineUpdate.availableTag ||
         get().engineInstall.inFlight
       )
         return
       updatingEngine = true
-      set({ engineUpdatingTo: get().engineUpdate.availableTag })
+      const tag = engineUpdate.availableTag
+      set({ engineUpdatingTo: tag })
       const pending = get().pendingEngineArtifactId
+      const startedAt = Date.now()
+      set({ engineInstall: { ...emptyInstall, inFlight: true } })
+      captureImageEngineInstall({
+        install_status: 'started',
+        backend: hostBackendId,
+        duration_ms: null,
+        error_code: null,
+      })
       try {
-        // The core activates the new build under its load lock: it unloads
-        // every session of another build and cancels the running job.
-        await get().installEngine()
-        if (get().engineInstall.error === null && lastInstall?.installed === false) {
-          // The core had nothing newer to install (`already-installed`, or the
-          // active build is newer than the manifest's): the offer is no longer
-          // true, and a model waiting for a newer engine still cannot load.
-          set({
-            engineUpdate: { ...noUpdate, checkedAt: Date.now() },
-            engineUpdatingTo: null,
-          })
-          retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
+        // The core installs the build its manifest names, activates it under
+        // its load lock (unloading every session of another build and
+        // cancelling the running job) and retires the old one.
+        const result = await updateEngineWithProgress('sd-cpp', {
+          // The shape the download panel, its Cancel and the telemetry know.
+          taskId: diffusionBackendTaskId(tag, hostBackendId ?? 'unknown'),
+          onProgress: ({ transferred, total }) =>
+            set((state) => ({
+              engineInstall: { ...state.engineInstall, transferred, total },
+            })),
+        })
+        captureImageEngineInstall({
+          install_status: 'completed',
+          backend: result.active?.variant ?? hostBackendId,
+          duration_ms: Date.now() - startedAt,
+          error_code: null,
+        })
+        await get().refreshStatus()
+        if (get().status?.model.state !== 'loaded') {
+          set({ capabilities: null, videoCapabilities: null })
+        }
+        // One set: whoever watches `engineUpdatingTo` fall reads the outcome
+        // from `availableTag`, which is cleared only once nothing is offered.
+        set({
+          engineInstall: emptyInstall,
+          engineUpdate: { ...noUpdate, checkedAt: Date.now() },
+          engineUpdatingTo: null,
+          ...(result.active ? { hostBackendId: result.active.variant } : {}),
+        })
+        if (!result.updated) {
+          // The core had nothing newer (`no-update`, `already-active`): a
+          // model waiting for a newer engine still cannot load.
           if (pending) {
             set({
               lastError: {
@@ -771,30 +779,32 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
               },
             })
           }
-        } else if (get().engineInstall.error === null) {
-          // One set: whoever watches `engineUpdatingTo` fall reads the outcome
-          // from `availableTag`, which is cleared only on success.
-          set({
-            engineUpdate: { ...noUpdate, checkedAt: Date.now() },
-            engineUpdatingTo: null,
-          })
-          retractEngineUpdateOffer(MEDIA_ENGINE_PROVIDER)
-          if (pending && get().pendingEngineArtifactId === pending)
-            await get().loadModel(pending)
-        } else {
-          set({
-            lastError: pending
-              ? {
-                  code: 'ENGINE_UPDATE_REQUIRED',
-                  message:
-                    get().engineInstall.error?.message ??
-                    'Update the media engine and retry.',
-                }
-              : get().engineInstall.error,
-          })
+        } else if (pending && get().pendingEngineArtifactId === pending) {
+          await get().loadModel(pending)
         }
       } catch (error) {
-        set({ lastError: toDiffusionError(error) })
+        const described = toDiffusionError(engineInstallError(error))
+        captureImageEngineInstall({
+          install_status: 'failed',
+          backend: hostBackendId,
+          duration_ms: Date.now() - startedAt,
+          error_code: described.code,
+        })
+        // A cancel from the download panel is the user's choice, not a
+        // failure to show on the card.
+        set({
+          engineInstall:
+            described.code === 'CANCELLED'
+              ? emptyInstall
+              : { ...emptyInstall, error: described },
+          lastError: pending
+            ? {
+                code: 'ENGINE_UPDATE_REQUIRED',
+                message:
+                  described.message || 'Update the media engine and retry.',
+              }
+            : described,
+        })
       } finally {
         updatingEngine = false
         set({ engineUpdatingTo: null })

@@ -42,14 +42,8 @@ import {
   compareBackendVersions,
   assertDeletableBackendPack,
   mergeBackendOptions,
-  getIndexedVariantSize,
   type InstalledBackendPack,
 } from './backend'
-import {
-  buildEngineUpdateOffer,
-  clearEngineUpdateOffer,
-  publishEngineUpdateOffer,
-} from './engineUpdateOffer'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import {
   getProxyConfig,
@@ -413,8 +407,8 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
-  /// In-flight first-run download of the hardware-optimal backend. Awaited by
-  /// `reconcileBackendReleaseTag` so the two never fetch the same archive.
+  /// In-flight first-run download of the hardware-optimal backend, `null`
+  /// once it settled.
   private firstRunAdoption: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   /// The ctx_size a model was last known to run with (requested at load, grown
@@ -612,7 +606,6 @@ export default class llamacpp_extension extends AIEngine {
         //! Previously the rejected promise was lost; without a log it's hard to diagnose a perpetual "loading" in settings.
         logger.error('configureBackends failed:', err)
       })
-      .then(() => this.reconcileBackendReleaseTag())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1812,11 +1805,6 @@ export default class llamacpp_extension extends AIEngine {
 
     localStorage.removeItem(TURBOQUANT_PENDING_KEY)
 
-    // A pending engine-update offer is about this provider's backend, and the
-    // backend just changed — whatever it proposed is now either done or stale.
-    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
-    clearEngineUpdateOffer(this.providerId)
-
     // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
     // a pure UI concern (the dialog/pill in the web app) and does not
     // need to traverse the cross-extension event bus. `window` is always
@@ -2300,119 +2288,6 @@ export default class llamacpp_extension extends AIEngine {
       await this.core.removeBackend(pack.version, pack.backend)
     } catch (error) {
       throw new Error(describeCoreError(error))
-    }
-  }
-
-  /**
-   * Move an existing install onto the newest release tag of the backend type
-   * the user already runs.
-   *
-   * `configureBackends()` only force-switches when the freshly unpacked
-   * bundled backend has the *same* type as the configured one. Windows bundles
-   * `windows-x64-cpu` and Linux bundles `linux-x64-vulkan`, so anyone whose GPU
-   * tier was fetched at runtime (CUDA, ROCm) stays pinned to the release tag
-   * they first downloaded — an app update alone never reaches them. The
-   * hardware popup does not help either: it compares backend *categories*, so a
-   * CUDA user already counts as optimal and is never prompted.
-   *
-   * `checkBackendForUpdates()` resolves the newest tag for the current type
-   * across the merged local+release catalog. The running backend is itself
-   * part of that catalog, so the resolved target is never older — this cannot
-   * downgrade anyone.
-   *
-   * This is what makes a fork release reach users without an Atomic Chat
-   * release, on every platform including macOS, where the bundled build is now
-   * an offline baseline rather than the only source.
-   */
-  private async reconcileBackendReleaseTag(): Promise<void> {
-    try {
-      // A first-run adoption is already fetching the right archive; racing it
-      // would download the same release twice.
-      if (this.firstRunAdoption) {
-        await this.firstRunAdoption
-      }
-
-      const current = stripBom(this.config.version_backend || '')
-      const currentType = current.split('/')[1]?.trim()
-      if (!current || current === 'none' || !currentType) {
-        logger.info(
-          'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
-        )
-        return
-      }
-
-      const { updateNeeded, targetBackend, sameFamily } =
-        await this.checkBackendForUpdates()
-      const targetType = targetBackend?.split('/')[1]?.trim()
-      if (!updateNeeded || !targetBackend || !targetType) return
-
-      // The catalog is merged with what is on disk, so the "newest" candidate
-      // can be a legacy prerelease someone still has installed. Auto-updates
-      // only ever move onto stable releases.
-      if (!isStableReleaseTag(targetBackend)) {
-        logger.info(
-          `reconcileBackendReleaseTag: newest candidate '${targetBackend}' is not a stable release, keeping '${current}'`
-        )
-        return
-      }
-
-      // Reconciliation bumps the release tag only; it must never move anyone
-      // between backend families. Legacy ids may land on their migrated form,
-      // which is what the core's `same_family` allows for.
-      if (sameFamily !== true) {
-        logger.warn(
-          `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
-        )
-        return
-      }
-
-      // ATO-528: a tag bump is offered, not taken. It used to download here
-      // unannounced — hundreds of megabytes on a launch the user did not ask
-      // anything of. The offer is published instead and the web app's
-      // `<EngineUpdateBanner />` asks; accepting routes back through
-      // `downloadRecommendedBackend()`, which is what this call used to be.
-      // A first-run adoption, awaited at the top, is still automatic: that is
-      // an install completing, not an update.
-      logger.info(
-        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}'`
-      )
-      await this.offerEngineUpdate(current, targetBackend)
-    } catch (err) {
-      logger.error(
-        'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
-        err
-      )
-    }
-  }
-
-  /**
-   * Publishes a "new engine build available" offer for the banner (ATO-528).
-   *
-   * Best-effort in both directions: the archive size comes from the release
-   * index and is simply absent for a build the index does not describe, and a
-   * failure to publish costs the banner, not the app — the offer is rebuilt on
-   * the next launch because the tag comparison that produced it is stateless.
-   */
-  private async offerEngineUpdate(
-    currentBackend: string,
-    targetBackend: string
-  ): Promise<void> {
-    try {
-      const offer = await buildEngineUpdateOffer(
-        this.providerId,
-        currentBackend,
-        targetBackend,
-        (version, backendId) => getIndexedVariantSize(version, backendId)
-      )
-      if (!offer) {
-        logger.warn(
-          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
-        )
-        return
-      }
-      publishEngineUpdateOffer(offer)
-    } catch (err) {
-      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
     }
   }
 

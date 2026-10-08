@@ -1,128 +1,34 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { useCallback, useMemo, useState } from 'react'
 
-import { MEDIA_ENGINE_PROVIDER } from '@/lib/diffusion/engineUpdateOffer'
+import { route } from '@/constants/routes'
 import {
-  clearEngineUpdateOffer,
+  ENGINE_UPDATE_ORDER,
   dismissEngineUpdate,
+  engineUpdateOfferFrom,
   isEngineUpdateSnoozed,
-  readEngineUpdateOffer,
-  retractEngineUpdateOffer,
   snoozeEngineUpdate,
-  ENGINE_UPDATE_AVAILABLE_EVENT,
-  ENGINE_UPDATE_RETRACTED_EVENT,
   type EngineUpdateOffer,
 } from '@/lib/engineUpdateOffer'
-import { ExtensionManager } from '@/lib/extension'
-import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
-import { checkEngineBuildUpdates } from '@/services/engine-builds/core'
+import type { EngineVersions } from '@/services/engines/types'
 import {
-  engineBuildTaskId,
-  installEngineBuildWithProgress,
-} from '@/services/engine-builds/install'
+  engineUpdateTaskId,
+  updateEngineWithProgress,
+} from '@/services/engines/update'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 
-interface BackendDownloadCapableExtension {
-  downloadRecommendedBackend?(backendString: string): Promise<void>
-}
-
-/** "Update" for an engine an extension owns: the extension downloads it. */
-const throughExtension =
-  (extensionName: string) =>
-  async (offer: EngineUpdateOffer): Promise<void> => {
-    const extension = ExtensionManager.getInstance().getByName(
-      extensionName
-    ) as BackendDownloadCapableExtension | undefined
-
-    if (!extension?.downloadRecommendedBackend) {
-      throw new Error(`${extensionName} cannot download a backend on request`)
-    }
-
-    // The transfer takes minutes and reports through the backend download
-    // events that `<BackendUpdater />` already renders, so this is awaited
-    // only far enough to know it started.
-    await extension.downloadRecommendedBackend(offer.targetBackend)
-  }
-
-/**
- * "Update" for the media engine, which no extension owns: the image store
- * installs it. The offer may be one an earlier launch persisted, read before
- * this launch's check answered — the store then looks again first, and a
- * manifest that no longer names a newer build leaves nothing to do.
- */
-const throughImageStore = async (offer: EngineUpdateOffer): Promise<void> => {
-  if (
-    useImageGenerationStore.getState().engineUpdate.availableTag !==
-    offer.targetVersion
-  ) {
-    await useImageGenerationStore.getState().checkEngineUpdate()
-  }
-  const { engineUpdate, updateEngine } = useImageGenerationStore.getState()
-  if (!engineUpdate.availableTag) return
-  // Not awaited: `<BackendUpdater />` shows the download and its outcome.
-  void updateEngine()
-}
-
-/**
- * "Update" for MLX: the core installs the build its manifest names. It is
- * asked again first, so an offer persisted on an earlier launch that is no
- * longer true installs nothing and comes down; the download task is named
- * after the build the core names now. The panel shows the download; the core
- * unloads MLX sessions of the old build, and `mlx-extension` follows its
- * `engine-build:changed`. Not awaited, as for the media engine.
- */
-const throughCoreInstall = async (offer: EngineUpdateOffer): Promise<void> => {
-  const check = await checkEngineBuildUpdates('mlx', {})
-  if (!check.update_needed || !check.target) {
-    retractEngineUpdateOffer(offer.provider)
-    return
-  }
-  void installEngineBuildWithProgress('mlx', {
-    taskId: engineBuildTaskId('mlx', check.target.tag),
-  }).catch((error) => {
-    // The panel already shows the failure; the next launch offers it again.
-    console.error('MLX engine update failed:', error)
-  })
-}
-
-/**
- * Providers that can offer an engine update, most-preferred first, each with
- * what "Update" does for it. The llama.cpp providers ship side by side, and
- * only one banner may be on screen — the default provider's offer wins, the
- * others wait until the first is dealt with. MLX follows them; the media
- * engine comes last: a chat engine is what most sessions use.
- */
-const ENGINE_PROVIDERS: {
-  provider: string
-  apply: (offer: EngineUpdateOffer) => Promise<void>
-}[] = [
-  {
-    provider: LOCAL_LLAMACPP_PROVIDER,
-    apply: throughExtension('@janhq/llamacpp-upstream-extension'),
-  },
-  {
-    provider: 'llamacpp',
-    apply: throughExtension('@janhq/llamacpp-extension'),
-  },
-  {
-    provider: 'atomic-prism',
-    apply: throughExtension('@janhq/atomic-prism-extension'),
-  },
-  { provider: 'mlx', apply: throughCoreInstall },
-  { provider: MEDIA_ENGINE_PROVIDER, apply: throughImageStore },
-]
-
-/** First non-snoozed, still-meaningful offer across the engine providers. */
-function readActiveOffer(now = Date.now()): EngineUpdateOffer | null {
-  for (const { provider } of ENGINE_PROVIDERS) {
-    const offer = readEngineUpdateOffer(provider)
-    if (!offer) continue
-    // An offer that survived the backend already moving to its target is
-    // stale. The extension clears it on hot-swap, but a restart-required
-    // fallback or a manual switch in settings leaves it behind.
-    if (offer.targetBackend === offer.currentBackend) {
-      clearEngineUpdateOffer(provider)
-      continue
-    }
+/** First offer the core makes that the user has not put away, in banner order. */
+function firstOffer(
+  engines: Partial<Record<string, EngineVersions>>,
+  hidden: ReadonlySet<string>,
+  now = Date.now()
+): EngineUpdateOffer | null {
+  for (const engine of ENGINE_UPDATE_ORDER) {
+    const versions = engines[engine]
+    if (!versions) continue
+    const offer = engineUpdateOfferFrom(versions)
+    if (!offer || hidden.has(offer.targetBackend)) continue
     if (isEngineUpdateSnoozed(offer, now)) continue
     return offer
   }
@@ -132,9 +38,12 @@ function readActiveOffer(now = Date.now()): EngineUpdateOffer | null {
 export interface EngineUpdateState {
   /** The offer to show, or `null` when there is nothing to ask about. */
   offer: EngineUpdateOffer | null
-  /** True from the moment "Update" is pressed until the transfer starts. */
+  /** True from the moment "Update" is pressed until the core answers. */
   isApplying: boolean
-  /** "Update" — download the build and hot-swap onto it. */
+  /**
+   * "Update" — the core downloads the build and switches to it; a managed
+   * engine's reinstall is confirmed on its own page instead.
+   */
   applyUpdate: () => Promise<void>
   /** "Remind me later" — back in a day. */
   remindLater: () => void
@@ -143,73 +52,84 @@ export interface EngineUpdateState {
 }
 
 /**
- * Surfaces the engine update offer published by the llama.cpp extensions
- * (ATO-528 / ATO-531) and by the image-generation store for the media engine.
- *
- * Two sources, for the same reason the better-backend recommendation has two:
- * the extension's release-tag reconciliation can finish either side of React
- * mounting, so the banner reads the persisted offer once on mount *and*
- * listens for the event.
+ * The engine update offer on the shared banner, built from the core's answer
+ * about every engine (`useEngineVersionsStore`, spec
+ * `engine-lifecycle-desktop`). An accepted offer comes down at once: the
+ * download panel shows the transfer, and the core's `engine:changed` refreshes
+ * the answer once the new build is active. A refused update puts it back.
  */
 export const useEngineUpdate = (): EngineUpdateState => {
-  const [offer, setOffer] = useState<EngineUpdateOffer | null>(null)
-  const [isApplying, setIsApplying] = useState(false)
+  const navigate = useNavigate()
+  const engines = useEngineVersionsStore((state) => state.engines)
+  // Snoozing writes storage the selector cannot see; this re-reads it.
+  const [answered, setAnswered] = useState(0)
+  // Targets being applied now, and those applied this session: the answer
+  // held still offers them until the core's `engine:changed` refreshes it.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
+  const [applyingCount, setApplyingCount] = useState(0)
 
-  useEffect(() => {
-    setOffer(readActiveOffer())
-
-    const handleOffer = (event: Event) => {
-      const detail = (event as CustomEvent<EngineUpdateOffer>).detail
-      if (!detail?.targetBackend) return
-      // Re-read rather than trusting the event: another provider may hold a
-      // higher-priority offer, and this one may already be snoozed.
-      setOffer(readActiveOffer())
-    }
-    // The withdrawn offer is already off disk; whatever is left takes over.
-    const handleRetracted = () => setOffer(readActiveOffer())
-
-    window.addEventListener(ENGINE_UPDATE_AVAILABLE_EVENT, handleOffer)
-    window.addEventListener(ENGINE_UPDATE_RETRACTED_EVENT, handleRetracted)
-    return () => {
-      window.removeEventListener(ENGINE_UPDATE_AVAILABLE_EVENT, handleOffer)
-      window.removeEventListener(
-        ENGINE_UPDATE_RETRACTED_EVENT,
-        handleRetracted
-      )
-    }
-  }, [])
+  const offer = useMemo(
+    () => firstOffer(engines, hidden),
+    // `answered` is the storage the snooze map lives in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engines, hidden, answered]
+  )
 
   const applyUpdate = useCallback(async () => {
-    if (!offer || isApplying) return
-    const entry = ENGINE_PROVIDERS.find((e) => e.provider === offer.provider)
-    if (!entry) return
+    if (!offer) return
+    if (offer.apply === 'reinstall') {
+      // A reinstall downloads a large image and asks for consent: the
+      // engine's card confirms it first.
+      await navigate({
+        to: route.settings.providers,
+        params: { providerName: offer.provider },
+        search: { engineUpdate: true },
+      })
+      return
+    }
 
-    setIsApplying(true)
+    const target = offer.targetBackend
+    setHidden((held) => new Set(held).add(target))
+    setApplyingCount((n) => n + 1)
     try {
-      // The banner comes down once the update is under way; a failure leaves
-      // the offer in place for the next launch.
-      await entry.apply(offer)
-      clearEngineUpdateOffer(offer.provider)
-      setOffer(null)
+      if (offer.provider === 'sd-cpp') {
+        // The image store keeps Settings → Media's view of the update.
+        await useImageGenerationStore.getState().updateEngine()
+      } else {
+        await updateEngineWithProgress(offer.provider, {
+          taskId: engineUpdateTaskId(offer.provider, offer.targetVersion),
+        })
+      }
     } catch (error) {
-      console.error('Engine update failed to start:', error)
+      // Refused: the offer is still true, so it comes back.
+      setHidden((held) => {
+        const next = new Set(held)
+        next.delete(target)
+        return next
+      })
       throw error
     } finally {
-      setIsApplying(false)
+      setApplyingCount((n) => n - 1)
     }
-  }, [offer, isApplying])
+  }, [offer, navigate])
 
   const remindLater = useCallback(() => {
     if (!offer) return
     snoozeEngineUpdate(offer)
-    setOffer(readActiveOffer())
+    setAnswered((n) => n + 1)
   }, [offer])
 
   const dismiss = useCallback(() => {
     if (!offer) return
     dismissEngineUpdate(offer)
-    setOffer(readActiveOffer())
+    setAnswered((n) => n + 1)
   }, [offer])
 
-  return { offer, isApplying, applyUpdate, remindLater, dismiss }
+  return {
+    offer,
+    isApplying: applyingCount > 0,
+    applyUpdate,
+    remindLater,
+    dismiss,
+  }
 }

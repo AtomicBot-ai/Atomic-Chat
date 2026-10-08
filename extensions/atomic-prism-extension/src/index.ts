@@ -62,12 +62,6 @@ import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import {
-  buildEngineUpdateOffer,
-  clearEngineUpdateOffer,
-  publishEngineUpdateOffer,
-  type EngineUpdateDetails,
-} from './engineUpdateOffer'
-import {
   readGgufMetadata,
   isModelSupported,
   LlamacppConfig,
@@ -653,8 +647,6 @@ export default class atomic_prism_extension extends AIEngine {
       .catch((err) => {
         logger.error('configureBackends failed:', err)
       })
-      // Offer a newer release once the configured build is known.
-      .then(() => this.reconcileBackendReleaseTag())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1092,8 +1084,8 @@ export default class atomic_prism_extension extends AIEngine {
       let effectiveBackendString = stripBom(this.config.version_backend || '')
 
       // Move to the newest *installed* release of the same backend type. A
-      // newer release that is not on disk yet is offered by
-      // `reconcileBackendReleaseTag()`, never downloaded from here.
+      // newer release that is not on disk yet is offered by the core
+      // (`POST /engines/versions`), never downloaded from here.
       if (
         effectiveBackendString &&
         bestAvailableBackendString &&
@@ -1187,103 +1179,6 @@ export default class atomic_prism_extension extends AIEngine {
       }
     } finally {
       this.isConfiguringBackends = false
-    }
-  }
-
-  /**
-   * Offers the newest PrismML release the core approves for the configured
-   * backend type. Never downloads: the web app's `<EngineUpdateBanner />` asks,
-   * and accepting routes back through `downloadRecommendedBackend()`.
-   *
-   * The core answers with the target's release page, its note and its download
-   * size, and says when the release in use was withdrawn (its offer is then the
-   * newest approved build of the same type, possibly an older tag).
-   */
-  private async reconcileBackendReleaseTag(): Promise<void> {
-    try {
-      const current = stripBom(this.config.version_backend || '')
-
-      if (!isConcreteVersionBackend(current)) {
-        logger.info(
-          'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
-        )
-        return
-      }
-
-      const currentType = current.slice(current.indexOf('/') + 1)
-
-      // Only a build on disk has anything to update. `configureBackends()`
-      // names the catalog's pick on a machine that never set PrismML up, and
-      // a newer release must not reach that user as an "update".
-      const currentTag = current.slice(0, current.indexOf('/'))
-      if (!(await isBackendInstalled(currentType.trim(), currentTag.trim()))) {
-        logger.info(
-          `reconcileBackendReleaseTag: ${current} is not installed, nothing to update`
-        )
-        return
-      }
-
-      const check = await this.checkBackendForUpdates()
-      if (check.currentWithdrawn) {
-        logger.warn(
-          `reconcileBackendReleaseTag: the release in use (${current}) was withdrawn: ${check.currentWithdrawn}`
-        )
-      }
-      const { updateNeeded, targetBackend, sameFamily } = check
-      const targetType = targetBackend?.split('/')[1]?.trim()
-      if (!updateNeeded || !targetBackend || !targetType) return
-
-      // A tag bump must never move anyone between backend types. The core
-      // judges it and says so in `same_family`.
-      if (!sameFamily) {
-        logger.warn(
-          `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
-        )
-        return
-      }
-
-      logger.info(
-        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}' (${check.reason ?? 'newer'})`
-      )
-      this.offerEngineUpdate(current, targetBackend, {
-        notesUrl: check.notesUrl,
-        notes: check.notes,
-        downloadSize: check.downloadSize,
-      })
-    } catch (err) {
-      logger.error(
-        'reconcileBackendReleaseTag: failed to check for a newer release (keeping current backend):',
-        err
-      )
-    }
-  }
-
-  /**
-   * Publishes a "new engine build available" offer for the banner (ATO-528).
-   * A failure to publish costs the banner, not the app — the offer is rebuilt
-   * on the next launch because the check that produced it is stateless.
-   */
-  private offerEngineUpdate(
-    currentBackend: string,
-    targetBackend: string,
-    details: EngineUpdateDetails
-  ): void {
-    try {
-      const offer = buildEngineUpdateOffer(
-        this.providerId,
-        currentBackend,
-        targetBackend,
-        details
-      )
-      if (!offer) {
-        logger.warn(
-          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
-        )
-        return
-      }
-      publishEngineUpdateOffer(offer)
-    } catch (err) {
-      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
     }
   }
 
@@ -1536,11 +1431,6 @@ export default class atomic_prism_extension extends AIEngine {
     }
 
     localStorage.removeItem(PENDING_BACKEND_KEY)
-
-    // A pending engine-update offer is about this provider's backend, and the
-    // backend just changed — whatever it proposed is now either done or stale.
-    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
-    clearEngineUpdateOffer(this.providerId)
 
     if (typeof window !== 'undefined' && window.dispatchEvent) {
       const [swappedVersion, swappedId] = backendString.split('/')

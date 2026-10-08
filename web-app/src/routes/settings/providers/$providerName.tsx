@@ -149,10 +149,17 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
     }
   },
   component: ProviderDetail,
-  validateSearch: (search: Record<string, unknown>): { step?: string } => {
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { step?: string; engineUpdate?: boolean } => {
     // validate and parse the search params into a typed state
     return {
       step: String(search?.step),
+      // The engine update banner's "Update" for a managed engine: its card
+      // asks to confirm the reinstall.
+      ...(search?.engineUpdate === true || search?.engineUpdate === 'true'
+        ? { engineUpdate: true }
+        : {}),
     }
   },
 })

@@ -1797,120 +1797,33 @@ describe('llamacpp_extension', () => {
       delete (window as any).dispatchEvent
     })
 
-    describe('reconcileBackendReleaseTag', () => {
-      /// Offer published by the last `reconcileBackendReleaseTag()` run, read
-      /// off the persisted mirror the banner boots from (ATO-528).
-      const publishedOffer = () => {
-        const call = vi
-          .mocked(localStorage.setItem)
-          .mock.calls.find(
-            ([key]) => key === 'atomic_engine_update_offer_llamacpp-upstream'
-          )
-        return call ? JSON.parse(call[1] as string) : null
-      }
-
+    describe('resolveParkedBackendSentinel', () => {
       beforeEach(() => {
         vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
         ;(window as any).dispatchEvent = vi.fn()
       })
 
-      it('offers the newest manifest release instead of taking it', async () => {
+      it('publishes no update offer: the core’s versions answer is the only source', async () => {
         extension['config'] = {
           version_backend: 'b9937/win-cuda-13.3-x64',
         } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-          sameFamily: true,
-        })
+        extension.checkBackendForUpdates = vi.fn()
         extension.downloadRecommendedBackend = vi
           .fn()
           .mockResolvedValue(undefined)
 
-        await extension['reconcileBackendReleaseTag']()
+        await extension['resolveParkedBackendSentinel']()
 
-        // The whole point of ATO-528: a launch no longer starts a several
-        // hundred megabyte transfer the user never asked for.
+        expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
         expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-        const offer = publishedOffer()
-        expect(offer).toMatchObject({
-          provider: 'llamacpp-upstream',
-          currentBackend: 'b9937/win-cuda-13.3-x64',
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-          currentVersion: 'b9937',
-          targetVersion: 'b10344',
-          restartRequired: false,
-          releaseNotesUrl:
-            'https://github.com/ggml-org/llama.cpp/releases/tag/b10344',
-        })
-        // The core downloads from the signed mirror; the extension no longer knows the size.
-        expect(offer.downloadSizeBytes).toBeUndefined()
-        const event = vi.mocked((window as any).dispatchEvent).mock
-          .calls[0]?.[0] as CustomEvent
-        expect(event?.type).toBe('app:engine-update-available')
-        expect(event?.detail).toMatchObject({
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-        })
-      })
-
-      it('leaves the newest release alone', async () => {
-        extension['config'] = { version_backend: RECOMMENDED } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: false,
-          newVersion: '0',
-          sameFamily: false,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
-
-        await extension['reconcileBackendReleaseTag']()
-
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-      })
-
-      it('refuses to cross backend families', async () => {
-        extension['config'] = {
-          version_backend: 'b9937/win-vulkan-x64',
-        } as any
-        // The core judges the family and says so; the extension only obeys.
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cpu-x64',
-          sameFamily: false,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
-
-        await extension['reconcileBackendReleaseTag']()
-
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-      })
-
-      it('offers a tag bump on macOS, where the family never changes', async () => {
-        extension['config'] = {
-          version_backend: 'b10205/macos-arm64',
-        } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/macos-arm64',
-          sameFamily: true,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
-
-        await extension['reconcileBackendReleaseTag']()
-
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-        expect(publishedOffer()).toMatchObject({
-          currentBackend: 'b10205/macos-arm64',
-          targetBackend: 'b10344/macos-arm64',
-        })
+        expect(
+          vi
+            .mocked(localStorage.setItem)
+            .mock.calls.filter(([key]) =>
+              String(key).startsWith('atomic_engine_update_offer_')
+            )
+        ).toEqual([])
+        expect((window as any).dispatchEvent).not.toHaveBeenCalled()
       })
 
       it('resolves a sentinel parked in the config instead of skipping it', async () => {
@@ -1926,7 +1839,7 @@ describe('llamacpp_extension', () => {
           .fn()
           .mockResolvedValue(undefined)
 
-        await extension['reconcileBackendReleaseTag']()
+        await extension['resolveParkedBackendSentinel']()
 
         expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
           'latest/macos-arm64'
@@ -1945,7 +1858,7 @@ describe('llamacpp_extension', () => {
           .mockRejectedValue(new Error('asset unavailable'))
 
         await expect(
-          extension['reconcileBackendReleaseTag']()
+          extension['resolveParkedBackendSentinel']()
         ).resolves.toBeUndefined()
         expect(extension['config'].version_backend).toBe(current)
       })

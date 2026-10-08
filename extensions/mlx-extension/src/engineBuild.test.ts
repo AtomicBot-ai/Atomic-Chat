@@ -169,76 +169,14 @@ describe('the MLX version on the provider page', () => {
   })
 })
 
-// Task 6.3: the core advises an MLX update (`POST /engine-builds/mlx/updates`), the extension
-// turns it into the shared banner's offer, and the core's `engine-build:changed` refreshes the
-// version once the build moved.
+// Change unify-engine-lifecycle (6.1): the extension publishes no update offer; the desktop's
+// banner reads the core's `POST /engines/versions`. The core's `engine:changed` refreshes the
+// version once the MLX build moved.
 describe('MLX engine updates', () => {
-  const NEWER = {
-    update_needed: true,
-    current: { tag: 'mlxvlm-macos-arm64-07ba5a1', backend_id: 'macos-arm64', origin: 'bundled' },
-    target: {
-      tag: 'mlxvlm-macos-arm64-abc1234',
-      backend_id: 'macos-arm64',
-      published_at: '2026-10-01T00:00:00Z',
-      download_bytes: 210_000_000,
-    },
-  }
-  const KEY = 'atomic_engine_update_offer_mlx'
-
-  // This suite's jsdom has no storage; the offer lives in the webview's.
-  beforeEach(() => {
-    const store = new Map<string, string>()
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => void store.set(key, value),
-      removeItem: (key: string) => void store.delete(key),
-      clear: () => store.clear(),
-    })
-  })
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('offers the build the core names as newer, on the shared banner', async () => {
-    const calls = core(() => NEWER)
-    const announced = vi.fn()
-    window.addEventListener('app:engine-update-available', announced)
-    const result = await new mlx_extension().checkForEngineUpdate({ force: true })
-    window.removeEventListener('app:engine-update-available', announced)
-
-    expect(calls).toEqual(['POST /engine-builds/mlx/updates'])
-    expect(invokeMock.mock.calls[0][1]).toMatchObject({ body: { force: true } })
-    expect(result).toEqual({ updateAvailable: true, targetVersion: 'mlxvlm-macos-arm64-abc1234' })
-    expect(JSON.parse(localStorage.getItem(KEY) ?? 'null')).toEqual({
-      provider: 'mlx',
-      currentBackend: 'mlxvlm-macos-arm64-07ba5a1/macos-arm64',
-      targetBackend: 'mlxvlm-macos-arm64-abc1234/macos-arm64',
-      currentVersion: 'mlxvlm-macos-arm64-07ba5a1',
-      targetVersion: 'mlxvlm-macos-arm64-abc1234',
-      downloadSizeBytes: 210_000_000,
-      restartRequired: false,
-      releaseNotesUrl:
-        'https://github.com/AtomicBot-ai/mlx-vlm/releases/tag/mlxvlm-macos-arm64-abc1234',
-    })
-    expect(announced).toHaveBeenCalledTimes(1)
-  })
-
-  it('offers nothing, and withdraws an old offer, when the core says no update is needed', async () => {
-    localStorage.setItem(KEY, JSON.stringify({ provider: 'mlx' }))
-    core(() => ({ ...NEWER, update_needed: false, target: null }))
-    const retracted = vi.fn()
-    window.addEventListener('app:engine-update-retracted', retracted)
-    const result = await new mlx_extension().checkForEngineUpdate()
-    window.removeEventListener('app:engine-update-retracted', retracted)
-
-    expect(result).toEqual({ updateAvailable: false, targetVersion: null })
-    expect(invokeMock.mock.calls[0][1]).toMatchObject({ body: {} })
-    expect(localStorage.getItem(KEY)).toBeNull()
-    expect(retracted).toHaveBeenCalledWith(expect.objectContaining({ detail: 'mlx' }))
-  })
-
-  it('checks on start and refreshes the version when the core changes the MLX build', async () => {
+  it('asks nothing about updates on start and refreshes the version when the core changes the MLX build', async () => {
     // Defined by the bundler from settings.json; nothing here reads a setting.
     vi.stubGlobal('SETTINGS', [])
-    const calls = core(() => NEWER)
+    const calls = core(() => ({}))
     const ext = new mlx_extension()
     const detect = vi
       .spyOn(ext as unknown as { detectBackendVersion: () => Promise<void> }, 'detectBackendVersion')
@@ -246,16 +184,18 @@ describe('MLX engine updates', () => {
     ;(ext as unknown as { listenForCoreSettings: () => Promise<void> }).listenForCoreSettings =
       async () => {}
     await ext.onLoad()
-    await vi.waitFor(() => expect(calls).toContain('POST /engine-builds/mlx/updates'))
     expect(detect).toHaveBeenCalledTimes(1)
+    expect(calls.filter((call) => call.includes('/updates'))).toEqual([])
+    expect('checkForEngineUpdate' in ext).toBe(false)
 
-    listeners.get('atomic-core://engine-build:changed')?.({
+    listeners.get('atomic-core://engine:changed')?.({
       payload: { engine: 'sd-cpp', reason: 'install' },
     })
     expect(detect).toHaveBeenCalledTimes(1)
-    listeners.get('atomic-core://engine-build:changed')?.({
-      payload: { engine: 'mlx', reason: 'install' },
+    listeners.get('atomic-core://engine:changed')?.({
+      payload: { engine: 'mlx', reason: 'update' },
     })
     expect(detect).toHaveBeenCalledTimes(2)
+    vi.unstubAllGlobals()
   })
 })

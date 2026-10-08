@@ -80,11 +80,6 @@ import * as coreRuntime from './adapter/coreRuntime'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import { isPrismModel } from '../../shared/atomicCoreRuntime'
 import {
-  buildEngineUpdateOffer,
-  clearEngineUpdateOffer,
-  publishEngineUpdateOffer,
-} from './engineUpdateOffer'
-import {
   readGgufMetadata,
   isModelSupported,
   LlamacppConfig,
@@ -708,9 +703,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         //! Previously the rejected promise was lost; without a log it's hard to diagnose a perpetual "loading" in settings.
         logger.error('configureBackends failed:', err)
       })
-      // Reconcile the selected backend after configureBackends has resolved
-      // legacy/latest values to a concrete version/backend pair.
-      .then(() => this.reconcileBackendReleaseTag())
+      // A `latest/<variant>` configureBackends could not pin is resolved to a
+      // concrete build. Update offers are the desktop's, from the core.
+      .then(() => this.resolveParkedBackendSentinel())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1359,7 +1354,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
         // the disk lists it. Dropping it hands the value to core's
         // `registerSettings()`, which replaces anything missing from the options
         // with `options[0]` — here the `latest/<variant>` sentinel, which
-        // `reconcileBackendReleaseTag` can only recover from by downloading. The
+        // `resolveParkedBackendSentinel` can only recover from by downloading. The
         // manifest carries the newest tag alone, so an older saved tag survives
         // in the list purely through its copy on disk, and that copy is what
         // `removeOldBackendVersions` prunes after an update: gating this pin on
@@ -1619,112 +1614,27 @@ export default class llamacpp_upstream_extension extends AIEngine {
   }
 
   /**
-   * Reconciles the configured upstream backend to the newest release the
-   * `atomic-chat-conf` manifest offers, while preserving the selected backend
-   * type.
+   * Resolves a `latest/<variant>` parked in the config to a concrete build.
    *
-   * The target used to be the compiled-in `PINNED_BACKEND_TAG`, which meant a
-   * manifest bump could never reach anyone and — worse — would drag a user who
-   * had just updated by hand back down to the app's tag on the next launch.
-   * The manifest is ours and only moves once a build is verified, so it is the
-   * authority; the core reads it (with its offline baseline) and answers the
-   * update check.
-   *
-   * If the newest release does not contain the selected type, the existing
-   * backend remains active because `downloadRecommendedBackend` only persists
-   * after a successful download.
+   * Not an update: core's `registerSettings()` parks the value there when the
+   * stored concrete tag falls out of the options list, and a provider left on
+   * the sentinel has no build to load. Resolving it costs nothing when that
+   * release is already on disk. Engine update offers are not made here: the
+   * desktop reads them from the core's `POST /engines/versions`.
    */
-  private async reconcileBackendReleaseTag(): Promise<void> {
+  private async resolveParkedBackendSentinel(): Promise<void> {
     try {
       const current = stripBom(this.config.version_backend || '')
-
-      // A parked `latest/<variant>` is not a fresh install waiting to be
-      // configured: it is what core's `registerSettings()` leaves behind when
-      // the stored concrete value falls out of the options list, and treating it
-      // as unconfigured used to disable engine updates for good. Resolving it
-      // costs nothing when that release is already on disk, and persists a
-      // concrete tag this method can reconcile normally from then on.
-      if (current.startsWith('latest/')) {
-        logger.info(
-          `reconcileBackendReleaseTag: resolving parked sentinel '${current}'`
-        )
-        await this.downloadRecommendedBackend(current)
-        return
-      }
-
-      if (!isConcreteVersionBackend(current)) {
-        logger.info(
-          'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
-        )
-        return
-      }
-
-      const currentType = current.slice(current.indexOf('/') + 1)
-
-      const { updateNeeded, targetBackend, sameFamily } =
-        await this.checkBackendForUpdates()
-      const targetType = targetBackend?.split('/')[1]?.trim()
-      if (!updateNeeded || !targetBackend || !targetType) return
-
-      // A tag bump must never move anyone between backend families. The core
-      // judges the family (legacy ids on their migrated form, a CUDA minor bump
-      // within the same major is a match) and says so in `same_family`.
-      if (!sameFamily) {
-        logger.warn(
-          `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
-        )
-        return
-      }
-
-      // ATO-528: a tag bump is offered, not taken. It used to download here
-      // unannounced — hundreds of megabytes on a launch the user did not ask
-      // anything of. The offer is published instead and the web app's
-      // `<EngineUpdateBanner />` asks; accepting routes back through
-      // `downloadRecommendedBackend()`, which is what this call used to be.
-      // The recovery paths above (a parked `latest/` sentinel) still act on
-      // their own — those are not updates, they are a broken configuration.
+      if (!current.startsWith('latest/')) return
       logger.info(
-        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}'`
+        `resolveParkedBackendSentinel: resolving parked sentinel '${current}'`
       )
-      await this.offerEngineUpdate(current, targetBackend)
+      await this.downloadRecommendedBackend(current)
     } catch (err) {
       logger.error(
-        'reconcileBackendReleaseTag: failed to reconcile the release tag (keeping current backend):',
+        'resolveParkedBackendSentinel: failed to resolve the parked sentinel (keeping current backend):',
         err
       )
-    }
-  }
-
-  /**
-   * Publishes a "new engine build available" offer for the banner (ATO-528).
-   *
-   * Best-effort in both directions: the archive size is not known on this
-   * line (the core downloads the archive from the signed mirror and the
-   * extension no longer reads that manifest), so the banner shows no size, and
-   * a failure to publish costs the banner, not the app — the offer is rebuilt
-   * on the next launch because the tag comparison that produced it is
-   * stateless.
-   */
-  private async offerEngineUpdate(
-    currentBackend: string,
-    targetBackend: string
-  ): Promise<void> {
-    try {
-      const offer = await buildEngineUpdateOffer(
-        this.providerId,
-        currentBackend,
-        targetBackend,
-        async () => undefined
-      )
-      if (!offer) {
-        logger.warn(
-          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
-        )
-        return
-      }
-      publishEngineUpdateOffer(offer)
-    } catch (err) {
-      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
     }
   }
 
@@ -2050,11 +1960,6 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     localStorage.removeItem('llama_cpp_pending_backend')
-
-    // A pending engine-update offer is about this provider's backend, and the
-    // backend just changed — whatever it proposed is now either done or stale.
-    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
-    clearEngineUpdateOffer(this.providerId)
 
     // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
     // a pure UI concern (the dialog/pill in the web app) and does not

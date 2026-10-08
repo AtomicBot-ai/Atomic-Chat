@@ -2,16 +2,7 @@ import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { ExtensionManager } from '@/lib/extension'
-
-const MLX_EXTENSION = '@janhq/mlx-extension'
-
-interface MlxEngineUpdateCapableExtension {
-  checkForEngineUpdate?(options?: { force?: boolean }): Promise<{
-    updateAvailable: boolean
-    targetVersion: string | null
-  }>
-}
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
 export type MlxBuild = { tag: string; origin: 'bundled' | 'downloaded' }
 
@@ -26,10 +17,10 @@ export function describeMlxBuild(value: string): MlxBuild | null {
 }
 
 /**
- * "Check engine updates" on the MLX provider page. mlx-extension asks the
- * core with the manifest re-read and publishes the banner's offer itself;
- * this only tells the user what came of it. Installing stays the banner's
- * "Update" (design D10).
+ * "Check engine updates" on the MLX provider page. Asks the core again with
+ * every source re-read (`useEngineVersionsStore.refresh({force})`); the banner
+ * offers what it finds, and this only tells the user what came of it.
+ * Installing stays the banner's "Update", which the core applies.
  */
 export function useMlxEngineUpdateCheck(): {
   checking: boolean
@@ -39,24 +30,25 @@ export function useMlxEngineUpdateCheck(): {
   const [checking, setChecking] = useState(false)
 
   const check = useCallback(async () => {
-    const extension = ExtensionManager.getInstance().getByName(MLX_EXTENSION) as
-      | MlxEngineUpdateCapableExtension
-      | undefined
-    if (!extension?.checkForEngineUpdate) return
     setChecking(true)
     try {
-      const { updateAvailable, targetVersion } =
-        await extension.checkForEngineUpdate({ force: true })
-      if (updateAvailable && targetVersion) {
-        toast.info(t('settings:mlxEngine.updateAvailable', { version: targetVersion }))
+      await useEngineVersionsStore.getState().refresh({ force: true })
+      const { engines, error } = useEngineVersionsStore.getState()
+      const mlx = engines.mlx
+      const failure = mlx?.error ?? (mlx ? null : error)
+      if (failure) {
+        toast.error(t('settings:mlxEngine.checkFailed'), {
+          description: failure.message,
+        })
+      } else if (mlx?.update.needed && mlx.update.target) {
+        toast.info(
+          t('settings:mlxEngine.updateAvailable', {
+            version: mlx.update.target.version,
+          })
+        )
       } else {
         toast.success(t('settings:mlxEngine.upToDate'))
       }
-    } catch (error) {
-      const message = (error as { message?: unknown } | null)?.message
-      toast.error(t('settings:mlxEngine.checkFailed'), {
-        description: typeof message === 'string' ? message : String(error),
-      })
     } finally {
       setChecking(false)
     }

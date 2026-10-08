@@ -44,7 +44,9 @@ export type EngineBuildInstallOptions = {
   force?: boolean
   onProgress?: (progress: { transferred: number; total: number }) => void
   /** The call that starts the install; the core's route by default. */
-  install?: (request: EngineBuildInstallRequest) => Promise<EngineBuildInstallResult>
+  install?: (
+    request: EngineBuildInstallRequest
+  ) => Promise<EngineBuildInstallResult>
 }
 
 const isCancelled = (error: unknown): boolean =>
@@ -57,19 +59,17 @@ const describe = (error: unknown): string => {
 }
 
 /**
- * Install `engine` through the core under `taskId`. Rejects with the core's
- * error as it came (`{code, message, details?}`).
+ * Run `call`, a core request that downloads under `taskId`, and show its
+ * transfer in the download panel: a row from the first progress frame, closed
+ * as finished, stopped (a cancel) or failed. A call that downloaded nothing
+ * opens no row. Rejects with the core's error as it came
+ * (`{code, message, details?}`).
  */
-export async function installEngineBuildWithProgress(
-  engine: EngineBuildId,
-  options: EngineBuildInstallOptions
-): Promise<EngineBuildInstallResult> {
-  const { taskId } = options
-  const proxy = engineBuildProxy()
-  const install =
-    options.install ??
-    ((request: EngineBuildInstallRequest) => installEngineBuild(engine, request))
-
+export async function followCoreDownload<T>(
+  taskId: string,
+  call: () => Promise<T>,
+  onProgress?: (progress: { transferred: number; total: number }) => void
+): Promise<T> {
   // A resumed transfer and a companion archive restart the core's counters;
   // the bar must never move backwards.
   let transferred = 0
@@ -79,7 +79,7 @@ export async function installEngineBuildWithProgress(
     reported = true
     transferred = Math.max(transferred, bytes)
     total = Math.max(total, size, transferred)
-    options.onProgress?.({ transferred, total })
+    onProgress?.({ transferred, total })
     emitTransferProgress(taskId, 'Backend', transferred, total)
   }
   // Registered before the call: the core reports progress before it answers.
@@ -102,12 +102,8 @@ export async function installEngineBuildWithProgress(
     report(event.payload.transferred, event.payload.total)
   })
   try {
-    const result = await install({
-      task_id: taskId,
-      ...(options.force ? { force: true } : {}),
-      ...(proxy ? { proxy } : {}),
-    })
-    // Nothing was downloaded for `installed: false`, and no row was opened.
+    const result = await call()
+    // Nothing was downloaded, and no row was opened.
     if (reported) emitTransferSuccess(taskId, 'Backend', total)
     return result
   } catch (error) {
@@ -123,4 +119,30 @@ export async function installEngineBuildWithProgress(
   } finally {
     unlisten()
   }
+}
+
+/**
+ * Install `engine` through the core under `taskId`. Rejects with the core's
+ * error as it came (`{code, message, details?}`).
+ */
+export async function installEngineBuildWithProgress(
+  engine: EngineBuildId,
+  options: EngineBuildInstallOptions
+): Promise<EngineBuildInstallResult> {
+  const { taskId } = options
+  const proxy = engineBuildProxy()
+  const install =
+    options.install ??
+    ((request: EngineBuildInstallRequest) =>
+      installEngineBuild(engine, request))
+  return followCoreDownload(
+    taskId,
+    () =>
+      install({
+        task_id: taskId,
+        ...(options.force ? { force: true } : {}),
+        ...(proxy ? { proxy } : {}),
+      }),
+    options.onProgress
+  )
 }
