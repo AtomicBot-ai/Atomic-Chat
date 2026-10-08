@@ -74,6 +74,22 @@ describe('the embedded image API card', () => {
     expect(screen.queryByTestId('image-api-start-server')).toBeNull()
   })
 
+  // The Video page's copy control and requirements once said "image" (ATO-553).
+  it.each([
+    ['images', 'settings:media.apiCopyEndpoint', 'settings:media.apiModelMissing'],
+    ['videos', 'settings:media.videoApiCopyEndpoint', 'settings:media.videoApiModelMissing'],
+  ] as const)('names the %s resource in the copy control and the model requirement', (resource, copy, missing) => {
+    const embedded = render(
+      <ImageApiSettingsCard variant="embedded" resource={resource} />
+    )
+    expect(screen.getByRole('button', { name: copy })).toBeInTheDocument()
+    embedded.unmount()
+
+    render(<ImageApiSettingsCard resource={resource} />)
+    expect(screen.getByRole('button', { name: copy })).toBeInTheDocument()
+    expect(screen.getByText(missing)).toBeInTheDocument()
+  })
+
   it('holds the button while the server is coming up', () => {
     useAppState.getState().setServerStatus('pending')
     render(<ImageApiSettingsCard variant="embedded" />)

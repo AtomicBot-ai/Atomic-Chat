@@ -6,6 +6,8 @@
   },
   "model": {
     "select": "Select video model",
+    "startingToast": "Запускаем видеомодель…",
+    "stoppingToast": "Останавливаем видеомодель…",
     "noneInCatalog": "No video models are listed for this engine."
   },
   "setup": {

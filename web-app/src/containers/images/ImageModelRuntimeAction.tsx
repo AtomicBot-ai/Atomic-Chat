@@ -72,20 +72,29 @@ export function ImageModelRuntimeAction({
   const busy = phase === 'starting' || phase === 'stopping'
   const actionDisabled =
     disabled || generating || busy || anotherTransitionActive || !artifact.complete
+  // The Video page runs the same control over a video checkpoint.
+  const startingLabel =
+    modality === 'video'
+      ? t('videos:model.startingToast')
+      : t('images:model.startingToast')
+  const stoppingLabel =
+    modality === 'video'
+      ? t('videos:model.stoppingToast')
+      : t('images:model.stoppingToast')
   const label =
     phase === 'ready'
       ? t('images:model.unload')
       : phase === 'starting'
-        ? t('images:model.startingToast')
+        ? startingLabel
         : phase === 'stopping'
-          ? t('images:model.stoppingToast')
+          ? stoppingLabel
           : t('images:model.load')
 
   const start = async () => {
     if (actionDisabled || phase !== 'idle') return
     setSelectedArtifactId(artifactId)
     const toastId = `image-model-runtime-${artifactId}`
-    toast.loading(t('images:model.startingToast'), { id: toastId })
+    toast.loading(startingLabel, { id: toastId })
     await artifact.load()
     const loadedId =
       useImageGenerationStore.getState().status?.model.loaded?.modelId
@@ -103,7 +112,7 @@ export function ImageModelRuntimeAction({
   const stop = async () => {
     if (actionDisabled || phase !== 'ready') return
     const toastId = `image-model-runtime-${artifactId}`
-    toast.loading(t('images:model.stoppingToast'), { id: toastId })
+    toast.loading(stoppingLabel, { id: toastId })
     await unloadModel()
     const stillLoaded =
       useImageGenerationStore.getState().status?.model.loaded?.modelId ===

@@ -27,6 +27,9 @@ const RESOURCES = {
   images: {
     path: '/images/generations',
     title: 'settings:media.apiTitle',
+    copyEndpoint: 'settings:media.apiCopyEndpoint',
+    modelLoaded: 'settings:media.apiModelLoaded',
+    modelMissing: 'settings:media.apiModelMissing',
     request: 'settings:media.apiRequestContract',
     response: 'settings:media.apiResponseContract',
     error: 'settings:media.apiErrorContract',
@@ -36,6 +39,9 @@ const RESOURCES = {
   videos: {
     path: '/videos',
     title: 'settings:media.videoApiTitle',
+    copyEndpoint: 'settings:media.videoApiCopyEndpoint',
+    modelLoaded: 'settings:media.videoApiModelLoaded',
+    modelMissing: 'settings:media.videoApiModelMissing',
     request: 'settings:media.videoApiRequestContract',
     response: 'settings:media.videoApiResponseContract',
     error: 'settings:media.videoApiErrorContract',
@@ -149,7 +155,7 @@ export function ImageApiSettingsCard({
           >
             <CopyButton
               text={endpoint}
-              ariaLabel={t('settings:media.apiCopyEndpoint')}
+              ariaLabel={t(spec.copyEndpoint)}
               label={t('common:copy')}
               className="w-full min-w-0 rounded-full"
             />
@@ -192,7 +198,7 @@ export function ImageApiSettingsCard({
           actions={
             <CopyButton
               text={endpoint}
-              ariaLabel={t('settings:media.apiCopyEndpoint')}
+              ariaLabel={t(spec.copyEndpoint)}
             />
           }
         />
@@ -230,9 +236,7 @@ export function ImageApiSettingsCard({
                     className="shrink-0 text-muted-foreground"
                   />
                 )}
-                {modelReady
-                  ? t('settings:media.apiModelLoaded')
-                  : t('settings:media.apiModelMissing')}
+                {modelReady ? t(spec.modelLoaded) : t(spec.modelMissing)}
               </span>
               <span className="block pt-1">
                 {t('settings:media.apiRequirementsHint')}

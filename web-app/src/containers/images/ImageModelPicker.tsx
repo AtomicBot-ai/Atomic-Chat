@@ -55,9 +55,13 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const stateLabel = displayArtifact.loaded
     ? t('images:model.loaded')
     : displayArtifact.loading
-      ? t('images:model.startingToast')
+      ? modality === 'video'
+        ? t('videos:model.startingToast')
+        : t('images:model.startingToast')
       : displayArtifact.unloading
-        ? t('images:model.stoppingToast')
+        ? modality === 'video'
+          ? t('videos:model.stoppingToast')
+          : t('images:model.stoppingToast')
         : showArtifact
           ? t('images:model.readyToLoad')
           : null
