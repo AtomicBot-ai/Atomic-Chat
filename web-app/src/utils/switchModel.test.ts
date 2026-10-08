@@ -948,6 +948,24 @@ describe('describeModelLoadFailure', () => {
     ).toMatchObject({ title: 'model-errors:modelFileCorruptTitle' })
   })
 
+  it('says the GPU is busy with the core’s own reason, which names the job (ATO-549)', () => {
+    const message =
+      'Wan 2.2 TI2V 5B is generating a video; loading another model on the same GPU would cancel it. ' +
+      'Wait for the video to finish, or stop it, then try again.'
+    expect(
+      describeModelLoadFailure({
+        code: 'GPU_BUSY',
+        message,
+        details: 'holder=diffusion/wan2.2:q4_k_m state=ready cards=all busy=true',
+      })
+    ).toEqual({
+      title: 'model-errors:gpuBusyTitle',
+      description: message,
+      details: 'holder=diffusion/wan2.2:q4_k_m state=ready cards=all busy=true',
+      persistent: false,
+    })
+  })
+
   it('keeps the engine log behind the details toggle', () => {
     const failure = describeModelLoadFailure({
       code: 'MODEL_ARCH_NOT_SUPPORTED',

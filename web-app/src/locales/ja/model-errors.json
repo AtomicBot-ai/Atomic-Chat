@@ -18,6 +18,7 @@
   "archNotSupportedDescriptionNoAlt": "このモデルのアーキテクチャは、現在のバックエンド（{{backend}}）ではまだサポートされていません。アプリをアップデートするか、別のモデルを使用してください。",
   "modelFileMissingTitle": "モデルファイルが見つかりません",
   "modelFileMissingDescription": "モデルファイルが見つかりませんでした。移動または削除された可能性があります。モデルを再ダウンロードしてください。",
+  "gpuBusyTitle": "GPU は使用中です",
   "modelFileCorruptTitle": "モデルファイルが破損しています",
   "modelFileCorruptDescription": "モデルファイルが不完全または破損しているようです（ダウンロードが中断された可能性があります）。モデルを削除して再度ダウンロードしてください。",
   "osVersionUnsupportedTitle": "サポートされていない macOS バージョンです",
