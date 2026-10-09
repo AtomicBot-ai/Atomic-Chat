@@ -42,6 +42,7 @@ export type DiffusionFamilyId =
   | 'krea-2-turbo'
   | 'qwen-image'
   | 'qwen-image-2.1'
+  | 'qwen-image-2.1-turbo'
   | 'wan2.2-ti2v-5b'
   | 'ltx-2'
 

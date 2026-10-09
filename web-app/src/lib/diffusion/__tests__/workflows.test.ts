@@ -79,6 +79,9 @@ describe('workflowsForFamily', () => {
     ])
     expect(familySupportsWorkflow('qwen-image-2.1', 'edit')).toBe(true)
     expect(familySupportsWorkflow('qwen-image-2.1', 'transform')).toBe(false)
+    expect(workflowsForFamily('qwen-image-2.1-turbo')).toEqual(
+      workflowsForFamily('qwen-image-2.1')
+    )
     expect(workflowsForFamily('krea-2-turbo')).toEqual(['create'])
     expect(familySupportsWorkflow('krea-2-turbo', 'transform')).toBe(false)
     expect(familySupportsWorkflow('z-image', 'edit')).toBe(false)

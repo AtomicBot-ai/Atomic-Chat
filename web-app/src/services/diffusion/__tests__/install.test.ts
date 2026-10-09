@@ -184,6 +184,14 @@ describe('resolveSdcppManifest', () => {
       (await resolveSdcppManifest({ url: URL_, family: 'krea-2-turbo' }))
         .manifest.tag_name
     ).toBe(BASELINE_TAG)
+    expect(
+      (
+        await resolveSdcppManifest({
+          url: URL_,
+          family: 'qwen-image-2.1-turbo',
+        })
+      ).manifest.tag_name
+    ).toBe(BASELINE_TAG)
   })
 
   it('falls back to the bundled baseline with the error attached', async () => {

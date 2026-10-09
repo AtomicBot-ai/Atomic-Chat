@@ -135,6 +135,7 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
   'krea-2-turbo': 'bfl',
   'qwen-image': 'qwen',
   'qwen-image-2.1': 'qwen',
+  'qwen-image-2.1-turbo': 'qwen',
   'wan2.2-ti2v-5b': 'wan',
   'ltx-2': 'ltx',
 }
