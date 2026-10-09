@@ -112,6 +112,68 @@ export function mergeHits(
 
 const basename = (path?: string) => path?.split(/[\\/]/).pop() || undefined
 
+export type FileFilter = {
+  /** Ids to search within; undefined searches every file in the scope. */
+  fileIds?: string[]
+  /** Requested entries that matched no listed file. */
+  unmatched: string[]
+}
+
+/**
+ * The `file_ids` argument in terms of the scope's files. Models pass file
+ * names as often as ids (`["FINDINGS.md"]`), and an id the store does not
+ * know filters every passage out, so each entry matches a listed file by id,
+ * then by name or path basename, ignoring case. When nothing matches, the
+ * filter is dropped rather than returning no passages. `files` is the scope's
+ * listing; without one (`null`) the entries are used as given.
+ */
+export function resolveFileFilter(
+  requested: unknown,
+  files: AttachmentFileInfo[] | null
+): FileFilter {
+  let list = requested
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list)
+    } catch {
+      list = [list]
+    }
+  }
+  const entries = (Array.isArray(list) ? list : [list])
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+  if (entries.length === 0) return { unmatched: [] }
+  if (!files) return { fileIds: entries, unmatched: [] }
+
+  const fileIds = new Set<string>()
+  const unmatched: string[] = []
+  for (const entry of entries) {
+    const key = entry.toLowerCase()
+    const byId = files.filter((file) => file.id === entry)
+    const matches = byId.length
+      ? byId
+      : files.filter(
+          (file) =>
+            file.name?.toLowerCase() === key ||
+            basename(file.path)?.toLowerCase() === key
+        )
+    if (matches.length === 0) unmatched.push(entry)
+    for (const file of matches) fileIds.add(file.id)
+  }
+  return { fileIds: fileIds.size ? [...fileIds] : undefined, unmatched }
+}
+
+/** What the model is told about `file_ids` entries that matched no file. */
+export function fileFilterNote(filter: FileFilter): string | undefined {
+  if (filter.unmatched.length === 0) return undefined
+  const listed = JSON.stringify(filter.unmatched)
+  return filter.fileIds
+    ? `file_ids ${listed} matched no attached document and were ignored.`
+    : `file_ids ${listed} matched no attached document, so every document was searched. ` +
+        'Pass file ids or file names from list_attachments to narrow the search.'
+}
+
 /**
  * Readable citations for the model to copy: `[FINDINGS.md §13]` names the
  * file and the 1-based passage, never the chunk or file ids. `files` is the

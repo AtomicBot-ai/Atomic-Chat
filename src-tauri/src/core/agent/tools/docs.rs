@@ -87,7 +87,21 @@ async fn retrieve(
 ) -> Result<Value, String> {
     let queries = parse_queries(args)?;
     let top_k = parse_top_k(args)?;
-    let file_ids = parse_file_ids(args)?;
+    let filter = match parse_file_ids(args)? {
+        Some(requested) => {
+            let mut listed = Vec::new();
+            let mut complete = true;
+            for scope in scopes {
+                match bridge.list(*scope).await {
+                    Ok(files) => listed.extend(files),
+                    Err(_) => complete = false,
+                }
+            }
+            resolve_file_ids(&listed, complete, requested)
+        }
+        None => FileFilter::default(),
+    };
+    let file_ids = filter.file_ids.clone();
 
     let mut per_query: Vec<Vec<DocsChunk>> = Vec::with_capacity(queries.len());
     for query in &queries {
@@ -112,12 +126,97 @@ async fn retrieve(
     let hits = merge_hits(&queries, per_query, top_k);
     let listings = list_cited_scopes(bridge, &hits).await;
     let (citations, sources) = cite(hits, &listings, queries.len() > 1);
-    Ok(json!({
+    let mut payload = json!({
         "queries": queries,
         "citations": citations,
         "sources": sources,
         "mode": "linear",
-    }))
+    });
+    if let Some(note) = filter.note() {
+        payload["note"] = json!(note);
+    }
+    Ok(payload)
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct FileFilter {
+    /// Ids to search within; `None` searches every document.
+    file_ids: Option<Vec<String>>,
+    /// Requested entries that matched no listed document.
+    unmatched: Vec<String>,
+}
+
+impl FileFilter {
+    /// What the model is told about `file_ids` entries that matched nothing.
+    fn note(&self) -> Option<String> {
+        if self.unmatched.is_empty() {
+            return None;
+        }
+        let listed = json!(self.unmatched).to_string();
+        Some(match self.file_ids {
+            Some(_) => format!("file_ids {listed} matched no attached document and were ignored."),
+            None => format!(
+                "file_ids {listed} matched no attached document, so every document was searched. \
+                 Pass file ids or file names from docs.list to narrow the search."
+            ),
+        })
+    }
+}
+
+/// `file_ids` in terms of the listed documents. Models pass file names as
+/// often as ids (`["FINDINGS.md"]`), and an id the store does not know filters
+/// every passage out, so each entry matches a document by id, then by name or
+/// path basename, ignoring case. When nothing matches, the filter is dropped
+/// rather than returning no passages. With an incomplete listing (`complete`
+/// false) an unmatched entry may belong to the unlisted scope, so it is kept
+/// as given.
+fn resolve_file_ids(
+    listed: &[DocsAttachment],
+    complete: bool,
+    requested: Vec<String>,
+) -> FileFilter {
+    let mut file_ids: Vec<String> = Vec::new();
+    let mut unmatched = Vec::new();
+    for entry in requested {
+        let key = entry.to_lowercase();
+        let by_id: Vec<&DocsAttachment> = listed.iter().filter(|file| file.id == entry).collect();
+        let matches = if by_id.is_empty() {
+            listed
+                .iter()
+                .filter(|file| {
+                    file.name.as_deref().map(str::to_lowercase).as_deref() == Some(key.as_str())
+                        || path_basename(file.path.as_deref())
+                            .map(str::to_lowercase)
+                            .as_deref()
+                            == Some(key.as_str())
+                })
+                .collect()
+        } else {
+            by_id
+        };
+        if matches.is_empty() {
+            if complete {
+                unmatched.push(entry);
+            } else if !file_ids.contains(&entry) {
+                file_ids.push(entry);
+            }
+            continue;
+        }
+        for file in matches {
+            if !file_ids.contains(&file.id) {
+                file_ids.push(file.id.clone());
+            }
+        }
+    }
+    FileFilter {
+        file_ids: (!file_ids.is_empty()).then_some(file_ids),
+        unmatched,
+    }
+}
+
+fn path_basename(path: Option<&str>) -> Option<&str> {
+    path.and_then(|path| path.rsplit(['/', '\\']).next())
+        .filter(|name| !name.is_empty())
 }
 
 struct MergedHit {
@@ -234,13 +333,7 @@ fn cite(
                 (_, Some(file)) => file
                     .name
                     .clone()
-                    .or_else(|| {
-                        file.path
-                            .as_deref()
-                            .and_then(|path| path.rsplit(['/', '\\']).next())
-                            .filter(|name| !name.is_empty())
-                            .map(str::to_owned)
-                    })
+                    .or_else(|| path_basename(file.path.as_deref()).map(str::to_owned))
                     .unwrap_or_else(|| UNKNOWN_SOURCE.to_owned()),
                 (Some(_), None) => REMOVED_SOURCE.to_owned(),
                 (None, _) => UNKNOWN_SOURCE.to_owned(),
@@ -530,6 +623,47 @@ mod tests {
                 "scope": "project",
             })]
         );
+    }
+
+    fn attachment(id: &str, name: &str) -> DocsAttachment {
+        DocsAttachment {
+            id: id.into(),
+            name: Some(name.into()),
+            path: Some(format!("/docs/{name}")),
+            file_type: None,
+            size: None,
+            chunk_count: 1,
+            scope: "project",
+        }
+    }
+
+    #[test]
+    fn file_ids_resolve_by_id_or_file_name() {
+        let listed = [
+            attachment("file-1", "FINDINGS.md"),
+            attachment("file-2", "notes.md"),
+        ];
+        let strings = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let by_name = resolve_file_ids(&listed, true, strings(&["findings.md", "file-2"]));
+        assert_eq!(by_name.file_ids, Some(strings(&["file-1", "file-2"])));
+        assert_eq!(by_name.note(), None);
+
+        let partial = resolve_file_ids(&listed, true, strings(&["file-1", "missing.md"]));
+        assert_eq!(partial.file_ids, Some(strings(&["file-1"])));
+        assert_eq!(
+            partial.note().unwrap(),
+            r#"file_ids ["missing.md"] matched no attached document and were ignored."#
+        );
+
+        let none = resolve_file_ids(&listed, true, strings(&["REPORT.md"]));
+        assert_eq!(none.file_ids, None);
+        assert!(none.note().unwrap().contains("every document was searched"));
+
+        // An entry that may live in a scope that could not be listed is kept.
+        let incomplete = resolve_file_ids(&listed, false, strings(&["file-9"]));
+        assert_eq!(incomplete.file_ids, Some(strings(&["file-9"])));
+        assert_eq!(incomplete.note(), None);
     }
 
     #[test]

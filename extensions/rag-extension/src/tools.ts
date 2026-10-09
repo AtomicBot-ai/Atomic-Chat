@@ -29,7 +29,7 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
         'When the question asks for several facts, pass one short, focused query per distinct fact in `queries` ' +
         '(for example ["capability probe timeout UTC time", "MiniLM vector dimension"]) instead of one combined query. ' +
         'Each passage has a `cite` label such as "[FINDINGS.md §13]": cite a passage by copying its `cite` label exactly. ' +
-        'Never cite file ids or passage ids. Use file_ids to search within specific files only.',
+        'Never cite file ids or passage ids. Omit file_ids to search every attached document.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -55,7 +55,7 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Optional: Filter search to specific file IDs from list_attachments',
+              'Optional: search only these files, by file id or file name from list_attachments.',
           },
         },
         // One of `query` / `queries` is required; retrieve() checks it so

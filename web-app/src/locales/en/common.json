@@ -175,6 +175,7 @@
   "webSearchToggleConnecting": "Connecting web search…",
   "webSearchToggleUnavailable": "Web search unavailable. Click to retry; if it still fails, check your search provider connection and MCP configuration.",
   "webSearchTemporarilyUnavailable": "Web search is temporarily unavailable. Try again.",
+  "webSearchStillConnecting": "Web search is still connecting, so this message was sent without it.",
   "reasoningToggleEnabled": "Reasoning enabled",
   "reasoningToggleDisabled": "Reasoning disabled",
   "reasoningEffort": {

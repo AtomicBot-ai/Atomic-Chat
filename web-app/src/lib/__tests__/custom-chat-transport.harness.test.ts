@@ -16,6 +16,7 @@ import {
 import { loadChatSkillDetails } from '../chat-skill-injection'
 import { bumpAgentSkillRevision } from '../agent-skill-revision'
 import { ModelFactory } from '../model-factory'
+import { trackMcpActivation } from '../mcp-activation'
 
 // The skill-body loader is Tauri-only (IS_TAURI is false under vitest), so it
 // is mocked at the boundary; the pure collect/render/compose helpers run real.
@@ -347,6 +348,51 @@ describe('CustomChatTransport skill injection', () => {
     }>
     const system = prompt.find((message) => message.role === 'system')
     expect(system?.content).toBe('be brief')
+  })
+
+  it('tells the model to search attached documents when retrieve is offered', async () => {
+    seedServiceHub({
+      rag: {
+        getTools: vi.fn().mockResolvedValue([
+          {
+            name: 'retrieve',
+            server: 'rag-internal',
+            description: 'Retrieve passages',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ]),
+      } as never,
+    })
+    useModelProvider.setState((state) => ({
+      selectedModel: { ...state.selectedModel!, capabilities: ['tools'] },
+    }))
+    const model = fakeStreamingModel(idleStream)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('be brief', 'thread-7')
+    await transport.updateRagToolsAvailability(true, true, true)
+
+    await readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+
+    const doStream = (
+      model as unknown as { doStream: ReturnType<typeof vi.fn> }
+    ).doStream
+    const request = doStream.mock.calls[0][0] as {
+      prompt: Array<{ role: string; content: unknown }>
+      tools?: Array<{ name: string }>
+    }
+    expect(request.tools?.map((tool) => tool.name)).toContain('retrieve')
+    // Folded into the first user turn for local providers, so look anywhere.
+    const text = JSON.stringify(request.prompt)
+    expect(text).toContain('be brief')
+    expect(text).toContain('search them with the `retrieve` tool')
   })
 
   // The transport lives for the session, so a memoized SKILL.md body used to
@@ -1032,6 +1078,37 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     expect(await sendAndCaptureTools()).toEqual(
       linearTools.map((t) => t.name).sort()
     )
+  })
+
+  it('waits for web search that is still connecting before collecting tools', async () => {
+    useMCPServers
+      .getState()
+      .editServer('exa', { command: '', args: [], env: {}, active: false })
+    useAppState.setState({
+      tools: [...linearTools],
+      mcpToolNames: new Set(linearTools.map((t) => t.name)),
+    })
+    // What the globe does after the handshake: tools in, server active.
+    trackMcpActivation(
+      'exa',
+      new Promise<void>((resolve) =>
+        setTimeout(() => {
+          useAppState.setState({
+            tools: [...linearTools, exaTool],
+            mcpToolNames: new Set([
+              ...linearTools.map((t) => t.name),
+              exaTool.name,
+            ]),
+          })
+          useMCPServers
+            .getState()
+            .editServer('exa', { command: '', args: [], env: {}, active: true })
+          resolve()
+        }, 20)
+      )
+    )
+
+    expect(await sendAndCaptureTools()).toContain(exaTool.name)
   })
 
   it('removes search on the next turn of an already cached transport', async () => {

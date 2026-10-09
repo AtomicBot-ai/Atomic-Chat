@@ -157,6 +157,7 @@ import {
 import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { settleMcpActivationsBeforeSend } from '@/lib/mcp-activation'
 import { findWebSearchServer, isWebSearchEnabled } from '@/lib/web-search'
 import type {
   AgentAttachment as AgentIpcAttachment,
@@ -1173,6 +1174,7 @@ function ThreadDetail() {
       // tools so a failed startup cannot promise web access. No server means
       // no globe to turn it off with, so web access stays off — an existing
       // chat setup without a search server never made web requests.
+      await settleMcpActivationsBeforeSend()
       const webSearchServer = findWebSearchServer(
         useMCPServers.getState().mcpServers
       )

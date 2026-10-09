@@ -41,6 +41,13 @@ export function splitAnthropicSerialToolUse(
   })
 }
 
+/// Added to the system prompt whenever the document `retrieve` tool is
+/// offered: small local models otherwise answer "that is not in the files"
+/// without ever searching them.
+export const ATTACHED_DOCUMENTS_HINT =
+  'Documents are attached to this chat or its project. Before answering a question about them, ' +
+  'search them with the `retrieve` tool; never say something is missing from them without searching first.'
+
 export function buildToolsRecord(
   ragTools: readonly MCPTool[],
   mcpTools: readonly MCPTool[],

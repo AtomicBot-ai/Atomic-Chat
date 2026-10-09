@@ -17,6 +17,7 @@ import { getRAGTools, RETRIEVE } from './tools'
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 const FILE_ID = 'af1035b9-6c1e-4c39-9d0e-6f1c3b2a7e10'
+const OTHER_FILE_ID = '5c2e9a41-0b7d-4f3e-8a61-2d9f4c7b1e05'
 const DIMENSION = 64
 
 // Deterministic bag-of-words embedding: each word lands in a hashed bucket,
@@ -65,7 +66,12 @@ const db = {
     path: string
     chunk_count: number
   }>,
-  searches: [] as Array<{ limit: number; mode?: string; queryText?: string }>,
+  searches: [] as Array<{
+    limit: number
+    mode?: string
+    queryText?: string
+    fileIds?: string[]
+  }>,
   embedCalls: [] as string[][],
 }
 
@@ -94,11 +100,12 @@ const vectorDb = {
     limit: number,
     threshold: number,
     mode?: string,
-    _fileIds?: string[],
+    fileIds?: string[],
     queryText?: string
   ) => {
-    db.searches.push({ limit, mode, queryText })
+    db.searches.push({ limit, mode, queryText, fileIds })
     return db.chunks
+      .filter((chunk) => !fileIds || fileIds.includes(chunk.file_id))
       .map(({ embedding: stored, ...chunk }) => ({
         ...chunk,
         score: cosine(embedding, stored),
@@ -256,6 +263,56 @@ describe('retrieve', () => {
       removed: true,
     })
     expect(payload.sources).toEqual([])
+  })
+
+  it('resolves file_ids given as a file name to that file', async () => {
+    seedFile(FILE_ID, 'FINDINGS.md', FINDINGS)
+    seedFile(OTHER_FILE_ID, 'notes.md', [
+      'MiniLM vector dimension is 768 here.',
+    ])
+
+    const { payload } = await retrieve({
+      queries: ['capability probe timeout UTC time', 'MiniLM vector dimension'],
+      file_ids: ['findings.md'],
+    })
+
+    expect(db.searches.map((s) => s.fileIds)).toEqual([[FILE_ID], [FILE_ID]])
+    const facts = payload.citations
+      .map((c: { text: string }) => c.text)
+      .join('\n')
+    expect(facts).toContain('06:48:48 UTC')
+    expect(facts).toContain('384')
+    expect(facts).not.toContain('768')
+    expect(payload).not.toHaveProperty('note')
+  })
+
+  it('searches every document when no file_ids entry matches, and says so', async () => {
+    seedFile(FILE_ID, 'FINDINGS.md', FINDINGS)
+
+    const { payload } = await retrieve({
+      query: 'MiniLM vector dimension',
+      file_ids: ['REPORT.md'],
+    })
+
+    expect(db.searches.map((s) => s.fileIds)).toEqual([undefined])
+    expect(payload.citations[0].cite).toBe('[FINDINGS.md §7]')
+    expect(payload.note).toContain('["REPORT.md"] matched no attached document')
+    expect(payload.note).toContain('every document was searched')
+  })
+
+  it('keeps the matching file_ids and names the ones it ignored', async () => {
+    seedFile(FILE_ID, 'FINDINGS.md', FINDINGS)
+    seedFile(OTHER_FILE_ID, 'notes.md', ['Unrelated notes.'])
+
+    const { payload } = await retrieve({
+      query: 'MiniLM vector dimension',
+      file_ids: JSON.stringify([FILE_ID, 'missing.md']),
+    })
+
+    expect(db.searches.map((s) => s.fileIds)).toEqual([[FILE_ID]])
+    expect(payload.note).toBe(
+      'file_ids ["missing.md"] matched no attached document and were ignored.'
+    )
   })
 
   it('asks for a query when neither query nor queries is given', async () => {

@@ -16,7 +16,9 @@ import {
   clampTopK,
   collectQueries,
   DEFAULT_TOP_K,
+  fileFilterNote,
   mergeHits,
+  resolveFileFilter,
 } from './retrieval'
 import * as ragApi from '../../../src-tauri/plugins/tauri-plugin-rag/guest-js/index'
 
@@ -196,17 +198,6 @@ export default class RagExtension extends RAGExtension {
     const threadId = String(args['thread_id'] || '')
     const projectId = String(args['project_id'] || '')
     const queries = collectQueries(args['query'], args['queries'])
-    let fileIds = args['file_ids'] as string[] | string | undefined
-    if (typeof fileIds === 'string') {
-      try {
-        fileIds = JSON.parse(fileIds)
-      } catch {
-        fileIds = undefined
-      }
-    }
-    if (fileIds != null && !Array.isArray(fileIds)) {
-      fileIds = undefined
-    }
     const scope = String(args['scope'] || 'thread')
 
     // Use project_id as threadId when scope is project
@@ -267,8 +258,12 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      // One embedding request for every query.
-      const embeddings = await this.embedTexts(queries)
+      // One embedding request for every query; the listing names the cited
+      // files and resolves `file_ids` given as file names.
+      const [embeddings, files] = await Promise.all([
+        this.embedTexts(queries),
+        this.listSources(vec, scope, effectiveThreadId),
+      ])
       if (queries.some((_, index) => !embeddings[index])) {
         return {
           error: 'Failed to compute embeddings',
@@ -276,6 +271,8 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
+      const filter = resolveFileFilter(args['file_ids'], files)
+      const fileIds = filter.fileIds
       const search = (embedding: number[], queryText: string) =>
         scope === 'project' && vec.searchCollectionForProject
           ? vec.searchCollectionForProject(
@@ -296,15 +293,11 @@ export default class RagExtension extends RAGExtension {
               fileIds,
               queryText
             )
-      const [perQuery, files] = await Promise.all([
-        Promise.all(
-          queries.map(
-            async (query, index) =>
-              (await search(embeddings[index], query)) ?? []
-          )
-        ),
-        this.listSources(vec, scope, effectiveThreadId),
-      ])
+      const perQuery = await Promise.all(
+        queries.map(
+          async (query, index) => (await search(embeddings[index], query)) ?? []
+        )
+      )
 
       const hits = mergeHits(queries, perQuery, topK)
       const { citations, sources } = buildCitations(
@@ -312,6 +305,7 @@ export default class RagExtension extends RAGExtension {
         files,
         queries.length > 1
       )
+      const note = fileFilterNote(filter)
       const payload = {
         thread_id: threadId,
         project_id: projectId,
@@ -320,6 +314,7 @@ export default class RagExtension extends RAGExtension {
         citations,
         sources,
         mode,
+        ...(note ? { note } : {}),
       }
       return {
         error: '',
