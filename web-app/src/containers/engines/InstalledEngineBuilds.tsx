@@ -36,10 +36,13 @@ const key = (build: EngineBuild) => `${build.version}/${build.variant}`
 export function InstalledEngineBuilds({
   engine,
   hasLoadedModels = false,
+  onActivated,
 }: {
   engine: EngineId
   /** The provider has loaded models, which "Make active" unloads. */
   hasLoadedModels?: boolean
+  /** The core made another build active (the page clears a device chosen for the old one). */
+  onActivated?: () => void
 }) {
   const { t } = useTranslation()
   const versions = useEngineVersionsStore((state) => state.engines[engine])
@@ -89,7 +92,12 @@ export function InstalledEngineBuilds({
     setBusy(key(build))
     setError(null)
     try {
-      await activateEngineBuildThroughCore(engine, build.version, build.variant)
+      const result = await activateEngineBuildThroughCore(
+        engine,
+        build.version,
+        build.variant
+      )
+      if (result.activated) onActivated?.()
     } catch (refusal) {
       setError(describeRefusal(refusal, 'activate'))
     } finally {

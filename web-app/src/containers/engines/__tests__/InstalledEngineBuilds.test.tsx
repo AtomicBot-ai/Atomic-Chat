@@ -239,6 +239,38 @@ describe('InstalledEngineBuilds', () => {
     expect(core.engineVersions).toHaveBeenCalled()
   })
 
+  it('tells the page once the core switched, and not when nothing changed', async () => {
+    const user = userEvent.setup()
+    const onActivated = vi.fn()
+    render(
+      <InstalledEngineBuilds
+        engine="llamacpp-upstream"
+        onActivated={onActivated}
+      />
+    )
+    const makeActive = () =>
+      user.click(
+        within(row('b11443')).getByRole('button', {
+          name: 'settings:engineBuilds.makeActive',
+        })
+      )
+
+    activateEngineBuildThroughCore.mockResolvedValueOnce({
+      activated: false,
+      reason: 'already-active',
+      active: { version: 'b11443', variant: 'win-cpu-x64' },
+    })
+    await makeActive()
+    expect(onActivated).not.toHaveBeenCalled()
+
+    activateEngineBuildThroughCore.mockResolvedValueOnce({
+      activated: true,
+      active: { version: 'b11443', variant: 'win-cpu-x64' },
+    })
+    await makeActive()
+    expect(onActivated).toHaveBeenCalledTimes(1)
+  })
+
   it('warns that loaded models unload, only when the provider has some', () => {
     const { rerender } = render(
       <InstalledEngineBuilds engine="llamacpp-upstream" />
@@ -284,13 +316,17 @@ describe('InstalledEngineBuilds', () => {
     render(<InstalledEngineBuilds engine="llamacpp-upstream" />)
 
     await user.click(
-      within(row('b11400')).getByRole('button', { name: 'settings:engineBuilds.makeActive' })
+      within(row('b11400')).getByRole('button', {
+        name: 'settings:engineBuilds.makeActive',
+      })
     )
 
     expect(
       await screen.findByText(/settings:engineBuilds\.error\.notInstalled/)
     ).toBeInTheDocument()
-    expect(screen.queryByText(/settings:engineBuilds\.error\.invalid/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/settings:engineBuilds\.error\.invalid/)
+    ).not.toBeInTheDocument()
   })
 
   it('offers no "Make active" where the core picks the build', () => {

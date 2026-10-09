@@ -478,6 +478,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
         if (!result.updated) {
           events.emit('onManualBackendFailed', { provider: providerId })
         }
+        return result
       } catch (error) {
         const message = (error as { message?: unknown } | null)?.message
         events.emit('onManualBackendFailed', {

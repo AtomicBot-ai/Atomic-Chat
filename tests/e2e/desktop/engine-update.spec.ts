@@ -8,7 +8,8 @@
  *     location contract of design D4 (`<resources>/llamacpp-backend-upstream` beside `--resources-dir`);
  *   - a newer release behind the user's proxy is offered in the banner, and "Update" has the core
  *     install it, switch to it and unload the model that ran on the old one; the old build stays;
- *   - "Make active" on another installed build switches to it, and the version dropdown follows;
+ *   - "Make active" on another installed build switches to it, and the list marks it active; the
+ *     "Install another build…" picker, which replaced the version dropdown, offers no installed build;
  *   - "Remove" on an inactive build deletes it after the confirmation.
  */
 import { readFile, stat } from 'node:fs/promises'
@@ -103,7 +104,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('switching and removing installed llama.c
     })
   })
 
-  it('makes another build active while a model runs, and the version dropdown follows', async () => {
+  it('makes another build active while a model runs, and the list marks it active', async () => {
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
@@ -124,8 +125,22 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('switching and removing installed llama.c
       // The core writes `version_backend`, unloads the model, and the page mirrors the switch.
       await expect.poll(() => coreVersionBackend(dataFolder), { timeout: 30_000 }).toBe(`${OLDER_TAG}/${FAKE_BACKEND}`)
       await expect.poll(() => coreSessions(dataFolder), { timeout: 30_000 }).toEqual([])
-      await pageShows(session, `${OLDER_TAG}/${FAKE_BACKEND}`, 30_000)
+      await other.$('button=Make active').waitForDisplayed({ reverse: true, timeout: 30_000 })
+      expect(await other.getText()).toContain('active')
       expect(await onDisk(dataFolder, OLD_TAG)).toBe(true)
+
+      // Installed builds are switched here, not installed again from the picker.
+      const picker = browser.$(`[data-testid="engine-install-other-${FAKE_PROVIDER}"]`)
+      expect(await picker.getText()).toContain('Install another build')
+      if (await picker.isEnabled()) {
+        await picker.click()
+        const menu = browser.$('[role="menu"]')
+        await menu.waitForDisplayed({ timeout: 15_000 })
+        const offered = await menu.getText()
+        expect(offered).not.toContain(OLD_TAG)
+        expect(offered).not.toContain(OLDER_TAG)
+        await browser.keys('Escape')
+      }
     })
   })
 

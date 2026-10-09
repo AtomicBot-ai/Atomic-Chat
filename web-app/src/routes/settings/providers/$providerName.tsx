@@ -47,10 +47,11 @@ import {
   useMlxEngineUpdateCheck,
 } from '@/hooks/useMlxEngineUpdateCheck'
 import {
-  isInstalledBuild,
   isLlamacppProvider,
-  useVersionBackendActivation,
-} from '@/hooks/useVersionBackendActivation'
+  useClearDeviceAfterSwitch,
+} from '@/hooks/useEngineBuildSwitch'
+import { InstallOtherBuild } from '@/containers/engines/InstallOtherBuild'
+import type { EngineId } from '@/services/engines/types'
 import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import Capabilities from '@/containers/Capabilities'
 import {
@@ -188,8 +189,7 @@ function ProviderDetail() {
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
   const [isCheckingEngineUpdate, setIsCheckingEngineUpdate] = useState(false)
   const mlxEngineCheck = useMlxEngineUpdateCheck()
-  const { choose: activateVersionBackend } =
-    useVersionBackendActivation(providerName)
+  const clearDeviceAfterSwitch = useClearDeviceAfterSwitch(providerName)
   /// A switch the core made (an update, an activation, another client's) is
   /// announced as `app:backend-hotswapped`: pull fresh provider settings so the
   /// `version_backend` row reflects the new value without a tab refresh.
@@ -2115,6 +2115,35 @@ function ProviderDetail() {
                           <IconLoader size={16} className="animate-spin" />
                           <span>loading</span>
                         </div>
+                      ) : setting.key === 'version_backend' &&
+                        isLlamacppProvider(providerName) ? (
+                        // The installed builds list below switches and
+                        // removes; this row only installs what is not on
+                        // disk, through the core's update with a target.
+                        <InstallOtherBuild
+                          engine={providerName as EngineId}
+                          options={
+                            (setting.controller_props.options ?? []) as Array<{
+                              value: number | string
+                              name: string
+                            }>
+                          }
+                          onPick={(value) => {
+                            void selectManualBackend(value)
+                              .then((result) => {
+                                if (result?.updated) clearDeviceAfterSwitch()
+                              })
+                              .catch((err) => {
+                                console.error(
+                                  'Manual backend download failed:',
+                                  err
+                                )
+                                toast.error(
+                                  t('settings:backendUpdater.downloadFailed')
+                                )
+                              })
+                          }}
+                        />
                       ) : isDflashToggle ? (
                         <div className="flex items-center gap-2">
                           <Switch
@@ -2278,17 +2307,10 @@ function ProviderDetail() {
                             // <BackendUpdater /> dialog, download, and let
                             // updateBackend() persist + reflect the result
                             // back into this dropdown.
-                            //
-                            // The list also offers catalog releases that are
-                            // not on disk: activation would refuse those, so
-                            // they take the same download → switch flow, with
-                            // the release named as the update's target.
                             if (
                               setting.key === 'version_backend' &&
                               typeof newValue === 'string' &&
-                              (newValue.startsWith('latest/') ||
-                                (isLlamacppProvider(providerName) &&
-                                  !isInstalledBuild(providerName, newValue)))
+                              newValue.startsWith('latest/')
                             ) {
                               void selectManualBackend(newValue).catch(
                                 (err) => {
@@ -2301,18 +2323,6 @@ function ProviderDetail() {
                                   )
                                 }
                               )
-                              return
-                            }
-                            // An installed build picked in a llama.cpp
-                            // provider's version list is made active by the
-                            // core, which writes `version_backend` and unloads
-                            // this provider's models itself.
-                            if (
-                              setting.key === 'version_backend' &&
-                              typeof newValue === 'string' &&
-                              isLlamacppProvider(providerName)
-                            ) {
-                              void activateVersionBackend(newValue)
                               return
                             }
                             if (provider) {
@@ -2708,6 +2718,11 @@ function ProviderDetail() {
                                 hasLoadedModels={provider.models.some((model) =>
                                   activeModels.includes(model.id)
                                 )}
+                                onActivated={
+                                  isLlamacppProvider(provider.provider)
+                                    ? clearDeviceAfterSwitch
+                                    : undefined
+                                }
                               />
                             )}
                         </>
