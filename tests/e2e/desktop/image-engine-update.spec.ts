@@ -2,7 +2,7 @@
  * The image engine's lifecycle from the page: a model the installed engine is
  * too old for is refused with the update offer, the core installs the update
  * from a release published on this machine (download, sha256, probe, swap),
- * retires the old tree, and the model loads on the new one; and a model that
+ * keeps the old tree (no update deletes a build), and the model loads on the new one; and a model that
  * is not on disk is downloaded from a Hugging Face published the same way.
  *
  * Neither address can be changed in the app, so both are reached the way a
@@ -115,7 +115,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('updating the image engine', () => {
       const seen = mirror.seen()
       expect(seen).toContain('CONNECT github.com:443')
       expect(seen.some((line) => line.includes(`/leejet/stable-diffusion.cpp/releases/download/${NEW_TAG}/${IMAGE_ENGINE_ASSET}`))).toBe(true)
-      // The new tree, owned and recorded; the old one retired; nothing left in staging.
+      // The new tree, owned and recorded; the old one kept beside it; nothing left in staging.
       const newDir = join(backends, NEW_TAG, IMAGE_BACKEND_ID)
       expect((await stat(join(newDir, '.atomic-owned'))).isFile()).toBe(true)
       expect((await stat(join(newDir, 'sd-server'))).mode & 0o111).not.toBe(0)
@@ -124,7 +124,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('updating the image engine', () => {
         backendId: IMAGE_BACKEND_ID,
         engine: 'sd-cpp',
       })
-      expect(await installedImageEngines(dataFolder)).toEqual([`${NEW_TAG}/${IMAGE_BACKEND_ID}`])
+      expect((await installedImageEngines(dataFolder)).sort()).toEqual(
+        [`${OLD_IMAGE_ENGINE_TAG}/${IMAGE_BACKEND_ID}`, `${NEW_TAG}/${IMAGE_BACKEND_ID}`].sort()
+      )
       expect(await readdir(join(backends, 'tmp')).catch(() => [])).toEqual([])
       const status = await diffusionStatus(dataFolder)
       expect(status.install).toMatchObject({ tag: NEW_TAG, dir: newDir })

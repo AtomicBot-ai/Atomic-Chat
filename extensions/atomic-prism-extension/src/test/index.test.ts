@@ -822,7 +822,7 @@ describe('atomic_prism_extension', () => {
       ).resolves.toBe(`${TAG}/linux-cpu-x64`)
     })
 
-    it('installs an archive from a file under the id the core looks it up by', async () => {
+    it('installs an archive from a file under the id the core looks it up by, and selects nothing itself', async () => {
       stubSettings(extension)
       extension['config'] = { version_backend: 'none' } as any
       extension.configureBackends = vi.fn().mockResolvedValue(undefined)
@@ -830,14 +830,17 @@ describe('atomic_prism_extension', () => {
       vi.mocked(fs.existsSync).mockResolvedValue(true)
       vi.mocked(getBackendDir).mockResolvedValue(`/jan/atomic-prism/backends/${TAG}/linux-vulkan-x64`)
 
-      await extension.installBackend(`/dl/llama-${TAG}-bin-ubuntu-vulkan-x64.tar.gz`)
+      await expect(extension.installBackend(`/dl/llama-${TAG}-bin-ubuntu-vulkan-x64.tar.gz`)).resolves.toBe(
+        `${TAG}/linux-vulkan-x64`
+      )
 
       expect(getBackendDir).toHaveBeenCalledWith('linux-vulkan-x64', TAG)
       expect(invoke).toHaveBeenCalledWith('decompress', {
         path: `/dl/llama-${TAG}-bin-ubuntu-vulkan-x64.tar.gz`,
         outputDir: `/jan/atomic-prism/backends/${TAG}/linux-vulkan-x64`,
       })
-      expect(extension['config'].version_backend).toBe(`${TAG}/linux-vulkan-x64`)
+      // The core makes it active and writes `version_backend`; the extension mirrors that.
+      expect(extension['config'].version_backend).toBe('none')
     })
 
     it('refuses an archive that is not a PrismML server build', async () => {

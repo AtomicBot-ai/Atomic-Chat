@@ -24,6 +24,14 @@ const OLD_REPLY = 'ATOMIC-E2E-OLD-BACKEND 3e71'
 const NEW_REPLY = 'ATOMIC-E2E-NEW-BACKEND 9d04'
 const NEW_BACKEND = `${NEW_TAG}/${FAKE_BACKEND}`
 
+/** The provider's `version_backend` in the core's settings. */
+async function coreVersionBackend(dataFolder: string): Promise<unknown> {
+  const settings = JSON.parse(await readFile(join(dataFolder, 'atomic-core', 'settings.json'), 'utf8')) as {
+    providers?: Record<string, Record<string, unknown>>
+  }
+  return settings.providers?.[FAKE_PROVIDER]?.version_backend
+}
+
 /** The executable of the one model process the core runs, from its journal. */
 async function runningExe(dataFolder: string): Promise<string> {
   const sessions = await coreSessions(dataFolder)
@@ -57,7 +65,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('installing a backend from a file', () =>
     if (session) expect(await endSession(session)).toEqual([])
   })
 
-  it('unpacks it, selects it, and runs the model on it from its next load', async () => {
+  it('unpacks it, has the core make it active and unload the model, and runs the model on it from its next load', async () => {
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
@@ -76,13 +84,18 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('installing a backend from a file', () =>
       await answerNextDialog(session.profile, archive)
       await install.click()
 
-      // The page says so, the binary is where the core looks for it, and the
-      // provider's setting now names the new pair. The core's copy of that
-      // setting follows with the next load, which is when the app hands its
-      // settings over; it is checked after the chat below.
+      // The page says so, and the binary is where the core looks for it. The
+      // core makes it active, as "Make active" does: it writes
+      // `version_backend` and unloads the model that ran on the old build; the
+      // installed builds list marks the new one.
       await pageShows(session, `${NEW_TAG}-bin-${FAKE_BACKEND}`, 60_000)
       expect((await stat(join(backends, NEW_TAG, FAKE_BACKEND, 'build', 'bin', 'llama-server'))).mode & 0o111).not.toBe(0)
-      await pageShows(session, NEW_BACKEND, 30_000)
+      await expect.poll(() => coreVersionBackend(dataFolder), { timeout: 30_000 }).toBe(NEW_BACKEND)
+      await expect.poll(() => coreSessions(dataFolder), { timeout: 30_000 }).toEqual([])
+      const row = browser.$(`[data-testid="engine-builds-${FAKE_PROVIDER}"] [data-testid="engine-build-${NEW_TAG}"]`)
+      await row.waitForDisplayed({ timeout: 30_000 })
+      await row.$('button=Make active').waitForDisplayed({ reverse: true, timeout: 30_000 })
+      expect(await row.getText()).toContain('active')
       // The app's bundled build is unpacked on first launch beside the profile's own packs;
       // what the install added is the new tag next to the old one.
       const bundledTags = bundledBackends()
@@ -90,25 +103,13 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('installing a backend from a file', () =>
         .map((entry) => entry.split(':')[1]!.split('/')[0]!)
       expect((await readdir(backends)).filter((tag) => !bundledTags.includes(tag)).sort()).toEqual([OLD_TAG, NEW_TAG])
 
-      // A model that is already running stays on the backend it was started
-      // with; the page does not say so. Selecting a backend decides the next
-      // load, so the user stops the model here, on the same page.
-      expect(await runningExe(dataFolder)).toContain(`${OLD_TAG}/`)
-      const stop = browser.$(`//*[normalize-space(text())="${MODEL_ID}"]/ancestor::*[.//button[normalize-space(.)="Stop"]][1]//button[normalize-space(.)="Stop"]`)
-      await stop.waitForClickable({ timeout: 30_000 })
-      await stop.click()
-      await expect.poll(() => coreSessions(dataFolder), { timeout: 30_000 }).toEqual([])
-
       // The next message loads it again — on what was installed.
       await browser.$('//*[normalize-space(text())="which backend are you"]').click()
       await waitForChat(session)
       await send(session, 'and now')
       await pageShows(session, NEW_REPLY, 90_000)
       expect(await runningExe(dataFolder)).toContain(`${NEW_TAG}/`)
-      const coreSettings = JSON.parse(await readFile(join(dataFolder, 'atomic-core', 'settings.json'), 'utf8')) as {
-        providers?: Record<string, Record<string, unknown>>
-      }
-      expect(coreSettings.providers?.[FAKE_PROVIDER]?.version_backend).toBe(NEW_BACKEND)
+      expect(await coreVersionBackend(dataFolder)).toBe(NEW_BACKEND)
     })
   })
 })

@@ -47,6 +47,7 @@ import {
   useMlxEngineUpdateCheck,
 } from '@/hooks/useMlxEngineUpdateCheck'
 import {
+  activateInstalledBuild,
   isLlamacppProvider,
   useClearDeviceAfterSwitch,
 } from '@/hooks/useEngineBuildSwitch'
@@ -1763,8 +1764,24 @@ function ProviderDetail() {
       if (selectedFile && typeof selectedFile === 'string') {
         // Process the file path: replace spaces with dashes and convert to lowercase
 
-        // Install the backend using the llamacpp extension
-        await installBackend(selectedFile)
+        // The extension unpacks it; the core makes it active (and unloads
+        // this provider's models), as "Make active" does.
+        const installed = await installBackend(selectedFile)
+        if (isLlamacppProvider(provider.provider)) {
+          try {
+            const result = await activateInstalledBuild(
+              provider.provider as EngineId,
+              installed
+            )
+            if (result?.activated) clearDeviceAfterSwitch()
+          } catch (error) {
+            const message = (error as { message?: unknown } | null)?.message
+            toast.error(t('settings:backendUpdater.activateFailed'), {
+              description:
+                typeof message === 'string' ? message : String(error),
+            })
+          }
+        }
 
         // Extract filename from the selected file path and replace spaces with dashes
         const fileName = basenameNoExt(selectedFile).replace(/\s+/g, '-')
@@ -1789,7 +1806,14 @@ function ProviderDetail() {
     } finally {
       setIsInstallingBackend(false)
     }
-  }, [provider, serviceHub, refreshSettings, t, installBackend])
+  }, [
+    provider,
+    serviceHub,
+    refreshSettings,
+    t,
+    installBackend,
+    clearDeviceAfterSwitch,
+  ])
 
   /// The version list and the release index are both fetched during the
   /// extension's `onLoad()`, so a fork release published while the app was

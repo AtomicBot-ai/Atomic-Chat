@@ -71,7 +71,8 @@ export type EngineUpdateResult = {
 }
 
 interface LlamacppExtension {
-  installBackend?(filePath: string): Promise<void>
+  /** Unpacks the archive and answers its `<version>/<variant>`; selects nothing. */
+  installBackend?(filePath: string): Promise<string | void>
   configureBackends?(): Promise<void>
   recheckOptimalBackend?(): Promise<BetterBackendRecommendation | null>
   /** `latest/<variant>` → the concrete `<version>/<variant>` it means here. */
@@ -681,9 +682,10 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       }
 
       const extension = extensionToUse as LlamacppExtension
-      await extension.installBackend?.(filePath)
+      const installed = await extension.installBackend?.(filePath)
 
       await extension.configureBackends?.()
+      return typeof installed === 'string' ? installed : undefined
     } catch (error) {
       console.error('Error installing backend:', error)
       throw error

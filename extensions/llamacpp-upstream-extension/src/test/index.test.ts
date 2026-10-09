@@ -370,7 +370,9 @@ describe('llamacpp_extension', () => {
       extension['getSettings'] = vi.fn().mockResolvedValue([])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension.installBackend(archivePath)
+      await expect(extension.installBackend(archivePath)).resolves.toBe(
+        'b9702/macos-arm64'
+      )
 
       expect(invoke).toHaveBeenNthCalledWith(1, 'decompress', {
         path: archivePath,
@@ -381,6 +383,8 @@ describe('llamacpp_extension', () => {
         exeName: 'llama-server',
       })
       expect(fs.rm).not.toHaveBeenCalled()
+      // The core makes it active; the extension writes no `version_backend`.
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
     })
 
     it('rejects an import when normalization leaves no llama-server binary', async () => {

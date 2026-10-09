@@ -9,8 +9,16 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ providers: () => ({ updateSettings }) }),
 }))
 
-const { installableOptions, useClearDeviceAfterSwitch } = await import(
-  '../useEngineBuildSwitch'
+const activateEngineBuildThroughCore = vi.hoisted(() => vi.fn())
+vi.mock('@/services/engines/update', () => ({ activateEngineBuildThroughCore }))
+
+const {
+  activateInstalledBuild,
+  installableOptions,
+  useClearDeviceAfterSwitch,
+} = await import('../useEngineBuildSwitch')
+const { useEngineVersionsStore } = await import(
+  '@/stores/engine-versions-store'
 )
 
 const entry = (patch: Partial<EngineVersions>): EngineVersions => ({
@@ -145,5 +153,49 @@ describe('useClearDeviceAfterSwitch', () => {
     act(() => result.current())
     expect(deviceShown()).toBe('')
     expect(updateSettings).not.toHaveBeenCalled()
+  })
+})
+
+describe('activateInstalledBuild', () => {
+  const refresh = vi.fn(async () => {})
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useEngineVersionsStore.setState({ refresh })
+  })
+
+  it('has the core make the unpacked build active, and reads the list again', async () => {
+    const answer = {
+      activated: true,
+      active: { version: 'b99999', variant: 'macos-arm64' },
+    }
+    activateEngineBuildThroughCore.mockResolvedValueOnce(answer)
+    await expect(
+      activateInstalledBuild('llamacpp-upstream', '\uFEFFb99999/macos-arm64')
+    ).resolves.toEqual(answer)
+    expect(activateEngineBuildThroughCore).toHaveBeenCalledWith(
+      'llamacpp-upstream',
+      'b99999',
+      'macos-arm64'
+    )
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('activates nothing when the extension named no build, and still reads the list again', async () => {
+    await expect(
+      activateInstalledBuild('llamacpp-upstream', undefined)
+    ).resolves.toBeNull()
+    expect(activateEngineBuildThroughCore).not.toHaveBeenCalled()
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("passes the core's refusal on, after reading the list again", async () => {
+    activateEngineBuildThroughCore.mockRejectedValueOnce({
+      code: 'ENGINE_INSTALL_IN_PROGRESS',
+      message: 'busy',
+    })
+    await expect(
+      activateInstalledBuild('llamacpp-upstream', 'b99999/macos-arm64')
+    ).rejects.toMatchObject({ code: 'ENGINE_INSTALL_IN_PROGRESS' })
+    expect(refresh).toHaveBeenCalledTimes(1)
   })
 })

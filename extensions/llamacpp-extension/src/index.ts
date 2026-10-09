@@ -2419,11 +2419,15 @@ export default class llamacpp_extension extends AIEngine {
     localStorage.setItem('cortex_models_migrated', 'true')
   }
 
-  /*
-   * Manually installs a supported backend archive
+  /**
+   * Manually installs a supported backend archive from a local file.
    *
+   * Answers the pack's `<version>/<variant>` and selects nothing: the page has
+   * the core make it active (change `unify-engine-lifecycle`), which writes
+   * `version_backend` — mirrored here on `settings:changed` — and unloads the
+   * models, as "Make active" does.
    */
-  async installBackend(path: string): Promise<void> {
+  async installBackend(path: string): Promise<string> {
     const platformName = IS_WINDOWS ? 'win' : 'linux'
 
     // Match prefix (optional), llama, main (optional), version (b####-hash),
@@ -2493,35 +2497,19 @@ export default class llamacpp_extension extends AIEngine {
     try {
       await this.configureBackends()
 
-      // Auto-select the newly installed backend
+      // The variant is the preferred one from now on; the build itself is
+      // made active by the core.
       const effectiveBackendType = await mapOldBackendToNew(backendIdentifier)
       this.setStoredBackendType(effectiveBackendType)
-      this.config.version_backend = newBackendString
 
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = newBackendString
-          }
-          return item
-        })
-      )
-
-      if (events && typeof events.emit === 'function') {
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: newBackendString,
-        })
-      }
-
-      logger.info(`Backend ${newBackendString} installed and auto-selected`)
+      logger.info(`Backend ${newBackendString} installed`)
     } catch (e) {
       logger.error('Backend installed but failed to refresh UI', e)
       throw new Error(
         `Backend installed but failed to refresh UI: ${String(e)}`
       )
     }
+    return newBackendString
   }
 
   /**

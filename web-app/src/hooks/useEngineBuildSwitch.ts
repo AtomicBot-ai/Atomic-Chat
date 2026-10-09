@@ -3,7 +3,13 @@ import { useCallback } from 'react'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { EngineVersions } from '@/services/engines/types'
+import type {
+  EngineActivateResult,
+  EngineId,
+  EngineVersions,
+} from '@/services/engines/types'
+import { activateEngineBuildThroughCore } from '@/services/engines/update'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
 /** The providers whose builds are llama.cpp packs the client picks through the core. */
 export function isLlamacppProvider(providerName: string): boolean {
@@ -83,4 +89,27 @@ export function useClearDeviceAfterSwitch(providerName: string) {
       void useLlamacppDevices.getState().fetchDevices()
     }
   }, [providerName, serviceHub])
+}
+
+/**
+ * A build installed from a file is made active by the core, as "Make active"
+ * makes one: the core writes `version_backend` and unloads the provider's
+ * models; the extension only unpacked it. `null` when the extension did not
+ * name a `<version>/<variant>`. The installed builds list is asked again either
+ * way, since the disk changed without an `engine:changed`.
+ */
+export async function activateInstalledBuild(
+  engine: EngineId,
+  installed: string | undefined
+): Promise<EngineActivateResult | null> {
+  try {
+    const [version, variant, ...rest] = (installed ?? '')
+      .replace(/\uFEFF/g, '')
+      .trim()
+      .split('/')
+    if (!version || !variant || rest.length > 0) return null
+    return await activateEngineBuildThroughCore(engine, version, variant)
+  } finally {
+    void useEngineVersionsStore.getState().refresh()
+  }
 }
