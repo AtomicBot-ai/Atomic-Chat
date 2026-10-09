@@ -108,6 +108,16 @@ describe('ModelListRow', () => {
     expect(onSelect).toHaveBeenCalledOnce()
   })
 
+  it('shows an accessible downloaded marker and removes it when deleted', () => {
+    const { rerender } = render(
+      <ModelListRow model={model()} downloaded onSelect={vi.fn()} />
+    )
+    expect(screen.getByRole('img', { name: 'downloaded' })).toBeInTheDocument()
+    expect(screen.getByRole('button')).toHaveAccessibleName(/downloaded/)
+    rerender(<ModelListRow model={model()} onSelect={vi.fn()} />)
+    expect(screen.queryByRole('img', { name: 'downloaded' })).toBeNull()
+  })
+
   // Capabilities are read in the detail panel, where the whole set is shown.
   // A row that drew the first two of four was a second, differently truncated
   // copy of the same answer.
