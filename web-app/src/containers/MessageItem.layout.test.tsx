@@ -12,7 +12,6 @@ import { seedServiceHub } from '@/test/service-hub'
 import {
   expectNoHorizontalOverflow,
   expectOneLine,
-  expectVerticallyCentered,
   setFontSize,
   setTheme,
   settle,
@@ -126,206 +125,94 @@ async function prepare(
 
 describe('Live reasoning geometry (Chromium)', () => {
   it.each(cases)(
-    '$width / $fontSize / $theme: stable rows and adjacent chevrons through reasoning, tools, gaps and final',
+    '$width / $fontSize / $theme: flat tool rows stay compact through streamed states',
     async ({ width, fontSize, theme }) => {
       await page.viewport(width, 800)
       setFontSize(fontSize)
       setTheme(theme)
-      const thought: UIMessage['parts'][number] = {
-        type: 'reasoning',
-        text: 'Plan the lookup.',
-        state: 'done',
-      }
-      const tool = (id: string, state: string, query: string) =>
-        ({
-          type: 'tool-web_search_exa',
-          toolCallId: id,
-          state,
-          input: { query },
-          ...(state === 'output-available' ? { output: [] } : {}),
-        }) as UIMessage['parts'][number]
-      const first = tool('first', 'output-available', 'first query')
-      const read = (state: string) =>
-        ({
-          type: 'tool-os.fs.read',
-          toolCallId: 'second',
-          state,
-          input: { path: 'long-research-notes.md' },
-          ...(state === 'output-error'
-            ? { errorText: 'The file could not be read' }
-            : {}),
-        }) as UIMessage['parts'][number]
-      const second = read('output-error')
-      const phases = [
-        { parts: [thought], label: 'Working', active: true },
-        {
-          parts: [thought, tool('first', 'input-available', 'first query')],
-          label: 'Searching',
-          active: true,
-        },
-        { parts: [thought, first], label: 'Searched the web', active: true },
-        {
-          parts: [thought, first, read('input-streaming')],
-          label: 'Reading long-research-notes.md',
-          active: true,
-        },
-        {
-          parts: [thought, first, second],
-          label: 'Could not read long-research-notes.md',
-          active: true,
-        },
-        {
-          parts: [thought, first, second],
-          label: 'Completed 2 actions',
-          active: false,
-        },
-      ]
-      const item = (phase: (typeof phases)[number]) =>
+      const item = (state: string, active: boolean) =>
         withTranslations(
           <div style={{ marginLeft: 256, padding: 24 }}>
             <MessageItem
               message={{
                 id: 'lifecycle-layout',
                 role: 'assistant',
-                parts: phase.parts,
+                parts: [
+                  {
+                    type: 'reasoning',
+                    text: 'Plan the lookup.',
+                    state: 'done',
+                  },
+                  {
+                    type: 'tool-web_search_exa',
+                    toolCallId: 'first',
+                    state: 'output-available',
+                    input: { query: 'first query' },
+                    output: [],
+                  } as UIMessage['parts'][number],
+                  {
+                    type: 'tool-os.fs.read',
+                    toolCallId: 'second',
+                    state,
+                    input: { path: 'long-research-notes.md' },
+                    ...(state === 'output-error'
+                      ? { errorText: 'The file could not be read' }
+                      : {}),
+                  } as UIMessage['parts'][number],
+                ],
               }}
               isFirstMessage={false}
               isLastMessage
-              status={phase.active ? 'streaming' : 'ready'}
-              requestActive={phase.active}
+              status={active ? 'streaming' : 'ready'}
+              requestActive={active}
               hideActions
             />
             <div data-testid="lifecycle-anchor">Answer position</div>
           </div>
         )
-      const { container, rerender } = render(item(phases[0]))
+      const { container, rerender } = render(item('input-streaming', true))
       await act(async () => {
         await document.fonts.ready
         await frame()
         await frame()
       })
-      const thinking = screen.getByRole('button', { name: /Thinking for/ })
-      const activity = screen
-        .getByTestId('tool-activity-group')
-        .querySelector('button')!
       const anchor = screen
         .getByTestId('lifecycle-anchor')
         .getBoundingClientRect().top
-      const rowHeight = activity.getBoundingClientRect().height
-      for (const phase of phases) {
-        rerender(item(phase))
+      const first = screen.getByRole('button', { name: /web_search_exa/ })
+      const rowHeight = first.getBoundingClientRect().height
+      for (const [state, active] of [
+        ['input-available', true],
+        ['output-error', true],
+        ['output-error', false],
+      ] as const) {
+        rerender(item(state, active))
         await act(async () => {
           await frame()
           await frame()
         })
-        expect(activity).toHaveTextContent(phase.label)
-        expect(activity).toBe(
-          screen.getByTestId('tool-activity-group').querySelector('button')
-        )
-        expect(thinking).toBe(
-          screen.getByRole('button', {
-            name: phase.active ? /Thinking for/ : /Thought for/,
-          })
-        )
-        expect(thinking.querySelector('.text-transparent')).toBeNull()
-        expect(activity.getBoundingClientRect().height).toBeCloseTo(
-          rowHeight,
-          0
-        )
+        const rows = screen
+          .getByTestId('tool-activity-group')
+          .querySelectorAll('button')
+        expect(rows).toHaveLength(2)
+        expect(rows[0]).toBe(first)
+        for (const row of rows) {
+          expect(row).toHaveAttribute('aria-expanded', 'false')
+          expectOneLine(row.querySelector('.truncate') as HTMLElement)
+          expect(row.getBoundingClientRect().height).toBeCloseTo(rowHeight, 0)
+        }
         expect(
           screen.getByTestId('lifecycle-anchor').getBoundingClientRect().top
         ).toBeCloseTo(anchor, 0)
         expect(viewport(container).getBoundingClientRect().height).toBe(0)
-
-        for (const trigger of [thinking, activity]) {
-          const chevron = trigger.querySelector(
-            '.lucide-chevron-down, .lucide-chevron-right'
-          )
-          if (!chevron) continue // No disclosure before the first tool exists.
-          const summary = chevron.previousElementSibling as HTMLElement
-          const gap = parseFloat(
-            getComputedStyle(chevron.parentElement!).columnGap
-          )
-          expect(
-            chevron.getBoundingClientRect().left -
-              summary.getBoundingClientRect().right
-          ).toBeCloseTo(gap, 0)
-          expectVerticallyCentered(chevron, summary)
-          const textElement =
-            (summary.firstElementChild as HTMLElement | null) ?? summary
-          expectOneLine(textElement)
-          if (textElement.scrollWidth <= textElement.clientWidth) {
-            const text = document.createRange()
-            text.selectNodeContents(textElement)
-            expect(
-              chevron.getBoundingClientRect().left -
-                text.getBoundingClientRect().right
-            ).toBeCloseTo(gap, 0)
-          }
-        }
         expectNoHorizontalOverflow(container)
       }
-      expect(screen.getAllByText('Completed 2 actions')).toHaveLength(1)
+      expect(screen.queryByText('Completed 2 actions')).toBeNull()
       expect(
         screen.getAllByRole('button', { name: /Thought for/ })
       ).toHaveLength(1)
     }
   )
-
-  it('keeps reasoning and activity chevrons immediately beside their summaries', async () => {
-    await page.viewport(1024, 800)
-    setFontSize('20px')
-    const { container } = render(
-      withTranslations(
-        <div className="w-[720px] p-6">
-          <MessageItem
-            message={{
-              id: 'adjacent-chevrons',
-              role: 'assistant',
-              parts: [
-                {
-                  type: 'reasoning',
-                  text: 'Plan the lookup.',
-                  state: 'done',
-                },
-                {
-                  type: 'tool-mcp.search',
-                  toolCallId: 'search-1',
-                  state: 'output-available',
-                  input: { query: 'layout' },
-                  output: { ok: true },
-                },
-              ],
-            }}
-            isFirstMessage={false}
-            isLastMessage
-            status="ready"
-            hideActions
-          />
-        </div>
-      )
-    )
-    await act(async () => {
-      await document.fonts.ready
-      await frame()
-      await frame()
-    })
-
-    for (const selector of ['.lucide-chevron-down', '.lucide-chevron-right']) {
-      const chevron = container.querySelector<SVGElement>(selector)!
-      const summary = chevron.previousElementSibling as HTMLElement
-      const wrapper = chevron.parentElement!
-      const trigger = wrapper.parentElement!
-      const summaryBox = summary.getBoundingClientRect()
-      const chevronBox = chevron.getBoundingClientRect()
-      const triggerBox = trigger.getBoundingClientRect()
-      const gap = parseFloat(getComputedStyle(wrapper).columnGap)
-
-      expect(chevronBox.left - summaryBox.right).toBeCloseTo(gap, 0)
-      expect(triggerBox.right - chevronBox.right).toBeGreaterThan(100)
-    }
-    expectNoHorizontalOverflow(container)
-  })
 
   it('starts as one compact closed status row', async () => {
     const result = await prepare(cases[0], longText, false)
