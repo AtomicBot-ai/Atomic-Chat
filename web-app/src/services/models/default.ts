@@ -1326,7 +1326,10 @@ export class DefaultModelsService implements ModelsService {
               : Array.isArray(msg.content) && msg.content.length > 0
           ) // Filter out empty messages
 
-        if (transformedMessages.length === 0) {
+        // llama-server treats a trailing assistant message as a prefill and
+        // drops it, so assistant turns alone reach the chat template as an
+        // empty list, which Gemma's template rejects with a 500.
+        if (!transformedMessages.some((msg) => msg.role !== 'assistant')) {
           return 0
         }
 

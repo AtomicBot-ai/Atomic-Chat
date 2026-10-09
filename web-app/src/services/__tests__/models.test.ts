@@ -39,6 +39,7 @@ vi.mock('@janhq/core', () => ({
   },
   events: mockEvents,
   DownloadEvent: mockDownloadEvent,
+  ContentType: { Text: 'text', Image: 'image_url' },
 }))
 
 vi.mock('@tauri-apps/plugin-http', () => ({
@@ -299,6 +300,40 @@ describe('DefaultModelsService', () => {
       expect(result).toEqual(['llama-model', 'mlx-model'])
       expect(llamaEngine.getLoadedModels).toHaveBeenCalled()
       expect(mlxEngine.getLoadedModels).toHaveBeenCalled()
+    })
+  })
+
+  describe('getTokensCount', () => {
+    const message = (role: 'user' | 'assistant', text: string) =>
+      ({
+        role,
+        content: [{ type: 'text', text: { value: text, annotations: [] } }],
+      }) as never
+
+    it('counts nothing without a non-assistant message', async () => {
+      const getTokensCount = vi.fn().mockResolvedValue(42)
+      mockEngineManager.get.mockReturnValue({
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue(['gemma']),
+        getTokensCount,
+      })
+
+      // llama-server drops a trailing assistant message as a prefill, so
+      // the chat template would see no messages at all.
+      expect(
+        await modelsService.getTokensCount('gemma', [
+          message('assistant', 'The answer.'),
+        ])
+      ).toBe(0)
+      expect(getTokensCount).not.toHaveBeenCalled()
+
+      expect(
+        await modelsService.getTokensCount('gemma', [
+          message('user', 'Question?'),
+          message('assistant', 'The answer.'),
+        ])
+      ).toBe(42)
+      expect(getTokensCount).toHaveBeenCalledTimes(1)
     })
   })
 
