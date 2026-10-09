@@ -7,7 +7,7 @@
  * icon geometry as every other snackbar.
  */
 import { useEffect, useRef } from 'react'
-import { toast } from 'sonner'
+import { toast, type ToastT } from 'sonner'
 
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -53,7 +53,11 @@ export function ModelLoadSnackbar() {
       shownRef.current = null
     }
 
-    const onDismiss = () => {
+    const onDismiss = (dismissed: ToastT) => {
+      // Sonner also calls this, a few frames later, for the toast.dismiss() in
+      // hide(); by then a load started right after a failed one may own
+      // shownRef, and forgetting it would leave that toast up for good.
+      if (shownRef.current?.id !== dismissed.id) return
       if (isLoading(latestStatus.current)) closedDuringLoadRef.current = true
       shownRef.current = null
     }
