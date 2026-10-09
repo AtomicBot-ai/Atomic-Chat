@@ -43,14 +43,20 @@ export function ToolRenderer({
   presentation,
   state,
   onRetry,
+  active = true,
+  waiting = false,
 }: {
   toolName: string
   presentation: ToolPresentation
   state: ToolUIPart['state']
   onRetry?: () => void
+  active?: boolean
+  waiting?: boolean
 }) {
   const { t } = useTranslation('chat')
-  const running = state === 'input-streaming' || state === 'input-available'
+  const hasPendingInput =
+    state === 'input-streaming' || state === 'input-available'
+  const running = hasPendingInput && active && !waiting
   const denied = (state as string) === 'output-denied'
   const loopSkipped =
     denied &&
@@ -58,7 +64,13 @@ export function ToolRenderer({
     presentation.deniedReason === 'tool-loop'
   const failed = state === 'output-error' || (denied && !loopSkipped)
   const Icon = running ? Loader2 : toolIcon(toolName, presentation.kind)
-  const label = toolActivityLabel(toolName, presentation, state, t)
+  const activity =
+    hasPendingInput && waiting
+      ? t('activity.working')
+      : hasPendingInput && !active
+        ? ''
+        : toolActivityLabel(toolName, presentation, state, t)
+  const label = activity ? `${toolName} — ${activity}` : toolName
 
   return (
     <Tool state={state} className="group/tool">
