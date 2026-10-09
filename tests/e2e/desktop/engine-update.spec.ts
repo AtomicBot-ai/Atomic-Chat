@@ -130,9 +130,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('switching and removing installed llama.c
       expect(await onDisk(dataFolder, OLD_TAG)).toBe(true)
 
       // Installed builds are switched here, not installed again from the picker.
+      // Shown only when something is left to install.
       const picker = browser.$(`[data-testid="engine-install-other-${FAKE_PROVIDER}"]`)
-      expect(await picker.getText()).toContain('Install another build')
-      if (await picker.isEnabled()) {
+      if (await picker.isExisting()) {
+        expect(await picker.getText()).toContain('Install another build')
         await picker.click()
         const menu = browser.$('[role="menu"]')
         await menu.waitForDisplayed({ timeout: 15_000 })

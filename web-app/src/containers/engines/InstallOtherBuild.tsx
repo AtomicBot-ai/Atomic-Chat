@@ -19,7 +19,8 @@ import { useEngineVersionsStore } from '@/stores/engine-versions-store'
  * hands it to `onPick`, which has the core download it, switch to it and
  * unload the provider's models. Switching between installed builds and
  * removing them is the installed builds list's; the active build is shown
- * there, so this control names no current value.
+ * there, so this control names no current value. With nothing to install it
+ * renders nothing.
  */
 export function InstallOtherBuild({
   engine,
@@ -38,19 +39,9 @@ export function InstallOtherBuild({
   const offered = installableOptions(entry, options)
   const label = t('settings:engineBuilds.installOther')
 
-  if (offered.length === 0)
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        disabled
-        className="w-full min-w-0 justify-between"
-        data-testid={`engine-install-other-${engine}`}
-        title={t('settings:engineBuilds.nothingToInstall')}
-      >
-        <span className="truncate">{label}</span>
-      </Button>
-    )
+  // Nothing to install (on macOS, most of the time: one variant, its newest
+  // build on disk): no control at all rather than one that looks broken.
+  if (offered.length === 0) return null
 
   return (
     <DropdownMenu>

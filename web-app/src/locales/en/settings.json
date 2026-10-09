@@ -472,7 +472,6 @@
     },
     "makeActive": "Make active",
     "installOther": "Install another build…",
-    "nothingToInstall": "Every build offered for this computer is installed",
     "remove": "Remove",
     "unloadWarning": "Making another build active unloads this provider's loaded models.",
     "confirmRemoveTitle": "Remove this build?",

@@ -74,7 +74,7 @@ describe('InstallOtherBuild', () => {
     expect(onPick).toHaveBeenCalledWith('b11300/macos-arm64')
   })
 
-  it('is unavailable when everything offered is installed', () => {
+  it('renders nothing when everything offered is installed', () => {
     hold(['b11500/macos-arm64', 'b11300/macos-arm64'], 'b11500/macos-arm64')
     render(
       <InstallOtherBuild
@@ -84,7 +84,7 @@ describe('InstallOtherBuild', () => {
       />
     )
     expect(
-      screen.getByTestId('engine-install-other-llamacpp-upstream')
-    ).toBeDisabled()
+      screen.queryByTestId('engine-install-other-llamacpp-upstream')
+    ).toBeNull()
   })
 })
