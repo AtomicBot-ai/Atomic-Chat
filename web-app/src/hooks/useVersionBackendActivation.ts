@@ -7,6 +7,38 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { EngineId } from '@/services/engines/types'
 import { activateEngineBuildThroughCore } from '@/services/engines/update'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
+
+/** The providers whose version list switches a llama.cpp build through the core. */
+export function isLlamacppProvider(providerName: string): boolean {
+  return (
+    providerName === 'llamacpp' ||
+    providerName === 'llamacpp-upstream' ||
+    providerName === 'atomic-prism'
+  )
+}
+
+/**
+ * Whether `<version>/<variant>` is one of the provider's installed builds, by
+ * the core's last versions answer. The version list also offers catalog
+ * releases that are not on disk; those are an update with a target, not an
+ * activation. Unknown (no answer yet) counts as not installed: an update of a
+ * build already on disk is only a switch, while an activation of a missing one
+ * is refused.
+ */
+export function isInstalledBuild(providerName: string, value: string): boolean {
+  const [version, variant] = value
+    .replace(/\uFEFF/g, '')
+    .trim()
+    .split('/')
+  const entry =
+    useEngineVersionsStore.getState().engines[providerName as EngineId]
+  return (
+    entry?.builds.some(
+      (build) => build.version === version && build.variant === variant
+    ) ?? false
+  )
+}
 
 /** One setting's value replaced, the rest as they were. */
 function withValue(

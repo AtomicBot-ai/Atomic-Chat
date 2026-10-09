@@ -7,7 +7,7 @@
  *   - the llama.cpp build the installer brings is listed as `bundled` and cannot be removed — the
  *     location contract of design D4 (`<resources>/llamacpp-backend-upstream` beside `--resources-dir`);
  *   - a newer release behind the user's proxy is offered in the banner, and "Update" has the core
- *     install it, switch to it, unload the model that ran on the old one and retire the old one;
+ *     install it, switch to it and unload the model that ran on the old one; the old build stays;
  *   - "Make active" on another installed build switches to it, and the version dropdown follows;
  *   - "Remove" on an inactive build deletes it after the confirmation.
  */
@@ -172,7 +172,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a llama.cpp update offered in the banner
     expect(left).toEqual([])
   })
 
-  it('installs the release, switches to it, unloads the model and retires the old build', async () => {
+  it('installs the release, switches to it, unloads the model and keeps the old build', async () => {
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
@@ -191,8 +191,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a llama.cpp update offered in the banner
       await update.click()
 
       await expect.poll(() => coreVersionBackend(dataFolder), { timeout: 120_000 }).toBe(`${NEW_TAG}/${FAKE_BACKEND}`)
-      await expect.poll(() => onDisk(dataFolder, OLD_TAG), { timeout: 30_000 }).toBe(false)
       expect(await onDisk(dataFolder, NEW_TAG)).toBe(true)
+      expect(await onDisk(dataFolder, OLD_TAG)).toBe(true)
       await expect.poll(() => coreSessions(dataFolder), { timeout: 30_000 }).toEqual([])
       await banner.waitForDisplayed({ reverse: true, timeout: 30_000 })
 

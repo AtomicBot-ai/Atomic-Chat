@@ -21,8 +21,11 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ providers: () => ({ updateSettings }) }),
 }))
 
-const { useVersionBackendActivation } = await import(
+const { useVersionBackendActivation, isInstalledBuild } = await import(
   '../useVersionBackendActivation'
+)
+const { useEngineVersionsStore } = await import(
+  '@/stores/engine-versions-store'
 )
 
 const PREVIOUS = 'b11500/win-cuda-13.3-x64'
@@ -138,5 +141,42 @@ describe('useVersionBackendActivation', () => {
 
     expect(activateEngineBuildThroughCore).not.toHaveBeenCalled()
     expect(shown()).toBe(PREVIOUS)
+  })
+})
+
+describe('isInstalledBuild', () => {
+  const answer = (builds: { version: string; variant: string }[]) =>
+    useEngineVersionsStore.setState({
+      engines: {
+        'llamacpp-upstream': {
+          engine: 'llamacpp-upstream',
+          active: null,
+          builds: builds.map((build) => ({
+            ...build,
+            origin: 'downloaded',
+            active: false,
+            removable: true,
+          })),
+        },
+      } as never,
+    })
+
+  it('is true only for a build in the core answer, a catalog release is not', () => {
+    answer([{ version: 'b11400', variant: 'win-vulkan-x64' }])
+    expect(isInstalledBuild('llamacpp-upstream', PICK)).toBe(true)
+    expect(
+      isInstalledBuild('llamacpp-upstream', '\uFEFFb11400/win-vulkan-x64')
+    ).toBe(true)
+    expect(isInstalledBuild('llamacpp-upstream', 'b10269/win-vulkan-x64')).toBe(
+      false
+    )
+    expect(isInstalledBuild('llamacpp-upstream', 'b11400/win-cpu-x64')).toBe(
+      false
+    )
+  })
+
+  it('is false before the core answered: an update of a build on disk is only a switch', () => {
+    useEngineVersionsStore.setState({ engines: {} })
+    expect(isInstalledBuild('llamacpp-upstream', PICK)).toBe(false)
   })
 })

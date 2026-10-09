@@ -46,7 +46,11 @@ import {
   describeMlxBuild,
   useMlxEngineUpdateCheck,
 } from '@/hooks/useMlxEngineUpdateCheck'
-import { useVersionBackendActivation } from '@/hooks/useVersionBackendActivation'
+import {
+  isInstalledBuild,
+  isLlamacppProvider,
+  useVersionBackendActivation,
+} from '@/hooks/useVersionBackendActivation'
 import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import Capabilities from '@/containers/Capabilities'
 import {
@@ -2274,10 +2278,17 @@ function ProviderDetail() {
                             // <BackendUpdater /> dialog, download, and let
                             // updateBackend() persist + reflect the result
                             // back into this dropdown.
+                            //
+                            // The list also offers catalog releases that are
+                            // not on disk: activation would refuse those, so
+                            // they take the same download → switch flow, with
+                            // the release named as the update's target.
                             if (
                               setting.key === 'version_backend' &&
                               typeof newValue === 'string' &&
-                              newValue.startsWith('latest/')
+                              (newValue.startsWith('latest/') ||
+                                (isLlamacppProvider(providerName) &&
+                                  !isInstalledBuild(providerName, newValue)))
                             ) {
                               void selectManualBackend(newValue).catch(
                                 (err) => {
@@ -2299,9 +2310,7 @@ function ProviderDetail() {
                             if (
                               setting.key === 'version_backend' &&
                               typeof newValue === 'string' &&
-                              (providerName === 'llamacpp' ||
-                                providerName === 'llamacpp-upstream' ||
-                                providerName === 'atomic-prism')
+                              isLlamacppProvider(providerName)
                             ) {
                               void activateVersionBackend(newValue)
                               return
