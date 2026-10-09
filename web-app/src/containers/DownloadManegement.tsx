@@ -3,13 +3,12 @@ import {
   type DownloadProgressProps,
   type DownloadStage,
 } from '@/hooks/useDownloadStore'
-import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useModelSetupDownloads } from '@/hooks/useModelSetup'
-import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DownloadEvent, DownloadState, events } from '@janhq/core'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { IconCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -17,7 +16,6 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { DownloadPanel } from '@/containers/downloads/DownloadPanel'
 import type { DownloadRowProps } from '@/containers/downloads/DownloadProgressRow'
-import { advanceSpeedSample, newSpeedSample } from '@/lib/downloadFormat'
 import {
   cancelDownload,
   clearDownloadCancellationRequested,
@@ -178,81 +176,6 @@ export function DownloadManagement() {
     clearDownloadOrigin,
     downloadOriginByModelId,
   } = useDownloadStore()
-  const { updateState } = useAppUpdater()
-
-  const [appUpdateState, setAppUpdateState] = useState({
-    isDownloading: false,
-    downloadProgress: 0,
-    downloadedBytes: 0,
-    totalBytes: 0,
-  })
-
-  // The app updater keeps its progress in component state rather than in the
-  // download store, so its speed is sampled here — with the same estimator, so
-  // the two kinds of row cannot report speed differently.
-  const appUpdateSample = useRef(newSpeedSample())
-  const [appUpdateBps, setAppUpdateBps] = useState(0)
-
-  useEffect(() => {
-    if (!appUpdateState.isDownloading) {
-      appUpdateSample.current = newSpeedSample()
-      setAppUpdateBps(0)
-      return
-    }
-    appUpdateSample.current = advanceSpeedSample(
-      appUpdateSample.current,
-      appUpdateState.downloadedBytes
-    )
-    setAppUpdateBps(appUpdateSample.current.bytesPerSecond)
-  }, [appUpdateState.isDownloading, appUpdateState.downloadedBytes])
-
-  useEffect(() => {
-    setAppUpdateState({
-      isDownloading: updateState.isDownloading,
-      downloadProgress: updateState.downloadProgress,
-      downloadedBytes: updateState.downloadedBytes,
-      totalBytes: updateState.totalBytes,
-    })
-  }, [updateState])
-
-  const onAppUpdateDownloadUpdate = useCallback(
-    (data: {
-      progress?: number
-      downloadedBytes?: number
-      totalBytes?: number
-    }) => {
-      setAppUpdateState((prev) => ({
-        ...prev,
-        isDownloading: true,
-        downloadProgress: data.progress || 0,
-        downloadedBytes: data.downloadedBytes || 0,
-        totalBytes: data.totalBytes || 0,
-      }))
-    },
-    []
-  )
-
-  const onAppUpdateDownloadSuccess = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
-      isDownloading: false,
-      downloadProgress: 1,
-    }))
-    toast.success(t('common:toast.appUpdateDownloaded.title'), {
-      description: t('common:toast.appUpdateDownloaded.description'),
-    })
-  }, [t])
-
-  const onAppUpdateDownloadError = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
-      isDownloading: false,
-    }))
-    toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
-      description: t('common:toast.appUpdateDownloadFailed.description'),
-    })
-  }, [t])
-
   const decisionCatalog = useDecisionStore((s) => s.catalog)
   const embeddingCatalog = useEmbeddingStore((s) => s.catalog)
 
@@ -319,12 +242,12 @@ export function DownloadManagement() {
   // download events, so its rows come from the setups themselves.
   const setupDownloads = useModelSetupDownloads()
 
-  const downloadCount = useMemo(() => {
-    const modelDownloads = downloadProcesses.length + setupDownloads.length
-    const appUpdateDownload = appUpdateState.isDownloading ? 1 : 0
-    const total = modelDownloads + appUpdateDownload
-    return total
-  }, [downloadProcesses, setupDownloads, appUpdateState.isDownloading])
+  // The app update is not counted: its progress lives in the update banner
+  // itself, the one place that offered it.
+  const downloadCount = useMemo(
+    () => downloadProcesses.length + setupDownloads.length,
+    [downloadProcesses, setupDownloads]
+  )
 
   // ATO-462: each download run starts expanded and stays present while active;
   // a deliberate collapse lasts for that run. Measure how much of the run the
@@ -837,11 +760,6 @@ export function DownloadManagement() {
       onFileDownloadAndVerificationSuccess
     )
 
-    // Register app update event listeners
-    events.on(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
-    events.on(AppEvent.onAppUpdateDownloadSuccess, onAppUpdateDownloadSuccess)
-    events.on(AppEvent.onAppUpdateDownloadError, onAppUpdateDownloadError)
-
     return () => {
       console.debug('DownloadListener: unregistering event listeners...')
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
@@ -857,14 +775,6 @@ export function DownloadManagement() {
         DownloadEvent.onFileDownloadAndVerificationSuccess,
         onFileDownloadAndVerificationSuccess
       )
-
-      // Unregister app update event listeners
-      events.off(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
-      events.off(
-        AppEvent.onAppUpdateDownloadSuccess,
-        onAppUpdateDownloadSuccess
-      )
-      events.off(AppEvent.onAppUpdateDownloadError, onAppUpdateDownloadError)
     }
   }, [
     onFileDownloadUpdate,
@@ -874,9 +784,6 @@ export function DownloadManagement() {
     onModelValidationStarted,
     onModelValidationFailed,
     onFileDownloadAndVerificationSuccess,
-    onAppUpdateDownloadUpdate,
-    onAppUpdateDownloadSuccess,
-    onAppUpdateDownloadError,
   ])
 
   // ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
@@ -1026,17 +933,6 @@ export function DownloadManagement() {
   const panelItems = useMemo<DownloadRowProps[]>(() => {
     const rows: DownloadRowProps[] = []
 
-    if (appUpdateState.isDownloading) {
-      rows.push({
-        id: 'app-update',
-        name: t('common:downloadPanel.appUpdate'),
-        progress: appUpdateState.downloadProgress,
-        current: appUpdateState.downloadedBytes,
-        total: appUpdateState.totalBytes,
-        bytesPerSecond: appUpdateBps,
-      })
-    }
-
     for (const download of downloadProcesses) {
       rows.push({
         ...download,
@@ -1067,8 +963,6 @@ export function DownloadManagement() {
 
     return rows
   }, [
-    appUpdateState,
-    appUpdateBps,
     downloadProcesses,
     setupDownloads,
     pausedDownloads,
@@ -1076,7 +970,6 @@ export function DownloadManagement() {
     handleResumeDownload,
     handleCancelDownload,
     handleSetupAction,
-    t,
   ])
 
   return (

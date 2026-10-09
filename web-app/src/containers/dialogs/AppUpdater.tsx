@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -7,7 +7,12 @@ import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { parseReleaseHighlights } from '@/lib/releaseHighlights'
-import { formatProgressPair } from '@/lib/downloadFormat'
+import {
+  advanceSpeedSample,
+  formatEta,
+  formatProgressPair,
+  newSpeedSample,
+} from '@/lib/downloadFormat'
 import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
 /// Same repository the "What's new" dialog and the release-notes store read.
@@ -54,6 +59,11 @@ const NOTES_CLASS_NAME = [
  * has one session-scoped `remindMeLater` flag, reset by the next check or by
  * the button in Settings → General. The engine banner, which owns a persisted
  * snooze, is where the two differ.
+ *
+ * Once "Update" is pressed the banner is the one place the update shows: the
+ * button fills as it downloads and the download panel does not list it. Both
+ * levers go away meanwhile — the download cannot be stopped, so hiding the
+ * banner would only hide its progress.
  */
 const DialogAppUpdater = () => {
   const { t } = useTranslation()
@@ -71,6 +81,23 @@ const DialogAppUpdater = () => {
     () => parseReleaseHighlights(updateState.updateInfo?.body),
     [updateState.updateInfo?.body]
   )
+
+  // Sampled here because the banner is the update's only progress readout;
+  // same estimator as the download panel's rows, so the two estimates agree.
+  const speedSample = useRef(newSpeedSample())
+  const [bytesPerSecond, setBytesPerSecond] = useState(0)
+  useEffect(() => {
+    if (!updateState.isDownloading) {
+      speedSample.current = newSpeedSample()
+      setBytesPerSecond(0)
+      return
+    }
+    speedSample.current = advanceSpeedSample(
+      speedSample.current,
+      updateState.downloadedBytes
+    )
+    setBytesPerSecond(speedSample.current.bytesPerSecond)
+  }, [updateState.isDownloading, updateState.downloadedBytes])
 
   // Unfolded notes belong to one offer: a different version folds them back.
   const [notesOpen, setNotesOpen] = useState(false)
@@ -116,6 +143,21 @@ const DialogAppUpdater = () => {
 
   const handleOpenRelease = () => openExternal(releaseNotesUrl(newVersion))
 
+  const { isDownloading, isInstalling, downloadedBytes, totalBytes } =
+    updateState
+  const inProgress = isDownloading || isInstalling
+  // Bytes flow only once the updater reports a size; before that it is still
+  // unloading models and stopping the core.
+  const transferring = isDownloading && totalBytes > 0
+  const eta = transferring
+    ? formatEta(totalBytes - downloadedBytes, bytesPerSecond)
+    : null
+  const progressLabel = isInstalling
+    ? t('updater:installing')
+    : transferring
+      ? `${Math.round(updateState.downloadProgress * 100)}%`
+      : t('updater:starting')
+
   // With nothing to unfold, the link still leads somewhere: the release page.
   const handleToggleReleaseNotes = () => {
     if (!releaseBody) {
@@ -133,11 +175,13 @@ const DialogAppUpdater = () => {
       fromVersion={updateState.currentVersion || null}
       toVersion={newVersion}
       subtitle={
-        updateState.isDownloading
-          ? `${Math.round(updateState.downloadProgress * 100)}% · ${formatProgressPair(
-              updateState.downloadedBytes,
-              updateState.totalBytes
-            )}`
+        transferring
+          ? [
+              formatProgressPair(downloadedBytes, totalBytes),
+              eta && t('common:downloadPanel.left', { eta }),
+            ]
+              .filter(Boolean)
+              .join(' · ')
           : undefined
       }
       highlights={highlights.items}
@@ -173,8 +217,10 @@ const DialogAppUpdater = () => {
       onRemindLater={() => setRemindMeLater(true)}
       updateLabel={t('updater:update')}
       onUpdate={handleUpdate}
-      busy={updateState.isDownloading}
-      busyLabel={t('updater:downloading')}
+      busy={inProgress}
+      busyLabel={progressLabel}
+      progress={isInstalling ? 1 : updateState.downloadProgress}
+      dismissible={!inProgress}
       dismissLabel={t('updater:dismiss')}
       onDismiss={() => setRemindMeLater(true)}
     />

@@ -639,8 +639,7 @@
     "retrying": "Нет соединения, повтор ({{attempt}}/{{maxAttempts}})…",
     "stalled": "Загрузка зависла, переподключаемся…",
     "paused": "Пауза",
-    "left": "осталось {{eta}}",
-    "appUpdate": "Обновление приложения"
+    "left": "осталось {{eta}}"
   },
   "inferenceStatus": {
     "starting": "Запускается {{model}}…",

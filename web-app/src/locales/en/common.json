@@ -734,8 +734,7 @@
     "retrying": "Connection failed, retrying ({{attempt}}/{{maxAttempts}})…",
     "stalled": "Stalled, reconnecting…",
     "paused": "Paused",
-    "left": "{{eta}} left",
-    "appUpdate": "App update"
+    "left": "{{eta}} left"
   },
   "inferenceStatus": {
     "starting": "Starting {{model}}…",

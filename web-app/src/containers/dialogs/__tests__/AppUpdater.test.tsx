@@ -52,6 +52,7 @@ const baseState = (): UpdateState => ({
   isUpdateAvailable: true,
   updateInfo: { version: '2.0.38', body: RELEASE_BODY },
   isDownloading: false,
+  isInstalling: false,
   downloadProgress: 0,
   downloadedBytes: 0,
   totalBytes: 0,
@@ -285,13 +286,65 @@ describe('DialogAppUpdater', () => {
     expect(setRemindMeLater).not.toHaveBeenCalled()
   })
 
-  it('disables "Update" while the download runs', () => {
+  it('fills "Update" with the download and drops the levers that would hide it', () => {
+    updateState = {
+      ...baseState(),
+      isDownloading: true,
+      downloadProgress: 0.68,
+      downloadedBytes: 99 * 1024 * 1024,
+      totalBytes: 146 * 1024 * 1024,
+    }
+    render(<DialogAppUpdater />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '68')
+    expect(bar).toHaveAttribute('aria-valuetext', '68%')
+    // The percentage lives in the bar; the line under the versions carries
+    // the size instead of repeating it.
+    expect(screen.getByText('99 / 146 MB')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'updater:update' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'updater:remindMeLater' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'updater:dismiss' })
+    ).not.toBeInTheDocument()
+    // Reading the notes while waiting is still fine.
+    expect(
+      screen.getByRole('button', { name: 'updater:showReleaseNotes' })
+    ).toBeInTheDocument()
+  })
+
+  it('says "Starting…" until the updater reports a size', () => {
     updateState = { ...baseState(), isDownloading: true }
     render(<DialogAppUpdater />)
 
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '0')
+    expect(bar).toHaveAttribute('aria-valuetext', 'updater:starting')
+  })
+
+  it('stays full and says "Installing…" once the download is done', () => {
+    updateState = {
+      ...baseState(),
+      isInstalling: true,
+      downloadProgress: 1,
+      downloadedBytes: 146 * 1024 * 1024,
+      totalBytes: 146 * 1024 * 1024,
+    }
+    render(<DialogAppUpdater />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '100')
+    expect(bar).toHaveAttribute('aria-valuetext', 'updater:installing')
     expect(
-      screen.getByRole('button', { name: 'updater:downloading' })
-    ).toBeDisabled()
+      screen.queryByRole('button', { name: 'updater:update' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'updater:dismiss' })
+    ).not.toBeInTheDocument()
   })
 
   it('outranks the engine banner but yields to a running download', () => {

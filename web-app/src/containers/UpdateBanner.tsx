@@ -48,6 +48,14 @@ export interface UpdateBannerProps {
   /// Disables "Update" and swaps its label while the update is running.
   busy?: boolean
   busyLabel?: string
+  /// 0–1. While `busy`, turns "Update" into a bar that fills as the update
+  /// downloads, with `busyLabel` inside it, so the banner itself is where the
+  /// download shows. Omitted keeps a plain disabled button.
+  progress?: number
+  /// `false` hides "Remind me later" and the × — for an update that has
+  /// started and cannot be stopped, where hiding the banner would only hide
+  /// its progress.
+  dismissible?: boolean
   dismissLabel: string
   onDismiss: () => void
   /// Test hook / DOM anchor. Also used to tell the two banners apart.
@@ -84,6 +92,8 @@ export function UpdateBanner({
   onUpdate,
   busy = false,
   busyLabel,
+  progress,
+  dismissible = true,
   dismissLabel,
   onDismiss,
   testId,
@@ -104,15 +114,17 @@ export function UpdateBanner({
         className
       )}
     >
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={dismissLabel}
-        onClick={onDismiss}
-        className="absolute right-1.5 top-1.5 text-muted-foreground"
-      >
-        <IconX size={14} />
-      </Button>
+      {dismissible ? (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={dismissLabel}
+          onClick={onDismiss}
+          className="absolute right-1.5 top-1.5 text-muted-foreground"
+        >
+          <IconX size={14} />
+        </Button>
+      ) : null}
 
       <div className="flex items-start gap-2.5 px-4 pt-4 pr-9">
         <IconDownload
@@ -213,12 +225,21 @@ export function UpdateBanner({
           </Button>
         ) : null}
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={onRemindLater}>
-            {remindLaterLabel}
-          </Button>
-          <Button size="sm" onClick={onUpdate} disabled={busy}>
-            {busy ? (busyLabel ?? updateLabel) : updateLabel}
-          </Button>
+          {dismissible ? (
+            <Button variant="ghost" size="sm" onClick={onRemindLater}>
+              {remindLaterLabel}
+            </Button>
+          ) : null}
+          {busy && progress != null ? (
+            <UpdateProgressButton
+              progress={progress}
+              label={busyLabel ?? updateLabel}
+            />
+          ) : (
+            <Button size="sm" onClick={onUpdate} disabled={busy}>
+              {busy ? (busyLabel ?? updateLabel) : updateLabel}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -231,6 +252,48 @@ export function UpdateBanner({
   return typeof document === 'undefined'
     ? banner
     : createPortal(banner, document.body)
+}
+
+/**
+ * The "Update" pill once pressed: the same size and shape, filling with the
+ * primary colour as the update downloads. The label is drawn twice — muted on
+ * the track, inverted on the fill, clipped to the same edge — so it stays
+ * legible wherever the edge happens to cross it.
+ */
+function UpdateProgressButton({
+  progress,
+  label,
+}: {
+  progress: number
+  label: string
+}) {
+  const percent = Math.round(Math.min(Math.max(progress, 0), 1) * 100)
+  const labelClassName =
+    'flex h-full items-center justify-center px-3 whitespace-nowrap tabular-nums'
+
+  return (
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      aria-valuetext={label}
+      data-slot="update-progress"
+      className="relative h-8 min-w-28 overflow-hidden rounded-full bg-primary/15 text-sm font-medium"
+    >
+      <div className={cn(labelClassName, 'text-foreground')}>{label}</div>
+      <div
+        aria-hidden="true"
+        className={cn(
+          labelClassName,
+          'absolute inset-0 bg-primary text-primary-foreground transition-[clip-path] duration-300 ease-out'
+        )}
+        style={{ clipPath: `inset(0 ${100 - percent}% 0 0)` }}
+      >
+        {label}
+      </div>
+    </div>
+  )
 }
 
 export default UpdateBanner
