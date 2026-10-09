@@ -269,6 +269,8 @@ describe('InstalledEngineBuilds', () => {
     })
     await makeActive()
     expect(onActivated).toHaveBeenCalledTimes(1)
+    // Both answers are successes: the list says nothing went wrong.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('warns that loaded models unload, only when the provider has some', () => {

@@ -27,7 +27,7 @@ const entry = (patch: Partial<EngineVersions>): EngineVersions => ({
   ...patch,
 })
 
-const build = (version: string, variant: string) => ({
+const installedBuild = (version: string, variant: string) => ({
   version,
   variant,
   origin: 'downloaded' as const,
@@ -52,8 +52,8 @@ describe('installableOptions', () => {
     const offered = installableOptions(
       entry({
         builds: [
-          build('b11500', 'win-cuda-13.3-x64'),
-          build('b11400', 'win-vulkan-x64'),
+          installedBuild('b11500', 'win-cuda-13.3-x64'),
+          installedBuild('b11400', 'win-vulkan-x64'),
         ],
         active: { version: 'b11500', variant: 'win-cuda-13.3-x64' },
         latest: { version: 'b11500', variant: 'win-cuda-13.3-x64' },
@@ -69,7 +69,7 @@ describe('installableOptions', () => {
   it('keeps the latest of the active variant while a newer one is offered', () => {
     const offered = installableOptions(
       entry({
-        builds: [build('b11400', 'win-cuda-13.3-x64')],
+        builds: [installedBuild('b11400', 'win-cuda-13.3-x64')],
         active: { version: 'b11400', variant: 'win-cuda-13.3-x64' },
         latest: { version: 'b11500', variant: 'win-cuda-13.3-x64' },
       }),
@@ -143,6 +143,7 @@ describe('useClearDeviceAfterSwitch', () => {
       useClearDeviceAfterSwitch('llamacpp-upstream')
     )
     act(() => result.current())
+    expect(deviceShown()).toBe('')
     expect(updateSettings).not.toHaveBeenCalled()
   })
 })
