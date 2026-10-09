@@ -53,7 +53,14 @@ export function ModelLoadSnackbar() {
       shownRef.current = null
     }
 
-    const onDismiss = () => {
+    // Bound to one snackbar. Sonner reports a programmatic `toast.dismiss(id)`
+    // on a later render, so the report of a snackbar this component already
+    // replaced can arrive while the next load's is up (an engine update ends
+    // one load and the next starts at once). Only the user closing the one
+    // shown now counts; a late report of another would orphan the shown one,
+    // which then spins on after its load finished.
+    const onDismissOf = (id: string) => () => {
+      if (shownRef.current?.id !== id) return
       if (isLoading(latestStatus.current)) closedDuringLoadRef.current = true
       shownRef.current = null
     }
@@ -86,7 +93,7 @@ export function ModelLoadSnackbar() {
         description,
         duration: Infinity,
         closeButton: true,
-        onDismiss,
+        onDismiss: onDismissOf(id),
         action: cancelInProgress
           ? null
           : {
@@ -118,7 +125,7 @@ export function ModelLoadSnackbar() {
         duration: LOADED_SNACKBAR_MS,
         closeButton: true,
         action: null,
-        onDismiss,
+        onDismiss: onDismissOf(id),
         onAutoClose: () => {
           if (shownRef.current?.id === id) shownRef.current = null
         },

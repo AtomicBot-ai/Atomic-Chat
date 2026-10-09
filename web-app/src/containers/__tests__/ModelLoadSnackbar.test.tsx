@@ -256,6 +256,40 @@ describe('ModelLoadSnackbar', () => {
     await waitFor(() => expect(snackbar()).not.toBeInTheDocument())
   })
 
+  it("keeps the next load's snackbar when the previous one's dismissal is reported late", async () => {
+    // Sonner reports a programmatic dismiss (`toast.dismiss(id)`) on a later
+    // render. After an engine update the core ends one load and the next one
+    // starts at once, so the first snackbar's report arrives after the second
+    // is up; it must not make the page lose the second (which then spun on).
+    const loading = vi.spyOn(toast, 'loading')
+    renderSnackbar()
+    startLoad()
+    await waitFor(() => expect(snackbar()).toBeInTheDocument())
+    const first = loading.mock.calls.at(-1)?.[1] as {
+      id: string
+      onDismiss: (t: unknown) => void
+    }
+
+    act(() => useAppState.getState().updateLoadingModel(false))
+    startLoad('restart')
+    await waitFor(() =>
+      expect(loading.mock.calls.at(-1)?.[1]).not.toMatchObject({
+        id: first.id,
+      })
+    )
+    act(() => first.onDismiss({ id: first.id }))
+
+    finishLoad()
+    await waitFor(() =>
+      expect(snackbar()).toHaveAttribute('data-type', 'success')
+    )
+    // The first one leaves after Sonner's exit animation; nothing spins on.
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-type="loading"]')).toHaveLength(0)
+    )
+    loading.mockRestore()
+  })
+
   it('shows again for the next load after one was dismissed', async () => {
     renderSnackbar()
     startLoad()
@@ -284,7 +318,10 @@ describe('ModelLoadSnackbar for a container-backed engine', () => {
   beforeEach(() => {
     i18n.changeLanguage('en')
     act(() => {
-      useModelLoad.setState({ modelLoadError: undefined, modelLoadErrorModelId: undefined })
+      useModelLoad.setState({
+        modelLoadError: undefined,
+        modelLoadErrorModelId: undefined,
+      })
       useAppState.setState({ activeModels: [], userStoppedModels: [] })
     })
   })
@@ -307,7 +344,9 @@ describe('ModelLoadSnackbar for a container-backed engine', () => {
         elapsedMs: 42_000,
       })
     )
-    await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 0:42'))
+    await waitFor(() =>
+      expect(snackbar()).toHaveTextContent('Preparing the engine · 0:42')
+    )
 
     act(() =>
       useAppState.getState().setLoadingModelProgress({
@@ -316,7 +355,9 @@ describe('ModelLoadSnackbar for a container-backed engine', () => {
         elapsedMs: 185_000,
       })
     )
-    await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 3:05'))
+    await waitFor(() =>
+      expect(snackbar()).toHaveTextContent('Preparing the engine · 3:05')
+    )
   })
 
   it('shows the same for a vLLM load: "starting the engine" with the stage and time (spec vllm-desktop)', async () => {
@@ -332,6 +373,8 @@ describe('ModelLoadSnackbar for a container-backed engine', () => {
         elapsedMs: 245_000,
       })
     )
-    await waitFor(() => expect(snackbar()).toHaveTextContent('Preparing the engine · 4:05'))
+    await waitFor(() =>
+      expect(snackbar()).toHaveTextContent('Preparing the engine · 4:05')
+    )
   })
 })
