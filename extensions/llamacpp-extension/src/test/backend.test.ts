@@ -525,7 +525,7 @@ describe('catalog wrappers over the core', () => {
     expect(available).toEqual(CATALOG.available)
   })
 
-  it('reads asset names and sizes off the memoized catalog', async () => {
+  it('reads asset names off the memoized catalog', async () => {
     // Cold: no catalog yet, so the naming convention takes over upstream.
     expect(
       backend.getIndexedAssetName(LATEST, 'linux-x64-vulkan')
@@ -537,23 +537,6 @@ describe('catalog wrappers over the core', () => {
       'llama-turboquant-linux-x64-vulkan.tar.gz'
     )
     expect(backend.getIndexedAssetName(LATEST, 'linux-x64-rocm')).toBeUndefined()
-    await expect(
-      backend.getIndexedVariantSize(LATEST, 'linux-x64-vulkan')
-    ).resolves.toBe(120_000_000)
-    // A zero or missing size is "unknown", not "0 bytes".
-    await expect(
-      backend.getIndexedVariantSize(PREVIOUS, 'linux-x64-vulkan')
-    ).resolves.toBeUndefined()
-    await expect(
-      backend.getIndexedVariantSize(LATEST, 'linux-x64-cpu')
-    ).resolves.toBeUndefined()
-  })
-
-  it('getIndexedVariantSize loads the catalog when it is cold', async () => {
-    await expect(
-      backend.getIndexedVariantSize(LATEST, 'linux-x64-vulkan')
-    ).resolves.toBe(120_000_000)
-    expect(getBackendCatalog).toHaveBeenCalledTimes(1)
   })
 
   it('treats a core without a release index as an empty one', async () => {
@@ -582,9 +565,6 @@ describe('catalog wrappers over the core', () => {
         source: 'none',
       })
       await expect(backend.fetchRemoteBackends()).resolves.toEqual([])
-      await expect(
-        backend.getIndexedVariantSize(LATEST, 'linux-x64-vulkan')
-      ).resolves.toBeUndefined()
     })
 
     it('listSupportedBackends throws so configureBackends can keep the bundled build', async () => {

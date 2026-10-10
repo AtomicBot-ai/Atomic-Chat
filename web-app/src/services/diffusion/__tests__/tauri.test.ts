@@ -59,8 +59,6 @@ describe('TauriDiffusionService commands', () => {
           return { job: null }
         case 'POST /diffusion/jobs/job-1/cancel':
           return { cancelled: true, serverStopped: false }
-        case 'GET /diffusion/backends':
-          return { backends: [{ tag: 't', backendId: 'macos-arm64' }] }
         case 'GET /diffusion/model-files':
           return { files: [{ relativePath: 'z-image/x.gguf' }] }
         case 'GET /diffusion/gallery':
@@ -97,15 +95,6 @@ describe('TauriDiffusionService commands', () => {
   it('calls one core route per operation, with the interface parameters as the body', async () => {
     await service.configure({ dataFolder: '/data', idleUnloadSecs: 600 })
     await service.getStatus()
-    await service.finalizeBackendInstall({
-      dir: '/data/diffusion/backends/t/macos-arm64',
-      tag: 't',
-      backendId: 'macos-arm64',
-      backend: 'metal',
-      engine: 'sd-cpp',
-    })
-    await service.listInstalledBackends()
-    await service.removeBackend('/old')
     await service.listModelFiles()
     await service.deleteModelFile('/data/diffusion/models/z-image/x.gguf')
     await service.unloadModel()
@@ -123,19 +112,6 @@ describe('TauriDiffusionService commands', () => {
     expect(calls).toEqual([
       { method: 'PUT', path: '/diffusion/config', body: { dataFolder: '/data', idleUnloadSecs: 600 } },
       { method: 'GET', path: '/diffusion/status', body: null },
-      {
-        method: 'POST',
-        path: '/diffusion/backends/finalize',
-        body: {
-          dir: '/data/diffusion/backends/t/macos-arm64',
-          tag: 't',
-          backendId: 'macos-arm64',
-          backend: 'metal',
-          engine: 'sd-cpp',
-        },
-      },
-      { method: 'GET', path: '/diffusion/backends', body: null },
-      { method: 'POST', path: '/diffusion/backends/remove', body: { dir: '/old' } },
       { method: 'GET', path: '/diffusion/model-files', body: null },
       {
         method: 'POST',
@@ -203,6 +179,57 @@ describe('TauriDiffusionService commands', () => {
     ])
   })
 
+  it('reaches the core\'s sd.cpp engine builds under /engine-builds/sd-cpp, snake_case bodies', async () => {
+    await service.engineCatalog()
+    await service.engineCatalog({ force: true })
+    await service.checkEngineUpdate({ force: true })
+    await service.installEngine({ task_id: 'diffusion-backend-master-900-abc-macos-arm64' })
+    await service.installEngine({ task_id: 't', force: true })
+    await service.removeEngineBuild('master-900/abc', 'macos-arm64')
+
+    expect(calls).toEqual([
+      { method: 'POST', path: '/engine-builds/sd-cpp/catalog', body: {} },
+      { method: 'POST', path: '/engine-builds/sd-cpp/catalog', body: { force: true } },
+      { method: 'POST', path: '/engine-builds/sd-cpp/updates', body: { force: true } },
+      {
+        method: 'POST',
+        path: '/engine-builds/sd-cpp/install',
+        body: { task_id: 'diffusion-backend-master-900-abc-macos-arm64' },
+      },
+      { method: 'POST', path: '/engine-builds/sd-cpp/install', body: { task_id: 't', force: true } },
+      { method: 'DELETE', path: '/engine-builds/sd-cpp/master-900%2Fabc/macos-arm64', body: null },
+    ])
+  })
+
+  it('returns the core\'s engine-build answers as they are', async () => {
+    const catalog = {
+      engine: 'sd-cpp',
+      manifest: null,
+      manifest_error: 'offline',
+      host_backend_id: null,
+      host_reason: 'Intel Macs are not supported.',
+      installed: [],
+      active: null,
+    }
+    mockIPC((_command: string, args?: InvokeArgs) => {
+      const call = args as Call
+      if (call.path === '/engine-builds/sd-cpp/catalog') return catalog
+      if (call.path === '/engine-builds/sd-cpp/updates')
+        return { update_needed: false, current: null, target: null }
+      throw { code: 'ENGINE_INSTALL_IN_PROGRESS', message: 'busy' }
+    })
+    await expect(service.engineCatalog()).resolves.toEqual(catalog)
+    await expect(service.checkEngineUpdate()).resolves.toEqual({
+      update_needed: false,
+      current: null,
+      target: null,
+    })
+    await expect(service.installEngine({ task_id: 't' })).rejects.toEqual({
+      code: 'ENGINE_INSTALL_IN_PROGRESS',
+      message: 'busy',
+    })
+  })
+
   it('asks the core for a video estimate, and reads any refusal as no estimate', async () => {
     const request = {
       prompt: 'a cat walking',
@@ -251,14 +278,13 @@ describe('TauriDiffusionService commands', () => {
     ])
   })
 
-  it('returns what the core answers, unwrapping the four envelopes', async () => {
+  it('returns what the core answers, unwrapping the envelopes', async () => {
     await expect(service.getStatus()).resolves.toEqual(status)
     await expect(service.cancelJob('job-1')).resolves.toEqual({
       cancelled: true,
       serverStopped: false,
     })
     await expect(service.getJob('job-1')).resolves.toBeNull()
-    await expect(service.listInstalledBackends()).resolves.toEqual([{ tag: 't', backendId: 'macos-arm64' }])
     await expect(service.listModelFiles()).resolves.toEqual([{ relativePath: 'z-image/x.gguf' }])
     await expect(service.getGalleryItem('job-1-00')).resolves.toEqual({ id: 'job-1-00' })
   })

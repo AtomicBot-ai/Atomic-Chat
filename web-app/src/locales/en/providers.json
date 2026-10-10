@@ -90,6 +90,14 @@
     "notInstalled": "vLLM is not installed. Installing it downloads the engine image and, if needed, sets up Docker and the NVIDIA Container Toolkit.",
     "install": "Install…",
     "installed": "vLLM is installed.",
+    "version": "Installed release: {{version}}",
+    "update": {
+      "available": "A newer release is available: {{version}}",
+      "button": "Update…",
+      "title": "Update vLLM?",
+      "body": "The engine is removed and installed again from the newer release. Your downloaded models stay. The new engine image downloads about {{size}}; until it is set up, vLLM models cannot load.",
+      "confirm": "Update"
+    },
     "failed": "The installation stopped:",
     "retry": "Try again",
     "newerPlan": "The engine can now be set up with a newer plan, for example from a newer engine release. Install starts over with it; Try again repeats the failed attempt as it was.",
@@ -250,6 +258,14 @@
     "notInstalled": "TensorRT-LLM is not installed. Installing it downloads the engine image and, if needed, sets up Docker and the NVIDIA Container Toolkit.",
     "install": "Install…",
     "installed": "TensorRT-LLM is installed.",
+    "version": "Installed release: {{version}}",
+    "update": {
+      "available": "A newer release is available: {{version}}",
+      "button": "Update…",
+      "title": "Update TensorRT-LLM?",
+      "body": "The engine is removed and installed again from the newer release. Your downloaded models stay. The new engine image downloads about {{size}}; until it is set up, TensorRT-LLM models cannot load.",
+      "confirm": "Update"
+    },
     "failed": "The installation stopped:",
     "retry": "Try again",
     "newerPlan": "The engine can now be set up with a newer plan, for example from a newer engine release. Install starts over with it; Try again repeats the failed attempt as it was.",

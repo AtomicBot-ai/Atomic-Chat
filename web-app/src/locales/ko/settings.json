@@ -368,8 +368,6 @@
     "alreadyOptimal": "이 기기에 이미 최적의 백엔드를 사용 중입니다.",
     "findOptimalFailed": "최적 백엔드를 확인할 수 없습니다. 나중에 다시 시도하세요.",
     "detectionUnavailable": "백엔드 릴리스 스트림(GitHub)에 연결할 수 없습니다. 현재 백엔드를 유지합니다 — 연결 또는 프록시를 확인하고 다시 시도하세요.",
-    "pendingBackendLabel": "대기 중:",
-    "pendingBackendHint": "재시작 후 활성화됩니다",
     "hotSwapping": "백엔드 전환 중",
     "hotSwappingDesc": "재시작 없이 {{backend}}을(를) 활성화하는 중…",
     "hotSwapSuccess": "백엔드 전환됨",

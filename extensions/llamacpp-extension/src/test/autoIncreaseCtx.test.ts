@@ -46,7 +46,6 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
   mapOldBackendToNew: vi.fn(),
   findLatestVersionForBackend: vi.fn(),
   prioritizeBackends: vi.fn(),
-  removeOldBackendVersions: vi.fn(),
   shouldMigrateBackend: vi.fn(),
   handleSettingUpdate: vi.fn(),
   installBundledBackend: vi.fn(),

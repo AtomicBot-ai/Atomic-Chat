@@ -49,7 +49,6 @@ vi.mock(
     mapOldBackendToNew: vi.fn(),
     findLatestVersionForBackend: vi.fn(),
     prioritizeBackends: vi.fn(),
-    removeOldBackendVersions: vi.fn(),
     shouldMigrateBackend: vi.fn(),
     handleSettingUpdate: vi.fn(),
     installBundledBackend: vi.fn(),

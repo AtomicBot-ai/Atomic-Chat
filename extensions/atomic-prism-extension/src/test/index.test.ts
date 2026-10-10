@@ -736,223 +736,12 @@ describe('atomic_prism_extension', () => {
     })
   })
 
+  // Engine update offers are the desktop's, from the core's `POST /engines/versions`
+  // (change unify-engine-lifecycle): the extension neither checks on load nor publishes one.
   describe('update offer', () => {
-    const publishedOffer = () => {
-      const call = vi
-        .mocked(localStorage.setItem)
-        .mock.calls.find(([key]) => key === 'atomic_engine_update_offer_atomic-prism')
-      return call ? JSON.parse(call[1] as string) : null
-    }
-
-    beforeEach(() => {
-      ;(window as any).dispatchEvent = vi.fn()
-      extension.downloadRecommendedBackend = vi.fn().mockResolvedValue(undefined)
-      vi.mocked(isBackendInstalled).mockResolvedValue(true)
-    })
-
-    it('offers the newer release with the core’s notes and size, and installs nothing', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cuda-12.4-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: true,
-        new_version: NEXT_TAG,
-        target_backend: `${NEXT_TAG}/linux-cuda-12.4-x64`,
-        same_family: true,
-        reason: 'newer',
-        notes_url: `https://github.com/PrismML-Eng/llama.cpp/releases/tag/${NEXT_TAG}`,
-        notes: 'Faster Q1 kernels.',
-        download_size: 512_000_000,
-      } as any)
-
-      await extension['reconcileBackendReleaseTag']()
-
-      expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-      expect(invoke).not.toHaveBeenCalledWith(
-        'atomic_core_call',
-        expect.objectContaining({ path: '/backends/atomic-prism/install' })
-      )
-      expect(publishedOffer()).toEqual({
-        provider: 'atomic-prism',
-        currentBackend: `${TAG}/linux-cuda-12.4-x64`,
-        targetBackend: `${NEXT_TAG}/linux-cuda-12.4-x64`,
-        currentVersion: TAG,
-        targetVersion: NEXT_TAG,
-        downloadSizeBytes: 512_000_000,
-        restartRequired: false,
-        releaseNotesUrl: `https://github.com/PrismML-Eng/llama.cpp/releases/tag/${NEXT_TAG}`,
-        notes: 'Faster Q1 kernels.',
-      })
-      const event = vi.mocked((window as any).dispatchEvent).mock.calls[0]?.[0] as CustomEvent
-      expect(event?.type).toBe('app:engine-update-available')
-    })
-
-    it('carries no release page when the core names none', async () => {
-      extension['config'] = { version_backend: `${TAG}/macos-arm64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: true,
-        new_version: NEXT_TAG,
-        target_backend: `${NEXT_TAG}/macos-arm64`,
-        same_family: true,
-      } as any)
-
-      await extension['reconcileBackendReleaseTag']()
-
-      const offer = publishedOffer()
-      expect(offer.targetBackend).toBe(`${NEXT_TAG}/macos-arm64`)
-      expect(offer).not.toHaveProperty('releaseNotesUrl')
-      expect(offer).not.toHaveProperty('notes')
-      expect(offer).not.toHaveProperty('downloadSizeBytes')
-    })
-
-    it('offers the replacement of a withdrawn release, even an older tag', async () => {
-      extension['config'] = { version_backend: `${NEXT_TAG}/win-cpu-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: true,
-        new_version: TAG,
-        target_backend: `${TAG}/win-cpu-x64`,
-        same_family: true,
-        reason: 'withdrawn',
-        current_withdrawn: { reason: 'corrupts output on AVX2' },
-      } as any)
-
-      await extension['reconcileBackendReleaseTag']()
-
-      expect(publishedOffer()).toMatchObject({
-        currentBackend: `${NEXT_TAG}/win-cpu-x64`,
-        targetBackend: `${TAG}/win-cpu-x64`,
-      })
-      expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-    })
-
-    it('refuses to move between backend types', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-vulkan-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: true,
-        new_version: NEXT_TAG,
-        target_backend: `${NEXT_TAG}/linux-cpu-x64`,
-        same_family: false,
-      } as any)
-
-      await extension['reconcileBackendReleaseTag']()
-
-      expect(publishedOffer()).toBeNull()
-    })
-
-    it('stays quiet when the release in use is the newest', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: false,
-        new_version: '0',
-        same_family: false,
-      } as any)
-
-      await extension['reconcileBackendReleaseTag']()
-
-      expect(publishedOffer()).toBeNull()
-    })
-
-    it('offers nothing to a machine that never set PrismML up', async () => {
-      // `configureBackends()` names the catalog's pick without installing it.
-      extension['config'] = { version_backend: `${TAG}/macos-arm64` } as any
-      vi.mocked(isBackendInstalled).mockResolvedValue(false)
-
-      await extension['reconcileBackendReleaseTag']()
-
-      expect(isBackendInstalled).toHaveBeenCalledWith('macos-arm64', TAG)
-      expect(coreRuntime.checkBackendUpdates).not.toHaveBeenCalled()
-      expect(publishedOffer()).toBeNull()
-    })
-
-    it('asks nothing before a concrete build is configured', async () => {
-      extension['config'] = { version_backend: 'none' } as any
-
-      await extension['reconcileBackendReleaseTag']()
-
-      expect(coreRuntime.checkBackendUpdates).not.toHaveBeenCalled()
-      expect(publishedOffer()).toBeNull()
-    })
-
-    it('swallows a failing check: the offer is not worth a crash', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      extension.checkBackendForUpdates = vi.fn().mockRejectedValue(new Error('boom'))
-
-      await expect(extension['reconcileBackendReleaseTag']()).resolves.toBeUndefined()
-      expect(publishedOffer()).toBeNull()
-    })
-  })
-
-  describe('checkBackendForUpdates', () => {
-    it('reads the PrismML fields defensively', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: true,
-        new_version: NEXT_TAG,
-        target_backend: `${NEXT_TAG}/linux-cpu-x64`,
-        same_family: true,
-        notes_url: 42,
-        notes: '',
-        download_size: -1,
-        current_withdrawn: {},
-      } as any)
-
-      const result = await extension.checkBackendForUpdates({ force: true })
-
-      expect(result).toEqual({
-        updateNeeded: true,
-        newVersion: NEXT_TAG,
-        targetBackend: `${NEXT_TAG}/linux-cpu-x64`,
-        sameFamily: true,
-        reason: undefined,
-        notesUrl: undefined,
-        notes: undefined,
-        downloadSize: undefined,
-        currentWithdrawn: 'withdrawn',
-      })
-      expect(coreRuntime.checkBackendUpdates).toHaveBeenCalledWith(
-        expect.objectContaining({ current: `${TAG}/linux-cpu-x64`, force: true })
-      )
-    })
-
-    it('answers "no update" without asking for a malformed backend', async () => {
-      extension['config'] = { version_backend: 'none' } as any
-      await expect(extension.checkBackendForUpdates()).resolves.toEqual({
-        updateNeeded: false,
-        newVersion: '0',
-        sameFamily: false,
-      })
-      expect(coreRuntime.checkBackendUpdates).not.toHaveBeenCalled()
-    })
-
-    it('answers "no update" when the core fails', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockRejectedValue(new Error('down'))
-      await expect(extension.checkBackendForUpdates()).resolves.toMatchObject({
-        updateNeeded: false,
-      })
-    })
-
-    it('fails the manual check when the core fails, instead of reporting no update', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockRejectedValue(new Error('down'))
-      await expect(extension.checkForEngineUpdate()).rejects.toThrow('down')
-    })
-
-    it('feeds the manual check, which only decides', async () => {
-      extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-        update_needed: true,
-        new_version: NEXT_TAG,
-        target_backend: `${NEXT_TAG}/linux-cpu-x64`,
-        same_family: true,
-      } as any)
-
-      await expect(extension.checkForEngineUpdate()).resolves.toEqual({
-        updateAvailable: true,
-        targetBackend: `${NEXT_TAG}/linux-cpu-x64`,
-      })
-      expect(invoke).not.toHaveBeenCalledWith(
-        'atomic_core_call',
-        expect.objectContaining({ path: '/backends/atomic-prism/install' })
-      )
+    it('makes none of its own', () => {
+      expect('reconcileBackendReleaseTag' in extension).toBe(false)
+      expect('offerEngineUpdate' in extension).toBe(false)
     })
   })
 
@@ -988,36 +777,52 @@ describe('atomic_prism_extension', () => {
       expect(invoke).not.toHaveBeenCalled()
     })
 
-    it('prunes older releases of the same type through the core after an update', async () => {
-      stubSettings(extension)
+    // Change unify-engine-lifecycle: the core installs, switches and retires old builds; the
+    // extension writes no version and removes nothing.
+    it('has the core switch to the build a `latest/` pick resolves to', async () => {
       extension['config'] = { version_backend: `${TAG}/linux-cpu-x64` } as any
-      vi.mocked(isBackendInstalled).mockResolvedValue(true)
-      vi.mocked(invoke).mockImplementation(async (command, args) => {
-        if (command !== 'atomic_core_call') return undefined
-        const { method, path } = args as { method: string; path: string }
-        if (method === 'GET' && path.startsWith('/backends/atomic-prism')) {
-          return {
-            backends: [
-              { version: TAG, backend: 'linux-cpu-x64', path: '/a', active: false },
-              { version: TAG, backend: 'linux-vulkan-x64', path: '/b', active: false },
-              { version: NEXT_TAG, backend: 'linux-cpu-x64', path: '/c', active: true },
-            ],
-          }
-        }
-        return { removed: true }
+      extension['resolveLatestBackendString'] = vi
+        .fn()
+        .mockResolvedValue(`${NEXT_TAG}/linux-cpu-x64`)
+      vi.mocked(listen).mockResolvedValue(vi.fn())
+      vi.mocked(invoke).mockResolvedValue({
+        updated: true,
+        active: { version: NEXT_TAG, variant: 'linux-cpu-x64' },
+        retired: [{ version: TAG, variant: 'linux-cpu-x64' }],
+        kept_in_use: [],
       })
 
-      const result = await extension.updateBackend(`${NEXT_TAG}/linux-cpu-x64`)
+      await extension['switchThroughCore']('latest/linux-cpu-x64')
 
-      expect(result).toEqual({ wasUpdated: true, newBackend: `${NEXT_TAG}/linux-cpu-x64` })
-      const deletes = vi
-        .mocked(invoke)
-        .mock.calls.filter(([, a]) => (a as { method?: string })?.method === 'DELETE')
-        .map(([, a]) => (a as { path: string }).path)
-      expect(deletes).toEqual([`/backends/atomic-prism/${TAG}/linux-cpu-x64`])
+      expect(vi.mocked(invoke).mock.calls).toEqual([
+        [
+          'atomic_core_call',
+          {
+            method: 'POST',
+            path: '/engines/atomic-prism/update',
+            body: {
+              task_id: 'engine-update-atomic-prism-latest_linux-cpu-x64',
+              target: { version: NEXT_TAG, variant: 'linux-cpu-x64' },
+            },
+          },
+        ],
+      ])
+      expect(extension['config'].version_backend).toBe(`${TAG}/linux-cpu-x64`)
     })
 
-    it('installs an archive from a file under the id the core looks it up by', async () => {
+    it('resolves a pick it can neither find in the catalog nor on disk to an actionable error', async () => {
+      extension['resolveLatestBackendString'] = vi.fn().mockResolvedValue(null)
+      extension['newestInstalledOfFamily'] = vi.fn().mockResolvedValue(null)
+
+      await expect(
+        extension.resolveBackendSelection('latest/linux-rocm-7.2-x64')
+      ).rejects.toThrow(/Install backend from file/)
+      await expect(
+        extension.resolveBackendSelection(`${TAG}/linux-cpu-x64`)
+      ).resolves.toBe(`${TAG}/linux-cpu-x64`)
+    })
+
+    it('installs an archive from a file under the id the core looks it up by, and selects nothing itself', async () => {
       stubSettings(extension)
       extension['config'] = { version_backend: 'none' } as any
       extension.configureBackends = vi.fn().mockResolvedValue(undefined)
@@ -1025,14 +830,17 @@ describe('atomic_prism_extension', () => {
       vi.mocked(fs.existsSync).mockResolvedValue(true)
       vi.mocked(getBackendDir).mockResolvedValue(`/jan/atomic-prism/backends/${TAG}/linux-vulkan-x64`)
 
-      await extension.installBackend(`/dl/llama-${TAG}-bin-ubuntu-vulkan-x64.tar.gz`)
+      await expect(extension.installBackend(`/dl/llama-${TAG}-bin-ubuntu-vulkan-x64.tar.gz`)).resolves.toBe(
+        `${TAG}/linux-vulkan-x64`
+      )
 
       expect(getBackendDir).toHaveBeenCalledWith('linux-vulkan-x64', TAG)
       expect(invoke).toHaveBeenCalledWith('decompress', {
         path: `/dl/llama-${TAG}-bin-ubuntu-vulkan-x64.tar.gz`,
         outputDir: `/jan/atomic-prism/backends/${TAG}/linux-vulkan-x64`,
       })
-      expect(extension['config'].version_backend).toBe(`${TAG}/linux-vulkan-x64`)
+      // The core makes it active and writes `version_backend`; the extension mirrors that.
+      expect(extension['config'].version_backend).toBe('none')
     })
 
     it('refuses an archive that is not a PrismML server build', async () => {
@@ -1176,6 +984,65 @@ describe('atomic_prism_extension', () => {
       expect(mirror).not.toHaveBeenCalled()
       listener({ payload: { provider: 'atomic-prism' } })
       expect(mirror).toHaveBeenCalledOnce()
+    })
+
+    // Change unify-engine-lifecycle (6.3): the core writes `version_backend` on an update or an
+    // activation, from this app or another client.
+    it('takes a build the core switched to: adds it to the list, records its type and tells the page', async () => {
+      stubSettings(extension, { version_backend: `${TAG}/linux-cpu-x64` })
+      const addOption = vi
+        .spyOn(extension as any, 'ensureBackendOption')
+        .mockResolvedValue(undefined)
+      vi.mocked(invoke).mockImplementation(async (_command, args) => {
+        const { method, path } = args as { method: string; path: string }
+        if (method === 'GET' && path === '/settings/atomic-prism') {
+          return {
+            provider: 'atomic-prism',
+            revision: 4,
+            values: { version_backend: `${NEXT_TAG}/linux-vulkan-x64` },
+          }
+        }
+        return undefined
+      })
+      vi.mocked(events.emit).mockClear()
+
+      await extension['coreSettings'].mirror()
+
+      expect(addOption).toHaveBeenCalledWith(`${NEXT_TAG}/linux-vulkan-x64`)
+      const stored = (await extension.getSettings()).find(
+        (s: { key: string }) => s.key === 'version_backend'
+      )
+      expect(stored?.controllerProps.value).toBe(`${NEXT_TAG}/linux-vulkan-x64`)
+      expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+        key: 'version_backend',
+        value: `${NEXT_TAG}/linux-vulkan-x64`,
+      })
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'atomic_prism_backend_type',
+        'linux-vulkan-x64'
+      )
+    })
+
+    it('says nothing to the page when the core’s version is the one it holds', async () => {
+      stubSettings(extension, { version_backend: `${TAG}/linux-cpu-x64` })
+      vi.mocked(invoke).mockImplementation(async (_command, args) => {
+        const { method, path } = args as { method: string; path: string }
+        if (method === 'GET' && path === '/settings/atomic-prism') {
+          return {
+            provider: 'atomic-prism',
+            revision: 4,
+            values: { version_backend: `${TAG}/linux-cpu-x64` },
+          }
+        }
+        return undefined
+      })
+      vi.mocked(events.emit).mockClear()
+
+      await extension['coreSettings'].mirror()
+
+      expect(
+        vi.mocked(events.emit).mock.calls.filter(([name]) => name === 'settingsChanged')
+      ).toEqual([])
     })
 
     it('follows the core’s optimal-backend record for this provider only', async () => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { EngineManager, events } from '@janhq/core'
 
 import { PRISM_PROVIDER } from '@/lib/model-setup'
+import { switchBackendThroughCore } from '@/services/engines/update'
 
 /** What the PrismML extension answers about its engine (`getEngineStatus`). */
 export type PrismEngineStatus = {
@@ -12,15 +13,13 @@ export type PrismEngineStatus = {
 
 type PrismExtension = {
   getEngineStatus(): Promise<PrismEngineStatus>
-  downloadRecommendedBackend(backend: string): Promise<void>
 }
 
 function prismExtension(): PrismExtension | null {
   const engine = EngineManager.instance().get(PRISM_PROVIDER) as
     | Partial<PrismExtension>
     | undefined
-  return typeof engine?.getEngineStatus === 'function' &&
-    typeof engine.downloadRecommendedBackend === 'function'
+  return typeof engine?.getEngineStatus === 'function'
     ? (engine as PrismExtension)
     : null
 }
@@ -84,7 +83,8 @@ export function usePrismEngine(enabled: boolean): PrismEngine {
     setInstalling(true)
     setInstallError(null)
     try {
-      await extension.downloadRecommendedBackend(status.recommended)
+      // The core installs the build and makes it PrismML's active one.
+      await switchBackendThroughCore(PRISM_PROVIDER, status.recommended)
     } catch (error) {
       setInstallError(errorText(error))
     } finally {

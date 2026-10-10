@@ -37,6 +37,7 @@ import { formatBytes } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
 import { findFamily, findQuant } from '@/services/diffusion-catalog-registry'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import { ImageApiSettingsCard } from './ImageApiSettingsCard'
 
 const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
@@ -313,6 +314,9 @@ export function MediaSettingsPanel() {
             )
           }
         />
+        {/* The sd.cpp builds on disk; the core picks the active one, so they
+            can be removed here but not chosen. */}
+        {engine.installed && <InstalledEngineBuilds engine="sd-cpp" />}
         {engine.engineChoices.length > 1 && (
           <CardItem
             title={t('settings:media.engineOverride')}

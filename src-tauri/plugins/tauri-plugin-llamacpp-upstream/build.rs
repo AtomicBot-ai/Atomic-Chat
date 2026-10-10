@@ -13,7 +13,6 @@ const COMMANDS: &[&str] = &[
     "find_latest_version_for_backend",
     "prioritize_backends",
     "check_backend_for_updates",
-    "remove_old_backend_versions",
     "should_migrate_backend",
     "handle_setting_update",
     "install_bundled_backend",

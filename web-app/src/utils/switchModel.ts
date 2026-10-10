@@ -1595,7 +1595,15 @@ export function describeModelLoadFailure(
     return simple('startupTimedOut')
   }
   if (isOutOfMemoryError(err)) {
-    return simple('outOfMemory', true)
+    // The copy is generic; the engine's own words — which allocation failed
+    // and how much was free, or a KV cache shorter than the context — stay one
+    // click away, the sentence first and the log under it.
+    const { summary, details } = splitModelLoadError(err)
+    const raw = [summary, details].filter(Boolean).join('\n\n')
+    return {
+      ...simple('outOfMemory', true),
+      details: raw ? clampDetails(raw) : undefined,
+    }
   }
   // ATO-121: map well-classified engine errors to an actionable message + hint
   // instead of the opaque generic "unexpected error". The codes come from the

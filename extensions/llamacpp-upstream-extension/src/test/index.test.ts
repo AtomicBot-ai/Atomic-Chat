@@ -7,7 +7,6 @@ import llamacpp_extension, {
 import {
   mapOldBackendToNew,
   readGgufMetadata,
-  removeOldBackendVersions,
 } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp-upstream/guest-js/index'
 import {
   getBackendDir,
@@ -73,6 +72,7 @@ vi.mock('../adapter/coreRuntime', async () => {
     getBackendCatalog: vi.fn(),
     recommendBackend: vi.fn(),
     checkBackendUpdates: vi.fn(),
+    updateEngine: vi.fn(),
   }
 })
 
@@ -130,7 +130,6 @@ vi.mock(
       ...actual,
       mapOldBackendToNew: vi.fn(),
       readGgufMetadata: vi.fn(),
-      removeOldBackendVersions: vi.fn(),
     }
   }
 )
@@ -371,7 +370,9 @@ describe('llamacpp_extension', () => {
       extension['getSettings'] = vi.fn().mockResolvedValue([])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension.installBackend(archivePath)
+      await expect(extension.installBackend(archivePath)).resolves.toBe(
+        'b9702/macos-arm64'
+      )
 
       expect(invoke).toHaveBeenNthCalledWith(1, 'decompress', {
         path: archivePath,
@@ -382,6 +383,8 @@ describe('llamacpp_extension', () => {
         exeName: 'llama-server',
       })
       expect(fs.rm).not.toHaveBeenCalled()
+      // The core makes it active; the extension writes no `version_backend`.
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
     })
 
     it('rejects an import when normalization leaves no llama-server binary', async () => {
@@ -1282,233 +1285,80 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('updateBackend', () => {
-    beforeEach(() => {
-      vi.stubGlobal('IS_WINDOWS', false)
-      extension['config'] = {
-        version_backend: 'v1.0.0/linux-avx2-x64',
-        device: '',
-      } as any
-    })
+  // Change unify-engine-lifecycle (6.3): the core writes `version_backend` on an update or an
+  // activation, from this app or another client. The extension follows it without a restart, and
+  // its next load imports nothing older.
+  describe('a version_backend the core switched to', () => {
+    const OLD = 'b10200/win-vulkan-x64'
+    const NEW = 'b10300/win-cuda-13.3-x64'
 
-    afterEach(() => {
-      vi.unstubAllGlobals()
-    })
-
-    describe('validation', () => {
-      it('should reject empty targetBackendString', async () => {
-        const result = await extension.updateBackend('')
-        expect(result).toEqual({
-          wasUpdated: false,
-          newBackend: 'v1.0.0/linux-avx2-x64',
-        })
+    const setup = (coreValue = NEW) => {
+      let stored = [
+        {
+          key: 'version_backend',
+          controllerProps: { value: OLD, options: [{ value: OLD, name: OLD }] },
+        },
+      ]
+      Object.assign(extension, {
+        name: '@janhq/llamacpp-upstream-extension',
+        getSettings: vi.fn(async () => structuredClone(stored)),
+        updateSettings: vi.fn(async (next: typeof stored) => {
+          stored = structuredClone(next)
+        }),
       })
-
-      it('should reject targetBackendString with no slash', async () => {
-        const result = await extension.updateBackend('v1.2.3')
-        expect(result).toEqual({
-          wasUpdated: false,
-          newBackend: 'v1.0.0/linux-avx2-x64',
-        })
+      vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+        if (key === '@janhq/llamacpp-upstream-extension') stored = JSON.parse(value)
       })
-
-      it('should reject targetBackendString with trailing slash', async () => {
-        const result = await extension.updateBackend('v1.2.3/')
-        expect(result).toEqual({
-          wasUpdated: false,
-          newBackend: 'v1.0.0/linux-avx2-x64',
-        })
-      })
-
-      it('should reject targetBackendString with leading slash', async () => {
-        const result = await extension.updateBackend('/linux-avx2-x64')
-        expect(result).toEqual({
-          wasUpdated: false,
-          newBackend: 'v1.0.0/linux-avx2-x64',
-        })
-      })
-
-      it('should reject targetBackendString with extra segments', async () => {
-        const result = await extension.updateBackend('v1/backend/extra')
-        expect(result).toEqual({
-          wasUpdated: false,
-          newBackend: 'v1.0.0/linux-avx2-x64',
-        })
-      })
-
-      it('should reject targetBackendString with whitespace-only parts', async () => {
-        const result = await extension.updateBackend(' / ')
-        expect(result).toEqual({
-          wasUpdated: false,
-          newBackend: 'v1.0.0/linux-avx2-x64',
-        })
-      })
-    })
-
-    describe('isUpdatingBackend flag', () => {
-      it('should reset isUpdatingBackend to false after successful update', async () => {
-        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
-        extension['getStoredBackendType'] = vi
-          .fn()
-          .mockReturnValue('linux-avx2-x64')
-        extension['setStoredBackendType'] = vi.fn()
-        extension['getSettings'] = vi.fn().mockResolvedValue([])
-        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-        vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
-
-        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
-        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
-
-        expect(extension['isUpdatingBackend']).toBe(false)
-
-        await extension.updateBackend('v2.0.0/linux-avx2-x64')
-
-        expect(extension['isUpdatingBackend']).toBe(false)
-      })
-
-      it('should reset isUpdatingBackend to false after failed update', async () => {
-        extension['ensureBackendReady'] = vi
-          .fn()
-          .mockRejectedValue(new Error('download failed'))
-
-        expect(extension['isUpdatingBackend']).toBe(false)
-
-        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
-
-        expect(extension['isUpdatingBackend']).toBe(false)
-        expect(result.wasUpdated).toBe(false)
-      })
-
-      it('should return no-op when an update is already in progress', async () => {
-        // Simulate an update already in progress
-        extension['isUpdatingBackend'] = true
-
-        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
-        expect(result.wasUpdated).toBe(false)
-      })
-    })
-
-    describe('onSettingUpdate guard', () => {
-      it('should skip ensureBackendReady in onSettingUpdate when updateBackend is in progress', async () => {
-        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
-
-        // Simulate updateBackend in progress
-        extension['isUpdatingBackend'] = true
-
-        // Call onSettingUpdate while updateBackend is "running"
-        extension.onSettingUpdate('version_backend', 'v2.0.0/linux-avx2-x64')
-
-        // ensureBackendReady should NOT have been called from onSettingUpdate
-        expect(extension['ensureBackendReady']).not.toHaveBeenCalled()
-      })
-    })
-
-    describe('stored backend type', () => {
-      it('should store effectiveBackendType, not the full version/backend string', async () => {
-        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
-        extension['getStoredBackendType'] = vi
-          .fn()
-          .mockReturnValue('old-backend-type')
-        extension['setStoredBackendType'] = vi.fn()
-        extension['getSettings'] = vi.fn().mockResolvedValue([])
-        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-        vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
-
-        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
-        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
-
-        await extension.updateBackend('v2.0.0/linux-avx2-x64')
-
-        // setStoredBackendType should be called with the backend type only, not "version/backend"
-        const storedValue = vi.mocked(extension['setStoredBackendType']).mock
-          .calls[0]?.[0]
-        expect(storedValue).not.toContain('/')
-      })
-    })
-
-    describe('trimming', () => {
-      it('should trim whitespace from version and backend before use', async () => {
-        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
-        extension['getStoredBackendType'] = vi
-          .fn()
-          .mockReturnValue('linux-avx2-x64')
-        extension['setStoredBackendType'] = vi.fn()
-        extension['getSettings'] = vi.fn().mockResolvedValue([])
-        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-        vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
-
-        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
-        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
-
-        await extension.updateBackend(' v2.0.0 / linux-avx2-x64 ')
-
-        // ensureBackendReady should receive trimmed values
-        expect(extension['ensureBackendReady']).toHaveBeenCalledWith(
-          'linux-avx2-x64',
-          'v2.0.0'
-        )
-      })
-    })
-
-    describe('cleanup target directory (ATO-153)', () => {
-      it('should resolve the cleanup dir under this provider (llamacpp-upstream), never the shared/turboquant llamacpp dir', async () => {
-        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
-        extension['getStoredBackendType'] = vi
-          .fn()
-          .mockReturnValue('linux-avx2-x64')
-        extension['setStoredBackendType'] = vi.fn()
-        extension['getSettings'] = vi.fn().mockResolvedValue([])
-        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-        vi.mocked(joinPath).mockImplementation((paths) =>
-          Promise.resolve(paths.join('/'))
-        )
-
-        // The extension imports the guest-js helpers via a RELATIVE path, so
-        // the `@janhq/tauri-plugin-llamacpp-upstream-api` mock does not
-        // intercept them — they hit the real Tauri `invoke` bridge. Stub the
-        // bridge so `mapOldBackendToNew` / `remove_old_backend_versions` / the
-        // log plugin resolve and `updateBackend` reaches the cleanup block.
-        const originalTauriInternals = (window as any).__TAURI_INTERNALS__
-        ;(window as any).__TAURI_INTERNALS__ = {
-          invoke: vi.fn(async (cmd: string, args: any) => {
-            if (cmd.endsWith('map_old_backend_to_new')) return args.oldBackend
-            if (cmd.endsWith('remove_old_backend_versions')) return []
-            return undefined
-          }),
+      let values: Record<string, unknown> = { version_backend: OLD }
+      const imports: unknown[] = []
+      vi.mocked(invoke).mockImplementation(async (command, args) => {
+        if (command === 'atomic_core_status') {
+          return { attached: { instance_id: 'i', generation: 1 } }
         }
-
-        try {
-          await extension.updateBackend('v2.0.0/linux-avx2-x64')
-        } finally {
-          ;(window as any).__TAURI_INTERNALS__ = originalTauriInternals
+        const call = args as { method: string; path: string; body?: { values?: unknown } }
+        if (call.method === 'POST' && call.path === '/settings/llamacpp-upstream/import') {
+          imports.push(call.body?.values)
+          return { status: 'imported', applied: [], conflicts: [], revision: 1 }
         }
-
-        // The cleanup MUST build its path from this provider's own tree
-        // (`llamacpp-upstream`), so the upstream auto-upgrade never wipes
-        // the turboquant `llamacpp/backends` dir (ATO-153).
-        expect(joinPath).toHaveBeenCalledWith([
-          '/path/to/jan',
-          'llamacpp-upstream',
-          'backends',
-        ])
-        expect(joinPath).not.toHaveBeenCalledWith([
-          '/path/to/jan',
-          'llamacpp',
-          'backends',
-        ])
+        if (call.method === 'GET' && call.path === '/settings/llamacpp-upstream') {
+          return { provider: 'llamacpp-upstream', revision: 2, values }
+        }
+        return undefined
       })
+      return {
+        stored: () => stored,
+        imports,
+        switchInCore: () => {
+          values = { version_backend: coreValue }
+        },
+      }
+    }
+
+    it('shows it in the list, records its type and tells the page', async () => {
+      const h = setup()
+      h.switchInCore()
+      vi.mocked(events.emit).mockClear()
+
+      await extension['enqueueCoreSettingsMirror']()
+
+      const setting = h.stored()[0]
+      expect(setting.controllerProps.value).toBe(NEW)
+      expect(setting.controllerProps.options).toContainEqual({ value: NEW, name: NEW })
+      expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+        key: 'version_backend',
+        value: NEW,
+      })
+    })
+
+    it('does not import the old value on the next load', async () => {
+      const h = setup()
+      await extension['ensureCoreIsReady']()
+      h.switchInCore()
+
+      await extension['enqueueCoreSettingsMirror']()
+      await extension['ensureCoreIsReady']()
+
+      expect(h.imports).toEqual([{ version_backend: OLD }])
     })
   })
 
@@ -1730,39 +1580,6 @@ describe('llamacpp_extension', () => {
   describe('backend replacement', () => {
     const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 
-    /**
-     * `updateBackend` fans out to the settings store, the stored-type
-     * preference and the guest bridge. Stub all of it so these tests can
-     * assert *what ends up persisted* and *in which order*.
-     */
-    const stubUpdateBackendDeps = async (storedType: string) => {
-      extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
-      extension['ensureBackendOption'] = vi.fn().mockResolvedValue(undefined)
-      extension['getStoredBackendType'] = vi.fn().mockReturnValue(storedType)
-      extension['setStoredBackendType'] = vi.fn()
-      extension['getSettings'] = vi
-        .fn()
-        .mockResolvedValue([
-          { key: 'version_backend', controllerProps: { value: '' } },
-        ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      vi.mocked(joinPath).mockResolvedValue(
-        '/path/to/jan/llamacpp-upstream/backends'
-      )
-      vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
-      vi.mocked(removeOldBackendVersions).mockResolvedValue([])
-    }
-
-    const persistedVersionBackend = () => {
-      const calls = vi.mocked(extension['updateSettings']).mock.calls
-      const settings = calls[calls.length - 1]?.[0] as any[] | undefined
-      return settings?.find((s) => s.key === 'version_backend')?.controllerProps
-        .value
-    }
-
     beforeEach(() => {
       vi.stubGlobal('IS_MAC', false)
       vi.stubGlobal('IS_WINDOWS', false)
@@ -1797,495 +1614,114 @@ describe('llamacpp_extension', () => {
       delete (window as any).dispatchEvent
     })
 
-    describe('reconcileBackendReleaseTag', () => {
-      /// Offer published by the last `reconcileBackendReleaseTag()` run, read
-      /// off the persisted mirror the banner boots from (ATO-528).
-      const publishedOffer = () => {
-        const call = vi
-          .mocked(localStorage.setItem)
-          .mock.calls.find(
-            ([key]) => key === 'atomic_engine_update_offer_llamacpp-upstream'
-          )
-        return call ? JSON.parse(call[1] as string) : null
-      }
-
+    describe('resolveParkedBackendSentinel', () => {
       beforeEach(() => {
         vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
         ;(window as any).dispatchEvent = vi.fn()
       })
 
-      it('offers the newest manifest release instead of taking it', async () => {
+      it('publishes no update offer: the core’s versions answer is the only source', async () => {
         extension['config'] = {
           version_backend: 'b9937/win-cuda-13.3-x64',
         } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-          sameFamily: true,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
+        extension.checkBackendForUpdates = vi.fn()
 
-        await extension['reconcileBackendReleaseTag']()
+        await extension['resolveParkedBackendSentinel']()
 
-        // The whole point of ATO-528: a launch no longer starts a several
-        // hundred megabyte transfer the user never asked for.
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-        const offer = publishedOffer()
-        expect(offer).toMatchObject({
-          provider: 'llamacpp-upstream',
-          currentBackend: 'b9937/win-cuda-13.3-x64',
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-          currentVersion: 'b9937',
-          targetVersion: 'b10344',
-          restartRequired: false,
-          releaseNotesUrl:
-            'https://github.com/ggml-org/llama.cpp/releases/tag/b10344',
-        })
-        // The core downloads from the signed mirror; the extension no longer knows the size.
-        expect(offer.downloadSizeBytes).toBeUndefined()
-        const event = vi.mocked((window as any).dispatchEvent).mock
-          .calls[0]?.[0] as CustomEvent
-        expect(event?.type).toBe('app:engine-update-available')
-        expect(event?.detail).toMatchObject({
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-        })
+        expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
+        expect(coreRuntime.updateEngine).not.toHaveBeenCalled()
+        expect(
+          vi
+            .mocked(localStorage.setItem)
+            .mock.calls.filter(([key]) =>
+              String(key).startsWith('atomic_engine_update_offer_')
+            )
+        ).toEqual([])
+        expect((window as any).dispatchEvent).not.toHaveBeenCalled()
       })
 
-      it('leaves the newest release alone', async () => {
-        extension['config'] = { version_backend: RECOMMENDED } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: false,
-          newVersion: '0',
-          sameFamily: false,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
-
-        await extension['reconcileBackendReleaseTag']()
-
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-      })
-
-      it('refuses to cross backend families', async () => {
-        extension['config'] = {
-          version_backend: 'b9937/win-vulkan-x64',
-        } as any
-        // The core judges the family and says so; the extension only obeys.
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cpu-x64',
-          sameFamily: false,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
-
-        await extension['reconcileBackendReleaseTag']()
-
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-      })
-
-      it('offers a tag bump on macOS, where the family never changes', async () => {
-        extension['config'] = {
-          version_backend: 'b10205/macos-arm64',
-        } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/macos-arm64',
-          sameFamily: true,
-        })
-        extension.downloadRecommendedBackend = vi
-          .fn()
-          .mockResolvedValue(undefined)
-
-        await extension['reconcileBackendReleaseTag']()
-
-        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
-        expect(publishedOffer()).toMatchObject({
-          currentBackend: 'b10205/macos-arm64',
-          targetBackend: 'b10344/macos-arm64',
-        })
-      })
-
-      it('resolves a sentinel parked in the config instead of skipping it', async () => {
+      it('resolves a sentinel parked in the config through the core instead of skipping it', async () => {
         // A `latest/<variant>` value here is not a fresh install: it is what
         // core's `registerSettings()` leaves behind when the stored concrete
-        // tag falls out of the options list. Skipping it used to switch off
-        // automatic engine updates for the rest of the installation's life.
+        // tag falls out of the options list. The core switches to the newest
+        // build of that variant, downloading it only if it is not on disk.
         extension['config'] = {
           version_backend: 'latest/macos-arm64',
         } as any
         extension.checkBackendForUpdates = vi.fn()
-        extension.downloadRecommendedBackend = vi
+        extension['resolveLatestBackendString'] = vi
           .fn()
-          .mockResolvedValue(undefined)
+          .mockResolvedValue('b11500/macos-arm64')
+        vi.mocked(coreRuntime.updateEngine).mockResolvedValue({
+          updated: true,
+          active: { version: 'b11500', variant: 'macos-arm64' },
+          retired: [],
+          kept_in_use: [],
+        })
 
-        await extension['reconcileBackendReleaseTag']()
+        await extension['resolveParkedBackendSentinel']()
 
-        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
-          'latest/macos-arm64'
-        )
+        // The pick is resolved here (a family id like `win-cuda-12-x64` has
+        // no exact build); the core gets the concrete build and the task is
+        // named after the pick the dialog opened on.
+        expect(coreRuntime.updateEngine).toHaveBeenCalledWith({
+          task_id: 'engine-update-llamacpp-upstream-latest_macos-arm64',
+          target: { version: 'b11500', variant: 'macos-arm64' },
+        })
         expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
+        // The extension wrote nothing: the value comes back from the core.
+        expect(extension['config'].version_backend).toBe('latest/macos-arm64')
       })
 
-      it('keeps the working backend when the sentinel download fails', async () => {
-        // The parked-sentinel recovery is the one leg that still downloads on
-        // its own; a failure there must not disturb the running backend.
+      it('keeps the working backend when the core cannot switch', async () => {
         const current = 'latest/win-vulkan-x64'
         extension['config'] = { version_backend: current } as any
-        extension.checkBackendForUpdates = vi.fn()
-        extension.downloadRecommendedBackend = vi
+        extension['resolveLatestBackendString'] = vi
           .fn()
-          .mockRejectedValue(new Error('asset unavailable'))
+          .mockResolvedValue('b11500/win-vulkan-x64')
+        vi.mocked(coreRuntime.updateEngine).mockRejectedValue({
+          code: 'BACKEND_TAG_UNRESOLVED',
+          message: 'asset unavailable',
+        })
 
         await expect(
-          extension['reconcileBackendReleaseTag']()
+          extension['resolveParkedBackendSentinel']()
         ).resolves.toBeUndefined()
         expect(extension['config'].version_backend).toBe(current)
       })
     })
 
-    describe('checkForEngineUpdate', () => {
-      beforeEach(() => {
-        vi.mocked(mapOldBackendToNew).mockImplementation(async (b: string) => b)
-        extension['configureBackendsPromise'] = null
+    describe('resolveBackendSelection', () => {
+      it('passes a concrete pick through', async () => {
+        await expect(
+          extension.resolveBackendSelection('b11400/win-vulkan-x64')
+        ).resolves.toBe('b11400/win-vulkan-x64')
       })
 
-      it('reports the newest release of the backend type in use', async () => {
-        extension['config'] = {
-          version_backend: 'b10205/win-cuda-13.3-x64',
-        } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-          sameFamily: true,
-        })
-
-        await expect(extension.checkForEngineUpdate()).resolves.toEqual({
-          updateAvailable: true,
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-        })
-        // The session manifest cache is exactly what hides a release published
-        // while the app was open, so the check must bypass it.
-        expect(extension.checkBackendForUpdates).toHaveBeenCalledWith({
-          force: true,
-          throwOnError: true,
-        })
-      })
-
-      it('fails when the catalog lookup fails, instead of reporting no update', async () => {
-        extension['config'] = {
-          version_backend: 'b10344/win-cpu-x64',
-        } as any
-        extension.checkBackendForUpdates = vi
+      it('resolves a family pick to the newest concrete build, offline to the newest installed one', async () => {
+        extension['resolveLatestBackendString'] = vi
           .fn()
-          .mockRejectedValue(new Error('offline'))
-
-        await expect(extension.checkForEngineUpdate()).rejects.toThrow(
-          'offline'
-        )
-      })
-
-      it('reports no update when the catalog has nothing newer', async () => {
-        extension['config'] = {
-          version_backend: 'b10344/win-cpu-x64',
-        } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: false,
-          newVersion: '0',
-          sameFamily: false,
-        })
-
-        await expect(extension.checkForEngineUpdate()).resolves.toEqual({
-          updateAvailable: false,
-          targetBackend: null,
-        })
-      })
-
-      it('never crosses backend families', async () => {
-        extension['config'] = {
-          version_backend: 'b10205/win-vulkan-x64',
-        } as any
-        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cuda-13.3-x64',
-          sameFamily: false,
-        })
-
-        await expect(extension.checkForEngineUpdate()).resolves.toEqual({
-          updateAvailable: false,
-          targetBackend: null,
-        })
-      })
-    })
-
-    describe('version update', () => {
-      it('bumps the version and keeps the backend type', async () => {
-        await stubUpdateBackendDeps('win-cuda-13.3-x64')
-        extension['config'] = {
-          version_backend: 'b9800/win-cuda-13.3-x64',
-          device: '',
-        } as any
-
-        const result = await extension.updateBackend(RECOMMENDED)
-
-        expect(result).toEqual({ wasUpdated: true, newBackend: RECOMMENDED })
-        expect(extension['ensureBackendReady']).toHaveBeenCalledWith(
-          'win-cuda-13.3-x64',
-          'b10205'
-        )
-        expect(persistedVersionBackend()).toBe(RECOMMENDED)
-        expect(extension['config'].version_backend).toBe(RECOMMENDED)
-        // The type is unchanged, so the stored preference must be left alone.
-        expect(extension['setStoredBackendType']).not.toHaveBeenCalled()
-      })
-
-      it('records the new type when the update also switches tier', async () => {
-        await stubUpdateBackendDeps('win-cpu-x64')
-
-        await extension.updateBackend(RECOMMENDED)
-
-        expect(persistedVersionBackend()).toBe(RECOMMENDED)
-        expect(extension['setStoredBackendType']).toHaveBeenCalledWith(
-          'win-cuda-13.3-x64'
-        )
-      })
-
-      it('offers the freshly installed version as a dropdown option', async () => {
-        await stubUpdateBackendDeps('win-cuda-13.3-x64')
-
-        await extension.updateBackend(RECOMMENDED)
-
-        expect(extension['ensureBackendOption']).toHaveBeenCalledWith(
-          RECOMMENDED
-        )
-      })
-    })
-
-    describe('applyBackendLive', () => {
-      it('persists the new backend before unloading any model', async () => {
-        const order: string[] = []
-        extension['getLoadedModels'] = vi.fn().mockResolvedValue(['m1', 'm2'])
-        extension.updateBackend = vi.fn(async () => {
-          order.push('updateBackend')
-          return { wasUpdated: true, newBackend: RECOMMENDED }
-        })
-        extension.unload = vi.fn(async (modelId: string) => {
-          order.push(`unload:${modelId}`)
-          return { success: true } as any
-        })
-        ;(window as any).dispatchEvent = vi.fn()
-
-        await extension['applyBackendLive'](RECOMMENDED)
-
-        // An unload flips the model to stopped, which makes the web app
-        // auto-reload it; the new backend has to be committed by then.
-        expect(order).toEqual(['updateBackend', 'unload:m1', 'unload:m2'])
-        expect(localStorage.removeItem).toHaveBeenCalledWith(
-          'llama_cpp_pending_backend'
-        )
-
-        const event = vi.mocked((window as any).dispatchEvent).mock
-          .calls[0][0] as CustomEvent
-        expect(event.type).toBe('app:backend-hotswapped')
-        // The detail names its provider so the turboquant popup ignores this
-        // swap instead of completing on it.
-        expect(event.detail).toEqual({
-          backend: RECOMMENDED,
-          provider: 'llamacpp-upstream',
-          version: 'b10205',
-          backendId: 'win-cuda-13.3-x64',
-        })
-      })
-
-      it('keeps loaded models alive when the swap cannot be persisted', async () => {
-        extension['getLoadedModels'] = vi.fn().mockResolvedValue(['m1'])
-        extension.updateBackend = vi.fn().mockResolvedValue({
-          wasUpdated: false,
-          newBackend: 'b9800/win-cpu-x64',
-        })
-        extension.unload = vi.fn()
+          .mockResolvedValueOnce('b11500/win-cuda-12.4-x64')
+          .mockResolvedValueOnce(null)
+        extension['newestInstalledOfFamily'] = vi
+          .fn()
+          .mockResolvedValue('b11300/win-cuda-12.4-x64')
 
         await expect(
-          extension['applyBackendLive'](RECOMMENDED)
-        ).rejects.toThrow(/wasUpdated=false/)
-
-        expect(extension.unload).not.toHaveBeenCalled()
-        expect(localStorage.removeItem).not.toHaveBeenCalledWith(
-          'llama_cpp_pending_backend'
-        )
+          extension.resolveBackendSelection('latest/win-cuda-12-x64')
+        ).resolves.toBe('b11500/win-cuda-12.4-x64')
+        await expect(
+          extension.resolveBackendSelection('latest/win-cuda-12-x64')
+        ).resolves.toBe('b11300/win-cuda-12.4-x64')
       })
 
-      it('still swaps when the loaded-model probe fails', async () => {
-        extension['getLoadedModels'] = vi
-          .fn()
-          .mockRejectedValue(new Error('server unreachable'))
-        extension.updateBackend = vi
-          .fn()
-          .mockResolvedValue({ wasUpdated: true, newBackend: RECOMMENDED })
-        extension.unload = vi.fn()
-
-        await extension['applyBackendLive'](RECOMMENDED)
-
-        expect(extension.updateBackend).toHaveBeenCalledWith(RECOMMENDED)
-        expect(extension.unload).not.toHaveBeenCalled()
-      })
-    })
-
-    describe('downloadRecommendedBackend', () => {
-      it('marks the backend pending before downloading, then swaps to it', async () => {
-        const order: string[] = []
-        vi.mocked(localStorage.setItem).mockImplementation((key: string) => {
-          order.push(`pending:${key}`)
-        })
-        extension['downloadAndInstallBackend'] = vi.fn(async () => {
-          order.push('download')
-        })
-        extension['applyBackendLive'] = vi.fn(async (backend: string) => {
-          order.push(`apply:${backend}`)
-        })
-
-        await extension.downloadRecommendedBackend(RECOMMENDED)
-
-        expect(order).toEqual([
-          'pending:llama_cpp_pending_backend',
-          'download',
-          `apply:${RECOMMENDED}`,
-        ])
-        expect(localStorage.removeItem).toHaveBeenCalledWith(
-          'llama_cpp_better_backend_recommendation'
-        )
-      })
-
-      it('drops the pending marker when the download fails', async () => {
-        extension['downloadAndInstallBackend'] = vi
-          .fn()
-          .mockRejectedValue(new Error('asset 404'))
-        extension['applyBackendLive'] = vi.fn()
+      it('says what to do when the pick can be neither resolved nor found on disk', async () => {
+        extension['resolveLatestBackendString'] = vi.fn().mockResolvedValue(null)
+        extension['newestInstalledOfFamily'] = vi.fn().mockResolvedValue(null)
 
         await expect(
-          extension.downloadRecommendedBackend(RECOMMENDED)
-        ).rejects.toThrow('asset 404')
-
-        expect(localStorage.removeItem).toHaveBeenCalledWith(
-          'llama_cpp_pending_backend'
-        )
-        expect(extension['applyBackendLive']).not.toHaveBeenCalled()
-      })
-
-      it('leaves the pending marker for the next launch when the hot-swap fails', async () => {
-        extension['downloadAndInstallBackend'] = vi
-          .fn()
-          .mockResolvedValue(undefined)
-        extension['applyBackendLive'] = vi
-          .fn()
-          .mockRejectedValue(new Error('model still running'))
-
-        await extension.downloadRecommendedBackend(RECOMMENDED)
-
-        expect(localStorage.removeItem).not.toHaveBeenCalledWith(
-          'llama_cpp_pending_backend'
-        )
-      })
-    })
-
-    describe('activatePendingBackend', () => {
-      beforeEach(() => {
-        vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
-          key === 'llama_cpp_pending_backend' ? RECOMMENDED : null
-        )
-      })
-
-      it('activates a backend downloaded before the last restart', async () => {
-        vi.mocked(isBackendInstalled).mockResolvedValue(true)
-        extension.updateBackend = vi
-          .fn()
-          .mockResolvedValue({ wasUpdated: true, newBackend: RECOMMENDED })
-
-        await extension['activatePendingBackend']()
-
-        expect(extension.updateBackend).toHaveBeenCalledWith(RECOMMENDED)
-        expect(localStorage.removeItem).toHaveBeenCalledWith(
-          'llama_cpp_pending_backend'
-        )
-      })
-
-      it('clears a pending backend that never made it to disk', async () => {
-        vi.mocked(isBackendInstalled).mockResolvedValue(false)
-        extension.updateBackend = vi.fn()
-
-        await extension['activatePendingBackend']()
-
-        expect(extension.updateBackend).not.toHaveBeenCalled()
-        expect(localStorage.removeItem).toHaveBeenCalledWith(
-          'llama_cpp_pending_backend'
-        )
-      })
-    })
-
-    describe('checkBackendForUpdates', () => {
-      it('asks the core about the current build and hands back its family verdict', async () => {
-        extension['config'] = {
-          version_backend: '﻿b9937/win-cuda-13.3-x64',
-        } as any
-        vi.mocked(coreRuntime.checkBackendUpdates).mockResolvedValue({
-          provider: 'llamacpp-upstream',
-          current: 'b9937/win-cuda-13.3-x64',
-          current_kind: 'concrete',
-          update_needed: true,
-          new_version: 'b10344',
-          target_backend: 'b10344/win-cuda-13.4-x64',
-          same_family: true,
-          offer: 'b10344/win-cuda-13.4-x64',
-        })
-
-        await expect(
-          extension.checkBackendForUpdates({ force: true })
-        ).resolves.toEqual({
-          updateNeeded: true,
-          newVersion: 'b10344',
-          targetBackend: 'b10344/win-cuda-13.4-x64',
-          sameFamily: true,
-        })
-        expect(coreRuntime.checkBackendUpdates).toHaveBeenCalledWith(
-          expect.objectContaining({
-            current: 'b9937/win-cuda-13.3-x64',
-            force: true,
-            app_version: '1.0.0',
-          })
-        )
-      })
-
-      it('answers no update without asking when no backend is configured', async () => {
-        extension['config'] = { version_backend: 'none' } as any
-
-        await expect(extension.checkBackendForUpdates()).resolves.toEqual({
-          updateNeeded: false,
-          newVersion: '0',
-          sameFamily: false,
-        })
-        expect(coreRuntime.checkBackendUpdates).not.toHaveBeenCalled()
-      })
-
-      it('answers no update when the core cannot be reached', async () => {
-        extension['config'] = { version_backend: RECOMMENDED } as any
-        vi.mocked(coreRuntime.checkBackendUpdates).mockRejectedValue(
-          new Error('core unreachable')
-        )
-
-        await expect(extension.checkBackendForUpdates()).resolves.toEqual({
-          updateNeeded: false,
-          newVersion: '0',
-          sameFamily: false,
-        })
+          extension.resolveBackendSelection('latest/win-rocm-x64')
+        ).rejects.toThrow(/Install backend from file/)
       })
     })
 

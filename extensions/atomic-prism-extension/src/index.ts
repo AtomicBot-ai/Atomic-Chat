@@ -60,14 +60,8 @@ import {
 import * as coreRuntime from './adapter/coreRuntime'
 import { createCoreSettingsSync } from '../../shared/atomicCoreSettingsSync'
 import type { PersistedSetting } from '../../shared/atomicCoreSettingsSync'
-import { withEngineUpdateDeadline } from '../../shared/engineUpdateCheck'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
-import {
-  buildEngineUpdateOffer,
-  clearEngineUpdateOffer,
-  publishEngineUpdateOffer,
-  type EngineUpdateDetails,
-} from './engineUpdateOffer'
+import { updateEngineThroughCore } from '../../shared/coreEngineUpdate'
 import {
   readGgufMetadata,
   isModelSupported,
@@ -153,9 +147,6 @@ const logger = {
 }
 
 const PRISM_BACKEND_TYPE_KEY = 'atomic_prism_backend_type'
-/// A backend downloaded before the last restart and not yet activated. Every
-/// llama.cpp provider keeps its own key, so one never activates another's build.
-const PENDING_BACKEND_KEY = 'atomic_prism_pending_backend'
 /// Read by the web app's `useBackendUpdater` for this provider. Its own key:
 /// the upstream one is cleared and rewritten by `llamacpp-upstream`.
 const BETTER_BACKEND_RECOMMENDATION_KEY =
@@ -265,33 +256,6 @@ type BetterBackendPayload = {
 }
 
 /**
- * The core's update check for this provider. The shared type predates the
- * PrismML fields, so they are declared here and read defensively: the core
- * leaves out whatever the manifest does not carry.
- */
-type PrismBackendUpdateCheck = coreRuntime.CoreBackendUpdateCheck & {
-  reason?: 'newer' | 'withdrawn' | 'model_requires'
-  notes_url?: string
-  notes?: string
-  download_size?: number
-  current_withdrawn?: { reason?: string }
-}
-
-/** `checkBackendForUpdates()`'s answer, in the app's words. */
-type BackendUpdateCheckResult = {
-  updateNeeded: boolean
-  newVersion: string
-  targetBackend?: string
-  sameFamily: boolean
-  reason?: string
-  notesUrl?: string
-  notes?: string
-  downloadSize?: number
-  /** Why the release in use was pulled, when it was. */
-  currentWithdrawn?: string
-}
-
-/**
  * Bound on one `recommendation` round trip to the core. Above the core's own
  * 20 s detection guard, so the core decides `detection_failed` first and this
  * only catches a core that stopped answering altogether.
@@ -353,7 +317,6 @@ export default class atomic_prism_extension extends AIEngine {
   private config: PrismConfig
   private providerPath!: string
   private isConfiguringBackends: boolean = false
-  private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
   private isMirroringCoreSettings = false
@@ -373,6 +336,8 @@ export default class atomic_prism_extension extends AIEngine {
     setMirroring: (active) => {
       this.isMirroringCoreSettings = active
     },
+    beforeMirror: (values) => this.beforeCoreMirror(values),
+    afterMirror: (changed) => this.afterCoreMirror(changed),
   })
   /// A model's trained context length as the core reads it from the GGUF
   /// (`{general.architecture}.context_length`). It is a property of the file,
@@ -557,9 +522,6 @@ export default class atomic_prism_extension extends AIEngine {
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
 
-    // Activate a pending backend that was downloaded before the last restart.
-    await this.activatePendingBackend()
-
     // ATO-179: sweep orphan / incomplete backend folders (exist on disk but
     // carry no llama-server exe — e.g. empty stubs from a failed download) so
     // they neither masquerade as installed nor block a clean re-download.
@@ -654,8 +616,6 @@ export default class atomic_prism_extension extends AIEngine {
       .catch((err) => {
         logger.error('configureBackends failed:', err)
       })
-      // Offer a newer release once the configured build is known.
-      .then(() => this.reconcileBackendReleaseTag())
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -774,44 +734,6 @@ export default class atomic_prism_extension extends AIEngine {
       logger.info('Cleared stored backend type preference')
     } catch (error) {
       logger.warn('Failed to clear backend type from localStorage:', error)
-    }
-  }
-
-  private async activatePendingBackend(): Promise<void> {
-    const pending = localStorage.getItem(PENDING_BACKEND_KEY)
-    if (!pending) return
-
-    const cleaned = stripBom(pending)
-    const parts = cleaned.split('/')
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      logger.warn(`Invalid pending backend string "${cleaned}", clearing`)
-      localStorage.removeItem(PENDING_BACKEND_KEY)
-      return
-    }
-
-    const [version, backend] = [parts[0].trim(), parts[1].trim()]
-
-    try {
-      const installed = await isBackendInstalled(backend, version)
-      if (!installed) {
-        logger.warn(`Pending backend ${cleaned} not found on disk, clearing`)
-        localStorage.removeItem(PENDING_BACKEND_KEY)
-        return
-      }
-
-      logger.info(
-        `Activating pending backend from previous download: ${cleaned}`
-      )
-      const result = await this.updateBackend(cleaned)
-      if (result.wasUpdated) {
-        logger.info(`Pending backend ${cleaned} activated successfully`)
-      } else {
-        logger.warn(`Failed to activate pending backend ${cleaned}`)
-      }
-    } catch (err) {
-      logger.error('Error activating pending backend:', err)
-    } finally {
-      localStorage.removeItem(PENDING_BACKEND_KEY)
     }
   }
 
@@ -1093,8 +1015,8 @@ export default class atomic_prism_extension extends AIEngine {
       let effectiveBackendString = stripBom(this.config.version_backend || '')
 
       // Move to the newest *installed* release of the same backend type. A
-      // newer release that is not on disk yet is offered by
-      // `reconcileBackendReleaseTag()`, never downloaded from here.
+      // newer release that is not on disk yet is offered by the core
+      // (`POST /engines/versions`), never downloaded from here.
       if (
         effectiveBackendString &&
         bestAvailableBackendString &&
@@ -1192,100 +1114,32 @@ export default class atomic_prism_extension extends AIEngine {
   }
 
   /**
-   * Offers the newest PrismML release the core approves for the configured
-   * backend type. Never downloads: the web app's `<EngineUpdateBanner />` asks,
-   * and accepting routes back through `downloadRecommendedBackend()`.
-   *
-   * The core answers with the target's release page, its note and its download
-   * size, and says when the release in use was withdrawn (its offer is then the
-   * newest approved build of the same type, possibly an older tag).
+   * The core switched `version_backend` (an update or an activation, from
+   * this app or another client) and the mirror is about to write it: make sure
+   * the dropdown has it as an option, or core's `registerSettings()` would
+   * replace a value it cannot find.
    */
-  private async reconcileBackendReleaseTag(): Promise<void> {
-    try {
-      const current = stripBom(this.config.version_backend || '')
-
-      if (!isConcreteVersionBackend(current)) {
-        logger.info(
-          'reconcileBackendReleaseTag: no concrete backend configured yet, skipping'
-        )
-        return
-      }
-
-      const currentType = current.slice(current.indexOf('/') + 1)
-
-      // Only a build on disk has anything to update. `configureBackends()`
-      // names the catalog's pick on a machine that never set PrismML up, and
-      // a newer release must not reach that user as an "update".
-      const currentTag = current.slice(0, current.indexOf('/'))
-      if (!(await isBackendInstalled(currentType.trim(), currentTag.trim()))) {
-        logger.info(
-          `reconcileBackendReleaseTag: ${current} is not installed, nothing to update`
-        )
-        return
-      }
-
-      const check = await this.checkBackendForUpdates()
-      if (check.currentWithdrawn) {
-        logger.warn(
-          `reconcileBackendReleaseTag: the release in use (${current}) was withdrawn: ${check.currentWithdrawn}`
-        )
-      }
-      const { updateNeeded, targetBackend, sameFamily } = check
-      const targetType = targetBackend?.split('/')[1]?.trim()
-      if (!updateNeeded || !targetBackend || !targetType) return
-
-      // A tag bump must never move anyone between backend types. The core
-      // judges it and says so in `same_family`.
-      if (!sameFamily) {
-        logger.warn(
-          `reconcileBackendReleaseTag: refusing to switch backend type ${currentType} -> ${targetType}`
-        )
-        return
-      }
-
-      logger.info(
-        `reconcileBackendReleaseTag: offering '${current}' -> '${targetBackend}' (${check.reason ?? 'newer'})`
-      )
-      this.offerEngineUpdate(current, targetBackend, {
-        notesUrl: check.notesUrl,
-        notes: check.notes,
-        downloadSize: check.downloadSize,
-      })
-    } catch (err) {
-      logger.error(
-        'reconcileBackendReleaseTag: failed to check for a newer release (keeping current backend):',
-        err
-      )
+  private async beforeCoreMirror(values: Record<string, unknown>): Promise<void> {
+    const value = values['version_backend']
+    if (typeof value === 'string' && isConcreteVersionBackend(stripBom(value))) {
+      await this.ensureBackendOption(stripBom(value))
     }
   }
 
   /**
-   * Publishes a "new engine build available" offer for the banner (ATO-528).
-   * A failure to publish costs the banner, not the app — the offer is rebuilt
-   * on the next launch because the check that produced it is stateless.
+   * After a mirror wrote a `version_backend` the core chose: remember its
+   * type as the user's preference, as a switch always did, and tell the
+   * provider page so its dropdown shows the build without a restart.
    */
-  private offerEngineUpdate(
-    currentBackend: string,
-    targetBackend: string,
-    details: EngineUpdateDetails
-  ): void {
-    try {
-      const offer = buildEngineUpdateOffer(
-        this.providerId,
-        currentBackend,
-        targetBackend,
-        details
-      )
-      if (!offer) {
-        logger.warn(
-          `offerEngineUpdate: could not describe '${targetBackend}', skipping`
-        )
-        return
-      }
-      publishEngineUpdateOffer(offer)
-    } catch (err) {
-      logger.warn('offerEngineUpdate: failed to publish the offer:', err)
+  private afterCoreMirror(changed: Record<string, unknown>): void {
+    const value = changed['version_backend']
+    if (typeof value !== 'string') return
+    const backend = stripBom(value)
+    const backendType = backend.split('/')[1]?.trim()
+    if (backendType && isConcreteVersionBackend(backend)) {
+      this.setStoredBackendType(backendType)
     }
+    events.emit('settingsChanged', { key: 'version_backend', value: backend })
   }
 
   /**
@@ -1322,238 +1176,6 @@ export default class atomic_prism_extension extends AIEngine {
       localStorage.setItem(this.name, JSON.stringify(settings))
       logger.info(
         `[ensureBackendOption] Added ${backendString} to version_backend options`
-      )
-    }
-  }
-
-  async updateBackend(
-    targetBackendString: string
-  ): Promise<{ wasUpdated: boolean; newBackend: string }> {
-    targetBackendString = stripBom(targetBackendString)
-    if (this.isUpdatingBackend) {
-      logger.warn(
-        'Backend update already in progress, skipping new update request'
-      )
-      // Treat concurrent update requests as a benign no-op and report that no new update
-      // was performed, while still returning the current backend value.
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    this.isUpdatingBackend = true
-
-    try {
-      if (!targetBackendString)
-        throw new Error(
-          `Invalid backend string: ${targetBackendString} supplied to update function`
-        )
-
-      const backendParts = targetBackendString.split('/')
-
-      if (
-        backendParts.length !== 2 ||
-        !backendParts[0]?.trim() ||
-        !backendParts[1]?.trim()
-      ) {
-        throw new Error(
-          `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
-        )
-      }
-
-      const [rawVersion, rawBackend] = backendParts
-      const version = rawVersion.trim()
-      const backend = rawBackend.trim()
-
-      // Normalize the target backend string to use trimmed values
-      targetBackendString = `${version}/${backend}`
-
-      logger.info(
-        `Updating backend to ${targetBackendString} (backend type: ${backend})`
-      )
-
-      await this.ensureBackendReady(backend, version)
-
-      // Add delay on Windows
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      const currentStoredBackend = this.getStoredBackendType()
-
-      // ATO-218: make sure the freshly-downloaded backend appears as a
-      // dropdown option before the value is written.
-      await this.ensureBackendOption(targetBackendString)
-
-      // Update settings first — if this fails, we haven't mutated any state yet
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      if (currentStoredBackend !== backend) {
-        this.setStoredBackendType(backend)
-      }
-
-      // All critical side effects succeeded — now commit to in-memory config
-      this.config.version_backend = targetBackendString
-      this.config.device = ''
-
-      logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-      if (events && typeof events.emit === 'function') {
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up older releases of this backend type — best-effort, through the core, which owns
-      // this provider's tree. Never touches another provider's packs.
-      try {
-        await this.removeOldBackendVersions(version, backend)
-      } catch (cleanupError) {
-        logger.warn('Failed to remove old backend versions:', cleanupError)
-      }
-
-      return { wasUpdated: true, newBackend: targetBackendString }
-    } catch (error) {
-      logger.error('Backend update failed:', error)
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    } finally {
-      this.isUpdatingBackend = false
-    }
-  }
-
-  /** Removes every installed release of `backend` other than `keepVersion`. */
-  private async removeOldBackendVersions(
-    keepVersion: string,
-    backend: string
-  ): Promise<void> {
-    const packs = await coreRuntime.listInstalledBackends(
-      `${keepVersion}/${backend}`
-    )
-    for (const pack of packs) {
-      if (pack.active) continue
-      if (stripBom(pack.backend) !== backend) continue
-      if (stripBom(pack.version) === keepVersion) continue
-      await coreRuntime.removeBackend(pack.version, pack.backend)
-      logger.info(`Removed old backend ${pack.version}/${pack.backend}`)
-    }
-  }
-
-  /**
-   * Downloads a backend and applies it without restarting the app whenever
-   * possible. Called by the frontend when the user confirms the better-backend
-   * popup or accepts the engine-update banner.
-   *
-   * The pending key is written BEFORE the download so an observer reacting to
-   * `AppEvent.onBackendDownloadFinished` already sees it; after a successful
-   * download `applyBackendLive()` hot-swaps, and on failure the pending key
-   * stays for `activatePendingBackend()` on the next launch.
-   */
-  async downloadRecommendedBackend(backendString: string): Promise<void> {
-    backendString = stripBom(backendString)
-
-    // A `latest/<backend>` sentinel never reaches a download URL: resolve it
-    // to a concrete `<tag>/<backend>` first (ATO-95).
-    if (backendString.startsWith('latest/')) {
-      const backendId = backendString.slice('latest/'.length).trim()
-      const resolved =
-        (await this.resolveLatestBackendString(backendId)) ??
-        (await this.newestInstalledOfFamily(backendId))
-      if (!resolved) {
-        throw new Error(
-          `Could not resolve a release for '${backendId}': the PrismML catalog is unreachable and no version of this backend is installed locally.`
-        )
-      }
-      logger.info(
-        `downloadRecommendedBackend: resolved sentinel ${backendString} -> ${resolved}`
-      )
-      backendString = resolved
-    }
-
-    logger.info(`downloadRecommendedBackend: downloading ${backendString}`)
-    localStorage.setItem(PENDING_BACKEND_KEY, backendString)
-    try {
-      await this.downloadAndInstallBackend(backendString)
-    } catch (err) {
-      // Download failed — drop the pending marker so the next app launch
-      // doesn't try to "activate" a backend that was never installed.
-      localStorage.removeItem(PENDING_BACKEND_KEY)
-      throw err
-    }
-    localStorage.removeItem(BETTER_BACKEND_RECOMMENDATION_KEY)
-
-    try {
-      await this.applyBackendLive(backendString)
-      logger.info(
-        `downloadRecommendedBackend: applied backend ${backendString} live (no restart needed)`
-      )
-    } catch (err) {
-      logger.warn(
-        `downloadRecommendedBackend: hot-swap failed for ${backendString}, falling back to pending-restart flow:`,
-        err
-      )
-    }
-  }
-
-  /**
-   * Apply a freshly-downloaded backend to the running process: swap
-   * `version_backend` via `updateBackend()` first, then stop any loaded
-   * models, clear the pending marker, and notify the UI via a window event.
-   *
-   * Order matters: `updateBackend()` must commit the new `version_backend`
-   * before any model is unloaded, or the web app's auto-reload of the stopped
-   * model would race ahead and start `llama-server` on the old build.
-   */
-  private async applyBackendLive(backendString: string): Promise<void> {
-    let loaded: string[] = []
-    try {
-      loaded = await this.getLoadedModels()
-    } catch (err) {
-      logger.warn('applyBackendLive: getLoadedModels failed (continuing):', err)
-    }
-
-    const result = await this.updateBackend(backendString)
-    if (!result.wasUpdated) {
-      throw new Error(
-        `updateBackend reported wasUpdated=false for ${backendString}`
-      )
-    }
-
-    for (const modelId of loaded) {
-      try {
-        await this.unload(modelId)
-      } catch (err) {
-        logger.warn(
-          `applyBackendLive: failed to unload model ${modelId} (continuing):`,
-          err
-        )
-      }
-    }
-
-    localStorage.removeItem(PENDING_BACKEND_KEY)
-
-    // A pending engine-update offer is about this provider's backend, and the
-    // backend just changed — whatever it proposed is now either done or stale.
-    // The next `reconcileBackendReleaseTag()` republishes it if it still holds.
-    clearEngineUpdateOffer(this.providerId)
-
-    if (typeof window !== 'undefined' && window.dispatchEvent) {
-      const [swappedVersion, swappedId] = backendString.split('/')
-      window.dispatchEvent(
-        new CustomEvent('app:backend-hotswapped', {
-          detail: {
-            backend: backendString,
-            provider: this.providerId,
-            version: swappedVersion,
-            backendId: swappedId,
-          },
-        })
       )
     }
   }
@@ -1685,101 +1307,6 @@ export default class atomic_prism_extension extends AIEngine {
     }
   }
 
-  /**
-   * Whether a newer build of the current backend's type exists, as the core
-   * judges it from the PrismML manifest. `sameFamily` is the core's verdict on
-   * whether taking the target would change backend type; the callers refuse
-   * when it is false. A missing or malformed `version_backend` is answered
-   * locally as "no update" without asking.
-   */
-  /**
-   * `throwOnError`: a failed lookup rejects instead of reading as "no update"
-   * (the manual check, which must not call an unchecked engine up to date).
-   */
-  async checkBackendForUpdates(options?: {
-    force?: boolean
-    throwOnError?: boolean
-  }): Promise<BackendUpdateCheckResult> {
-    const noUpdate = { updateNeeded: false, newVersion: '0', sameFamily: false }
-    try {
-      const currentBackend = stripBom(this.config.version_backend || '')
-      if (!currentBackend || !currentBackend.includes('/')) {
-        return noUpdate
-      }
-
-      const result = (await coreRuntime.checkBackendUpdates({
-        current: currentBackend,
-        force: options?.force ?? false,
-        app_version: await appVersion(),
-        proxy: (getProxyConfig() as unknown as coreRuntime.CoreProxyConfig | null) ?? null,
-      })) as PrismBackendUpdateCheck
-      const text = (value: unknown): string | undefined =>
-        typeof value === 'string' && value ? value : undefined
-      const withdrawn = result.current_withdrawn
-      return {
-        updateNeeded: result.update_needed,
-        newVersion: result.new_version,
-        targetBackend: result.target_backend ?? undefined,
-        sameFamily: result.same_family,
-        reason: text(result.reason),
-        notesUrl: text(result.notes_url),
-        notes: text(result.notes),
-        downloadSize:
-          typeof result.download_size === 'number' && result.download_size > 0
-            ? result.download_size
-            : undefined,
-        currentWithdrawn:
-          withdrawn && typeof withdrawn === 'object'
-            ? (text(withdrawn.reason) ?? 'withdrawn')
-            : undefined,
-      }
-    } catch (err) {
-      logger.warn('checkBackendForUpdates failed:', err)
-      if (options?.throwOnError) throw err
-      return noUpdate
-    }
-  }
-
-  /**
-   * Manual engine-update check behind the "check for engine updates" button.
-   * Forces the core to re-read the manifest, so a release published while the
-   * app was open becomes visible. Only the decision happens here, and every
-   * leg of it is bounded; the caller starts the download.
-   */
-  async checkForEngineUpdate(): Promise<{
-    updateAvailable: boolean
-    targetBackend: string | null
-  }> {
-    const noUpdate = { updateAvailable: false, targetBackend: null }
-
-    // A configuration pass started at load may still be fetching the catalog.
-    if (this.configureBackendsPromise) {
-      await this.withTimeout(this.configureBackendsPromise, 20_000, undefined)
-    }
-
-    const current = stripBom(this.config.version_backend || '')
-    const currentType = current.split('/')[1]?.trim()
-    if (!current || current === 'none' || !currentType) return noUpdate
-
-    // A lookup that fails or never answers rejects: it is not "up to date".
-    const { updateNeeded, targetBackend, sameFamily } =
-      await withEngineUpdateDeadline(
-        this.checkBackendForUpdates({ force: true, throwOnError: true })
-      )
-    const targetType = targetBackend?.split('/')[1]?.trim()
-    if (!updateNeeded || !targetBackend || !targetType) return noUpdate
-
-    if (!sameFamily) {
-      logger.warn(
-        `checkForEngineUpdate: refusing to switch backend type ${currentType} -> ${targetType}`
-      )
-      return noUpdate
-    }
-
-    logger.info(`checkForEngineUpdate: ${current} -> ${targetBackend}`)
-    return { updateAvailable: true, targetBackend }
-  }
-
   async listInstalledBackends(): Promise<InstalledBackendPack[]> {
     const current = stripBom(this.config.version_backend || '')
     // The core owns the data folder, so it owns the answer: it may have installed a pack this
@@ -1836,12 +1363,6 @@ export default class atomic_prism_extension extends AIEngine {
       return
     }
     if (key === 'version_backend') {
-      // Skip entirely if updateBackend() is already handling it —
-      // updateBackend() will commit to in-memory config itself after all
-      // side effects succeed.
-      if (this.isUpdatingBackend) {
-        return
-      }
       // During initialization, configureBackends handles all backend
       // setup; any updateSettings calls (e.g. BOM cleanup) should only
       // touch in-memory config without triggering downloads.
@@ -1875,17 +1396,12 @@ export default class atomic_prism_extension extends AIEngine {
       // Async logic wrapped in IIFE since onSettingUpdate is void
       ;(async () => {
         try {
+          // A "Latest <variant>" pick: the core switches to the build it
+          // resolves to and writes the concrete value, which comes back as a
+          // mirror of its settings.
           if (valueStr.startsWith('latest/')) {
-            const backendId = valueStr.slice('latest/'.length).trim()
-            const resolved = await this.resolveLatestBackendString(backendId)
-            if (!resolved) {
-              logger.error(
-                `Could not resolve the latest release for '${backendId}' — the PrismML catalog is unreachable. Backend left unchanged.`
-              )
-              this.config.version_backend = previousVersionBackend ?? ''
-              return
-            }
-            await this.updateBackend(resolved)
+            this.config.version_backend = previousVersionBackend ?? ''
+            await this.switchThroughCore(valueStr)
             return
           }
 
@@ -1914,6 +1430,57 @@ export default class atomic_prism_extension extends AIEngine {
     } else if (key === 'timeout') {
       this.timeout = value as number
     }
+  }
+
+  /**
+   * The concrete `<version>/<variant>` a version-list pick means. A concrete
+   * pick is itself; a "Latest <variant>" pick is the newest build of it the
+   * PrismML catalog names and, with the catalog unreachable, the newest copy
+   * of it already on disk. Rejects with what to do when neither exists.
+   */
+  async resolveBackendSelection(selection: string): Promise<string> {
+    const pick = stripBom(selection).trim()
+    if (!pick.startsWith('latest/')) return pick
+    const backendId = pick.slice('latest/'.length).trim()
+    // The core bounds its own manifest read; this cap only guards against a
+    // wedged promise and sits above the core's fetch budget.
+    const resolved =
+      (await this.withTimeout(
+        this.resolveLatestBackendString(backendId),
+        20000,
+        null
+      )) ?? (await this.newestInstalledOfFamily(backendId))
+    if (!resolved) {
+      throw new Error(
+        `Could not download the ${friendlyBackendLabel(backendId)} backend: the PrismML release catalog is unreachable or slow, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
+      )
+    }
+    return resolved
+  }
+
+  /**
+   * Has the core move this provider to the build `selection` means
+   * (`resolveBackendSelection`): it installs what is missing, writes
+   * `version_backend`, unloads the provider's models and retires the old
+   * release. The new value reaches this extension as a mirror of the core's
+   * settings.
+   */
+  private async switchThroughCore(selection: string): Promise<void> {
+    const [version, variant] = (await this.resolveBackendSelection(selection)).split('/')
+    await updateEngineThroughCore({
+      core: coreRuntime,
+      provider: this.providerId,
+      backend: selection,
+      target: { version, variant },
+      proxy: getProxyConfig() as unknown as coreRuntime.CoreProxyConfig | null,
+      listen,
+      emit: (name, payload) => events.emit(name, payload),
+      dispatch: (event) => {
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(event)
+        }
+      },
+    })
   }
 
   /**
@@ -1979,101 +1546,6 @@ export default class atomic_prism_extension extends AIEngine {
     } catch (err) {
       logger.warn(`newestInstalledOfFamily('${backendId}') failed:`, err)
       return null
-    }
-  }
-
-  /**
-   * Drives a manual backend selection through the same download → hot-swap →
-   * completed dialog the "Find optimal backend" button uses. Accepts a concrete
-   * `<tag>/<backend>` or a `latest/<backend>` sentinel, keyed on the selection
-   * so the globally-mounted `<BackendUpdater />` dialog can follow it through
-   * events alone. Throws (after `onManualBackendFailed`) when the target can
-   * be neither resolved nor satisfied from a local install.
-   */
-  async downloadManualBackend(selection: string): Promise<void> {
-    const sentinel = stripBom(selection)
-    const isSentinel = sentinel.startsWith('latest/')
-    const backendId = isSentinel
-      ? sentinel.slice('latest/'.length).trim()
-      : (sentinel.split('/')[1] || '').trim()
-    const dialogKey = sentinel
-    const label = friendlyBackendLabel(backendId)
-    const current = stripBom(this.config.version_backend || '')
-
-    // Open the dialog straight into its "downloading" spinner.
-    if (events && typeof events.emit === 'function') {
-      events.emit('onManualBackendDownloading', {
-        currentBackend: current,
-        recommendedBackend: dialogKey,
-        recommendedCategory: label,
-        provider: this.providerId,
-        backendId,
-      })
-    }
-
-    try {
-      // The core bounds its own manifest read; this cap only guards against a
-      // wedged promise and sits above the core's fetch budget.
-      const MANUAL_RESOLVE_TIMEOUT_MS = 20000
-      let concrete: string | null = null
-      if (isSentinel) {
-        concrete = await this.withTimeout(
-          this.resolveLatestBackendString(backendId),
-          MANUAL_RESOLVE_TIMEOUT_MS,
-          null
-        )
-        if (!concrete) {
-          concrete = await this.newestInstalledOfFamily(backendId)
-          if (concrete) {
-            logger.warn(
-              `downloadManualBackend: catalog unreachable/slow for '${backendId}', falling back to newest installed ${concrete}`
-            )
-          }
-        }
-      } else {
-        concrete = sentinel
-      }
-
-      if (!concrete) {
-        throw new Error(
-          `Could not download the ${label} backend: the PrismML release catalog is unreachable or slow, and no version of this backend is installed locally. Check your connection/proxy (Settings → Proxy) and try again, or install the backend from a downloaded archive via "Install backend from file".`
-        )
-      }
-
-      // Download only if the resolved target isn't already on disk.
-      const [tag, btype] = concrete.split('/')
-      if (await isBackendInstalled(btype, tag)) {
-        logger.info(
-          `downloadManualBackend: ${concrete} already installed — switching without download`
-        )
-      } else {
-        logger.info(`downloadManualBackend: downloading ${concrete}`)
-        await this.downloadAndInstallBackend(concrete)
-      }
-
-      // Advance the dialog to "hot-swapping".
-      if (events && typeof events.emit === 'function') {
-        events.emit(AppEvent.onBackendDownloadFinished, {
-          backend: dialogKey,
-          status: 'completed',
-          provider: this.providerId,
-          backendId,
-        })
-      }
-
-      await this.applyBackendLive(concrete)
-      logger.info(`downloadManualBackend: applied ${concrete} live`)
-    } catch (err) {
-      logger.error('downloadManualBackend failed:', err)
-      if (events && typeof events.emit === 'function') {
-        events.emit('onManualBackendFailed', {
-          backend: dialogKey,
-          error: err instanceof Error ? err.message : String(err),
-          provider: this.providerId,
-          backendId,
-        })
-      }
-      throw err
     }
   }
 
@@ -2255,8 +1727,13 @@ export default class atomic_prism_extension extends AIEngine {
    * from a local archive (its install route only downloads). The pack lands in
    * the same `atomic-prism/backends/<version>/<backend>` tree the core scans,
    * so the core picks it up on its next listing or load.
+   *
+   * Answers the pack's `<version>/<variant>` and selects nothing: the page has
+   * the core make it active (change `unify-engine-lifecycle`), which writes
+   * `version_backend` — mirrored here on `settings:changed` — and unloads the
+   * models, as "Make active" does.
    */
-  async installBackend(path: string): Promise<void> {
+  async installBackend(path: string): Promise<string> {
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
 
@@ -2309,34 +1786,18 @@ export default class atomic_prism_extension extends AIEngine {
     try {
       await this.configureBackends()
 
-      // Auto-select the newly installed backend
+      // The variant is the preferred one from now on; the build itself is
+      // made active by the core.
       this.setStoredBackendType(backend)
-      this.config.version_backend = newBackendString
 
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = newBackendString
-          }
-          return item
-        })
-      )
-
-      if (events && typeof events.emit === 'function') {
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: newBackendString,
-        })
-      }
-
-      logger.info(`Backend ${newBackendString} installed and auto-selected`)
+      logger.info(`Backend ${newBackendString} installed`)
     } catch (e) {
       logger.error('Backend installed but failed to refresh UI', e)
       throw new Error(
         `Backend installed but failed to refresh UI: ${String(e)}`
       )
     }
+    return newBackendString
   }
 
   /**

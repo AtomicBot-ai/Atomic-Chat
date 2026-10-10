@@ -74,7 +74,6 @@ const EXPECTED_PLUGIN_IDS = [
   'hardware',
   'llamacpp',
   'llamacpp-upstream',
-  'mlx',
   'rag',
   'vector-db',
 ]

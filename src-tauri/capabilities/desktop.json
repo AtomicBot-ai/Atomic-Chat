@@ -28,7 +28,6 @@
     "rag:default",
     "llamacpp:default",
     "llamacpp-upstream:default",
-    "mlx:default",
     "deep-link:default",
     "hardware:default",
     "autostart:default",

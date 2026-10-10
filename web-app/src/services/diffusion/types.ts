@@ -17,6 +17,16 @@
  * handed explicit file paths at load time. It never resolves the catalog.
  */
 
+import type {
+  EngineBuildCatalog,
+  EngineBuildCatalogRequest,
+  EngineBuildInstallRequest,
+  EngineBuildInstallResult,
+  EngineBuildRemoveResult,
+  EngineBuildUpdateCheck,
+  EngineBuildUpdateCheckRequest,
+} from '@/services/engine-builds/types'
+
 /** Which native engine serves generation. `diffusers` arrives in phase 1b. */
 export type DiffusionEngineId = 'sd-cpp' | 'diffusers'
 
@@ -425,16 +435,6 @@ export type DiffusionModelFile = {
   bytes: number
 }
 
-export type DiffusionBackendInstallRecord = {
-  tag: string
-  backendId: string
-  backend: DiffusionBackend
-  engine: DiffusionEngineId
-  sha256: string | null
-  installedAtMs: number
-  dir: string
-}
-
 /**
  * The core's image-generation configuration. It lives only in the core's
  * memory and each `configure` replaces all of it, so the app sends every
@@ -660,23 +660,20 @@ export interface DiffusionService {
   configure(config: DiffusionConfig): Promise<DiffusionStatus>
   getStatus(): Promise<DiffusionStatus>
 
-  // --- engine binary --------------------------------------------------------
+  // --- engine builds (the core's `/engine-builds/sd-cpp/*`) ----------------
+  /** The installed builds, the active one, and what this host would install from the manifest. */
+  engineCatalog(request?: EngineBuildCatalogRequest): Promise<EngineBuildCatalog>
+  /** Whether the manifest names a build strictly newer than the active one. */
+  checkEngineUpdate(
+    request?: EngineBuildUpdateCheckRequest
+  ): Promise<EngineBuildUpdateCheck>
   /**
-   * Called after the archive has been downloaded and decompressed into `dir`:
-   * sets the executable bits, writes the ownership marker and install record,
-   * and probes `sd-cli --help` to make sure this really is stable-diffusion.cpp.
+   * Download, verify, probe and activate this host's build under the
+   * caller's `task_id`; the core unloads sessions of other builds and removes
+   * the builds nobody runs from.
    */
-  finalizeBackendInstall(args: {
-    dir: string
-    tag: string
-    backendId: string
-    backend: DiffusionBackend
-    engine: DiffusionEngineId
-    sha256?: string
-  }): Promise<DiffusionBackendInstallRecord>
-  listInstalledBackends(): Promise<DiffusionBackendInstallRecord[]>
-  /** Refuses (`BACKEND_IN_USE`) while a session runs from that tree, and refuses trees without the ownership marker. */
-  removeBackend(dir: string): Promise<void>
+  installEngine(request: EngineBuildInstallRequest): Promise<EngineBuildInstallResult>
+  removeEngineBuild(tag: string, backendId: string): Promise<EngineBuildRemoveResult>
 
   // --- model files ---------------------------------------------------------
   listModelFiles(): Promise<DiffusionModelFile[]>

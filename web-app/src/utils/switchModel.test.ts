@@ -934,6 +934,35 @@ describe('describeModelLoadFailure', () => {
     ).toMatchObject({ persistent: true })
   })
 
+  it("keeps the engine's own words behind the out-of-memory copy: the sentence, then the log", () => {
+    const failure = describeModelLoadFailure({
+      code: 'OUT_OF_MEMORY',
+      message:
+        'The model loaded, but this GPU has room for a KV cache of only 2080 tokens, less than the context length of 2096.',
+      details: '[TRT-LLM] max sequence length=2080',
+    })
+    expect(failure).toMatchObject({
+      title: 'model-errors:outOfMemoryTitle',
+      persistent: true,
+    })
+    expect(failure.details).toBe(
+      'The model loaded, but this GPU has room for a KV cache of only 2080 tokens, less than the context length of 2096.\n\n' +
+        '[TRT-LLM] max sequence length=2080'
+    )
+  })
+
+  it("splits a llama.cpp out-of-memory message the same way: the reason, then the engine's output", () => {
+    expect(
+      describeModelLoadFailure(
+        new Error(
+          'Out of memory.\nggml_backend_cuda_buffer_type_alloc_buffer: failed to allocate 2048 MiB'
+        )
+      ).details
+    ).toBe(
+      'Out of memory.\n\nggml_backend_cuda_buffer_type_alloc_buffer: failed to allocate 2048 MiB'
+    )
+  })
+
   it('maps a classified engine code onto its own copy', () => {
     expect(
       describeModelLoadFailure({ code: 'MODEL_FILE_NOT_FOUND' })

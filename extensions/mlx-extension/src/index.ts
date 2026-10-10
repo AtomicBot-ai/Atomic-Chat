@@ -65,6 +65,9 @@ const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 /// (`src-tauri/src/core/server/proxy.rs`) talks to backend extensions about
 /// a mid-flight context-window overflow.
 const AUTO_INCREASE_CTX_EVENT = 'local_backend://auto_increase_ctx'
+/** The core's `engine:changed {engine, reason}`, as the relay names it. */
+const ENGINE_CHANGED_EVENT = 'atomic-core://engine:changed'
+const MLX_PROVIDER = 'mlx'
 const AUTO_INCREASE_CTX_DONE_PREFIX = 'local_backend://auto_increase_ctx_done/'
 /// Parallel Tauri-level broadcast so the web-app can subscribe without
 /// routing through the `@janhq/core` in-process EventEmitter.
@@ -150,6 +153,7 @@ export default class mlx_extension extends AIEngine {
 
   private unlistenAutoIncreaseCtx?: () => void
   private unlistenCoreSettingsChanged?: () => void
+  private unlistenEngineChanged?: () => void
 
   /// MLX in `atomic-chat-core` (PLAN.md §4). The core starts, stops and grows the mlx-server
   /// processes; the model catalogue, downloads (drafters included) and settings UI stay here.
@@ -216,6 +220,14 @@ export default class mlx_extension extends AIEngine {
     void this.detectBackendVersion().catch((err) => {
       logger.warn('Failed to detect MLX backend version:', err)
     })
+    // An update, an install or the start-up cleanup moved the active build:
+    // the version follows it. Update offers are the desktop's, from the core.
+    this.unlistenEngineChanged = await listen<{ engine?: string }>(
+      ENGINE_CHANGED_EVENT,
+      (event) => {
+        if (event.payload?.engine === MLX_PROVIDER) void this.detectBackendVersion()
+      }
+    )
 
     // Local API Server auto-increase-ctx bridge. Mirrors the listener in
     // llamacpp-extension; only payloads with `backend === 'mlx'` are handled
@@ -239,34 +251,35 @@ export default class mlx_extension extends AIEngine {
     return this.providerPath
   }
 
+  /**
+   * The provider page's version: the build the core starts MLX from, as
+   * `<tag>/<origin>` (`bundled` — shipped with the installer, `downloaded` —
+   * installed by the core), `none` without one.
+   */
   private async detectBackendVersion(): Promise<void> {
     try {
-      const info = await invoke<{ version: string; backend: string }>(
-        'plugin:mlx|get_mlx_server_version'
-      )
-
-      const version = info.version || 'unknown'
-      const backend = info.backend || 'macos-arm64'
-      const display = `${version} / ${backend}`
+      const { active } = await this.core.engineBuildCatalog('mlx')
+      const display = active ? `${active.tag}/${active.origin}` : 'none'
 
       const currentSettings = await this.getSettings()
       await this.updateSettings(
         currentSettings.map((item: any) => {
           if (item.key === 'version_backend') {
             item.controllerProps.value = display
-            item.description = `${backend} is the recommended backend.`
           }
           return item
         })
       )
 
-      logger.info('MLX backend version:', display)
+      logger.info('MLX engine build:', display)
     } catch (err) {
-      logger.warn('Could not detect MLX backend version:', err)
+      logger.warn('Could not read the MLX engine build from the core:', err)
     }
   }
 
   override async onUnload(): Promise<void> {
+    this.unlistenEngineChanged?.()
+    this.unlistenEngineChanged = undefined
     this.unlistenCoreSettingsChanged?.()
     this.unlistenCoreSettingsChanged = undefined
     if (this.unlistenAutoIncreaseCtx) {

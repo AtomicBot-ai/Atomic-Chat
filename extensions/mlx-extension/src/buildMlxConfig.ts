@@ -1,5 +1,20 @@
 import { DEFAULT_CTX_LEN } from '@janhq/core'
-import type { MlxConfig } from '../../../src-tauri/plugins/tauri-plugin-mlx/guest-js/index'
+
+/** The MLX launch settings the core turns into `mlx-server` arguments. */
+export type MlxConfig = {
+  ctx_size: number
+  draft_model_path: string
+  block_size: number
+  /** Drafter family — "dflash" (default) or "mtp" (Gemma 4 assistant); "" reads as "dflash". */
+  draft_kind: string
+  /**
+   * KV-cache quantization bit-width (e.g. 3.5 for TurboQuant). 0 disables it;
+   * `--kv-bits` goes out only when this is > 0 and a real scheme is set.
+   */
+  kv_bits: number
+  /** "" / "off" (no quantization, default), "uniform" or "turboquant", passed verbatim. */
+  kv_quant_scheme: string
+}
 
 export type MlxDraftKind = 'dflash' | 'mtp' | 'eagle3'
 

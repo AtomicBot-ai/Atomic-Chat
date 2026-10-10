@@ -27,7 +27,11 @@ vi.mock('@/services/managed-environment/client', async (importOriginal) => ({
   ...client,
 }))
 
+const engines = vi.hoisted(() => ({ updateEngine: vi.fn(), engineVersions: vi.fn() }))
+vi.mock('@/services/engines/core', () => engines)
+
 import { resetHostStepPromptsForTests, ManagedEngineSetupPanel } from '../ManagedEngineSetupPanel'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { resetManagedPlansForTests } from '@/hooks/useManagedPlan'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
@@ -982,5 +986,172 @@ describe('ManagedEngineSetupPanel', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'providers:tensorrt.remove.confirm' }))
     await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
     expect(client.beginOperation.mock.calls[0][1]).toMatchObject({ kind: 'remove', retain_models: true })
+  })
+})
+
+// Change unify-engine-lifecycle (6.6): a newer release of an installed managed engine is a
+// reinstall the core runs — remove, keeping the models, then a setup that waits for consent.
+describe('updating an installed managed engine', () => {
+  const NEXT = 'tensorrt-llm-1.3.0rc29-r3'
+
+  const offer = (needed = true) =>
+    act(() => {
+      useEngineVersionsStore.setState({
+        engines: {
+          'tensorrt-llm': {
+            engine: 'tensorrt-llm',
+            kind: 'managed',
+            active_choice: 'core',
+            builds: [],
+            active: { version: 'tensorrt-llm-1.2.1-r1', variant: 'linux/amd64' },
+            latest: { version: NEXT, variant: 'linux/amd64' },
+            update: {
+              needed,
+              target: needed
+                ? { version: NEXT, variant: 'linux/amd64', download_bytes: 22 * 1024 ** 3 }
+                : null,
+              apply: 'reinstall',
+            },
+            source: 'remote',
+            source_error: null,
+            error: null,
+          },
+        },
+      })
+    })
+
+  beforeEach(() => {
+    useEngineVersionsStore.getState().reset()
+    engines.updateEngine.mockReset()
+    engines.updateEngine.mockResolvedValue({ operation_id: 'op-remove' })
+    seed(environment({ installations: [installedEngine] }))
+  })
+
+  it('shows the installed version from the core, and no Update when nothing is newer', async () => {
+    offer(false)
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
+
+    expect(
+      await screen.findByText(
+        'providers:tensorrt.version {"version":"tensorrt-llm-1.2.1-r1"}'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'providers:tensorrt.update.button' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('asks before updating, saying it reinstalls, keeps the models and downloads the image', async () => {
+    offer()
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'providers:tensorrt.update.button' })
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('providers:tensorrt.update.title')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('providers:tensorrt.update.body {"size":"22.0 GB"}')
+    ).toBeInTheDocument()
+    expect(engines.updateEngine).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'providers:tensorrt.plan.cancel' }))
+    expect(engines.updateEngine).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('has the core reinstall on confirm, then shows the removal and the consent for the new setup', async () => {
+    offer()
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'providers:tensorrt.update.button' })
+    )
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'providers:tensorrt.update.confirm',
+      })
+    )
+
+    await waitFor(() =>
+      expect(engines.updateEngine).toHaveBeenCalledWith('tensorrt-llm', {
+        request_id: expect.any(String),
+        app_version: 'test',
+      })
+    )
+    // The panel starts nothing of its own: the core removes and sets up.
+    expect(client.beginOperation).not.toHaveBeenCalled()
+
+    // The removal the core began, with the consent it computed itself.
+    coreSays(operation({ operation_id: 'op-remove', kind: 'remove', phase: 'removing', revision: 2 }))
+    expect(await screen.findByText(/providers:tensorrt.phase.removing/)).toBeInTheDocument()
+
+    // Then the setup it began, waiting for the person's consent: the plan is shown.
+    client.probe.mockResolvedValue(plan({ descriptor_id: NEXT }))
+    coreSays(
+      operation({
+        operation_id: 'op-setup',
+        request_id: 'req-1:setup',
+        kind: 'setup',
+        phase: 'awaiting-consent',
+        plan_digest: digest,
+        revision: 3,
+      })
+    )
+    expect(await screen.findByText('providers:tensorrt.plan.title')).toBeInTheDocument()
+    expect(client.resumeOperation).not.toHaveBeenCalled()
+  })
+
+  it('leaves the engine uninstalled, models and all, when the person declines the new setup', async () => {
+    offer()
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'providers:tensorrt.update.button' })
+    )
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'providers:tensorrt.update.confirm',
+      })
+    )
+    await waitFor(() => expect(engines.updateEngine).toHaveBeenCalled())
+
+    coreSays(
+      operation({
+        operation_id: 'op-setup',
+        kind: 'setup',
+        phase: 'awaiting-consent',
+        plan_digest: digest,
+        revision: 3,
+      })
+    )
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'providers:tensorrt.plan.cancel',
+      })
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'providers:tensorrt.cancel' }))
+    await waitFor(() => expect(client.cancelOperation).toHaveBeenCalledWith('op-setup'))
+    expect(client.resumeOperation).not.toHaveBeenCalled()
+
+    // The core cancels the setup; the removal kept the models (the core's reinstall always does).
+    act(() => {
+      store().applyEnvironment(environment({ revision: 200, installations: [] }))
+    })
+    coreSays(
+      operation({
+        operation_id: 'op-setup',
+        kind: 'setup',
+        phase: 'cancelled',
+        revision: 4,
+      })
+    )
+    expect(await screen.findByText('providers:tensorrt.notInstalled')).toBeInTheDocument()
+  })
+
+  it('opens the confirmation by itself when the update banner sent the person here', async () => {
+    offer()
+    render(<ManagedEngineSetupPanel engine={TENSORRT_LLM_ENGINE} askToUpdate />)
+
+    expect(await screen.findByText('providers:tensorrt.update.title')).toBeInTheDocument()
+    expect(engines.updateEngine).not.toHaveBeenCalled()
   })
 })

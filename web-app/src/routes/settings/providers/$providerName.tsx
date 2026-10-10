@@ -39,8 +39,21 @@ import {
   redirect,
   useNavigate,
   useParams,
+  useSearch,
 } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import {
+  describeMlxBuild,
+  useMlxEngineUpdateCheck,
+} from '@/hooks/useMlxEngineUpdateCheck'
+import {
+  activateInstalledBuild,
+  isLlamacppProvider,
+  useClearDeviceAfterSwitch,
+} from '@/hooks/useEngineBuildSwitch'
+import { InstallOtherBuild } from '@/containers/engines/InstallOtherBuild'
+import type { EngineId } from '@/services/engines/types'
+import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import Capabilities from '@/containers/Capabilities'
 import {
   ModelSourceBadge,
@@ -113,7 +126,7 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
-import { AppEvent, EngineManager, events } from '@janhq/core'
+import { EngineManager } from '@janhq/core'
 import debounce from 'lodash.debounce'
 import { restartLocalModel } from '@/utils/restartLocalModel'
 
@@ -145,10 +158,17 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
     }
   },
   component: ProviderDetail,
-  validateSearch: (search: Record<string, unknown>): { step?: string } => {
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { step?: string; engineUpdate?: boolean } => {
     // validate and parse the search params into a typed state
     return {
       step: String(search?.step),
+      // The engine update banner's "Update" for a managed engine: its card
+      // asks to confirm the reinstall.
+      ...(search?.engineUpdate === true || search?.engineUpdate === 'true'
+        ? { engineUpdate: true }
+        : {}),
     }
   },
 })
@@ -156,6 +176,8 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 function ProviderDetail() {
   const { t } = useTranslation()
   const { providerName } = useParams({ from: Route.id })
+  /// The engine update banner's "Update" for a managed engine lands here.
+  const { engineUpdate } = useSearch({ from: Route.id })
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
   const [activeModels, setActiveModels] = useAppState(
@@ -167,51 +189,21 @@ function ProviderDetail() {
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
   const [isCheckingEngineUpdate, setIsCheckingEngineUpdate] = useState(false)
-  /// localStorage key holding the pending backend of the provider this page
-  /// shows. Each llama provider writes its own key, so reading the upstream
-  /// one on the turboquant page would show a foreign backend as pending.
-  const pendingBackendKey =
-    providerName === 'llamacpp'
-      ? 'turboquant_pending_backend'
-      : providerName === 'atomic-prism'
-        ? 'atomic_prism_pending_backend'
-        : 'llama_cpp_pending_backend'
-  /// Mirrors the provider's pending-backend key so the provider settings
-  /// page can surface a "restart to activate" pill next to the (still-old)
-  /// `version_backend` value once a recommended GPU backend has finished
-  /// downloading. Updated reactively via
-  /// `AppEvent.onBackendDownloadFinished` so the user gets feedback
-  /// without having to refresh.
-  const [pendingBackend, setPendingBackend] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null
-    const raw = localStorage.getItem(pendingBackendKey)
-    return raw ? raw.replace(/\uFEFF/g, '').trim() : null
-  })
-
+  const mlxEngineCheck = useMlxEngineUpdateCheck()
+  const clearDeviceAfterSwitch = useClearDeviceAfterSwitch(providerName)
+  /// A switch the core made (an update, an activation, another client's) is
+  /// announced as `app:backend-hotswapped`: pull fresh provider settings so the
+  /// `version_backend` row reflects the new value without a tab refresh.
+  ///
+  /// We deliberately read `setProviders` from the Zustand store via
+  /// `getState()` instead of capturing the destructured binding from
+  /// `useModelProvider()` — that destructuring happens later in the
+  /// component body, so referencing it here would hit a TDZ
+  /// `ReferenceError` on the very first render.
   useEffect(() => {
-    const refresh = () => {
-      const raw = localStorage.getItem(pendingBackendKey)
-      setPendingBackend(raw ? raw.replace(/\uFEFF/g, '').trim() : null)
-    }
-    refresh()
-    const onFinished = (payload: { status: string; provider?: string }) => {
-      if ((payload?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
-      if (payload?.status === 'completed') refresh()
-    }
-    /// Hot-swap path: the extension already cleared its pending key and
-    /// updated `version_backend` settings.
-    /// Drop the pill immediately and pull fresh provider settings so the
-    /// `version_backend` row reflects the new value without a tab refresh.
-    ///
-    /// We deliberately read `setProviders` from the Zustand store via
-    /// `getState()` instead of capturing the destructured binding from
-    /// `useModelProvider()` — that destructuring happens later in the
-    /// component body, so referencing it here would hit a TDZ
-    /// `ReferenceError` on the very first render.
     const onHotswapped = (event: Event) => {
       const detail = (event as CustomEvent<{ provider?: string }>).detail
       if ((detail?.provider ?? LOCAL_LLAMACPP_PROVIDER) !== providerName) return
-      setPendingBackend(null)
       void serviceHub
         .providers()
         .getProviders()
@@ -222,23 +214,11 @@ function ProviderDetail() {
           console.warn('Failed to refresh providers after hot-swap:', err)
         })
     }
-    events.on(AppEvent.onBackendDownloadFinished, onFinished)
-    window.addEventListener('storage', refresh)
     window.addEventListener('app:backend-hotswapped', onHotswapped)
     return () => {
-      events.off(AppEvent.onBackendDownloadFinished, onFinished)
-      window.removeEventListener('storage', refresh)
       window.removeEventListener('app:backend-hotswapped', onHotswapped)
     }
-  }, [serviceHub, providerName, pendingBackendKey])
-
-  const handleRestartForPendingBackend = useCallback(async () => {
-    try {
-      await window.core?.api?.relaunch()
-    } catch (err) {
-      console.error('Failed to relaunch for pending backend:', err)
-    }
-  }, [])
+  }, [serviceHub, providerName])
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [isTogglingDflash, setIsTogglingDflash] = useState(false)
   /// `isTogglingDflash` covers fast operations (lookup + MLX reload) and
@@ -1784,8 +1764,24 @@ function ProviderDetail() {
       if (selectedFile && typeof selectedFile === 'string') {
         // Process the file path: replace spaces with dashes and convert to lowercase
 
-        // Install the backend using the llamacpp extension
-        await installBackend(selectedFile)
+        // The extension unpacks it; the core makes it active (and unloads
+        // this provider's models), as "Make active" does.
+        const installed = await installBackend(selectedFile)
+        if (isLlamacppProvider(provider.provider)) {
+          try {
+            const result = await activateInstalledBuild(
+              provider.provider as EngineId,
+              installed
+            )
+            if (result?.activated) clearDeviceAfterSwitch()
+          } catch (error) {
+            const message = (error as { message?: unknown } | null)?.message
+            toast.error(t('settings:backendUpdater.activateFailed'), {
+              description:
+                typeof message === 'string' ? message : String(error),
+            })
+          }
+        }
 
         // Extract filename from the selected file path and replace spaces with dashes
         const fileName = basenameNoExt(selectedFile).replace(/\s+/g, '-')
@@ -1810,7 +1806,14 @@ function ProviderDetail() {
     } finally {
       setIsInstallingBackend(false)
     }
-  }, [provider, serviceHub, refreshSettings, t, installBackend])
+  }, [
+    provider,
+    serviceHub,
+    refreshSettings,
+    t,
+    installBackend,
+    clearDeviceAfterSwitch,
+  ])
 
   /// The version list and the release index are both fetched during the
   /// extension's `onLoad()`, so a fork release published while the app was
@@ -1996,7 +1999,12 @@ function ProviderDetail() {
             </div>
 
             {/* A managed engine: setting it up comes before its settings and models. */}
-            {managed && <ManagedEngineSetupPanel engine={managed} />}
+            {managed && (
+              <ManagedEngineSetupPanel
+                engine={managed}
+                askToUpdate={engineUpdate === true}
+              />
+            )}
             {managed && <ManagedEngineTroubleshooting engine={managed} />}
             {managed && provider && (
               <ManagedEngineSettingsCard
@@ -2131,6 +2139,35 @@ function ProviderDetail() {
                           <IconLoader size={16} className="animate-spin" />
                           <span>loading</span>
                         </div>
+                      ) : setting.key === 'version_backend' &&
+                        isLlamacppProvider(providerName) ? (
+                        // The installed builds list below switches and
+                        // removes; this row only installs what is not on
+                        // disk, through the core's update with a target.
+                        <InstallOtherBuild
+                          engine={providerName as EngineId}
+                          options={
+                            (setting.controller_props.options ?? []) as Array<{
+                              value: number | string
+                              name: string
+                            }>
+                          }
+                          onPick={(value) => {
+                            void selectManualBackend(value)
+                              .then((result) => {
+                                if (result?.updated) clearDeviceAfterSwitch()
+                              })
+                              .catch((err) => {
+                                console.error(
+                                  'Manual backend download failed:',
+                                  err
+                                )
+                                toast.error(
+                                  t('settings:backendUpdater.downloadFailed')
+                                )
+                              })
+                          }}
+                        />
                       ) : isDflashToggle ? (
                         <div className="flex items-center gap-2">
                           <Switch
@@ -2511,6 +2548,21 @@ function ProviderDetail() {
                               </div>
                             )}
                           {setting.key === 'version_backend' &&
+                            provider?.provider === 'mlx' &&
+                            (() => {
+                              const build = describeMlxBuild(
+                                String(setting.controller_props?.value ?? '')
+                              )
+                              return build ? (
+                                <div
+                                  className="mt-1 text-sm text-muted-foreground"
+                                  data-testid="mlx-build-origin"
+                                >
+                                  {t(`settings:mlxEngine.origin.${build.origin}`)}
+                                </div>
+                              ) : null
+                            })()}
+                          {setting.key === 'version_backend' &&
                             runningBackendNotice && (
                               <div className="mt-1 flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-500">
                                 <IconAlertTriangle size={14} />
@@ -2548,6 +2600,34 @@ function ProviderDetail() {
                                       {isInstallingBackend
                                         ? 'Installing Backend...'
                                         : 'Install Backend from File'}
+                                    </span>
+                                  </Button>
+                                )}
+                                {/* MLX: the core compares the active
+                                    build with conf's manifest; a newer one
+                                    becomes the banner's offer (design D10). */}
+                                {provider?.provider === 'mlx' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void mlxEngineCheck.check()}
+                                    disabled={mlxEngineCheck.checking}
+                                    className="w-[16rem]"
+                                    data-testid="mlx-engine-check"
+                                  >
+                                    {mlxEngineCheck.checking ? (
+                                      <IconLoader
+                                        size={12}
+                                        className="animate-spin text-muted-foreground"
+                                      />
+                                    ) : (
+                                      <IconRefresh
+                                        size={12}
+                                        className="text-muted-foreground"
+                                      />
+                                    )}
+                                    <span>
+                                      {t('settings:mlxEngine.checkForUpdates')}
                                     </span>
                                   </Button>
                                 )}
@@ -2648,49 +2728,26 @@ function ProviderDetail() {
                                   )}
                               </div>
                             )}
-                          {/* Pending-backend banner: appears as soon as
-                              the just-downloaded backend is sitting in
-                              this provider's pending key and waiting
-                              for `activatePendingBackend()` on the
-                              next launch. The `version_backend`
-                              setting itself can't be hot-swapped while
-                              the llama-server is running, so without
-                              this pill the user sees no change
-                              between "I clicked Find optimal" and "I
-                              restarted the app". */}
+                          {/* The builds of this engine on disk: remove one,
+                              or (llama.cpp) make another active, through
+                              the core. */}
                           {setting.key === 'version_backend' &&
-                            (provider?.provider === 'llamacpp' ||
-                              provider?.provider === LOCAL_LLAMACPP_PROVIDER) &&
-                            pendingBackend && (
-                              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs">
-                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                  {t(
-                                    'settings:backendUpdater.pendingBackendLabel'
-                                  )}
-                                </span>
-                                <code className="font-mono text-foreground/80">
-                                  {pendingBackend}
-                                </code>
-                                <span className="text-muted-foreground">
-                                  {t(
-                                    'settings:backendUpdater.pendingBackendHint'
-                                  )}
-                                </span>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="ml-auto"
-                                  onClick={handleRestartForPendingBackend}
-                                >
-                                  <IconRefresh
-                                    size={12}
-                                    className="text-muted-foreground"
-                                  />
-                                  <span>
-                                    {t('settings:backendUpdater.restartNow')}
-                                  </span>
-                                </Button>
-                              </div>
+                            provider &&
+                            (provider.provider === 'llamacpp' ||
+                              provider.provider === 'llamacpp-upstream' ||
+                              provider.provider === 'atomic-prism' ||
+                              provider.provider === 'mlx') && (
+                              <InstalledEngineBuilds
+                                engine={provider.provider}
+                                hasLoadedModels={provider.models.some((model) =>
+                                  activeModels.includes(model.id)
+                                )}
+                                onActivated={
+                                  isLlamacppProvider(provider.provider)
+                                    ? clearDeviceAfterSwitch
+                                    : undefined
+                                }
+                              />
                             )}
                         </>
                       }

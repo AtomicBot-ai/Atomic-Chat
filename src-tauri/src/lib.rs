@@ -77,11 +77,6 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
     }
 
-    #[cfg(feature = "mlx")]
-    {
-        app_builder = app_builder.plugin(tauri_plugin_mlx::init());
-    }
-
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());

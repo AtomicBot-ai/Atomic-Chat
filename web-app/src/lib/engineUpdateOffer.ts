@@ -1,138 +1,152 @@
 /**
- * Contract for the inference-engine update offer (ATO-528 / ATO-531).
+ * The inference-engine update offer on the shared banner (ATO-528 / ATO-531),
+ * built from the core's answer about every engine (`POST /engines/versions`,
+ * spec `engine-lifecycle-desktop`). The core alone decides whether an update
+ * is needed and to what: an offer exists exactly when the engine's
+ * `update.needed` is `true`, and a `blocked_reason` is never turned into one.
+ * The app compares no versions.
  *
- * The producer side lives in the llama.cpp extensions, which bundle their own
- * copy of `@janhq/core` and cannot import from the web app — so the event name
- * and the storage keys below are duplicated there as literals. Keep the two
- * sides in sync:
- *   - `extensions/llamacpp-extension/src/engineUpdateOffer.ts`
- *   - `extensions/llamacpp-upstream-extension/src/engineUpdateOffer.ts`
- *   - `extensions/atomic-prism-extension/src/engineUpdateOffer.ts`
- *
- * The media engine (`sd-server`) is the one producer inside the web app: its
- * install lives in the image-generation store, which publishes through
- * {@link publishEngineUpdateOffer} below.
- *
- * A DOM `CustomEvent` rather than the `@janhq/core` bus, for the same reason
- * `app:backend-hotswapped` is one: the in-process EventEmitter singleton is
- * bypassed when an extension bundles its own core copy, and this event only
- * drives UI.
+ * What stays in the app is the user's answer to an offer: "Remind me later"
+ * (a day) and the × (never for this target), kept per engine in
+ * `localStorage` and bound to the target, so the next release always gets a
+ * fresh hearing.
  */
 
-/** Dispatched on `window` with an {@link EngineUpdateOffer} as its detail. */
-export const ENGINE_UPDATE_AVAILABLE_EVENT = 'app:engine-update-available'
+import type {
+  EngineId,
+  EngineUpdateApply,
+  EngineVersions,
+} from '@/services/engines/types'
 
 /**
- * Dispatched on `window` with the provider id as its detail when an offer
- * stops being true without the banner's involvement: the engine was updated
- * from its own settings page, or its manifest no longer names a newer build.
+ * Engines that can offer an update, most-preferred first. The llama.cpp
+ * providers ship side by side and only one banner may be on screen, so the
+ * default provider's offer wins and the others wait. MLX follows them; the
+ * media engine comes after: a chat engine is what most sessions use. The
+ * managed engines, whose update is a reinstall the user confirms on their
+ * page, come last.
  */
-export const ENGINE_UPDATE_RETRACTED_EVENT = 'app:engine-update-retracted'
+export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
+  'llamacpp-upstream',
+  'llamacpp',
+  'atomic-prism',
+  'mlx',
+  'sd-cpp',
+  'tensorrt-llm',
+  'vllm',
+]
 
-/**
- * Per-provider mirror of the last offer, written before the event is
- * dispatched. Extensions load after React mounts *and* can finish their
- * release-tag reconciliation before it, so the banner reads this on mount
- * instead of relying on catching the event — the same race the better-backend
- * recommendation solves this way.
- */
-export const engineUpdateOfferKey = (providerId: string): string =>
-  `atomic_engine_update_offer_${providerId}`
-
-/** One entry per provider; a newer target replaces the previous decision. */
+/** One entry per engine; a newer target replaces the previous decision. */
 const ENGINE_UPDATE_SNOOZE_KEY = 'atomic-engine-update-snooze'
+
+/** Offers the extensions and the image store persisted before the core made them. */
+const LEGACY_OFFER_KEY_PREFIX = 'atomic_engine_update_offer_'
 
 /** How long "Remind me later" keeps the engine banner down. */
 export const ENGINE_UPDATE_SNOOZE_MS = 24 * 60 * 60 * 1000
 
 export interface EngineUpdateOffer {
-  /** Provider id, e.g. `llamacpp-upstream`. Names the engine to the user. */
-  provider: string
-  /** Full `version/backend` pair currently configured. */
+  /** The engine, e.g. `llamacpp-upstream`. Names it to the user. */
+  provider: EngineId
+  /** Full `version/variant` pair active now. */
   currentBackend: string
-  /** Full `version/backend` pair being offered. */
+  /** Full `version/variant` pair being offered. */
   targetBackend: string
-  /** Release tag currently in use, e.g. `b10840`. */
+  /** Version active now, e.g. `b10840`. */
   currentVersion: string
-  /** Release tag being offered, e.g. `b10909-mix-bea84f7`. */
+  /** Version being offered, e.g. `b10909`. */
   targetVersion: string
-  /** Archive size in bytes when the release index knows it. */
+  /** Every archive or image layer the update downloads, when the core knows it. */
   downloadSizeBytes?: number
-  /**
-   * Whether the app must restart to pick the build up. `false` for llama.cpp,
-   * which hot-swaps (`applyBackendLive`); carried explicitly so an engine that
-   * cannot hot-swap can say so without a UI change.
-   */
+  /** `swap` — the core installs and switches in place; `reinstall` — confirmed on the engine's page. */
+  apply: EngineUpdateApply
+  /** Whether the app must restart to pick the build up; no engine needs it today. */
   restartRequired: boolean
   /** Release page for "Show what's new". Absent renders no link. */
   releaseNotesUrl?: string
-  /**
-   * One line about the target release, where the engine's manifest carries
-   * one (PrismML's does). Absent renders no changelog block.
-   */
+  /** One line about the target release. Absent renders no changelog block. */
   notes?: string
 }
 
-function isOffer(value: unknown): value is EngineUpdateOffer {
-  if (!value || typeof value !== 'object') return false
-  const offer = value as Partial<EngineUpdateOffer>
-  return (
-    typeof offer.provider === 'string' &&
-    !!offer.provider &&
-    typeof offer.targetBackend === 'string' &&
-    !!offer.targetBackend &&
-    typeof offer.targetVersion === 'string' &&
-    !!offer.targetVersion
-  )
-}
+const GGML_ORG_RELEASE_TAG_BASE =
+  'https://github.com/ggml-org/llama.cpp/releases/tag'
+const TURBOQUANT_RELEASE_TAG_BASE =
+  'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/tag'
+const MLX_RELEASE_TAG_BASE =
+  'https://github.com/AtomicBot-ai/mlx-vlm/releases/tag'
+const SD_UPSTREAM_REPO = 'leejet/stable-diffusion.cpp'
+/** sd.cpp builds with an `-a<rev>` tag come from the fork, which keeps upstream's tag for its releases. */
+const SD_FORK_REPO = 'AtomicBot-ai/stable-diffusion.cpp'
+const SD_ATOMIC_TAG_SUFFIX_RE = /-a[0-9a-f]{7,}$/
 
-/** Reads the offer an extension persisted for `providerId`, if any. */
-export function readEngineUpdateOffer(
-  providerId: string
-): EngineUpdateOffer | null {
-  try {
-    const raw = localStorage.getItem(engineUpdateOfferKey(providerId))
-    if (!raw) return null
-    const parsed: unknown = JSON.parse(raw)
-    return isOffer(parsed) ? parsed : null
-  } catch {
-    return null
+/**
+ * Where to read what changed in `version`, for the engines whose release page
+ * follows from the tag alone. PrismML's page and note come from its own
+ * manifest, and a managed engine's release is a conf descriptor: neither is in
+ * the core's answer, so they get no link.
+ */
+export function engineReleaseNotesUrl(
+  engine: EngineId,
+  version: string
+): string | undefined {
+  switch (engine) {
+    case 'llamacpp-upstream':
+      return `${GGML_ORG_RELEASE_TAG_BASE}/${encodeURIComponent(version)}`
+    case 'llamacpp':
+      return `${TURBOQUANT_RELEASE_TAG_BASE}/${encodeURIComponent(version)}`
+    case 'mlx':
+      return `${MLX_RELEASE_TAG_BASE}/${encodeURIComponent(version)}`
+    case 'sd-cpp': {
+      const repo = SD_ATOMIC_TAG_SUFFIX_RE.test(version)
+        ? SD_FORK_REPO
+        : SD_UPSTREAM_REPO
+      return `https://github.com/${repo}/releases/tag/${version.replace(SD_ATOMIC_TAG_SUFFIX_RE, '')}`
+    }
+    default:
+      return undefined
   }
 }
 
-/** Drops the offer once it has been accepted or is no longer true. */
-export function clearEngineUpdateOffer(providerId: string): void {
-  try {
-    localStorage.removeItem(engineUpdateOfferKey(providerId))
-  } catch {
-    // Storage unavailable: the offer simply returns next launch.
+/** The offer the core makes for one engine, or `null` when it makes none. */
+export function engineUpdateOfferFrom(
+  versions: EngineVersions
+): EngineUpdateOffer | null {
+  const { active, update } = versions
+  const target = update.target
+  if (!update.needed || !target || !active) return null
+  return {
+    provider: versions.engine,
+    currentBackend: `${active.version}/${active.variant}`,
+    targetBackend: `${target.version}/${target.variant}`,
+    currentVersion: active.version,
+    targetVersion: target.version,
+    downloadSizeBytes:
+      target.download_bytes && target.download_bytes > 0
+        ? target.download_bytes
+        : undefined,
+    apply: update.apply,
+    // A swap unloads the engine's models and switches in place; a reinstall
+    // is followed on the engine's page.
+    restartRequired: false,
+    releaseNotesUrl: engineReleaseNotesUrl(versions.engine, target.version),
   }
 }
 
 /**
- * Producer side for an engine that lives in the web app. Persists the offer,
- * then announces it — the same two legs the extensions take.
+ * Drop the offers earlier versions of the app persisted. The core is the only
+ * source now; a stale record would otherwise sit in storage forever.
  */
-export function publishEngineUpdateOffer(offer: EngineUpdateOffer): void {
+export function clearLegacyEngineUpdateOffers(): void {
   try {
-    localStorage.setItem(
-      engineUpdateOfferKey(offer.provider),
-      JSON.stringify(offer)
-    )
+    const stale: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(LEGACY_OFFER_KEY_PREFIX)) stale.push(key)
+    }
+    stale.forEach((key) => localStorage.removeItem(key))
   } catch {
-    // Storage unavailable: the event below still reaches a mounted banner.
+    // Storage unavailable: nothing was persisted either.
   }
-  window.dispatchEvent(
-    new CustomEvent(ENGINE_UPDATE_AVAILABLE_EVENT, { detail: offer })
-  )
-}
-
-/** Producer side of a withdrawal: clears the offer and tells the banner. */
-export function retractEngineUpdateOffer(providerId: string): void {
-  clearEngineUpdateOffer(providerId)
-  window.dispatchEvent(
-    new CustomEvent(ENGINE_UPDATE_RETRACTED_EVENT, { detail: providerId })
-  )
 }
 
 /**

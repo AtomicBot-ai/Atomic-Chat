@@ -429,6 +429,36 @@
       "managedModels": "Модели GPU-движков ({{engines}}) хранятся в WSL-дистрибутиве Atomic Chat «{{name}}», а не в папке данных: они не переносятся и остаются доступны после смены папки."
     }
   },
+  "engineBuilds": {
+    "title": "Установленные сборки",
+    "active": "активна",
+    "inUse": "используется",
+    "origin": {
+      "downloaded": "скачана",
+      "bundled": "поставляется с приложением",
+      "managed": "управляемая"
+    },
+    "notRemovable": {
+      "active": "активная сборка",
+      "bundled": "поставляется с приложением",
+      "in-use": "из неё запущена модель"
+    },
+    "makeActive": "Сделать активной",
+    "installOther": "Установить другую сборку…",
+    "remove": "Удалить",
+    "unloadWarning": "Смена активной сборки выгрузит загруженные модели этого провайдера.",
+    "confirmRemoveTitle": "Удалить эту сборку?",
+    "confirmRemoveDescription": "{{build}} будет удалена с этого компьютера. Её можно скачать снова.",
+    "confirmRemove": "Удалить",
+    "cancel": "Отмена",
+    "removeFailed": "Не удалось удалить сборку",
+    "activateFailed": "Не удалось сделать сборку активной",
+    "error": {
+      "inUse": "Из этой сборки ещё запущена модель: {{message}}",
+      "invalid": "Эту сборку нельзя удалить: {{message}}",
+      "notInstalled": "Этой сборки больше нет на компьютере: {{message}}"
+    }
+  },
   "backendUpdater": {
     "newBackendVersion": "Новая версия бэкенда {{version}}",
     "backendUpdateAvailable": "Доступно обновление бэкенда",
@@ -441,6 +471,7 @@
     "downloadingBackendDesc": "Обнаружен лучший бэкенд для вашего оборудования. Установка выполняется в фоновом режиме.",
     "downloadComplete": "Бэкенд {{backend}} успешно установлен!",
     "downloadFailed": "Не удалось установить бэкенд движка",
+    "activateFailed": "Не удалось переключить сборку движка",
     "betterBackendTitle": "Доступен более быстрый бэкенд",
     "betterBackendDesc": "Используйте {{backend}} для более быстрых ответов.",
     "notNow": "Отмена",
@@ -664,5 +695,15 @@
     "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated"
+  },
+  "mlxEngine": {
+    "checkForUpdates": "Проверить обновления движка",
+    "upToDate": "Вы используете последнюю версию движка MLX",
+    "updateAvailable": "Доступен движок MLX {{version}}. Обновить можно в баннере.",
+    "checkFailed": "Не удалось проверить обновление движка MLX",
+    "origin": {
+      "bundled": "Поставляется с приложением",
+      "downloaded": "Загруженное обновление"
+    }
   }
 }

@@ -42,19 +42,6 @@ vi.mock('@/containers/images/ImageModelSelector', () => ({
   },
 }))
 
-const install = vi.hoisted(() => ({
-  ensure: vi.fn(),
-  select: vi.fn(async () => ({ backendId: 'macos-arm64' })),
-}))
-vi.mock('@/services/diffusion/install', () => ({
-  ensureDiffusionBackend: install.ensure,
-  selectDiffusionBackendForHost: install.select,
-  resolveSdcppManifest: vi.fn(async () => ({
-    manifest: { tag_name: 'master-849-d04e895', assets: [] },
-    source: 'cache',
-    fetchedAt: 1,
-  })),
-}))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 
 import en from '@/locales/en/images.json'

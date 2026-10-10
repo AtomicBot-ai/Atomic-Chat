@@ -33,6 +33,9 @@ import {
 } from '@/services/managed-environment/client'
 import { describeDescriptor } from '@/services/managed-models/models'
 import { useRunningHostSteps } from '@/stores/host-step-running-store'
+import { updateEngine } from '@/services/engines/core'
+import type { EngineId } from '@/services/engines/types'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import type {
   EnvironmentOperation,
   RequirementPlan,
@@ -95,9 +98,19 @@ const errorText = (error: unknown) =>
     ? String((error as { message: unknown }).message)
     : String(error)
 
-export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
+export function ManagedEngineSetupPanel({
+  engine,
+  askToUpdate = false,
+}: {
+  engine: ManagedEngine
+  /** The engine update banner sent the person here: ask to confirm the update at once. */
+  askToUpdate?: boolean
+}) {
   const { t } = useTranslation()
   const k = providerKey(engine)
+  /** The core's answer about this engine: the installed release and whether a newer one exists. */
+  const versions = useEngineVersionsStore((state) => state.engines[engine.id as EngineId])
+  const updateTarget = versions?.update.needed ? versions.update.target : null
   const environment = useManagedEnvironmentStore(selectEnvironment)
   const installation = useManagedEnvironmentStore((state) => selectInstallation(state, engine.id))
   const operation = useManagedEnvironmentStore((state) => selectSetupOperation(state, engine.id))
@@ -124,6 +137,8 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
   const [planOpen, setPlanOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const [removeEnvironmentOpen, setRemoveEnvironmentOpen] = useState(false)
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const askedToUpdate = useRef(false)
   const [keepModels, setKeepModels] = useState(true)
   const [manualCommand, setManualCommand] = useState<string | null>(null)
   const [notices, setNotices] = useState<string[]>([])
@@ -278,6 +293,28 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
     })
 
   const view = deriveSetupView({ plan, operation, installation, failed })
+
+  // From the banner: confirm the update once the installed engine and its offer are known.
+  useEffect(() => {
+    if (!askToUpdate || askedToUpdate.current) return
+    if (view.kind !== 'installed' || !updateTarget) return
+    askedToUpdate.current = true
+    setUpdateOpen(true)
+  }, [askToUpdate, view.kind, updateTarget])
+
+  /**
+   * The update is a reinstall the core runs (`POST /engines/:engine/update`): it removes the
+   * engine, keeping the models, with the consent it computes for that removal, then begins the
+   * setup of the new release, which waits for the person's consent here like any setup.
+   */
+  const update = () =>
+    act(async () => {
+      setUpdateOpen(false)
+      await updateEngine(engine.id as EngineId, {
+        request_id: crypto.randomUUID(),
+        app_version: VERSION,
+      })
+    })
   const summary = plan ? planSummary(plan, notices, environment?.executor) : undefined
   /**
    * Windows only: every managed engine is gone and the distribution is still there. Removing it is
@@ -410,6 +447,21 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
       {view.kind === 'installed' && (
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">{t(k('installed'))}</p>
+          {versions?.active && (
+            <p className="text-sm text-main-view-fg/70 break-all">
+              {t(k('version'), { version: versions.active.version })}
+            </p>
+          )}
+          {updateTarget && (
+            <div className="flex items-center justify-between gap-3">
+              <p className="min-w-0 text-sm text-main-view-fg/70 break-all">
+                {t(k('update.available'), { version: updateTarget.version })}
+              </p>
+              <Button size="sm" disabled={!!anyOperation} onClick={() => setUpdateOpen(true)}>
+                {t(k('update.button'))}
+              </Button>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3">
             <p className="min-w-0 text-sm text-main-view-fg/70">
               {t(windows ? k('remove.spaceWindows') : k('remove.space'), {
@@ -458,6 +510,25 @@ export function ManagedEngineSetupPanel({ engine }: { engine: ManagedEngine }) {
             <Button disabled={!plan || !summary?.canStart} onClick={() => plan && void agree(plan)}>
               {t(k('plan.agree'))}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={updateOpen} onOpenChange={setUpdateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t(k('update.title'))}</DialogTitle>
+            <DialogDescription>
+              {t(k('update.body'), {
+                size: formatBytes(updateTarget?.download_bytes ?? undefined),
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUpdateOpen(false)}>
+              {t(k('plan.cancel'))}
+            </Button>
+            <Button onClick={() => void update()}>{t(k('update.confirm'))}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
