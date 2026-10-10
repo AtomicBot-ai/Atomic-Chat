@@ -74,7 +74,7 @@
   },
   "version": "0.0.0",
   "atomicCore": {
-    "version": "0.12.1",
+    "version": "0.13.6",
     "repo": "AtomicBot-ai/atomic-chat-core"
   },
   "installConfig": {
