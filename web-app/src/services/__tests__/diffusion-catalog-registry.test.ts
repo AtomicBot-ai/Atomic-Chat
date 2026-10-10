@@ -406,6 +406,35 @@ describe('strict parsing', () => {
     expect(qwen?.ranges.dims).toEqual([256, 2048])
     expect(other?.defaults).toMatchObject({ width: 2048, height: 1536 })
   })
+
+  it('accepts Qwen 2.1 Turbo with its 8-step schedule at the same 1024px default', () => {
+    const sigmas = [
+      1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568,
+    ]
+    const turbo = sanitizeDiffusionFamily(
+      family({
+        id: 'qwen-image-2.1-turbo',
+        defaults: {
+          steps: 8,
+          cfg_scale: 1,
+          sampling_method: 'euler',
+          width: 2048,
+          height: 2048,
+          sigmas,
+        },
+        ranges: { steps: [1, 20], dims: [256, 2048], dim_multiple: 32 },
+      })
+    )
+
+    expect(turbo?.id).toBe('qwen-image-2.1-turbo')
+    expect(turbo?.defaults).toMatchObject({
+      steps: 8,
+      cfg_scale: 1,
+      width: 1024,
+      height: 1024,
+      sigmas,
+    })
+  })
 })
 
 describe('baseline and lookups', () => {

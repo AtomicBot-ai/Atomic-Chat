@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-397 records, 2026-05-19 → 2026-10-08.
+404 records, 2026-05-19 → 2026-10-09.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (24)
+## Local image & video generation (25)
 
+- **2026-10-09** — [Run Qwen-Image-2.1-Turbo as a Qwen-Image-2.1 sibling](2026-10-09-run-qwen-image-2-1-turbo-as-a-qwen-image-2-1-sibling.md)
 - **2026-10-07** — [Install the media engine and MLX through the core, and ship mlx-server by conf's manifest](2026-10-07-install-media-and-mlx-engines-through-the-core.md) — supersedes the desktop-installer parts of the 2026-10-06 probe-fallback record.
 - **2026-10-07** — [Move installed media engines onto the fork's build with an `-a<rev>` tag](2026-10-07-move-installed-media-engines-onto-the-fork-build-with-an-atomic-tag.md) — supersedes the no-suffix clause of the 2026-10-06 fork record.
 - **2026-10-06** — [Fall back from a media engine build that fails its probe, and stop shipping Windows ROCm](2026-10-06-fall-back-from-a-media-engine-build-that-fails-its-probe.md)
@@ -264,8 +265,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (8)
+## Local API server & OpenAI compatibility (9)
 
+- **2026-10-08** — [Stop closes the local stream's connection in Rust](2026-10-08-stop-closes-the-local-stream-connection-in-rust.md)
 - **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
 - **2026-09-19** — [Reload the served model when the API listener is recovered](2026-09-19-reload-the-served-model-when-the-api-listener-is-recovered.md)
 - **2026-09-18** — [Bind the API inspector's emitter on the core event path](2026-09-18-bind-the-api-inspector-emitter-on-the-core-event-path.md)
@@ -289,8 +291,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (20)
+## Packaging, installers, autostart & platform policy (21)
 
+- **2026-10-09** — [Hide the CLI in the app, and stop installing it on launch](2026-10-09-hide-the-cli-in-the-app.md)
 - **2026-10-02** — [Publish releases with make release-prod and feed the landing page from conf](2026-10-02-publish-releases-with-make-release-prod-and-feed-the-landing-from-conf.md)
 - **2026-09-30** — [Stop a leftover app core before the Windows installer overwrites it](2026-09-30-stop-a-leftover-app-core-before-the-windows-installer-overwrites-it.md) — an update exits without `RunEvent::Exit`, so the core outlives the app.
 - **2026-09-23** — [Add a Video page that shares the image runtime](2026-09-23-add-a-video-page-that-shares-the-image-runtime.md)
@@ -312,8 +315,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (84)
+## UI / UX (88)
 
+- **2026-10-09** — [Match file_ids by name, and tell the model documents are attached](2026-10-09-match-file-ids-by-name-and-tell-the-model-documents-are-attached.md)
+- **2026-10-09** — [A send waits for web search that is still connecting](2026-10-09-a-send-waits-for-web-search-that-is-still-connecting.md)
+- **2026-10-08** — [Cite documents by name, and retrieve one query per fact (ATO-551, ATO-552)](2026-10-08-cite-documents-by-name-and-retrieve-one-query-per-fact.md)
+- **2026-10-08** — [A thread's Chat calls back into the page mounted now](2026-10-08-a-threads-chat-calls-back-into-the-page-mounted-now.md)
 - **2026-10-05** — [Keep desktop internal links in the app router](2026-10-05-keep-desktop-internal-links-in-the-app-router.md)
 - **2026-09-29** — [Notify the desktop when a download or a generation finishes](2026-09-29-notify-the-desktop-when-a-download-or-generation-finishes.md)
 - **2026-09-25** — [Clear the composer selection after a failed model load](2026-09-25-clear-the-composer-selection-after-a-failed-load.md)

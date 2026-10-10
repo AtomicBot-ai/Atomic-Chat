@@ -158,6 +158,7 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'krea-2-turbo',
   'qwen-image',
   'qwen-image-2.1',
+  'qwen-image-2.1-turbo',
   'wan2.2-ti2v-5b',
   'ltx-2',
 ] as const
@@ -446,7 +447,7 @@ export const sanitizeDiffusionFamily = (
   }
 
   const normalizedDefaults =
-    raw.id === 'qwen-image-2.1'
+    raw.id === 'qwen-image-2.1' || raw.id === 'qwen-image-2.1-turbo'
       ? {
           ...defaults,
           width: QWEN_IMAGE_2_1_DEFAULT_DIM,

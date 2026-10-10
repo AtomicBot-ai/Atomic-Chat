@@ -12,6 +12,7 @@
   "archNotSupportedDescriptionNoAlt": "Архитектура этой модели пока не поддерживается текущим движком ({{backend}}). Обновите приложение или выберите другую модель.",
   "modelFileMissingTitle": "Файл модели не найден",
   "modelFileMissingDescription": "Не удалось найти файл модели — возможно, он был перемещён или удалён. Попробуйте скачать модель заново.",
+  "gpuBusyTitle": "GPU занят",
   "modelFileCorruptTitle": "Файл модели повреждён",
   "modelFileCorruptDescription": "Похоже, файл модели неполный или повреждён — вероятно, из-за прерванной загрузки. Удалите модель и скачайте её заново.",
   "osVersionUnsupportedTitle": "Версия macOS не поддерживается",

@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "Chọn mô hình cục bộ, hoặc nhà cung cấp đám mây có khóa API.",
     "providerKeyMissing": "Thêm khóa API cho nhà cung cấp này trong Cài đặt rồi thử lại.",
     "localServerRequired": "Chế độ agent với mô hình đám mây cần Local API Server. Hãy khởi động trong Cài đặt."
+  },
+  "docCitation": {
+    "document": "Tài liệu",
+    "removedDocument": "Tài liệu đã bị xóa",
+    "passage": "Đoạn {{passage}}",
+    "passageOf": "Đoạn {{passage}}/{{total}}",
+    "removedFromProject": "Tài liệu này đã bị xóa khỏi dự án. Bên dưới là đoạn mà câu trả lời dựa vào.",
+    "removedFromChat": "Tài liệu này đã bị xóa khỏi cuộc trò chuyện. Bên dưới là đoạn mà câu trả lời dựa vào.",
+    "open": "Mở tài liệu",
+    "showInFolder": "Hiển thị trong thư mục",
+    "openFailed": "Không thể mở {{name}}",
+    "openFailedDescription": "Tệp có thể đã bị di chuyển hoặc xóa.",
+    "chipLabel": "Nguồn: {{name}}, đoạn {{passage}}"
   }
 }

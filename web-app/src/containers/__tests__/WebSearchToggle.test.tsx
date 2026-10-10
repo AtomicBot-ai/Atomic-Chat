@@ -48,6 +48,7 @@ import WebSearchToggle from '../WebSearchToggle'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { awaitMcpActivations } from '@/lib/mcp-activation'
 
 const EXA = {
   command: '',
@@ -290,6 +291,43 @@ describe('WebSearchToggle', () => {
     ])
     await screen.findByRole('button', {
       name: common.webSearchToggleEnabled,
+    })
+  })
+
+  it('lets a send wait until the server is active, unmuted and has its tools', async () => {
+    useMCPServers.setState({ mcpServers: { exa: { ...EXA, active: false } } })
+    useToolAvailable.setState({ mutedServers: { 'thread-1': ['exa'] } })
+    useAppState.setState({ tools: [] })
+    let finishHandshake!: () => void
+    activateMCPServer.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishHandshake = () => {
+            useAppState.getState().updateTools([SEARCH_TOOL])
+            resolve()
+          }
+        })
+    )
+
+    render(<WebSearchToggle />)
+    await userEvent.click(
+      screen.getByRole('button', { name: common.webSearchToggleDisabled })
+    )
+    await waitFor(() => expect(activateMCPServer).toHaveBeenCalled())
+    // A message sent now, while the globe still says "Connecting".
+    const send = awaitMcpActivations().then((result) => ({
+      result,
+      active: useMCPServers.getState().mcpServers.exa?.active,
+      muted: useToolAvailable.getState().getMutedServersForThread('thread-1'),
+      tools: useAppState.getState().tools.map((tool) => tool.name),
+    }))
+    finishHandshake()
+
+    expect(await send).toEqual({
+      result: 'settled',
+      active: true,
+      muted: [],
+      tools: ['web_search_exa'],
     })
   })
 

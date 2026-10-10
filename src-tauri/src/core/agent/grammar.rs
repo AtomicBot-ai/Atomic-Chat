@@ -139,7 +139,7 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
     ToolGrammar {
         name: "docs.retrieve",
         rule: "docs-retrieve",
-        args: r#""{" ws "\"query\"" ws ":" ws non-empty-string ( ws "," ws "\"top_k\"" ws ":" ws positive-integer )? ( ws "," ws "\"file_ids\"" ws ":" ws non-empty-string-array )? ( ws "," ws "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) )? ws "}""#,
+        args: r#""{" ws ( "\"query\"" ws ":" ws non-empty-string | "\"queries\"" ws ":" ws non-empty-string-array ) ( ws "," ws "\"top_k\"" ws ":" ws positive-integer )? ( ws "," ws "\"file_ids\"" ws ":" ws non-empty-string-array )? ( ws "," ws "\"scope\"" ws ":" ws ( "\"thread\"" | "\"project\"" ) )? ws "}""#,
     },
     ToolGrammar {
         name: "docs.chunks",

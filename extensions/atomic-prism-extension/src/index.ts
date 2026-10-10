@@ -2677,11 +2677,25 @@ export default class atomic_prism_extension extends AIEngine {
 
     const timeoutNum = Number(this.timeout) || 1800
 
+    // An abort has to reach the Rust read loop: it alone holds the connection,
+    // and the server cancels a generation only when that connection closes
+    // (ATO-550).
+    const requestId = crypto.randomUUID()
+    let cancelSent = false
+    const cancelRequest = () => {
+      if (cancelSent || streamDone) return
+      cancelSent = true
+      invoke('cancel_local_stream', { requestId }).catch(() => {
+        // An app without the command still ends the stream on this side.
+      })
+    }
+
     const requestPromise = invoke<number>('stream_local_http', {
       url,
       headers: headersRecord,
       body,
       timeoutSecs: timeoutNum,
+      requestId,
       onChunk: channel,
     })
 
@@ -2708,6 +2722,7 @@ export default class atomic_prism_extension extends AIEngine {
 
     if (abortController?.signal) {
       const onAbort = () => {
+        cancelRequest()
         streamError = streamError ?? new Error('Request aborted')
         streamDone = true
         if (wakeUp) {

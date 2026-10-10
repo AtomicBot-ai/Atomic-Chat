@@ -46,7 +46,7 @@ const getRagExtension = (): RAGExtension | undefined => {
 export const useAttachments = create<AttachmentsStore>()((set) => ({
   enabled: true,
   maxFileSizeMB: 20,
-  retrievalLimit: 3,
+  retrievalLimit: 5,
   retrievalThreshold: 0.3,
   chunkSizeChars: 512,
   overlapChars: 64,

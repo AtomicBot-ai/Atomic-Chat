@@ -290,6 +290,24 @@ describe('ModelLoadSnackbar', () => {
     loading.mockRestore()
   })
 
+  // A switch refused at once (the GPU is busy with a video) is often
+  // followed by another within the same frames; the first toast's late
+  // dismissal callback used to make the snackbar forget the second one.
+  it('goes away after two loads that fail back to back', async () => {
+    renderSnackbar()
+    startLoad()
+    await waitFor(() => expect(snackbar()).toBeInTheDocument())
+
+    act(() => useAppState.getState().updateLoadingModel(false))
+    startLoad()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    act(() => useAppState.getState().updateLoadingModel(false))
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('.model-load-snackbar')).toHaveLength(0)
+    )
+  })
+
   it('shows again for the next load after one was dismissed', async () => {
     renderSnackbar()
     startLoad()

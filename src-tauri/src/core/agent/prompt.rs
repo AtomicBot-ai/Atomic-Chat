@@ -420,10 +420,13 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
     },
     ToolDescriptor {
         name: "docs.retrieve",
-        summary: "Retrieve the most relevant snippets from the indexed documents. Pass a search query, never raw document content. Omitting scope searches every available collection. Read-only.",
-        args_schema: r#"{ query: string, top_k?: number, file_ids?: string[], scope?: "thread" | "project" }"#,
+        summary: "Retrieve the most relevant passages from the indexed documents. Pass search queries, never raw document content; when the question asks for several facts, pass one short query per fact in queries. Cite a passage by copying its cite label (like [FINDINGS.md §13]) exactly; never cite ids. file_ids takes ids or file names from docs.list; omit it and scope to search everything. Read-only.",
+        args_schema: r#"{ query?: string, queries?: string[], top_k?: number, file_ids?: string[], scope?: "thread" | "project" }"#,
         tier: ToolTier::Frequent,
-        examples: &[r#"{"query":"payment terms","top_k":3}"#],
+        examples: &[
+            r#"{"query":"payment terms","top_k":3}"#,
+            r#"{"queries":["probe timeout UTC time","MiniLM vector dimension"]}"#,
+        ],
     },
     ToolDescriptor {
         name: "docs.chunks",

@@ -20,6 +20,7 @@ import {
   hasWebSearchTool,
   isWebSearchEnabled,
 } from '@/lib/web-search'
+import { trackMcpActivation } from '@/lib/mcp-activation'
 import { cn } from '@/lib/utils'
 
 type WebSearchToggleProps = {
@@ -111,21 +112,27 @@ const WebSearchToggle = memo(function WebSearchToggle({
         await syncServers()
         await serviceHub.mcp().deactivateMCPServer(key)
       } else {
-        if (!config.active || !hasWebSearchTool(server, tools)) {
-          await serviceHub
-            .mcp()
-            .activateMCPServer(key, { ...config, active: true })
-          const snapshot = await serviceHub.mcp().getToolsWithStatus()
-          useAppState.getState().updateTools(snapshot.tools)
-          useAppState
-            .getState()
-            .updateMcpToolNames(snapshot.tools.map((tool) => tool.name))
-          if (!hasWebSearchTool(server, snapshot.tools)) {
-            throw new Error(t('common:webSearchToggleUnavailable'))
+        // A message sent while this runs waits for it, up to the point where
+        // the transport sees the server active, its tools and no mute.
+        const activation = (async () => {
+          if (!config.active || !hasWebSearchTool(server, tools)) {
+            await serviceHub
+              .mcp()
+              .activateMCPServer(key, { ...config, active: true })
+            const snapshot = await serviceHub.mcp().getToolsWithStatus()
+            useAppState.getState().updateTools(snapshot.tools)
+            useAppState
+              .getState()
+              .updateMcpToolNames(snapshot.tools.map((tool) => tool.name))
+            if (!hasWebSearchTool(server, snapshot.tools)) {
+              throw new Error(t('common:webSearchToggleUnavailable'))
+            }
           }
-        }
-        editServer(key, { ...config, active: true })
-        enableServerTools(key)
+          editServer(key, { ...config, active: true })
+          enableServerTools(key)
+        })()
+        trackMcpActivation(key, activation)
+        await activation
         await syncServers()
       }
     } catch {

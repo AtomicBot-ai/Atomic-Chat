@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "请选择本地模型，或已配置 API 密钥的云端提供商。",
     "providerKeyMissing": "请在设置中为该提供商添加 API 密钥后重试。",
     "localServerRequired": "使用云端模型运行智能体需要本地 API 服务器，请在设置中启动。"
+  },
+  "docCitation": {
+    "document": "文档",
+    "removedDocument": "已移除的文档",
+    "passage": "第 {{passage}} 段",
+    "passageOf": "第 {{passage}} 段，共 {{total}} 段",
+    "removedFromProject": "此文档已从项目中移除。下方是回答所依据的段落。",
+    "removedFromChat": "此文档已从对话中移除。下方是回答所依据的段落。",
+    "open": "打开文档",
+    "showInFolder": "在文件夹中显示",
+    "openFailed": "无法打开 {{name}}",
+    "openFailedDescription": "文件可能已被移动或删除。",
+    "chipLabel": "来源：{{name}}，第 {{passage}} 段"
   }
 }

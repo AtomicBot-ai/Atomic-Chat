@@ -59,6 +59,9 @@ impl DocsScope {
 pub struct DocsAttachment {
     pub id: String,
     pub name: Option<String>,
+    /// For the UI's citation links; `docs.list` does not show it to the model.
+    #[serde(skip_serializing)]
+    pub path: Option<String>,
     #[serde(rename = "type")]
     pub file_type: Option<String>,
     pub size: Option<i64>,
@@ -91,12 +94,15 @@ pub trait DocsBridge: Send + Sync {
         cancellation: &CancellationToken,
     ) -> Result<Vec<f32>, String>;
     async fn list(&self, scope: DocsScope) -> Result<Vec<DocsAttachment>, String>;
+    /// `query_text` feeds the plugin's lexical boost (exact terms such as
+    /// times and ids raise a chunk's score).
     async fn retrieve(
         &self,
         scope: DocsScope,
         query_embedding: &[f32],
         top_k: usize,
         file_ids: Option<&[String]>,
+        query_text: Option<&str>,
     ) -> Result<Vec<DocsChunk>, String>;
     async fn chunks(
         &self,
@@ -257,6 +263,7 @@ impl DocsBridge for LiveDocsBridge {
             .map(|info| DocsAttachment {
                 id: info.id,
                 name: info.name,
+                path: info.path,
                 file_type: info.file_type,
                 size: info.size,
                 chunk_count: info.chunk_count,
@@ -271,6 +278,7 @@ impl DocsBridge for LiveDocsBridge {
         query_embedding: &[f32],
         top_k: usize,
         file_ids: Option<&[String]>,
+        query_text: Option<&str>,
     ) -> Result<Vec<DocsChunk>, String> {
         let Some(collection) = self.collection_for(scope).map(str::to_owned) else {
             return Ok(Vec::new());
@@ -278,6 +286,7 @@ impl DocsBridge for LiveDocsBridge {
         let base_dir = self.base_dir.clone();
         let embedding = query_embedding.to_vec();
         let file_ids = file_ids.map(<[String]>::to_vec);
+        let query_text = query_text.map(str::to_owned);
         let results = self
             .run_blocking(move || {
                 tauri_plugin_vector_db::api::search_collection(
@@ -291,6 +300,7 @@ impl DocsBridge for LiveDocsBridge {
                     // ignores the threshold).
                     Some("linear".into()),
                     file_ids,
+                    query_text.as_deref(),
                 )
             })
             .await?;

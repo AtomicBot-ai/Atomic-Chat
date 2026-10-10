@@ -7,7 +7,7 @@
  * icon geometry as every other snackbar.
  */
 import { useEffect, useRef } from 'react'
-import { toast } from 'sonner'
+import { toast, type ToastT } from 'sonner'
 
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -53,14 +53,11 @@ export function ModelLoadSnackbar() {
       shownRef.current = null
     }
 
-    // Bound to one snackbar. Sonner reports a programmatic `toast.dismiss(id)`
-    // on a later render, so the report of a snackbar this component already
-    // replaced can arrive while the next load's is up (an engine update ends
-    // one load and the next starts at once). Only the user closing the one
-    // shown now counts; a late report of another would orphan the shown one,
-    // which then spins on after its load finished.
-    const onDismissOf = (id: string) => () => {
-      if (shownRef.current?.id !== id) return
+    const onDismiss = (dismissed: ToastT) => {
+      // Sonner also calls this, a few frames later, for the toast.dismiss() in
+      // hide(); by then a load started right after a failed one may own
+      // shownRef, and forgetting it would leave that toast up for good.
+      if (shownRef.current?.id !== dismissed.id) return
       if (isLoading(latestStatus.current)) closedDuringLoadRef.current = true
       shownRef.current = null
     }
@@ -93,7 +90,7 @@ export function ModelLoadSnackbar() {
         description,
         duration: Infinity,
         closeButton: true,
-        onDismiss: onDismissOf(id),
+        onDismiss,
         action: cancelInProgress
           ? null
           : {
@@ -125,7 +122,7 @@ export function ModelLoadSnackbar() {
         duration: LOADED_SNACKBAR_MS,
         closeButton: true,
         action: null,
-        onDismiss: onDismissOf(id),
+        onDismiss,
         onAutoClose: () => {
           if (shownRef.current?.id === id) shownRef.current = null
         },

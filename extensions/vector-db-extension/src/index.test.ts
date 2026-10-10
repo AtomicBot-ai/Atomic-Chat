@@ -9,10 +9,12 @@ const store = {
   collections: new Map<string, number>(),
   files: new Map<string, Array<{ id: string; name?: string; path?: string }>>(),
   chunks: new Map<string, Map<string, StoredChunk[]>>(),
+  searches: [] as unknown[][],
   reset() {
     this.collections.clear()
     this.files.clear()
     this.chunks.clear()
+    this.searches = []
   },
 }
 
@@ -51,6 +53,10 @@ vi.mock(
       store.chunks.set(name, perFile)
     },
     chunkText: async (text: string) => text.split('\n\n').filter(Boolean),
+    searchCollection: async (...args: unknown[]) => {
+      store.searches.push(args)
+      return []
+    },
   })
 )
 
@@ -144,5 +150,25 @@ describe('listAttachmentsForProject', () => {
     await expect(ext.listAttachmentsForProject('p1')).rejects.toEqual({
       DatabaseError: 'database is locked',
     })
+  })
+})
+
+describe('searchCollectionForProject', () => {
+  it('passes the query text to the plugin for the lexical boost', async () => {
+    const ext = new VectorDBExt('vector-db', '@janhq/vector-db-extension')
+
+    await ext.searchCollectionForProject(
+      'p1',
+      [1, 0, 0, 0],
+      5,
+      0.3,
+      'linear',
+      undefined,
+      'UTC timeout'
+    )
+
+    expect(store.searches).toEqual([
+      ['project_p1', [1, 0, 0, 0], 5, 0.3, 'linear', undefined, 'UTC timeout'],
+    ])
   })
 })

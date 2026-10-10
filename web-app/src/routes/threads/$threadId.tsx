@@ -93,6 +93,7 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { downscaleToolResultContent } from '@/lib/toolResultImages'
 import {
   executeChatToolCalls,
+  hasUnresolvedToolCallParts,
   shouldSendToolFollowUp,
 } from '@/lib/execute-chat-tool-calls'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -156,6 +157,7 @@ import {
 import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { settleMcpActivationsBeforeSend } from '@/lib/mcp-activation'
 import { findWebSearchServer, isWebSearchEnabled } from '@/lib/web-search'
 import type {
   AgentAttachment as AgentIpcAttachment,
@@ -288,15 +290,12 @@ function ThreadDetail() {
   const getSessionData = useChatSessions((state) => state.getSessionData)
   const sessionData = getSessionData(threadId)
 
-  // AbortController for cancelling tool calls
-  const toolCallAbortController = useRef<AbortController | null>(null)
-
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
     ({ messages }: { messages: UIMessage[] }) => {
-      return shouldSendToolFollowUp(messages, toolCallAbortController.current)
+      return shouldSendToolFollowUp(messages, sessionData.toolAbort)
     },
-    []
+    [sessionData]
   )
 
   // Subscribe directly to the thread data to ensure updates when model changes
@@ -335,7 +334,16 @@ function ThreadDetail() {
     useState<UIMessage | null>(null)
   const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
-  const [isChatRequestActive, setIsChatRequestActive] = useState(false)
+  // In the session store, per thread: the thread's Chat outlives this page and
+  // calls back into whichever render is the latest (ATO-538).
+  const isChatRequestActive = useChatSessions(
+    (state) => state.requestActive[threadId] === true
+  )
+  const setIsChatRequestActive = useCallback(
+    (active: boolean) =>
+      useChatSessions.getState().setRequestActive(threadId, active),
+    [threadId]
+  )
 
   // Optimistic user message shown while the home → new thread initial-message
   // path indexes attachments. Lives in a shared Zustand store published by
@@ -557,10 +565,14 @@ function ThreadDetail() {
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
 
-      if (!isAbort && sessionData.tools.length === 0) {
+      if (!isAbort && !hasUnresolvedToolCallParts(message)) {
         setIsChatRequestActive(false)
-        // Terminal only when no tool calls are queued: with tools, onFinish
-        // fires once per step and the turn continues after they resolve.
+        // Terminal when nothing in this message waits on a tool result, so no
+        // automatic follow-up will run: with tools, onFinish fires once per
+        // step and the turn continues after they resolve. The queue is not the
+        // judge: an entry left from an earlier step or turn kept a plain final
+        // answer from ever releasing the composer (PR #335).
+        sessionData.tools = []
         captureTurnOutcome('success', message)
       }
 
@@ -616,8 +628,8 @@ function ThreadDetail() {
       }
 
       // Create a new AbortController for tool calls
-      toolCallAbortController.current = new AbortController()
-      const signal = toolCallAbortController.current.signal
+      sessionData.toolAbort = new AbortController()
+      const signal = sessionData.toolAbort.signal
 
       // Get cached tool names from store (initialized in useTools hook)
       const ragToolNames = useAppState.getState().ragToolNames
@@ -657,14 +669,14 @@ function ThreadDetail() {
 
         // Clear tools after processing all
         sessionData.tools = []
-        toolCallAbortController.current = null
+        sessionData.toolAbort = null
       })().catch((error) => {
         // Ignore abort errors
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
         sessionData.tools = []
-        toolCallAbortController.current = null
+        sessionData.toolAbort = null
       })
     },
     onToolCall: ({ toolCall }) => {
@@ -1162,6 +1174,7 @@ function ThreadDetail() {
       // tools so a failed startup cannot promise web access. No server means
       // no globe to turn it off with, so web access stays off — an existing
       // chat setup without a search server never made web requests.
+      await settleMcpActivationsBeforeSend()
       const webSearchServer = findWebSearchServer(
         useMCPServers.getState().mcpServers
       )
@@ -1934,8 +1947,8 @@ function ThreadDetail() {
     // Decide by live run state, not by routing: a chat-transport stream must
     // survive a provider flip mid-generation.
     if (!isAgentRunning || !agentRun?.runId) {
-      toolCallAbortController.current?.abort()
-      toolCallAbortController.current = null
+      sessionData.toolAbort?.abort()
+      sessionData.toolAbort = null
       sessionData.tools = []
       setIsChatRequestActive(false)
       stop()

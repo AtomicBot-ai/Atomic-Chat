@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { invoke } from '@tauri-apps/api/core'
 import { isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -39,7 +38,6 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
 import { setLaunchAtStartup } from '@/lib/launchAtStartup'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
-const ATOMIC_CLI_COMMAND = 'atomic-chat-cli'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -93,9 +91,6 @@ function General() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isValidatingToken, setIsValidatingToken] = useState(false)
-  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
-  const [cliPath, setCliPath] = useState<string | null>(null)
-  const [isCliLoading, setIsCliLoading] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
   const [coreVersion, setCoreVersion] = useState<string | undefined>()
   const canManageAutostart = IS_TAURI && !isDev()
@@ -123,18 +118,6 @@ function General() {
   }, [serviceHub])
 
   useEffect(() => {
-    if (!IS_TAURI) return
-    invoke<{ installed: boolean; path: string | null }>(
-      'check_jan_cli_installed'
-    )
-      .then((s) => {
-        setCliInstalled(s.installed)
-        setCliPath(s.path)
-      })
-      .catch(() => setCliInstalled(false))
-  }, [])
-
-  useEffect(() => {
     if (!canManageAutostart) return
     isAutostartEnabled()
       .then(setAutostartEnabled)
@@ -154,40 +137,6 @@ function General() {
     },
     [canManageAutostart, serviceHub, t]
   )
-
-  const handleInstallCli = async () => {
-    setIsCliLoading(true)
-    try {
-      const s = await invoke<{ installed: boolean; path: string | null }>(
-        'install_jan_cli'
-      )
-      setCliInstalled(s.installed)
-      setCliPath(s.path)
-      toast.success(
-        t('settings:general.atomicBotCliInstalledToast', {
-          path: s.path ?? ATOMIC_CLI_COMMAND,
-        })
-      )
-    } catch (e) {
-      toast.error('Install failed', { description: String(e) })
-    } finally {
-      setIsCliLoading(false)
-    }
-  }
-
-  const handleUninstallCli = async () => {
-    setIsCliLoading(true)
-    try {
-      await invoke('uninstall_jan_cli')
-      setCliInstalled(false)
-      setCliPath(null)
-      toast.success('Atomic Chat CLI uninstalled')
-    } catch (e) {
-      toast.error('Uninstall failed', { description: String(e) })
-    } finally {
-      setIsCliLoading(false)
-    }
-  }
 
   const resetApp = async () => {
     // Prevent resetting if data folder is root directory
@@ -653,39 +602,6 @@ function General() {
 
             {/* Advanced - Desktop only */}
             <Card title="Advanced">
-              {IS_TAURI && (
-                <CardItem
-                  title={t('settings:general.atomicBotCliTitle')}
-                  description={
-                    cliInstalled && cliPath
-                      ? t('settings:general.atomicBotCliInstalled', {
-                          path: cliPath,
-                        })
-                      : t('settings:general.atomicBotCliNotInstalled')
-                  }
-                  actions={
-                    cliInstalled ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleUninstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Uninstalling…' : 'Uninstall'}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleInstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Installing…' : 'Install'}
-                      </Button>
-                    )
-                  }
-                />
-              )}
               <CardItem
                 title={t('settings:others.resetFactory', {
                   ns: 'settings',

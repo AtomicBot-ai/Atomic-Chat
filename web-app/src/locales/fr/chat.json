@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "Choisissez un modèle local ou un fournisseur cloud avec une clé API.",
     "providerKeyMissing": "Ajoutez une clé API pour ce fournisseur dans les paramètres et réessayez.",
     "localServerRequired": "Le mode agent avec un modèle cloud nécessite le serveur API local. Démarrez-le dans les paramètres."
+  },
+  "docCitation": {
+    "document": "Document",
+    "removedDocument": "Document supprimé",
+    "passage": "Passage {{passage}}",
+    "passageOf": "Passage {{passage}} sur {{total}}",
+    "removedFromProject": "Ce document a été retiré du projet. Ci-dessous, le passage sur lequel la réponse s'appuie.",
+    "removedFromChat": "Ce document a été retiré de la discussion. Ci-dessous, le passage sur lequel la réponse s'appuie.",
+    "open": "Ouvrir le document",
+    "showInFolder": "Afficher dans le dossier",
+    "openFailed": "Impossible d'ouvrir {{name}}",
+    "openFailedDescription": "Le fichier a peut-être été déplacé ou supprimé.",
+    "chipLabel": "Source : {{name}}, passage {{passage}}"
   }
 }

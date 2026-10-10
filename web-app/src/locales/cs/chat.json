@@ -21,5 +21,18 @@
     "providerUnavailableDescription": "Zvolte lokální model nebo cloudového poskytovatele s API klíčem.",
     "providerKeyMissing": "Přidejte v Nastavení API klíč tohoto poskytovatele a zkuste to znovu.",
     "localServerRequired": "Režim agenta s cloudovým modelem vyžaduje lokální API server. Spusťte jej v Nastavení."
+  },
+  "docCitation": {
+    "document": "Dokument",
+    "removedDocument": "Odstraněný dokument",
+    "passage": "Úryvek {{passage}}",
+    "passageOf": "Úryvek {{passage}} z {{total}}",
+    "removedFromProject": "Tento dokument byl z projektu odstraněn. Níže je úryvek, ze kterého odpověď vycházela.",
+    "removedFromChat": "Tento dokument byl z chatu odstraněn. Níže je úryvek, ze kterého odpověď vycházela.",
+    "open": "Otevřít dokument",
+    "showInFolder": "Zobrazit ve složce",
+    "openFailed": "{{name}} se nepodařilo otevřít",
+    "openFailedDescription": "Soubor mohl být přesunut nebo smazán.",
+    "chipLabel": "Zdroj: {{name}}, úryvek {{passage}}"
   }
 }

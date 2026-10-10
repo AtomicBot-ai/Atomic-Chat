@@ -150,6 +150,7 @@ export function workflowsForFamily(family: string): ImageWorkflowId[] {
         'edit',
       ]
     case 'qwen-image-2.1':
+    case 'qwen-image-2.1-turbo':
       return ['create', 'reference', 'edit']
     case 'krea-2-turbo':
       return ['create']

@@ -3,16 +3,23 @@
 //! (`extensions/rag-extension/src/tools.ts`): JSON payload in the model-visible
 //! summary, no raw scoring surprises (linear cosine only — see `rag_bridge`).
 
+use std::collections::{HashMap, HashSet};
+
 use serde_json::{json, Value};
 
 use super::{ToolContext, MAX_TOOL_OUTPUT_CHARS};
-use crate::core::agent::rag_bridge::{DocsBridge, DocsChunk, DocsScope};
+use crate::core::agent::rag_bridge::{DocsAttachment, DocsBridge, DocsChunk, DocsScope};
 use crate::core::agent::types::ToolOutcome;
 
 pub const DOCS_TOOL_NAMES: [&str; 3] = ["docs.list", "docs.retrieve", "docs.chunks"];
-pub const DOCS_DEFAULT_TOP_K: usize = 3;
+pub const DOCS_DEFAULT_TOP_K: usize = 5;
 pub const DOCS_MAX_TOP_K: usize = 10;
+pub const DOCS_MAX_QUERIES: usize = 5;
 pub const DOCS_MAX_CHUNK_RANGE: i64 = 100;
+/// Citation label of a passage whose file is no longer listed.
+const REMOVED_SOURCE: &str = "removed document";
+/// Citation label of a passage whose scope could not be listed.
+const UNKNOWN_SOURCE: &str = "document";
 
 pub(super) async fn execute(tool: &str, args: &Value, context: &ToolContext<'_>) -> ToolOutcome {
     let Some(bridge) = context.docs else {
@@ -78,27 +85,293 @@ async fn retrieve(
     args: &Value,
     context: &ToolContext<'_>,
 ) -> Result<Value, String> {
-    let query = required_non_empty_str(args, "query")?;
+    let queries = parse_queries(args)?;
     let top_k = parse_top_k(args)?;
-    let file_ids = parse_file_ids(args)?;
+    let filter = match parse_file_ids(args)? {
+        Some(requested) => {
+            let mut listed = Vec::new();
+            let mut complete = true;
+            for scope in scopes {
+                match bridge.list(*scope).await {
+                    Ok(files) => listed.extend(files),
+                    Err(_) => complete = false,
+                }
+            }
+            resolve_file_ids(&listed, complete, requested)
+        }
+        None => FileFilter::default(),
+    };
+    let file_ids = filter.file_ids.clone();
 
-    let embedding = bridge.embed(query, context.cancellation).await?;
-    let mut citations: Vec<DocsChunk> = Vec::new();
-    for scope in scopes {
-        citations.extend(
-            bridge
-                .retrieve(*scope, &embedding, top_k, file_ids.as_deref())
-                .await?,
-        );
+    let mut per_query: Vec<Vec<DocsChunk>> = Vec::with_capacity(queries.len());
+    for query in &queries {
+        let embedding = bridge.embed(query, context.cancellation).await?;
+        let mut hits: Vec<DocsChunk> = Vec::new();
+        for scope in scopes {
+            hits.extend(
+                bridge
+                    .retrieve(*scope, &embedding, top_k, file_ids.as_deref(), Some(query))
+                    .await?,
+            );
+        }
+        // Uniform cosine similarities (linear mode) merge safely across scopes.
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        per_query.push(hits);
     }
-    // Uniform cosine similarities (linear mode) merge safely across scopes.
-    citations.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
+
+    let hits = merge_hits(&queries, per_query, top_k);
+    let listings = list_cited_scopes(bridge, &hits).await;
+    let (citations, sources) = cite(hits, &listings, queries.len() > 1);
+    let mut payload = json!({
+        "queries": queries,
+        "citations": citations,
+        "sources": sources,
+        "mode": "linear",
+    });
+    if let Some(note) = filter.note() {
+        payload["note"] = json!(note);
+    }
+    Ok(payload)
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct FileFilter {
+    /// Ids to search within; `None` searches every document.
+    file_ids: Option<Vec<String>>,
+    /// Requested entries that matched no listed document.
+    unmatched: Vec<String>,
+}
+
+impl FileFilter {
+    /// What the model is told about `file_ids` entries that matched nothing.
+    fn note(&self) -> Option<String> {
+        if self.unmatched.is_empty() {
+            return None;
+        }
+        let listed = json!(self.unmatched).to_string();
+        Some(match self.file_ids {
+            Some(_) => format!("file_ids {listed} matched no attached document and were ignored."),
+            None => format!(
+                "file_ids {listed} matched no attached document, so every document was searched. \
+                 Pass file ids or file names from docs.list to narrow the search."
+            ),
+        })
+    }
+}
+
+/// `file_ids` in terms of the listed documents. Models pass file names as
+/// often as ids (`["FINDINGS.md"]`), and an id the store does not know filters
+/// every passage out, so each entry matches a document by id, then by name or
+/// path basename, ignoring case. When nothing matches, the filter is dropped
+/// rather than returning no passages. With an incomplete listing (`complete`
+/// false) an unmatched entry may belong to the unlisted scope, so it is kept
+/// as given.
+fn resolve_file_ids(
+    listed: &[DocsAttachment],
+    complete: bool,
+    requested: Vec<String>,
+) -> FileFilter {
+    let mut file_ids: Vec<String> = Vec::new();
+    let mut unmatched = Vec::new();
+    for entry in requested {
+        let key = entry.to_lowercase();
+        let by_id: Vec<&DocsAttachment> = listed.iter().filter(|file| file.id == entry).collect();
+        let matches = if by_id.is_empty() {
+            listed
+                .iter()
+                .filter(|file| {
+                    file.name.as_deref().map(str::to_lowercase).as_deref() == Some(key.as_str())
+                        || path_basename(file.path.as_deref())
+                            .map(str::to_lowercase)
+                            .as_deref()
+                            == Some(key.as_str())
+                })
+                .collect()
+        } else {
+            by_id
+        };
+        if matches.is_empty() {
+            if complete {
+                unmatched.push(entry);
+            } else if !file_ids.contains(&entry) {
+                file_ids.push(entry);
+            }
+            continue;
+        }
+        for file in matches {
+            if !file_ids.contains(&file.id) {
+                file_ids.push(file.id.clone());
+            }
+        }
+    }
+    FileFilter {
+        file_ids: (!file_ids.is_empty()).then_some(file_ids),
+        unmatched,
+    }
+}
+
+fn path_basename(path: Option<&str>) -> Option<&str> {
+    path.and_then(|path| path.rsplit(['/', '\\']).next())
+        .filter(|name| !name.is_empty())
+}
+
+struct MergedHit {
+    chunk: DocsChunk,
+    score: f32,
+    matched: Vec<String>,
+}
+
+/// One list from the per-query results (each best first). A passage found by
+/// several queries appears once, with its best score and every query that
+/// found it. Each query's best passage is kept before the rest compete on
+/// score, so one strongly matching fact cannot crowd the others out.
+fn merge_hits(queries: &[String], per_query: Vec<Vec<DocsChunk>>, top_k: usize) -> Vec<MergedHit> {
+    let mut merged: Vec<MergedHit> = Vec::new();
+    let mut index_of: HashMap<(&'static str, String), usize> = HashMap::new();
+    let mut best_of_query: Vec<usize> = Vec::new();
+    for (query, hits) in queries.iter().zip(per_query) {
+        for (rank, chunk) in hits.into_iter().enumerate() {
+            let key = (chunk.scope, chunk.id.clone());
+            let score = chunk.score.unwrap_or(0.0);
+            let index = match index_of.get(&key) {
+                Some(&index) => {
+                    let hit = &mut merged[index];
+                    hit.score = hit.score.max(score);
+                    if !hit.matched.contains(query) {
+                        hit.matched.push(query.clone());
+                    }
+                    index
+                }
+                None => {
+                    merged.push(MergedHit {
+                        chunk,
+                        score,
+                        matched: vec![query.clone()],
+                    });
+                    index_of.insert(key, merged.len() - 1);
+                    merged.len() - 1
+                }
+            };
+            if rank == 0 {
+                best_of_query.push(index);
+            }
+        }
+    }
+
+    let mut order: Vec<usize> = (0..merged.len()).collect();
+    order.sort_by(|&a, &b| {
+        merged[b]
+            .score
+            .partial_cmp(&merged[a].score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    citations.truncate(top_k);
-    Ok(json!({ "query": query, "citations": citations, "mode": "linear" }))
+    let mut keep = vec![false; merged.len()];
+    let mut kept = 0;
+    for index in best_of_query.into_iter().chain(order.iter().copied()) {
+        if kept == top_k {
+            break;
+        }
+        if !keep[index] {
+            keep[index] = true;
+            kept += 1;
+        }
+    }
+    let mut slots: Vec<Option<MergedHit>> = merged.into_iter().map(Some).collect();
+    order
+        .into_iter()
+        .filter(|&index| keep[index])
+        .filter_map(|index| slots[index].take())
+        .collect()
+}
+
+/// The attachments of every scope a hit came from, listed once per scope;
+/// `None` for a scope whose listing failed.
+async fn list_cited_scopes(
+    bridge: &dyn DocsBridge,
+    hits: &[MergedHit],
+) -> HashMap<&'static str, Option<HashMap<String, DocsAttachment>>> {
+    let mut listings = HashMap::new();
+    for hit in hits {
+        let Some(scope) = DocsScope::parse(hit.chunk.scope) else {
+            continue;
+        };
+        if listings.contains_key(scope.as_str()) {
+            continue;
+        }
+        let files = bridge.list(scope).await.ok().map(|files| {
+            files
+                .into_iter()
+                .map(|file| (file.id.clone(), file))
+                .collect::<HashMap<_, _>>()
+        });
+        listings.insert(scope.as_str(), files);
+    }
+    listings
+}
+
+/// Readable citations for the model to copy: `[FINDINGS.md §13]` names the
+/// file and the 1-based passage, never the chunk or file ids. `sources`
+/// carries what the UI needs to open a cited file.
+fn cite(
+    hits: Vec<MergedHit>,
+    listings: &HashMap<&'static str, Option<HashMap<String, DocsAttachment>>>,
+    with_matched: bool,
+) -> (Vec<Value>, Vec<Value>) {
+    let mut sources = Vec::new();
+    let mut seen = HashSet::new();
+    let citations = hits
+        .into_iter()
+        .map(|hit| {
+            let chunk = hit.chunk;
+            let listing = listings.get(chunk.scope).and_then(Option::as_ref);
+            let file = listing.and_then(|files| files.get(&chunk.file_id));
+            let name = match (listing, file) {
+                (_, Some(file)) => file
+                    .name
+                    .clone()
+                    .or_else(|| path_basename(file.path.as_deref()).map(str::to_owned))
+                    .unwrap_or_else(|| UNKNOWN_SOURCE.to_owned()),
+                (Some(_), None) => REMOVED_SOURCE.to_owned(),
+                (None, _) => UNKNOWN_SOURCE.to_owned(),
+            };
+            if let Some(file) = file {
+                if seen.insert((chunk.scope, file.id.clone())) {
+                    sources.push(json!({
+                        "file_id": file.id,
+                        "name": name,
+                        "path": file.path,
+                        "passages": file.chunk_count,
+                        "scope": chunk.scope,
+                    }));
+                }
+            }
+            let passage = chunk.chunk_file_order + 1;
+            // Brackets in a file name would end the label early.
+            let label = name.replace('[', "(").replace(']', ")");
+            let mut citation = json!({
+                "cite": format!("[{label} §{passage}]"),
+                "source": name,
+                "passage": passage,
+                "text": chunk.text,
+                "score": hit.score,
+                "file_id": chunk.file_id,
+                "chunk_file_order": chunk.chunk_file_order,
+                "scope": chunk.scope,
+            });
+            if listing.is_some() && file.is_none() {
+                citation["removed"] = json!(true);
+            }
+            if with_matched {
+                citation["matched"] = json!(hit.matched);
+            }
+            citation
+        })
+        .collect();
+    (citations, sources)
 }
 
 async fn chunks(
@@ -148,6 +421,44 @@ fn parse_scope(args: &Value) -> Result<Option<DocsScope>, String> {
             .ok_or_else(|| format!("scope must be \"thread\" or \"project\", got {raw:?}")),
         Some(_) => Err("scope must be a string".into()),
     }
+}
+
+/// `query` and `queries` together: trimmed, deduplicated, at most
+/// `DOCS_MAX_QUERIES`, and at least one.
+fn parse_queries(args: &Value) -> Result<Vec<String>, String> {
+    let mut candidates: Vec<&Value> = Vec::new();
+    if let Some(query) = args.get("query").filter(|value| !value.is_null()) {
+        candidates.push(query);
+    }
+    match args.get("queries") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(values)) => candidates.extend(values),
+        Some(_) => return Err("queries must be an array of strings".into()),
+    }
+    let mut queries: Vec<String> = Vec::new();
+    for candidate in candidates {
+        let query = candidate
+            .as_str()
+            .ok_or("query and queries entries must be strings")?
+            .trim();
+        if query.is_empty()
+            || queries
+                .iter()
+                .any(|seen| seen.to_lowercase() == query.to_lowercase())
+        {
+            continue;
+        }
+        queries.push(query.to_owned());
+        if queries.len() == DOCS_MAX_QUERIES {
+            break;
+        }
+    }
+    if queries.is_empty() {
+        return Err(
+            "query must be a non-empty string, or queries a non-empty array of strings".into(),
+        );
+    }
+    Ok(queries)
 }
 
 fn parse_top_k(args: &Value) -> Result<usize, String> {
@@ -217,6 +528,142 @@ mod tests {
         assert_eq!(parse_top_k(&json!({"top_k": 99})).unwrap(), DOCS_MAX_TOP_K);
         assert!(parse_top_k(&json!({"top_k": 0})).is_err());
         assert!(parse_top_k(&json!({"top_k": "three"})).is_err());
+    }
+
+    #[test]
+    fn queries_merge_with_query_trim_dedupe_and_cap() {
+        assert_eq!(
+            parse_queries(&json!({"query": " probe timeout ", "queries": ["Probe Timeout", "", "MiniLM dimension"]}))
+                .unwrap(),
+            ["probe timeout", "MiniLM dimension"]
+        );
+        let many: Vec<String> = (0..8).map(|i| format!("fact {i}")).collect();
+        assert_eq!(
+            parse_queries(&json!({ "queries": many })).unwrap().len(),
+            DOCS_MAX_QUERIES
+        );
+        assert!(parse_queries(&json!({})).is_err());
+        assert!(parse_queries(&json!({"queries": ["  "]})).is_err());
+        assert!(parse_queries(&json!({"queries": "one"})).is_err());
+    }
+
+    fn chunk(scope: &'static str, id: &str, order: i64, score: f32) -> DocsChunk {
+        DocsChunk {
+            id: id.into(),
+            text: format!("passage {id}"),
+            score: Some(score),
+            file_id: "file-1".into(),
+            chunk_file_order: order,
+            scope,
+        }
+    }
+
+    #[test]
+    fn merge_keeps_each_querys_best_passage_once() {
+        let queries = vec!["first".to_owned(), "second".to_owned(), "third".to_owned()];
+        let per_query = vec![
+            vec![chunk("project", "a", 2, 0.9), chunk("project", "b", 3, 0.8)],
+            vec![chunk("project", "c", 4, 0.5), chunk("project", "a", 2, 0.6)],
+            vec![chunk("project", "d", 6, 0.4)],
+        ];
+
+        let merged = merge_hits(&queries, per_query, 3);
+
+        let ids: Vec<&str> = merged.iter().map(|hit| hit.chunk.id.as_str()).collect();
+        // `b` outscores `c` and `d`, but each query keeps its best passage.
+        assert_eq!(ids, ["a", "c", "d"]);
+        assert_eq!(merged[0].matched, ["first", "second"]);
+        assert_eq!(merged[0].score, 0.9);
+    }
+
+    #[test]
+    fn citations_name_the_file_and_flag_a_removed_one() {
+        let listing = HashMap::from([(
+            "file-1".to_owned(),
+            DocsAttachment {
+                id: "file-1".into(),
+                name: Some("FINDINGS.md".into()),
+                path: Some("/docs/FINDINGS.md".into()),
+                file_type: None,
+                size: None,
+                chunk_count: 42,
+                scope: "project",
+            },
+        )]);
+        let listings =
+            HashMap::from([("project", Some(listing)), ("thread", Some(HashMap::new()))]);
+        let hits = vec![
+            MergedHit {
+                chunk: chunk("project", "a", 12, 0.9),
+                score: 0.9,
+                matched: vec!["q".into()],
+            },
+            MergedHit {
+                chunk: chunk("thread", "b", 0, 0.5),
+                score: 0.5,
+                matched: vec!["q".into()],
+            },
+        ];
+
+        let (citations, sources) = cite(hits, &listings, false);
+
+        assert_eq!(citations[0]["cite"], "[FINDINGS.md §13]");
+        assert_eq!(citations[0]["passage"], 13);
+        assert!(citations[0].get("removed").is_none());
+        assert!(citations[0].get("id").is_none());
+        assert_eq!(citations[1]["cite"], "[removed document §1]");
+        assert_eq!(citations[1]["removed"], true);
+        assert_eq!(
+            sources,
+            [json!({
+                "file_id": "file-1",
+                "name": "FINDINGS.md",
+                "path": "/docs/FINDINGS.md",
+                "passages": 42,
+                "scope": "project",
+            })]
+        );
+    }
+
+    fn attachment(id: &str, name: &str) -> DocsAttachment {
+        DocsAttachment {
+            id: id.into(),
+            name: Some(name.into()),
+            path: Some(format!("/docs/{name}")),
+            file_type: None,
+            size: None,
+            chunk_count: 1,
+            scope: "project",
+        }
+    }
+
+    #[test]
+    fn file_ids_resolve_by_id_or_file_name() {
+        let listed = [
+            attachment("file-1", "FINDINGS.md"),
+            attachment("file-2", "notes.md"),
+        ];
+        let strings = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        let by_name = resolve_file_ids(&listed, true, strings(&["findings.md", "file-2"]));
+        assert_eq!(by_name.file_ids, Some(strings(&["file-1", "file-2"])));
+        assert_eq!(by_name.note(), None);
+
+        let partial = resolve_file_ids(&listed, true, strings(&["file-1", "missing.md"]));
+        assert_eq!(partial.file_ids, Some(strings(&["file-1"])));
+        assert_eq!(
+            partial.note().unwrap(),
+            r#"file_ids ["missing.md"] matched no attached document and were ignored."#
+        );
+
+        let none = resolve_file_ids(&listed, true, strings(&["REPORT.md"]));
+        assert_eq!(none.file_ids, None);
+        assert!(none.note().unwrap().contains("every document was searched"));
+
+        // An entry that may live in a scope that could not be listed is kept.
+        let incomplete = resolve_file_ids(&listed, false, strings(&["file-9"]));
+        assert_eq!(incomplete.file_ids, Some(strings(&["file-9"])));
+        assert_eq!(incomplete.note(), None);
     }
 
     #[test]

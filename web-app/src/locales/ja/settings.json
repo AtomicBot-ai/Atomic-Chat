@@ -290,10 +290,6 @@
     "credits": "クレジット",
     "creditsDesc1": "👋 Atomic ChatはAtomic Chatチームによって❤️を込めて作られています。",
     "creditsDesc2": "オープンソースの依存関係、特にllama.cppとTauri、そして素晴らしいAIコミュニティに感謝します。",
-    "atomicBotCliTitle": "Atomic Chat CLI",
-    "atomicBotCliInstalled": "{{path}} にインストール済み — ターミナルから atomic-chat-cli を実行して、ローカルモデルや外部プロバイダーとチャットできます。",
-    "atomicBotCliNotInstalled": "未インストール — ターミナルでお好みの設定で atomic-chat-cli を実行して、ローカルモデルや外部プロバイダーとチャットできます。",
-    "atomicBotCliInstalledToast": "Atomic Chat CLI が {{path}} にインストールされました",
     "launchAtStartup": "ログイン時に起動",
     "launchAtStartupDesc": "コンピューターにログインしたときに Atomic Chat を自動的に起動します。",
     "launchAtStartupError": "スタートアップ設定の更新に失敗しました"

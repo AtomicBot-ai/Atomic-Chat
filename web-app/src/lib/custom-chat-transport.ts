@@ -17,6 +17,7 @@ import {
 import { repairToolCallArguments } from './repairToolCall'
 import { prepareToolResultImagesForModel } from './toolResultImages'
 import {
+  ATTACHED_DOCUMENTS_HINT,
   buildToolsRecord,
   splitAnthropicSerialToolUse,
   withGrammarSafeToolSchemas,
@@ -75,6 +76,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
+import { settleMcpActivationsBeforeSend } from '@/lib/mcp-activation'
 import {
   growModelContext,
   readAutoIncreaseCtx,
@@ -815,6 +817,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): Promise<ReadableStream<UIMessageChunk>> {
     const requestStartedAt = Date.now()
     ttftMark('gammaStart')
+    // A send right after switching on web search would otherwise go out
+    // without its tools.
+    await settleMcpActivationsBeforeSend(options.abortSignal)
     await this.refreshTools()
     ttftMark('gammaEnd')
 
@@ -1122,9 +1127,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const skillsBlock = renderChatSkillsBlock(
       await loadChatSkillDetails(invokedSkillNames, this.skillDetailCache)
     )
+    const documentsHint =
+      activeTools && 'retrieve' in activeTools
+        ? ATTACHED_DOCUMENTS_HINT
+        : undefined
     const systemWithSkills = composeSystemMessage(
-      this.systemMessage,
-      skillsBlock
+      composeSystemMessage(this.systemMessage, skillsBlock),
+      documentsHint
     )
 
     const dropSystemForTools =

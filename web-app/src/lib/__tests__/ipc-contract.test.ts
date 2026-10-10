@@ -63,6 +63,7 @@ const EXPECTED_MOBILE_ONLY = new Set<string>()
  * it shipped; this set closes that hole.
  */
 const MOBILE_REQUIRED = [
+  'cancel_local_stream',
   'get_local_http',
   'post_local_http',
   'stream_local_http',

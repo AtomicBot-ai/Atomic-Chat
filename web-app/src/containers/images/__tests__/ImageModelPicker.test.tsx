@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -203,6 +204,44 @@ describe('ImageModelPicker', () => {
     const indicator = screen.getByTestId('image-model-runtime-indicator')
     expect(indicator).toHaveAttribute('data-phase', 'starting')
     expect(indicator.querySelector('svg')).not.toBeNull()
+  })
+
+  it('says a video model is starting on the Video page and an image model on the Images page (ATO-553)', async () => {
+    const { toast } = await import('sonner')
+    state.status.model = { state: 'unloaded', loaded: null }
+    state.videoSelectedArtifactId = 'ltx-2:q4_k_m'
+    state.loadingArtifactId = 'ltx-2:q4_k_m'
+    const { unmount } = render(
+      <ImageModelPicker open={false} onOpenChange={vi.fn()} modality="video" />
+    )
+    expect(screen.getByTestId('image-models-toggle')).toHaveAttribute(
+      'title',
+      'videos:model.startingToast'
+    )
+    expect(screen.getByTestId('image-model-runtime-indicator')).toHaveAccessibleName(
+      'videos:model.startingToast'
+    )
+    unmount()
+
+    state.loadingArtifactId = 'z-image:q4_k_m'
+    const images = render(
+      <ImageModelPicker open={false} onOpenChange={vi.fn()} />
+    )
+    expect(screen.getByTestId('image-model-runtime-indicator')).toHaveAccessibleName(
+      'images:model.startingToast'
+    )
+    images.unmount()
+
+    // Run from an idle video checkpoint: the toast names a video model too.
+    state.loadingArtifactId = null
+    render(
+      <ImageModelPicker open={false} onOpenChange={vi.fn()} modality="video" />
+    )
+    await userEvent.click(screen.getByTestId('image-model-runtime-indicator'))
+    expect(toast.loading).toHaveBeenCalledWith('videos:model.startingToast', {
+      id: 'image-model-runtime-ltx-2:q4_k_m',
+    })
+    expect(state.setVideoSelectedArtifactId).toHaveBeenCalledWith('ltx-2:q4_k_m')
   })
 
   it('asks for a video model on the Video page when none is selected', () => {

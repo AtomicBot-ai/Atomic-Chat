@@ -43,6 +43,13 @@ import {
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { agentErrorCopy } from '@/lib/agent-error-copy'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import {
+  collectDocCitations,
+  docCitationKeyFromHref,
+  emptyDocCitationIndex,
+  linkDocCitations,
+} from '@/lib/doc-citations'
+import { DocCitationChip } from '@/containers/DocCitationChip'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -163,6 +170,14 @@ export const MessageItem = memo(
           : [],
       [agentAttachmentReferences, isAgentMessage, message.parts]
     )
+    // Passages the message's retrieve calls returned, for citation chips.
+    const docCitations = useMemo(
+      () =>
+        message.role === 'assistant'
+          ? collectDocCitations(message.parts)
+          : emptyDocCitationIndex(),
+      [message.parts, message.role]
+    )
     const messageMarkdownComponents = useMemo(
       () => ({
         a: ({
@@ -172,6 +187,16 @@ export const MessageItem = memo(
           rel,
           ...props
         }: ComponentPropsWithoutRef<'a'>) => {
+          const citationKey = href ? docCitationKeyFromHref(href) : null
+          if (citationKey) {
+            const citation = docCitations.byKey.get(citationKey)
+            return citation ? (
+              <DocCitationChip citation={citation} />
+            ) : (
+              <span>{children}</span>
+            )
+          }
+
           const filePath = href ? agentFilePathFromHref(href) : null
           if (!filePath) {
             return (
@@ -210,7 +235,7 @@ export const MessageItem = memo(
           )
         },
       }),
-      [serviceHub]
+      [serviceHub, docCitations]
     )
 
     // Extract file metadata from message text (for user messages with attachments)
@@ -304,10 +329,16 @@ export const MessageItem = memo(
         return renderEditor(block.key)
       }
 
+      // Citation labels first: an Agent file link would otherwise claim the
+      // file name inside `[FINDINGS.md §13]`.
       const assistantText =
         message.role === 'assistant'
           ? linkAgentFileReferences(
-              block.text,
+              linkDocCitations(
+                block.text,
+                docCitations,
+                t('docCitation.document')
+              ),
               isAgentMessage ? agentFileReferences : []
             )
           : block.text
@@ -340,7 +371,9 @@ export const MessageItem = memo(
             <RenderMarkdown
               content={assistantText}
               components={
-                isAgentMessage || containsAgentFileLink(assistantText)
+                isAgentMessage ||
+                docCitations.byKey.size > 0 ||
+                containsAgentFileLink(assistantText)
                   ? messageMarkdownComponents
                   : undefined
               }

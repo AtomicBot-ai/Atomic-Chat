@@ -25,6 +25,11 @@ vi.mock('@janhq/core', () => ({
   },
 }))
 
+const mockToastError = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({
+  toast: { error: mockToastError, info: vi.fn() },
+}))
+
 vi.mock('@/types/events', () => ({
   SystemEvent: {
     KILL_SIDECAR: 'KILL_SIDECAR',
@@ -92,6 +97,7 @@ describe('useAppUpdater', () => {
       isUpdateAvailable: false,
       updateInfo: null,
       isDownloading: false,
+      isInstalling: false,
       downloadProgress: 0,
       downloadedBytes: 0,
       totalBytes: 0,
@@ -318,6 +324,13 @@ describe('useAppUpdater', () => {
       expect(mockEventsEmit).toHaveBeenCalledWith('KILL_SIDECAR')
       expect(mockUpdaterDownloadAndInstallWithProgress).toHaveBeenCalled()
       expect(mockRelaunch).toHaveBeenCalled()
+      // Between the last byte and the relaunch the banner says "Installing…"
+      // rather than offering "Update" again.
+      expect(result.current.updateState).toMatchObject({
+        isDownloading: false,
+        isInstalling: true,
+        downloadProgress: 1,
+      })
     })
 
     it('should handle download errors', async () => {
@@ -353,6 +366,8 @@ describe('useAppUpdater', () => {
         expect.any(Error)
       )
       expect(result.current.updateState.isDownloading).toBe(false)
+      expect(result.current.updateState.isInstalling).toBe(false)
+      expect(mockToastError).toHaveBeenCalledTimes(1)
       expect(mockEvents.emit).toHaveBeenCalledWith('onAppUpdateDownloadError', {
         message: 'Download failed',
       })

@@ -611,3 +611,74 @@ describe('createLocalStreamingFetch error mapping', () => {
     expect(response.status).toBe(503)
   })
 })
+
+// ATO-550: Stop ended only the JS stream; Rust kept reading, the connection stayed open, and a
+// one-slot llama-server finished the abandoned answer while the next message waited behind it.
+describe('createLocalStreamingFetch cancellation', () => {
+  type ChunkChannel = { onmessage: (message: { data: string; done?: boolean }) => void }
+
+  /** A stream that has sent one chunk and stays open, and the cancels asked for. */
+  const openStream = () => {
+    const calls: { streamId?: string; cancelled: string[]; channel?: ChunkChannel } = {
+      cancelled: [],
+    }
+    mockedInvoke.mockImplementation((command, args) => {
+      const payload = args as { requestId: string; onChunk: ChunkChannel }
+      if (command === 'stream_local_http') {
+        calls.streamId = payload.requestId
+        calls.channel = payload.onChunk
+        queueMicrotask(() => payload.onChunk.onmessage({ data: 'data: {"x":1}\n\n' }))
+        return new Promise(() => {})
+      }
+      if (command === 'cancel_local_stream') {
+        calls.cancelled.push(payload.requestId)
+        return Promise.resolve()
+      }
+      return Promise.resolve(null)
+    })
+    return calls
+  }
+
+  const send = (signal?: AbortSignal) =>
+    createLocalStreamingFetch(vi.fn(), {})('http://localhost:4242/v1/chat/completions', {
+      method: 'POST',
+      body: '{}',
+      signal,
+    })
+
+  beforeEach(() => {
+    mockedInvoke.mockReset()
+  })
+
+  it('asks Rust to drop the connection of the request the signal aborts', async () => {
+    const calls = openStream()
+    const controller = new AbortController()
+    const response = await send(controller.signal)
+    expect(response.status).toBe(200)
+    expect(calls.streamId).toMatch(/^[0-9a-f-]{36}$/)
+
+    controller.abort()
+    controller.abort()
+
+    expect(calls.cancelled).toEqual([calls.streamId])
+  })
+
+  it('asks the same when the reader walks away', async () => {
+    const calls = openStream()
+    const response = await send()
+    await response.body?.cancel()
+    expect(calls.cancelled).toEqual([calls.streamId])
+  })
+
+  it('cancels nothing once the stream has ended', async () => {
+    const calls = openStream()
+    const controller = new AbortController()
+    const response = await send(controller.signal)
+    calls.channel?.onmessage({ data: '', done: true })
+    expect(await response.text()).toBe('data: {"x":1}\n\n')
+
+    controller.abort()
+
+    expect(calls.cancelled).toEqual([])
+  })
+})

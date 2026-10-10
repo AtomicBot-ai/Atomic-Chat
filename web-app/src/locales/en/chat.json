@@ -78,6 +78,19 @@
     "thinkingFor": "Thinking for {{count}}s…",
     "thoughtFor": "Thought for {{count}}s"
   },
+  "docCitation": {
+    "document": "Document",
+    "removedDocument": "Removed document",
+    "passage": "Passage {{passage}}",
+    "passageOf": "Passage {{passage}} of {{total}}",
+    "removedFromProject": "This document was removed from the project. The passage below is what the answer used.",
+    "removedFromChat": "This document was removed from the chat. The passage below is what the answer used.",
+    "open": "Open document",
+    "showInFolder": "Show in folder",
+    "openFailed": "Couldn't open {{name}}",
+    "openFailedDescription": "The file may have been moved or deleted.",
+    "chipLabel": "Source: {{name}}, passage {{passage}}"
+  },
   "toolCall": {
     "result": "{{count}} result",
     "results": "{{count}} results",

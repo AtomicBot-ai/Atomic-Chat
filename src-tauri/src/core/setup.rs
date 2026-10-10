@@ -288,46 +288,36 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
-/// Install/update the bundled `atomic-chat-cli` binary.
+/// Refresh an `atomic-chat-cli` that is already on PATH after an app update, so it
+/// stays in sync with the bundled binary.
 ///
-/// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
-///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
-///   When `false` only installs if the binary is not yet present on PATH.
+/// The CLI is hidden in the app, so a launch never installs it on its own: when the
+/// version is unchanged, or the command is not on PATH, this does nothing.
 ///
 /// Runs in a background task — never blocks startup.
 /// Errors are logged as warnings and never prevent the app from starting.
 pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_changed: bool) {
+    if !version_changed {
+        return;
+    }
     tauri::async_runtime::spawn(async move {
-        // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
-        if !version_changed {
-            let which_cmd = if cfg!(windows) { "where" } else { "which" };
-            let mut cmd = std::process::Command::new(which_cmd);
-            cmd.arg(crate::core::system::commands::CLI_COMMAND_NAME);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-            if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
-                log::debug!("Atomic Chat CLI already on PATH — skipping reinstall");
-                return;
-            }
+        if !crate::core::system::commands::check_jan_cli_installed()
+            .await
+            .installed
+        {
+            log::debug!("Atomic Chat CLI not on PATH — leaving it uninstalled");
+            return;
         }
 
         match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
             Ok(status) => {
                 log::info!(
-                    "Atomic Chat CLI {} to {}",
-                    if version_changed {
-                        "updated"
-                    } else {
-                        "installed"
-                    },
+                    "Atomic Chat CLI updated at {}",
                     status.path.as_deref().unwrap_or("<unknown>")
                 );
             }
             Err(e) => {
-                log::warn!("Atomic Chat CLI auto-install skipped: {e}");
+                log::warn!("Atomic Chat CLI update skipped: {e}");
             }
         }
     });

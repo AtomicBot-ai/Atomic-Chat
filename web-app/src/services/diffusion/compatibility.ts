@@ -3,6 +3,7 @@ export const MODERN_IMAGE_ENGINE_TAG = 'master-883-137f740'
 
 const REQUIRES_MODERN_IMAGE_ENGINE = new Set([
   'qwen-image-2.1',
+  'qwen-image-2.1-turbo',
   'krea-2-turbo',
 ])
 

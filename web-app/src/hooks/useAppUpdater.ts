@@ -11,6 +11,9 @@ export interface UpdateState {
   isUpdateAvailable: boolean
   updateInfo: UpdateInfo | null
   isDownloading: boolean
+  /// Set once the download finishes, while the updater installs it and the
+  /// app relaunches. Keeps the banner from offering "Update" again meanwhile.
+  isInstalling: boolean
   downloadProgress: number
   downloadedBytes: number
   totalBytes: number
@@ -97,6 +100,7 @@ export const useAppUpdater = () => {
         ? PREVIEW_UPDATE_INFO
         : null,
     isDownloading: false,
+    isInstalling: false,
     downloadProgress: 0,
     downloadedBytes: 0,
     totalBytes: 0,
@@ -288,6 +292,7 @@ export const useAppUpdater = () => {
         setUpdateState((prev) => ({
           ...prev,
           isDownloading: progress < 1,
+          isInstalling: progress >= 1,
           downloadProgress: progress,
           downloadedBytes,
         }))
@@ -307,9 +312,15 @@ export const useAppUpdater = () => {
     }
 
     try {
+      // A retry after a failed attempt starts from zero, not from where the
+      // last one stopped.
       setUpdateState((prev) => ({
         ...prev,
         isDownloading: true,
+        isInstalling: false,
+        downloadProgress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
       }))
 
       let downloaded = 0
@@ -361,6 +372,7 @@ export const useAppUpdater = () => {
               setUpdateState((prev) => ({
                 ...prev,
                 isDownloading: false,
+                isInstalling: true,
                 downloadProgress: 1,
               }))
 
@@ -385,7 +397,12 @@ export const useAppUpdater = () => {
       setUpdateState((prev) => ({
         ...prev,
         isDownloading: false,
+        isInstalling: false,
       }))
+      // The banner falls back to "Update"; this says why.
+      toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
+        description: t('common:toast.appUpdateDownloadFailed.description'),
+      })
 
       // Emit app update download error event
       events.emit(AppEvent.onAppUpdateDownloadError, {

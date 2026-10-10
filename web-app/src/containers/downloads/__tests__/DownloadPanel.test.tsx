@@ -59,7 +59,7 @@ const three = [
     pausable: true,
   }),
   row('mlx-community/gemma-3-27b-it-4bit'),
-  row('app-update', { name: 'common:downloadPanel.appUpdate' }),
+  row('unsloth/Qwen3-4B-GGUF'),
 ]
 
 /**
@@ -97,9 +97,7 @@ describe('DownloadPanel width', () => {
       screen.getByText('Qwen3-Coder-30B-A3B-Instruct-GGUF')
     ).toBeInTheDocument()
     expect(screen.getByText('gemma-3-27b-it-4bit')).toBeInTheDocument()
-    expect(
-      screen.getByText('common:downloadPanel.appUpdate')
-    ).toBeInTheDocument()
+    expect(screen.getByText('Qwen3-4B-GGUF')).toBeInTheDocument()
   })
 
   it('collapses to a badge that still counts the downloads', () => {

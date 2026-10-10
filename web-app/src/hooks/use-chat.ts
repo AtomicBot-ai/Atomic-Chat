@@ -15,6 +15,44 @@ import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 
+/** What a Chat calls back into the page that drives it. */
+type ChatCallbacks = Pick<
+  ChatInit<UIMessage>,
+  'onError' | 'onToolCall' | 'onFinish' | 'onData' | 'sendAutomaticallyWhen'
+>
+
+/**
+ * Per session, the callbacks of the hook's latest render. A session's Chat is
+ * created once and handed to every later mount by `ensureSession`, and the AI
+ * SDK never updates a Chat's callbacks: made with the first mount's closures,
+ * its `onFinish` set state on a thread page that had since unmounted (the user
+ * went to Settings, the Hub or a new chat and back). The reply finished,
+ * Working stayed and Enter did nothing until Stop (ATO-538). The Chat calls
+ * through these instead.
+ */
+const latestCallbacks = new Map<string, { current: ChatCallbacks }>()
+
+function callbacksOf(sessionId: string): { current: ChatCallbacks } {
+  let holder = latestCallbacks.get(sessionId)
+  if (!holder) {
+    holder = { current: {} }
+    latestCallbacks.set(sessionId, holder)
+  }
+  return holder
+}
+
+/** Callbacks that look up the latest ones on every call. */
+function forwardTo(holder: { current: ChatCallbacks }): ChatCallbacks {
+  return {
+    onError: (error) => holder.current.onError?.(error),
+    onToolCall: (options) => holder.current.onToolCall?.(options),
+    onFinish: (options) => holder.current.onFinish?.(options),
+    onData: (part) => holder.current.onData?.(part),
+    sendAutomaticallyWhen: (options) =>
+      holder.current.sendAutomaticallyWhen?.(options) ?? false,
+  }
+}
+
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
     sessionId?: string
@@ -95,6 +133,18 @@ export function useChat(options?: CustomChatOptions) {
     }
   }, [onTokenUsage])
 
+  if (sessionId) {
+    const { onError, onToolCall, onFinish, onData, sendAutomaticallyWhen } =
+      chatInitOptions
+    callbacksOf(sessionId).current = {
+      onError,
+      onToolCall,
+      onFinish,
+      onData,
+      sendAutomaticallyWhen,
+    }
+  }
+
   // Memoize to prevent calling ensureSession (which has side effects) on every render
   const chat = useMemo(() => {
     if (!sessionId || !transportRef.current) return undefined
@@ -102,7 +152,12 @@ export function useChat(options?: CustomChatOptions) {
     return ensureSession(
       sessionId,
       transportRef.current,
-      () => new Chat({ ...chatInitOptions, transport: transportRef.current }),
+      () =>
+        new Chat({
+          ...chatInitOptions,
+          ...forwardTo(callbacksOf(sessionId)),
+          transport: transportRef.current,
+        }),
       sessionTitle
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps

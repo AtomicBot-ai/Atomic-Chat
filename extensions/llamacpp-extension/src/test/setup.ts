@@ -40,6 +40,9 @@ vi.mock('../hardware', () => ({
 // Mock Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  Channel: class {
+    onmessage: ((message: unknown) => void) | null = null
+  },
 }))
 
 // The app version every advisor question carries to the core.

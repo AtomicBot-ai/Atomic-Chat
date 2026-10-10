@@ -255,6 +255,7 @@ pub fn run() {
         core::http::post_local_http,
         core::http::get_local_http,
         core::http::stream_local_http,
+        core::http::cancel_local_stream,
         // HTML artifact preview (served via the artifact:// protocol)
         core::artifact::set_artifact_html,
         core::artifact::clear_artifact_html,
@@ -431,6 +432,7 @@ pub fn run() {
         core::http::post_local_http,
         core::http::get_local_http,
         core::http::stream_local_http,
+        core::http::cancel_local_stream,
         // HTML artifact preview (served via the artifact:// protocol)
         core::artifact::set_artifact_html,
         core::artifact::clear_artifact_html,
@@ -678,7 +680,7 @@ pub fn run() {
 
             setup_mcp(app);
             // Not in an end-to-end build: a clean profile always counts as a
-            // version change, so every run would copy the CLI onto the
+            // version change, so every run would overwrite the CLI on the
             // operator's real PATH — outside the isolated test root.
             #[cfg(all(desktop, not(feature = "e2e")))]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);

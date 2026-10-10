@@ -2,8 +2,9 @@ use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
+use tokio_util::sync::CancellationToken;
 
 /// Fallback when the caller passes no (or a nonsensical) timeout, matching the
 /// llama.cpp extension's `timeout` setting default.
@@ -207,6 +208,82 @@ fn report_stalled_stream(message: &str) {
     log::error!("{message}");
 }
 
+/// A cancel for a stream that has not registered yet, kept for the stream to find; one nobody
+/// claims within this long (the stream had already ended) is dropped by the next cancel.
+const UNCLAIMED_CANCEL_TTL: Duration = Duration::from_secs(60);
+
+struct StreamCancel {
+    token: CancellationToken,
+    /// When a cancel arrived before its stream: the stream never came if this grows old.
+    unclaimed_since: Option<Instant>,
+}
+
+/// The cancel tokens of the streams a caller can still abort, by the request id it chose.
+fn stream_cancels() -> &'static Mutex<HashMap<String, StreamCancel>> {
+    static CANCELS: OnceLock<Mutex<HashMap<String, StreamCancel>>> = OnceLock::new();
+    CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// One stream's cancel token, registered under its request id for as long as the stream lives.
+struct CancelRegistration {
+    id: Option<String>,
+    token: CancellationToken,
+}
+
+impl CancelRegistration {
+    fn register(id: Option<String>) -> Self {
+        let token = match &id {
+            Some(id) => {
+                let mut cancels = stream_cancels().lock().expect("stream cancels poisoned");
+                let entry = cancels.entry(id.clone()).or_insert_with(|| StreamCancel {
+                    token: CancellationToken::new(),
+                    unclaimed_since: None,
+                });
+                entry.unclaimed_since = None;
+                entry.token.clone()
+            }
+            None => CancellationToken::new(),
+        };
+        Self { id, token }
+    }
+}
+
+impl Drop for CancelRegistration {
+    fn drop(&mut self) {
+        if let Some(id) = &self.id {
+            stream_cancels()
+                .lock()
+                .expect("stream cancels poisoned")
+                .remove(id);
+        }
+    }
+}
+
+/// Abort a `stream_local_http` call by the `request_id` it was given (ATO-550). Ending the JS
+/// stream alone left the Rust read loop draining the response: the connection stayed open, so
+/// llama-server — one slot — went on generating the abandoned answer and the next message
+/// queued behind it for minutes. Dropping the response here closes the socket, which is how
+/// llama-server learns to cancel the task. A cancel that overtakes its stream's start is kept
+/// for the stream to pick up.
+#[tauri::command]
+pub fn cancel_local_stream(request_id: String) {
+    let mut cancels = stream_cancels().lock().expect("stream cancels poisoned");
+    let now = Instant::now();
+    cancels.retain(|_, cancel| {
+        cancel
+            .unclaimed_since
+            .is_none_or(|since| now.duration_since(since) < UNCLAIMED_CANCEL_TTL)
+    });
+    cancels
+        .entry(request_id)
+        .or_insert_with(|| StreamCancel {
+            token: CancellationToken::new(),
+            unclaimed_since: Some(now),
+        })
+        .token
+        .cancel();
+}
+
 /// Streams an HTTP POST response back to the frontend via a Tauri IPC Channel.
 /// Bypasses tauri_plugin_http's fetch interception, which may not properly
 /// bridge ReadableStream for SSE responses in the webview.
@@ -216,15 +293,20 @@ fn report_stalled_stream(message: &str) {
 /// consecutive chunks. A model that keeps emitting tokens can stream for as
 /// long as it likes; one that goes silent past the budget errors out. The
 /// budget is floored at `STREAM_IDLE_TIMEOUT_FLOOR_SECS`.
+///
+/// `request_id`, when given, lets `cancel_local_stream` abort the call: the response is dropped,
+/// the connection closes, and the call answers `Request aborted`.
 #[tauri::command]
 pub async fn stream_local_http(
     url: String,
     headers: HashMap<String, String>,
     body: String,
     timeout_secs: u64,
+    request_id: Option<String>,
     on_chunk: Channel<HttpStreamChunk>,
 ) -> Result<u16, String> {
     let _in_flight = StreamInFlight::enter();
+    let cancel = CancelRegistration::register(request_id);
     let configured_secs = timeout_secs;
     let timeout_secs = stream_idle_timeout_secs(timeout_secs);
     // The Settings UI shows the raw configured value, so log both — otherwise
@@ -241,7 +323,12 @@ pub async fn stream_local_http(
     }
     req = req.body(body);
 
-    let response = match tokio::time::timeout(idle_timeout, req.send()).await {
+    let sent = tokio::select! {
+        biased;
+        _ = cancel.token.cancelled() => return Err(aborted()),
+        sent = tokio::time::timeout(idle_timeout, req.send()) => sent,
+    };
+    let response = match sent {
         Ok(sent) => sent.map_err(|e| format!("Request failed: {e}"))?,
         Err(_) => {
             let message = format!("Request failed: no response headers within {timeout_secs}s");
@@ -259,7 +346,12 @@ pub async fn stream_local_http(
     let mut stream = response.bytes_stream();
     let mut pending: Vec<u8> = Vec::new();
     loop {
-        let next = match tokio::time::timeout(idle_timeout, stream.next()).await {
+        let next = tokio::select! {
+            biased;
+            _ = cancel.token.cancelled() => return Err(aborted()),
+            next = tokio::time::timeout(idle_timeout, stream.next()) => next,
+        };
+        let next = match next {
             Ok(next) => next,
             Err(_) => {
                 let message = format!("Stream error: no data received for {timeout_secs}s");
@@ -293,6 +385,12 @@ pub async fn stream_local_http(
     }
 
     Ok(status)
+}
+
+/// What a cancelled stream answers; the log line marks where the connection was dropped.
+fn aborted() -> String {
+    log::info!("[stream] cancelled by the client; closing the connection");
+    "Request aborted".to_string()
 }
 
 #[cfg(test)]
@@ -357,5 +455,116 @@ mod tests {
         drop(first);
         drop(second);
         assert_eq!(STREAMS_IN_FLIGHT.load(Ordering::SeqCst), before);
+    }
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::{oneshot, Notify};
+
+    /// An SSE endpoint that never ends: a chunk every 20 ms until the client goes away, which it
+    /// reports — the moment llama-server would cancel the task.
+    async fn endless_server() -> (String, oneshot::Receiver<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().unwrap()
+        );
+        let (gone_tx, gone_rx) = oneshot::channel();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n";
+            socket.write_all(head.as_bytes()).await.unwrap();
+            let event = "data: {\"x\":1}\n\n";
+            let chunk = format!("{:x}\r\n{event}\r\n", event.len());
+            loop {
+                if socket.write_all(chunk.as_bytes()).await.is_err() {
+                    let _ = gone_tx.send(());
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        });
+        (url, gone_rx)
+    }
+
+    fn counting_channel(first: Arc<Notify>) -> Channel<HttpStreamChunk> {
+        Channel::new(move |_| {
+            first.notify_one();
+            Ok(())
+        })
+    }
+
+    #[tokio::test]
+    async fn a_cancel_drops_the_connection_and_the_call_answers_aborted() {
+        let (url, gone) = endless_server().await;
+        let first = Arc::new(Notify::new());
+        let id = "ato-550-mid-stream".to_string();
+        let call = tokio::spawn(stream_local_http(
+            url,
+            HashMap::new(),
+            "{}".into(),
+            5,
+            Some(id.clone()),
+            counting_channel(first.clone()),
+        ));
+        first.notified().await;
+
+        cancel_local_stream(id.clone());
+
+        let answer = tokio::time::timeout(Duration::from_secs(2), call)
+            .await
+            .expect("the call ends promptly")
+            .unwrap();
+        assert_eq!(answer, Err("Request aborted".to_string()));
+        tokio::time::timeout(Duration::from_secs(2), gone)
+            .await
+            .expect("the server sees the connection close")
+            .unwrap();
+        assert!(!stream_cancels().lock().unwrap().contains_key(&id));
+    }
+
+    #[tokio::test]
+    async fn a_cancel_that_overtakes_the_start_still_stops_the_stream() {
+        let (url, _gone) = endless_server().await;
+        let id = "ato-550-early".to_string();
+        cancel_local_stream(id.clone());
+        let answer = tokio::time::timeout(
+            Duration::from_secs(2),
+            stream_local_http(
+                url,
+                HashMap::new(),
+                "{}".into(),
+                5,
+                Some(id.clone()),
+                counting_channel(Arc::new(Notify::new())),
+            ),
+        )
+        .await
+        .expect("the call ends promptly");
+        assert_eq!(answer, Err("Request aborted".to_string()));
+        assert!(!stream_cancels().lock().unwrap().contains_key(&id));
+    }
+
+    #[test]
+    fn an_unclaimed_cancel_is_dropped_once_it_is_old() {
+        let stale = "ato-550-stale".to_string();
+        stream_cancels().lock().unwrap().insert(
+            stale.clone(),
+            StreamCancel {
+                token: CancellationToken::new(),
+                unclaimed_since: Instant::now().checked_sub(UNCLAIMED_CANCEL_TTL * 2),
+            },
+        );
+        cancel_local_stream("ato-550-fresh".to_string());
+        let cancels = stream_cancels().lock().unwrap();
+        assert!(!cancels.contains_key(&stale));
+        assert!(cancels.contains_key("ato-550-fresh"));
     }
 }

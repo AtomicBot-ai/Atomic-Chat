@@ -15,6 +15,8 @@ export type SessionData = {
   tools: any[];
   messages: UIMessage[];
   idMap: Map<string, string>;
+  /** Aborts the tool calls this thread's last step is running; null when none run. */
+  toolAbort: AbortController | null;
 };
 
 export type ChatSession = {
@@ -29,6 +31,14 @@ export type ChatSession = {
 
 interface ChatSessionState {
   sessions: Record<string, ChatSession>;
+  /**
+   * Per thread: a turn was sent and has not finished (its tool calls and
+   * follow-up steps included). Kept here, not in the thread page: the thread's
+   * Chat outlives the page that sent the turn (ATO-538), and one page instance
+   * shows every thread it is navigated to.
+   */
+  requestActive: Record<string, boolean>;
+  setRequestActive: (sessionId: string, active: boolean) => void;
   activeConversationId?: string;
   setActiveConversationId: (conversationId?: string) => void;
   ensureSession: (
@@ -68,6 +78,7 @@ const createSessionData = (): SessionData => ({
   tools: [],
   messages: [],
   idMap: new Map<string, string>(),
+  toolAbort: null,
 });
 
 // Standalone data store for sessions that don't have a Chat yet
@@ -75,6 +86,13 @@ const standaloneData: Record<string, SessionData> = {};
 
 export const useChatSessions = create<ChatSessionState>((set, get) => ({
   sessions: {},
+  requestActive: {},
+  setRequestActive: (sessionId, active) => {
+    if ((get().requestActive[sessionId] === true) === active) return;
+    set((state) => ({
+      requestActive: { ...state.requestActive, [sessionId]: active },
+    }));
+  },
   activeConversationId: undefined,
   setActiveConversationId: (conversationId) =>
     set({ activeConversationId: conversationId }),
@@ -246,7 +264,9 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       }
       const rest = { ...state.sessions };
       delete rest[sessionId];
-      return { sessions: rest };
+      const active = { ...state.requestActive };
+      delete active[sessionId];
+      return { sessions: rest, requestActive: active };
     });
 
     // Then cleanup (existing is a copy, safe to use after removal)
@@ -287,6 +307,6 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       delete standaloneData[key];
     });
 
-    set({ sessions: {}, activeConversationId: undefined });
+    set({ sessions: {}, requestActive: {}, activeConversationId: undefined });
   },
 }));

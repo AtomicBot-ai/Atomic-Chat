@@ -11,12 +11,21 @@ import {
 } from '@janhq/core'
 import './env.d'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
+import {
+  buildCitations,
+  clampTopK,
+  collectQueries,
+  DEFAULT_TOP_K,
+  fileFilterNote,
+  mergeHits,
+  resolveFileFilter,
+} from './retrieval'
 import * as ragApi from '../../../src-tauri/plugins/tauri-plugin-rag/guest-js/index'
 
 export default class RagExtension extends RAGExtension {
   private config = {
     enabled: true,
-    retrievalLimit: 3,
+    retrievalLimit: DEFAULT_TOP_K,
     retrievalThreshold: 0.3,
     chunkSizeChars: 512,
     overlapChars: 64,
@@ -188,18 +197,7 @@ export default class RagExtension extends RAGExtension {
   ): Promise<MCPToolCallResult> {
     const threadId = String(args['thread_id'] || '')
     const projectId = String(args['project_id'] || '')
-    const query = String(args['query'] || '')
-    let fileIds = args['file_ids'] as string[] | string | undefined
-    if (typeof fileIds === 'string') {
-      try {
-        fileIds = JSON.parse(fileIds)
-      } catch {
-        fileIds = undefined
-      }
-    }
-    if (fileIds != null && !Array.isArray(fileIds)) {
-      fileIds = undefined
-    }
+    const queries = collectQueries(args['query'], args['queries'])
     const scope = String(args['scope'] || 'thread')
 
     // Use project_id as threadId when scope is project
@@ -207,9 +205,12 @@ export default class RagExtension extends RAGExtension {
       scope === 'project' ? projectId || threadId : threadId
 
     const s = this.config
-    const topK = (args['top_k'] as number) || s.retrievalLimit || 3
+    const topK = clampTopK(args['top_k'], s.retrievalLimit)
     const threshold = s.retrievalThreshold ?? 0.3
-    const mode: 'auto' | 'ann' | 'linear' = s.searchMode || 'auto'
+    // Always linear: every query's scores are then comparable cosines (plus
+    // the lexical boost), which the merge below relies on. ANN scores are
+    // distances and ignore the threshold.
+    const mode = 'linear' as const
 
     if (s.enabled === false) {
       return {
@@ -222,13 +223,23 @@ export default class RagExtension extends RAGExtension {
         ],
       }
     }
+    if (queries.length === 0) {
+      return {
+        error: 'Missing query',
+        content: [
+          {
+            type: 'text',
+            text: 'Pass a search query in `query`, or one query per fact in `queries`.',
+          },
+        ],
+      }
+    }
     if (
-      !query ||
       (!threadId && scope === 'thread') ||
       (scope === 'project' && !effectiveThreadId)
     ) {
       return {
-        error: 'Missing thread_id, project_id, or query',
+        error: 'Missing thread_id or project_id',
         content: [{ type: 'text', text: 'Missing required parameters' }],
       }
     }
@@ -247,49 +258,63 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const queryEmb = (await this.embedTexts([query]))?.[0]
-      if (!queryEmb) {
+      // One embedding request for every query; the listing names the cited
+      // files and resolves `file_ids` given as file names.
+      const [embeddings, files] = await Promise.all([
+        this.embedTexts(queries),
+        this.listSources(vec, scope, effectiveThreadId),
+      ])
+      if (queries.some((_, index) => !embeddings[index])) {
         return {
           error: 'Failed to compute embeddings',
           content: [{ type: 'text', text: 'Failed to compute embeddings' }],
         }
       }
 
-      let results
-      if (scope === 'project' && vec.searchCollectionForProject) {
-        results = await vec.searchCollectionForProject(
-          effectiveThreadId,
-          queryEmb,
-          topK,
-          threshold,
-          mode,
-          fileIds
+      const filter = resolveFileFilter(args['file_ids'], files)
+      const fileIds = filter.fileIds
+      const search = (embedding: number[], queryText: string) =>
+        scope === 'project' && vec.searchCollectionForProject
+          ? vec.searchCollectionForProject(
+              effectiveThreadId,
+              embedding,
+              topK,
+              threshold,
+              mode,
+              fileIds,
+              queryText
+            )
+          : vec.searchCollection!(
+              effectiveThreadId,
+              embedding,
+              topK,
+              threshold,
+              mode,
+              fileIds,
+              queryText
+            )
+      const perQuery = await Promise.all(
+        queries.map(
+          async (query, index) => (await search(embeddings[index], query)) ?? []
         )
-      } else {
-        results = await vec.searchCollection!(
-          effectiveThreadId,
-          queryEmb,
-          topK,
-          threshold,
-          mode,
-          fileIds
-        )
-      }
+      )
 
+      const hits = mergeHits(queries, perQuery, topK)
+      const { citations, sources } = buildCitations(
+        hits,
+        files,
+        queries.length > 1
+      )
+      const note = fileFilterNote(filter)
       const payload = {
         thread_id: threadId,
         project_id: projectId,
         scope,
-        query,
-        citations:
-          results?.map((r: any) => ({
-            id: r.id,
-            text: r.text,
-            score: r.score,
-            file_id: r.file_id,
-            chunk_file_order: r.chunk_file_order,
-          })) ?? [],
+        queries,
+        citations,
+        sources,
         mode,
+        ...(note ? { note } : {}),
       }
       return {
         error: '',
@@ -310,6 +335,26 @@ export default class RagExtension extends RAGExtension {
         content: [{ type: 'text', text: `Retrieve failed: ${msg}` }],
       }
     }
+  }
+
+  /**
+   * The scope's files, to name the cited ones. `null` when the listing fails:
+   * the passages are still worth returning, only without their file names.
+   */
+  private async listSources(
+    vec: VectorDBExtension,
+    scope: string,
+    collectionId: string
+  ): Promise<AttachmentFileInfo[] | null> {
+    try {
+      if (scope === 'project' && vec.listAttachmentsForProject) {
+        return await vec.listAttachmentsForProject(collectionId)
+      }
+      if (vec.listAttachments) return await vec.listAttachments(collectionId)
+    } catch (e) {
+      console.warn('[RAG] Could not list sources for citations:', e)
+    }
+    return null
   }
 
   private async getChunks(

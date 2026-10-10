@@ -1624,6 +1624,17 @@ export function describeModelLoadFailure(
   if (err.code === 'MODEL_FILE_NOT_FOUND') {
     return simple('modelFileMissing')
   }
+  // ATO-549: the core will not stop an image or video job to load a chat
+  // model. Its message says what is generating and how to free the GPU.
+  if (err.code === 'GPU_BUSY') {
+    const { summary, details } = splitModelLoadError(err)
+    return {
+      title: t('model-errors:gpuBusyTitle'),
+      description: summary,
+      details,
+      persistent: false,
+    }
+  }
   // A shard set missing members is an incomplete download by another name, and
   // the remedy the corrupt-file copy already gives — delete and download again —
   // is exactly right for it.
