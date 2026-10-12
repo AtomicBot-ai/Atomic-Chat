@@ -13,7 +13,7 @@
  * See decision D5 in the tracker.
  */
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useStore } from 'zustand'
 
 import {
@@ -38,6 +38,15 @@ export type UseMediaGeneration = {
 export function useMediaGeneration(
   manager: MediaJobManager = mediaJobManager
 ): UseMediaGeneration {
+  // Restore jobs persisted by a previous session, once per mounted hook. The
+  // manager's own `load` is idempotent, so a second mount is harmless.
+  const restored = useRef(false)
+  useEffect(() => {
+    if (restored.current) return
+    restored.current = true
+    void manager.load()
+  }, [manager])
+
   // Selecting the two stable slices rather than a derived array: zustand v5
   // compares with Object.is, so a selector building a new array every call
   // would re-render on every store read.

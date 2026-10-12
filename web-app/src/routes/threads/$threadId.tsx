@@ -11,6 +11,7 @@ import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
 import HeaderContextSize from '@/containers/HeaderContextSize'
+import MediaChatSettingsDialog from '@/containers/MediaChatSettingsDialog'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
@@ -40,8 +41,10 @@ import { generateId } from 'ai'
 import {
   defaultChatGenerationDeps,
   generateMediaForChat,
+  type ChatMediaOverrides,
 } from '@/services/media/chatGeneration'
 import { useMediaChatMode } from '@/stores/media-chat-mode-store'
+import { useMediaChatSettings } from '@/stores/media-chat-settings-store'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
@@ -1223,7 +1226,11 @@ function ThreadDetail() {
    * result is shown inline in the assistant's reply.
    */
   const processMediaMessage = useCallback(
-    async (text: string, task: 'text_to_image' | 'text_to_video') => {
+    async (
+      text: string,
+      task: 'text_to_image' | 'text_to_video',
+      overrides?: ChatMediaOverrides
+    ) => {
       await useThreads.getState().awaitThreadPersistence(threadId)
 
       const userMessage = newUserThreadContent(threadId, text, [])
@@ -1288,7 +1295,8 @@ function ThreadDetail() {
               ])[0]
               if (ui) useChatSessions.getState().upsertMessage(threadId, ui)
             },
-          }
+          },
+          overrides
         )
         finished = build(
           `${result.model_label}: “${text}”`,
@@ -1322,10 +1330,12 @@ function ThreadDetail() {
       documentsFromPayload?: Attachment[],
       agentSkillName?: string
     ) => {
-      // Media mode: generate instead of asking the language model.
+      // Media mode: generate instead of asking the language model. Park the
+      // prompt in the settings popup so the user can pick "use last used
+      // settings" or an explicit resolution/length before anything runs.
       const mediaTask = useMediaChatMode.getState().task
       if (mediaTask) {
-        await processMediaMessage(text, mediaTask)
+        useMediaChatSettings.getState().open({ task: mediaTask, text })
         return
       }
       // Documents may be passed explicitly via the initial-message payload
@@ -1571,7 +1581,6 @@ function ThreadDetail() {
     [
       sendMessage,
       processAndRunAgent,
-      processMediaMessage,
       threadId,
       thread,
       addMessage,
@@ -2249,6 +2258,12 @@ function ThreadDetail() {
           </div>
         </div>
       </div>
+      <MediaChatSettingsDialog
+        onConfirm={(task, text, overrides) =>
+          processMediaMessage(text, task, overrides)
+        }
+        onCancel={() => useOptimisticUserMessage.getState().clear(threadId)}
+      />
     </AgentWorkspaceLayout>
   )
 }

@@ -24,8 +24,11 @@ import {
   MEDIA_POLL_BACKOFF_MS,
   MEDIA_POLL_CEILING_MS,
   MEDIA_POLL_MAX_CONSECUTIVE_FAILURES,
+  MEDIA_SUBMIT_BACKOFF_MS,
+  MEDIA_SUBMIT_MAX_ATTEMPTS,
   MEDIA_SUBSCRIBE_SILENCE_MS,
   createMediaJobManager,
+  type MediaJobEntry,
 } from '../jobManager'
 
 // --- fixtures ---------------------------------------------------------------
@@ -604,6 +607,183 @@ describe('seed resolution (D8)', () => {
     const sent = adapter.submit.mock.calls[0]![0] as NormalizedMediaRequest
     expect(sent.params).not.toHaveProperty('seed')
 
+    manager.dispose()
+  })
+})
+
+describe('createMediaJobManager — submit retry', () => {
+  function managerWith(adapter: FakeAdapter) {
+    return createMediaJobManager({
+      createAdapter: () => adapter,
+      providers: () => [providerA],
+      capabilitiesFor: () => capabilities('worker', {}),
+    })
+  }
+
+  it('retries a rate limit and then accepts the job', async () => {
+    const adapter = fakeAdapter(providerA)
+    let calls = 0
+    adapter.submit = vi.fn(async (req: NormalizedMediaRequest) => {
+      calls += 1
+      if (calls === 1) {
+        throw Object.assign(new Error('rate limited'), {
+          retryable: true,
+          retryAfterMs: 0,
+        })
+      }
+      return snapshot(req, 'queued')
+    })
+    const manager = managerWith(adapter)
+
+    const submitted = manager.submit(requestFor('worker'))
+    await vi.advanceTimersByTimeAsync(MEDIA_SUBMIT_BACKOFF_MS[0]!)
+    const entry = await submitted
+
+    expect(adapter.submit).toHaveBeenCalledTimes(2)
+    expect(entry.state).toBe('queued')
+    manager.dispose()
+  })
+
+  it('does not retry an error the provider flags as non-retryable', async () => {
+    const adapter = fakeAdapter(providerA)
+    adapter.submit = vi.fn(async () => {
+      throw Object.assign(new Error('invalid api key'), { retryable: false })
+    })
+    const manager = managerWith(adapter)
+
+    await expect(manager.submit(requestFor('worker'))).rejects.toThrow(
+      'invalid api key'
+    )
+    expect(adapter.submit).toHaveBeenCalledTimes(1)
+    manager.dispose()
+  })
+
+  it('honours a Retry-After longer than the standard backoff', async () => {
+    const adapter = fakeAdapter(providerA)
+    let calls = 0
+    adapter.submit = vi.fn(async (req: NormalizedMediaRequest) => {
+      calls += 1
+      if (calls === 1) {
+        throw Object.assign(new Error('slow down'), {
+          retryable: true,
+          retryAfterMs: 5000,
+        })
+      }
+      return snapshot(req, 'queued')
+    })
+    const manager = managerWith(adapter)
+
+    const submitted = manager.submit(requestFor('worker'))
+    await vi.advanceTimersByTimeAsync(MEDIA_SUBMIT_BACKOFF_MS[0]!)
+    expect(adapter.submit).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(4000)
+    await submitted
+    expect(adapter.submit).toHaveBeenCalledTimes(2)
+    manager.dispose()
+  })
+
+  it('gives up after the retry budget and surfaces the last error', async () => {
+    const adapter = fakeAdapter(providerA)
+    adapter.submit = vi.fn(async () => {
+      throw Object.assign(new Error('provider down'), { retryable: true })
+    })
+    const manager = managerWith(adapter)
+
+    const submitted = manager.submit(requestFor('worker'))
+    const expectation = expect(submitted).rejects.toThrow('provider down')
+    await vi.advanceTimersByTimeAsync(
+      MEDIA_SUBMIT_BACKOFF_MS.reduce((sum, ms) => sum + ms, 0) + 1000
+    )
+    await expectation
+    expect(adapter.submit).toHaveBeenCalledTimes(MEDIA_SUBMIT_MAX_ATTEMPTS)
+    manager.dispose()
+  })
+})
+
+describe('createMediaJobManager — durable history', () => {
+  function entryFor(
+    providerId: string,
+    clientJobId: string,
+    state: MediaJobSnapshot['state']
+  ): MediaJobEntry {
+    const request = requestFor(providerId, clientJobId)
+    return {
+      ...snapshot(request, state),
+      request,
+      submitted_at: 1_700_000_000_000,
+      cancellable: false,
+    }
+  }
+
+  function managerWith(persisted: MediaJobEntry[] = []) {
+    const adapter = fakeAdapter(providerA)
+    const saved: MediaJobEntry[][] = []
+    const persist = {
+      load: vi.fn(async () => persisted),
+      save: vi.fn(async (jobs: MediaJobEntry[]) => {
+        saved.push(jobs)
+      }),
+    }
+    const manager = createMediaJobManager({
+      createAdapter: () => adapter,
+      providers: () => [providerA],
+      capabilitiesFor: () => capabilities('worker', {}),
+      persist,
+    })
+    return { adapter, manager, persist, saved }
+  }
+
+  it('writes jobs on change, stripped of their heavy outputs', async () => {
+    const { manager, persist } = managerWith()
+
+    await manager.submit(requestFor('worker'))
+
+    expect(persist.save).toHaveBeenCalled()
+    const written = persist.save.mock.calls[0]![0] as MediaJobEntry[]
+    expect(written).toHaveLength(1)
+    expect(written[0]!.client_job_id).toBe('01JJOB000000000000000000')
+    expect(written[0]!.outputs).toBeUndefined()
+    manager.dispose()
+  })
+
+  it('restores terminal jobs as history', async () => {
+    const persisted = [
+      entryFor('worker', '01JOLD000000000000000001', 'succeeded'),
+    ]
+    const { manager } = managerWith(persisted)
+
+    await manager.load()
+
+    expect(manager.get('01JOLD000000000000000001')?.state).toBe('succeeded')
+    expect(manager.list()).toHaveLength(1)
+    manager.dispose()
+  })
+
+  it('marks jobs interrupted by a reload as failed and retryable', async () => {
+    const persisted = [
+      entryFor('worker', '01JOLD000000000000000001', 'running'),
+    ]
+    const { manager } = managerWith(persisted)
+
+    await manager.load()
+
+    const job = manager.get('01JOLD000000000000000001')
+    expect(job?.state).toBe('failed')
+    expect(job?.error).toMatchObject({ code: 'interrupted', retryable: true })
+    manager.dispose()
+  })
+
+  it('does not overwrite a live job with its stale persisted copy', async () => {
+    const persisted = [
+      entryFor('worker', '01JOLD000000000000000001', 'succeeded'),
+    ]
+    const { manager } = managerWith(persisted)
+
+    await manager.submit(requestFor('worker', '01JOLD000000000000000001'))
+    await manager.load()
+
+    expect(manager.get('01JOLD000000000000000001')?.state).toBe('queued')
     manager.dispose()
   })
 })

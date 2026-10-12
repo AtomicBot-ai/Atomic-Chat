@@ -388,6 +388,66 @@ describe('fal.ai — queue lifecycle', () => {
     })
   })
 
+  it('translates a chat `length_seconds` into fal frames at the default fps', async () => {
+    await create().submit({
+      ...request({ prompt: 'waves', length_seconds: 8 }),
+      model_id: 'fal-ai:fal-ai/wan/v2.2-a14b/text-to-video',
+      task: MEDIA_TASK.TEXT_TO_VIDEO,
+    })
+
+    expect(state.requests.at(-1)!.body).toEqual({
+      prompt: 'waves',
+      num_frames: 128,
+      frames_per_second: 16,
+    })
+  })
+
+  it('keeps fal native frames when the caller already set them', async () => {
+    await create().submit({
+      ...request({ prompt: 'waves', num_frames: 81, frames_per_second: 16 }),
+      model_id: 'fal-ai:fal-ai/wan/v2.2-a14b/text-to-video',
+      task: MEDIA_TASK.TEXT_TO_VIDEO,
+    })
+
+    expect(state.requests.at(-1)!.body).toEqual({
+      prompt: 'waves',
+      num_frames: 81,
+      frames_per_second: 16,
+    })
+  })
+
+  it('snaps a long clip to fal’s frame window and keeps the chosen fps', async () => {
+    await create().submit({
+      ...request({ prompt: 'waves', length_seconds: 30, fps: 60 }),
+      model_id: 'fal-ai:fal-ai/wan/v2.2-a14b/text-to-video',
+      task: MEDIA_TASK.TEXT_TO_VIDEO,
+    })
+
+    expect(state.requests.at(-1)!.body).toEqual({
+      prompt: 'waves',
+      num_frames: 161,
+      frames_per_second: 60,
+    })
+  })
+
+  it('offers a length ladder and buries the frame keys under advanced', async () => {
+    const models = (await create().capabilities()).models
+    const video = models.find((model) =>
+      model.tasks.includes(MEDIA_TASK.TEXT_TO_VIDEO)
+    )
+    const specs = video!.params.text_to_video
+
+    const length = specs.find((spec) => spec.id === 'length_seconds')
+    const frames = specs.find((spec) => spec.id === 'num_frames')
+    const fps = specs.find((spec) => spec.id === 'frames_per_second')
+
+    expect(length?.type).toBe('enum')
+    expect(length?.options.map((option) => option.value)).toEqual([1, 2, 3, 4, 5, 8, 10])
+    expect(length?.default).toBe(5)
+    expect(frames?.advanced).toBe(true)
+    expect(fps?.advanced).toBe(true)
+  })
+
   it('treats a COMPLETED request with an error as failed, retryable per its error_type', async () => {
     const adapter = create()
     const submitted = await adapter.submit(request())

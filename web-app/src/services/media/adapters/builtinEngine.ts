@@ -50,6 +50,17 @@ export const BUILTIN_ENGINE_PROVIDER_ID = 'builtin-engine'
 
 export type EngineModelTask = 'text_to_image' | 'text_to_video'
 
+/** How far a video model can be pushed, and the frame count it wants. */
+export type EngineVideoDefaults = {
+  fps: number
+  fps_min: number
+  fps_max: number
+  length_seconds: number[]
+  default_length_seconds: number
+  frame_modulus: number
+  frame_offset: number
+}
+
 export type EngineModelStatus = {
   id: string
   label: string
@@ -64,6 +75,10 @@ export type EngineModelStatus = {
     steps: number
     cfg_scale: number
     sampler: string
+    /** Resolution ladder, native/default first (serialized from the Rust catalog). */
+    resolutions?: Array<[number, number]>
+    /** Present only on video models (serialized from the Rust catalog). */
+    video?: EngineVideoDefaults | null
   }
   /** The default size's download, and whether it is complete. */
   size_bytes: number
@@ -169,16 +184,39 @@ const MIME: Record<string, string> = {
 /** Pictures the engine takes as a starting image or a frame. */
 const IMAGE_ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp']
 
-/** Video length choices, in seconds (the user, 2026-09-15: "length etc"). */
-const LENGTH_SECONDS = [1, 2, 3, 4, 5, 8]
+/**
+ * Fallback video limits when a model does not declare its own. Models now carry
+ * these in `defaults.video` (from the Rust catalog); the fallback only keeps an
+ * unknown model from rendering an empty picker.
+ */
+const FALLBACK_VIDEO: EngineVideoDefaults = {
+  fps: 16,
+  fps_min: 1,
+  fps_max: 30,
+  length_seconds: [1, 2, 3, 4, 5, 8],
+  default_length_seconds: 2,
+  frame_modulus: 4,
+  frame_offset: 1,
+}
 
 /**
- * Frames for a video of `seconds` at `fps`. Wan wants 4k + 1 frames, so the
- * count is rounded to the nearest such number, and never below 5.
+ * Frames for a video of `seconds` at `fps`, snapped to the lattice
+ * `n % modulus == offset` the model wants. Wan is 4k + 1, so the count is
+ * rounded to the nearest such number and never below `modulus + offset`.
  */
-export function framesFor(seconds: number, fps: number): number {
-  const k = Math.max(1, Math.round((seconds * fps - 1) / 4))
-  return 4 * k + 1
+export function framesFor(
+  seconds: number,
+  fps: number,
+  rule: { modulus: number; offset: number } = { modulus: 4, offset: 1 }
+): number {
+  const modulus = Math.max(1, Math.round(rule.modulus))
+  const offset = Math.round(rule.offset)
+  const k = Math.max(1, Math.round((seconds * fps - offset) / modulus))
+  return modulus * k + offset
+}
+
+function videoDefaultsOf(model: EngineModelStatus): EngineVideoDefaults {
+  return model.defaults.video ?? FALLBACK_VIDEO
 }
 
 const isDataUrl = (value: unknown): value is string =>
@@ -238,7 +276,7 @@ function reasonOf(body: { error?: unknown; message?: unknown } | undefined): str
 }
 
 function resolutionSpec(model: EngineModelStatus): MediaParamSpec {
-  const sizes: Array<[number, number]> = [
+  const sizes: Array<[number, number]> = model.defaults.resolutions ?? [
     [model.defaults.width, model.defaults.height],
     ...(FAMILY_SIZES[model.family] ?? []),
   ]
@@ -304,19 +342,76 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
     },
   ]
   if (task === 'text_to_image') {
-    specs.push({
-      id: 'strength',
-      type: 'float',
-      group: 'core',
-      label: 'How much to change it',
-      help: 'Low keeps the starting image; high follows the prompt more.',
-      min: 0.05,
-      max: 1,
-      step: 0.05,
-      default: 0.75,
-      widget: 'slider',
-      depends_on: [{ param: 'init_image', truthy: true }],
-    })
+    specs.push(
+      {
+        id: 'strength',
+        type: 'float',
+        group: 'core',
+        label: 'How much to change it',
+        help: 'Low keeps the starting image; high follows the prompt more.',
+        min: 0.05,
+        max: 1,
+        step: 0.05,
+        default: 0.75,
+        widget: 'slider',
+        depends_on: [{ param: 'init_image', truthy: true }],
+      },
+      // Hires fix (the engine's `hires` field): render again at a multiple of
+      // the chosen size for much more detail. On by default so images are
+      // "as high-definition as the engine allows"; the upscaler/scale/strength
+      // knobs stay under Advanced for power users.
+      {
+        id: 'hires',
+        type: 'bool',
+        group: 'core',
+        label: 'HD upscale',
+        help: 'Rework the image at a larger size for much more detail. Slower, but far sharper.',
+        widget: 'switch',
+        default: true,
+      },
+      {
+        id: 'hires_upscaler',
+        type: 'enum',
+        group: 'advanced',
+        label: 'Upscaler',
+        advanced: true,
+        depends_on: [{ param: 'hires', truthy: true }],
+        options: [
+          { value: 'Latent', label: 'Latent (detail)' },
+          { value: 'Lanczos', label: 'Lanczos (sharp)' },
+          { value: 'Nearest', label: 'Nearest (fast)' },
+        ],
+        default: 'Latent',
+      },
+      {
+        id: 'hires_scale',
+        type: 'enum',
+        group: 'advanced',
+        label: 'Scale',
+        advanced: true,
+        depends_on: [{ param: 'hires', truthy: true }],
+        options: [
+          { value: 2, label: '2×' },
+          { value: 3, label: '3×' },
+          { value: 4, label: '4×' },
+        ],
+        default: 2,
+      },
+      {
+        id: 'hires_denoising_strength',
+        type: 'float',
+        group: 'advanced',
+        label: 'Detail strength',
+        help: 'Low keeps the first pass; high reworks more and can drift from the prompt.',
+        advanced: true,
+        depends_on: [{ param: 'hires', truthy: true }],
+        min: 0.2,
+        max: 0.9,
+        step: 0.05,
+        default: 0.7,
+        widget: 'slider',
+      }
+    )
   }
   if (task === 'text_to_video') {
     specs.push(
@@ -333,13 +428,21 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
         type: 'enum',
         group: 'motion',
         label: 'Length',
-        options: LENGTH_SECONDS.map((seconds) => ({
+        options: videoDefaultsOf(model).length_seconds.map((seconds) => ({
           value: seconds,
           label: seconds === 1 ? '1 second' : `${seconds} seconds`,
         })),
-        default: 2,
+        default: videoDefaultsOf(model).default_length_seconds,
       },
-      { id: 'fps', type: 'int', group: 'motion', label: 'FPS', min: 1, max: 30, default: 16 }
+      {
+        id: 'fps',
+        type: 'int',
+        group: 'motion',
+        label: 'FPS',
+        min: videoDefaultsOf(model).fps_min,
+        max: videoDefaultsOf(model).fps_max,
+        default: videoDefaultsOf(model).fps,
+      }
     )
   }
   specs.push({ id: 'seed', type: 'seed', group: 'advanced', label: 'Seed', advanced: true })
@@ -457,6 +560,17 @@ export function engineRequestBody(req: NormalizedMediaRequest): Record<string, u
     body.init_image = params.init_image
     if (req.task !== MEDIA_TASK.TEXT_TO_VIDEO && typeof params.strength === 'number') {
       body.strength = params.strength
+    }
+  }
+  // Hires fix: re-render at a multiple of the chosen size for more detail.
+  // Only image jobs take it; the engine spells it exactly like its `img_gen`
+  // schema (`hires.enabled/upscaler/scale/denoising_strength`).
+  if (req.task !== MEDIA_TASK.TEXT_TO_VIDEO && params.hires === true) {
+    body.hires = {
+      enabled: true,
+      upscaler: String(params.hires_upscaler ?? 'Latent'),
+      scale: Number(params.hires_scale ?? 2),
+      denoising_strength: Number(params.hires_denoising_strength ?? 0.7),
     }
   }
   if (req.task === MEDIA_TASK.TEXT_TO_VIDEO) {
@@ -613,7 +727,11 @@ export function createBuiltinEngineAdapter(
         features: {
           // Waiting jobs can be cancelled; one already generating cannot yet.
           cancel: true,
-          progress: true,
+          // Honest: the engine's job endpoint reports only status and queue
+          // position, and the Rust stdout progress parser is not forwarded to
+          // the frontend. Flip back to true only once `poll`/`subscribe`
+          // actually emits `progress` (0..100).
+          progress: false,
           queue: true,
           events: false,
           install: true,

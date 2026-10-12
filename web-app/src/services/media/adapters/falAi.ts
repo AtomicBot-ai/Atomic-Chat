@@ -159,6 +159,51 @@ const SEED: MediaParamSpec = {
   min: 0,
 }
 
+/**
+ * fal's Wan 2.2 A14B frame window. `length_seconds` is translated into a
+ * `num_frames` inside this window at the chosen `frames_per_second`.
+ */
+const FAL_WAN_MIN_FRAMES = 17
+const FAL_WAN_MAX_FRAMES = 161
+const FAL_WAN_DEFAULT_FPS = 16
+
+/**
+ * Durations the length picker offers, in seconds. Each is reachable at the
+ * default 16 fps inside fal's 17–161 frame window (10 s × 16 = 160 ≤ 161).
+ * Longer clips run at a lower fps, which the `frames_per_second` control
+ * still lets a power user trade off.
+ */
+const FAL_WAN_LENGTH_SECONDS = [1, 2, 3, 4, 5, 8, 10] as const
+
+/**
+ * Translate the canonical `length_seconds` (and optional `fps`) — the keys the
+ * built-in engine, the chat popup and the shared contract speak — into fal's
+ * native `num_frames` + `frames_per_second`. A caller that already set fal's
+ * native keys is left untouched. This is the cloud half of the one-length-
+ * choice-works-everywhere abstraction; the local half lives in
+ * `builtinEngine.ts`.
+ */
+function translateVideoLength(input: Record<string, unknown>): void {
+  if (typeof input.fps === 'number' && input.frames_per_second === undefined) {
+    input.frames_per_second = input.fps
+  }
+  delete input.fps
+
+  const seconds = Number(input.length_seconds)
+  if (input.num_frames === undefined && Number.isFinite(seconds) && seconds > 0) {
+    const fps =
+      typeof input.frames_per_second === 'number'
+        ? input.frames_per_second
+        : FAL_WAN_DEFAULT_FPS
+    input.num_frames = Math.min(
+      FAL_WAN_MAX_FRAMES,
+      Math.max(FAL_WAN_MIN_FRAMES, Math.round(seconds * fps))
+    )
+    if (input.frames_per_second === undefined) input.frames_per_second = fps
+  }
+  delete input.length_seconds
+}
+
 /** Declared from each model's OpenAPI input schema; ids are fal's own. */
 function declaredModels(providerId: string): MediaModelDescriptor[] {
   const fluxSchnell: MediaParamSpec[] = [
@@ -249,24 +294,38 @@ function declaredModels(providerId: string): MediaModelDescriptor[] {
       default: '720p',
     },
     {
+      id: 'length_seconds',
+      type: 'enum',
+      label: 'Length',
+      group: 'motion',
+      order: 1,
+      options: FAL_WAN_LENGTH_SECONDS.map((seconds) => ({
+        value: seconds,
+        label: seconds === 1 ? '1 second' : `${seconds} seconds`,
+      })),
+      default: 5,
+    },
+    {
       id: 'num_frames',
       type: 'int',
       label: 'Frames',
       group: 'motion',
-      order: 1,
-      min: 17,
-      max: 161,
+      order: 2,
+      min: FAL_WAN_MIN_FRAMES,
+      max: FAL_WAN_MAX_FRAMES,
       default: 81,
+      advanced: true,
     },
     {
       id: 'frames_per_second',
       type: 'int',
       label: 'Frames per second',
       group: 'motion',
-      order: 2,
+      order: 3,
       min: 4,
       max: 60,
-      default: 16,
+      default: FAL_WAN_DEFAULT_FPS,
+      advanced: true,
     },
     {
       id: 'num_inference_steps',
@@ -647,6 +706,7 @@ export function createFalAiAdapter(
         if (value === undefined || value === null || value === '') continue
         input[key] = value
       }
+      if (req.task === MEDIA_TASK.TEXT_TO_VIDEO) translateVideoLength(input)
 
       const localId = localModelId(descriptor, req.model_id)
       const auth = await headers(true)

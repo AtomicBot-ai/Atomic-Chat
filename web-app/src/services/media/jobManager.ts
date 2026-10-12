@@ -25,6 +25,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import { createMediaAdapter } from './providerFactory'
+import { createMediaJobsStore } from './jobsStore'
 import { resolveSeeds } from './contract'
 import {
   getMediaProvidersSync,
@@ -69,6 +70,19 @@ export const MEDIA_POLL_MAX_CONSECUTIVE_FAILURES = 5
  */
 export const MEDIA_SUBSCRIBE_SILENCE_MS = 15_000
 
+/**
+ * How many times a submit may reach the provider before the manager gives up.
+ * The first attempt is attempt 0; the retries follow.
+ */
+export const MEDIA_SUBMIT_MAX_ATTEMPTS = 3
+
+/**
+ * Delay before the (N+1)th submit attempt, i.e. before each retry. The last
+ * entry repeats past the end, so a provider with no `Retry-After` still stops
+ * hammering after the backoff ceiling.
+ */
+export const MEDIA_SUBMIT_BACKOFF_MS = [1000, 2000]
+
 const TERMINAL: ReadonlySet<MediaJobState> = new Set<MediaJobState>([
   'succeeded',
   'failed',
@@ -100,6 +114,17 @@ export type MediaJobManagerDeps = {
   now?: () => number
   /** Seed source. Injected so D8's resolution is testable. Like Math.random. */
   random?: () => number
+  /**
+   * Optional durable history. When present, jobs are written back on every
+   * state change and can be restored with `load()` after a reload. `outputs`
+   * is stripped before saving — the library already owns the materialised
+   * files, so only state and provenance belong on disk.
+   */
+  persist?: {
+    load: () => Promise<MediaJobEntry[]>
+    save: (jobs: MediaJobEntry[]) => Promise<void>
+  }
+  warn?: (message: string, cause?: unknown) => void
 }
 
 export type MediaJobManager = {
@@ -109,6 +134,8 @@ export type MediaJobManager = {
   canCancel: (clientJobId: string) => boolean
   get: (clientJobId: string) => MediaJobEntry | undefined
   list: () => MediaJobEntry[]
+  /** Restore jobs persisted by a previous session. Safe to call more than once. */
+  load: () => Promise<void>
   /** Stop watching everything. Does not cancel work already on a provider. */
   dispose: () => void
 }
@@ -132,6 +159,69 @@ type Watch = {
 function detailOf(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+/**
+ * Whether a failed submit is worth trying again.
+ *
+ * A provider's own error carries `retryable` (rate limits, timeouts,
+ * server-side failures are; a bad key or bad request is not). An error with no
+ * such signal is a transport failure — the same rule `jobErrorFrom` uses — and
+ * says nothing about the job itself, so it is retried.
+ */
+function isRetryableSubmitError(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as { retryable?: unknown }
+    if (typeof candidate.retryable === 'boolean') return candidate.retryable
+  }
+  return true
+}
+
+/** The delay before a retry: the backoff, or `Retry-After` if the provider asked for longer. */
+function retryDelayFor(error: unknown, retryIndex: number): number {
+  const backoff =
+    MEDIA_SUBMIT_BACKOFF_MS[retryIndex] ??
+    MEDIA_SUBMIT_BACKOFF_MS[MEDIA_SUBMIT_BACKOFF_MS.length - 1]!
+  let requested = 0
+  if (typeof error === 'object' && error !== null) {
+    const retryAfter = (error as { retryAfterMs?: unknown }).retryAfterMs
+    if (
+      typeof retryAfter === 'number' &&
+      Number.isFinite(retryAfter) &&
+      retryAfter > 0
+    ) {
+      requested = retryAfter
+    }
+  }
+  return Math.max(backoff, requested)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Submit with retry. A rate limit or a dropped connection is worth a second
+ * (and third) attempt; a bad key or invalid request is not and is re-thrown on
+ * the first failure.
+ */
+async function submitToAdapter(
+  adapter: MediaProviderAdapter,
+  request: NormalizedMediaRequest
+): Promise<MediaJobSnapshot> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < MEDIA_SUBMIT_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await adapter.submit(request)
+    } catch (error) {
+      lastError = error
+      if (!isRetryableSubmitError(error)) throw error
+      if (attempt === MEDIA_SUBMIT_MAX_ATTEMPTS - 1) break
+      const delay = retryDelayFor(error, attempt)
+      if (delay > 0) await sleep(delay)
+    }
+  }
+  throw lastError
 }
 
 export function createMediaJobManager(
@@ -162,6 +252,24 @@ export function createMediaJobManager(
         ? state.order
         : [clientJobId, ...state.order],
     }))
+    persistNow()
+  }
+
+  /**
+   * Write the current history to disk, best-effort. `outputs` is dropped: it
+   * can carry inline bytes too large to re-serialise every poll, and the
+   * library already owns the materialised files.
+   */
+  function persistNow() {
+    if (!deps.persist) return
+    const { jobs, order } = store.getState()
+    const snapshots = order
+      .map((id) => jobs[id])
+      .filter((entry): entry is MediaJobEntry => entry !== undefined)
+      .map((entry) => ({ ...entry, outputs: undefined }))
+    void deps.persist.save(snapshots).catch((error) => {
+      deps.warn?.('Could not persist media jobs.', error)
+    })
   }
 
   function merge(clientJobId: string, snapshot: MediaJobSnapshot) {
@@ -335,7 +443,7 @@ export function createMediaJobManager(
       inFlight.add(request.client_job_id)
       try {
         const adapter = deps.createAdapter(descriptor)
-        const snapshot = await adapter.submit(resolved)
+        const snapshot = await submitToAdapter(adapter, resolved)
         const features = capabilities?.features
 
         const entry: MediaJobEntry = {
@@ -366,6 +474,37 @@ export function createMediaJobManager(
       } finally {
         inFlight.delete(request.client_job_id)
       }
+    },
+
+    async load() {
+      if (!deps.persist) return
+      const persisted = await deps.persist.load()
+      const state = store.getState()
+      const jobs = { ...state.jobs }
+      const order = [...state.order]
+
+      for (const entry of persisted) {
+        if (jobs[entry.client_job_id]) continue
+        // A terminal job is restored as the history it is. A job that was
+        // still queued or running when the app closed lost its watcher and its
+        // backoff/subscription state, so it cannot be polled to completion.
+        // The honest answer is "interrupted", retryable so a re-run is offered.
+        const restored: MediaJobEntry = isTerminalMediaJobState(entry.state)
+          ? entry
+          : {
+              ...entry,
+              state: 'failed',
+              error: {
+                code: 'interrupted',
+                message: 'The app closed while this job was still running.',
+                retryable: true,
+              },
+            }
+        jobs[entry.client_job_id] = restored
+        order.push(entry.client_job_id)
+      }
+
+      store.setState({ jobs, order })
     },
 
     async cancel(clientJobId) {
@@ -399,10 +538,45 @@ export function createMediaJobManager(
 /**
  * The app-wide instance. Module-scoped on purpose: it must outlive every route
  * and every component that looks at it.
+ *
+ * Persistence is wired lazily: the real filesystem and data-folder bindings
+ * live in `@/stores/media-library-store`, which touches the `@janhq/core`
+ * bridge. That module must not be pulled into the graph of code that only
+ * wants the manager (and must not be loaded by the test environment), so it is
+ * imported on first use instead of at module evaluation.
  */
+type MediaJobsStoreInstance = ReturnType<typeof createMediaJobsStore>
+
+let jobsStorePromise: Promise<MediaJobsStoreInstance> | undefined
+
+function mediaJobsStore(): Promise<MediaJobsStoreInstance> {
+  if (!jobsStorePromise) {
+    jobsStorePromise = (async () => {
+      const { coreMediaFileSystem, mediaDataFolder } = await import(
+        '@/stores/media-library-store'
+      )
+      return createMediaJobsStore({
+        fs: coreMediaFileSystem,
+        dataFolder: mediaDataFolder,
+        warn: (message, cause) =>
+          console.warn(`[media-jobs] ${message}`, cause),
+      })
+    })()
+  }
+  return jobsStorePromise
+}
+
 export const mediaJobManager = createMediaJobManager({
   createAdapter: createMediaAdapter,
   providers: getMediaProvidersSync,
   capabilitiesFor: (providerId) =>
     useMediaProviderStore.getState().capabilities[providerId],
+  persist: {
+    async load() {
+      return (await mediaJobsStore()).load()
+    },
+    async save(jobs) {
+      await (await mediaJobsStore()).save(jobs)
+    },
+  },
 })

@@ -39,11 +39,13 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Radium Media platform (8)
+## Radium Media platform (10)
 
 The model-agnostic media platform: provider adapters, the v2 contract, the
 library on disk, and how the frozen surface is allowed to change.
 
+- **2026-10-11** — [Full-HD images via the built-in engine's native hires-fix; no upscaler model download](2026-10-11-full-hd-images-via-built-in-engine-hires-fix.md)
+- **2026-10-11** — [Media jobs persist state-only history and retry submissions](2026-10-11-media-jobs-persist-state-only-and-retry-submits.md)
 - **2026-09-10** — [Adopt a provider-adapter architecture for Radium Media](2026-09-10-adopt-a-provider-adapter-architecture-for-radium-media.md)
 - **2026-09-10** — [Media contract v2 uses declarative parameter schemas with an open task vocabulary](2026-09-10-media-contract-v2-uses-declarative-parameter-schemas.md)
 - **2026-09-10** — [Materialise every media output to local disk before preview](2026-09-10-materialise-every-media-output-to-disk-before-preview.md)

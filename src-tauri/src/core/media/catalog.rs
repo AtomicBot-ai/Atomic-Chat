@@ -82,6 +82,27 @@ pub struct CatalogQuant {
     pub file: CatalogFile,
 }
 
+/// How far a video model can be pushed, and the frame count it wants.
+///
+/// Present only on video models. The frame rule (`frame_modulus`/`frame_offset`)
+/// mirrors what the engine's server requires: Wan wants `n % 4 == 1` frames,
+/// so a requested duration in seconds is converted to a frame count on that
+/// lattice rather than the exact `seconds * fps`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct VideoDefaults {
+    /// Frames per second used when none is chosen.
+    pub fps: u32,
+    pub fps_min: u32,
+    pub fps_max: u32,
+    /// Video length choices in seconds, shortest first.
+    pub length_seconds: &'static [u32],
+    /// The length the picker starts on.
+    pub default_length_seconds: u32,
+    /// Frame counts must satisfy `n % frame_modulus == frame_offset`.
+    pub frame_modulus: u32,
+    pub frame_offset: u32,
+}
+
 /// Settings a model works well with out of the box.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct GenerationDefaults {
@@ -90,6 +111,12 @@ pub struct GenerationDefaults {
     pub steps: u32,
     pub cfg_scale: f32,
     pub sampler: &'static str,
+    /// Resolution ladder the engine supports for this model, native/default
+    /// first (the first entry is always `width` × `height`). Larger entries are
+    /// still native model sizes, not upscales — upscaling is a separate stage.
+    pub resolutions: &'static [[u32; 2]],
+    /// Present only for video models: how long a clip can be, and how many frames.
+    pub video: Option<VideoDefaults>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -146,6 +173,8 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 20,
             cfg_scale: 7.0,
             sampler: "euler_a",
+            resolutions: &[[512, 512], [512, 768], [768, 512]],
+            video: None,
         },
         quants: &[
             CatalogQuant {
@@ -219,6 +248,8 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 25,
             cfg_scale: 7.0,
             sampler: "euler_a",
+            resolutions: &[[1024, 1024], [832, 1216], [1216, 832]],
+            video: None,
         },
         quants: &[
             CatalogQuant {
@@ -304,6 +335,8 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 4,
             cfg_scale: 1.0,
             sampler: "euler",
+            resolutions: &[[1024, 1024], [832, 1216], [1216, 832]],
+            video: None,
         },
         quants: &[
             CatalogQuant {
@@ -402,6 +435,18 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 20,
             cfg_scale: 6.0,
             sampler: "euler",
+            resolutions: &[[832, 480]],
+            video: Some(VideoDefaults {
+                fps: 16,
+                fps_min: 1,
+                fps_max: 30,
+                // Wan 2.2 5B is a short-clip model; longer runs come from a
+                // cloud provider (fal's A14B) or a larger local model.
+                length_seconds: &[1, 2, 3, 4, 5, 8],
+                default_length_seconds: 2,
+                frame_modulus: 4,
+                frame_offset: 1,
+            }),
         },
         quants: &[
             CatalogQuant {
@@ -666,6 +711,8 @@ mod tests {
             steps: 1,
             cfg_scale: 1.0,
             sampler: "euler",
+            resolutions: &[[64, 64]],
+            video: None,
         },
         quants: &TINY_QUANTS,
         default_quant: "q4_0",
@@ -777,6 +824,67 @@ mod tests {
             }
         );
         assert!(find_model("not-a-model").is_none());
+    }
+
+    #[test]
+    fn only_video_models_declare_video_defaults() {
+        let wan = find_model("wan2.2-ti2v-5b").expect("Wan is in the catalog");
+        let video = wan
+            .defaults
+            .video
+            .expect("the video model declares video defaults");
+
+        assert!(video.fps_min <= video.fps && video.fps <= video.fps_max);
+        assert!(!video.length_seconds.is_empty());
+        assert!(
+            video
+                .length_seconds
+                .contains(&video.default_length_seconds),
+            "the default length is one of the offered lengths"
+        );
+        assert!(
+            video.length_seconds.windows(2).all(|pair| pair[0] < pair[1]),
+            "lengths are shortest first"
+        );
+        assert!(video.frame_modulus > 0);
+        assert!(video.frame_offset < video.frame_modulus);
+
+        for id in ["sd-1.5", "sdxl-1.0", "flux.1-schnell"] {
+            let model = find_model(id).expect("image model is in the catalog");
+            assert!(
+                model.defaults.video.is_none(),
+                "{} is an image model and must not declare video defaults",
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn every_model_declares_a_resolution_ladder_starting_at_its_native_size() {
+        for model in catalog() {
+            let defaults = model.defaults;
+            assert!(
+                !defaults.resolutions.is_empty(),
+                "{} must offer at least one resolution",
+                model.id
+            );
+            assert_eq!(
+                defaults.resolutions[0],
+                [defaults.width, defaults.height],
+                "{}'s first resolution is its native size",
+                model.id
+            );
+            // No duplicate sizes in the ladder.
+            for i in 0..defaults.resolutions.len() {
+                for j in (i + 1)..defaults.resolutions.len() {
+                    assert_ne!(
+                        defaults.resolutions[i], defaults.resolutions[j],
+                        "{} lists the same size twice",
+                        model.id
+                    );
+                }
+            }
+        }
     }
 
     #[test]
