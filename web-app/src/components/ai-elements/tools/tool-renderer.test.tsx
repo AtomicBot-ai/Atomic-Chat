@@ -117,11 +117,13 @@ describe('ToolRenderer friendly activity', () => {
           }}
         />
       )
-      const row = screen.getByRole('button', { name: expected })
+      const row = screen.getByRole('button', {
+        name: `${toolName} — ${expected}`,
+      })
       expect(row).toHaveTextContent(expected)
-      expect(row).not.toHaveTextContent(toolName)
+      expect(row).toHaveTextContent(toolName)
       expect(row).not.toHaveTextContent('/Users/')
-      expect(row).toHaveAttribute('title', expected)
+      expect(row).toHaveAttribute('title', `${toolName} — ${expected}`)
       expect(row).toHaveAttribute('aria-expanded', 'false')
     }
   )
@@ -148,9 +150,11 @@ describe('ToolRenderer friendly activity', () => {
         presentation={{ kind: 'generic', title: 'Wrote file', input: { path } }}
       />
     )
-    expect(screen.getByRole('button')).toHaveAccessibleName(`Created ${target}`)
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      `os.fs.write — Created ${target}`
+    )
     expect(screen.getByRole('button')).not.toHaveTextContent(
-      path.includes('/') || path.includes('\\') ? path : 'os.fs.write'
+      path.includes('/') || path.includes('\\') ? path : '/Users/'
     )
   })
 
@@ -171,7 +175,9 @@ describe('ToolRenderer friendly activity', () => {
         }}
       />
     )
-    expect(screen.getByRole('button')).toHaveAccessibleName(label)
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      `vendor.weather_forecast — ${label}`
+    )
     expect(screen.getByRole('button')).not.toHaveTextContent('/Users/')
   })
 
@@ -187,7 +193,7 @@ describe('ToolRenderer friendly activity', () => {
       />
     )
     expect(screen.getByRole('button')).toHaveAccessibleName(
-      'Inspect document — completed'
+      'vendor.inspect — Inspect document — completed'
     )
   })
 
@@ -207,7 +213,9 @@ describe('ToolRenderer friendly activity', () => {
         presentation={{ kind: 'generic', title: toolName }}
       />
     )
-    expect(screen.getByRole('button')).toHaveAccessibleName(label)
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      `${toolName} — ${label}`
+    )
   })
 
   it('labels an automatic loop veto as skipped, not as denied access', () => {
@@ -223,7 +231,9 @@ describe('ToolRenderer friendly activity', () => {
       />
     )
     const button = screen.getByRole('button')
-    expect(button).toHaveAccessibleName('Skipped repeated folder creation')
+    expect(button).toHaveAccessibleName(
+      'os.fs.mkdir — Skipped repeated folder creation'
+    )
     expect(button.querySelector('.text-destructive')).toBeNull()
   })
 
@@ -246,7 +256,9 @@ describe('ToolRenderer friendly activity', () => {
         presentation={{ kind: 'generic', title: toolName, input }}
       />
     )
-    expect(screen.getByRole('button')).toHaveAccessibleName(label)
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      `${toolName} — ${label}`
+    )
   })
 
   it('has a useful label before a path arrives', () => {
@@ -257,7 +269,9 @@ describe('ToolRenderer friendly activity', () => {
         presentation={{ kind: 'generic', title: 'Read file', input: null }}
       />
     )
-    expect(screen.getByRole('button')).toHaveAccessibleName('Reading file…')
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      'os.fs.read — Reading file…'
+    )
   })
 
   it('keeps original parameters and errors in the expanded disclosure', async () => {
@@ -277,7 +291,9 @@ describe('ToolRenderer friendly activity', () => {
     expect(container).not.toHaveTextContent(path)
     await userEvent.click(screen.getByRole('button'))
     expect(screen.getByText('Parameters')).toBeInTheDocument()
-    expect(screen.queryByText('os.fs.write')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /os.fs.write/ })
+    ).toBeInTheDocument()
     expect(container).toHaveTextContent(path)
     expect(container).toHaveTextContent(`Permission denied: ${path}`)
   })
@@ -300,7 +316,7 @@ describe('ToolRenderer friendly activity', () => {
     )
     const row = screen.getByRole('button')
     expect(row).toHaveTextContent('nemotron')
-    expect(row).not.toHaveTextContent('web_search_exa')
+    expect(row).toHaveTextContent('web_search_exa')
     expect(row).not.toHaveTextContent('2 results')
   })
 
@@ -318,7 +334,7 @@ describe('ToolRenderer friendly activity', () => {
       />
     )
     expect(screen.getByRole('button')).toHaveAccessibleName(
-      'Could not read web page: developer.nvidia.com'
+      'web_fetch_exa — Could not read web page: developer.nvidia.com'
     )
   })
 })

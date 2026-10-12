@@ -170,9 +170,8 @@ describe('MessageItem tool calls', () => {
         revealItemInDir: vi.fn().mockResolvedValue(undefined),
       },
     })
-    const bridge = (
-      window as unknown as Record<string, unknown>
-    ).__TAURI_INTERNALS__
+    const bridge = (window as unknown as Record<string, unknown>)
+      .__TAURI_INTERNALS__
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
 
     try {
@@ -204,376 +203,140 @@ describe('MessageItem tool calls', () => {
       // The browser is not sent to the pseudo URL either.
       expect(followed).toBe(false)
     } finally {
-      ;(
-        window as unknown as Record<string, unknown>
-      ).__TAURI_INTERNALS__ = bridge
+      ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ =
+        bridge
     }
   })
 
-  it('groups a finished turn and reveals individually expandable calls', async () => {
+  it('shows each finished call directly with one details disclosure', async () => {
     renderLast(
       {
-        id: 'a1',
+        id: 'flat',
         role: 'assistant',
-        metadata: { activityDurationMs: 4_000 },
         parts: [
-          search('t1', 'output-available', 'nemotron news'),
+          search('first', 'output-available', 'news'),
           {
             type: 'tool-os.fs.read',
-            toolCallId: 't2',
-            state: 'output-available',
+            toolCallId: 'second',
+            state: 'output-error',
             input: { path: 'notes.md' },
-            output: { content: 'hi' },
+            errorText: 'File disappeared',
           } as UIMessage['parts'][number],
           { type: 'text', text: 'Here is the news.' },
         ],
       },
       'ready'
     )
-
     const group = screen.getByTestId('tool-activity-group')
-    const activity = within(group).getByRole('button', { expanded: false })
-    const chevron = activity.querySelector('.lucide-chevron-right')!
-    expect(activity).toHaveTextContent('activity.completedActions')
-    expect(activity.querySelector('svg')).toHaveClass('size-[18px]')
-    expect(chevron.parentElement).toHaveClass(
-      'inline-flex',
-      'min-w-0',
-      'items-center'
-    )
-    expect(chevron.previousElementSibling).toHaveClass('truncate')
-    expect(chevron.previousElementSibling).not.toHaveClass('flex-1')
-    expect(within(group).getAllByRole('button')).toHaveLength(1)
-    await userEvent.click(activity)
+    const calls = within(group).getAllByRole('button')
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toHaveTextContent('web_search_exa')
+    expect(calls[1]).toHaveTextContent('os.fs.read')
+    expect(calls[1]).toHaveTextContent('toolCall.actions.read.error')
+    for (const call of calls)
+      expect(call).toHaveAttribute('aria-expanded', 'false')
     expect(
-      within(group).getAllByRole('button', { expanded: false })
-    ).toHaveLength(2)
-    expect(screen.queryByText('web_search_exa')).not.toBeInTheDocument()
-    expect(screen.queryByText('os.fs.read')).not.toBeInTheDocument()
-    expect(screen.queryByText(/activity\.workedFor/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/activity\.calledTool/)).not.toBeInTheDocument()
-  })
-
-  it('keeps a running call compact until the user opens its timeline', async () => {
-    renderLast(
-      {
-        id: 'a2',
-        role: 'assistant',
-        parts: [search('t1', 'input-available', 'nemotron ultra')],
-      },
-      'streaming'
-    )
-
-    expect(screen.getByTestId('tool-activity-group')).toHaveAttribute(
-      'data-state',
-      'closed'
-    )
-    expect(
-      within(screen.getByTestId('tool-activity-group')).getAllByRole('button')
-    ).toHaveLength(1)
-    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0)
-    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
-    expect(
-      within(screen.getByTestId('tool-activity-group')).getByRole('button')
-        .textContent
-    ).toContain('toolCall')
-
-    await userEvent.click(
-      within(screen.getByTestId('tool-activity-group')).getByRole('button')
-    )
-    expect(screen.getByTestId('tool-activity-group')).toHaveAttribute(
-      'data-state',
-      'open'
-    )
-    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1)
-  })
-
-  it('tracks the newest live action, then settles stale calls into a completed summary', () => {
-    const message: UIMessage = {
-      id: 'a-live',
-      role: 'assistant',
-      parts: [
-        search('t1', 'input-available', 'nemotron ultra'),
-        {
-          type: 'tool-os.fs.read',
-          toolCallId: 't2',
-          state: 'input-available',
-          input: { path: 'notes.md' },
-        } as UIMessage['parts'][number],
-      ],
-    }
-    const { rerender } = renderLast(message, 'streaming')
-    const liveButton = within(
-      screen.getByTestId('tool-activity-group')
-    ).getByRole('button')
-    expect(liveButton).toHaveTextContent('toolCall.actions.read.running')
-    expect(liveButton.querySelector('.lucide-file-text')).toBeInTheDocument()
-
-    rerender(
-      <MessageItem
-        message={message}
-        isFirstMessage={false}
-        isLastMessage
-        status="ready"
-      />
-    )
-    const doneButton = within(
-      screen.getByTestId('tool-activity-group')
-    ).getByRole('button')
-    expect(doneButton).toHaveTextContent('activity.completedActions')
-    expect(doneButton.querySelector('.lucide-list-checks')).toBeInTheDocument()
-  })
-
-  it('never reports completion between sequential calls, reasoning, or answer streaming', () => {
-    vi.useFakeTimers()
-    const renderTurn = (
-      parts: UIMessage['parts'],
-      requestActive: boolean,
-      metadata?: UIMessage['metadata']
-    ) => (
-      <MessageItem
-        message={{
-          id: 'a-monotonic-activity',
-          role: 'assistant',
-          parts,
-          metadata,
-        }}
-        isFirstMessage={false}
-        isLastMessage
-        status={requestActive ? 'streaming' : 'ready'}
-        requestActive={requestActive}
-      />
-    )
-    const activity = () =>
-      within(screen.getByTestId('tool-activity-group')).getByRole('button')
-    let elapsed = 0
-    let reasoningHeader: HTMLElement | undefined
-    let activityHeader: HTMLElement | undefined
-    const expectLive = (label: string, icon = 'loader-circle') => {
-      act(() => vi.advanceTimersByTime(2_000))
-      elapsed += 2
-      expect(activity()).toHaveTextContent(label)
-      expect(activity().querySelector(`.lucide-${icon}`)).toBeInTheDocument()
-      expect(activity()).not.toHaveTextContent('activity.completedActions')
-      const thinking = screen.getByRole('button', {
-        name: `activity.thinkingFor ${elapsed}`,
-      })
-      reasoningHeader ??= thinking
-      activityHeader ??= activity()
-      expect(thinking).toBe(reasoningHeader)
-      expect(activity()).toBe(activityHeader)
-      expect(thinking.querySelector('.text-transparent')).toBeNull()
-      expect(screen.queryByText(/activity\.thoughtFor/)).toBeNull()
-    }
-
-    const initialReasoning: UIMessage['parts'] = [
-      {
-        type: 'reasoning',
-        text: 'Plan the first lookup.',
-        state: 'streaming',
-      },
-    ]
-    const { rerender } = render(renderTurn(initialReasoning, true))
-    expect(screen.getByText('activity.thinkingFor 1')).toBeInTheDocument()
-    expectLive('activity.working')
-    expect(screen.queryByText(/activity\.thoughtFor/)).not.toBeInTheDocument()
-
-    const firstRunning: UIMessage['parts'] = [
-      { ...initialReasoning[0], state: 'done' },
-      search('t1', 'input-available', 'first lookup'),
-    ]
-    rerender(renderTurn(firstRunning, true))
-    expectLive('toolCall.withContext', 'globe')
-    expect(screen.getByText(/activity\.thinkingFor/)).toBeInTheDocument()
-
-    const firstResult: UIMessage['parts'] = [
-      firstRunning[0],
-      search('t1', 'output-available', 'first lookup'),
-    ]
-    rerender(renderTurn(firstResult, true))
-    expectLive('toolCall.withContext', 'globe')
-
-    const reasoningGap: UIMessage['parts'] = [
-      ...firstResult,
-      {
-        type: 'reasoning',
-        text: 'Interpret the first result.',
-        state: 'streaming',
-      },
-    ]
-    rerender(renderTurn(reasoningGap, true))
-    expectLive('toolCall.withContext', 'globe')
-
-    const secondRunning: UIMessage['parts'] = [
-      firstResult[0],
-      firstResult[1],
-      { ...reasoningGap[2], state: 'done' },
-      {
-        type: 'tool-os.fs.read',
-        toolCallId: 't2',
-        state: 'input-available',
-        input: { path: 'notes.md' },
-      } as UIMessage['parts'][number],
-    ]
-    rerender(renderTurn(secondRunning, true))
-    expectLive('toolCall.actions.read.running', 'file-text')
-
-    const awaitingApproval: UIMessage['parts'] = [
-      secondRunning[0],
-      secondRunning[1],
-      secondRunning[2],
-      {
-        ...secondRunning[3],
-        state: 'output-available',
-        output: 'Notes',
-      } as UIMessage['parts'][number],
-    ]
-    rerender(
-      renderTurn(awaitingApproval, false, {
-        agent_run: {
-          run_id: 'run-awaiting',
-          status: 'awaiting_approval',
-          tools: [],
-          loops: [],
-        },
-      })
-    )
-    expectLive('activity.working')
-    expect(screen.getByText(/activity\.thinkingFor/)).toBeInTheDocument()
-
-    const answerStreaming: UIMessage['parts'] = [
-      ...awaitingApproval,
-      { type: 'text', text: 'Final answer is streaming' },
-    ]
-    rerender(renderTurn(answerStreaming, true))
-    expectLive('toolCall.actions.read.success', 'file-text')
-
-    rerender(
-      renderTurn(
-        [...awaitingApproval, { type: 'text', text: 'Final answer.' }],
-        false
+      screen.queryByText(
+        /activity\.completedActions|activity\.workedFor|activity\.calledTool/
       )
-    )
-    expect(activity()).toBe(activityHeader)
-    expect(activity().querySelector('.lucide-list-checks')).toBeInTheDocument()
-    expect(screen.getAllByText('activity.completedActions 2')).toHaveLength(1)
-    expect(screen.getAllByText(`activity.thoughtFor ${elapsed}`)).toHaveLength(
-      1
-    )
-    expect(screen.queryByText(/activity\.thinkingFor/)).not.toBeInTheDocument()
-    act(() => vi.advanceTimersByTime(10_000))
-    expect(screen.getAllByText(`activity.thoughtFor ${elapsed}`)).toHaveLength(
-      1
-    )
-    expect(screen.getAllByText('activity.completedActions 2')).toHaveLength(1)
+    ).toBeNull()
+    await userEvent.click(calls[1])
+    expect(calls[1]).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Parameters')).toBeInTheDocument()
+    expect(screen.getByText('File disappeared')).toBeInTheDocument()
+    expect(calls[0]).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('keeps the most recent concrete step through answer streaming and completes with the turn', () => {
-    const between: UIMessage = {
-      id: 'a3',
-      role: 'assistant',
-      parts: [search('t1', 'output-available', 'nemotron')],
-    }
-    const { rerender } = renderLast(between, 'streaming')
-    expect(screen.getByText('toolCall.withContext')).toBeInTheDocument()
-    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
-
-    rerender(
-      <MessageItem
-        message={{
-          ...between,
-          parts: [...between.parts, { type: 'text', text: 'Nemotron is' }],
-        }}
-        isFirstMessage={false}
-        isLastMessage
-        status="streaming"
-      />
-    )
-    expect(screen.getByText('toolCall.withContext')).toBeInTheDocument()
-    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
-    expect(
-      screen.queryByText('activity.completedActions')
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText('web_search_exa')).not.toBeInTheDocument()
-
-    rerender(
-      <MessageItem
-        message={{
-          ...between,
-          parts: [
-            ...between.parts,
-            { type: 'text', text: 'Nemotron is done.' },
-          ],
-        }}
-        isFirstMessage={false}
-        isLastMessage
-        status="ready"
-      />
-    )
-    expect(screen.getByText(/activity\.completedActions/)).toBeInTheDocument()
-  })
-
-  it('updates the live headline across streamed results and errors instead of reverting to Working', () => {
+  it('preserves a call disclosure when another call streams in', async () => {
+    const first = search('first', 'output-available', 'first query')
     const item = (parts: UIMessage['parts']) => (
       <MessageItem
-        message={{ id: 'streamed-tools', role: 'assistant', parts }}
+        message={{ id: 'stream', role: 'assistant', parts }}
         isFirstMessage={false}
         isLastMessage
         status="streaming"
         requestActive
       />
     )
-    const searchRunning = search(
-      'search-1',
-      'input-available',
-      'latest news'
+    const { rerender } = render(item([first]))
+    const firstRow = screen.getByRole('button', { name: /web_search_exa/ })
+    await userEvent.click(firstRow)
+    rerender(
+      item([
+        first,
+        {
+          type: 'tool-os.fs.read',
+          toolCallId: 'second',
+          state: 'input-available',
+          input: { path: 'notes.md' },
+        } as UIMessage['parts'][number],
+      ])
     )
-    const searchResult = search('search-1', 'output-available', 'latest news')
-    const readRunning = {
-      type: 'tool-os.fs.read',
-      toolCallId: 'read-1',
-      state: 'input-available',
-      input: { path: 'notes.md' },
-    } as UIMessage['parts'][number]
-    const readError = {
-      ...readRunning,
-      state: 'output-error',
-      errorText: 'File disappeared',
-    } as UIMessage['parts'][number]
-    const activity = () =>
-      within(screen.getByTestId('tool-activity-group')).getByRole('button')
-
-    const { rerender } = render(item([]))
-    expect(activity()).toHaveTextContent('activity.working')
-
-    rerender(item([searchRunning]))
-    expect(activity()).toHaveTextContent('toolCall.withContext')
-    expect(activity().querySelector('.lucide-globe')).toBeInTheDocument()
-
-    rerender(item([searchResult]))
-    expect(activity()).toHaveTextContent('toolCall.withContext')
-    expect(activity().querySelector('.lucide-globe')).toBeInTheDocument()
-
-    // A stale input state from an older call must not win over the newer step.
-    rerender(item([searchRunning, readRunning]))
-    expect(activity()).toHaveTextContent('toolCall.actions.read.running')
-    expect(activity().querySelector('.lucide-file-text')).toBeInTheDocument()
-
-    rerender(item([searchRunning, readError]))
-    expect(activity()).toHaveTextContent('toolCall.actions.read.error')
-    expect(activity().querySelector('.lucide-file-text')).toHaveClass(
-      'text-destructive'
+    expect(screen.getByRole('button', { name: /web_search_exa/ })).toBe(
+      firstRow
     )
-    expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
+    expect(firstRow).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /os.fs.read/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1)
+    expect(screen.queryByText('activity.working')).toBeNull()
+  })
+
+  it('keeps reasoning live through tool results and answer streaming, then stops its timer', () => {
+    vi.useFakeTimers()
+    const thought: UIMessage['parts'][number] = {
+      type: 'reasoning',
+      text: 'Plan.',
+      state: 'done',
+    }
+    const item = (parts: UIMessage['parts'], active: boolean) => (
+      <MessageItem
+        message={{ id: 'lifecycle', role: 'assistant', parts }}
+        isFirstMessage={false}
+        isLastMessage
+        status={active ? 'streaming' : 'ready'}
+        requestActive={active}
+      />
+    )
+    const { rerender } = render(item([thought], true))
+    expect(screen.getByRole('status')).toHaveTextContent('activity.working')
+    act(() => vi.advanceTimersByTime(2000))
+    expect(screen.getByText('activity.thinkingFor 2')).toBeInTheDocument()
+    const first = search('first', 'input-available', 'lookup')
+    rerender(item([thought, first], true))
+    const row = screen.getByRole('button', { name: /web_search_exa/ })
+    expect(row).toHaveTextContent('toolCall.withContext')
+    const result = search('first', 'output-available', 'lookup')
+    for (const parts of [
+      [thought, result],
+      [thought, result, { type: 'text', text: 'Answer' } as const],
+    ]) {
+      rerender(item(parts, true))
+      act(() => vi.advanceTimersByTime(2000))
+      expect(screen.getByRole('button', { name: /web_search_exa/ })).toBe(row)
+      expect(
+        screen.queryByText(/activity\.thoughtFor|activity\.completedActions/)
+      ).toBeNull()
+    }
+    rerender(item([thought, result, { type: 'text', text: 'Answer.' }], false))
+    expect(screen.getByText('activity.thoughtFor 6')).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(10000))
+    expect(screen.getByText('activity.thoughtFor 6')).toBeInTheDocument()
+    expect(
+      screen.queryByText(/activity\.thinkingFor|activity\.working/)
+    ).toBeNull()
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0)
   })
 
   it.each(['awaiting_approval', 'awaiting_folder_access'])(
-    'keeps %s live without claiming the pending tool is running',
+    'keeps %s visibly waiting without claiming execution',
     (agentStatus) => {
       render(
         <MessageItem
           message={{
-            id: 'pending-tool',
+            id: 'waiting',
             role: 'assistant',
             metadata: {
               agent_run: {
@@ -583,14 +346,7 @@ describe('MessageItem tool calls', () => {
                 loops: [],
               },
             },
-            parts: [
-              {
-                type: 'reasoning',
-                text: 'Waiting for permission.',
-                state: 'done',
-              },
-              search('pending', 'input-available', 'pending lookup'),
-            ],
+            parts: [search('pending', 'input-available', 'lookup')],
           }}
           isFirstMessage={false}
           isLastMessage
@@ -598,42 +354,30 @@ describe('MessageItem tool calls', () => {
           requestActive={false}
         />
       )
-
-      const header = within(
-        screen.getByTestId('tool-activity-group')
-      ).getByRole('button')
-      expect(header).toHaveTextContent('activity.working')
-      expect(header.querySelector('.lucide-loader-circle')).toBeInTheDocument()
-      expect(screen.getByText(/activity\.thinkingFor/)).toBeInTheDocument()
+      const row = screen.getByRole('button', { name: /web_search_exa/ })
+      expect(row).toHaveTextContent('activity.working')
+      expect(document.querySelectorAll('.animate-spin')).toHaveLength(0)
       expect(
-        screen.queryByText(/activity\.completedActions|activity\.thoughtFor/)
+        screen.queryByText(/toolCall\.withContext|activity\.completedActions/)
       ).toBeNull()
     }
   )
 
   it.each(['finished', 'failed', 'cancelled'])(
-    'settles a %s agent turn even while request flags and tool inputs are stale',
+    'stops stale input spinners for a %s agent turn',
     (agentStatus) => {
-      const message: UIMessage = {
-        id: 'terminal-agent',
-        role: 'assistant',
-        parts: [
-          { type: 'reasoning', text: 'Plan.', state: 'streaming' },
-          search('stale', 'input-available', 'lookup'),
-        ],
-      }
-      const item = (runStatus: string) => (
+      const item = (status: string) => (
         <MessageItem
           message={{
-            ...message,
+            id: 'terminal',
+            role: 'assistant',
             metadata: {
-              agent_run: {
-                run_id: 'terminal',
-                status: runStatus,
-                tools: [],
-                loops: [],
-              },
+              agent_run: { run_id: 'terminal', status, tools: [], loops: [] },
             },
+            parts: [
+              { type: 'reasoning', text: 'Plan.', state: 'streaming' },
+              search('stale', 'input-available', 'lookup'),
+            ],
           }}
           isFirstMessage={false}
           isLastMessage
@@ -642,16 +386,16 @@ describe('MessageItem tool calls', () => {
         />
       )
       const { rerender } = render(item('running'))
-      expect(screen.getByText(/activity\.thinkingFor/)).toBeInTheDocument()
+      expect(document.querySelectorAll('.animate-spin')).toHaveLength(1)
       rerender(item(agentStatus))
-
-      expect(screen.getAllByText('activity.completedActions 1')).toHaveLength(1)
+      expect(
+        screen.getByRole('button', { name: 'web_search_exa' })
+      ).toBeInTheDocument()
+      expect(document.querySelectorAll('.animate-spin')).toHaveLength(0)
       expect(screen.getAllByText(/activity\.thoughtFor/)).toHaveLength(1)
       expect(
         screen.queryByText(/activity\.thinkingFor|activity\.working/)
       ).toBeNull()
-      rerender(item(agentStatus))
-      expect(screen.getAllByText('activity.completedActions 1')).toHaveLength(1)
     }
   )
 
