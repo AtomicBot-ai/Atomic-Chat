@@ -1,0 +1,65 @@
+name: "Upload draft release assets"
+description: "Upload files to this run's draft release, replacing assets of the same name"
+
+# A re-run of a failed job uploads the same file names again; the plain upload
+# API answers that with "Validation Failed" (v2.2.1's latest.json). This
+# replaces an existing asset instead, and only ever on a draft: a published
+# release is refused, so a re-run can never change what users already got.
+
+inputs:
+  release-id:
+    description: "Numeric id of the draft release (create-draft-release's release_id output)"
+    required: true
+  files:
+    description: "Newline-separated paths of the files to upload"
+    required: true
+  github-token:
+    description: "Token with contents:write (secrets.GITHUB_TOKEN)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Upload to the draft release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RELEASE_ID: ${{ inputs.release-id }}
+        FILES: ${{ inputs.files }}
+      run: |
+        set -euo pipefail
+        api="repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+        draft="$(gh api "$api" --jq .draft)"
+        if [ "$draft" != "true" ]; then
+          echo "::error::Release $RELEASE_ID is not a draft; refusing to change its assets."
+          exit 1
+        fi
+        while IFS= read -r file; do
+          [ -n "$file" ] || continue
+          if [ ! -f "$file" ]; then
+            echo "::error::$file does not exist."
+            exit 1
+          fi
+          # GitHub stores a space in an asset name as a dot. Every name this
+          # workflow uploads is then URL-safe as is; anything else is refused
+          # rather than encoded into a name the updater URLs would not match.
+          name="$(basename "$file")"
+          name="${name// /.}"
+          if ! [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Unexpected characters in the asset name $name."
+            exit 1
+          fi
+          existing="$(gh api --paginate "$api/assets" --jq ".[] | select(.name == \"$name\") | .id")"
+          for id in $existing; do
+            echo "Replacing the existing asset $name ($id)"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id"
+          done
+          echo "Uploading $name ($(wc -c < "$file") bytes)"
+          # --upload-file streams the file; -X POST is what the upload API takes.
+          curl -fsS --retry 3 --retry-delay 5 -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/octet-stream" \
+            --upload-file "$file" \
+            "https://uploads.github.com/$api/assets?name=$name" > /dev/null
+        done <<< "$FILES"

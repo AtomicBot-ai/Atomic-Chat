@@ -371,27 +371,7 @@ test-extensions:
 # placeholders and never overwrite a real local build.
 stub-resources:
 ifeq ($(OS),Windows_NT)
-	powershell -NoProfile -Command "\
-		$$files = @( \
-			'src-tauri/resources/LICENSE', \
-			'src-tauri/resources/pre-install/test-placeholder', \
-			'src-tauri/resources/bin/jan-cli.exe', \
-			'src-tauri/resources/bin/atomic-chat-core.exe', \
-			'src-tauri/resources/bin/atomic-chat-app-core.exe', \
-			'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe', \
-			'src-tauri/resources/bin/uv-x86_64-pc-windows-msvc.exe', \
-			'src-tauri/resources/bin/cloudflared-x86_64-pc-windows-msvc.exe', \
-			'src-tauri/resources/bin/bun-aarch64-pc-windows-msvc.exe', \
-			'src-tauri/resources/bin/uv-aarch64-pc-windows-msvc.exe', \
-			'src-tauri/resources/bin/cloudflared-aarch64-pc-windows-msvc.exe', \
-			'src-tauri/resources/llamacpp-backend/test-placeholder', \
-			'src-tauri/resources/llamacpp-backend-upstream/test-placeholder' \
-		); \
-		foreach ($$file in $$files) { \
-			$$parent = Split-Path -Parent $$file; \
-			New-Item -ItemType Directory -Force -Path $$parent | Out-Null; \
-			if (-not (Test-Path $$file)) { New-Item -ItemType File -Path $$file | Out-Null } \
-		}"
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stub-tauri-resources.ps1
 else ifeq ($(shell uname -s),Darwin)
 	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE

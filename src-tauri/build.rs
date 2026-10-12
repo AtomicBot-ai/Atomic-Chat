@@ -15,7 +15,14 @@ fn load_dotenv() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     let env_path = Path::new(&manifest_dir).join(".env");
 
-    println!("cargo:rerun-if-changed={}", env_path.display());
+    // Watch `.env` only when it exists: Cargo treats a missing `rerun-if-changed`
+    // path as always stale, which reran this script — and so recompiled the
+    // whole crate — on every cargo call in a checkout without `.env` (CI,
+    // fresh clones). The cost: creating `.env` later is not noticed on its own;
+    // `touch src-tauri/build.rs` once after creating it (DEVELOP.md).
+    if env_path.exists() {
+        println!("cargo:rerun-if-changed={}", env_path.display());
+    }
     for key in DOTENV_KEYS {
         println!("cargo:rerun-if-env-changed={key}");
     }

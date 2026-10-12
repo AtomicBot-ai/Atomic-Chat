@@ -1,0 +1,339 @@
+name: Warm build caches
+
+# Writes the dependency caches release.yml reads. A release runs on a tag or
+# a release branch, and an Actions cache saved there is readable by that same
+# ref only; a cache saved on the default branch is readable by every branch
+# and tag. So the release jobs and their gates only restore, and this
+# workflow, on main, is the one writer.
+#
+# It compiles what the release compiles, under the same Rust cache keys:
+# - release-<platform>: `tauri build --no-bundle` with each release job's
+#   target and config, against stub resources and an empty web build (the
+#   cache keeps dependencies only; the app crate is rebuilt every time anyway);
+# - gate-<platform>: the gates' `cargo test --lib --features test-tauri`
+#   compile, with their profile env.
+# A key's inputs are the runner OS/arch, rustc's version, CARGO*/RUST*/CC*
+# env and the manifests and lockfile. Keep the toolchain, targets, configs and
+# that env equal to release.yml's, or the release restores nothing usable.
+# No signing, publishing, Sentry upload or real backend download here.
+
+on:
+  schedule:
+    # Nightly, so a new day's first release starts warm.
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "**/yarn.lock"
+      - ".yarnrc.yml"
+      - ".cargo/**"
+      - "src-tauri/.cargo/**"
+      - "Makefile"
+      - "scripts/stub-tauri-resources.ps1"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/warm-cache.yml"
+
+permissions:
+  contents: read
+
+# One writer per ref at a time; a newer trigger waits instead of racing it.
+concurrency:
+  group: warm-cache-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Must equal release.yml's ATOMIC_RUST_TOOLCHAIN: rustc's version is part of
+  # every Rust cache key.
+  ATOMIC_RUST_TOOLCHAIN: "1.99.0"
+
+jobs:
+  # The release builds' dependencies, one job and one cache per platform.
+  release:
+    name: release-${{ matrix.key }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # A standard runner on the image macos-latest-xlarge (build-macos)
+          # runs: same OS, arch and Xcode, so the same cache key.
+          - key: macos
+            runner: macos-latest
+            targets: x86_64-apple-darwin,aarch64-apple-darwin
+            tauri-args: --target universal-apple-darwin --config src-tauri/tauri.macos.conf.json
+          - key: windows
+            runner: windows-2022
+            targets: ""
+            tauri-args: ""
+          - key: windows-arm64
+            runner: windows-11-arm
+            targets: aarch64-pc-windows-msvc
+            tauri-args: --target aarch64-pc-windows-msvc --config src-tauri/tauri.windows-arm64.conf.json
+            node-arch: arm64
+          - key: linux-x64
+            runner: ubuntu-22.04
+            targets: ""
+            tauri-args: ""
+          - key: linux-arm64
+            runner: ubuntu-22.04-arm
+            targets: ""
+            tauri-args: --config src-tauri/tauri.linux-arm64.conf.json
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          architecture: ${{ matrix.node-arch }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.ATOMIC_RUST_TOOLCHAIN }}
+          targets: ${{ matrix.targets }}
+
+      - name: Set Xcode version
+        if: runner.os == 'macOS'
+        run: |
+          if [ -d "/Applications/Xcode_26.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_26.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+          swift --version
+
+      # `yarn build:icon` runs the PIL icon scripts on macOS.
+      - name: Install Python dependencies
+        if: runner.os == 'macOS'
+        run: pip3 install --break-system-packages Pillow
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libasound2-dev \
+            pkg-config \
+            patchelf \
+            squashfs-tools \
+            unzip \
+            xdg-utils
+
+      # Restores like the release does, then saves after a successful job
+      # (Swatinem/rust-cache's post step) unless the key already matched.
+      - name: Rust cache
+        id: rust-cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-${{ matrix.key }}
+          save-if: true
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Locate the Yarn cache
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Yarn cache
+        id: yarn-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-${{ hashFiles('.yarnrc.yml', 'yarn.lock', 'extensions/yarn.lock', 'src-tauri/plugins/yarn.lock') }}
+          restore-keys: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-
+
+      # Every Yarn project the release installs, so the saved Yarn cache
+      # holds all three lockfiles' packages; also what `yarn tauri` needs.
+      - name: Install dependencies and build core
+        if: steps.rust-cache.outputs.cache-hit != 'true' || steps.yarn-restore.outputs.cache-hit != 'true'
+        run: |
+          yarn install
+          yarn build:tauri:plugin:api
+          yarn build:core
+          yarn build:extensions
+
+      - name: Stub the bundled resources and the web build
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        run: |
+          yarn build:icon
+          if [ "$RUNNER_OS" = Windows ]; then
+            pwsh -NoProfile -File scripts/stub-tauri-resources.ps1
+          else
+            make stub-resources
+          fi
+          mkdir -p web-app/dist
+          [ -e web-app/dist/index.html ] || printf '<!doctype html>\n' > web-app/dist/index.html
+
+      # The release's `tauri build` minus bundling and the web build. On Linux
+      # through the same shim as the release (it sets XDG_CACHE_HOME).
+      - name: Compile the release build
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        env:
+          TAURI_ARGS: ${{ matrix.tauri-args }}
+        run: |
+          shim=""
+          [ "$RUNNER_OS" = Linux ] && shim=./src-tauri/build-utils/shim-linuxdeploy.sh
+          # shellcheck disable=SC2086 # TAURI_ARGS is a list of arguments
+          $shim yarn tauri build $TAURI_ARGS --no-bundle --config '{"build":{"beforeBuildCommand":""}}'
+
+      - name: Save the Yarn cache
+        if: steps.yarn-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-${{ hashFiles('.yarnrc.yml', 'yarn.lock', 'extensions/yarn.lock', 'src-tauri/plugins/yarn.lock') }}
+
+      - name: Build summary
+        if: always()
+        uses: ./.github/actions/build-summary
+        with:
+          rust-cache-hit: ${{ steps.rust-cache.outputs.cache-hit }}
+
+  # The gates' test-profile dependencies (release.yml's gate-* jobs).
+  gate:
+    name: gate-${{ matrix.key }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: macos
+            runner: macos-latest
+          - key: windows
+            runner: windows-2022
+          - key: linux
+            runner: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      # The gates' own values: part of the Rust cache key.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: runner.os == 'Windows'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.ATOMIC_RUST_TOOLCHAIN }}
+
+      - name: Set Xcode version
+        if: runner.os == 'macOS'
+        run: |
+          if [ -d "/Applications/Xcode_26.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_26.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.1.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+          swift --version
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libasound2-dev \
+            pkg-config
+
+      - name: Rust cache
+        id: rust-cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: gate-${{ matrix.key }}
+          save-if: true
+
+      # Windows needs icons/icon.ico from `tauri icon`; the Yarn cache's
+      # writer is the release-windows job, so this one only restores.
+      - name: Configure Yarn
+        if: runner.os == 'Windows' && steps.rust-cache.outputs.cache-hit != 'true'
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Locate the Yarn cache
+        id: yarn-cache
+        if: runner.os == 'Windows' && steps.rust-cache.outputs.cache-hit != 'true'
+        run: echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Yarn cache
+        if: runner.os == 'Windows' && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-${{ hashFiles('.yarnrc.yml', 'yarn.lock', 'extensions/yarn.lock', 'src-tauri/plugins/yarn.lock') }}
+          restore-keys: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-
+
+      - name: Stub the bundled resources and the web build
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            yarn install
+            yarn build:icon
+            pwsh -NoProfile -File scripts/stub-tauri-resources.ps1
+          else
+            make stub-resources
+            # As in the gates: the generated icons are not there.
+            echo 'TAURI_CONFIG={"bundle":{"icon":["icons/icon.png"]}}' >> "$GITHUB_ENV"
+          fi
+          mkdir -p web-app/dist
+          [ -e web-app/dist/index.html ] || printf '<!doctype html>\n' > web-app/dist/index.html
+
+      - name: Compile the gate tests
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri --no-run
+
+      - name: Build summary
+        if: always()
+        uses: ./.github/actions/build-summary
+        with:
+          rust-cache-hit: ${{ steps.rust-cache.outputs.cache-hit }}
