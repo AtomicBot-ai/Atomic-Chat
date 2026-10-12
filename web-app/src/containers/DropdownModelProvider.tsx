@@ -143,6 +143,7 @@ const visionProbeCache = new Map<string, boolean>()
 type DropdownModelProviderProps = {
   className?: string
   compact?: boolean
+  hasSavedThreadModel?: boolean
 }
 
 /**
@@ -155,6 +156,7 @@ type PickerView = 'main' | 'models'
 const DropdownModelProvider = memo(function DropdownModelProvider({
   className,
   compact: compactOverride,
+  hasSavedThreadModel = false,
 }: DropdownModelProviderProps) {
   const providers = useModelProvider((state) => state.providers)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
@@ -297,7 +299,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   // Initialize model provider on first mount (no model selected yet)
   useEffect(() => {
+    let cancelled = false
     const initializeModel = async () => {
+      // Thread entry owns restoration and missing-model messaging. Startup
+      // defaults would silently replace a deleted/disconnected saved model.
+      if (hasSavedThreadModel) return
       if (selectedProvider && selectedModel) {
         // A cloud selection survives a launch with preload off (main.tsx). It
         // is only worth keeping while the provider can still answer: a key
@@ -331,6 +337,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         // session); otherwise leave the selector blank.
         try {
           const activeModelIds = await serviceHub.models().getActiveModels()
+          if (cancelled) return
           const activeModelId = activeModelIds?.[0]
           if (activeModelId) {
             const activeProvider = providers.find(
@@ -345,6 +352,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         } catch (error) {
           console.debug('Error checking active models on startup:', error)
         }
+        if (cancelled) return
         selectModelProvider('', '')
         return
       }
@@ -389,8 +397,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     }
 
     initializeModel()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    hasSavedThreadModel,
     providers,
     selectModelProvider,
     checkModelExists,

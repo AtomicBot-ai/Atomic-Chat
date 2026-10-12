@@ -193,6 +193,7 @@ const ChatInput = memo(function ChatInput({
   className,
   containerClassName,
   minRows = 2,
+  model,
   initialMessage,
   preselectedAgentSkillName,
   projectId,
@@ -919,6 +920,13 @@ const ChatInput = memo(function ChatInput({
       }
     }
     if (!prompt.trim()) {
+      return
+    }
+    if (!selectedModel && model) {
+      // A saved chat requires an explicit replacement. The first-run gate
+      // would otherwise silently select another model on Send.
+      setPrompt(prompt)
+      toast.info(t('chat:savedModelUnavailableHint'))
       return
     }
     if (!selectedModel) {
@@ -3503,6 +3511,7 @@ const ChatInput = memo(function ChatInput({
                     whose first stop switches thinking off, and leads into the
                     model list. */}
                 <DropdownModelProvider
+                  hasSavedThreadModel={Boolean(model)}
                   className="mb-1"
                   compact={compactComposer}
                 />
