@@ -325,6 +325,21 @@ describe('/hub route', () => {
     vi.unstubAllGlobals()
   })
 
+  it('marks downloaded catalog rows without the filter and refreshes after deletion', async () => {
+    const installed = mocks.staffPicks[0].model
+    const state = useModelProvider.getState() as unknown as { providers: ModelProvider[] }
+    state.providers = [{ provider: 'llamacpp-upstream', models: [{ id: installed.quants![0].model_id }], active: true, settings: [] }]
+    try {
+      const { rerender } = render(<HubPage />)
+      await waitFor(() => expect(screen.getByRole('img', { name: 'downloaded' })).toBeInTheDocument())
+      expect(screen.getByRole('button', { name: /Qwen3.5 4B/ })).toHaveAccessibleName(/downloaded/)
+      expect(screen.getByRole('button', { name: /Gemma 4 12B/ })).not.toHaveAccessibleName(/downloaded/)
+      state.providers = []
+      rerender(<HubPage />)
+      expect(screen.queryByRole('img', { name: 'downloaded' })).toBeNull()
+    } finally { state.providers = [] }
+  })
+
   beforeEach(() => {
     setHubFormat(null)
     vi.clearAllMocks()
@@ -485,6 +500,25 @@ describe('/hub route', () => {
     expect(screen.queryByText('hub:searchResults')).not.toBeInTheDocument()
     expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
     expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
+  })
+
+  it('marks a non-selected downloaded Hugging Face search hit after resolving its quants', async () => {
+    const state = useModelProvider.getState() as unknown as { providers: ModelProvider[] }
+    const downloaded = model('zzz/Downloaded-GGUF')
+    state.providers = [{ provider: 'llamacpp-upstream', models: [{ id: downloaded.quants![0].model_id }], active: true, settings: [] }]
+    mocks.searchHuggingFaceCandidates.mockResolvedValue([
+      model('aaa/Alpha-GGUF', { quants: [] }),
+      { ...downloaded, quants: [] },
+    ])
+    mocks.fetchHuggingFaceRepo.mockImplementation(async (repoId: string) =>
+      repoId === downloaded.model_name ? downloaded as never : null)
+    try {
+      render(<HubPage />)
+      await userEvent.type(screen.getByRole('textbox', { name: 'hub:searchPlaceholder' }), 'model')
+      await waitFor(() => expect(screen.getByRole('button', { name: /Downloaded-GGUF/ })).toHaveAccessibleName(/downloaded/), { timeout: 2500 })
+      expect(screen.getByRole('button', { name: /Alpha-GGUF/ })).not.toHaveAccessibleName(/downloaded/)
+      expect(screen.getByTestId('detail-panel')).not.toHaveTextContent('zzz/Downloaded-GGUF')
+    } finally { state.providers = [] }
   })
 
   it('switches to search results once the user types', async () => {

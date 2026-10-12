@@ -1,3 +1,5 @@
+import { CheckCircle2 } from 'lucide-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { modelFormat, type ModelFormat } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
@@ -10,6 +12,7 @@ export type ModelListRowProps = {
   /** Curated metadata, when the row comes from the staff-picks manifest. */
   pick?: StaffPick
   selected?: boolean
+  downloaded?: boolean
   /** Long-tail Hugging Face hit: draw the neutral HF mark, not a letter. */
   fromHuggingFace?: boolean
   /** The managed engine's format the Hub shows: a managed checkpoint's badge reads as it. */
@@ -28,10 +31,12 @@ export function ModelListRow({
   model,
   pick,
   selected = false,
+  downloaded = false,
   fromHuggingFace = false,
   managedFormat,
   onSelect,
 }: ModelListRowProps) {
+  const { t } = useTranslation('hub')
   const name =
     pick?.title || extractModelName(model.model_name) || model.model_name
   const summary = pick?.summary || model.developer || ''
@@ -55,10 +60,19 @@ export function ModelListRow({
         className="size-9 rounded-lg"
       />
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
             {name}
           </span>
+          {downloaded && (
+            <CheckCircle2
+              role="img"
+              aria-label={t('downloaded')}
+              className="size-4 shrink-0 text-emerald-700 dark:text-emerald-300"
+            >
+              <title>{t('downloaded')}</title>
+            </CheckCircle2>
+          )}
           <span className="shrink-0 rounded-[5px] border border-border px-1.5 py-px text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             {format}
           </span>

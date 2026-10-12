@@ -56,6 +56,8 @@ import {
 } from '@/lib/hub-filters'
 import {
   collectInstalledModels,
+  isCatalogModelInstalled,
+  LLAMACPP_PROVIDERS,
   filterInstalledBySearch,
   withStaffPicks,
 } from '@/lib/hub-installed'
@@ -1259,7 +1261,25 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }
       return
     }
-    if (isSearchMode) return
+    if (isSearchMode) {
+      // GGUF search hits have no quant ids until inspected. Resolve visible
+      // rows through the existing bounded cache so downloaded markers do not
+      // depend on clicking each result first. MLX/managed ids need no lookup.
+      const hasLocalGguf = providers.some(
+        (provider) =>
+          (LLAMACPP_PROVIDERS as readonly string[]).includes(provider.provider) &&
+          provider.models?.some((model) => !model.missing && !model.embedding)
+      )
+      if (
+        !managedFormat &&
+        listSources.feedFormat === 'gguf' &&
+        hasLocalGguf &&
+        visibleFeedRepos
+      ) {
+        feed.ensureDetails(visibleFeedRepos.split('\n'))
+      }
+      return
+    }
     if (managedFormat) {
       // vLLM and TensorRT-LLM share one feed but not one prefilter: pages one emptied may fill
       // rows for the other, so the count starts over with the format.
@@ -1284,6 +1304,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   }, [
     isSearchMode,
     managedFormat,
+    listSources.feedFormat,
+    providers,
     managedSelected?.id,
     filters.uncensored,
     listItems.length,
@@ -1424,6 +1446,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
                       }
                       pick={item.pick}
                       fromHuggingFace={item.fromHuggingFace}
+                      downloaded={isCatalogModelInstalled(item.model, providers)}
                       selected={item.model.model_name === selectedRepo}
                       onSelect={() => selectModel(item.model.model_name)}
                     />

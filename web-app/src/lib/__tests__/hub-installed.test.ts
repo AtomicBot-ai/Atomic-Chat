@@ -4,6 +4,7 @@ import { modelFormat } from '@/lib/model-card'
 import type { CatalogModel } from '@/services/models/types'
 import {
   collectInstalledModels,
+  isCatalogModelInstalled,
   filterInstalledBySearch,
   findInstalledLocalModel,
   LLAMACPP_PROVIDERS,
@@ -376,5 +377,72 @@ describe('collectInstalledModels — the shared store of several managed engines
     } finally {
       setManagedEnginesForTests(undefined)
     }
+  })
+})
+
+describe('isCatalogModelInstalled', () => {
+  const entry = gguf('publisher/Qwen3-GGUF', ['Qwen3-Q4_K_M', 'Qwen3-Q8_0'])
+  it.each(['llamacpp', 'llamacpp-upstream', 'atomic-prism'])(
+    'recognises any installed quant from %s',
+    (name) => {
+      expect(
+        isCatalogModelInstalled(entry, [
+          provider(name, ['publisher/Qwen3-Q8_0']),
+        ])
+      ).toBe(true)
+      expect(
+        isCatalogModelInstalled(entry, [provider(name, ['other-quant'])])
+      ).toBe(false)
+    }
+  )
+  it('does not match a cloud or MLX id to a GGUF quant', () => {
+    expect(
+      isCatalogModelInstalled(entry, [
+        provider('openai', ['Qwen3-Q4_K_M']),
+        provider('mlx', ['Qwen3-Q4_K_M']),
+      ])
+    ).toBe(false)
+  })
+  it('matches MLX repositories with dots using the MLX id rules', () => {
+    const entry = mlx('mlx-community/Qwen3.5-4B-4bit')
+    expect(
+      isCatalogModelInstalled(entry, [
+        provider('mlx', ['mlx-community/Qwen3.5-4B-4bit']),
+      ])
+    ).toBe(true)
+    expect(
+      isCatalogModelInstalled(entry, [
+        provider('llamacpp', ['mlx-community/Qwen3.5-4B-4bit']),
+      ])
+    ).toBe(false)
+  })
+  it('matches a shared managed repository through managed providers only', () => {
+    const managed = {
+      ...entry,
+      model_name: 'nvidia/Qwen3-FP8',
+      is_managed: true,
+    }
+    expect(
+      isCatalogModelInstalled(managed, [
+        provider('tensorrt-llm', ['nvidia/Qwen3-FP8']),
+      ])
+    ).toBe(true)
+    expect(
+      isCatalogModelInstalled(managed, [
+        provider('llamacpp', ['nvidia/Qwen3-FP8']),
+      ])
+    ).toBe(false)
+  })
+  it.each(['missing', 'embedding'] as const)('excludes %s weights', (flag) => {
+    const local = provider('llamacpp', ['Qwen3-Q4_K_M'])
+    local.models[0][flag] = true
+    expect(isCatalogModelInstalled(entry, [local])).toBe(false)
+  })
+  it('does not mark an uninspected GGUF repository from a similar model name', () => {
+    expect(
+      isCatalogModelInstalled({ ...entry, quants: undefined }, [
+        provider('llamacpp', ['Qwen3-Q4_K_M']),
+      ])
+    ).toBe(false)
   })
 })

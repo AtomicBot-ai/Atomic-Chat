@@ -84,7 +84,8 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
 
   for (const name of LLAMACPP_PROVIDERS) add(local, modelsOf(name), 'gguf')
   add(local, modelsOf(MLX_PROVIDER), 'mlx')
-  for (const name of managedProviderIds()) add(managed, modelsOf(name), 'managed')
+  for (const name of managedProviderIds())
+    add(managed, modelsOf(name), 'managed')
 
   return { local, managed }
 }
@@ -146,6 +147,28 @@ export function findInstalledLocalModel(
     if (match) return { modelId: match.id, provider: name }
   }
   return null
+}
+
+/** Whether any runnable local weights for this repository are already present.
+ * Keep formats separate and ignore missing scan links and internal embeddings.
+ */
+export function isCatalogModelInstalled(
+  entry: CatalogModel,
+  providers: readonly ModelProvider[]
+): boolean {
+  const names = entry.is_managed
+    ? managedProviderIds()
+    : entry.is_mlx
+      ? [MLX_PROVIDER]
+      : LLAMACPP_PROVIDERS
+  const available = providers.map((provider) => ({
+    ...provider,
+    models: (provider.models ?? []).filter(
+      (model) =>
+        !model.missing && !model.embedding && model.id !== EMBEDDING_MODEL_ID
+    ),
+  }))
+  return findInstalledLocalModel(available, candidateIds(entry), names) !== null
 }
 
 /**
