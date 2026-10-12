@@ -296,6 +296,7 @@ pub fn run() {
         core::media::runtime::media_engine_install,
         core::media::runtime::media_engine_start,
         core::media::runtime::media_engine_stop,
+        core::media::runtime::media_upscaler_install,
         core::runtimes::commands::runtimes_catalog,
         core::runtimes::commands::runtimes_detect,
         core::runtimes::ollama::commands::ollama_status,

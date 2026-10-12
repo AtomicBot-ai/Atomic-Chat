@@ -18,6 +18,11 @@ use serde::Serialize;
 /// Where models live, relative to Radium's data folder.
 pub const MODELS_DIR: &str = "media/models";
 
+/// Where upscaler models live, relative to Radium's data folder. The engine
+/// scans this folder directly (`--hires-upscalers-dir`), so each `.pth` file
+/// must sit at its top level rather than in a per-model subfolder.
+pub const UPSCALERS_DIR: &str = "media/upscalers";
+
 /// Joins a model and one of its sizes in the id the Media page uses:
 /// `sd-1.5@q4_0`. A model id on its own means its default size.
 pub const QUANT_SEPARATOR: char = '@';
@@ -67,6 +72,48 @@ impl CatalogFile {
     pub fn file_name(&self) -> &'static str {
         self.file.rsplit('/').next().unwrap_or(self.file)
     }
+}
+
+/// One `.pth` file of an upscaler, pinned to a Hugging Face commit.
+///
+/// Upscalers are not model files: they have no quantisations or shared parts,
+/// and the engine finds them by scanning `media/upscalers` rather than loading
+/// them through a `--model`-style flag. They therefore have their own, smaller
+/// descriptor instead of a `CatalogFile`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpscalerFile {
+    pub repo: &'static str,
+    /// A full commit hash, never a branch name, so the file cannot change.
+    pub revision: &'static str,
+    /// The path inside the repository.
+    pub file: &'static str,
+    pub sha256: &'static str,
+    pub size: u64,
+}
+
+impl UpscalerFile {
+    pub fn url(&self) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            self.repo, self.revision, self.file
+        )
+    }
+
+    /// The file's own name, without the folders inside its repository.
+    pub fn file_name(&self) -> &'static str {
+        self.file.rsplit('/').next().unwrap_or(self.file)
+    }
+}
+
+/// A standalone upscaler the engine's hires stage uses to enlarge a finished
+/// image. A single `.pth` file; the engine selects it by the file's own name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpscalerModel {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// What it is good for, in plain words.
+    pub note: &'static str,
+    pub file: UpscalerFile,
 }
 
 /// One size of a model's main file. A smaller file downloads and loads faster
@@ -559,6 +606,43 @@ pub fn find_model(id: &str) -> Option<&'static CatalogModel> {
     CATALOG.iter().find(|model| model.id == id)
 }
 
+/// Every upscaler Radium offers to enlarge finished images.
+static UPSCALERS: [UpscalerModel; 2] = [
+    UpscalerModel {
+        id: "realesrgan-x4",
+        label: "Real-ESRGAN 4×",
+        note: "General-purpose 4× upscaler; good for photos and illustrations.",
+        file: UpscalerFile {
+            repo: "ai-forever/Real-ESRGAN",
+            revision: "8110204ebf8d25c031b66c26c2d1098aa831157e",
+            file: "RealESRGAN_x4.pth",
+            sha256: "aa00f09ad753d88576b21ed977e97d634976377031b178acc3b5b238df463400",
+            size: 67_040_989,
+        },
+    },
+    UpscalerModel {
+        id: "ultrasharp-4x",
+        label: "4×-UltraSharp",
+        note: "Sharper 4× upscaler tuned for fine detail and texture.",
+        file: UpscalerFile {
+            repo: "Kim2091/UltraSharp",
+            revision: "920fe218c211f831b43cb30327f203e2b59f5dab",
+            file: "4x-UltraSharp.pth",
+            sha256: "a5812231fc936b42af08a5edba784195495d303d5b3248c24489ef0c4021fe01",
+            size: 66_961_958,
+        },
+    },
+];
+
+/// Every upscaler in the catalog.
+pub fn upscalers() -> &'static [UpscalerModel] {
+    &UPSCALERS
+}
+
+pub fn find_upscaler(id: &str) -> Option<&'static UpscalerModel> {
+    UPSCALERS.iter().find(|upscaler| upscaler.id == id)
+}
+
 /// The model and size an id names: `sd-1.5` is its default size, and
 /// `sd-1.5@q4_0` its Q4_0 size.
 pub fn resolve_model(id: &str) -> Option<(&'static CatalogModel, &'static CatalogQuant)> {
@@ -621,6 +705,35 @@ pub fn model_install_plan(
         downloads,
         total_size,
         installed,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpscalerInstallPlan {
+    pub id: &'static str,
+    pub downloads: Vec<ModelDownload>,
+    pub total_size: u64,
+    pub installed: bool,
+}
+
+/// What to download for one upscaler under `data_dir`, and whether it is
+/// already complete there. The file lands flat in `media/upscalers` so the
+/// engine discovers it by scanning that folder.
+pub fn upscaler_install_plan(data_dir: &Path, upscaler: &UpscalerModel) -> UpscalerInstallPlan {
+    let file = &upscaler.file;
+    let download = ModelDownload {
+        url: file.url(),
+        save_path: format!("{UPSCALERS_DIR}/{}", file.file_name()),
+        sha256: file.sha256,
+        size: file.size,
+    };
+    let installed = std::fs::metadata(data_dir.join(&download.save_path))
+        .is_ok_and(|meta| meta.is_file() && meta.len() == download.size);
+    UpscalerInstallPlan {
+        id: upscaler.id,
+        total_size: download.size,
+        installed,
+        downloads: vec![download],
     }
 }
 
@@ -985,5 +1098,107 @@ mod tests {
             model_install_plan(data.path(), &TINY, &TINY_QUANTS[0]).installed,
             "the smaller size is still there"
         );
+    }
+
+    fn assert_upscaler_pinned(upscaler: &UpscalerModel) {
+        let file = &upscaler.file;
+        assert!(
+            is_hex(file.revision, 40),
+            "{} is not pinned to a commit",
+            upscaler.id
+        );
+        assert!(
+            is_hex(file.sha256, 64),
+            "{} has no SHA-256",
+            upscaler.id
+        );
+        assert!(file.size > 0, "{}", upscaler.id);
+        assert!(
+            file.file_name().ends_with(".pth"),
+            "{} is not a .pth upscaler file",
+            upscaler.id
+        );
+        assert_eq!(
+            file.url(),
+            format!(
+                "https://huggingface.co/{}/resolve/{}/{}",
+                file.repo, file.revision, file.file
+            )
+        );
+    }
+
+    #[test]
+    fn every_upscaler_is_pinned_with_its_name_and_checksum() {
+        let catalog = upscalers();
+        assert!(!catalog.is_empty(), "the upscaler catalog is empty");
+        let mut ids = std::collections::BTreeSet::new();
+        for upscaler in catalog {
+            assert!(ids.insert(upscaler.id), "duplicate id {}", upscaler.id);
+            assert!(
+                upscaler
+                    .id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                "{} is not a plain id",
+                upscaler.id
+            );
+            assert!(
+                !upscaler.label.is_empty() && !upscaler.note.is_empty(),
+                "{}",
+                upscaler.id
+            );
+            assert_upscaler_pinned(upscaler);
+        }
+        assert!(find_upscaler("not-an-upscaler").is_none());
+    }
+
+    #[test]
+    fn an_upscaler_saves_flat_into_media_upscalers() {
+        let data = tempfile::TempDir::new().unwrap();
+        let realesrgan = find_upscaler("realesrgan-x4").unwrap();
+
+        let plan = upscaler_install_plan(data.path(), realesrgan);
+
+        assert_eq!(plan.id, "realesrgan-x4");
+        assert_eq!(plan.total_size, 67_040_989);
+        assert_eq!(
+            plan.downloads,
+            [ModelDownload {
+                url: "https://huggingface.co/ai-forever/Real-ESRGAN/resolve/8110204ebf8d25c031b66c26c2d1098aa831157e/RealESRGAN_x4.pth".to_string(),
+                save_path: "media/upscalers/RealESRGAN_x4.pth".to_string(),
+                sha256: realesrgan.file.sha256,
+                size: 67_040_989,
+            }]
+        );
+        assert!(!plan.installed);
+    }
+
+    #[test]
+    fn an_upscaler_counts_as_installed_only_at_its_full_size() {
+        // A made-up tiny upscaler, so the test never writes tens of megabytes.
+        let tiny = UpscalerModel {
+            id: "tiny-x4",
+            label: "Tiny 4×",
+            note: "Test only.",
+            file: UpscalerFile {
+                repo: "example/tiny-upscaler",
+                revision: "0123456789abcdef0123456789abcdef01234567",
+                file: "tiny-x4.pth",
+                sha256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                size: 6,
+            },
+        };
+        let data = tempfile::TempDir::new().unwrap();
+        let folder = data.path().join("media/upscalers");
+        std::fs::create_dir_all(&folder).unwrap();
+
+        std::fs::write(folder.join("tiny-x4.pth"), b"12345").unwrap();
+        assert!(
+            !upscaler_install_plan(data.path(), &tiny).installed,
+            "the file is cut short"
+        );
+
+        std::fs::write(folder.join("tiny-x4.pth"), b"123456").unwrap();
+        assert!(upscaler_install_plan(data.path(), &tiny).installed);
     }
 }

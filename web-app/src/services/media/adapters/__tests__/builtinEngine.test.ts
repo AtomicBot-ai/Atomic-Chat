@@ -40,6 +40,7 @@ const STATUS: EngineStatus = {
   engine_size_bytes: 39_092_706,
   running_model: null,
   base_url: null,
+  upscalers: [],
   models: [
     {
       id: 'sd-1.5',

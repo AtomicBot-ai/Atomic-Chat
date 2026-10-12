@@ -20,8 +20,8 @@ use tokio::{process::Child, sync::Mutex};
 
 use super::{
     catalog::{
-        catalog, model_install_plan, resolve_model, CatalogModel, CatalogQuant, GenerationDefaults,
-        ModelFileRole, ModelTask,
+        catalog, find_upscaler, model_install_plan, resolve_model, upscaler_install_plan,
+        CatalogModel, CatalogQuant, GenerationDefaults, ModelFileRole, ModelTask,
     },
     engine::{
         choose_engine_variant, engine_install_plan, host_platform, EngineInstallPlan,
@@ -153,12 +153,27 @@ pub struct FileStatus {
     pub installed: bool,
 }
 
+/// One upscaler the engine can enlarge finished images with.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UpscalerStatus {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub note: &'static str,
+    /// The `.pth` file's own name; the engine selects it by this name.
+    pub file_name: &'static str,
+    pub size_bytes: u64,
+    pub installed: bool,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct EngineStatus {
     pub variant: EngineVariant,
     pub engine_installed: bool,
     pub engine_size_bytes: u64,
     pub models: Vec<ModelStatus>,
+    /// Every upscaler Radium knows, and whether its file is downloaded. The
+    /// engine discovers installed ones by scanning `media/upscalers`.
+    pub upscalers: Vec<UpscalerStatus>,
     /// The model the engine is running, and where to send jobs for it.
     pub running_model: Option<String>,
     pub base_url: Option<String>,
@@ -218,6 +233,25 @@ fn quant_status(data_dir: &Path, model: &CatalogModel, quant: &CatalogQuant) -> 
     }
 }
 
+/// Every upscaler Radium offers, and whether its `.pth` file is under
+/// `media/upscalers` at its full size.
+pub fn upscaler_statuses(data_dir: &Path) -> Vec<UpscalerStatus> {
+    super::catalog::upscalers()
+        .iter()
+        .map(|upscaler| {
+            let plan = upscaler_install_plan(data_dir, upscaler);
+            UpscalerStatus {
+                id: upscaler.id,
+                label: upscaler.label,
+                note: upscaler.note,
+                file_name: upscaler.file.file_name(),
+                size_bytes: plan.total_size,
+                installed: plan.installed,
+            }
+        })
+        .collect()
+}
+
 /// What still has to be downloaded to make images with `model_id`: the engine
 /// (when it is not installed yet) and the model's missing files.
 pub fn downloads_needed(
@@ -259,6 +293,35 @@ pub fn downloads_needed(
             }),
     );
     Ok(items)
+}
+
+/// What still has to be downloaded to install one upscaler. An upscaler needs
+/// no engine unpacking and no other files, so this is just its `.pth`.
+pub fn upscaler_downloads_needed(
+    data_dir: &Path,
+    upscaler_id: &str,
+) -> Result<Vec<DownloadItem>, String> {
+    let upscaler = find_upscaler(upscaler_id).ok_or_else(|| {
+        format!("Radium has no upscaler called \"{upscaler_id}\".")
+    })?;
+    let plan = upscaler_install_plan(data_dir, upscaler);
+    Ok(plan
+        .downloads
+        .iter()
+        .filter(|download| {
+            fs::metadata(under(data_dir, &download.save_path))
+                .map(|meta| meta.len() != download.size)
+                .unwrap_or(true)
+        })
+        .map(|download| DownloadItem {
+            url: download.url.clone(),
+            save_path: download.save_path.clone(),
+            proxy: None,
+            sha256: Some(download.sha256.to_string()),
+            size: Some(download.size),
+            model_id: Some(format!("media-upscaler:{upscaler_id}")),
+        })
+        .collect())
 }
 
 /// Unpack a downloaded engine archive into its install folder. Entries that
@@ -357,6 +420,7 @@ pub async fn media_engine_status<R: Runtime>(
         engine_installed: plan.installed,
         engine_size_bytes: plan.downloads.iter().map(|download| download.size).sum(),
         models: model_statuses(&data_dir),
+        upscalers: upscaler_statuses(&data_dir),
         running_model: running.as_ref().map(|current| current.model_id.clone()),
         base_url: running
             .as_ref()
@@ -386,6 +450,24 @@ pub async fn media_engine_install<R: Runtime>(
         tauri::async_runtime::spawn_blocking(move || finish_engine_install(&unpack_dir, &plan))
             .await
             .map_err(|error| error.to_string())??;
+    }
+    Ok(())
+}
+
+/// Download one upscaler's `.pth` into `media/upscalers`, reporting progress on
+/// the download manager's `download-{task_id}` event. Cancel with
+/// `cancel_download_task`.
+#[tauri::command]
+pub async fn media_upscaler_install<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    upscaler_id: String,
+    task_id: String,
+) -> Result<(), String> {
+    let data_dir = get_jan_data_folder_path(app.clone());
+    let items = upscaler_downloads_needed(&data_dir, &upscaler_id)?;
+    if !items.is_empty() {
+        download_files(app, state, items, &task_id, HashMap::new(), false).await?;
     }
     Ok(())
 }
@@ -563,6 +645,41 @@ mod tests {
     fn an_unknown_model_is_refused_by_name() {
         let tmp = tempdir().unwrap();
         let error = downloads_needed(tmp.path(), EngineVariant::WindowsCpu, "nope").unwrap_err();
+        assert!(error.contains("nope"));
+    }
+
+    #[test]
+    fn a_fresh_data_folder_lists_every_upscaler_as_not_downloaded() {
+        let tmp = tempdir().unwrap();
+        let statuses = upscaler_statuses(tmp.path());
+        assert_eq!(statuses.len(), crate::core::media::catalog::upscalers().len());
+        assert!(statuses.iter().all(|upscaler| {
+            !upscaler.installed
+                && upscaler.size_bytes > 0
+                && upscaler.file_name.ends_with(".pth")
+        }));
+        assert!(statuses.iter().any(|upscaler| upscaler.id == "realesrgan-x4"));
+        assert!(statuses.iter().any(|upscaler| upscaler.id == "ultrasharp-4x"));
+    }
+
+    #[test]
+    fn an_upscaler_downloads_only_its_pth_into_media_upscalers() {
+        let tmp = tempdir().unwrap();
+        let items = upscaler_downloads_needed(tmp.path(), "realesrgan-x4").unwrap();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].save_path, "media/upscalers/RealESRGAN_x4.pth");
+        assert!(items[0].sha256.is_some() && items[0].size.is_some());
+        assert_eq!(
+            items[0].model_id.as_deref(),
+            Some("media-upscaler:realesrgan-x4")
+        );
+    }
+
+    #[test]
+    fn an_unknown_upscaler_is_refused_by_name() {
+        let tmp = tempdir().unwrap();
+        let error = upscaler_downloads_needed(tmp.path(), "nope").unwrap_err();
         assert!(error.contains("nope"));
     }
 

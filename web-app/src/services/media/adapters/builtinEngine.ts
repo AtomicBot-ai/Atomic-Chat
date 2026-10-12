@@ -106,11 +106,21 @@ export type EngineQuantStatus = {
   files: EngineFileStatus[]
 }
 
+export type EngineUpscalerStatus = {
+  id: string
+  label: string
+  note: string
+  file_name: string
+  size_bytes: number
+  installed: boolean
+}
+
 export type EngineStatus = {
   variant: string
   engine_installed: boolean
   engine_size_bytes: number
   models: EngineModelStatus[]
+  upscalers: EngineUpscalerStatus[]
   running_model: string | null
   base_url: string | null
 }

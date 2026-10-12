@@ -39,11 +39,12 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Radium Media platform (10)
+## Radium Media platform (11)
 
 The model-agnostic media platform: provider adapters, the v2 contract, the
 library on disk, and how the frozen surface is allowed to change.
 
+- **2026-10-11** — [Model-backed upscalers ship in the Rust catalog with a dedicated install path](2026-10-11-model-backed-upscalers-in-the-rust-catalog.md)
 - **2026-10-11** — [Full-HD images via the built-in engine's native hires-fix; no upscaler model download](2026-10-11-full-hd-images-via-built-in-engine-hires-fix.md)
 - **2026-10-11** — [Media jobs persist state-only history and retry submissions](2026-10-11-media-jobs-persist-state-only-and-retry-submits.md)
 - **2026-09-10** — [Adopt a provider-adapter architecture for Radium Media](2026-09-10-adopt-a-provider-adapter-architecture-for-radium-media.md)
