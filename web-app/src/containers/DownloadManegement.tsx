@@ -3,6 +3,10 @@ import {
   type DownloadProgressProps,
   type DownloadStage,
 } from '@/hooks/useDownloadStore'
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
+import { useModelSources } from '@/hooks/useModelSources'
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { VOICE_MODEL_ID } from '@/constants/voice'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -140,6 +144,31 @@ function notifyDownloadFinished(
     t
   )
   if (notification) notifyWhenAway(notification.title, notification.body)
+}
+
+const recordFailedChatDownload = (
+  modelId: string,
+  downloadType?: string,
+  origin?: string
+) => {
+  if (
+    downloadKind(modelId, downloadType) !== 'model' ||
+    modelId === EMBEDDING_MODEL_ID || modelId === VOICE_MODEL_ID ||
+    isDiffusionModelDownloadTaskId(modelId) ||
+    isDecisionDownloadTaskId(modelId) || isEmbeddingDownloadTaskId(modelId)
+  ) return
+  const repoOrigin =
+    origin ?? useDownloadStore.getState().downloadOriginByModelId[modelId]
+  const model = useModelSources.getState().sources.find((item) =>
+    item.model_name === repoOrigin ||
+    item.quants?.some((quant) => quant.model_id === modelId)
+  )
+  const repo = repoOrigin ?? model?.model_name
+  if (repo) {
+    useFailedDownloadsStore.getState().record(
+      modelId, repo, model?.is_mlx ?? repo.startsWith('mlx-community/')
+    )
+  }
 }
 
 export function DownloadManagement() {
@@ -331,6 +360,7 @@ export function DownloadManagement() {
       const err = anyState?.error || ''
       // Read before the row is removed below; the terminal event reports it.
       const transfer = useDownloadStore.getState().downloads[state.modelId]
+      const origin = useDownloadStore.getState().downloadOriginByModelId[state.modelId]
 
       // The Rust downloader opens the "verifying…" toast itself and never
       // closes it. A failure that lands after it (disk error while hashing, a
@@ -374,6 +404,8 @@ export function DownloadManagement() {
         toast.dismiss('download-failed')
         return
       }
+
+      recordFailedChatDownload(state.modelId, anyState.downloadType, origin)
 
       // ATO-113: report genuine download failures to Sentry with zero-PII tags
       // (classification enums + http status only; the raw error string carries
@@ -555,6 +587,9 @@ export function DownloadManagement() {
   const onModelValidationFailed = useCallback(
     (event: { modelId: string; error: string; reason: string }) => {
       console.debug('onModelValidationFailed', event)
+      if (!isDownloadCancellationError(event.error || event.reason)) {
+        recordFailedChatDownload(event.modelId)
+      }
 
       // Dismiss the validation started toast
       toast.dismiss(`model-validation-started-${event.modelId}`)
@@ -648,6 +683,7 @@ export function DownloadManagement() {
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
+      useFailedDownloadsStore.getState().clear(state.modelId)
 
       notifyDownloadFinished(state, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
@@ -698,6 +734,7 @@ export function DownloadManagement() {
   const onFileDownloadAndVerificationSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
+      useFailedDownloadsStore.getState().clear(state.modelId)
 
       notifyDownloadFinished(state, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {

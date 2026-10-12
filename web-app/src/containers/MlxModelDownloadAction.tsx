@@ -1,3 +1,4 @@
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -210,6 +211,7 @@ export const MlxModelDownloadAction = memo(
         ) {
           return
         }
+        useFailedDownloadsStore.getState().record(modelId, model.model_name, true)
         toast.error('Failed to download MLX model', {
           description: error instanceof Error ? error.message : 'Unknown error',
         })

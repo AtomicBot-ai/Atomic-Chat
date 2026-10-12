@@ -88,6 +88,29 @@ describe('HubFilters', () => {
     vllm.visible = false
   })
 
+  it('offers recent failures and makes them exclusive with installed models and fit', async () => {
+    function Harness() {
+      const [filters, setFilters] = useState(DEFAULT_HUB_FILTERS)
+      const [downloaded, setDownloaded] = useState(true)
+      const [failed, setFailed] = useState(false)
+      return <HubFilters state={filters} onChange={setFilters}
+        showOnlyDownloaded={downloaded} onShowOnlyDownloadedChange={setDownloaded}
+        showOnlyFailed={failed} onShowOnlyFailedChange={setFailed} />
+    }
+    render(<Harness />)
+    const user = userEvent.setup()
+    const menu = await openSortMenu(user)
+    const failed = within(menu).getByRole('menuitemcheckbox', { name: 'hub:recentlyFailedDownloads' })
+    await user.click(failed)
+    expect(failed).toHaveAttribute('aria-checked', 'true')
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'hub:installedOnDevice' })).toHaveAttribute('aria-checked', 'false')
+    const fit = within(menu).getByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
+    expect(fit).toHaveAttribute('aria-checked', 'false')
+    await user.click(fit)
+    expect(fit).toHaveAttribute('aria-checked', 'true')
+    expect(failed).toHaveAttribute('aria-checked', 'false')
+  })
+
   it('offers no format choice where only GGUF exists (no MLX, no TensorRT-LLM provider)', () => {
     renderFilters()
     expect(screen.queryByRole('button', { name: 'hub:formats' })).not.toBeInTheDocument()

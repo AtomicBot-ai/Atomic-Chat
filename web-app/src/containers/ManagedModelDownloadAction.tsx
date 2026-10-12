@@ -1,3 +1,4 @@
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
 import { IconX } from '@tabler/icons-react'
 import { memo, useCallback, useState } from 'react'
 
@@ -54,13 +55,19 @@ export const ManagedModelDownloadAction = memo(function ManagedModelDownloadActi
     // The download panel names the row after this, not after the id.
     store.setDownloadOrigin(downloadId, repository)
     store.addLocalDownloadingModel(downloadId)
+    let installCompleted = false
     try {
       await installManagedModel({ engineId, repository, revision, token })
+      installCompleted = true
+      useFailedDownloadsStore.getState().clear(downloadId)
       // The model is a model once `model.yml` is written: list it, so the card turns to "New chat".
       useModelProvider.getState().setProviders(await serviceHub.providers().getProviders())
     } catch (error) {
       // A cancel is the person's own doing, not a failure to report.
       if (!wasDownloadCancellationRequested(downloadId) && !isDownloadCancellationError(error)) {
+        if (!installCompleted) {
+          useFailedDownloadsStore.getState().record(downloadId, repository, false)
+        }
         setFailure(verdictFromError(error))
       }
     } finally {

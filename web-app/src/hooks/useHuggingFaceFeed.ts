@@ -27,7 +27,7 @@ const DETAIL_CONCURRENCY = 2
 const feeds = new Map<FeedKey, FeedState>()
 const details = new Map<string, CatalogModel>()
 const detailPending = new Set<string>()
-const detailFailed = new Set<string>()
+const detailFailed = new Map<string, string | undefined>()
 
 export function resetHuggingFaceFeedForTest(): void {
   feeds.clear()
@@ -51,7 +51,7 @@ export type HuggingFaceFeed = {
   error: string | null
   loadMore: () => void
   /** Rows on screen: fetch their file sizes, a couple at a time. */
-  ensureDetails: (repoIds: readonly string[]) => void
+  ensureDetails: (repoIds: readonly string[], retryFailed?: boolean) => void
 }
 
 /**
@@ -147,10 +147,11 @@ export function useHuggingFaceFeed(
   }, [enabled, key, loadPage])
 
   const ensureDetails = useCallback(
-    (repoIds: readonly string[]) => {
+    (repoIds: readonly string[], retryFailed = false) => {
+      if (retryFailed) repoIds.forEach((id) => detailFailed.delete(id))
       const wanted = repoIds.filter(
         (id) =>
-          !details.has(id) && !detailPending.has(id) && !detailFailed.has(id)
+          !details.has(id) && !detailPending.has(id) && (!detailFailed.has(id) || detailFailed.get(id) !== huggingfaceToken)
       )
       if (wanted.length === 0) return
       const slots = Math.max(0, DETAIL_CONCURRENCY - detailPending.size)
@@ -161,7 +162,7 @@ export function useHuggingFaceFeed(
           .fetchHuggingFaceRepo(repoId, huggingfaceToken)
           .then((repo) => {
             if (!repo) {
-              detailFailed.add(repoId)
+              detailFailed.set(repoId, huggingfaceToken)
               return
             }
             const catalog = serviceHub
@@ -177,7 +178,7 @@ export function useHuggingFaceFeed(
             })
           })
           .catch(() => {
-            detailFailed.add(repoId)
+            detailFailed.set(repoId, huggingfaceToken)
           })
           .finally(() => {
             detailPending.delete(repoId)

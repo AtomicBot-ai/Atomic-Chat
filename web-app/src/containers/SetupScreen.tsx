@@ -1,3 +1,4 @@
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -782,7 +783,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
             filename: file.rfilename,
           }))
 
-        return engine.import(mlxId, {
+        return await engine.import(mlxId, {
           modelPath: modelUrl,
           files: extraFiles,
           resume: resumableDownloads.has(mlxId),
@@ -799,6 +800,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         ) {
           return
         }
+        useFailedDownloadsStore.getState().record(mlxId, catalog.model_name, true)
         toast.error('Failed to download MLX model', {
           description: extractModelErrorMessage(error),
         })

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -45,7 +45,7 @@ const COLUMN_WIDTH = 320 - 2 * 12
 function inColumn(state: HubFilterState, width = COLUMN_WIDTH) {
   return withTranslations(
     <div data-testid="column" style={{ width }}>
-      <HubFilters state={state} onChange={() => {}} />
+      <HubFilters state={state} onChange={() => {}} onShowOnlyFailedChange={() => {}} />
     </div>
   )
 }
@@ -91,6 +91,24 @@ describe('HubFilters layout', () => {
       expectFits(screen.getByRole('checkbox', { name: /uncensored/i }), column)
       expectNoHorizontalOverflow(column)
     })
+  }
+
+  for (const width of [COLUMN_WIDTH, WIDE_COLUMN_WIDTH]) {
+    for (const size of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
+      for (const theme of ['light', 'dark']) {
+        it(`fits the failed-download filter at ${width}px / ${size} / ${theme}`, async () => {
+          setFontSize(size)
+          document.documentElement.classList.toggle('dark', theme === 'dark')
+          render(inColumn(DEFAULT_HUB_FILTERS, width))
+          fireEvent.pointerDown(screen.getByRole('button', { name: 'Sort by' }), { button: 0, ctrlKey: false, pointerType: 'mouse' })
+          await settle()
+          const menu = screen.getByRole('menu')
+          expectNoHorizontalOverflow(menu)
+          expectFits(screen.getByRole('menuitemcheckbox', { name: 'Recently failed downloads' }), menu)
+          expectNoHorizontalOverflow(screen.getByTestId('column'))
+        })
+      }
+    }
   }
 
   // Uncensored sits on the triggers' line, pinned to its end: picking a format

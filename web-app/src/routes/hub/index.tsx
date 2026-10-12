@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { Loader } from 'lucide-react'
 import HeaderPage from '@/containers/HeaderPage'
+import { Button } from '@/components/ui/button'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
 import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
@@ -84,6 +85,8 @@ import {
   selectEnvironment,
   useManagedEnvironmentStore,
 } from '@/stores/managed-environment-store'
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
+import { failedDownloadModels } from '@/lib/hub-failed-downloads'
 import { useModelCatalogStore } from '@/stores/model-catalog-store'
 import type { DiffusionModality } from '@/services/diffusion/types'
 import type { CatalogModel, HuggingFaceFeedSort } from '@/services/models/types'
@@ -477,6 +480,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     [storedFilters, availableFormats]
   )
   const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
+  const [showOnlyFailed, setShowOnlyFailed] = useState(false)
+  const failedDownloads = useFailedDownloadsStore((state) => state.failures)
   const [isSearching, setIsSearching] = useState(false)
   const [hfSearching, setHfSearching] = useState(false)
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
@@ -575,7 +580,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // it, or nothing at all until the core has answered. "Downloaded" lists what
   // is on disk whatever the format, so it is never replaced.
   const managedPanel: 'blocked' | 'checking' | null =
-    !managedFormat || showOnlyDownloaded
+    !managedFormat || showOnlyDownloaded || showOnlyFailed
       ? null
       : managedHub.state === 'blocked'
         ? 'blocked'
@@ -586,7 +591,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // Uncensored builds are a search of their own: the curated picks carry none,
   // so the filter opens the whole catalog plus Hugging Face even with no query.
   const isSearchMode =
-    debouncedSearchValue.length > 0 || showOnlyDownloaded || filters.uncensored
+    debouncedSearchValue.length > 0 || showOnlyDownloaded || showOnlyFailed || filters.uncensored
 
   // Under the picks, the rest of Hugging Face in the order the sort dropdown
   // names — its own trending score by default — a page at a time.
@@ -602,13 +607,14 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const uncensoredFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
-    filters.uncensored && !managedPanel && !prismFormat,
+    filters.uncensored && !showOnlyFailed && !managedPanel && !prismFormat,
     uncensoredQueries[0] ?? ''
   )
   const abliteratedFeed = useHuggingFaceFeed(
     listSources.feedFormat,
     FEED_SORT_FOR[filters.sort],
     filters.uncensored &&
+      !showOnlyFailed &&
       !managedPanel &&
       !prismFormat &&
       uncensoredQueries.length > 1,
@@ -751,7 +757,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   useEffect(() => {
     // Behind a managed engine's panel nothing is listed, so nothing is asked;
     // PrismML lists its own families only.
-    if (showOnlyDownloaded || managedPanel || prismFormat) {
+    if (showOnlyDownloaded || showOnlyFailed || managedPanel || prismFormat) {
       setHfCandidates((current) => (current.length > 0 ? [] : current))
       hfCandidatesFetchedForRef.current = ''
       return
@@ -820,6 +826,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     debouncedSearchValue,
     catalogResults,
     showOnlyDownloaded,
+    showOnlyFailed,
     filters.uncensored,
     serviceHub,
     huggingfaceToken,
@@ -833,6 +840,16 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // ---- Unified list -----------------------------------------------------
 
   const listItems = useMemo<HubListItem[]>(() => {
+    if (showOnlyFailed) {
+      return failedDownloadModels(
+        failedDownloads, installedCatalog, feed.details, debouncedSearchValue
+      ).map((model) => ({
+        model,
+        fromHuggingFace: !installedCatalog.some(
+          (entry) => entry.model_name === model.model_name
+        ),
+      }))
+    }
     if (managedPanel) return []
     if (showOnlyDownloaded) {
       // The format and fit filters describe what to look for in the catalog;
@@ -1025,7 +1042,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     managedExactRepo,
     isSearchMode,
     showOnlyDownloaded,
+    showOnlyFailed,
     installedResults,
+    failedDownloads,
+    installedCatalog,
     staffPickModels,
     pickByRepo,
     catalogResults,
@@ -1174,7 +1194,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (next.trim().length < 3) {
       setHuggingFaceRepo(null)
     }
-    if (!showOnlyDownloaded) {
+    if (!showOnlyDownloaded && !showOnlyFailed) {
       fetchExactRepo(next)
     }
   }
@@ -1247,6 +1267,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
   useEffect(() => {
     if (listItems.length === 0) return
+    if (showOnlyFailed) {
+      if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
+      return
+    }
     if (filters.uncensored) {
       if (lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS) {
         uncensoredFeed.loadMore()
@@ -1283,6 +1307,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
   }, [
     isSearchMode,
+    showOnlyFailed,
     managedFormat,
     managedSelected?.id,
     filters.uncensored,
@@ -1314,7 +1339,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     !isSearchMode &&
     (managedCurated.loading || feed.loading)
   const showSkeleton =
-    isEmpty &&
+    isEmpty && !showOnlyFailed &&
     (prismFormat
       ? prismFamilies.loading
       : (loading && !isSearchMode) ||
@@ -1346,10 +1371,28 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
         <div className="flex flex-col gap-2 border-b border-border p-3">
           {categoryTabs}
+          {showOnlyFailed && selectedRepo && selectedItem &&
+            'fromHuggingFace' in selectedItem && selectedItem.fromHuggingFace &&
+            modelDownloadSizeText(selectedItem.model) === undefined &&
+            !selectedItem.model.is_managed && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="max-w-full whitespace-normal"
+                onClick={() => feed.ensureDetails([selectedRepo], true)}
+              >
+                {t('hub:retryModelDetails')}
+              </Button>
+            )}
           <HubFilters
             state={filters}
             onChange={updateFilters}
             showLikesSort={showLikesSort}
+            showOnlyFailed={showOnlyFailed}
+            onShowOnlyFailedChange={(checked) => {
+              setShowOnlyFailed(checked)
+              if (checked) setHuggingFaceRepo(null)
+            }}
             showOnlyDownloaded={showOnlyDownloaded}
             onShowOnlyDownloadedChange={(checked) => {
               setShowOnlyDownloaded(checked)
