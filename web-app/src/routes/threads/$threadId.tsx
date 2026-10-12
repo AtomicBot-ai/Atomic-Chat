@@ -14,6 +14,8 @@ import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { selectThreadModelIfNone } from '@/utils/switchModel'
 
 import HeaderPage from '@/containers/HeaderPage'
+import { useThreadModelSelection } from '@/hooks/useThreadModelSelection'
+import { ThreadModelWarning } from '@/containers/ThreadModelWarning'
 import HeaderContextSize from '@/containers/HeaderContextSize'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
@@ -300,6 +302,12 @@ function ThreadDetail() {
 
   // Subscribe directly to the thread data to ensure updates when model changes
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
+
+  const unavailableThreadModel = useThreadModelSelection(
+    threadId,
+    searchThreadModel ?? thread?.model,
+    Boolean(thread)
+  )
 
   // Get model and provider for useChat
   const selectedModel = useModelProvider((state) => state.selectedModel)
@@ -1537,6 +1545,14 @@ function ThreadDetail() {
     })
     // #endregion
     if (initialMessageSentRef.current) return
+    // Restoration runs before paint, but passive effects from that first render
+    // still close over the previous selection. Wait for the matching render
+    // before consuming the one-shot message (including the agent callback).
+    const liveSelection = useModelProvider.getState()
+    if (
+      selectedModel?.id !== liveSelection.selectedModel?.id ||
+      selectedProvider !== liveSelection.selectedProvider
+    ) return
 
     const message = useInitialMessage.getState().consume(threadId)
     if (!message) return
@@ -1557,7 +1573,7 @@ function ThreadDetail() {
         console.error('[ThreadPage] Failed to process initial message:', error)
       }
     })()
-  }, [threadId, processAndSendMessage])
+  }, [threadId, processAndSendMessage, selectedModel?.id, selectedProvider])
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
@@ -2223,6 +2239,9 @@ function ThreadDetail() {
 
             {/* Chat Input - Fixed at bottom */}
             <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+              {unavailableThreadModel && (
+                <ThreadModelWarning modelId={unavailableThreadModel.id} />
+              )}
               <ChatInput
                 model={threadModel}
                 onSubmit={handleSubmit}

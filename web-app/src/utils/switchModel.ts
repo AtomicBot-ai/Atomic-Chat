@@ -583,10 +583,12 @@ function clearModelLoadError() {
   useModelLoad.getState().setModelLoadError(undefined)
 }
 
-function syncModelSelection(providerName: string, modelId: string) {
+function syncModelSelection(
+  providerName: string,
+  modelId: string,
+  canSyncSelection: () => boolean
+) {
   const serverState = useLocalApiServer.getState()
-
-  useModelProvider.getState().selectModelProvider(providerName, modelId)
 
   serverState.setDefaultModelLocalApiServer({
     model: modelId,
@@ -594,6 +596,10 @@ function syncModelSelection(providerName: string, modelId: string) {
   })
   serverState.setLastServerModels([{ model: modelId, provider: providerName }])
 
+  // A load belongs to the selection and chat that requested it. Navigation
+  // can restore another chat while the old engine is still starting.
+  if (!canSyncSelection()) return
+  useModelProvider.getState().selectModelProvider(providerName, modelId)
   setLastUsedModel(providerName, modelId)
 
   useThreads.getState().updateCurrentThreadModel({
@@ -673,6 +679,24 @@ export async function switchToModel(params: {
   // enqueued behind us while we waited for earlier ones to finish.
   const mySeq = ++switchSeq
   const prior = activeSwitchPromise
+  const ownerThreadId = useThreads.getState().currentThreadId
+  const ownerSelection = useModelProvider.getState()
+  const ownerProvider = ownerSelection.selectedProvider
+  const ownerModelId = ownerSelection.selectedModel?.id
+  const canSyncSelection = () => {
+    const current = useModelProvider.getState()
+    const unchanged =
+      current.selectedProvider === ownerProvider &&
+      current.selectedModel?.id === ownerModelId
+    const targetSelected =
+      current.selectedProvider === params.providerName &&
+      current.selectedModel?.id === params.modelId
+    return (
+      mySeq === switchSeq &&
+      useThreads.getState().currentThreadId === ownerThreadId &&
+      (unchanged || targetSelected)
+    )
+  }
 
   const isExplicit = !params.isAutoStart
   const explicitKey = autoStartKey(params.providerName, params.modelId)
@@ -708,7 +732,7 @@ export async function switchToModel(params: {
       // is already "active" in the UI so re-selecting the same cloud target
       // does not wipe out the global active-model state.
       syncActiveModelsFromEngines(activeModels || [])
-      syncModelSelection(params.providerName, params.modelId)
+      syncModelSelection(params.providerName, params.modelId, canSyncSelection)
       // WS2: the target is healthy — clear any prior auto-start failure record.
       clearAutoStartFailure(params.providerName, params.modelId)
       // ATO-63: the model is up — drop any stale "Failed to load" toast.
@@ -723,7 +747,7 @@ export async function switchToModel(params: {
     }
 
     try {
-      await doSwitchToModel(params)
+      await doSwitchToModel({ ...params, canSyncSelection })
     } catch (error) {
       // A failed load leaves nothing to chat with, so the composer goes back
       // to "Select Model" rather than showing the model that did not come
@@ -788,6 +812,7 @@ async function doSwitchToModel(params: {
   providerName: string
   serviceHub: ServiceHub
   isAutoStart?: boolean
+  canSyncSelection: () => boolean
 }): Promise<void> {
   const { modelId, providerName, serviceHub, isAutoStart } = params
 
@@ -1023,7 +1048,7 @@ async function doSwitchToModel(params: {
     }
 
     // 7. Synchronise the rest of global state (dropdown, thread, localStorage).
-    syncModelSelection(providerName, modelId)
+    syncModelSelection(providerName, modelId, params.canSyncSelection)
 
     // WS2: load succeeded — clear any prior auto-start failure record so the
     // model is eligible for automatic start again.

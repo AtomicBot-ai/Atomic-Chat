@@ -365,6 +365,30 @@ describe('ChatInput', () => {
     await waitFor(() => expect(input).toHaveValue(''))
   })
 
+  it('preserves the draft until a saved chat receives an explicit model choice', async () => {
+    const replacement = { id: 'replacement', capabilities: [], settings: {} } as Model
+    useModelProvider.setState({
+      providers: [{ provider: 'openai', active: true, api_key: 'test-key', models: [replacement], settings: [] } as ModelProvider],
+      selectedProvider: '', selectedModel: null,
+    })
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} model={{ id: 'missing.gguf', provider: 'llamacpp-upstream' }} />)
+    const input = screen.getByTestId('chat-input')
+    const send = document.querySelector('[data-test-id="send-message-button"]')!
+    fireEvent.change(input, { target: { value: 'Continue this saved chat' } })
+    fireEvent.click(send)
+    await act(async () => {})
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+    expect(useModelProvider.getState().selectedModel).toBeNull()
+    expect(screen.queryByTestId('reply-model-gate')).toBeNull()
+    expect(input).toHaveValue('Continue this saved chat')
+    act(() => useModelProvider.getState().selectModelProvider('openai', replacement.id))
+    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Continue this saved chat', undefined, undefined))
+    unmount()
+  })
+
   it('opens the reply-model widget instead of sending when none is selected', async () => {
     // With model preloading off by default, this is the state of every cold
     // launch until the user picks a model in the selector.

@@ -20,6 +20,8 @@ import {
   unloadModelByUser,
 } from './switchModel'
 
+const threadState = vi.hoisted(() => ({ currentThreadId: 'first-thread', updateCurrentThreadModel: vi.fn() }))
+
 const { appState, localApiState, modelProviderState, startServer, stopServer } =
   vi.hoisted(() => ({
     appState: {
@@ -114,7 +116,7 @@ vi.mock('@/hooks/useModelLoad', () => ({
 
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: {
-    getState: () => ({ updateCurrentThreadModel: vi.fn() }),
+    getState: () => threadState,
   },
 }))
 
@@ -564,6 +566,36 @@ describe('load progress and cancel', () => {
     startServer.mockResolvedValue(1337)
     stopServer.mockResolvedValue(undefined)
     window.core = { api: { startServer, stopServer } } as typeof window.core
+  })
+
+  it.each([false, true])('leaves restored thread selection intact after a stale load (already serving=%s)', async (alreadyServing) => {
+    threadState.currentThreadId = 'first-thread'
+    modelProviderState.selectedProvider = 'mlx'
+    modelProviderState.selectedModel = { id: 'ready-model' }
+    let release!: () => void
+    const deferred = new Promise<void>((resolve) => { release = resolve })
+    const startModel = vi.fn(() => deferred)
+    const getActiveModels = vi.fn(async () => {
+      if (alreadyServing) await deferred
+      return ['ready-model']
+    })
+    const pending = switchToModel({
+      modelId: 'ready-model', providerName: 'mlx',
+      serviceHub: hubWith({ startModel, getActiveModels }), isAutoStart: true,
+    })
+    await vi.waitFor(() => expect(alreadyServing ? getActiveModels : startModel).toHaveBeenCalled())
+    threadState.currentThreadId = 'saved-thread'
+    modelProviderState.selectedProvider = 'llamacpp-upstream'
+    modelProviderState.selectedModel = { id: 'shared-model' }
+    release()
+    await pending
+    expect(modelProviderState.selectedProvider).toBe('llamacpp-upstream')
+    expect(modelProviderState.selectedModel?.id).toBe('shared-model')
+    expect(modelProviderState.selectModelProvider).not.toHaveBeenCalled()
+    expect(threadState.updateCurrentThreadModel).not.toHaveBeenCalled()
+    threadState.currentThreadId = 'first-thread'
+    modelProviderState.selectedProvider = ''
+    modelProviderState.selectedModel = null
   })
 
   it('passes the steps the engine reports on to the status', async () => {

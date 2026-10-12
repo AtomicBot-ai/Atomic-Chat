@@ -282,5 +282,7 @@
   "threadType": {
     "chat": "Chat thread",
     "agent": "Agent thread"
-  }
+  },
+  "savedModelUnavailable": "The saved model “{{model}}” is unavailable.",
+  "savedModelUnavailableHint": "Choose a model below, or restore its download or provider connection. This chat has not switched to a different model."
 }

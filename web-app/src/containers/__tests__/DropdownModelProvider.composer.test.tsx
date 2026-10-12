@@ -19,6 +19,7 @@ import {
 import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useThreadModelSelection } from '@/hooks/useThreadModelSelection'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { localStorageKey } from '@/constants/localStorage'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -189,6 +190,65 @@ describe('DropdownModelProvider - the composer pill', () => {
   afterEach(() => {
     cleanup()
   })
+
+  it.each([
+    { savedId: 'other.gguf', activeIds: [thinkingModel.id] },
+    { savedId: 'other.gguf', activeIds: [] },
+    { savedId: 'missing.gguf', activeIds: [thinkingModel.id] },
+    { savedId: 'missing.gguf', activeIds: [] },
+  ])(
+    'preserves saved $savedId when an earlier startup probe resolves with $activeIds',
+    async ({ savedId, activeIds }) => {
+      const { useModelProvider: realStore } = await vi.importActual<
+        typeof import('@/hooks/useModelProvider')
+      >('@/hooks/useModelProvider')
+      vi.mocked(useModelProvider).mockImplementation(realStore)
+      realStore.setState({
+        providers: providers as ModelProvider[],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      useGeneralSetting.setState({ preloadModelOnStartup: false })
+      let finishProbe!: (ids: string[]) => void
+      const getActiveModels = vi.fn(() => new Promise<string[]>((resolve) => {
+        finishProbe = resolve
+      }))
+      seedServiceHub({
+        models: { getActiveModels } as unknown as ModelsService,
+      })
+
+      function ThreadPicker({ loaded }: { loaded: boolean }) {
+        const saved = loaded
+          ? { id: savedId, provider: 'llamacpp-upstream' }
+          : undefined
+        const warning = useThreadModelSelection('thread', saved, loaded)
+        return (
+          <>
+            {warning && <div role="status">{warning.id}</div>}
+            <DropdownModelProvider hasSavedThreadModel={Boolean(saved)} />
+          </>
+        )
+      }
+
+      const view = render(<ThreadPicker loaded={false} />)
+      expect(getActiveModels).toHaveBeenCalledTimes(1)
+      view.rerender(<ThreadPicker loaded />)
+      const expectedId = savedId === 'missing.gguf' ? undefined : savedId
+      expect(realStore.getState().selectedModel?.id).toBe(expectedId)
+
+      await act(async () => finishProbe(activeIds))
+
+      expect(realStore.getState().selectedModel?.id).toBe(expectedId)
+      if (savedId === 'missing.gguf') {
+        expect(screen.getByRole('status')).toHaveTextContent(savedId)
+        expect(pill()).toHaveTextContent('common:selectAModel')
+      } else {
+        expect(screen.queryByRole('status')).toBeNull()
+        expect(pill()).toHaveTextContent('Other')
+      }
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+    }
+  )
 
   it.each([false, true])(
     'keeps Select Model after Skip with preload %s, including library refresh and remount',
