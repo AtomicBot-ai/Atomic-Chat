@@ -110,10 +110,18 @@ vi.mock('@/containers/HeaderPage', () => ({
 }))
 
 vi.mock('@/containers/hub/ModelDetailPanel', () => ({
-  ModelDetailPanel: ({ model }: { model: CatalogModel | null }) => (
+  ModelDetailPanel: ({
+    model,
+    managedFormat,
+  }: {
+    model: CatalogModel | null
+    managedFormat?: string
+  }) => (
     <aside
       data-testid="detail-panel"
       data-quants={model?.quants?.length ?? 0}
+      data-managed={model?.is_managed ? 'yes' : 'no'}
+      data-managed-format={managedFormat ?? ''}
     >
       {model ? model.model_name : 'hub:selectModel'}
     </aside>
@@ -1128,6 +1136,99 @@ describe('/hub route', () => {
       'tiny-lab/experimental-3b',
       ''
     )
+    expect(screen.getByTestId('detail-panel')).toHaveAttribute(
+      'data-managed',
+      'no'
+    )
+  })
+
+  describe('a deep link to a safetensors repository', () => {
+    const repo = 'nvidia/Gemma-4-31B-IT-NVFP4'
+    // What `convertHfRepoToCatalogModel` makes of a repository with safetensors
+    // weights, no GGUF file and no MLX tag.
+    const checkpoint = (extra: Partial<CatalogModel> = {}) =>
+      model(repo, {
+        num_quants: 0,
+        quants: [],
+        num_safetensors: 1,
+        safetensors_files: [
+          {
+            model_id: 'model',
+            path: 'model.safetensors',
+            file_size: '19.00 GB',
+          },
+        ],
+        is_mlx: false,
+        ...extra,
+      })
+    const installed = {
+      visible: true,
+      state: 'ready',
+      blockers: [],
+      descriptorId: 'descriptor-a',
+    }
+    const open = (linked: CatalogModel) => {
+      mocks.search = { model: repo, repo }
+      mocks.fetchHuggingFaceRepo.mockResolvedValue(linked as never)
+      render(<HubPage />)
+    }
+    const panel = async () => {
+      await waitFor(() =>
+        expect(screen.getByTestId('detail-panel')).toHaveTextContent(repo)
+      )
+      return screen.getByTestId('detail-panel')
+    }
+
+    it('opens as a managed checkpoint while the Hub shows GGUF', async () => {
+      vllmHub.value = installed
+      tensorrtHub.value = installed
+      open(checkpoint())
+
+      const card = await panel()
+      expect(card).toHaveAttribute('data-managed', 'yes')
+      // No format was picked: the card reads as the first engine offered.
+      expect(card).toHaveAttribute('data-managed-format', 'vllm')
+    })
+
+    it('reads as the only engine offered', async () => {
+      tensorrtHub.value = installed
+      open(checkpoint())
+
+      const card = await panel()
+      expect(card).toHaveAttribute('data-managed', 'yes')
+      expect(card).toHaveAttribute('data-managed-format', 'tensorrt-llm')
+    })
+
+    it('stays as it is where no managed engine is offered', async () => {
+      open(checkpoint())
+
+      const card = await panel()
+      expect(card).toHaveAttribute('data-managed', 'no')
+      expect(card).toHaveAttribute('data-managed-format', '')
+    })
+
+    it('leaves an MLX repository to the MLX provider', async () => {
+      vllmHub.value = installed
+      open(checkpoint({ is_mlx: true }))
+
+      expect(await panel()).toHaveAttribute('data-managed', 'no')
+    })
+
+    it('leaves a repository that also ships GGUF files a GGUF card', async () => {
+      vllmHub.value = installed
+      open(
+        checkpoint({
+          num_quants: 1,
+          quants: [
+            { model_id: `${repo}-Q4_K_M`, path: 'q4.gguf', file_size: '2.00 GB' },
+          ],
+        })
+      )
+
+      const card = await panel()
+      expect(card).toHaveAttribute('data-managed', 'no')
+      expect(card).toHaveAttribute('data-quants', '1')
+    })
   })
 
   it('gives a selected Hugging Face search hit the files it can download', async () => {
