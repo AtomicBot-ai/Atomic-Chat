@@ -207,3 +207,110 @@ describe('useAgentRun', () => {
     expect(afterTrim.trace.tools).toEqual([])
   })
 })
+
+describe('repeated Agent replies without tools', () => {
+  beforeEach(() => useAgentRun.getState().clearAll())
+
+  function reply(
+    runId: string,
+    key = 'provider/model',
+    tool?: string,
+    reason: 'reply' | 'finish' | 'cancelled' | 'failed' | 'max_steps' = 'reply'
+  ) {
+    const store = useAgentRun.getState()
+    store.startRun('thread-a', runId, key)
+    store.applyEvent('thread-a', {
+      type: 'turn_started',
+      run_id: runId,
+      session_id: 'thread-a',
+    })
+    store.applyEvent('thread-a', {
+      type: 'assistant_reply',
+      text: 'I will look into it.',
+    })
+    if (tool)
+      store.applyEvent('thread-a', {
+        type: 'tool_call_parsed',
+        call: { tool, args: {} },
+        batch_index: 0,
+        batch_size: 1,
+      })
+    store.applyEvent('thread-a', {
+      type: 'turn_finished',
+      reason,
+      step_count: 1,
+    })
+    return store.getRun('thread-a')
+  }
+
+  it('counts successful replies across turn_started, excluding terminal pseudo-tools', () => {
+    expect(reply('one', undefined, 'reply').noToolReplyCount).toBe(1)
+    expect(reply('two', undefined, 'finish', 'finish').noToolReplyCount).toBe(2)
+    expect(reply('three').noToolReplyCount).toBe(2)
+  })
+
+  it('ignores duplicate terminal events', () => {
+    reply('one')
+    useAgentRun
+      .getState()
+      .applyEvent('thread-a', {
+        type: 'turn_finished',
+        reason: 'reply',
+        step_count: 1,
+      })
+    expect(useAgentRun.getState().getRun('thread-a').noToolReplyCount).toBe(1)
+  })
+
+  it.each(['os.fs.read', 'mcp.test.search'])(
+    'resets after a %s call, including unexecuted calls',
+    (tool) => {
+      reply('one')
+      expect(reply('two', undefined, tool).noToolReplyCount).toBe(0)
+      expect(reply('three').noToolReplyCount).toBe(1)
+    }
+  )
+
+  it.each(['cancelled', 'failed', 'max_steps'] as const)(
+    'resets on %s',
+    (reason) => {
+      reply('one')
+      expect(reply('two', undefined, undefined, reason).noToolReplyCount).toBe(
+        0
+      )
+    }
+  )
+
+  it('resets on model/provider change and keeps threads separate', () => {
+    reply('one')
+    expect(reply('two', 'another/model').noToolReplyCount).toBe(1)
+    useAgentRun.getState().startRun('thread-b', 'other', 'another/model')
+    expect(useAgentRun.getState().getRun('thread-b').noToolReplyCount).toBe(0)
+  })
+
+  it('does not count empty replies or error traces as model incompatibility', () => {
+    reply('one')
+    const store = useAgentRun.getState()
+    store.startRun('thread-a', 'empty', 'provider/model')
+    store.applyEvent('thread-a', { type: 'assistant_reply', text: '  ' })
+    store.applyEvent('thread-a', {
+      type: 'turn_finished',
+      reason: 'reply',
+      step_count: 1,
+    })
+    expect(store.getRun('thread-a').noToolReplyCount).toBe(0)
+    reply('two')
+    store.startRun('thread-a', 'error', 'provider/model')
+    store.applyEvent('thread-a', { type: 'assistant_reply', text: 'Answer' })
+    store.applyEvent('thread-a', {
+      type: 'step_error',
+      category: 'model',
+      message: 'Failure',
+    })
+    store.applyEvent('thread-a', {
+      type: 'turn_finished',
+      reason: 'reply',
+      step_count: 1,
+    })
+    expect(store.getRun('thread-a').noToolReplyCount).toBe(0)
+  })
+})

@@ -1131,7 +1131,11 @@ function ThreadDetail() {
       }
 
       const runId = generateId()
-      useAgentRun.getState().startRun(threadId, runId)
+      useAgentRun.getState().startRun(
+        threadId,
+        runId,
+        JSON.stringify([selectedProvider, selectedModel.id])
+      )
       const agentAttachments = attachmentTelemetry(combinedAttachments)
       turnContextRef.current = {
         source,

@@ -85,6 +85,8 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Agent mode — autonomous loop, tools, skills, workspace (46)
 
+- **2026-10-13** — [Warn after repeated Agent replies without tools](2026-10-13-warn-after-repeated-agent-replies-without-tools.md)
+
 - **2026-09-17** — [Fall back to keyless search when hosted Exa is unavailable](2026-09-17-fallback-to-keyless-search-when-hosted-exa-is-unavailable.md)
 - **2026-09-16** — [Reserve the thinking budget on top of the tool-call budget](2026-09-16-reserve-the-thinking-budget-on-top-of-the-tool-call-budget.md)
 - **2026-09-15** — [Restore loaded skills from disk, not from the session copy](2026-09-15-restore-loaded-skills-from-disk-not-from-the-session.md)
