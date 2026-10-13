@@ -88,6 +88,17 @@ describe('ManagedEngineOperationBar', () => {
     }
   })
 
+  it('titles the removal of the environment with all three managed engines (change add-sglang-runtime)', () => {
+    render(
+      <OperationBarView
+        operation={operation({ target: { kind: 'environment' }, kind: 'remove', phase: 'removing' })}
+        windows
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByText('vLLM / SGLang / TensorRT-LLM')).toBeInTheDocument()
+  })
+
   it('says the UAC step takes minutes instead of looking stuck', () => {
     render(
       <OperationBarView

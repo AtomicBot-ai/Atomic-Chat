@@ -102,3 +102,25 @@ describe('DialogDeleteModel', () => {
     expect(options.description).toContain('"size":"5.0 GB"')
   })
 })
+
+describe('DialogDeleteModel with the three managed engines', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('deleting a model from the SGLang page names every managed engine, and says what was freed', async () => {
+    // spec sglang-desktop "Удаление модели со страницы SGLang": the app's own registry.
+    const sglang = { ...trt, provider: 'sglang' } as unknown as ModelProvider
+    deletion.deleteLocalModel.mockResolvedValue({ freedBytes: 5 * 1024 ** 3 })
+    render(<DialogDeleteModel provider={sglang} modelId="Qwen/Qwen3-1.7B" />)
+    fireEvent.click(screen.getByLabelText('providers:deleteModel.delete'))
+
+    expect(
+      await screen.findByText('providers:deleteModel.managedShared {"engines":"vLLM, SGLang, TensorRT-LLM"}')
+    ).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'providers:deleteModel.delete' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    expect(deletion.deleteLocalModel).toHaveBeenCalledWith(expect.anything(), 'Qwen/Qwen3-1.7B', 'sglang')
+    const [, options] = toast.success.mock.calls[0] as [string, { description: string }]
+    expect(options.description).toContain('"size":"5.0 GB"')
+  })
+})

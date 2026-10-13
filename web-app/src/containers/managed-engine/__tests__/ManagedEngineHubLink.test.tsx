@@ -10,7 +10,7 @@ const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
 import { ManagedEngineHubLink } from '../ManagedEngineHubLink'
-import { TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
+import { SGLANG_ENGINE, TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { route } from '@/constants/routes'
 
 describe('ManagedEngineHubLink', () => {
@@ -34,5 +34,14 @@ describe('ManagedEngineHubLink', () => {
     fireEvent.click(screen.getByRole('button', { name: 'providers:vllm.hub.action' }))
 
     expect(navigate).toHaveBeenLastCalledWith({ to: route.hub.index, search: { engine: 'vllm' } })
+  })
+
+  it('opens the Model Hub on the SGLang format (spec sglang-desktop "Переход к выбору модели")', () => {
+    render(<ManagedEngineHubLink engine={SGLANG_ENGINE} />)
+
+    expect(screen.getByText('providers:sglang.hub.body')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'providers:sglang.hub.action' }))
+
+    expect(navigate).toHaveBeenLastCalledWith({ to: route.hub.index, search: { engine: 'sglang' } })
   })
 })

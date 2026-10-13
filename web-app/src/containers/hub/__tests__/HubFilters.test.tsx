@@ -29,11 +29,13 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 const tensorrt = vi.hoisted(() => ({ visible: false }))
 const vllm = vi.hoisted(() => ({ visible: false }))
+const sglang = vi.hoisted(() => ({ visible: false }))
 vi.mock('@/hooks/useManagedHubState', () => {
   const hub = (visible: boolean) => ({ visible, state: 'unknown', blockers: [], descriptorId: null })
   return {
     useManagedHubStates: () => [
       { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: hub(vllm.visible) },
+      { engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' }, hub: hub(sglang.visible) },
       { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: hub(tensorrt.visible) },
     ],
   }
@@ -86,6 +88,7 @@ describe('HubFilters', () => {
     }
     tensorrt.visible = false
     vllm.visible = false
+    sglang.visible = false
   })
 
   it('offers no format choice where only GGUF exists (no MLX, no TensorRT-LLM provider)', () => {
@@ -124,6 +127,25 @@ describe('HubFilters', () => {
     ])
     await user.click(within(menu).getByRole('menuitemradio', { name: 'vLLM' }))
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ formats: ['vllm'] }))
+  })
+
+  it('offers vLLM, SGLang, TensorRT-LLM in that order when all three are shown (spec sglang-desktop "Порядок трёх движков")', async () => {
+    tensorrt.visible = true
+    vllm.visible = true
+    sglang.visible = true
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    await user.click(screen.getByRole('button', { name: 'hub:formats' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      'GGUF',
+      'vLLM',
+      'SGLang',
+      'TensorRT-LLM',
+    ])
+    await user.click(within(menu).getByRole('menuitemradio', { name: 'SGLang' }))
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ formats: ['sglang'] }))
   })
 
   it('shows the current sort and switches on selection', async () => {

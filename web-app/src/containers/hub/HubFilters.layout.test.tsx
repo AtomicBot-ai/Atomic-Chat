@@ -29,6 +29,7 @@ vi.mock('@/hooks/useManagedHubState', () => {
   return {
     useManagedHubStates: () => [
       { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub },
+      { engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' }, hub },
       { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub },
     ],
   }
@@ -54,7 +55,7 @@ function renderInColumn() {
   render(inColumn({ ...DEFAULT_HUB_FILTERS, formats: ['tensorrt-llm'] }))
 }
 
-const FORMATS: ModelFormat[] = ['gguf', 'vllm', 'atomic-prism', 'tensorrt-llm']
+const FORMATS: ModelFormat[] = ['gguf', 'vllm', 'sglang', 'atomic-prism', 'tensorrt-llm']
 const SORTS: HubSortKey[] = ['recommended', 'downloads', 'last-modified']
 /** The column at its widest, `420px` less `p-3` on both sides. */
 const WIDE_COLUMN_WIDTH = 420 - 2 * 12

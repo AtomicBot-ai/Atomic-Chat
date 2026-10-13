@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ENGINE_OVERHEAD_BYTES,
   estimateWeightBytes,
   hubListSources,
   passesManagedPrefilter,
@@ -143,6 +144,15 @@ describe('passesManagedPrefilter by engine', () => {
     expect(passesManagedPrefilter(model, { engineId: 'vllm', supportedArchitectures: supported, gpus })).toBe(false)
   })
 
+  it("counts SGLang's own overhead: 2 GiB, core SGLANG_ENGINE_OVERHEAD_BYTES (change add-sglang-runtime)", () => {
+    expect(ENGINE_OVERHEAD_BYTES['sglang']).toBe(2 * 1024 ** 3)
+    // 22 GB of weights on a 24 GB card: as for vLLM, the 2 GiB do not fit beside them.
+    const model = entry({ architectures: ['Qwen3ForCausalLM'], parameters: { BF16: 11 * GB } })
+    expect(passesManagedPrefilter(model, { engineId: 'sglang', supportedArchitectures: supported, gpus: [card(24 * GB)] })).toBe(
+      false
+    )
+  })
+
   it("narrows by the engine's own descriptor architectures (spec vllm-desktop 'Архитектура не поддерживается vLLM')", () => {
     const model = entry({ architectures: ['NemotronHForCausalLM'], parameters: { BF16: 1 * GB } })
     const gpus = [card(24 * GB)]
@@ -173,6 +183,10 @@ describe('hubListSources', () => {
 
   it('vLLM lists like TensorRT-LLM: its curated models and the same narrowed safetensors feed', () => {
     expect(hubListSources('vllm')).toEqual(hubListSources('tensorrt-llm'))
+  })
+
+  it('SGLang lists like vLLM: its curated models and the same narrowed safetensors feed', () => {
+    expect(hubListSources('sglang')).toEqual(hubListSources('vllm'))
   })
 })
 

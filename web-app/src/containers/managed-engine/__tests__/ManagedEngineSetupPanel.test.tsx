@@ -32,7 +32,7 @@ vi.mock('@/services/engines/core', () => engines)
 
 import { resetHostStepPromptsForTests, ManagedEngineSetupPanel } from '../ManagedEngineSetupPanel'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
-import { TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
+import { SGLANG_ENGINE, TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { resetManagedPlansForTests } from '@/hooks/useManagedPlan'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -964,6 +964,114 @@ describe('ManagedEngineSetupPanel', () => {
         )
       ).toBeInTheDocument()
       expect(await screen.findByRole('button', { name: 'providers:vllm.install' })).toBeDisabled()
+      expect(client.beginOperation).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('SGLang (spec sglang-desktop, "Установка SGLang тем же сценарием окружения")', () => {
+    const sglangTarget = { kind: 'runtime' as const, installation_id: 'sglang', engine_id: 'sglang' }
+    const sglangPlan = (overrides: Partial<RequirementPlan> = {}) =>
+      plan({ target: sglangTarget, descriptor_id: 'sglang-0.5.21-r1', ...overrides })
+    const sglangOperation = (overrides: Partial<EnvironmentOperation> = {}) =>
+      operation({ operation_id: 'op-s', target: sglangTarget, ...overrides })
+    const vllmInstalled = {
+      ...installedEngine,
+      installation_id: 'vllm',
+      engine_id: 'vllm',
+      active_descriptor_id: 'vllm-0.31.0-cu129-r1',
+    }
+
+    it('vLLM already installed: a plan without system changes or privileges, then to ready without pkexec or UAC', async () => {
+      seed(environment({ availability: 'supported', installations: [vllmInstalled] }))
+      client.probe.mockResolvedValue(
+        sglangPlan({
+          availability: 'setup-required',
+          system_changes: [],
+          requires_elevation: false,
+          may_require_relogin: false,
+          download_bytes: 15 * 1024 ** 3,
+        })
+      )
+      client.beginOperation.mockResolvedValue(sglangOperation())
+      render(<ManagedEngineSetupPanel engine={SGLANG_ENGINE} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'providers:sglang.install' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText('providers:sglang.plan.noSystemChanges')).toBeInTheDocument()
+      expect(within(dialog).getByText(/providers:sglang.plan.download/)).toHaveTextContent('15.0 GB')
+      expect(within(dialog).queryByText(/providers:sglang.plan.relogin/)).not.toBeInTheDocument()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'providers:sglang.plan.agree' }))
+
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      expect(client.beginOperation.mock.calls[0][1]).toMatchObject({
+        kind: 'setup',
+        target: sglangTarget,
+        descriptor_id: 'sglang-0.5.21-r1',
+      })
+      coreSays(sglangOperation({ phase: 'awaiting-consent', revision: 2, plan_digest: digest }))
+      await waitFor(() => expect(client.resumeOperation).toHaveBeenCalledWith('op-s', 2, digest))
+      coreSays(sglangOperation({ phase: 'pulling-image', revision: 3 }))
+      expect(await screen.findByText('providers:sglang.phase.pulling-image')).toBeInTheDocument()
+
+      act(() => {
+        store().applyEnvironment(
+          environment({
+            revision: 200,
+            installations: [
+              vllmInstalled,
+              { ...installedEngine, installation_id: 'sglang', engine_id: 'sglang', active_descriptor_id: 'sglang-0.5.21-r1' },
+            ],
+          })
+        )
+        store().applyOperation(sglangOperation({ phase: 'ready', revision: 4 }))
+      })
+      expect(await screen.findByText('providers:sglang.installed')).toBeInTheDocument()
+      expect(client.runHostStep).not.toHaveBeenCalled()
+    })
+
+    it('a clean machine: the same path as TensorRT-LLM — system changes, the password, signing in again, then the image', async () => {
+      client.probe.mockResolvedValue(sglangPlan())
+      client.beginOperation.mockResolvedValue(sglangOperation())
+      render(<ManagedEngineSetupPanel engine={SGLANG_ENGINE} />)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'providers:sglang.install' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText(/Add ann to the docker group/)).toBeInTheDocument()
+      expect(within(dialog).getByText('providers:sglang.plan.relogin')).toBeInTheDocument()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'providers:sglang.plan.agree' }))
+
+      await waitFor(() => expect(client.beginOperation).toHaveBeenCalledTimes(1))
+      coreSays(sglangOperation({ phase: 'awaiting-consent', revision: 2, plan_digest: digest }))
+      await waitFor(() => expect(client.resumeOperation).toHaveBeenCalledWith('op-s', 2, digest))
+      coreSays(
+        sglangOperation({
+          phase: 'preparing-host',
+          revision: 3,
+          pending_host_step: { step_id: 'step-s', action: 'linux.install-container-runtime' } as EnvironmentOperation['pending_host_step'],
+        })
+      )
+      await waitFor(() => expect(client.runHostStep).toHaveBeenCalledWith('op-s'))
+      coreSays(sglangOperation({ phase: 'relogin-required', revision: 4 }))
+      expect(await screen.findByText('providers:sglang.relogin.title')).toBeInTheDocument()
+      coreSays(sglangOperation({ phase: 'pulling-image', revision: 5 }))
+      expect(await screen.findByText('providers:sglang.phase.pulling-image')).toBeInTheDocument()
+    })
+
+    it('while vLLM is being set up, explains that SGLang can be installed after it instead of failing on a conflict', async () => {
+      seed(environment({ active_operation_id: 'op-v' }), [
+        operation({
+          operation_id: 'op-v',
+          target: { kind: 'runtime', installation_id: 'vllm', engine_id: 'vllm' },
+          phase: 'pulling-image',
+        }),
+      ])
+      client.probe.mockResolvedValue(sglangPlan())
+      render(<ManagedEngineSetupPanel engine={SGLANG_ENGINE} />)
+
+      expect(
+        await screen.findByText('providers:sglang.otherOperation {"engine":"vLLM","phase":"providers:vllm.phase.pulling-image"}')
+      ).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'providers:sglang.install' })).toBeDisabled()
       expect(client.beginOperation).not.toHaveBeenCalled()
     })
   })
