@@ -21,6 +21,7 @@ import SetupScreen from '../SetupScreen'
 import { ONBOARDING_ROW_ACTION_CLASS } from '@/containers/RouteRow'
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
 import { seedServiceHub } from '@/test/service-hub'
 import { toast } from 'sonner'
 import { events } from '@janhq/core'
@@ -319,6 +320,7 @@ describe('SetupScreen', () => {
       downloadOriginByModelId: {},
       downloadRequestOriginByModelId: {},
     })
+    useFailedDownloadsStore.setState({ failures: [] })
     mocks.recommended = []
     mocks.staffPicks = []
     mocks.leftPanel.open = false
@@ -1085,6 +1087,29 @@ describe('SetupScreen', () => {
     beforeEach(() => {
       mocks.recommended = [ladderModel, otherModel]
       mocks.staffPicks = [gemma, nemotron]
+    })
+
+    it.each([false, true])('records an onboarding MLX rejection only when it is not cancelled (%s)', async (cancelled) => {
+      const repo = 'mlx-community/chat'
+      mocks.recommended = []
+      mocks.staffPicks = [{
+        pick: { model_name: repo, title: 'MLX chat', format: 'mlx' },
+        model: { model_name: repo, developer: 'mlx-community', is_mlx: true,
+          safetensors_files: [{ rfilename: 'model.safetensors', size: 2e9 }] },
+      }]
+      seedServiceHub({ models: {
+        fetchHuggingFaceRepo: vi.fn().mockResolvedValue({ siblings: [{ rfilename: 'model.safetensors' }] }),
+        abortDownload: mocks.abortDownload,
+      } as unknown as Parameters<typeof seedServiceHub>[0]['models'] })
+      mocks.engine.import.mockRejectedValueOnce(new Error(cancelled ? 'Download cancelled' : 'Network unavailable'))
+      const { unmount } = await renderPicker()
+      fireEvent.click(downloadButtons()[0])
+      await waitFor(() => expect(useDownloadStore.getState().resumableDownloads.has('chat')).toBe(true))
+      expect(useDownloadStore.getState().localDownloadingModels.has('chat')).toBe(false)
+      const failures = useFailedDownloadsStore.getState().failures
+      if (cancelled) expect(failures).toEqual([])
+      else expect(failures).toEqual([expect.objectContaining({ modelId: 'chat', repo, isMlx: true })])
+      unmount()
     })
 
     it('uses the lead model staff-pick summary and keeps size outside the action', async () => {

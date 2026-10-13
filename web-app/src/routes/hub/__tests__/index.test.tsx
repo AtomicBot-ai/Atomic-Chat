@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogModel, HuggingFaceRepo } from '@/services/models/types'
@@ -121,7 +121,9 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
 }))
 
 vi.mock('@/containers/hub/HubFilters', () => ({
-  HubFilters: () => <div data-testid="hub-filters" />,
+  HubFilters: ({ showOnlyFailed, onShowOnlyFailedChange }: {
+    showOnlyFailed?: boolean; onShowOnlyFailedChange?: (checked: boolean) => void
+  }) => <button data-testid="hub-filters" onClick={() => onShowOnlyFailedChange?.(!showOnlyFailed)}>Recent failures</button>,
 }))
 
 vi.mock('@/containers/hub/DecisionHub', () => ({
@@ -300,6 +302,7 @@ import { useModelSetupStore } from '@/stores/model-setup-store'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
 import en from '@/locales/en/hub.json'
 
 const model = (name: string, extra: Partial<CatalogModel> = {}): CatalogModel =>
@@ -376,7 +379,24 @@ describe('/hub route', () => {
       nextCursor: null,
     }))
     mocks.fetchHuggingFaceRepo.mockImplementation(async () => null)
+    useFailedDownloadsStore.setState({ failures: [] })
     resetHuggingFaceFeedForTest()
+  })
+
+  it('finds a failed noncatalog model regardless of fit and enriches its selected download card', async () => {
+    const repo = 'owner/failed-chat'
+    useFailedDownloadsStore.getState().record('failed-Q4', repo, false)
+    mocks.search = { model: repo }
+    mocks.fetchHuggingFaceRepo.mockImplementation(async (id: string) => id === repo
+      ? model(repo, { quants: [{ model_id: 'failed-Q4', path: 'q4.gguf', file_size: '500.00 GB' }] }) as unknown as HuggingFaceRepo
+      : null)
+    render(<HubPage />)
+    await userEvent.setup().click(screen.getByTestId('hub-filters'))
+    await waitFor(() => expect(screen.getByTestId('detail-panel')).toHaveAttribute('data-quants', '1'))
+    expect(screen.getByTestId('detail-panel')).toHaveTextContent(repo)
+    expect(screen.getByText('failed-chat')).toBeInTheDocument()
+    act(() => useFailedDownloadsStore.getState().clear('failed-Q4'))
+    await waitFor(() => expect(screen.queryByText('failed-chat')).not.toBeInTheDocument())
   })
 
   it('drops a feed row from a fitting-only list once its size arrives and is too big', async () => {

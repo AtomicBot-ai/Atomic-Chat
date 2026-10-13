@@ -1,3 +1,4 @@
+import { useFailedDownloadsStore } from '@/stores/failed-downloads-store'
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DownloadEvent } from '@janhq/core'
@@ -56,7 +57,8 @@ describe('DownloadManagement — terminal model_download telemetry', () => {
     vi.useFakeTimers()
     handlers.clear()
     queuedCapture.mockClear()
-    useDownloadStore.setState({ downloads: {} })
+    useDownloadStore.setState({ downloads: {}, downloadOriginByModelId: {} })
+    useFailedDownloadsStore.setState({ failures: [] })
     const core = ((
       globalThis as unknown as { core?: Record<string, unknown> }
     ).core ??= {})
@@ -110,6 +112,41 @@ describe('DownloadManagement — terminal model_download telemetry', () => {
       size: { transferred: 3 * GB, total: 3 * GB },
     })
   }
+
+  it('retains genuine failed chat downloads and clears them on completion', () => {
+    render(<DownloadManagement />)
+    useDownloadStore.getState().setDownloadOrigin('q4_k_m', 'owner/model-GGUF')
+    emit(DownloadEvent.onFileDownloadError, { modelId: 'q4_k_m', error: 'HTTP status 500' })
+    expect(useFailedDownloadsStore.getState().failures.map((entry) => entry.repo)).toEqual(['owner/model-GGUF'])
+    expect(useDownloadStore.getState().downloadOriginByModelId['q4_k_m']).toBeUndefined()
+    emit(DownloadEvent.onFileDownloadSuccess, { modelId: 'q4_k_m', downloadType: 'Model' })
+    expect(useFailedDownloadsStore.getState().failures).toEqual([])
+  })
+
+  it('clears failed chat downloads after GGUF verification succeeds', () => {
+    render(<DownloadManagement />)
+    useDownloadStore.getState().setDownloadOrigin('q4_k_m', 'owner/model-GGUF')
+    emit(DownloadEvent.onFileDownloadError, { modelId: 'q4_k_m', error: 'HTTP status 500' })
+    expect(useFailedDownloadsStore.getState().failures).toHaveLength(1)
+    emit(DownloadEvent.onFileDownloadAndVerificationSuccess, { modelId: 'q4_k_m', downloadType: 'Model' })
+    expect(useFailedDownloadsStore.getState().failures).toEqual([])
+  })
+
+  it('retains a chat download that fails checksum verification', () => {
+    render(<DownloadManagement />)
+    act(() => useDownloadStore.getState().setDownloadOrigin('q4_k_m', 'owner/model-GGUF'))
+    emit(DownloadEvent.onModelValidationFailed, { modelId: 'q4_k_m', downloadType: 'Model', error: 'checksum mismatch', reason: 'validation_failed' })
+    expect(useFailedDownloadsStore.getState().failures.map((entry) => entry.repo)).toEqual(['owner/model-GGUF'])
+  })
+
+  it('does not record cancellations or engine downloads', () => {
+    render(<DownloadManagement />)
+    useDownloadStore.getState().setDownloadOrigin('q4_k_m', 'owner/model-GGUF')
+    emit(DownloadEvent.onFileDownloadError, { modelId: 'q4_k_m', error: 'cancelled' })
+    useDownloadStore.getState().setDownloadOrigin('llama-backend', 'owner/engine')
+    emit(DownloadEvent.onFileDownloadError, { modelId: 'llama-backend', downloadType: 'Backend', error: 'network failed' })
+    expect(useFailedDownloadsStore.getState().failures).toEqual([])
+  })
 
   it('reports the size, average speed, stalls and reconnects of a finished download', () => {
     render(<DownloadManagement />)

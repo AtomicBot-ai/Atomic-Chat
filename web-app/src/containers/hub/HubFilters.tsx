@@ -49,6 +49,8 @@ export type HubFiltersProps = {
   showLikesSort?: boolean
   showOnlyDownloaded?: boolean
   onShowOnlyDownloadedChange?: (checked: boolean) => void
+  showOnlyFailed?: boolean
+  onShowOnlyFailedChange?: (checked: boolean) => void
   className?: string
 }
 
@@ -58,6 +60,8 @@ export function HubFilters({
   showLikesSort = false,
   showOnlyDownloaded = false,
   onShowOnlyDownloadedChange,
+  showOnlyFailed = false,
+  onShowOnlyFailedChange,
   className,
 }: HubFiltersProps) {
   const { t } = useTranslation()
@@ -172,6 +176,7 @@ export function HubFilters({
               const next = checked === true
               onShowOnlyDownloadedChange?.(next)
               if (next) {
+                onShowOnlyFailedChange?.(false)
                 onChange({ ...state, onlyFitting: false })
               }
             }}
@@ -179,6 +184,24 @@ export function HubFilters({
           >
             {t('hub:installedOnDevice')}
           </DropdownMenuCheckboxItem>
+
+          {onShowOnlyFailedChange && (
+            <DropdownMenuCheckboxItem
+              checked={showOnlyFailed}
+              onSelect={(event) => event.preventDefault()}
+              onCheckedChange={(checked) => {
+                const next = checked === true
+                onShowOnlyFailedChange(next)
+                if (next) {
+                  onShowOnlyDownloadedChange?.(false)
+                  onChange({ ...state, onlyFitting: false })
+                }
+              }}
+              className={FILTER_CHECKBOX_CLASS}
+            >
+              {t('hub:recentlyFailedDownloads')}
+            </DropdownMenuCheckboxItem>
+          )}
 
           {canFilterByFit && (
             <DropdownMenuCheckboxItem
@@ -191,6 +214,7 @@ export function HubFilters({
                 onChange({ ...state, onlyFitting: next })
                 if (next) {
                   onShowOnlyDownloadedChange?.(false)
+                  onShowOnlyFailedChange?.(false)
                 }
               }}
               className={FILTER_CHECKBOX_CLASS}

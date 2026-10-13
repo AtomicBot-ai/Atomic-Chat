@@ -207,5 +207,7 @@
   "prismStage_failed": "Failed",
   "prismStage_cancelled": "Cancelled",
   "prismStage_interrupted": "Interrupted",
-  "prismCurated": "Bonsai models for PrismML"
+  "prismCurated": "Bonsai models for PrismML",
+  "recentlyFailedDownloads": "Recently failed downloads",
+  "retryModelDetails": "Retry model details"
 }
