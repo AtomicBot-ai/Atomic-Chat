@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -18,6 +18,7 @@ vi.mock('@/lib/model-deletion', () => deletion)
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
 
 import { DialogDeleteModel } from '../DeleteModel'
+import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 
 const trt = {
   provider: 'tensorrt-llm',
@@ -33,7 +34,12 @@ async function confirmDelete() {
 }
 
 describe('DialogDeleteModel', () => {
-  beforeEach(() => vi.clearAllMocks())
+  // Pinned to the two engines this test was written for; the three-engine list has its own test (change add-sglang-runtime).
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setManagedEnginesForTests([VLLM_ENGINE, TENSORRT_LLM_ENGINE])
+  })
+  afterEach(() => setManagedEnginesForTests(undefined))
 
   it('says how much space the delete freed when the engine measured it (task 3.15)', async () => {
     deletion.deleteLocalModel.mockResolvedValue({ freedBytes: 4 * 1024 ** 3 })

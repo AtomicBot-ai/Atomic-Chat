@@ -11,6 +11,7 @@ const invoke = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
 import { OperationBarView } from '../ManagedEngineOperationBar'
+import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import type { EnvironmentOperation } from '@/services/managed-environment/types'
 
 const operation = (over: Partial<EnvironmentOperation> = {}): EnvironmentOperation => ({
@@ -71,14 +72,20 @@ describe('ManagedEngineOperationBar', () => {
   })
 
   it('titles the removal of the environment with every managed engine, since it is all of theirs', () => {
-    render(
-      <OperationBarView
-        operation={operation({ target: { kind: 'environment' }, kind: 'remove', phase: 'removing' })}
-        windows
-        onDismiss={() => {}}
-      />
-    )
-    expect(screen.getByText('vLLM / TensorRT-LLM')).toBeInTheDocument()
+    // Pinned to the two engines this test was written for; the three-engine list has its own test (change add-sglang-runtime).
+    setManagedEnginesForTests([VLLM_ENGINE, TENSORRT_LLM_ENGINE])
+    try {
+      render(
+        <OperationBarView
+          operation={operation({ target: { kind: 'environment' }, kind: 'remove', phase: 'removing' })}
+          windows
+          onDismiss={() => {}}
+        />
+      )
+      expect(screen.getByText('vLLM / TensorRT-LLM')).toBeInTheDocument()
+    } finally {
+      setManagedEnginesForTests(undefined)
+    }
   })
 
   it('says the UAC step takes minutes instead of looking stuck', () => {
