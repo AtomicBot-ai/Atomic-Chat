@@ -4,6 +4,7 @@ import {
   useServiceStore,
 } from '@/hooks/useServiceHub'
 import { DefaultEmbeddingService } from '@/services/embedding/default'
+import { DefaultMediaService } from '@/services/media/default'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 
 type ServiceInstances = {
@@ -54,6 +55,7 @@ export function createMockServiceHub(
     // Unsupported unless a test says otherwise: the API page and the server
     // control ask it on every render.
     embedding: overrides.embedding ?? new DefaultEmbeddingService(),
+    media: overrides.media ?? new DefaultMediaService(),
     modelSetup: overrides.modelSetup ?? new DefaultModelSetupService(),
   }
 
@@ -84,6 +86,7 @@ export function createMockServiceHub(
     diffusion: () => services.diffusion,
     decision: () => services.decision,
     embedding: () => services.embedding,
+    media: () => services.media,
     modelSetup: () => services.modelSetup,
   }
 }

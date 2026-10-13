@@ -56,6 +56,9 @@ import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 import { ModelFactory } from '@/lib/model-factory'
+import { isProviderConnected } from '@/lib/cloud-providers'
+import { mediaToSeed } from '@/lib/media-models'
+import { useMediaCatalog } from '@/stores/media-catalog-store'
 
 export function applyAtomicCoreServerState(payload: { running: boolean; port: number | null }) {
   if (payload.running && typeof payload.port === 'number' && payload.port > 0) {
@@ -181,6 +184,30 @@ const safeRegisterRemoteProvider = async (provider: ModelProvider) => {
     await registerRemoteProvider(provider)
   } catch (error) {
     console.error(`Failed to register provider ${provider.provider}:`, error)
+  }
+}
+
+/** Tries at the core's media catalog while the core is still starting. */
+const MEDIA_CATALOG_ATTEMPTS = 5
+const MEDIA_CATALOG_RETRY_MS = 3000
+
+/**
+ * Give every provider the catalog's curated image and video models it has not had yet, the way a
+ * registry provider comes with its chat models: the Cloud page shows them before a key is in, and
+ * the pickers once it is. A model the user removed is never put back. A keyless server of the
+ * user's own waits until it has answered, so its models never claim a connection it does not have.
+ */
+const seedProviderMedia = () => {
+  const catalog = useMediaCatalog.getState().catalog
+  if (!catalog) return
+  const { providers, updateProvider } = useModelProvider.getState()
+  for (const provider of providers) {
+    const seed = mediaToSeed(
+      provider,
+      catalog,
+      !isKeylessRemoteProvider(provider) || isProviderConnected(provider)
+    )
+    if (seed) updateProvider(provider.provider, { media: seed })
   }
 }
 
@@ -428,6 +455,33 @@ export function DataProvider() {
   useEffect(() => {
     syncRemoteProviders()
   }, [providers])
+
+  // The core's media catalog, asked again while the core is still starting.
+  const mediaCatalog = useMediaCatalog((state) => state.catalog)
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const attempt = (left: number) => {
+      void useMediaCatalog
+        .getState()
+        .load({ force: left < MEDIA_CATALOG_ATTEMPTS })
+        .then(() => {
+          const { status } = useMediaCatalog.getState()
+          if (cancelled || status !== 'error' || left <= 1) return
+          timer = setTimeout(() => attempt(left - 1), MEDIA_CATALOG_RETRY_MS)
+        })
+    }
+    attempt(MEDIA_CATALOG_ATTEMPTS)
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [])
+
+  // A provider connected now, or before the catalog arrived, gets its default media models.
+  useEffect(() => {
+    seedProviderMedia()
+  }, [providers, mediaCatalog])
 
   useEffect(() => {
     if (isDev()) {

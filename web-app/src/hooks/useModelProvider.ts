@@ -197,6 +197,12 @@ export const useModelProvider = create<ModelProviderState>()(
               }),
               api_key: existingProvider?.api_key || provider.api_key,
               base_url: existingProvider?.base_url || provider.base_url,
+              // The user's media models outlive every registry refresh, like `models` and the key.
+              ...(existingProvider?.media !== undefined
+                ? { media: existingProvider.media }
+                : provider.media !== undefined
+                  ? { media: provider.media }
+                  : {}),
               // First registration: TurboQuant defaults to disabled on fresh
               // installs (re-enableable via the Settings toggle); everything
               // else — and every already-persisted provider — keeps its value.

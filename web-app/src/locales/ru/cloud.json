@@ -24,7 +24,10 @@
     "saved": "{{provider}} connected.",
     "removed": "{{provider}} disconnected.",
     "empty": "No cloud providers available. Refresh the catalog and try again.",
-    "placeholder": "Pick a connection above to set it up."
+    "placeholder": "Pick a connection above to set it up.",
+    "mediaConnected": "{{provider}} подключён. Найдено моделей: {{count}}.",
+    "mediaFailed": "Не удалось подключиться к {{provider}}",
+    "mediaNoModels": "{{provider}} ответил, но не отдал ни одной модели. Запустите его с моделью и попробуйте снова."
   },
   "subscription": {
     "title": "ChatGPT subscription (Codex)",
@@ -42,5 +45,36 @@
     "searchPlaceholder": "Search models",
     "noResults": "No model matches this search.",
     "reload": "Reload models"
+  },
+  "media": {
+    "title": "Медиа-модели",
+    "description": "Модели картинок и видео этого провайдера для страниц «Изображения» и «Видео». Они не связаны с чат-моделями выше.",
+    "connectFirst": "Сначала подключите провайдера",
+    "images": "Картинки ({{count}})",
+    "videos": "Видео ({{count}})",
+    "pickApi": "Выберите, на каком медиа-API говорит этот сервер, чтобы увидеть его модели.",
+    "emptyImages": "Моделей картинок пока нет. Добавьте через +, или нажмите «Обновить», чтобы спросить провайдера.",
+    "emptyVideos": "Видео-моделей пока нет. Добавьте через +, или нажмите «Обновить», чтобы спросить провайдера.",
+    "remove": "Убрать {{name}}",
+    "add": "Добавить медиа-модель",
+    "searchPlaceholder": "Найдите или введите id модели",
+    "noneToAdd": "Больше нечего добавить",
+    "addById": "Добавить «{{id}}»",
+    "api": {
+      "none": "Нет",
+      "imageLabel": "API картинок",
+      "videoLabel": "API видео",
+      "openai-images": "OpenAI-совместимый",
+      "a1111": "Automatic1111 / Forge",
+      "openai-videos": "OpenAI-совместимый"
+    },
+    "workflow": {
+      "create": "Создание",
+      "edit": "Правка",
+      "reference": "По референсам",
+      "transform": "Преобразование",
+      "inpaint": "Перерисовка",
+      "imageToVideo": "Картинка в видео"
+    }
   }
 }

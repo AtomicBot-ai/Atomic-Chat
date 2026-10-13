@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-405 records, 2026-05-19 → 2026-10-09.
+406 records, 2026-05-19 → 2026-10-13.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (25)
+## Local image & video generation (26)
 
+- **2026-10-13** — [Offer providers' media models beside the local ones, through the core](2026-10-13-offer-providers-media-models-beside-the-local-ones.md)
 - **2026-10-09** — [Run Qwen-Image-2.1-Turbo as a Qwen-Image-2.1 sibling](2026-10-09-run-qwen-image-2-1-turbo-as-a-qwen-image-2-1-sibling.md)
 - **2026-10-07** — [Install the media engine and MLX through the core, and ship mlx-server by conf's manifest](2026-10-07-install-media-and-mlx-engines-through-the-core.md) — supersedes the desktop-installer parts of the 2026-10-06 probe-fallback record.
 - **2026-10-07** — [Move installed media engines onto the fork's build with an `-a<rev>` tag](2026-10-07-move-installed-media-engines-onto-the-fork-build-with-an-atomic-tag.md) — supersedes the no-suffix clause of the 2026-10-06 fork record.

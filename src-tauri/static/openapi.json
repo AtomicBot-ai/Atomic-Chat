@@ -88,8 +88,8 @@
     },
     "/images/generations": {
       "post": {
-        "summary": "Generate local images",
-        "description": "Generates PNG images with the image model already loaded in Atomic Chat. The Local API Server and an image model must both be running. Images are returned as base64 and are also saved to the local gallery; URL responses and automatic model loading are not supported.",
+        "summary": "Generate images",
+        "description": "Generates images with the image model already loaded in Atomic Chat, or — when `model` names an image model enabled for a cloud or self-hosted provider on the Cloud page — with that provider through Atomic Chat. The Local API Server must be running. Images are returned as base64 and are also saved to the local gallery; URL responses and automatic model loading are not supported. A provider's image may be JPEG or WebP when it makes them.",
         "operationId": "createImageGeneration",
         "tags": ["Images"],
         "requestBody": {
@@ -125,13 +125,22 @@
           "401": {
             "description": "The Local API Server key is missing or invalid"
           },
+          "402": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
           "403": {
             "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "404": {
+            "$ref": "#/components/responses/ImageApiError"
           },
           "429": {
             "$ref": "#/components/responses/ImageApiError"
           },
           "500": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "502": {
             "$ref": "#/components/responses/ImageApiError"
           },
           "503": {
@@ -143,10 +152,75 @@
         }
       }
     },
+    "/images/edits": {
+      "post": {
+        "summary": "Edit images with a provider's model",
+        "description": "Edits, inpaints or combines images with an image model enabled for a cloud or self-hosted provider on the Cloud page. JSON only: images are inline data URLs, never links, and a multipart body answers 415. One image edits it, a `mask` (transparent where the model repaints) inpaints it, several images are references. Local models do not serve this route.",
+        "operationId": "createImageEdit",
+        "tags": ["Images"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateImageEditDto"
+              },
+              "example": {
+                "model": "openai/gpt-image-2",
+                "prompt": "Make the boat red",
+                "images": [{"image_url": "data:image/png;base64,iVBORw0KGgo..."}]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Edited images encoded as base64, with Atomic Chat job and gallery metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageGenerationResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "401": {
+            "description": "The Local API Server key is missing or invalid"
+          },
+          "402": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "403": {
+            "description": "The request Host is not allowed by Trusted Hosts"
+          },
+          "404": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "415": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "429": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "502": {
+            "$ref": "#/components/responses/ImageApiError"
+          },
+          "504": {
+            "$ref": "#/components/responses/ImageApiError"
+          }
+        }
+      }
+    },
     "/videos": {
       "post": {
-        "summary": "Generate a local video",
-        "description": "Starts a video job with the video model already loaded in Atomic Chat and returns the queued video object at once. The Local API Server and a video model must both be running; poll GET /videos/{video_id} until the status is completed, then fetch the WebM from /videos/{video_id}/content. Clips are also saved to the local gallery. Image-to-video and automatic model loading are not supported.",
+        "summary": "Generate a video",
+        "description": "Starts a video job and returns the queued video object at once: with the video model already loaded in Atomic Chat, or — when `model` names a video model enabled for a cloud or self-hosted provider on the Cloud page — with that provider through Atomic Chat. The Local API Server must be running; poll GET /videos/{video_id} until the status is completed, then fetch the clip from /videos/{video_id}/content (WebM from a local model, MP4 from a provider). Clips are also saved to the local gallery. Image-to-video (`input_reference`) is served by providers' models only; automatic model loading is not supported.",
         "operationId": "createVideo",
         "tags": ["Videos"],
         "requestBody": {
@@ -312,8 +386,8 @@
     },
     "/videos/{video_id}/content": {
       "get": {
-        "summary": "Download a local video",
-        "description": "Streams the WebM of a completed clip. A clip still being made answers 404.",
+        "summary": "Download a video",
+        "description": "Streams the clip of a completed job: WebM from a local model, MP4 from a provider's. A clip still being made answers 404.",
         "operationId": "downloadVideoContent",
         "tags": ["Videos"],
         "parameters": [
@@ -336,6 +410,9 @@
             "description": "The clip",
             "content": {
               "video/webm": {
+                "schema": {"type": "string", "format": "binary"}
+              },
+              "video/mp4": {
                 "schema": {"type": "string", "format": "binary"}
               },
               "image/png": {
@@ -430,7 +507,7 @@
         "properties": {
           "model": {
             "type": "string",
-            "description": "Optional id or display name of the loaded image model. A different model returns 503."
+            "description": "Optional id or display name of the loaded image model; a different local model returns 503. An image model enabled for a provider on the Cloud page, by its id or as provider/id, runs on that provider."
           },
           "prompt": {
             "type": "string",
@@ -440,15 +517,40 @@
           "n": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 4,
+            "maximum": 10,
             "default": 1,
-            "description": "Number of images to generate in this request."
+            "description": "Number of images to generate in this request: at most 4 with a local model, 10 with a provider's (capped to what the model makes at once)."
           },
           "size": {
             "type": "string",
             "default": "auto",
             "example": "1024x1024",
-            "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT. Each dimension must be 256–2048 and a multiple of 16."
+            "description": "Either auto (the model's default) or WIDTHxHEIGHT. A local model takes 256–2048 and a multiple of 16 per side; a provider's takes its own sizes, or a tier such as 2K."
+          },
+          "quality": {
+            "type": "string",
+            "example": "high",
+            "description": "Provider's models only: a quality the model offers."
+          },
+          "background": {
+            "type": "string",
+            "example": "transparent",
+            "description": "Provider's models only: a background the model offers."
+          },
+          "output_format": {
+            "type": "string",
+            "example": "png",
+            "description": "Provider's models only: png, jpeg or webp, as the model offers."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "example": "16:9",
+            "description": "Provider's models only: an aspect ratio the model offers."
+          },
+          "resolution": {
+            "type": "string",
+            "example": "2K",
+            "description": "Provider's models only: a resolution tier the model offers."
           },
           "response_format": {
             "type": "string",
@@ -467,6 +569,85 @@
           }
         }
       },
+      "CreateImageEditDto": {
+        "type": "object",
+        "required": ["model", "prompt", "images"],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "An image model enabled for a provider on the Cloud page, by its id or as provider/id."
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What to change."
+          },
+          "images": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/components/schemas/InlineImageDto"},
+            "description": "The source first, then any references. `image` with one entry is accepted too."
+          },
+          "mask": {
+            "$ref": "#/components/schemas/InlineImageDto"
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1
+          },
+          "size": {
+            "type": "string",
+            "example": "1024x1024"
+          },
+          "quality": {
+            "type": "string"
+          },
+          "background": {
+            "type": "string"
+          },
+          "output_format": {
+            "type": "string"
+          },
+          "aspect_ratio": {
+            "type": "string"
+          },
+          "resolution": {
+            "type": "string"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": ["b64_json"],
+            "default": "b64_json"
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "negative_prompt": {
+            "type": "string"
+          }
+        }
+      },
+      "InlineImageDto": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "A data:image/...;base64, URL or bare base64."
+          },
+          {
+            "type": "object",
+            "required": ["image_url"],
+            "properties": {
+              "image_url": {
+                "type": "string",
+                "description": "A data:image/...;base64, URL. Links are refused: the server does not fetch them."
+              }
+            }
+          }
+        ]
+      },
       "ImageGenerationDataDto": {
         "type": "object",
         "required": ["b64_json"],
@@ -474,7 +655,7 @@
           "b64_json": {
             "type": "string",
             "format": "byte",
-            "description": "Base64-encoded PNG bytes."
+            "description": "Base64-encoded image bytes: PNG from a local model; PNG, JPEG or WebP from a provider's."
           }
         }
       },
@@ -497,7 +678,11 @@
             "items": {
               "type": "string"
             },
-            "description": "Local paths of the PNGs saved to the Atomic Chat gallery."
+            "description": "Local paths of the images saved to the Atomic Chat gallery."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The provider that made the images, for a provider's model."
           }
         }
       },
@@ -559,7 +744,7 @@
         "properties": {
           "model": {
             "type": "string",
-            "description": "Optional id or display name of the loaded video model. A different model returns 503."
+            "description": "Optional id or display name of the loaded video model; a different local model returns 503. A video model enabled for a provider on the Cloud page, by its id or as provider/id, runs on that provider."
           },
           "prompt": {
             "type": "string",
@@ -569,13 +754,30 @@
           "seconds": {
             "oneOf": [{"type": "number"}, {"type": "string"}],
             "example": "4",
-            "description": "Clip length in seconds, 0 < seconds <= 600. Snapped to the nearest frame count the loaded model accepts (its frame lattice) and clamped to its range; omitted, the model's default length is used."
+            "description": "Clip length in seconds, 0 < seconds <= 600. A local model snaps it to the nearest frame count it accepts (its frame lattice) and clamps it to its range; a provider's model takes one of its own lengths (at most 60 s). Omitted, the model's default length is used."
           },
           "size": {
             "type": "string",
             "default": "auto",
             "example": "768x512",
-            "description": "Either auto (the loaded model family's default) or WIDTHxHEIGHT from the model's resolution presets."
+            "description": "Either auto (the model's default) or WIDTHxHEIGHT from the model's resolution presets, or its own sizes for a provider's model."
+          },
+          "resolution": {
+            "type": "string",
+            "example": "720p",
+            "description": "Provider's models only: a resolution tier the model offers."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "example": "16:9",
+            "description": "Provider's models only: an aspect ratio the model offers."
+          },
+          "generate_audio": {
+            "type": "boolean",
+            "description": "Provider's models only: whether a model that makes sound does."
+          },
+          "input_reference": {
+            "$ref": "#/components/schemas/InlineImageDto"
           },
           "seed": {
             "type": "integer",
@@ -605,7 +807,7 @@
           "path": {
             "type": "string",
             "nullable": true,
-            "description": "Local path of the WebM saved to the Atomic Chat gallery, once completed."
+            "description": "Local path of the clip saved to the Atomic Chat gallery (WebM, or MP4 from a provider), once completed."
           },
           "poster_path": {
             "type": "string",

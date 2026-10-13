@@ -7,6 +7,7 @@ import { shouldReportGenerateError } from '@/lib/diffusion/generation-stop'
 import { parseArtifactId } from '@/lib/diffusion/models'
 import {
   captureVideoGenerate,
+  mediaTargetProps,
   videoEstimateProps,
 } from '@/lib/diffusion/telemetry'
 import { notifyWhenAway } from '@/lib/notifications'
@@ -159,9 +160,17 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
   })
 
   const reportJob = (job: VideoJob) => {
-    const loaded = useImageGenerationStore.getState().status?.model.loaded
-    const capabilities = useImageGenerationStore.getState().videoCapabilities
-    const parsed = parseArtifactId(job.modelId || loaded?.modelId || '')
+    // A provider's clip reports neither the resident model nor its engine.
+    const remote = job.request.target !== undefined
+    const loaded = remote
+      ? undefined
+      : useImageGenerationStore.getState().status?.model.loaded
+    const capabilities = remote
+      ? null
+      : useImageGenerationStore.getState().videoCapabilities
+    const parsed = remote
+      ? null
+      : parseArtifactId(job.modelId || loaded?.modelId || '')
     const duration =
       job.finishedAtMs && job.startedAtMs
         ? job.finishedAtMs - job.startedAtMs
@@ -189,6 +198,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       duration_ms: duration,
       error_code: job.error?.code ?? null,
       ...videoEstimateProps(job),
+      ...mediaTargetProps(job.request.target),
     })
   }
 
@@ -328,7 +338,10 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
 
     startGeneration: async ({ request, seed }) => {
       if (get().generating) return
-      const capabilities = useImageGenerationStore.getState().videoCapabilities
+      // A provider's model is checked by the core against its own descriptor, not the local caps.
+      const capabilities = request.target
+        ? null
+        : useImageGenerationStore.getState().videoCapabilities
       if (capabilities) {
         const verdict = validateVideoRequest(request, capabilities)
         if (!verdict.ok) {

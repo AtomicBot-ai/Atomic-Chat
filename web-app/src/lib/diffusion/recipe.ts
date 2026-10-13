@@ -41,8 +41,14 @@ export type RestoredDraft = {
 
 const pad = (value: number, width = 2) => String(value).padStart(width, '0')
 
+/** A picture's file extension: its own file's, which a provider's model may make as JPEG or WebP. */
+export function imageExtension(item: GalleryImageItem): string {
+  const match = /\.(png|jpe?g|webp)$/i.exec(item.path)
+  return match ? match[1].toLowerCase() : 'png'
+}
+
 /**
- * `AtomicChat_YYYYMMDD-HHMMSS_<seed>[_n].png` — the export name.
+ * `AtomicChat_YYYYMMDD-HHMMSS_<seed>[_n].<png|jpg|webp>` — the export name.
  *
  * Local time, because the user is looking at the file next to their other
  * downloads. The batch index is only appended for a batch bigger than one, so
@@ -55,7 +61,7 @@ export function exportFilename(item: GalleryImageItem): string {
     `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
     `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
   const suffix = recipe.batchSize > 1 ? `_${recipe.index + 1}` : ''
-  return `AtomicChat_${stamp}_${recipe.seed}${suffix}.png`
+  return `AtomicChat_${stamp}_${recipe.seed}${suffix}.${imageExtension(item)}`
 }
 
 /**

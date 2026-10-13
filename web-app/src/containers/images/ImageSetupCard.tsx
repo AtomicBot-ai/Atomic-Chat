@@ -1,14 +1,17 @@
 import { memo } from 'react'
-import { IconDownload, IconLoader2 } from '@tabler/icons-react'
+import { useNavigate } from '@tanstack/react-router'
+import { IconCloud, IconDownload, IconLoader2 } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { ClapperboardIcon } from '@/components/animated-icon/clapperboard'
 import { ImageIcon } from '@/components/animated-icon/image'
+import { route } from '@/constants/routes'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatProgressPair } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
 import type { DiffusionModality } from '@/services/diffusion/types'
+import { useMediaCatalog } from '@/stores/media-catalog-store'
 
 type ImageSetupCardProps = {
   className?: string
@@ -27,7 +30,10 @@ export const ImageSetupCard = memo(function ImageSetupCard({
   modality = 'image',
 }: ImageSetupCardProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const engine = useImageEngine()
+  // A core that serves remote media offers the other way in: a provider's models, no engine.
+  const remoteMedia = useMediaCatalog((state) => state.available)
   const ns = modality === 'video' ? 'videos' : 'images'
   const Icon = modality === 'video' ? ClapperboardIcon : ImageIcon
   const unsupported =
@@ -122,6 +128,20 @@ export const ImageSetupCard = memo(function ImageSetupCard({
               </p>
             ) : null}
           </div>
+        </div>
+      )}
+      {remoteMedia && (
+        <div className="flex justify-center">
+          <Button
+            variant="link"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => void navigate({ to: route.cloud.index })}
+            data-testid="image-setup-cloud"
+          >
+            <IconCloud size={16} aria-hidden />
+            {t('images:remote.connectProvider')}
+          </Button>
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ import {
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { groupCloudProviders, isProviderConnected } from '@/lib/cloud-providers'
+import { isMediaConnected } from '@/lib/media-models'
 import { cn, getProviderTitle } from '@/lib/utils'
 
 type CloudProviderSelectProps = {
@@ -51,7 +52,7 @@ export function CloudProviderSelect({
     >
       <ProvidersAvatar provider={provider} className="size-4.5 shrink-0" />
       <span className="truncate">{getProviderTitle(provider.provider)}</span>
-      {isProviderConnected(provider) && (
+      {(isProviderConnected(provider) || isMediaConnected(provider)) && (
         // Same marker the settings menu and the model picker use for "this one
         // is live".
         <span

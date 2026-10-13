@@ -100,6 +100,8 @@ export const localStorageKey = {
   // Advanced fold and the video output folder. The engine and the residency
   // policies are shared with `settingImages`: one engine, one resident model.
   settingVideos: 'setting-videos',
+  /** The cloud/self-hosted model settings of the Images and Video forms (`useRemoteMediaForm`). */
+  remoteMediaForm: 'remote-media-form',
   // Durable Video form choices: resolution, frame count, steps, cfg, guidance
   // and the seed as typed. Unsent prompt text is deliberately excluded.
   videoForm: 'video-form',

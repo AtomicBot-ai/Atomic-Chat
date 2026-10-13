@@ -34,6 +34,15 @@ const CONTRACT_CODES: NativeDiffusionErrorCode[] = [
   'BACKEND_IN_USE',
   'NOT_CONFIGURED',
   'INTERNAL',
+  'REMOTE_NOT_CONFIGURED',
+  'REMOTE_AUTH_FAILED',
+  'REMOTE_REJECTED',
+  'REMOTE_CONTENT_BLOCKED',
+  'REMOTE_RATE_LIMITED',
+  'REMOTE_QUOTA',
+  'REMOTE_UNAVAILABLE',
+  'REMOTE_TIMEOUT',
+  'REMOTE_UNSUPPORTED',
 ]
 
 describe('describeDiffusionError', () => {
@@ -61,6 +70,17 @@ describe('describeDiffusionError', () => {
       'openSettings'
     )
     expect(describeDiffusionError('DISK_FULL').action).toBe('openOutputFolder')
+  })
+
+  it('sends a provider’s key and account problems to the Cloud page', () => {
+    for (const code of ['REMOTE_NOT_CONFIGURED', 'REMOTE_AUTH_FAILED', 'REMOTE_QUOTA'] as const) {
+      expect(describeDiffusionError(code).action, code).toBe('openCloud')
+    }
+    expect(describeDiffusionError('REMOTE_UNAVAILABLE')).toMatchObject({
+      action: 'retry',
+      secondaryAction: 'openCloud',
+    })
+    expect(describeDiffusionError('REMOTE_CONTENT_BLOCKED').action).toBeNull()
   })
 
   it('offers nothing for a cancellation', () => {

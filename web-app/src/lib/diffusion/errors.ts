@@ -26,6 +26,8 @@ export type DiffusionErrorAction =
   | 'pickSmallerQuant'
   /** Retry the same request. */
   | 'retry'
+  /** Go to the Cloud page: a provider's key, model or connection needs the user. */
+  | 'openCloud'
 
 export type DiffusionErrorDescription = {
   titleKey: string
@@ -63,6 +65,15 @@ const ROUTES: Record<
   BACKEND_IN_USE: [null, null],
   NOT_CONFIGURED: ['openSettings', null],
   INTERNAL: ['retry', null],
+  REMOTE_NOT_CONFIGURED: ['openCloud', null],
+  REMOTE_AUTH_FAILED: ['openCloud', null],
+  REMOTE_REJECTED: [null, null],
+  REMOTE_CONTENT_BLOCKED: [null, null],
+  REMOTE_RATE_LIMITED: ['retry', null],
+  REMOTE_QUOTA: ['openCloud', null],
+  REMOTE_UNAVAILABLE: ['retry', 'openCloud'],
+  REMOTE_TIMEOUT: ['retry', null],
+  REMOTE_UNSUPPORTED: [null, null],
 }
 
 export function describeDiffusionError(

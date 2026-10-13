@@ -35,6 +35,16 @@ describe('useVideoSetting', () => {
     expect(images.state?.selectedArtifactId ?? null).toBeNull()
   })
 
+  it("keeps a provider's model as the pick until a local checkpoint is picked", () => {
+    const pick = { provider: 'openrouter', model: 'google/veo-3.1' }
+    useVideoSetting.getState().setSelectedRemote(pick)
+    const stored = JSON.parse(localStorage.getItem(localStorageKey.settingVideos) ?? '{}')
+    expect(stored.state.selectedRemote).toEqual(pick)
+    useVideoSetting.getState().setSelectedArtifactId('ltx-2:q4_k_m')
+    expect(useVideoSetting.getState().selectedRemote).toBeNull()
+    expect(useVideoSetting.getState().selectedArtifactId).toBe('ltx-2:q4_k_m')
+  })
+
   it('stores a blank output folder as null and trims the rest', () => {
     const { setOutputDir } = useVideoSetting.getState()
     setOutputDir('  /Users/me/Movies/Atomic ')

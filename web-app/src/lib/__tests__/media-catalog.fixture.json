@@ -1,0 +1,1123 @@
+{
+  "catalog_version": 1,
+  "origin": "baseline",
+  "dialects": {
+    "openai-images": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "xai-images": {
+      "kind": "image",
+      "workflows": [
+        "create",
+        "edit",
+        "reference"
+      ],
+      "params": {}
+    },
+    "openrouter-images": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "gemini-image": {
+      "kind": "image",
+      "workflows": [
+        "create",
+        "edit",
+        "reference"
+      ],
+      "params": {}
+    },
+    "minimax-image": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "dashscope-image": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "hf-images": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "nvidia-genai": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "mistral-agent-image": {
+      "kind": "image",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "a1111": {
+      "kind": "image",
+      "workflows": [
+        "create",
+        "transform",
+        "inpaint"
+      ],
+      "params": {}
+    },
+    "openai-videos": {
+      "kind": "video",
+      "workflows": [
+        "create",
+        "image-to-video"
+      ],
+      "params": {}
+    },
+    "openrouter-videos": {
+      "kind": "video",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "xai-videos": {
+      "kind": "video",
+      "workflows": [
+        "create",
+        "image-to-video"
+      ],
+      "params": {}
+    },
+    "gemini-veo": {
+      "kind": "video",
+      "workflows": [
+        "create",
+        "image-to-video"
+      ],
+      "params": {}
+    },
+    "minimax-video": {
+      "kind": "video",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "minimax-video-v2": {
+      "kind": "video",
+      "workflows": [
+        "create",
+        "image-to-video"
+      ],
+      "params": {}
+    },
+    "dashscope-video": {
+      "kind": "video",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "aimlapi-videos": {
+      "kind": "video",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    },
+    "hf-videos": {
+      "kind": "video",
+      "workflows": [
+        "create"
+      ],
+      "params": {}
+    }
+  },
+  "providers": {
+    "openai": {
+      "image": {
+        "api": "openai-images",
+        "models": [
+          {
+            "id": "gpt-image-2.5-flare",
+            "name": "GPT Image 2.5 Flare",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference",
+              "inpaint"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "gpt-image-2.5-sunburst",
+            "name": "GPT Image 2.5 Sunburst",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference",
+              "inpaint"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "gpt-image-2",
+            "name": "GPT Image 2",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference",
+              "inpaint"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "openrouter": {
+      "image": {
+        "api": "openrouter-images",
+        "models": [
+          {
+            "id": "google/gemini-nano-banana-2.1",
+            "name": "Nano Banana 2.1",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "openai/gpt-image-2.5-flare",
+            "name": "GPT Image 2.5 Flare",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "black-forest-labs/flux-3-image",
+            "name": "FLUX.3 Image",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "bytedance-seed/seedream-5-0-flash",
+            "name": "Seedream 5.0 Flash",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "x-ai/grok-imagine-image-2.0",
+            "name": "Grok Imagine Image 2.0",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "qwen/qwen-image-3",
+            "name": "Qwen Image 3",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "recraft/recraft-v4.1",
+            "name": "Recraft V4.1",
+            "kind": "image",
+            "api": "openrouter-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      },
+      "video": {
+        "api": "openrouter-videos",
+        "models": [
+          {
+            "id": "google/veo-3.1-fast",
+            "name": "Veo 3.1 Fast",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "google/veo-3.1",
+            "name": "Veo 3.1",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "kwaivgi/kling-v3.0-std",
+            "name": "Kling 3.0 Standard",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "kwaivgi/kling-v3.0-pro",
+            "name": "Kling 3.0 Pro",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "bytedance/seedance-2.0-fast",
+            "name": "Seedance 2.0 Fast",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "minimax/hailuo-3",
+            "name": "MiniMax H3",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "x-ai/grok-imagine-video-1.5",
+            "name": "Grok Imagine Video 1.5",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "alibaba/wan-3.0",
+            "name": "Wan 3.0",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "runway/gen-4.5",
+            "name": "Runway Gen-4.5",
+            "kind": "video",
+            "api": "openrouter-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "xai": {
+      "image": {
+        "api": "xai-images",
+        "models": [
+          {
+            "id": "grok-imagine-image-2.0",
+            "name": "Grok Imagine Image 2.0",
+            "kind": "image",
+            "api": "xai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          }
+        ]
+      },
+      "video": {
+        "api": "xai-videos",
+        "models": [
+          {
+            "id": "grok-imagine-video-1.5",
+            "name": "Grok Imagine Video 1.5",
+            "kind": "video",
+            "api": "xai-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "grok-imagine-video-1.5-lite",
+            "name": "Grok Imagine Video 1.5 Lite",
+            "kind": "video",
+            "api": "xai-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "grok-imagine-video",
+            "name": "Grok Imagine Video",
+            "kind": "video",
+            "api": "xai-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "gemini": {
+      "image": {
+        "api": "gemini-image",
+        "models": [
+          {
+            "id": "gemini-nano-banana-2.1",
+            "name": "Nano Banana 2.1",
+            "kind": "image",
+            "api": "gemini-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "gemini-3.1-flash-image",
+            "name": "Gemini 3.1 Flash Image",
+            "kind": "image",
+            "api": "gemini-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "gemini-3-pro-image",
+            "name": "Gemini 3 Pro Image",
+            "kind": "image",
+            "api": "gemini-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "gemini-3.1-flash-lite-image",
+            "name": "Gemini 3.1 Flash Lite Image",
+            "kind": "image",
+            "api": "gemini-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      },
+      "video": {
+        "api": "gemini-veo",
+        "models": [
+          {
+            "id": "veo-3.1-fast-generate-preview",
+            "name": "Veo 3.1 Fast",
+            "kind": "video",
+            "api": "gemini-veo",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "veo-3.1-generate-preview",
+            "name": "Veo 3.1",
+            "kind": "video",
+            "api": "gemini-veo",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "veo-3.1-lite-generate-preview",
+            "name": "Veo 3.1 Lite",
+            "kind": "video",
+            "api": "gemini-veo",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "meta": {
+      "image": {
+        "api": "openai-images",
+        "models": [
+          {
+            "id": "muse-image-1.0",
+            "name": "Muse Image 1.0",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          }
+        ]
+      }
+    },
+    "minimax": {
+      "image": {
+        "api": "minimax-image",
+        "models": [
+          {
+            "id": "image-01",
+            "name": "MiniMax Image-01",
+            "kind": "image",
+            "api": "minimax-image",
+            "workflows": [
+              "create",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          }
+        ]
+      },
+      "video": {
+        "api": "minimax-video",
+        "models": [
+          {
+            "id": "MiniMax-Hailuo-2.3",
+            "name": "Hailuo 2.3",
+            "kind": "video",
+            "api": "minimax-video",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "MiniMax-Hailuo-2.3-Fast",
+            "name": "Hailuo 2.3 Fast",
+            "kind": "video",
+            "api": "minimax-video",
+            "workflows": [
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "MiniMax-Hailuo-02",
+            "name": "Hailuo 02",
+            "kind": "video",
+            "api": "minimax-video",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "MiniMax-H3",
+            "name": "MiniMax H3",
+            "kind": "video",
+            "api": "minimax-video-v2",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "MiniMax-H3-Max",
+            "name": "MiniMax H3 Max",
+            "kind": "video",
+            "api": "minimax-video-v2",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "qwen": {
+      "image": {
+        "api": "dashscope-image",
+        "models": [
+          {
+            "id": "qwen-image-3.0",
+            "name": "Qwen-Image 3.0",
+            "kind": "image",
+            "api": "dashscope-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "qwen-image-3.0-pro",
+            "name": "Qwen-Image 3.0 Pro",
+            "kind": "image",
+            "api": "dashscope-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "wan2.7-image",
+            "name": "Wan 2.7 Image",
+            "kind": "image",
+            "api": "dashscope-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "wan2.7-image-pro",
+            "name": "Wan 2.7 Image Pro",
+            "kind": "image",
+            "api": "dashscope-image",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      },
+      "video": {
+        "api": "dashscope-video",
+        "models": [
+          {
+            "id": "wan2.7-t2v",
+            "name": "Wan 2.7 Text to Video",
+            "kind": "video",
+            "api": "dashscope-video",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "wan2.7-i2v",
+            "name": "Wan 2.7 Image to Video",
+            "kind": "video",
+            "api": "dashscope-video",
+            "workflows": [
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "wan2.6-t2v",
+            "name": "Wan 2.6 Text to Video",
+            "kind": "video",
+            "api": "dashscope-video",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "aimlapi": {
+      "image": {
+        "api": "openai-images",
+        "models": [
+          {
+            "id": "openai/gpt-image-2.5-flare",
+            "name": "GPT Image 2.5 Flare",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference",
+              "inpaint"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "google/gemini-nano-banana-2.1",
+            "name": "Nano Banana 2.1",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "meta/muse-image",
+            "name": "Muse Image",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      },
+      "video": {
+        "api": "aimlapi-videos",
+        "models": [
+          {
+            "id": "google/veo-3.1-t2v-fast",
+            "name": "Veo 3.1 Fast",
+            "kind": "video",
+            "api": "aimlapi-videos",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "google/veo-3.1-i2v-fast",
+            "name": "Veo 3.1 Fast Image to Video",
+            "kind": "video",
+            "api": "aimlapi-videos",
+            "workflows": [
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "edenai": {
+      "image": {
+        "api": "openai-images",
+        "models": [
+          {
+            "id": "openai/gpt-image-2.5-flare",
+            "name": "GPT Image 2.5 Flare",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create",
+              "edit",
+              "reference",
+              "inpaint"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "google/gemini-nano-banana-2.1",
+            "name": "Nano Banana 2.1",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "stabilityai/sd3.5-large",
+            "name": "Stable Diffusion 3.5 Large",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      },
+      "video": {
+        "api": "openai-videos",
+        "models": [
+          {
+            "id": "google/veo-3.1-fast-generate-preview",
+            "name": "Veo 3.1 Fast",
+            "kind": "video",
+            "api": "openai-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "minimax/MiniMax-Hailuo-2.3",
+            "name": "Hailuo 2.3",
+            "kind": "video",
+            "api": "openai-videos",
+            "workflows": [
+              "create",
+              "image-to-video"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "huggingface": {
+      "image": {
+        "api": "hf-images",
+        "models": [
+          {
+            "id": "black-forest-labs/FLUX.1-schnell",
+            "name": "FLUX.1 schnell",
+            "kind": "image",
+            "api": "hf-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "black-forest-labs/FLUX.1-dev",
+            "name": "FLUX.1 dev",
+            "kind": "image",
+            "api": "hf-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "Tongyi-MAI/Z-Image-Turbo",
+            "name": "Z-Image Turbo",
+            "kind": "image",
+            "api": "hf-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "Qwen/Qwen-Image",
+            "name": "Qwen-Image",
+            "kind": "image",
+            "api": "hf-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      },
+      "video": {
+        "api": "hf-videos",
+        "models": [
+          {
+            "id": "Wan-AI/Wan2.2-TI2V-5B",
+            "name": "Wan 2.2 TI2V 5B",
+            "kind": "video",
+            "api": "hf-videos",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "tencent/HunyuanVideo-1.5",
+            "name": "HunyuanVideo 1.5",
+            "kind": "video",
+            "api": "hf-videos",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "nvidia": {
+      "image": {
+        "api": "nvidia-genai",
+        "models": [
+          {
+            "id": "black-forest-labs/flux.1-schnell",
+            "name": "FLUX.1 schnell",
+            "kind": "image",
+            "api": "nvidia-genai",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "black-forest-labs/flux.1-dev",
+            "name": "FLUX.1 dev",
+            "kind": "image",
+            "api": "nvidia-genai",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "black-forest-labs/flux.2-klein-4b",
+            "name": "FLUX.2 Klein 4B",
+            "kind": "image",
+            "api": "nvidia-genai",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          },
+          {
+            "id": "stabilityai/stable-diffusion-3-medium",
+            "name": "Stable Diffusion 3 Medium",
+            "kind": "image",
+            "api": "nvidia-genai",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "mistral": {
+      "image": {
+        "api": "mistral-agent-image",
+        "models": [
+          {
+            "id": "mistral-medium-latest",
+            "name": "FLUX1.1 Ultra via Mistral Agents",
+            "kind": "image",
+            "api": "mistral-agent-image",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          }
+        ]
+      }
+    },
+    "ollama": {
+      "image": {
+        "api": "openai-images",
+        "models": [
+          {
+            "id": "x/z-image-turbo",
+            "name": "Z-Image Turbo",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog",
+            "default": true
+          },
+          {
+            "id": "x/flux2-klein",
+            "name": "FLUX.2 Klein",
+            "kind": "image",
+            "api": "openai-images",
+            "workflows": [
+              "create"
+            ],
+            "params": {},
+            "source": "catalog"
+          }
+        ]
+      }
+    },
+    "automatic1111": {
+      "image": {
+        "api": "a1111",
+        "models": []
+      }
+    },
+    "sdcpp-server": {
+      "image": {
+        "api": "a1111",
+        "models": []
+      }
+    }
+  }
+}

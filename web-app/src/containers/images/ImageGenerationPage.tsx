@@ -10,6 +10,7 @@ import { useImageForm } from '@/hooks/useImageForm'
 import { useImageGallery } from '@/hooks/useImageGallery'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
+import { useHasRemoteMedia, useRemoteMediaTarget } from '@/hooks/useRemoteMedia'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
@@ -83,7 +84,12 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   )
   const [modelsOpen, setModelsOpen] = useState(false)
 
-  const modelPicked = useMediaTarget('image').artifactId !== null
+  // A connected provider's models open the studio without the local engine.
+  const hasRemote = useHasRemoteMedia('image')
+  const remoteTarget = useRemoteMediaTarget('image')
+  const studioReady = engine.installed || hasRemote
+  const modelPicked =
+    useMediaTarget('image').artifactId !== null || remoteTarget !== null
   const showLivePreview = generating && viewerMode === 'live'
   const pendingSize = {
     width: currentJob?.request.width || draftWidth,
@@ -108,7 +114,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   // No engine and nothing to look at: one centered setup card instead of a
   // form-column card beside an empty canvas. Existing images keep the gallery
   // visible.
-  const onboarding = !engine.installed && gallery.items.length === 0
+  const onboarding = !studioReady && gallery.items.length === 0
   const openModels = useCallback(() => setModelsOpen(true), [])
 
   // A deep link picks the checkpoint; the picker then shows its plan if it
@@ -149,6 +155,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           return
         case 'openSettings':
           void navigate({ to: route.settings.media })
+          return
+        case 'openCloud':
+          void navigate({ to: route.cloud.index })
           return
         case 'openOutputFolder':
           if (status?.outputDir) {
@@ -237,7 +246,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
       <div className="col-span-2 min-w-0">{header}</div>
 
       <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
-        {engine.installed ? (
+        {studioReady ? (
           <ImagePromptForm
             modelsOpen={modelsOpen}
             onModelsOpenChange={setModelsOpen}
@@ -266,7 +275,9 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
             <ImageEmptyState
               modelPicked={modelPicked}
               onDownloadModel={
-                engine.installed && !hasModel ? openModels : undefined
+                engine.installed && !hasModel && !remoteTarget
+                  ? openModels
+                  : undefined
               }
             />
           </div>
