@@ -129,7 +129,7 @@ def _open_terminal_window(
 ) -> None:
     """Open a single Terminal.app window running `cmd`, tiled to `bounds`."""
     x1, y1, x2, y2 = bounds
-    ascript = (
+    apple_script = (
         'tell application "Terminal"\n'
         "    activate\n"
         f'    set newTab to do script "{_applescript_escape(cmd)}"\n'
@@ -139,7 +139,7 @@ def _open_terminal_window(
         f'    set custom title of newTab to "{_applescript_escape(title)}"\n'
         "end tell\n"
     )
-    subprocess.run(["osascript", "-e", ascript], check=False)
+    subprocess.run(["osascript", "-e", apple_script], check=False)
 
 
 def _spawn_dashboard_window(
