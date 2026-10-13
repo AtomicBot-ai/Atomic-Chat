@@ -1247,6 +1247,45 @@ describe('OOM retry ladder', () => {
     }
   )
 
+  it('a managed load the user cancelled ends quietly even when the engine reports running out of memory', async () => {
+    // The cancel and the container's OOM can cross: the user asked for the load to stop, so no
+    // out-of-memory toast for it.
+    const list = modelProviderState.providers as Array<Record<string, unknown>>
+    upstreamWith({ ctx_len: 16384, ngl: 100 })
+    list[1] = { ...(list[1] as Record<string, unknown>), provider: 'sglang' }
+    let rejectLoad: (error: unknown) => void = () => {}
+    const startModel = vi.fn(
+      () =>
+        new Promise((_, reject) => {
+          rejectLoad = reject
+        })
+    )
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue([]),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      stopModel: vi.fn().mockResolvedValue(undefined),
+      cancelModelLoad: vi.fn(async () => {
+        rejectLoad(Object.assign(new Error('CUDA out of memory'), { code: 'OUT_OF_MEMORY' }))
+        return true
+      }),
+      startModel,
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => models,
+      providers: () => ({ updateSettings: vi.fn() }),
+    } as unknown as ServiceHub
+
+    const pending = switchToModel({ modelId: 'shared-model', providerName: 'sglang', serviceHub })
+    const outcome = expect(pending).rejects.toMatchObject({ code: 'MODEL_LOAD_CANCELLED' })
+    await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
+    await cancelModelLoad(serviceHub)
+    await outcome
+
+    expect(startModel).toHaveBeenCalledTimes(1)
+  })
+
   it('llama.cpp keeps its ladder: an out-of-memory failure still retries with a smaller context', async () => {
     upstreamWith({ ctx_len: 16384, ngl: 100 })
     const startModel = vi.fn().mockRejectedValueOnce(oom()).mockResolvedValue(undefined)

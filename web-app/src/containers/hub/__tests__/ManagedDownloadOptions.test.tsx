@@ -363,12 +363,18 @@ describe('a card under the three managed engines (spec sglang-desktop)', () => {
   })
 
   it('SGLang not installed, only TensorRT-LLM, which refuses: its refusal and Install SGLang, no download', async () => {
-    hubStates.value = [hidden(VLLM_ENGINE), hub(SGLANG_ENGINE, 'not-installed'), hub(TENSORRT_LLM_ENGINE, 'ready')]
-    answers({ 'sglang': accepts, 'tensorrt-llm': refusedBy('tensorrt-llm') })
+    // vLLM is shown but not installed either, and would refuse: only SGLang is offered.
+    hubStates.value = [
+      hub(VLLM_ENGINE, 'not-installed'),
+      hub(SGLANG_ENGINE, 'not-installed'),
+      hub(TENSORRT_LLM_ENGINE, 'ready'),
+    ]
+    answers({ 'vllm': refusedBy('vllm'), 'sglang': accepts, 'tensorrt-llm': refusedBy('tensorrt-llm') })
     render(<ManagedDownloadOptions model={notDownloaded} />)
 
     expect(await screen.findByText('tensorrt-llm does not support this checkpoint.')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'hub:sglang.installEngine' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:vllm.installEngine' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'hub:sglang.installEngine' }))

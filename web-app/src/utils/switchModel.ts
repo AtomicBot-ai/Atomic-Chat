@@ -1332,9 +1332,9 @@ async function loadLocalModelWithOomRetry(args: {
       // A managed engine's context is a setting of its provider, which the core reads; the ladder
       // changes the model's `ctx_len` and `ngl`, which no managed engine reads, so it would only
       // repeat the same load. Its failure is shown at once, with the reason and the logs (change
-      // add-sglang-runtime, design D7).
-      if (isManagedProvider(providerName)) throw error
+      // add-sglang-runtime, design D7). A load the user cancelled still ends as cancelled.
       throwIfLoadCancelled()
+      if (isManagedProvider(providerName)) throw error
       const step =
         attempt < OOM_RETRY_MAX_ATTEMPTS - 1
           ? planOomRetry(provider, modelId, attempt)
