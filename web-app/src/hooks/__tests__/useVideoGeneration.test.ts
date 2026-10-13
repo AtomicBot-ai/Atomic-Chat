@@ -23,6 +23,11 @@ import { DEFAULT_VIDEO_FORM, useVideoForm } from '@/hooks/useVideoForm'
 import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useVideoGenerationStore } from '@/stores/video-generation-store'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
+import fixture from '@/lib/__tests__/media-catalog.fixture.json'
+import type { MediaCatalogView, VideoModelDescriptor } from '@/services/media/types'
+import { useMediaCatalog } from '@/stores/media-catalog-store'
 import { useVideoGeneration } from '../useVideoGeneration'
 
 describe('useVideoGeneration', () => {
@@ -269,6 +274,125 @@ describe('useVideoGeneration', () => {
       act(() => hook.result.current.confirmation.onConfirm())
       expect(start).toHaveBeenCalledWith({ request: asked, seed: 11 })
       expect(hook.result.current.confirmation.open).toBe(false)
+    })
+  })
+
+  describe("with a provider's model picked", () => {
+    const veo: VideoModelDescriptor = {
+      id: 'google/veo-3.1',
+      name: 'Veo 3.1',
+      kind: 'video',
+      api: 'openrouter-videos',
+      workflows: ['create', 'image-to-video'],
+      params: {
+        durations: { values: [4, 6, 8], default: 8 },
+        resolutions: { values: ['720p', '1080p'], default: '720p' },
+        aspect_ratios: { values: ['16:9', '9:16'], default: '16:9' },
+        audio: true,
+      },
+      source: 'live',
+    }
+
+    beforeEach(() => {
+      useMediaCatalog.setState({
+        catalog: fixture as unknown as MediaCatalogView,
+        available: true,
+        status: 'ready',
+        listings: {
+          'openrouter:video': { status: 'ready', models: [veo], live: true, error: null },
+        },
+      })
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'openrouter',
+            active: true,
+            api_key: 'sk-test',
+            base_url: 'https://openrouter.ai/api/v1',
+            models: [],
+            settings: [],
+            media: { models: [{ id: 'google/veo-3.1', kind: 'video' }] },
+          },
+        ] as unknown as ProviderObject[],
+      })
+      useRemoteMediaForm.setState({
+        video: { durationSecs: 5, resolution: '1080p' },
+        videoWorkflow: 'create',
+        firstFrame: null,
+      })
+      useVideoSetting.setState({
+        selectedRemote: { provider: 'openrouter', model: 'google/veo-3.1' },
+      })
+      // No engine on this machine: a provider's model does not need one.
+      useImageGenerationStore.setState({ status: null, videoCapabilities: null })
+    })
+
+    it('sends the target and the settings the model takes, nothing of the local engine', () => {
+      const { result } = renderHook(() => useVideoGeneration())
+      expect(result.current.remote?.descriptor.id).toBe('google/veo-3.1')
+      expect(result.current.disabledReason).toBeNull()
+      expect(result.current.capabilities).toBeNull()
+      expect(result.current.targetFamilyId).toBe('remote:openrouter/google/veo-3.1')
+      expect(result.current.request).toEqual({
+        prompt: 'a lighthouse',
+        width: 1920,
+        height: 1080,
+        steps: 0,
+        cfgScale: 0,
+        workflow: 'create',
+        target: { provider: 'openrouter', model: 'google/veo-3.1' },
+        // 5 s is not offered: the model's default goes instead.
+        remote: { durationSecs: 8, resolution: '1080p', aspectRatio: '16:9' },
+      })
+    })
+
+    it('generates straight away: no model to start, no memory to ask about', async () => {
+      const start = vi.fn(async () => {})
+      useVideoGenerationStore.setState({ startGeneration: start })
+      const { result } = renderHook(() => useVideoGeneration())
+      await act(() => result.current.generate())
+      const [[submitted]] = start.mock.calls as unknown as [[{ request: unknown }]]
+      expect(submitted).toEqual({ request: result.current.request, seed: null })
+      expect(submitted.request).toMatchObject({ target: { provider: 'openrouter' } })
+      expect(fake.estimateVideo).not.toHaveBeenCalled()
+      expect(fake.loadModel).not.toHaveBeenCalled()
+    })
+
+    it('needs a first frame for image to video, and sends it', () => {
+      act(() => useRemoteMediaForm.setState({ videoWorkflow: 'image-to-video' }))
+      const { result } = renderHook(() => useVideoGeneration())
+      expect(result.current.disabledReason).toBe('noSource')
+      act(() =>
+        useRemoteMediaForm.getState().setFirstFrame({ path: '/pics/a.png', width: 1024, height: 576 })
+      )
+      expect(result.current.disabledReason).toBeNull()
+      expect(result.current.request).toMatchObject({
+        workflow: 'image-to-video',
+        initImage: { path: '/pics/a.png' },
+      })
+    })
+
+    it('refuses a mode the model does not have', () => {
+      useMediaCatalog.setState({
+        listings: {
+          'openrouter:video': {
+            status: 'ready',
+            models: [{ ...veo, workflows: ['create'] }],
+            live: true,
+            error: null,
+          },
+        },
+      })
+      act(() => useRemoteMediaForm.setState({ videoWorkflow: 'image-to-video' }))
+      const { result } = renderHook(() => useVideoGeneration())
+      expect(result.current.disabledReason).toBe('unsupportedWorkflow')
+    })
+
+    it('falls back to the local model once the provider is gone', () => {
+      useModelProvider.setState({ providers: [] })
+      const { result } = renderHook(() => useVideoGeneration())
+      expect(result.current.remote).toBeNull()
+      expect(result.current.request).not.toHaveProperty('target')
     })
   })
 })

@@ -9,9 +9,15 @@ export type RestoredVideoDraft = {
 
 const pad = (value: number, width = 2) => String(value).padStart(width, '0')
 
+/** A clip's file extension: its own file's, which a provider's model makes as MP4. */
+export function videoExtension(item: GalleryVideoItem): string {
+  const match = /\.(mp4|webm)$/i.exec(item.path)
+  return match ? match[1].toLowerCase() : (item.recipe.outputFormat ?? 'webm')
+}
+
 /**
- * `AtomicChat_YYYYMMDD-HHMMSS_<seed>.webm` — the export name. Local time,
- * because the user is looking at the file next to their other downloads.
+ * `AtomicChat_YYYYMMDD-HHMMSS_<seed>.<webm|mp4>` — the export name. Local
+ * time, because the user is looking at the file next to their other downloads.
  */
 export function exportVideoFilename(item: GalleryVideoItem): string {
   const { recipe } = item
@@ -19,7 +25,7 @@ export function exportVideoFilename(item: GalleryVideoItem): string {
   const stamp =
     `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
     `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
-  return `AtomicChat_${stamp}_${recipe.seed}.webm`
+  return `AtomicChat_${stamp}_${recipe.seed}.${videoExtension(item)}`
 }
 
 /**

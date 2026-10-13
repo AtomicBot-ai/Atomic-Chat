@@ -14,7 +14,11 @@ import type { DiffusionModality } from '@/services/diffusion/types'
 type VideoSettingState = {
   /** `<family>:<quantId>` of the video checkpoint the form generates with. */
   selectedArtifactId: string | null
+  /** Picking a local checkpoint also drops a picked provider model. */
   setSelectedArtifactId: (value: string | null) => void
+  /** A provider's video model the form generates with instead of a local checkpoint. */
+  selectedRemote: { provider: string; model: string } | null
+  setSelectedRemote: (value: { provider: string; model: string } | null) => void
 
   /** The Advanced section of the Video form is unfolded. */
   advancedOpen: boolean
@@ -32,7 +36,9 @@ export const useVideoSetting = create<VideoSettingState>()(
   persist(
     (set) => ({
       selectedArtifactId: null,
-      setSelectedArtifactId: (value) => set({ selectedArtifactId: value }),
+      setSelectedArtifactId: (value) => set({ selectedArtifactId: value, selectedRemote: null }),
+      selectedRemote: null,
+      setSelectedRemote: (value) => set({ selectedRemote: value }),
 
       advancedOpen: false,
       setAdvancedOpen: (value) => set({ advancedOpen: value }),

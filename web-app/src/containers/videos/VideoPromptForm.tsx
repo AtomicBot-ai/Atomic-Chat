@@ -31,8 +31,9 @@ import { ImageField, ImageFieldHint } from '@/containers/images/ImageField'
 import { ImageGenerateButton } from '@/containers/images/ImageGenerateButton'
 import { ImageModelPicker } from '@/containers/images/ImageModelPicker'
 import { ImageParamSlider } from '@/containers/images/ImageParamSlider'
-import { AdvancedSelect } from '@/containers/images/ImagePromptForm'
+import { AdvancedSelect } from '@/containers/images/AdvancedSelect'
 import { ImageSeedField } from '@/containers/images/ImageSeedField'
+import { ImageSourceDropzone } from '@/containers/images/ImageSourceDropzone'
 import {
   MediaModeSelect,
   type MediaMode,
@@ -40,6 +41,7 @@ import {
 import { MediaSettingsHeading } from '@/containers/images/MediaSettingsHeading'
 import { MediaPageHeading } from '@/containers/images/MediaPageHeading'
 import { useImageEngine } from '@/hooks/useImageEngine'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
 import {
   IMAGE_IDLE_UNLOAD_OPTIONS,
   IMAGE_OFFLOAD_OVERRIDES,
@@ -59,6 +61,7 @@ import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ConfirmVideoExceedsMemory } from './ConfirmVideoExceedsMemory'
 import { VideoDurationSelect } from './VideoDurationSelect'
 import { VideoEstimateLine } from './VideoEstimateLine'
+import { RemoteVideoOptionsFields } from './RemoteVideoOptionsFields'
 import { VideoResolutionSelect } from './VideoResolutionSelect'
 
 /** Until a model reports its presets: LTX's landscape default. */
@@ -141,7 +144,14 @@ export const VideoPromptForm = memo(function VideoPromptForm({
   const generation = useVideoGeneration()
   // The picked model's, known from the catalog before it starts: the
   // controls it needs are there at once and do not appear on load.
-  const { capabilities, targetFamilyId } = generation
+  const { capabilities, targetFamilyId, remote, remoteOptions } = generation
+  const remoteParams = remote?.descriptor.params
+  const remoteWorkflow = useRemoteMediaForm((state) => state.videoWorkflow)
+  const setRemoteWorkflow = useRemoteMediaForm(
+    (state) => state.setVideoWorkflow
+  )
+  const firstFrame = useRemoteMediaForm((state) => state.firstFrame)
+  const setFirstFrame = useRemoteMediaForm((state) => state.setFirstFrame)
   const [internalModelsOpen, setInternalModelsOpen] = useState(false)
   const modelsOpen = controlledModelsOpen ?? internalModelsOpen
   const setModelsOpen = onModelsOpenChange ?? setInternalModelsOpen
@@ -169,7 +179,10 @@ export const VideoPromptForm = memo(function VideoPromptForm({
     [capabilities, form.frames]
   )
   const [minSteps, maxSteps] = capabilities?.ranges.steps ?? FALLBACK_STEPS
-  const showNegative = capabilities?.supportsNegativePrompt ?? false
+  const showNegative = remote
+    ? remoteParams?.negative_prompt === true
+    : (capabilities?.supportsNegativePrompt ?? false)
+  const showSeed = !remote || remoteParams?.seed === true
   // A family distilled to run at cfg 1 has no classifier-free guidance to
   // tune (LTX); Wan runs at cfg 5 with a negative prompt, so it gets the knob.
   const showGuidance =
@@ -178,25 +191,33 @@ export const VideoPromptForm = memo(function VideoPromptForm({
     capabilities.supportsNegativePrompt
   const showDistilledGuidance = capabilities?.supportsGuidance ?? false
   const busy = generation.generating
-  const modes = useMemo(
-    (): MediaMode<VideoWorkflowId>[] => [
+  const remoteWorkflows = remote?.descriptor.workflows
+  // The local engine makes clips from a prompt only, so image to video is a provider's model's.
+  const workflow: VideoWorkflowId = remote ? remoteWorkflow : 'create'
+  const modes = useMemo((): MediaMode<VideoWorkflowId>[] => {
+    const otherModel = (id: VideoWorkflowId) =>
+      remoteWorkflows && !remoteWorkflows.some((w) => w === id)
+        ? { badge: t('images:remote.otherModel') }
+        : {}
+    return [
       {
         id: 'create',
         icon: IconSparkles,
         title: t('videos:form.title'),
         hint: t('videos:form.hint'),
+        ...otherModel('create'),
       },
       {
         id: 'image-to-video',
         icon: IconPhotoVideo,
         title: t('videos:workflow.imageToVideo.title'),
         hint: t('videos:workflow.imageToVideo.hint'),
-        disabled: true,
-        badge: t('videos:workflow.soon'),
+        ...(remoteWorkflows
+          ? otherModel('image-to-video')
+          : { disabled: true, badge: t('videos:workflow.soon') }),
       },
-    ],
-    [t]
-  )
+    ]
+  }, [t, remoteWorkflows])
   const idleLabel = (minutes: number) =>
     minutes === 0
       ? t('settings:media.idleNever')
@@ -262,17 +283,35 @@ export const VideoPromptForm = memo(function VideoPromptForm({
             subtitle={t('videos:page.subtitle')}
             testIdPrefix="video"
           />
-          {/* Only `create` is served; the core parses and refuses
-              `image-to-video` until it lands, so it is listed as coming and
-              cannot be picked. */}
+          {/* The local engine serves `create` only, so image to video is
+              listed as coming until a provider's model that takes a first
+              frame is picked. */}
           <MediaModeSelect
             modes={modes}
-            value="create"
-            onChange={() => {}}
+            value={workflow}
+            onChange={(id) => {
+              if (remote) setRemoteWorkflow(id)
+            }}
             label={t('videos:workflow.choose')}
             testIdPrefix="video"
           />
         </div>
+
+        {remote && workflow === 'image-to-video' && (
+          <ImageField label={t('videos:remote.firstFrame')}>
+            <ImageSourceDropzone
+              path={firstFrame?.path ?? null}
+              onPick={setFirstFrame}
+              disabled={busy}
+              caption={
+                firstFrame
+                  ? `${firstFrame.width}×${firstFrame.height}`
+                  : undefined
+              }
+              testId="video-first-frame"
+            />
+          </ImageField>
+        )}
 
         <div
           className="space-y-2.5 rounded-2xl border bg-secondary/20 p-2.5"
@@ -355,190 +394,215 @@ export const VideoPromptForm = memo(function VideoPromptForm({
           resetLabel={t('videos:form.reset')}
           resetHint={t('videos:form.resetHint')}
           onReset={
-            capabilities ? () => form.resetToDefaults(capabilities) : undefined
+            remote
+              ? () => useRemoteMediaForm.setState({ video: {} })
+              : capabilities
+                ? () => form.resetToDefaults(capabilities)
+                : undefined
           }
           disabled={busy}
           testIdPrefix="video"
         />
 
-        <VideoResolutionSelect
-          width={form.width}
-          height={form.height}
-          presets={presets}
-          disabled={busy}
-          onChange={(size) => form.patch(size)}
-        />
-
-        <VideoDurationSelect
-          frames={form.frames}
-          options={durations}
-          disabled={busy}
-          onChange={(frames) => form.patch({ frames })}
-        />
-
-        {/* The rate is the model's own; it is shown, not chosen. */}
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
-            <span className="truncate">{t('videos:form.frameRate')}</span>
-            <ImageFieldHint>{t('videos:form.frameRateHint')}</ImageFieldHint>
-          </span>
-          <span
-            className="shrink-0 font-mono text-sm tabular-nums"
-            data-testid="video-frame-rate"
-          >
-            {t('videos:form.fps', { fps: lattice.fps })}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-3.5 pt-1">
-          <ImageParamSlider
-            id="video-steps"
-            label={t('videos:form.steps')}
-            description={t('videos:form.stepsHint')}
-            value={form.steps}
-            min={minSteps}
-            max={maxSteps}
-            step={1}
+        {remote && remoteOptions && (
+          <RemoteVideoOptionsFields
+            descriptor={remote.descriptor}
+            options={remoteOptions}
             disabled={busy}
-            onChange={(steps) => form.patch({ steps })}
           />
-          {showGuidance && (
-            <ImageParamSlider
-              id="video-guidance"
-              label={t('videos:form.guidance')}
-              description={t('videos:form.guidanceHint')}
-              value={form.cfgScale}
-              min={1}
-              max={20}
-              step={0.5}
-              disabled={busy}
-              onChange={(cfgScale) => form.patch({ cfgScale })}
-            />
-          )}
-          {showDistilledGuidance && (
-            <ImageParamSlider
-              id="video-distilled-guidance"
-              label={t('videos:form.distilledGuidance')}
-              description={t('videos:form.distilledGuidanceHint')}
-              value={form.guidance ?? capabilities?.defaults.guidance ?? 3.5}
-              min={0}
-              max={20}
-              step={0.5}
-              disabled={busy}
-              onChange={(guidance) => form.patch({ guidance })}
-            />
-          )}
-        </div>
+        )}
 
-        <ImageSeedField
-          id="video-seed"
-          value={form.seedText}
-          disabled={busy}
-          onChange={(seedText) => form.patch({ seedText })}
-        />
+        {/* The presets, frame lattice, rate and sampling are the local engine's. */}
+        {!remote && (
+          <>
+            <VideoResolutionSelect
+              width={form.width}
+              height={form.height}
+              presets={presets}
+              disabled={busy}
+              onChange={(size) => form.patch(size)}
+            />
 
-        <Collapsible
-          open={advancedOpen}
-          onOpenChange={setAdvancedOpen}
-          className="mt-1 border-t border-border/60 pt-3"
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
-              data-testid="video-advanced-toggle"
-            >
-              <span className="min-w-0 flex-1 text-xs font-medium">
-                {t('videos:form.advanced')}
+            <VideoDurationSelect
+              frames={form.frames}
+              options={durations}
+              disabled={busy}
+              onChange={(frames) => form.patch({ frames })}
+            />
+
+            {/* The rate is the model's own; it is shown, not chosen. */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+                <span className="truncate">{t('videos:form.frameRate')}</span>
+                <ImageFieldHint>
+                  {t('videos:form.frameRateHint')}
+                </ImageFieldHint>
               </span>
-              <IconChevronDown
-                size={16}
-                className={cn(
-                  'shrink-0 text-muted-foreground transition-transform',
-                  advancedOpen && 'rotate-180'
-                )}
+              <span
+                className="shrink-0 font-mono text-sm tabular-nums"
+                data-testid="video-frame-rate"
+              >
+                {t('videos:form.fps', { fps: lattice.fps })}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-3.5 pt-1">
+              <ImageParamSlider
+                id="video-steps"
+                label={t('videos:form.steps')}
+                description={t('videos:form.stepsHint')}
+                value={form.steps}
+                min={minSteps}
+                max={maxSteps}
+                step={1}
+                disabled={busy}
+                onChange={(steps) => form.patch({ steps })}
               />
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent
-            className={cn(
-              collapsiblePanelAnimation,
-              'duration-250 ease-out will-change-[height] motion-reduce:animate-none motion-reduce:duration-0'
-            )}
-            data-testid="video-advanced-panel"
-          >
-            <div className="flex flex-col gap-3 pt-3">
-              <AdvancedSelect
-                label={t('images:form.memory')}
-                hint={t('images:form.memoryHint')}
-                value={offloadOverride}
-                options={IMAGE_OFFLOAD_OVERRIDES.map((value) => [
-                  value,
-                  memoryLabel(value),
-                ])}
-                onChange={setOffloadOverride}
-              />
-              {engine.engineChoices.length > 1 && (
-                <AdvancedSelect
-                  label={t('settings:media.engineOverride')}
-                  hint={t('images:form.engineHint')}
-                  value={engineOverride}
-                  options={(
-                    ['auto', ...engine.engineChoices] as ImageEngineOverride[]
-                  ).map((value) => [value, engineLabel(value)])}
-                  onChange={setEngineOverride}
+              {showGuidance && (
+                <ImageParamSlider
+                  id="video-guidance"
+                  label={t('videos:form.guidance')}
+                  description={t('videos:form.guidanceHint')}
+                  value={form.cfgScale}
+                  min={1}
+                  max={20}
+                  step={0.5}
+                  disabled={busy}
+                  onChange={(cfgScale) => form.patch({ cfgScale })}
                 />
               )}
-              <AdvancedSelect
-                label={t('images:form.evictChat')}
-                hint={t('settings:media.evictChatDescription')}
-                value={evictChatModel}
-                options={(['whenNeeded', 'always'] as ImageEvictPolicy[]).map(
-                  (value) => [value, evictLabel(value)]
-                )}
-                onChange={setEvictChatModel}
-              />
-              <AdvancedSelect
-                label={t('settings:media.idleUnload')}
-                hint={t('settings:media.idleUnloadDescription')}
-                value={idleUnloadMinutes}
-                disabled={keepModelLoaded}
-                options={IMAGE_IDLE_UNLOAD_OPTIONS.map((minutes) => [
-                  minutes,
-                  idleLabel(minutes),
-                ])}
-                onChange={setIdle}
-              />
-              <div className="flex h-8 items-center justify-between gap-3">
-                <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                  {t('settings:media.keepLoaded')}
-                  <ImageFieldHint>
-                    {t('settings:media.keepLoadedDescription')}
-                  </ImageFieldHint>
-                </span>
-                <Switch
-                  checked={keepModelLoaded}
-                  onCheckedChange={setKeep}
-                  aria-label={t('settings:media.keepLoaded')}
+              {showDistilledGuidance && (
+                <ImageParamSlider
+                  id="video-distilled-guidance"
+                  label={t('videos:form.distilledGuidance')}
+                  description={t('videos:form.distilledGuidanceHint')}
+                  value={
+                    form.guidance ?? capabilities?.defaults.guidance ?? 3.5
+                  }
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  disabled={busy}
+                  onChange={(guidance) => form.patch({ guidance })}
                 />
-              </div>
-              <ImageApiSettingsCard variant="embedded" resource="videos" />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full justify-between rounded-full"
-                onClick={() => void navigate({ to: route.settings.media })}
-              >
-                <span className="flex items-center gap-2">
-                  <IconSettings size={14} className="text-muted-foreground" />
-                  {t('images:form.mediaSettings')}
-                </span>
-                <IconChevronRight size={14} />
-              </Button>
+              )}
             </div>
-          </CollapsibleContent>
-        </Collapsible>
+          </>
+        )}
+
+        {showSeed && (
+          <ImageSeedField
+            id="video-seed"
+            value={form.seedText}
+            disabled={busy}
+            onChange={(seedText) => form.patch({ seedText })}
+          />
+        )}
+
+        {!remote && (
+          <Collapsible
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            className="mt-1 border-t border-border/60 pt-3"
+          >
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
+                data-testid="video-advanced-toggle"
+              >
+                <span className="min-w-0 flex-1 text-xs font-medium">
+                  {t('videos:form.advanced')}
+                </span>
+                <IconChevronDown
+                  size={16}
+                  className={cn(
+                    'shrink-0 text-muted-foreground transition-transform',
+                    advancedOpen && 'rotate-180'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent
+              className={cn(
+                collapsiblePanelAnimation,
+                'duration-250 ease-out will-change-[height] motion-reduce:animate-none motion-reduce:duration-0'
+              )}
+              data-testid="video-advanced-panel"
+            >
+              <div className="flex flex-col gap-3 pt-3">
+                <AdvancedSelect
+                  label={t('images:form.memory')}
+                  hint={t('images:form.memoryHint')}
+                  value={offloadOverride}
+                  options={IMAGE_OFFLOAD_OVERRIDES.map((value) => [
+                    value,
+                    memoryLabel(value),
+                  ])}
+                  onChange={setOffloadOverride}
+                />
+                {engine.engineChoices.length > 1 && (
+                  <AdvancedSelect
+                    label={t('settings:media.engineOverride')}
+                    hint={t('images:form.engineHint')}
+                    value={engineOverride}
+                    options={(
+                      ['auto', ...engine.engineChoices] as ImageEngineOverride[]
+                    ).map((value) => [value, engineLabel(value)])}
+                    onChange={setEngineOverride}
+                  />
+                )}
+                <AdvancedSelect
+                  label={t('images:form.evictChat')}
+                  hint={t('settings:media.evictChatDescription')}
+                  value={evictChatModel}
+                  options={(['whenNeeded', 'always'] as ImageEvictPolicy[]).map(
+                    (value) => [value, evictLabel(value)]
+                  )}
+                  onChange={setEvictChatModel}
+                />
+                <AdvancedSelect
+                  label={t('settings:media.idleUnload')}
+                  hint={t('settings:media.idleUnloadDescription')}
+                  value={idleUnloadMinutes}
+                  disabled={keepModelLoaded}
+                  options={IMAGE_IDLE_UNLOAD_OPTIONS.map((minutes) => [
+                    minutes,
+                    idleLabel(minutes),
+                  ])}
+                  onChange={setIdle}
+                />
+                <div className="flex h-8 items-center justify-between gap-3">
+                  <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    {t('settings:media.keepLoaded')}
+                    <ImageFieldHint>
+                      {t('settings:media.keepLoadedDescription')}
+                    </ImageFieldHint>
+                  </span>
+                  <Switch
+                    checked={keepModelLoaded}
+                    onCheckedChange={setKeep}
+                    aria-label={t('settings:media.keepLoaded')}
+                  />
+                </div>
+                <ImageApiSettingsCard variant="embedded" resource="videos" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-between rounded-full"
+                  onClick={() => void navigate({ to: route.settings.media })}
+                >
+                  <span className="flex items-center gap-2">
+                    <IconSettings size={14} className="text-muted-foreground" />
+                    {t('images:form.mediaSettings')}
+                  </span>
+                  <IconChevronRight size={14} />
+                </Button>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     </form>
   )

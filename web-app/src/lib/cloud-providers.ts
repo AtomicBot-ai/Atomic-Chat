@@ -126,7 +126,7 @@ export type CloudProviderGroups = {
  * Subscriptions declare no `api-key` setting, so the property test alone would
  * file them here. They run on somebody else's servers: excluded up front.
  */
-const isSelfHostedGroup = (provider: ProviderObject): boolean => {
+export const isSelfHostedGroup = (provider: ProviderObject): boolean => {
   if (isSubscriptionProvider(provider.provider)) return false
   return (
     isSelfHostedProviderName(provider.provider) ||

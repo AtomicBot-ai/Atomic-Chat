@@ -9,13 +9,15 @@ import {
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
+import { useRemoteMediaTarget } from '@/hooks/useRemoteMedia'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
-import { cn } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import type { DiffusionModality } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
 import { ImageModelSelector } from './ImageModelSelector'
+import { RemoteModelLogo } from './RemoteModelSections'
 
 type ImageModelPickerProps = {
   open: boolean
@@ -43,28 +45,41 @@ export const ImageModelPicker = memo(function ImageModelPicker({
   const { artifactId: displayArtifactId, artifact: displayArtifact } =
     useMediaTarget(modality)
   const workflow = useImageForm((state) => state.workflow)
-  const showArtifact = Boolean(displayArtifactId && displayArtifact.complete)
+  // A picked provider model is the page's model over any local one, resident or not.
+  const remoteImage = useRemoteMediaTarget('image')
+  const remoteVideo = useRemoteMediaTarget('video')
+  const remote = modality === 'video' ? remoteVideo : remoteImage
+  const showArtifact =
+    !remote && Boolean(displayArtifactId && displayArtifact.complete)
 
   const loadedName = status?.model.loaded?.displayName ?? null
   const selectLabel =
     modality === 'video' ? t('videos:model.select') : t('images:model.select')
-  const name = showArtifact
-    ? (displayArtifact.family?.name ?? loadedName ?? selectLabel)
-    : selectLabel
-  const detail = showArtifact ? displayArtifact.quant?.label : null
-  const stateLabel = displayArtifact.loaded
-    ? t('images:model.loaded')
-    : displayArtifact.loading
-      ? modality === 'video'
-        ? t('videos:model.startingToast')
-        : t('images:model.startingToast')
-      : displayArtifact.unloading
+  const name = remote
+    ? remote.descriptor.name
+    : showArtifact
+      ? (displayArtifact.family?.name ?? loadedName ?? selectLabel)
+      : selectLabel
+  const detail = remote
+    ? getProviderTitle(remote.provider.provider)
+    : showArtifact
+      ? displayArtifact.quant?.label
+      : null
+  const stateLabel = remote
+    ? null
+    : displayArtifact.loaded
+      ? t('images:model.loaded')
+      : displayArtifact.loading
         ? modality === 'video'
-          ? t('videos:model.stoppingToast')
-          : t('images:model.stoppingToast')
-        : showArtifact
-          ? t('images:model.readyToLoad')
-          : null
+          ? t('videos:model.startingToast')
+          : t('images:model.startingToast')
+        : displayArtifact.unloading
+          ? modality === 'video'
+            ? t('videos:model.stoppingToast')
+            : t('images:model.stoppingToast')
+          : showArtifact
+            ? t('images:model.readyToLoad')
+            : null
 
   return (
     <div className="flex w-full min-w-0 items-center gap-1.5">
@@ -78,7 +93,13 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             data-testid="image-models-toggle"
             className="inline-flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
           >
-            {showArtifact && displayArtifact.family ? (
+            {remote ? (
+              <RemoteModelLogo
+                provider={remote.provider}
+                descriptor={remote.descriptor}
+                className="size-5 rounded-md"
+              />
+            ) : showArtifact && displayArtifact.family ? (
               <ModelLogo
                 icon={DIFFUSION_FAMILY_ICON_KEYS[displayArtifact.family.id]}
                 name={displayArtifact.family.name}
@@ -93,7 +114,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
             <span
               className={cn(
                 'truncate font-medium',
-                !showArtifact && 'text-muted-foreground'
+                !showArtifact && !remote && 'text-muted-foreground'
               )}
             >
               {name}
@@ -122,6 +143,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
           <ImageModelSelector
             variant="page"
             modality={modality}
+            onRemotePicked={() => onOpenChange(false)}
             {...(modality === 'image' ? { workflow } : {})}
           />
         </PopoverContent>

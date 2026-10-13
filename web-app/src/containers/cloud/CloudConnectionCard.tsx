@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { IconLoader2 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,6 +17,11 @@ import { CloudProviderSelect } from '@/containers/cloud/CloudProviderSelect'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { InputControl } from '@/containers/dynamicControllerSetting/InputControl'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import {
+  isMediaConnected,
+  mediaDialectOf,
+  withListedModels,
+} from '@/lib/media-models'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   isProviderConnected,
@@ -26,8 +32,13 @@ import { isOnboardingPending } from '@/lib/onboarding'
 import { buildApiKeyUpdate, saveProviderApiKey } from '@/lib/provider-api-key'
 import { getProviderTitle } from '@/lib/utils'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
-import { isKeylessRemoteProvider } from '@/utils/registerRemoteProvider'
+import {
+  isKeylessRemoteProvider,
+  registerRemoteProvider,
+} from '@/utils/registerRemoteProvider'
 import type { ServiceHub } from '@/services'
+import type { MediaKind } from '@/services/media/types'
+import { useMediaCatalog } from '@/stores/media-catalog-store'
 
 type CloudConnectionCardProps = {
   providers: ProviderObject[]
@@ -79,6 +90,8 @@ export function CloudConnectionCard({
 }: CloudConnectionCardProps) {
   const { t } = useTranslation()
   const [keyDraft, setKeyDraft] = useState('')
+  const [connectingMedia, setConnectingMedia] = useState(false)
+  const listMediaModels = useMediaCatalog((state) => state.listModels)
 
   // Reset the draft whenever the selection changes, so a key typed for one
   // provider can never be saved onto another.
@@ -96,12 +109,18 @@ export function CloudConnectionCard({
   const apiKeySetting = selected?.settings.find((s) => s.key === 'api-key')
   const baseUrlSetting = selected?.settings.find((s) => s.key === 'base-url')
   const needsKey = selected ? takesApiKey(selected) : false
-  const connected = selected ? isProviderConnected(selected) : false
+  // A server that only makes media is connected once its media models are set up.
+  const connected = selected
+    ? isProviderConnected(selected) || isMediaConnected(selected)
+    : false
   // Disconnecting means deleting the key, so it is only offered when a key is
   // what makes this provider work. Ollama declares an optional `api-key`
   // setting but is reachable without one, and clearing an empty key would be a
   // no-op button that claims to disconnect something.
   const hasKey = Boolean(selected?.api_key?.trim())
+  // A server that only makes media (Automatic1111, stable-diffusion.cpp) has no chat models to
+  // reload and needs no key: it is connected from its address, by asking it for its models.
+  const mediaServer = selected?.media_only === true
 
   const handleSaveKey = () => {
     if (!selected) return
@@ -120,6 +139,64 @@ export function CloudConnectionCard({
         provider: getProviderTitle(selected.provider),
       })
     )
+  }
+
+  /**
+   * Ask a media server for its models through the core and enable every one it lists: what makes it
+   * connected. The core asks at the address it has registered, so the one on screen goes first.
+   */
+  const handleConnectMediaServer = async () => {
+    if (!selected) return
+    const title = getProviderTitle(selected.provider)
+    setConnectingMedia(true)
+    try {
+      await registerRemoteProvider(selected)
+      const catalog =
+        useMediaCatalog.getState().catalog ??
+        (await useMediaCatalog.getState().load())
+      const kinds = (['image', 'video'] as const).filter(
+        (kind): kind is MediaKind =>
+          mediaDialectOf(selected, kind, catalog) !== undefined
+      )
+      const listings = await Promise.all(
+        kinds.map((kind) => listMediaModels(selected.provider, kind))
+      )
+      const failed = listings.find(
+        (listing) => listing.status === 'error' || !listing.live
+      )
+      if (failed) {
+        toast.error(t('cloud:connection.mediaFailed', { provider: title }), {
+          description: failed.error ?? undefined,
+        })
+        return
+      }
+      const listed = listings.flatMap((listing, index) =>
+        listing.models.map((model) => ({
+          id: model.id,
+          kind: kinds[index] as MediaKind,
+          name: model.name,
+        }))
+      )
+      if (listed.length === 0) {
+        toast.error(t('cloud:connection.mediaNoModels', { provider: title }))
+        return
+      }
+      updateProvider(selected.provider, {
+        media: withListedModels(selected.media, listed),
+      })
+      toast.success(
+        t('cloud:connection.mediaConnected', {
+          provider: title,
+          count: listed.length,
+        })
+      )
+    } catch (error) {
+      toast.error(t('cloud:connection.mediaFailed', { provider: title }), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setConnectingMedia(false)
+    }
   }
 
   const handleDisconnect = () => {
@@ -291,7 +368,8 @@ export function CloudConnectionCard({
                     disabled={!keyDraft.trim() || keyDraft === selected.api_key}
                     onClick={handleSaveKey}
                   >
-                    {hasKey
+                    {/* A media server's key is optional; it connects from its address. */}
+                    {hasKey || mediaServer
                       ? t('cloud:connection.save')
                       : t('cloud:connection.connect')}
                   </Button>
@@ -305,7 +383,7 @@ export function CloudConnectionCard({
               title={t('cloud:connection.baseUrl')}
               column
               actions={
-                <div className="mt-2 w-full">
+                <div className="mt-2 flex w-full items-center gap-2">
                   <InputControl
                     className="w-full"
                     value={selected.base_url ?? ''}
@@ -316,6 +394,23 @@ export function CloudConnectionCard({
                     }
                     onChange={handleBaseUrlChange}
                   />
+                  {mediaServer && (
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      variant={connected ? 'secondary' : 'default'}
+                      disabled={connectingMedia || !selected.base_url?.trim()}
+                      onClick={() => void handleConnectMediaServer()}
+                      data-testid="cloud-media-server-connect"
+                    >
+                      {connectingMedia && (
+                        <IconLoader2 size={14} className="animate-spin" />
+                      )}
+                      {connected
+                        ? t('cloud:models.reload')
+                        : t('cloud:connection.connect')}
+                    </Button>
+                  )}
                 </div>
               }
             />

@@ -21,13 +21,18 @@ import DeleteGalleryVideosDialog from '@/containers/dialogs/DeleteGalleryVideosD
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useVideoForm } from '@/hooks/useVideoForm'
 import { useVideoSetting } from '@/hooks/useVideoSetting'
+import { useRemoteMediaGroups } from '@/hooks/useRemoteMedia'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { captureVideoGalleryAction } from '@/lib/diffusion/telemetry'
 import {
   exportVideoFilename,
   restoreVideoDraftFromRecipe,
 } from '@/lib/video/recipe'
-import type { GalleryVideoItem } from '@/services/diffusion/types'
+import {
+  isRemoteRecipeEngine,
+  type GalleryVideoItem,
+} from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useVideoGalleryStore } from '@/stores/video-gallery-store'
 import { VideoRecipePopover } from './VideoRecipePopover'
@@ -78,6 +83,8 @@ export const VideoViewer = memo(function VideoViewer({
   const loadedModelId = useImageGenerationStore(
     (state) => state.status?.model.loaded?.modelId ?? null
   )
+  const setSelectedRemote = useVideoSetting((state) => state.setSelectedRemote)
+  const remoteGroups = useRemoteMediaGroups('video')
   const [pendingDelete, setPendingDelete] = useState<string[]>([])
   const [unplayableId, setUnplayableId] = useState<string | null>(null)
 
@@ -120,10 +127,49 @@ export const VideoViewer = memo(function VideoViewer({
   const src = convertFileSrc(item.path)
   const poster = item.posterPath ? convertFileSrc(item.posterPath) : undefined
   const unplayable = unplayableId === item.id
+  // A provider's file whose header the core could not read has no size: 16:9 frames it.
+  const [frameWidth, frameHeight] =
+    item.width > 0 && item.height > 0 ? [item.width, item.height] : [16, 9]
   const modelDiffers =
     (selectedArtifactId ?? loadedModelId) !== item.recipe.model.modelId
 
   const restore = () => {
+    const engine = item.recipe.engine
+    if (isRemoteRecipeEngine(engine)) {
+      // A provider's clip: its model becomes the pick again, with what it was asked.
+      const pick = {
+        provider: engine.provider,
+        model: item.recipe.model.modelId,
+      }
+      const { draft } = restoreVideoDraftFromRecipe(item.recipe)
+      applyDraft(draft, `remote:${pick.provider}/${pick.model}`)
+      const { recipe } = item
+      useRemoteMediaForm.setState({
+        video: {
+          ...(recipe.remote ?? {}),
+          ...(recipe.durationSecs !== undefined
+            ? { durationSecs: recipe.durationSecs }
+            : {}),
+        },
+        videoWorkflow:
+          recipe.workflow === 'image-to-video' ? 'image-to-video' : 'create',
+      })
+      captureVideoGalleryAction('restore_recipe')
+      const offered = remoteGroups.some(
+        (group) =>
+          group.provider.provider === pick.provider &&
+          group.models.some(({ model }) => model.id === pick.model)
+      )
+      if (offered) {
+        setSelectedRemote(pick)
+        toast.success(t('videos:viewer.restored'))
+      } else {
+        toast.warning(t('images:remote.restoreUnavailable'), {
+          description: recipe.model.displayName,
+        })
+      }
+      return
+    }
     const { draft, modelId } = restoreVideoDraftFromRecipe(item.recipe)
     // The numbers are the recipe model's: picking that model keeps them.
     applyDraft(draft, item.recipe.model.family)
@@ -189,8 +235,8 @@ export const VideoViewer = memo(function VideoViewer({
           className="relative block shrink-0 overflow-hidden rounded-lg bg-black shadow-md"
           data-testid="video-viewer-frame"
           style={{
-            width: `min(100cqw, ${(100 * item.width) / item.height}cqh)`,
-            height: `min(100cqh, ${(100 * item.height) / item.width}cqw)`,
+            width: `min(100cqw, ${(100 * frameWidth) / frameHeight}cqh)`,
+            height: `min(100cqh, ${(100 * frameHeight) / frameWidth}cqw)`,
           }}
         >
           {unplayable ? (
@@ -227,7 +273,8 @@ export const VideoViewer = memo(function VideoViewer({
             className="pointer-events-none absolute top-2 right-2 rounded-md bg-black/55 px-2 py-1 font-mono text-[10px] tabular-nums text-white opacity-0 backdrop-blur-sm transition-opacity group-hover/viewer:opacity-100"
             data-testid="video-dimension-badge"
           >
-            {item.width}×{item.height} · {item.fps} fps
+            {item.width}×{item.height}
+            {item.fps > 0 ? ` · ${item.fps} fps` : ''}
           </span>
         </div>
 

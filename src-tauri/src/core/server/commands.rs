@@ -178,6 +178,7 @@ pub async fn core_owner<R: Runtime, C: ControlCaller>(
                         })
                         .collect(),
                     models: config.models.clone(),
+                    media: config.media.clone(),
                 }),
             )
         })

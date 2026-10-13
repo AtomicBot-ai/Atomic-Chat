@@ -1,3 +1,6 @@
+import { getProviderTitle } from '@/lib/utils'
+import { isRemoteRecipeEngine } from '@/services/diffusion/types'
+import type { DiffusionRecipeEngine } from '@/services/diffusion/types'
 import { memo } from 'react'
 import { IconCopy, IconInfoCircle, IconRestore } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -11,6 +14,12 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { captureImageGalleryAction } from '@/lib/diffusion/telemetry'
 import type { ImageRecipe } from '@/services/diffusion/types'
+
+function engineLabel(engine: DiffusionRecipeEngine): string {
+  if (isRemoteRecipeEngine(engine)) return `${getProviderTitle(engine.provider)} · ${engine.api}`
+  return `${engine.kind} · ${engine.backend}${engine.cpuFallback ? ' (cpu)' : ''}`
+}
+
 
 type ImageRecipePopoverProps = {
   recipe: ImageRecipe
@@ -51,12 +60,7 @@ export const ImageRecipePopover = memo(function ImageRecipePopover({
   if (recipe.samplingMethod) {
     rows.push([t('images:viewer.details.sampler'), recipe.samplingMethod])
   }
-  rows.push([
-    t('images:viewer.details.engine'),
-    `${recipe.engine.kind} · ${recipe.engine.backend}${
-      recipe.engine.cpuFallback ? ' (cpu)' : ''
-    }`,
-  ])
+  rows.push([t('images:viewer.details.engine'), engineLabel(recipe.engine)])
   rows.push([
     t('images:viewer.details.duration'),
     t('images:viewer.details.seconds', {

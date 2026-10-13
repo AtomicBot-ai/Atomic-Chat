@@ -31,7 +31,14 @@ type ImageSettingState = {
 
   /** `<family>:<quantId>` of the checkpoint the form generates with. */
   selectedArtifactId: string | null
+  /** Picking a local checkpoint also drops a picked provider model. */
   setSelectedArtifactId: (value: string | null) => void
+  /**
+   * A cloud or self-hosted provider's image model the form generates with
+   * instead of a local checkpoint; null for the local one.
+   */
+  selectedRemote: { provider: string; model: string } | null
+  setSelectedRemote: (value: { provider: string; model: string } | null) => void
 
   /** The Advanced section of the form (steps, cfg, seed, batch) is unfolded. */
   advancedOpen: boolean
@@ -86,7 +93,9 @@ export const useImageSetting = create<ImageSettingState>()(
       setSetupCompleted: (value) => set({ setupCompleted: value }),
 
       selectedArtifactId: null,
-      setSelectedArtifactId: (value) => set({ selectedArtifactId: value }),
+      setSelectedArtifactId: (value) => set({ selectedArtifactId: value, selectedRemote: null }),
+      selectedRemote: null,
+      setSelectedRemote: (value) => set({ selectedRemote: value }),
 
       advancedOpen: false,
       setAdvancedOpen: (value) => set({ advancedOpen: value }),

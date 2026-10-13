@@ -165,6 +165,8 @@ describe('video-generation-store', () => {
             estimate_high_s: null,
             estimate_basis: null,
             slowdown_seen: false,
+            media_target: 'local',
+            media_provider: null,
           },
         ],
       ])

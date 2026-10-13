@@ -8,6 +8,7 @@ import { route } from '@/constants/routes'
 import { openAIProviderSettings } from '@/constants/providers'
 import HeaderPage from '@/containers/HeaderPage'
 import { CloudConnectionCard } from '@/containers/cloud/CloudConnectionCard'
+import { CloudMediaModelsCard } from '@/containers/cloud/CloudMediaModelsCard'
 import { CloudModelsCard } from '@/containers/cloud/CloudModelsCard'
 import { CloudSubscriptionCard } from '@/containers/cloud/CloudSubscriptionCard'
 import { AddProviderDialog } from '@/containers/dialogs'
@@ -22,7 +23,8 @@ import {
 } from '@/lib/cloud-providers'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
 import { cn } from '@/lib/utils'
-import { useProviderRegistryStore } from '@/stores/provider-registry-store'
+import { useMediaCatalog } from '@/stores/media-catalog-store'
+import { isKnownProvider, useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.cloud.index as any)({
@@ -100,6 +102,12 @@ export function CloudPage() {
     },
     [navigate]
   )
+
+  // The core's media catalog: which providers make images or video, and with which models.
+  const mediaAvailable = useMediaCatalog((state) => state.available)
+  useEffect(() => {
+    void useMediaCatalog.getState().load()
+  }, [])
 
   const clearSelection = useCallback(() => {
     navigate({ to: route.cloud.index, search: {}, replace: true })
@@ -262,11 +270,19 @@ export function CloudPage() {
             />
           )}
 
-          {selected && (
+          {selected && !selected.media_only && (
             <CloudModelsCard
               provider={selected}
               refreshing={refreshing}
               onRefresh={handleRefreshModels}
+            />
+          )}
+
+          {selected && mediaAvailable && !isSubscriptionProvider(selected.provider) && (
+            <CloudMediaModelsCard
+              provider={selected}
+              custom={!isKnownProvider(selected.provider)}
+              onChange={(media) => updateProvider(selected.provider, { media })}
             />
           )}
         </div>

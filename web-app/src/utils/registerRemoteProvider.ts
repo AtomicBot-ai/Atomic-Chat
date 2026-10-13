@@ -13,6 +13,12 @@ type RegisterProviderRequest = {
   base_url?: string
   custom_headers: ProviderCustomHeaderPayload[]
   models: string[]
+  /** The enabled image and video models; absent keeps what the core has stored. */
+  media?: {
+    image_api?: string | null
+    video_api?: string | null
+    models: Array<{ id: string; kind: 'image' | 'video' }>
+  }
 }
 
 export const LOCAL_PROVIDER_NAMES = [
@@ -44,7 +50,12 @@ export function isLocalProvider(providerName: string | undefined | null): boolea
  * without auth wherever they are reachable: loopback today, the box under the
  * desk or a VPS tomorrow.
  */
-export const SELF_HOSTED_PROVIDER_NAMES = ['ollama', 'llamacpp-server'] as const
+export const SELF_HOSTED_PROVIDER_NAMES = [
+  'ollama',
+  'llamacpp-server',
+  'automatic1111',
+  'sdcpp-server',
+] as const
 export type SelfHostedProviderName = (typeof SELF_HOSTED_PROVIDER_NAMES)[number]
 
 export function isSelfHostedProviderName(
@@ -144,6 +155,13 @@ export async function registerRemoteProvider(
       value: h.value,
     })),
     models: provider.models.map((e) => e.id),
+  }
+  if (provider.media) {
+    request.media = {
+      ...(provider.media.image_api ? { image_api: provider.media.image_api } : {}),
+      ...(provider.media.video_api ? { video_api: provider.media.video_api } : {}),
+      models: provider.media.models.map(({ id, kind }) => ({ id, kind })),
+    }
   }
 
   await invoke('register_provider_config', { request })

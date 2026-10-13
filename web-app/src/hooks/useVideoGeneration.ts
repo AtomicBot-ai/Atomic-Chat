@@ -3,15 +3,28 @@ import { useShallow } from 'zustand/shallow'
 
 import { parseSeedText } from '@/hooks/useImageForm'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
+import {
+  useRemoteMediaTarget,
+  type ResolvedRemoteTarget,
+} from '@/hooks/useRemoteMedia'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
 import { useVideoEstimate } from '@/hooks/useVideoEstimate'
 import { useVideoForm } from '@/hooks/useVideoForm'
 import { previewVideoCapabilities } from '@/lib/diffusion/capabilities'
+import {
+  effectiveVideoOptions,
+  nominalVideoSize,
+} from '@/lib/media-capabilities'
 import type {
   VideoCapabilities,
   VideoEstimate,
   VideoGenerateRequest,
   VideoJob,
 } from '@/services/diffusion/types'
+import type {
+  RemoteVideoOptions,
+  VideoModelDescriptor,
+} from '@/services/media/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useVideoGenerationStore } from '@/stores/video-generation-store'
 
@@ -21,6 +34,8 @@ export type VideoGenerateDisabledReason =
   | 'noModel'
   | 'modelLoading'
   | 'emptyPrompt'
+  | 'noSource'
+  | 'unsupportedWorkflow'
   | 'busy'
 
 /** What `ConfirmVideoExceedsMemory` renders from. */
@@ -59,6 +74,10 @@ export type VideoGenerationHandle = {
   estimate: VideoEstimate | null
   /** Asked before a draft whose estimate exceeds memory starts. */
   confirmation: VideoExceedsConfirmation
+  /** The picked provider model, which Generate sends to instead of the local engine. */
+  remote: ResolvedRemoteTarget<VideoModelDescriptor> | null
+  /** What the request carries for it: the form's settings checked against the model. */
+  remoteOptions: RemoteVideoOptions | null
   generate: () => Promise<void>
   stop: () => Promise<void>
 }
@@ -89,6 +108,21 @@ export function useVideoGeneration(): VideoGenerationHandle {
     }))
   )
   const target = useMediaTarget('video')
+  const remote = useRemoteMediaTarget('video')
+  const remoteForm = useRemoteMediaForm(
+    useShallow((state) => ({
+      options: state.video,
+      workflow: state.videoWorkflow,
+      firstFrame: state.firstFrame,
+    }))
+  )
+  const remoteOptions = useMemo(
+    () =>
+      remote
+        ? effectiveVideoOptions(remote.descriptor, remoteForm.options)
+        : null,
+    [remote, remoteForm.options]
+  )
   const {
     status,
     residentCapabilities,
@@ -141,6 +175,29 @@ export function useVideoGeneration(): VideoGenerationHandle {
 
   const request = useMemo<VideoGenerateRequest>(() => {
     const trimmedNegative = form.negativePrompt.trim()
+    if (remote && remoteOptions) {
+      // A provider's clip: its length and shape are the remote settings; the size is nominal,
+      // for the pending tile — the provider's own file says what it made.
+      const { params } = remote.descriptor
+      const size = nominalVideoSize(remoteOptions)
+      const workflow = remoteForm.workflow
+      return {
+        prompt: form.prompt.trim(),
+        ...(params.negative_prompt && trimmedNegative
+          ? { negativePrompt: trimmedNegative }
+          : {}),
+        width: size.width,
+        height: size.height,
+        steps: 0,
+        cfgScale: 0,
+        workflow,
+        ...(workflow === 'image-to-video' && remoteForm.firstFrame
+          ? { initImage: { path: remoteForm.firstFrame.path } }
+          : {}),
+        target: remote.target,
+        remote: remoteOptions,
+      }
+    }
     return {
       prompt: form.prompt.trim(),
       ...(capabilities?.supportsNegativePrompt && trimmedNegative
@@ -163,17 +220,38 @@ export function useVideoGeneration(): VideoGenerationHandle {
         : {}),
       workflow: 'create',
     }
-  }, [form, capabilities])
+  }, [
+    form,
+    capabilities,
+    remote,
+    remoteOptions,
+    remoteForm.workflow,
+    remoteForm.firstFrame,
+  ])
 
+  // The core estimates the local engine only; a provider's clip has no estimate here.
   const estimates = useVideoEstimate(
     request,
-    modelReady ? (loaded?.modelId ?? null) : null
+    !remote && modelReady ? (loaded?.modelId ?? null) : null
   )
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pending, setPending] = useState<PendingLaunch | null>(null)
 
-  const disabledReason: VideoGenerateDisabledReason | null =
-    generating || imageGenerating
+  const remoteDisabled: VideoGenerateDisabledReason | null = !remote
+    ? null
+    : generating
+      ? 'busy'
+      : !remote.descriptor.workflows.some((w) => w === remoteForm.workflow)
+        ? 'unsupportedWorkflow'
+        : remoteForm.workflow === 'image-to-video' && !remoteForm.firstFrame
+          ? 'noSource'
+          : request.prompt.length === 0 && !request.initImage
+            ? 'emptyPrompt'
+            : null
+
+  const disabledReason: VideoGenerateDisabledReason | null = remote
+    ? remoteDisabled
+    : generating || imageGenerating
       ? 'busy'
       : !engineInstalled
         ? 'noEngine'
@@ -187,7 +265,13 @@ export function useVideoGeneration(): VideoGenerationHandle {
 
   const { current } = estimates
   const generate = useCallback(async () => {
-    if (disabledReason || targetArtifactId === null) return
+    if (disabledReason) return
+    // A provider's model has nothing to start and no memory to ask about.
+    if (remote) {
+      await startGeneration({ request, seed })
+      return
+    }
+    if (targetArtifactId === null) return
     if (!modelReady) {
       // Start the picked model first. A failed start leaves its error on
       // the page and nothing is submitted.
@@ -208,6 +292,7 @@ export function useVideoGeneration(): VideoGenerationHandle {
     await startGeneration({ request, seed })
   }, [
     disabledReason,
+    remote,
     targetArtifactId,
     modelReady,
     loadModel,
@@ -230,8 +315,11 @@ export function useVideoGeneration(): VideoGenerationHandle {
     stopRequested,
     modelReady,
     targetArtifactId,
-    targetFamilyId: target.familyId,
-    capabilities,
+    // A provider's model adopts the form like a family of its own.
+    targetFamilyId: remote
+      ? `remote:${remote.target.provider}/${remote.target.model}`
+      : target.familyId,
+    capabilities: remote ? null : capabilities,
     canGenerate: disabledReason === null,
     disabledReason,
     request,
@@ -243,6 +331,8 @@ export function useVideoGeneration(): VideoGenerationHandle {
       onCancel,
       onConfirm,
     },
+    remote,
+    remoteOptions,
     generate,
     stop,
   }

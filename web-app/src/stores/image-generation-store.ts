@@ -25,6 +25,7 @@ import {
 import {
   captureImageEngineInstall,
   captureImageGenerate,
+  mediaTargetProps,
 } from '@/lib/diffusion/telemetry'
 import { validateImageRequest } from '@/lib/diffusion/validate'
 import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
@@ -364,9 +365,12 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
   }
 
   const reportJob = (job: ImageJob, runs: number) => {
-    const loaded = get().status?.model.loaded
+    // A provider's run reports neither the resident model nor its engine.
+    const loaded = job.request.target ? undefined : get().status?.model.loaded
     // An id the parser does not know reports the run without the model.
-    const parsed = parseArtifactId(job.modelId || loaded?.modelId || '')
+    const parsed = job.request.target
+      ? null
+      : parseArtifactId(job.modelId || loaded?.modelId || '')
     const family = parsed?.family ?? null
     const quant = parsed?.quantId ?? null
     const duration =
@@ -391,6 +395,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       runs,
       duration_ms: duration,
       error_code: job.error?.code ?? null,
+      ...mediaTargetProps(job.request.target),
     })
   }
 
@@ -989,7 +994,8 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     startGeneration: async ({ request, runs, baseSeed }) => {
       if (get().generating) return
       const capabilities = get().capabilities
-      if (capabilities) {
+      // The resident model's limits say nothing about a provider's model.
+      if (capabilities && !request.target) {
         const verdict = validateImageRequest(request, capabilities)
         if (!verdict.ok) {
           set({ lastError: { code: verdict.code, message: verdict.message } })
