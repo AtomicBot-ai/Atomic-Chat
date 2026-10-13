@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-263 records, 2026-05-19 → 2026-10-09.
+268 records, 2026-05-19 → 2026-10-11.
 
 <!-- Counted from the files on disk, not by arithmetic. Verified by counting *.md excluding INDEX and _TEMPLATE. -->
 
@@ -39,11 +39,12 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Radium Media platform (11)
+## Radium Media platform (12)
 
 The model-agnostic media platform: provider adapters, the v2 contract, the
 library on disk, and how the frozen surface is allowed to change.
 
+- **2026-10-11** — [Built-in engine progress is read on poll, not streamed as events](2026-10-11-built-in-engine-progress-is-read-on-poll.md)
 - **2026-10-11** — [Model-backed upscalers ship in the Rust catalog with a dedicated install path](2026-10-11-model-backed-upscalers-in-the-rust-catalog.md)
 - **2026-10-11** — [Full-HD images via the built-in engine's native hires-fix; no upscaler model download](2026-10-11-full-hd-images-via-built-in-engine-hires-fix.md)
 - **2026-10-11** — [Media jobs persist state-only history and retry submissions](2026-10-11-media-jobs-persist-state-only-and-retry-submits.md)
