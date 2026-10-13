@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-// Regenerate the offline baseline manifest that ships inside the
-// `llamacpp-upstream` extension, plus the test fixture that mirrors it.
+// Regenerate the app's snapshots of atomic-chat-conf: the upstream release
+// list and legacy manifest fixtures the contract tests read, and the model
+// catalog baselines the web app falls back to offline.
 //
-// The baseline is the last-resort backend index used when every network
-// transport fails (ATO-243). It used to be a hand-written literal next to a
-// hand-written tag constant, which meant a manifest update in atomic-chat-conf
-// silently left the offline path a release or two behind. Now the manifest is
-// the single source and both files are generated from it.
+// The upstream offline baseline itself lives in atomic-chat-core now (it owns
+// the backend index since ADR 2026-09-27), so the extension no longer ships
+// one; see ADR 2026-10-13-bundle-the-upstream-release-the-pinned-core-would-choose.
 //
 // Writes:
-//   extensions/llamacpp-upstream-extension/src/bundledManifestBaseline.ts
-//   tests/fixtures/registries/upstream-manifest.json
+//   tests/fixtures/registries/upstream-releases.json  (backends/llamacpp-upstream-releases.json)
+//   tests/fixtures/registries/upstream-manifest.json  (backends/manifest.json)
 //   tests/fixtures/registries/sources.json  (only the pinned revision)
 //   web-app/src/services/diffusion-catalog-baseline.ts   (models/diffusion.json)
 //   web-app/src/services/decision-catalog-baseline.ts    (models/decision.json)
@@ -18,7 +17,8 @@
 //
 // Usage:
 //   node scripts/sync-upstream-baseline.mjs
-//   node scripts/sync-upstream-baseline.mjs --from ../atomic-chat-conf/backends/manifest.json
+//   node scripts/sync-upstream-baseline.mjs --from ../atomic-chat-conf/backends/manifest.json \
+//                                           --releases-from ../atomic-chat-conf/backends/llamacpp-upstream-releases.json
 //   node scripts/sync-upstream-baseline.mjs --catalog-from ../atomic-chat-conf/models/diffusion.json \
 //                                           --decision-from ../atomic-chat-conf/models/decision.json \
 //                                           --embedding-from ../atomic-chat-conf/models/embedding.json
@@ -32,8 +32,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
-const COMMITS_API =
-  'https://api.github.com/repos/AtomicBot-ai/atomic-chat-conf/commits?path=backends/manifest.json&per_page=1'
+const RELEASES_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/llamacpp-upstream-releases.json'
+// Every mirror commits the release list, and a promotion commits both files,
+// so the list's last commit is the revision both fixtures were generated from.
+// Until conf publishes the list, the manifest's last commit is.
+const COMMITS_APIS = [
+  'https://api.github.com/repos/AtomicBot-ai/atomic-chat-conf/commits?path=backends/llamacpp-upstream-releases.json&per_page=1',
+  'https://api.github.com/repos/AtomicBot-ai/atomic-chat-conf/commits?path=backends/manifest.json&per_page=1',
+]
 const DIFFUSION_CATALOG_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/diffusion.json'
 const DECISION_CATALOG_URL =
@@ -41,10 +48,7 @@ const DECISION_CATALOG_URL =
 const EMBEDDING_CATALOG_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/embedding.json'
 
-const BASELINE_TS = join(
-  ROOT,
-  'extensions/llamacpp-upstream-extension/src/bundledManifestBaseline.ts'
-)
+const RELEASES_FIXTURE_JSON = join(ROOT, 'tests/fixtures/registries/upstream-releases.json')
 const FIXTURE_JSON = join(ROOT, 'tests/fixtures/registries/upstream-manifest.json')
 const SOURCES_JSON = join(ROOT, 'tests/fixtures/registries/sources.json')
 const DIFFUSION_CATALOG_TS = join(
@@ -82,63 +86,6 @@ function die(message) {
 }
 
 /**
- * Keeps only what the offline path can actually use. `updated_at` and `$schema`
- * are manifest bookkeeping, and a baseline that carried them would suggest the
- * snapshot is authoritative about freshness — it is the opposite.
- */
-export function baselineFromManifest(manifest) {
-  if (typeof manifest?.tag_name !== 'string' || !manifest.tag_name) {
-    throw new Error('manifest has no tag_name')
-  }
-  if (!Array.isArray(manifest.assets) || manifest.assets.length === 0) {
-    throw new Error('manifest lists no assets')
-  }
-  const baseline = { tag_name: manifest.tag_name }
-  if (manifest.download_base) baseline.download_base = manifest.download_base
-  baseline.assets = manifest.assets.map((asset) => {
-    const entry = { name: asset.name }
-    if (asset.sha256) entry.sha256 = asset.sha256
-    if (asset.size) entry.size = asset.size
-    return entry
-  })
-  return baseline
-}
-
-export function renderBaselineModule(baseline) {
-  const assets = baseline.assets
-    .map((asset) => {
-      const fields = [`name: '${asset.name}'`]
-      if (asset.sha256) fields.push(`sha256: '${asset.sha256}'`)
-      if (asset.size) fields.push(`size: ${asset.size}`)
-      return `    { ${fields.join(', ')} },`
-    })
-    .join('\n')
-
-  const downloadBase = baseline.download_base
-    ? `\n  download_base: '${baseline.download_base}',`
-    : ''
-
-  return `// GENERATED by scripts/sync-upstream-baseline.mjs — do not edit by hand.
-//
-// Offline snapshot of the atomic-chat-conf backend manifest. \`fetchRemoteBackends\`
-// parses it as a last resort when every network transport fails (ATO-243), so it
-// deliberately carries real tags and backend ids: the download path keeps
-// working, it is just older than the live manifest until the network recovers.
-//
-// Regenerate with \`make sync-upstream-baseline\` after the manifest moves. The
-// tag here is NOT a pin — a live manifest on a newer tag is followed as-is.
-import type { UpstreamManifest } from './backend'
-
-export const BUNDLED_MANIFEST_BASELINE: UpstreamManifest = {
-  tag_name: '${baseline.tag_name}',${downloadBase}
-  assets: [
-${assets}
-  ],
-}
-`
-}
-
-/**
  * The fixture is the manifest verbatim (the "exact" fixture in sources.json),
  * so contract tests assert against the shape the app really receives.
  */
@@ -162,6 +109,28 @@ export function renderFixture(manifest) {
     })
     .join(',\n')
   return `{\n${head.join(',\n')},\n  "assets": [\n${assets}\n  ]\n}\n`
+}
+
+/** The release list verbatim, as conf writes it (two-space JSON). */
+export function renderReleasesFixture(list) {
+  if (list?.schema_version !== 1 || !Array.isArray(list.releases) || list.releases.length === 0) {
+    throw new Error('release list has no releases this script reads')
+  }
+  return `${JSON.stringify(list, null, 2)}\n`
+}
+
+/** The release list, or `null` while conf does not publish one (404). */
+async function loadReleases(from) {
+  if (from) return JSON.parse(await readFile(from, 'utf8'))
+  const resp = await fetch(RELEASES_URL, {
+    headers: { 'User-Agent': 'atomic-chat-baseline-sync', Accept: 'application/json' },
+  })
+  if (resp.status === 404) {
+    process.stderr.write(`Warning: ${RELEASES_URL} is not published yet; leaving its fixture untouched\n`)
+    return null
+  }
+  if (!resp.ok) die(`release list returned HTTP ${resp.status} from ${RELEASES_URL}`)
+  return resp.json()
 }
 
 async function loadManifest(from, url = MANIFEST_URL) {
@@ -278,16 +247,18 @@ export const BASELINE_EMBEDDING_CATALOG: EmbeddingCatalogManifest = ${JSON.strin
 async function resolveRevision(explicit) {
   if (explicit) return explicit
   try {
-    const resp = await fetch(COMMITS_API, {
-      headers: {
-        'User-Agent': 'atomic-chat-baseline-sync',
-        Accept: 'application/vnd.github+json',
-      },
-    })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const commits = await resp.json()
-    const sha = commits?.[0]?.sha
-    if (typeof sha === 'string' && sha) return sha
+    for (const api of COMMITS_APIS) {
+      const resp = await fetch(api, {
+        headers: {
+          'User-Agent': 'atomic-chat-baseline-sync',
+          Accept: 'application/vnd.github+json',
+        },
+      })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const commits = await resp.json()
+      const sha = commits?.[0]?.sha
+      if (typeof sha === 'string' && sha) return sha
+    }
     throw new Error('no commit in response')
   } catch (err) {
     process.stderr.write(
@@ -310,12 +281,17 @@ async function main() {
   const manifest = await loadManifest(
     typeof args.from === 'string' ? args.from : null
   )
-
-  let baseline
+  if (typeof manifest?.tag_name !== 'string' || !manifest.tag_name) {
+    die(`manifest has no tag_name (source: ${args.from ?? MANIFEST_URL})`)
+  }
+  const releases = await loadReleases(
+    typeof args['releases-from'] === 'string' ? args['releases-from'] : null
+  )
+  let releasesFixture = null
   try {
-    baseline = baselineFromManifest(manifest)
+    if (releases) releasesFixture = renderReleasesFixture(releases)
   } catch (err) {
-    die(`${err.message} (source: ${args.from ?? MANIFEST_URL})`)
+    die(`${err.message} (source: ${args['releases-from'] ?? RELEASES_URL})`)
   }
 
   const catalog = await loadManifest(
@@ -344,7 +320,7 @@ async function main() {
   }
 
   const changed = []
-  await writeOrCheck(BASELINE_TS, renderBaselineModule(baseline), check, changed)
+  if (releasesFixture) await writeOrCheck(RELEASES_FIXTURE_JSON, releasesFixture, check, changed)
   await writeOrCheck(FIXTURE_JSON, renderFixture(manifest), check, changed)
   await writeOrCheck(
     DIFFUSION_CATALOG_TS,
@@ -384,18 +360,18 @@ async function main() {
   }
 
   if (changed.length === 0) {
-    process.stderr.write(`Baseline is already at ${baseline.tag_name}\n`)
+    process.stderr.write(`Fixtures are already at ${manifest.tag_name}\n`)
     return
   }
   if (check) {
     die(
-      `baseline is stale for manifest tag ${baseline.tag_name}; run \`make sync-upstream-baseline\`:\n  ${changed
+      `fixtures are stale for manifest tag ${manifest.tag_name}; run \`make sync-upstream-baseline\`:\n  ${changed
         .map((path) => path.slice(ROOT.length + 1))
         .join('\n  ')}`
     )
   }
   process.stderr.write(
-    `Synced baseline to ${baseline.tag_name}:\n  ${changed
+    `Synced fixtures to ${manifest.tag_name}:\n  ${changed
       .map((path) => path.slice(ROOT.length + 1))
       .join('\n  ')}\n`
   )

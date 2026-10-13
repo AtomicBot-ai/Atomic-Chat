@@ -1020,16 +1020,16 @@ release-prod:
 #
 # Backend-index source (ATO-199): every branch asks
 # scripts/resolve-upstream-backend.mjs for the tag, asset name, URL and hash.
-# That script reads the static manifest in atomic-chat-conf
-# (raw.githubusercontent.com — no per-IP rate limit), the same source the
-# runtime `fetchRemoteBackends()` uses, and prefers our signed mirror over the
-# ggml-org CDN. Do not re-derive any of this inline: it used to be five
-# copy-pasted jq blocks, each with its own hardcoded download base.
-# The manifest is the gate: a tag lands there only after the release has been
-# verified, so bundling whatever it names keeps the installer and the runtime
-# catalog on the same build instead of drifting apart. That replaces the
-# 2026-07-03 "hold off on auto-tracking ggml-org tags" pin. Set the variable
-# to bundle a different release, e.g.:
+# That script reads the release list in atomic-chat-conf
+# (backends/llamacpp-upstream-releases.json on raw.githubusercontent.com — no
+# per-IP rate limit), the same source the core's catalog uses, and prefers our
+# signed mirror over the ggml-org CDN. Do not re-derive any of this inline: it
+# used to be five copy-pasted jq blocks, each with its own hardcoded download
+# base. The release list and the pinned core (package.json atomicCore.version)
+# are the gate: the script bundles the newest approved release that core meets,
+# the same one the core offers at runtime, so the installer and the catalog
+# start on the same build. Until conf publishes the list it falls back to
+# backends/manifest.json. Set the variable to bundle a different release, e.g.:
 #   make download-llamacpp-upstream-backend LLAMACPP_UPSTREAM_TAG=b9222
 LLAMACPP_UPSTREAM_TAG ?=
 UPSTREAM_TAG_ARG = $(if $(LLAMACPP_UPSTREAM_TAG),--tag $(LLAMACPP_UPSTREAM_TAG),)

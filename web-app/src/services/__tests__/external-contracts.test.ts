@@ -46,6 +46,36 @@ const upstreamManifestSchema = z.object({
     .min(1),
 })
 
+/// The upstream release list the core reads (and the release build bundles
+/// from): per release the oldest core it runs on, per archive its validation.
+const upstreamReleasesSchema = z.object({
+  schema_version: z.literal(1),
+  updated_at: z.iso.datetime(),
+  download_base: z.url().startsWith('https://'),
+  releases: z
+    .array(
+      z.object({
+        tag: z.string().regex(/^b\d+$/),
+        commit: z.string().regex(/^[0-9a-f]{40}$/),
+        min_core_version: z.string().regex(/^\d+\.\d+\.\d+$/),
+        withdrawn: z.object({ reason: nonEmptyString }).optional(),
+        assets: z
+          .array(
+            z.object({
+              name: z.string().regex(/^llama-b\d+-bin-.+\.(zip|tar\.gz)$/),
+              sha256: z.string().regex(/^[0-9a-f]{64}$/),
+              size: z.number().int().positive(),
+              validation: z.enum(['candidate', 'approved']),
+            })
+          )
+          .min(1),
+      })
+    )
+    .min(1),
+})
+const UPSTREAM_RELEASES_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/llamacpp-upstream-releases.json'
+
 const turboquantManifestSchema = z.object({
   commit: z.string().regex(/^[0-9a-f]{7,40}$/),
   backends: z
@@ -198,6 +228,7 @@ const LEGACY_MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/turboquant-manifest.json'
 
 const liveContracts = [
+  ['upstream release list', UPSTREAM_RELEASES_URL, upstreamReleasesSchema],
   [
     'upstream manifest',
     'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json',
@@ -239,6 +270,7 @@ const liveContracts = [
 
 describe('pinned external registry contracts', () => {
   it.each([
+    ['upstream release list', 'upstream-releases', upstreamReleasesSchema],
     ['upstream manifest', 'upstream-manifest', upstreamManifestSchema],
     ['TurboQuant manifest', 'turboquant-manifest', turboquantManifestSchema],
     ['recommended models', 'recommended-models', recommendationSchema],
@@ -392,11 +424,9 @@ describe.runIf(process.env.ATOMIC_TEST_LIVE_REGISTRIES === '1')(
 )
 
 /**
- * The upstream provider's offline baseline is generated from the live manifest
- * (`make sync-upstream-baseline`), and the extension's own test asserts that the
- * generated module and this fixture stay byte-identical — so comparing the
- * fixture against the live manifest is comparing the shipped baseline against
- * it. A stale baseline is not a user-visible outage (the live manifest wins
+ * The upstream fixtures are generated from the live release list and manifest
+ * (`make sync-upstream-baseline`); the offline baseline itself is the core's.
+ * A stale fixture is not a user-visible outage (the core reads the live list
  * whenever the network is up), which is why this is opt-in rather than part of
  * `verify-fast`: it is a reminder to regenerate, not a release blocker.
  */
@@ -423,6 +453,43 @@ describe.runIf(process.env.ATOMIC_TEST_LIVE_REGISTRIES === '1')(
         )
       },
       30_000
+    )
+
+    it(
+      'keeps the release list fixture in step with the live list',
+      async () => {
+        const live = upstreamReleasesSchema.parse(
+          await (await fetch(UPSTREAM_RELEASES_URL)).json()
+        )
+        const pinned = upstreamReleasesSchema.parse(fixture('upstream-releases'))
+        const shape = (list: typeof live) =>
+          list.releases.map(({ tag, assets }) => [tag, assets.map(({ name }) => name).sort()])
+        expect(shape(pinned)).toEqual(shape(live))
+      },
+      30_000
+    )
+
+    // The mirror prune keeps every tag the list still offers: a listed archive
+    // that is gone would fail the core's download for whoever it is offered to.
+    it(
+      'serves every archive the release list offers',
+      async () => {
+        const live = upstreamReleasesSchema.parse(
+          await (await fetch(UPSTREAM_RELEASES_URL)).json()
+        )
+        const missing: string[] = []
+        for (const release of live.releases) {
+          if (release.withdrawn) continue
+          for (const asset of release.assets) {
+            const url = `${live.download_base}/${release.tag}/${asset.name}`
+            const response = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+            await response.arrayBuffer()
+            if (!response.ok) missing.push(`${asset.name} -> ${url}`)
+          }
+        }
+        expect(missing).toEqual([])
+      },
+      300_000
     )
 
     it(
