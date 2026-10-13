@@ -28,6 +28,7 @@ describe('isAgentLocalProvider', () => {
     expect(isAgentLocalProvider('mlx')).toBe(true)
     expect(isAgentLocalProvider('tensorrt-llm')).toBe(true)
     expect(isAgentLocalProvider('vllm')).toBe(true)
+    expect(isAgentLocalProvider('sglang')).toBe(true)
   })
 
   it('excludes foundation-models and unknown values', () => {
@@ -70,6 +71,11 @@ describe('agentProviderBlockReason', () => {
     {
       name: 'vllm with no key: its session gateway, like TensorRT-LLM',
       provider: provider({ provider: 'vllm', api_key: '' }),
+      expected: null,
+    },
+    {
+      name: 'sglang with no key: its session gateway, like vLLM',
+      provider: provider({ provider: 'sglang', api_key: '' }),
       expected: null,
     },
     {

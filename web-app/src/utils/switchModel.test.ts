@@ -1208,6 +1208,66 @@ describe('OOM retry ladder', () => {
     expect(startModel).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['sglang', 'vllm', 'tensorrt-llm'])(
+    'a managed engine (%s) that ran out of memory loads once, with its settings untouched (change add-sglang-runtime, D7)',
+    async (engine) => {
+      // Its context is a setting of the provider, which the core reads; halving the model's
+      // `ctx_len` would only repeat the same load (spec sglang-desktop "Нехватка памяти при загрузке").
+      const posthog = (await import('posthog-js')).default
+      vi.mocked(posthog.capture).mockClear()
+      const list = modelProviderState.providers as Array<Record<string, unknown>>
+      upstreamWith({ ctx_len: 16384, ngl: 100 })
+      list[1] = { ...(list[1] as Record<string, unknown>), provider: engine }
+      const failure = Object.assign(
+        new Error('SGLang ran out of GPU memory loading the model: 7.1 GiB needed, 6.2 GiB free.'),
+        { code: 'OUT_OF_MEMORY' }
+      )
+      const startModel = vi.fn().mockRejectedValue(failure)
+      const models = {
+        getActiveModels: vi.fn().mockResolvedValue([]),
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
+        stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+        startModel,
+      }
+      const serviceHub = {
+        app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+        models: () => models,
+        providers: () => ({ updateSettings: vi.fn() }),
+      } as unknown as ServiceHub
+
+      await expect(
+        switchToModel({ modelId: 'shared-model', providerName: engine, serviceHub })
+      ).rejects.toThrow('7.1 GiB needed, 6.2 GiB free')
+      expect(startModel).toHaveBeenCalledTimes(1)
+      expect(modelSetting('ctx_len')).toBe(16384)
+      expect(modelSetting('ngl')).toBe(100)
+      expect(
+        vi.mocked(posthog.capture).mock.calls.filter(([event]) => event === 'model_load_retry')
+      ).toEqual([])
+    }
+  )
+
+  it('llama.cpp keeps its ladder: an out-of-memory failure still retries with a smaller context', async () => {
+    upstreamWith({ ctx_len: 16384, ngl: 100 })
+    const startModel = vi.fn().mockRejectedValueOnce(oom()).mockResolvedValue(undefined)
+    const models = {
+      getActiveModels: vi.fn().mockResolvedValue(['shared-model']),
+      stopAllModels: vi.fn().mockResolvedValue(undefined),
+      stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+      startModel,
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => models,
+      providers: () => ({ updateSettings: vi.fn() }),
+    } as unknown as ServiceHub
+
+    await switchToModel({ modelId: 'shared-model', providerName: 'llamacpp-upstream', serviceHub })
+
+    expect(startModel).toHaveBeenCalledTimes(2)
+    expect(modelSetting('ctx_len')).toBe(8192)
+  })
+
   it('does not retry a failure that is not memory', async () => {
     upstreamWith({ ctx_len: 16384, ngl: 100 })
     const startModel = vi.fn().mockRejectedValue(new Error('unsupported arch'))
