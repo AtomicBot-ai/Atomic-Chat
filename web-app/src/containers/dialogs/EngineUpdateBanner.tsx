@@ -10,11 +10,11 @@ import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 /**
  * Bottom-right offer to update an inference engine (ATO-528 / ATO-531).
  *
- * The llama.cpp extensions used to download a new release tag on their own at
- * startup; they now publish an offer and this asks. Accepting hands the
- * transfer back to the extension, whose progress `<BackendUpdater />` renders —
- * which is why this banner disappears the moment "Update" is pressed rather
- * than growing a progress bar of its own.
+ * The offer is the core's (`POST /engines/versions`, read through
+ * `useEngineUpdate`); accepting asks the core to apply it, and the download
+ * panel shows the transfer — which is why this banner disappears the moment
+ * "Update" is pressed rather than growing a progress bar of its own. A managed
+ * engine's reinstall is confirmed on its provider page instead.
  */
 const EngineUpdateBanner = () => {
   const { t } = useTranslation()

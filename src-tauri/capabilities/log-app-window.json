@@ -20,7 +20,6 @@
     "hardware:default",
     "llamacpp:default",
     "llamacpp-upstream:default",
-    "mlx:default",
     "deep-link:default",
     {
       "identifier": "http:default",

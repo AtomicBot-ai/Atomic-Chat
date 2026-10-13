@@ -14,7 +14,6 @@ import {
   IMAGE_ARTIFACT,
   IMAGE_ENGINE_TAG,
   imageCatalogFixture,
-  imageManifestFixture,
   installFakeImageEngine,
   type FakeImageEngine,
   type FakeSdOptions,
@@ -121,16 +120,15 @@ export interface VideoSeedOptions {
 
 /**
  * What to put in the webview's localStorage before the first page script: the
- * catalog (image and video families) and manifest caches, the image settings
- * with the tour already done, and the video selection.
+ * catalog (image and video families) cache, the image settings with the tour
+ * already done, and the video selection. The engine's manifest is the core's:
+ * `installFakeImageEngine` writes it.
  */
 export function videoSeed(options: VideoSeedOptions = {}): Record<string, string> {
   const now = String(Date.now())
   const seed: Record<string, string> = {
     atomic_diffusion_catalog_cache_v1: JSON.stringify(videoCatalogFixture()),
     atomic_diffusion_catalog_cache_ts_v1: now,
-    atomic_sdcpp_manifest_cache_v1: JSON.stringify(imageManifestFixture()),
-    atomic_sdcpp_manifest_cache_ts_v1: now,
     'setting-images': JSON.stringify({
       state: {
         setupCompleted: true,

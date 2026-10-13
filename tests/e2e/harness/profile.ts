@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { homeRedirect, listProcesses, singleInstanceSocket, webviewStoreDir } from './platform.js'
 
 export interface Profile {
@@ -18,6 +19,12 @@ export interface Profile {
   binDir: string
   /** Where the webview keeps this run's localStorage and IndexedDB. */
   webviewStore: string
+  /**
+   * Where the core reads conf's engine-build manifests from: files in the
+   * profile, absent until a scenario writes one (`writeImageManifest`). An
+   * absent file is a manifest the core could not read, never the network.
+   */
+  manifests: { sdcpp: string; mlx: string }
   /** What the app needs in its environment to live inside this profile. */
   env: Record<string, string>
   destroy: () => Promise<void>
@@ -109,10 +116,17 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   await writeFile(join(root, 'webview-seed.json'), JSON.stringify(seed))
 
   const webviewStore = webviewStoreDir(root, webviewStoreUuid(root))
+  const manifests = {
+    sdcpp: join(root, 'sdcpp-manifest.json'),
+    mlx: join(root, 'mlx-manifest.json'),
+  }
   const env: Record<string, string> = {
     ...homeRedirect(home),
     ATOMIC_E2E_DATA_ROOT: root,
     PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
+    // The app's environment reaches the core it starts.
+    ATOMIC_SDCPP_MANIFEST_URL: pathToFileURL(manifests.sdcpp).href,
+    ATOMIC_MLX_MANIFEST_URL: pathToFileURL(manifests.mlx).href,
   }
   // Which core the app starts: `make test-app-e2e` names one, otherwise the app
   // falls back to the one bundled with the build. Quoted because the app splits
@@ -125,6 +139,7 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
     dataFolder,
     binDir,
     webviewStore,
+    manifests,
     env,
     destroy: async () => {
       await rm(root, { recursive: true, force: true })

@@ -25,6 +25,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
 import { useManagedEnvironmentSync } from '@/hooks/useManagedEnvironmentSync'
+import { useEngineVersionsSync } from '@/hooks/useEngineVersionsSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
@@ -73,6 +74,9 @@ const AppLayout = () => {
   // Follows the core's TensorRT-LLM environment and its setup for the whole session, so the
   // provider page finds a running setup as it is. No-op off Linux.
   useManagedEnvironmentSync()
+  // Asks the core about every engine's versions for the update banner and the
+  // installed builds lists, again whenever an engine changes. Desktop only.
+  useEngineVersionsSync()
   const isSetupCompleted = useSetupCompleted()
 
   return (

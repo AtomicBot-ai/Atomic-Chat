@@ -17,7 +17,6 @@ permissions = [
     "allow-find-latest-version-for-backend",
     "allow-prioritize-backends",
     "allow-check-backend-for-updates",
-    "allow-remove-old-backend-versions",
     "allow-should-migrate-backend",
     "allow-handle-setting-update",
     "allow-install-bundled-backend",

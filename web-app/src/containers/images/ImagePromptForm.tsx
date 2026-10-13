@@ -5,7 +5,6 @@ import {
   useMemo,
   useState,
   type KeyboardEvent,
-  type ReactNode,
 } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
@@ -22,12 +21,6 @@ import {
   CollapsibleTrigger,
   collapsiblePanelAnimation,
 } from '@/components/ui/collapsible'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { route } from '@/constants/routes'
@@ -38,6 +31,7 @@ import {
 } from '@/hooks/useImageForm'
 import { useImageGeneration } from '@/hooks/useImageGeneration'
 import { useImageEngine } from '@/hooks/useImageEngine'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
 import {
   IMAGE_IDLE_UNLOAD_OPTIONS,
   IMAGE_OFFLOAD_OVERRIDES,
@@ -64,9 +58,11 @@ import { MediaPageHeading } from './MediaPageHeading'
 import { WORKFLOW_ICONS } from './workflowIcons'
 import { ImageGenerateButton } from './ImageGenerateButton'
 import { ImageModelPicker } from './ImageModelPicker'
+import { AdvancedSelect } from './AdvancedSelect'
 import { ImageParamSlider } from './ImageParamSlider'
 import { ImageSeedField } from './ImageSeedField'
 import { ImageSizeControl } from './ImageSizeControl'
+import { RemoteImageOptionsFields } from './RemoteImageOptionsFields'
 
 /** Until a model reports its ranges: sd.cpp's own limits. */
 const FALLBACK_CONSTRAINTS: DimConstraints = {
@@ -155,7 +151,9 @@ export const ImagePromptForm = memo(function ImagePromptForm({
   const generation = useImageGeneration()
   // The picked model's, known from the catalog before it starts: the
   // controls it needs are there at once and do not appear on load.
-  const { capabilities, targetFamilyId } = generation
+  const { capabilities, targetFamilyId, remote } = generation
+  // A provider's model: only the controls its descriptor lists exist.
+  const remoteParams = remote?.descriptor.params
   const [internalModelsOpen, setInternalModelsOpen] = useState(false)
   const modelsOpen = controlledModelsOpen ?? internalModelsOpen
   const setModelsOpen = onModelsOpenChange ?? setInternalModelsOpen
@@ -177,16 +175,26 @@ export const ImagePromptForm = memo(function ImagePromptForm({
     : FALLBACK_CONSTRAINTS
   const [minSteps, maxSteps] = capabilities?.ranges.steps ?? FALLBACK_STEPS
   const maxBatch = Math.max(1, capabilities?.maxBatch ?? MAX_IMAGE_BATCH)
+  const spec = workflowSpec(form.workflow)
   const showNegative = capabilities?.supportsNegativePrompt ?? false
   // Families distilled to run at cfg 1 have no classifier-free guidance to
   // tune; the slider would be a knob that does nothing.
-  const showCfg =
-    !capabilities ||
-    capabilities.defaults.cfgScale > 1 ||
-    capabilities.supportsNegativePrompt
+  const showCfg = remote
+    ? remoteParams?.cfg !== undefined
+    : !capabilities ||
+      capabilities.defaults.cfgScale > 1 ||
+      capabilities.supportsNegativePrompt
+  const [minCfg, maxCfg] = remoteParams?.cfg
+    ? [remoteParams.cfg.min, remoteParams.cfg.max]
+    : [1, 20]
+  const showSteps = !remote || remoteParams?.steps !== undefined
+  const showSeed = !remote || remoteParams?.seed === true
+  // A provider's model with a list of sizes, or aspect ratios, takes them from the remote fields.
+  const showSize =
+    spec.usesResolution && (!remote || remoteParams?.size?.kind === 'range')
   const showGuidance = capabilities?.supportsGuidance ?? false
   const busy = generation.generating
-  const spec = workflowSpec(form.workflow)
+  const remoteWorkflows = remote?.descriptor.workflows
   const modes = useMemo(
     () =>
       IMAGE_WORKFLOWS.map(({ id }) => ({
@@ -194,8 +202,12 @@ export const ImagePromptForm = memo(function ImagePromptForm({
         icon: WORKFLOW_ICONS[id],
         title: t(`images:workflow.${id}.title`),
         hint: t(`images:workflow.${id}.hint`),
+        // Still selectable: the picker then offers the models that can.
+        ...(remoteWorkflows && !remoteWorkflows.some((w) => w === id)
+          ? { badge: t('images:remote.otherModel') }
+          : {}),
       })),
-    [t]
+    [t, remoteWorkflows]
   )
   const isEdit = form.workflow === 'edit'
   const idleLabel = (minutes: number) =>
@@ -362,7 +374,10 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           resetHint={t('images:form.resetHint')}
           onReset={
             capabilities
-              ? () => form.resetToDefaults(capabilities.defaults)
+              ? () => {
+                  form.resetToDefaults(capabilities.defaults)
+                  if (remote) useRemoteMediaForm.setState({ image: {} })
+                }
               : undefined
           }
           disabled={busy}
@@ -371,7 +386,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
 
         {/* Inpaint, extend, upscale and edit take their size from the
             source; a size control there would be a knob that does nothing. */}
-        {spec.usesResolution && (
+        {showSize && (
           <ImageSizeControl
             value={{
               width: form.width,
@@ -385,27 +400,36 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           />
         )}
 
+        {remote && (
+          <RemoteImageOptionsFields
+            descriptor={remote.descriptor}
+            disabled={busy}
+          />
+        )}
+
         {/* The one-line sliders, a touch apart from the fields above. */}
         <div className="flex flex-col gap-3.5 pt-1">
-          <ImageParamSlider
-            id="image-steps"
-            label={t('images:form.steps')}
-            description={t('images:form.stepsHint')}
-            value={form.steps}
-            min={minSteps}
-            max={maxSteps}
-            step={1}
-            disabled={busy}
-            onChange={(steps) => form.patch({ steps })}
-          />
+          {showSteps && (
+            <ImageParamSlider
+              id="image-steps"
+              label={t('images:form.steps')}
+              description={t('images:form.stepsHint')}
+              value={form.steps}
+              min={minSteps}
+              max={maxSteps}
+              step={1}
+              disabled={busy}
+              onChange={(steps) => form.patch({ steps })}
+            />
+          )}
           {showCfg && (
             <ImageParamSlider
               id="image-cfg"
               label={t('images:form.cfgScale')}
               description={t('images:form.cfgScaleHint')}
               value={form.cfgScale}
-              min={1}
-              max={20}
+              min={minCfg}
+              max={maxCfg}
               step={0.5}
               disabled={busy}
               onChange={(cfgScale) => form.patch({ cfgScale })}
@@ -448,179 +472,122 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           />
         </div>
 
-        <ImageSeedField
-          value={form.seedText}
-          disabled={busy}
-          onChange={(seedText) => form.patch({ seedText })}
-        />
+        {showSeed && (
+          <ImageSeedField
+            value={form.seedText}
+            disabled={busy}
+            onChange={(seedText) => form.patch({ seedText })}
+          />
+        )}
 
-        <Collapsible
-          open={advancedOpen}
-          onOpenChange={setAdvancedOpen}
-          className="mt-1 border-t border-border/60 pt-3"
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
-              data-testid="image-advanced-toggle"
-            >
-              <span className="min-w-0 flex-1 text-xs font-medium">
-                {t('images:form.advanced')}
-              </span>
-              <IconChevronDown
-                size={16}
-                className={cn(
-                  'shrink-0 text-muted-foreground transition-transform',
-                  advancedOpen && 'rotate-180'
-                )}
-              />
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent
-            className={cn(
-              collapsiblePanelAnimation,
-              'duration-250 ease-out will-change-[height] motion-reduce:animate-none motion-reduce:duration-0'
-            )}
-            data-testid="image-advanced-panel"
+        {/* The load-time options are the local engine's; a provider's model has none. */}
+        {!remote && (
+          <Collapsible
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            className="mt-1 border-t border-border/60 pt-3"
           >
-            <div className="flex flex-col gap-3 pt-3">
-              <AdvancedSelect
-                label={t('images:form.memory')}
-                hint={t('images:form.memoryHint')}
-                value={offloadOverride}
-                options={IMAGE_OFFLOAD_OVERRIDES.map((value) => [
-                  value,
-                  memoryLabel(value),
-                ])}
-                onChange={setOffloadOverride}
-              />
-              {engine.engineChoices.length > 1 && (
-                <AdvancedSelect
-                  label={t('settings:media.engineOverride')}
-                  hint={t('images:form.engineHint')}
-                  value={engineOverride}
-                  options={(
-                    ['auto', ...engine.engineChoices] as ImageEngineOverride[]
-                  ).map((value) => [value, engineLabel(value)])}
-                  onChange={setEngineOverride}
-                />
-              )}
-              <AdvancedSelect
-                label={t('images:form.evictChat')}
-                hint={t('settings:media.evictChatDescription')}
-                value={evictChatModel}
-                options={(['whenNeeded', 'always'] as ImageEvictPolicy[]).map(
-                  (value) => [value, evictLabel(value)]
-                )}
-                onChange={setEvictChatModel}
-              />
-              <AdvancedSelect
-                label={t('settings:media.idleUnload')}
-                hint={t('settings:media.idleUnloadDescription')}
-                value={idleUnloadMinutes}
-                disabled={keepModelLoaded}
-                options={IMAGE_IDLE_UNLOAD_OPTIONS.map((minutes) => [
-                  minutes,
-                  idleLabel(minutes),
-                ])}
-                onChange={setIdle}
-              />
-              <div className="flex h-8 items-center justify-between gap-3">
-                <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                  {t('settings:media.keepLoaded')}
-                  <ImageFieldHint>
-                    {t('settings:media.keepLoadedDescription')}
-                  </ImageFieldHint>
-                </span>
-                <Switch
-                  checked={keepModelLoaded}
-                  onCheckedChange={setKeep}
-                  aria-label={t('settings:media.keepLoaded')}
-                />
-              </div>
-              <ImageApiSettingsCard variant="embedded" />
-              <Button
+            <CollapsibleTrigger asChild>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="w-full justify-between rounded-full"
-                onClick={() => void navigate({ to: route.settings.media })}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-secondary/60"
+                data-testid="image-advanced-toggle"
               >
-                <span className="flex items-center gap-2">
-                  <IconSettings size={14} className="text-muted-foreground" />
-                  {t('images:form.mediaSettings')}
+                <span className="min-w-0 flex-1 text-xs font-medium">
+                  {t('images:form.advanced')}
                 </span>
-                <IconChevronRight size={14} />
-              </Button>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+                <IconChevronDown
+                  size={16}
+                  className={cn(
+                    'shrink-0 text-muted-foreground transition-transform',
+                    advancedOpen && 'rotate-180'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent
+              className={cn(
+                collapsiblePanelAnimation,
+                'duration-250 ease-out will-change-[height] motion-reduce:animate-none motion-reduce:duration-0'
+              )}
+              data-testid="image-advanced-panel"
+            >
+              <div className="flex flex-col gap-3 pt-3">
+                <AdvancedSelect
+                  label={t('images:form.memory')}
+                  hint={t('images:form.memoryHint')}
+                  value={offloadOverride}
+                  options={IMAGE_OFFLOAD_OVERRIDES.map((value) => [
+                    value,
+                    memoryLabel(value),
+                  ])}
+                  onChange={setOffloadOverride}
+                />
+                {engine.engineChoices.length > 1 && (
+                  <AdvancedSelect
+                    label={t('settings:media.engineOverride')}
+                    hint={t('images:form.engineHint')}
+                    value={engineOverride}
+                    options={(
+                      ['auto', ...engine.engineChoices] as ImageEngineOverride[]
+                    ).map((value) => [value, engineLabel(value)])}
+                    onChange={setEngineOverride}
+                  />
+                )}
+                <AdvancedSelect
+                  label={t('images:form.evictChat')}
+                  hint={t('settings:media.evictChatDescription')}
+                  value={evictChatModel}
+                  options={(['whenNeeded', 'always'] as ImageEvictPolicy[]).map(
+                    (value) => [value, evictLabel(value)]
+                  )}
+                  onChange={setEvictChatModel}
+                />
+                <AdvancedSelect
+                  label={t('settings:media.idleUnload')}
+                  hint={t('settings:media.idleUnloadDescription')}
+                  value={idleUnloadMinutes}
+                  disabled={keepModelLoaded}
+                  options={IMAGE_IDLE_UNLOAD_OPTIONS.map((minutes) => [
+                    minutes,
+                    idleLabel(minutes),
+                  ])}
+                  onChange={setIdle}
+                />
+                <div className="flex h-8 items-center justify-between gap-3">
+                  <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                    {t('settings:media.keepLoaded')}
+                    <ImageFieldHint>
+                      {t('settings:media.keepLoadedDescription')}
+                    </ImageFieldHint>
+                  </span>
+                  <Switch
+                    checked={keepModelLoaded}
+                    onCheckedChange={setKeep}
+                    aria-label={t('settings:media.keepLoaded')}
+                  />
+                </div>
+                <ImageApiSettingsCard variant="embedded" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-between rounded-full"
+                  onClick={() => void navigate({ to: route.settings.media })}
+                >
+                  <span className="flex items-center gap-2">
+                    <IconSettings size={14} className="text-muted-foreground" />
+                    {t('images:form.mediaSettings')}
+                  </span>
+                  <IconChevronRight size={14} />
+                </Button>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     </form>
   )
 })
-
-type AdvancedSelectProps<T extends string | number> = {
-  label: string
-  hint?: ReactNode
-  value: T
-  options: Array<[T, string]>
-  disabled?: boolean
-  onChange: (value: T) => void
-}
-
-/** One Advanced row: a muted label on the left, a pill menu on the right. Shared with the Video form. */
-export function AdvancedSelect<T extends string | number>({
-  label,
-  hint,
-  value,
-  options,
-  disabled,
-  onChange,
-}: AdvancedSelectProps<T>) {
-  const current =
-    options.find(([option]) => option === value)?.[1] ?? String(value)
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
-        <span className="truncate">{label}</span>
-        {hint && <ImageFieldHint>{hint}</ImageFieldHint>}
-      </span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 w-40 shrink-0 justify-between text-xs font-normal"
-            disabled={disabled}
-            aria-label={label}
-          >
-            <span className="truncate">{current}</span>
-            <IconChevronDown
-              size={16}
-              className="shrink-0 text-muted-foreground"
-            />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          {options.map(([option, text]) => (
-            <DropdownMenuItem
-              key={String(option)}
-              className={cn(
-                'cursor-pointer text-xs',
-                option === value && 'bg-secondary-foreground/8'
-              )}
-              onClick={() => onChange(option)}
-            >
-              {text}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  )
-}
 
 export default ImagePromptForm

@@ -95,6 +95,7 @@ export const recommendBackend = core.recommendBackend
 export const checkBackendUpdates = core.checkBackendUpdates
 export const listInstalledBackends = core.listInstalledBackends
 export const installBackend = core.installBackend
+export const updateEngine = core.updateEngine
 export const cancelBackendDownload = core.cancelBackendDownload
 export const removeBackend = core.removeBackend
 export const getOptimalCache = core.getOptimalCache

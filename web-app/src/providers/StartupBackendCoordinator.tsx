@@ -8,6 +8,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { ExtensionManager } from '@/lib/extension'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { switchBackendThroughCore } from '@/services/engines/update'
 import {
   applyStartupBackendUpgrade,
   buildLateBackendMismatch,
@@ -71,7 +72,7 @@ export function StartupBackendCoordinator() {
       /// Detection already knows which build this host should run; apply it
       /// instead of only using the record for the in-chat hint. Guarded and
       /// scoped to the upstream provider inside the helper.
-      void applyStartupBackendUpgrade(ExtensionManager.getInstance(), result)
+      void applyStartupBackendUpgrade(switchBackendThroughCore, result)
     })
     return () => {
       cancelled = true

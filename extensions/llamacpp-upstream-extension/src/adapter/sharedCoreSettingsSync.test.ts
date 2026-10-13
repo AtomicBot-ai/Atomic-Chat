@@ -4,9 +4,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { createCoreSettingsSync, stableSettingsFingerprint } from '../../../shared/atomicCoreSettingsSync'
 import type { PersistedSetting } from '../../../shared/atomicCoreSettingsSync'
 
-function harness(overrides: { status?: unknown; importStatus?: string; coreValues?: Record<string, unknown> } = {}) {
+function harness(
+  overrides: {
+    status?: unknown
+    importStatus?: string
+    coreValues?: Record<string, unknown>
+    persisted?: PersistedSetting[]
+  } = {}
+) {
   const order: string[] = []
-  let persisted: PersistedSetting[] = [
+  let persisted: PersistedSetting[] = overrides.persisted ?? [
     { key: 'ctx_size', controllerProps: { value: 4096 } },
     { key: 'kv_bits', controllerProps: { value: 3.5 } },
     { key: 'unset', controllerProps: {} },
@@ -31,6 +38,12 @@ function harness(overrides: { status?: unknown; importStatus?: string; coreValue
       persisted = settings
     },
     setMirroring: (active) => mirroring.push(active),
+    beforeMirror: async (values) => {
+      order.push(`before ${JSON.stringify(values)}`)
+    },
+    afterMirror: async (changed) => {
+      order.push(`after ${JSON.stringify(changed)}`)
+    },
   })
   return { sync, core, order, mirroring, persisted: () => persisted }
 }
@@ -41,8 +54,10 @@ describe('shared core settings sync', () => {
     await h.sync.ensureReady()
     expect(h.order).toEqual([
       'import {"ctx_size":4096,"kv_bits":3.5}',
+      'before {"ctx_size":8192}',
       'write mirroring=true',
       'ack 7',
+      'after {"ctx_size":8192}',
     ])
     expect(h.mirroring).toEqual([true, false])
     expect(h.persisted()[0]?.controllerProps.value).toBe(8192)
@@ -52,8 +67,10 @@ describe('shared core settings sync', () => {
     const h = harness({ coreValues: { ctx_size: 4096 } })
     const cycle = [
       'import {"ctx_size":4096,"kv_bits":3.5}',
+      'before {"ctx_size":4096}',
       'write mirroring=true',
       'ack 7',
+      'after {}',
     ]
     await h.sync.ensureReady()
     await h.sync.ensureReady()
@@ -82,6 +99,49 @@ describe('shared core settings sync', () => {
     await h.sync.ensureReady()
     await h.sync.mirror()
     expect(h.order.filter((line) => line.startsWith('ack'))).toHaveLength(2)
+  })
+
+  // Change unify-engine-lifecycle (6.3): the core writes `version_backend` on an update or an
+  // activation. The extension takes the value, and its next load hands the core nothing older.
+  it('takes a value the core changed and imports nothing older on the next load', async () => {
+    const h = harness({
+      persisted: [{ key: 'version_backend', controllerProps: { value: 'b1/macos-arm64' } }],
+      coreValues: { version_backend: 'b1/macos-arm64' },
+    })
+    await h.sync.ensureReady()
+    h.order.length = 0
+
+    // Another client updated the engine: `settings:changed` → mirror.
+    h.core.getSettings.mockResolvedValue({
+      provider: 'llamacpp',
+      revision: 8,
+      values: { version_backend: 'b2/macos-arm64' },
+    })
+    await h.sync.mirror()
+    await h.sync.ensureReady()
+
+    expect(h.persisted()[0]?.controllerProps.value).toBe('b2/macos-arm64')
+    expect(h.order).toEqual([
+      'before {"version_backend":"b2/macos-arm64"}',
+      'write mirroring=true',
+      'ack 8',
+      'after {"version_backend":"b2/macos-arm64"}',
+    ])
+    expect(h.core.importSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets a load that starts while a mirror runs wait for it instead of importing the old value', async () => {
+    const h = harness({
+      persisted: [{ key: 'version_backend', controllerProps: { value: 'b1/macos-arm64' } }],
+      coreValues: { version_backend: 'b2/macos-arm64' },
+    })
+    const mirroring = h.sync.mirror()
+    await h.sync.ensureReady()
+    await mirroring
+
+    const imports = h.core.importSettings.mock.calls.map(([values]) => values)
+    expect(imports).not.toContainEqual({ version_backend: 'b1/macos-arm64' })
+    expect(h.persisted()[0]?.controllerProps.value).toBe('b2/macos-arm64')
   })
 
   it('fingerprints settings independently of key order and undefined fields', () => {

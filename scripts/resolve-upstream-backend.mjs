@@ -16,35 +16,34 @@
 // release job — and every one of them hardcoded the ggml-org download base.
 // Node (unlike a make recipe) reads the same from bash, pwsh and make.
 //
-// It mirrors the client's own logic in
-// extensions/llamacpp-upstream-extension/src/backend.ts: the manifest in
-// atomic-chat-conf is authoritative for the tag, `download_base` points at our
-// signed mirror, and a tag we have not mirrored falls back to the ggml-org CDN
-// without a hash.
+// It picks what the pinned core would offer on its own: the release list in
+// atomic-chat-conf (backends/llamacpp-upstream-releases.json), newest release
+// first, takes the first one that is not withdrawn, whose `min_core_version`
+// the pinned core (package.json `atomicCore.version`) meets and whose archive
+// for this backend is approved. The installer and the runtime catalog then
+// start on the same build. `download_base` points at our signed mirror; every
+// listed tag, a pinned one included, downloads against its hash. When conf has
+// no release list yet (404, or a schema this script does not read) the legacy
+// backends/manifest.json decides, as it did before; a tag in neither falls
+// back to the ggml-org CDN without a hash.
 //
 // Usage:
 //   node scripts/resolve-upstream-backend.mjs --backend macos-arm64
 //   node scripts/resolve-upstream-backend.mjs --backend win-cuda-13-x64
 //   node scripts/resolve-upstream-backend.mjs --backend linux-cpu-x64 --tag b10344
-//
-// `--engine sdcpp` resolves a stable-diffusion.cpp prebuilt instead, from
-// backends/sdcpp-manifest.json. That manifest names every asset explicitly
-// (upstream file names embed the CI runner's OS version), so the asset is
-// looked up by its `backend` id, never constructed, and it prints the extra
-// COMPANION/COMPANION_URL lines for builds that need a runtime archive:
-//   node scripts/resolve-upstream-backend.mjs --engine sdcpp --backend win-cuda12-x64
+//   node scripts/resolve-upstream-backend.mjs --backend macos-arm64 \
+//     --releases-from ../atomic-chat-conf/backends/llamacpp-upstream-releases.json \
+//     --core-version 0.15.0
 
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
+const RELEASES_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/llamacpp-upstream-releases.json'
 const MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
-const SDCPP_MANIFEST_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/sdcpp-manifest.json'
 const GGML_ORG_DOWNLOAD_BASE =
   'https://github.com/ggml-org/llama.cpp/releases/download'
-const SDCPP_UPSTREAM_REPO = 'leejet/stable-diffusion.cpp'
-/** leejet tag, optionally with the `-a<sha>` suffix of an Atomic-built variant. */
-const SDCPP_TAG_RE = /^master-\d+-[0-9a-f]{7}(-a[0-9a-f]{7})?$/
 
 // Upstream names its Linux builds `ubuntu-*`; the app's backend ids say
 // `linux-*`. Keep this in step with LINUX_UPSTREAM_ASSET_BY_BACKEND in
@@ -124,6 +123,94 @@ export function pickSource(manifest, tag, asset) {
   }
 }
 
+/** Dotted-numeric comparison, as the core's `compareVersions`. Returns -1, 0 or 1. */
+export function compareVersions(a, b) {
+  const pa = String(a).split('.')
+  const pb = String(b).split('.')
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = Number(pa[i] ?? 0) || 0
+    const y = Number(pb[i] ?? 0) || 0
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
+
+const buildOf = (tag) => Number(/^b(\d+)$/.exec(tag ?? '')?.[1] ?? 0)
+
+/**
+ * One listed release in the legacy manifest's shape, for pickSource: any
+ * listed tag downloads from the mirror against its hash. `null` when the tag
+ * is not listed.
+ */
+export function manifestForTag(list, tag) {
+  const release = (list?.releases ?? []).find((r) => r.tag === tag)
+  if (!release) return null
+  return {
+    tag_name: release.tag,
+    download_base: list.download_base,
+    assets: (release.assets ?? []).map(({ name, sha256, size }) => ({ name, sha256, size })),
+  }
+}
+
+/**
+ * The release the pinned core would take for this backend: newest first, not
+ * withdrawn, `min_core_version` met, the backend's archive approved and
+ * hashed. A CUDA family id resolves against that release's approved archives.
+ * Returns `{ tag, backend }` with the concrete backend id, or `null`.
+ */
+export function pickRelease(list, { coreVersion, backend }) {
+  const releases = [...(list?.releases ?? [])].sort((a, b) => buildOf(b.tag) - buildOf(a.tag))
+  for (const release of releases) {
+    if (release.withdrawn) continue
+    if (compareVersions(coreVersion, release.min_core_version ?? '0.0.0') < 0) continue
+    const names = (release.assets ?? [])
+      .filter((a) => a.validation === 'approved' && a.sha256 && a.size)
+      .map((a) => a.name)
+    const concrete = WIN_CUDA_FAMILY_RE.test(backend)
+      ? resolveCudaFamily(backend, release.tag, names)
+      : backend
+    if (concrete && names.includes(assetNameFor(release.tag, concrete))) {
+      return { tag: release.tag, backend: concrete }
+    }
+  }
+  return null
+}
+
+/**
+ * The release list, or `null` when conf does not publish one this script can
+ * read (a 404 before it did, another schema). A network failure is fatal: a
+ * build must not silently fall back to an older rule.
+ */
+async function fetchReleases(from) {
+  if (from) return JSON.parse(readFileSync(from, 'utf8'))
+  const resp = await fetch(RELEASES_URL, {
+    headers: { 'User-Agent': 'atomic-chat-ci', 'Accept': 'application/json' },
+  })
+  if (!resp.ok) {
+    process.stderr.write(`Release list returned HTTP ${resp.status}; using the legacy manifest\n`)
+    return null
+  }
+  let list
+  try {
+    list = await resp.json()
+  } catch {
+    process.stderr.write('Release list is not valid JSON; using the legacy manifest\n')
+    return null
+  }
+  if (list?.schema_version !== 1 || !Array.isArray(list.releases)) {
+    process.stderr.write('Release list has a schema this script does not read; using the legacy manifest\n')
+    return null
+  }
+  return list
+}
+
+function pinnedCoreVersion() {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const version = pkg.atomicCore?.version
+  if (!version) die('package.json has no atomicCore.version')
+  return version
+}
+
 async function fetchManifest(url = MANIFEST_URL) {
   const resp = await fetch(url, {
     headers: { 'User-Agent': 'atomic-chat-ci', 'Accept': 'application/json' },
@@ -143,99 +230,14 @@ async function fetchManifest(url = MANIFEST_URL) {
   return manifest
 }
 
-// --- stable-diffusion.cpp ----------------------------------------------------
-
-/** `master-849-d04e895-a1b2c3d` → `master-849-d04e895`; upstream tags pass through. */
-export function stripSdcppTagSuffix(tag) {
-  return tag.replace(/-a[0-9a-f]{7}$/, '')
-}
-
-/** The manifest entry for a backend id, or null. Names are never constructed. */
-export function sdcppAssetFor(manifest, backend) {
-  return (manifest?.assets ?? []).find((a) => a.backend === backend) ?? null
-}
-
-/**
- * Where an sd.cpp asset comes from. The mirror when the manifest names one;
- * otherwise the upstream GitHub release, whose tag never carries the Atomic
- * variant suffix. The hash travels either way — the manifest records the
- * GitHub digest even before the tag is mirrored — but, as for llama.cpp, a
- * hash without a size is not trusted.
- */
-export function pickSdcppSource(manifest, asset) {
-  const tag = manifest.tag_name
-  const url = manifest.download_base
-    ? `${manifest.download_base}/${tag}/${asset.name}`
-    : `https://github.com/${manifest.upstream_repo ?? SDCPP_UPSTREAM_REPO}/releases/download/${stripSdcppTagSuffix(tag)}/${asset.name}`
-  if (!asset.sha256 || !asset.size) return { url }
-  return { url, sha256: asset.sha256, size: asset.size }
-}
-
-async function resolveSdcpp(args) {
-  const backend = args.backend
-  const pinned = args.tag
-  if (pinned && !SDCPP_TAG_RE.test(pinned)) {
-    die(`--tag must look like a leejet release tag (got "${pinned}")`)
-  }
-  process.stderr.write(
-    'Resolving sd.cpp backend from the atomic-chat-conf manifest...\n'
-  )
-  const manifest = await fetchManifest(SDCPP_MANIFEST_URL)
-  if (pinned && manifest.tag_name !== pinned) {
-    // Asset names come from the manifest, so an unmirrored tag has no answer.
-    die(
-      `manifest is at ${manifest.tag_name}, not ${pinned}; sd.cpp assets can only be resolved for the manifest tag`
-    )
-  }
-  const asset = sdcppAssetFor(manifest, backend)
-  if (!asset || asset.companion) {
-    die(
-      `manifest tag ${manifest.tag_name} lists no backend "${backend}" (update atomic-chat-conf/backends/sdcpp-manifest.json)`
-    )
-  }
-  const source = pickSdcppSource(manifest, asset)
-  if (source.sha256) {
-    process.stderr.write('sha256 will be verified\n')
-  } else {
-    process.stderr.write('No hash in the manifest; downloading unverified\n')
-  }
-
-  // Only the Windows CUDA build needs a runtime archive beside it.
-  const companion =
-    backend === 'win-cuda12-x64' ? sdcppAssetFor(manifest, 'win-cudart-cu12') : null
-
-  process.stdout.write(
-    [
-      `TAG=${manifest.tag_name}`,
-      `BACKEND=${backend}`,
-      `ASSET=${asset.name}`,
-      `URL=${source.url}`,
-      `SHA256=${source.sha256 ?? ''}`,
-      `SIZE=${source.size ?? ''}`,
-      `COMPANION=${companion?.name ?? ''}`,
-      `COMPANION_URL=${companion ? pickSdcppSource(manifest, companion).url : ''}`,
-      '',
-    ].join('\n')
-  )
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const backend = args.backend
   if (!backend) {
     process.stderr.write(
-      'usage: resolve-upstream-backend.mjs [--engine llama|sdcpp] --backend <id> [--tag <pin>]\n'
+      'usage: resolve-upstream-backend.mjs --backend <id> [--tag <pin>] [--core-version x.y.z] [--releases-from <file>]\n'
     )
     process.exit(2)
-  }
-
-  const engine = args.engine ?? 'llama'
-  if (engine === 'sdcpp') {
-    await resolveSdcpp(args)
-    return
-  }
-  if (engine !== 'llama') {
-    die(`--engine must be llama or sdcpp (got "${engine}")`)
   }
 
   const pinned = args.tag
@@ -250,9 +252,23 @@ async function main() {
     )
   }
 
+  const list = await fetchReleases(args['releases-from'])
   let manifest = null
+  let picked = null
   if (pinned) {
     process.stderr.write(`Using pinned upstream release: ${pinned}\n`)
+    // Listed: from the mirror against its hash. Anything else: the CDN, as before.
+    manifest = manifestForTag(list, pinned)
+  } else if (list) {
+    const coreVersion = args['core-version'] ?? pinnedCoreVersion()
+    picked = pickRelease(list, { coreVersion, backend })
+    if (!picked) {
+      die(
+        `no approved release in the release list carries ${backend} for core ${coreVersion} (approve one in atomic-chat-conf/backends/llamacpp-upstream-releases.json)`
+      )
+    }
+    process.stderr.write(`Release list: ${picked.tag} is the newest approved ${picked.backend} for core ${coreVersion}\n`)
+    manifest = manifestForTag(list, picked.tag)
   } else {
     process.stderr.write(
       'Resolving backend index from the atomic-chat-conf manifest (ATO-199)...\n'
@@ -263,8 +279,9 @@ async function main() {
   const tag = pinned ?? manifest.tag_name
   const assetNames = (manifest?.assets ?? []).map((a) => a.name)
 
-  let resolvedBackend = backend
-  if (WIN_CUDA_FAMILY_RE.test(backend)) {
+  // pickRelease already resolved a CUDA family against approved archives only.
+  let resolvedBackend = picked?.backend ?? backend
+  if (!picked && WIN_CUDA_FAMILY_RE.test(backend)) {
     resolvedBackend = resolveCudaFamily(backend, tag, assetNames)
     if (!resolvedBackend) {
       die(
@@ -275,7 +292,7 @@ async function main() {
   }
 
   const asset = assetNameFor(tag, resolvedBackend)
-  if (manifest && !assetNames.includes(asset)) {
+  if (!pinned && manifest && !assetNames.includes(asset)) {
     die(
       `manifest tag ${tag} does not list ${asset} (update atomic-chat-conf/backends/manifest.json)`
     )

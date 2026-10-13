@@ -24,7 +24,10 @@
     "saved": "{{provider}} connected.",
     "removed": "{{provider}} disconnected.",
     "empty": "No cloud providers available. Refresh the catalog and try again.",
-    "placeholder": "Pick a connection above to set it up."
+    "placeholder": "Pick a connection above to set it up.",
+    "mediaConnected": "{{provider}} connected. Models found: {{count}}.",
+    "mediaFailed": "Could not reach {{provider}}",
+    "mediaNoModels": "{{provider}} answered but lists no models. Start it with a model and try again."
   },
   "subscription": {
     "title": "ChatGPT subscription (Codex)",
@@ -42,5 +45,36 @@
     "searchPlaceholder": "Search models",
     "noResults": "No model matches this search.",
     "reload": "Reload models"
+  },
+  "media": {
+    "title": "Media models",
+    "description": "Image and video models this provider offers on the Images and Video pages. They are separate from the chat models above.",
+    "connectFirst": "Connect the provider first",
+    "images": "Images ({{count}})",
+    "videos": "Video ({{count}})",
+    "pickApi": "Choose which media API this server speaks to list its models.",
+    "emptyImages": "No image models yet. Add one with +, or press Reload to ask the provider.",
+    "emptyVideos": "No video models yet. Add one with +, or press Reload to ask the provider.",
+    "remove": "Remove {{name}}",
+    "add": "Add a media model",
+    "searchPlaceholder": "Search or type a model id",
+    "noneToAdd": "Nothing else to add",
+    "addById": "Add “{{id}}”",
+    "api": {
+      "none": "None",
+      "imageLabel": "Image API",
+      "videoLabel": "Video API",
+      "openai-images": "OpenAI-compatible",
+      "a1111": "Automatic1111 / Forge",
+      "openai-videos": "OpenAI-compatible"
+    },
+    "workflow": {
+      "create": "Create",
+      "edit": "Edit",
+      "reference": "Reference",
+      "transform": "Transform",
+      "inpaint": "Inpaint",
+      "imageToVideo": "Image to video"
+    }
   }
 }

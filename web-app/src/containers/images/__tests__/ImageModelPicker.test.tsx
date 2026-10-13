@@ -87,6 +87,17 @@ vi.mock('@/stores/image-generation-store', () => ({
 vi.mock('sonner', () => ({
   toast: { loading: vi.fn(), success: vi.fn(), error: vi.fn() },
 }))
+// A provider's model, when a test picks one; the local checkpoint otherwise.
+const remote = vi.hoisted(() => ({
+  target: null as null | {
+    target: { provider: string; model: string }
+    provider: { provider: string }
+    descriptor: { id: string; name: string }
+  },
+}))
+vi.mock('@/hooks/useRemoteMedia', () => ({
+  useRemoteMediaTarget: () => remote.target,
+}))
 vi.mock('../ImageModelSelector', () => ({
   ImageModelSelector: () => <div data-testid="image-model-selector" />,
 }))
@@ -95,6 +106,7 @@ import { ImageModelPicker } from '../ImageModelPicker'
 
 describe('ImageModelPicker', () => {
   beforeEach(() => {
+    remote.target = null
     state.workflow = 'create'
     state.loadingArtifactId = null
     state.unloadingArtifactId = null
@@ -142,6 +154,20 @@ describe('ImageModelPicker', () => {
       'data-phase',
       'ready'
     )
+  })
+
+  it("shows a picked provider model over the resident checkpoint, with nothing to start", () => {
+    remote.target = {
+      target: { provider: 'openai', model: 'gpt-image-2' },
+      provider: { provider: 'openai' },
+      descriptor: { id: 'gpt-image-2', name: 'GPT Image 2' },
+    }
+    render(<ImageModelPicker open={false} onOpenChange={vi.fn()} />)
+    const toggle = screen.getByTestId('image-models-toggle')
+    expect(toggle).toHaveTextContent('GPT Image 2')
+    expect(toggle).toHaveTextContent('OpenAI')
+    expect(toggle).not.toHaveTextContent('Z-Image Turbo')
+    expect(screen.queryByTestId('image-model-runtime-indicator')).toBeNull()
   })
 
   it('shows the Video page\'s own selection, whatever the image workflow', () => {

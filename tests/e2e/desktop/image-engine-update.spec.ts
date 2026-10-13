@@ -1,9 +1,9 @@
 /**
  * The image engine's lifecycle from the page: a model the installed engine is
- * too old for is refused with the update offer, the update is downloaded from
- * a release published on this machine, unpacked, finalized by the core, the
- * old tree retired, and the model loaded on the new one; and a model that is
- * not on disk is downloaded from a Hugging Face published the same way.
+ * too old for is refused with the update offer, the core installs the update
+ * from a release published on this machine (download, sha256, probe, swap),
+ * keeps the old tree (no update deletes a build), and the model loads on the new one; and a model that
+ * is not on disk is downloaded from a Hugging Face published the same way.
  *
  * Neither address can be changed in the app, so both are reached the way a
  * corporate network reaches them: through the user's proxy setting, a CONNECT
@@ -33,6 +33,7 @@ import {
   openImages,
   sdPids,
   writeFakeImageModel,
+  writeImageManifest,
 } from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
@@ -57,26 +58,23 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('updating the image engine', () => {
         // What is installed: the build app v2.0.40 shipped, on which Qwen Image 2.1 is refused.
         await installFakeImageEngine(profile, { tag: OLD_IMAGE_ENGINE_TAG })
         await writeFakeImageModel(profile, GATED_ARTIFACT)
-        // What the manifest publishes: a newer build, as the release archive the app unpacks.
+        // What the manifest publishes: a newer build, as the release archive the core installs.
         newPids = join(profile.root, 'sd-pids-new')
         newArgv = join(profile.root, 'sd-argv-new.json')
         const archive = await buildImageEngineArchive(work, { name: IMAGE_ENGINE_ASSET, pidFile: newPids, argvFile: newArgv })
         mirror = await startImageMirror({
           [`/leejet/stable-diffusion.cpp/releases/download/${NEW_TAG}/${IMAGE_ENGINE_ASSET}`]: await readFile(archive.path),
         })
+        await writeImageManifest(profile, {
+          tag: NEW_TAG,
+          asset: { name: archive.name, sha256: archive.sha256, size: archive.size },
+        })
         // The seed cannot be passed after the profile exists, so the session's own seed is
-        // written here, on top of what `createProfile` wrote.
+        // written here, on top of what `createProfile` wrote. The proxy setting reaches the
+        // core with the install call.
         const seedPath = join(profile.root, 'webview-seed.json')
         const seed = JSON.parse(await readFile(seedPath, 'utf8')) as Record<string, string>
-        Object.assign(
-          seed,
-          imageSeed({
-            selected: GATED_ARTIFACT,
-            manifestTag: NEW_TAG,
-            manifestAsset: { name: archive.name, sha256: archive.sha256, size: archive.size },
-          }),
-          proxySeed(mirror.proxyUrl)
-        )
+        Object.assign(seed, imageSeed({ selected: GATED_ARTIFACT }), proxySeed(mirror.proxyUrl))
         const { writeFile } = await import('node:fs/promises')
         await writeFile(seedPath, JSON.stringify(seed))
       },
@@ -109,7 +107,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('updating the image engine', () => {
       await update.waitForClickable({ timeout: 15_000 })
       await update.click()
 
-      // The download, the unpack, the finalize and the load the page runs on its own.
+      // The core's install and the load the page retries on its own.
       await browser.waitUntil(async () => (await browser.$(RUNTIME).getAttribute('data-phase')) === 'ready', {
         timeout: 120_000,
         timeoutMsg: 'the model never loaded on the updated engine',
@@ -117,7 +115,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('updating the image engine', () => {
       const seen = mirror.seen()
       expect(seen).toContain('CONNECT github.com:443')
       expect(seen.some((line) => line.includes(`/leejet/stable-diffusion.cpp/releases/download/${NEW_TAG}/${IMAGE_ENGINE_ASSET}`))).toBe(true)
-      // The new tree, owned and recorded; the old one retired; no archive left in staging.
+      // The new tree, owned and recorded; the old one kept beside it; nothing left in staging.
       const newDir = join(backends, NEW_TAG, IMAGE_BACKEND_ID)
       expect((await stat(join(newDir, '.atomic-owned'))).isFile()).toBe(true)
       expect((await stat(join(newDir, 'sd-server'))).mode & 0o111).not.toBe(0)
@@ -126,7 +124,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('updating the image engine', () => {
         backendId: IMAGE_BACKEND_ID,
         engine: 'sd-cpp',
       })
-      expect(await installedImageEngines(dataFolder)).toEqual([`${NEW_TAG}/${IMAGE_BACKEND_ID}`])
+      expect((await installedImageEngines(dataFolder)).sort()).toEqual(
+        [`${OLD_IMAGE_ENGINE_TAG}/${IMAGE_BACKEND_ID}`, `${NEW_TAG}/${IMAGE_BACKEND_ID}`].sort()
+      )
       expect(await readdir(join(backends, 'tmp')).catch(() => [])).toEqual([])
       const status = await diffusionStatus(dataFolder)
       expect(status.install).toMatchObject({ tag: NEW_TAG, dir: newDir })

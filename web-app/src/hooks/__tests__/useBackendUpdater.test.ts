@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { events } from '@janhq/core'
 import { useBackendUpdater } from '../useBackendUpdater'
 import { localStorageKey } from '@/constants/localStorage'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
 const RECOMMENDED = 'b10205/win-cuda-13.3-x64'
 const RECOMMENDATION = {
@@ -41,6 +42,12 @@ vi.mock('@janhq/core', () => {
   }
 })
 
+// Every check and switch is the core's (`POST /engines/versions`, `POST /engines/:engine/update`).
+const engineVersions = vi.hoisted(() => vi.fn())
+vi.mock('@/services/engines/core', () => ({ engineVersions }))
+const switchBackendThroughCore = vi.hoisted(() => vi.fn())
+vi.mock('@/services/engines/update', () => ({ switchBackendThroughCore }))
+
 vi.mock('posthog-js', () => ({
   default: { capture: vi.fn(), has_opted_in_capturing: () => true },
 }))
@@ -58,9 +65,15 @@ describe('useBackendUpdater', () => {
   beforeEach(() => {
     localStorage.clear()
     mocks.extension = {
-      downloadRecommendedBackend: vi.fn().mockResolvedValue(undefined),
       recheckOptimalBackend: vi.fn().mockResolvedValue(null),
     }
+    switchBackendThroughCore.mockReset()
+    switchBackendThroughCore.mockResolvedValue({
+      updated: true,
+      active: { version: 'b10205', variant: 'win-cuda-13.3-x64' },
+      retired: [],
+      kept_in_use: [],
+    })
   })
 
   afterEach(() => {
@@ -214,16 +227,38 @@ describe('useBackendUpdater', () => {
         await result.current.downloadRecommendedBackend(RECOMMENDED)
       })
 
-      expect(mocks.extension!.downloadRecommendedBackend).toHaveBeenCalledWith(
+      // The core downloads, switches and unloads; the extension is not asked.
+      expect(switchBackendThroughCore).toHaveBeenCalledWith(
+        'llamacpp-upstream',
         RECOMMENDED
       )
       expect(result.current.recommendationPhase).toBe('downloading')
     })
 
-    it('reverts to the prompt when the download call throws', async () => {
-      mocks.extension!.downloadRecommendedBackend = vi
-        .fn()
-        .mockRejectedValue(new Error('asset 404'))
+    it('closes the dialog everywhere when the core had nothing to change', async () => {
+      switchBackendThroughCore.mockResolvedValue({
+        updated: false,
+        reason: 'already-active',
+        active: { version: 'b10205', variant: 'win-cuda-13.3-x64' },
+        retired: [],
+        kept_in_use: [],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+      // Another mounted instance — the global dialog — saw the recommendation too.
+      const dialog = renderHook(() => useBackendUpdater())
+      detect()
+
+      await act(async () => {
+        await result.current.downloadRecommendedBackend()
+      })
+
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(dialog.result.current.recommendationPhase).toBe('idle')
+      expect(dialog.result.current.recommendation).toBeNull()
+    })
+
+    it('reverts to the prompt when the core refuses the switch', async () => {
+      switchBackendThroughCore.mockRejectedValue(new Error('asset 404'))
 
       const { result } = renderHook(() => useBackendUpdater())
       detect()
@@ -470,8 +505,8 @@ describe('useBackendUpdater', () => {
       expect(result.current.recommendation).toBeNull()
     })
 
-    /// `reconcileBackendReleaseTag()` downloads on its own after an app
-    /// update, so there is no recommendation to attach to. The only signal the
+    /// A first-run adoption or a parked `latest/` resolution downloads on its
+    /// own, so there is no recommendation to attach to. The only signal the
     /// progress surface can read is `downloadState`, and no modal may open.
     it('reports an unattended download through downloadState without a modal', () => {
       const { result } = renderHook(() => useBackendUpdater(TURBOQUANT))
@@ -509,7 +544,136 @@ describe('useBackendUpdater', () => {
     })
   })
 
+  describe('"Check for updates"', () => {
+    const versions = (patch: Record<string, unknown> = {}) => ({
+      engine: 'llamacpp-upstream',
+      kind: 'llamacpp',
+      active_choice: 'client',
+      builds: [],
+      active: { version: 'b10205', variant: 'win-vulkan-x64' },
+      latest: null,
+      update: { needed: false, target: null, apply: 'swap' },
+      source: 'remote',
+      source_error: null,
+      error: null,
+      ...patch,
+    })
+
+    beforeEach(() => {
+      useEngineVersionsStore.getState().reset()
+    })
+
+    it('asks the core again with every source re-read and names what it offers', async () => {
+      engineVersions.mockResolvedValue({
+        engines: [
+          versions({
+            update: {
+              needed: true,
+              target: { version: 'b10300', variant: 'win-vulkan-x64' },
+              apply: 'swap',
+            },
+          }),
+        ],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      let answer: unknown
+      await act(async () => {
+        answer = await result.current.checkForEngineUpdate()
+      })
+
+      expect(engineVersions).toHaveBeenCalledWith(
+        expect.objectContaining({ force: true })
+      )
+      expect(answer).toEqual({
+        updateAvailable: true,
+        targetBackend: 'b10300/win-vulkan-x64',
+      })
+    })
+
+    it('offers nothing the core blocks', async () => {
+      engineVersions.mockResolvedValue({
+        engines: [
+          versions({
+            update: {
+              needed: false,
+              target: { version: 'b10300', variant: 'win-cuda-13.3-x64' },
+              apply: 'swap',
+              blocked_reason: 'family-change',
+            },
+          }),
+        ],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      let answer: unknown
+      await act(async () => {
+        answer = await result.current.checkForEngineUpdate()
+      })
+
+      expect(answer).toEqual({ updateAvailable: false, targetBackend: null })
+    })
+
+    it('fails with the core’s reason when it could not read this engine’s source', async () => {
+      engineVersions.mockResolvedValue({
+        engines: [
+          versions({ error: { code: 'UPSTREAM_ERROR', message: 'manifest unreachable' } }),
+        ],
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      await expect(
+        act(async () => {
+          await result.current.checkForEngineUpdate()
+        })
+      ).rejects.toMatchObject({ message: 'manifest unreachable' })
+    })
+  })
+
   describe('manual "Latest <variant>" selection', () => {
+    it('opens the dialog on the pick and has the core switch to the build the extension resolves it to', async () => {
+      // A family pick has no exact build: the extension names the concrete one.
+      mocks.extension!.resolveBackendSelection = vi
+        .fn()
+        .mockResolvedValue('b10205/win-vulkan-x64')
+      const { result } = renderHook(() => useBackendUpdater())
+
+      await act(async () => {
+        await result.current.selectManualBackend('latest/win-vulkan-x64')
+      })
+
+      expect(switchBackendThroughCore).toHaveBeenCalledWith(
+        'llamacpp-upstream',
+        'b10205/win-vulkan-x64',
+        { announceAs: 'latest/win-vulkan-x64' }
+      )
+      // The switch events the core's answer brings move it on from here.
+      expect(result.current.recommendationPhase).toBe('downloading')
+      expect(result.current.recommendation).toMatchObject({
+        recommendedBackend: 'latest/win-vulkan-x64',
+        recommendedCategory: 'Vulkan',
+        provider: 'llamacpp-upstream',
+        backendId: 'win-vulkan-x64',
+      })
+    })
+
+    it('dismisses the dialog and rethrows when the core refuses the pick', async () => {
+      switchBackendThroughCore.mockRejectedValue({
+        code: 'BACKEND_TAG_UNRESOLVED',
+        message: 'no build of win-rocm-x64',
+      })
+      const { result } = renderHook(() => useBackendUpdater())
+
+      await expect(
+        act(async () => {
+          await result.current.selectManualBackend('latest/win-rocm-x64')
+        })
+      ).rejects.toMatchObject({ code: 'BACKEND_TAG_UNRESOLVED' })
+
+      expect(result.current.recommendationPhase).toBe('idle')
+      expect(result.current.recommendation).toBeNull()
+    })
+
     it('opens straight into the downloading state', () => {
       const { result } = renderHook(() => useBackendUpdater())
 

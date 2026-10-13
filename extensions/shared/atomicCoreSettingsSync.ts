@@ -36,6 +36,14 @@ export interface CoreSettingsSyncOptions {
    * descriptor, and a mirror must not start owner-side work such as a backend download.
    */
   setMirroring: (active: boolean) => void
+  /**
+   * Before a mirror reads and writes the extension's settings, with the core's values: a value the
+   * extension cannot show yet (a `version_backend` the core switched to that is not among the
+   * dropdown options) is made showable here, so the write keeps it.
+   */
+  beforeMirror?: (values: Record<string, unknown>) => Promise<void> | void
+  /** After a mirror was written and acknowledged, with the values it changed in the extension. */
+  afterMirror?: (changed: Record<string, unknown>) => Promise<void> | void
 }
 
 /** Key order and `undefined` fields do not make two settings objects different. */
@@ -54,7 +62,7 @@ export function stableSettingsFingerprint(values: Record<string, unknown>): stri
 }
 
 export function createCoreSettingsSync(options: CoreSettingsSyncOptions) {
-  let ready: { key: string; promise: Promise<void> } | undefined
+  let ready: { attachment: string; fingerprint: string; promise: Promise<void> } | undefined
   let mirrorChain: Promise<void> = Promise.resolve()
 
   async function currentValues(): Promise<Record<string, unknown>> {
@@ -68,9 +76,15 @@ export function createCoreSettingsSync(options: CoreSettingsSyncOptions) {
 
   async function mirrorNow(): Promise<void> {
     const snapshot = await options.core.getSettings()
+    await options.beforeMirror?.(snapshot.values)
+    const changed: Record<string, unknown> = {}
     const mirrored = (await options.readSettings()).map((setting) => {
-      if (Object.prototype.hasOwnProperty.call(snapshot.values, setting.key))
-        setting.controllerProps.value = snapshot.values[setting.key]
+      if (Object.prototype.hasOwnProperty.call(snapshot.values, setting.key)) {
+        const value = snapshot.values[setting.key]
+        if (stableSettingsFingerprint({ v: setting.controllerProps.value }) !== stableSettingsFingerprint({ v: value }))
+          changed[setting.key] = value
+        setting.controllerProps.value = value
+      }
       return setting
     })
     options.setMirroring(true)
@@ -79,7 +93,11 @@ export function createCoreSettingsSync(options: CoreSettingsSyncOptions) {
     } finally {
       options.setMirroring(false)
     }
+    // What was just written is the core's own: the next load must not import it back as the
+    // app's change, let alone an older value from before the write.
+    if (ready) ready = { ...ready, fingerprint: stableSettingsFingerprint(await currentValues()) }
     await options.core.acknowledgeSettings(snapshot.revision)
+    await options.afterMirror?.(changed)
   }
 
   /** Mirror the core's values into the extension, one mirror at a time. */
@@ -107,14 +125,17 @@ export function createCoreSettingsSync(options: CoreSettingsSyncOptions) {
    * since ADR 2026-09-27; nothing is sent.
    */
   async function ensureReady(): Promise<void> {
+    // A mirror in flight is writing the core's values: read them once it is done.
+    await mirrorChain
     const [values, status] = await Promise.all([currentValues(), options.core.getStatus()])
-    const attachment = status.attached
-    if (!attachment?.instance_id || attachment.generation === undefined)
+    const attached = status.attached
+    if (!attached?.instance_id || attached.generation === undefined)
       throw new Error('Atomic core has no ready attachment generation')
-    const key = `${attachment.instance_id}:${attachment.generation}:${stableSettingsFingerprint(values)}`
-    if (ready?.key === key) return ready.promise
+    const attachment = `${attached.instance_id}:${attached.generation}`
+    const fingerprint = stableSettingsFingerprint(values)
+    if (ready?.attachment === attachment && ready.fingerprint === fingerprint) return ready.promise
     const promise = prepare(values)
-    ready = { key, promise }
+    ready = { attachment, fingerprint, promise }
     try {
       await promise
     } catch (error) {

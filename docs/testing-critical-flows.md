@@ -347,10 +347,17 @@ Existing evidence:
   the chosen folder is persisted, a refused one leaves the old choice, and
   picking the default folder stores none. `lib/diffusion/__tests__/errors.test.ts`
   walks core and relay codes outside the 21 (message kept, code in details).
-- `services/diffusion/__tests__/install.test.ts` proves the engine install
-  end to end against the download and core mocks: the host's qualifying
-  build, the free-space refusal and the go-ahead when the core cannot tell,
-  retiring the previous tree unless a session still runs from it.
+- The engine install is the core's (`/engine-builds/sd-cpp`, change
+  move-sdcpp-mlx-install-to-core): the build for the host, the sha256 and
+  free-space checks, the probe and the retirement of old trees are proven in
+  `atomic-chat-core`. Here `image-generation-store.test.ts` proves the store's
+  side on a faked core: the install under its `diffusion-backend-*` task with
+  the core's progress, the host without a build, a cancel that is not an
+  error, the core's codes turned into diffusion ones, an update only when the
+  core names a newer build (a manifest rollback offers nothing), and the
+  Qwen Image 2.1 gate retried after the update.
+  `DownloadManagement.engine.test.tsx` proves Cancel reaches the core and no
+  Pause is offered; `services/diffusion/__tests__/tauri.test.ts` the routes.
 - The core's own evidence — the hand-ported sd.cpp tables, the fake
   `sd-server`, the diffusion e2e on the compiled binary (test/e2e/diffusion.test.ts
   there) and the live run on a real engine (test/live/diffusion.test.ts) —

@@ -188,7 +188,8 @@ export async function capturePosterForClip(
   const { bytes } = await readFileBytes(path, {
     maxBytes: MAX_POSTER_SOURCE_BYTES,
   })
-  return capturePosterPng(await dataUrlOf(bytes, 'video/webm'), {
+  const type = /\.mp4$/i.test(path) ? 'video/mp4' : 'video/webm'
+  return capturePosterPng(await dataUrlOf(bytes, type), {
     ...options,
     crossOrigin: null,
   })

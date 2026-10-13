@@ -1147,67 +1147,6 @@ pub async fn check_backend_for_updates(
     }
 }
 
-#[tauri::command]
-pub async fn remove_old_backend_versions(
-    backends_dir: String,
-    latest_version: String,
-    backend_type: String,
-) -> Result<Vec<String>, String> {
-    let mut removed_paths = Vec::new();
-    let backends_path = PathBuf::from(&backends_dir);
-
-    if !backends_path.exists() {
-        return Ok(removed_paths);
-    }
-
-    let version_dirs = fs::read_dir(&backends_path)
-        .map_err(|e| format!("Failed to read backends directory: {}", e))?;
-
-    for version_entry in version_dirs {
-        let version_entry =
-            version_entry.map_err(|e| format!("Failed to read version entry: {}", e))?;
-
-        let version_path = version_entry.path();
-        let version_name = match version_path.file_name() {
-            Some(name) => name.to_string_lossy().to_string(),
-            None => continue,
-        };
-
-        // Skip the latest version
-        if version_name == latest_version {
-            continue;
-        }
-
-        // Check if this version has the specific backend type
-        let backend_type_path = version_path.join(&backend_type);
-
-        if backend_type_path.exists() {
-            // Verify it's actually installed before removing
-            if is_backend_installed(&backend_type_path) {
-                match fs::remove_dir_all(&backend_type_path) {
-                    Ok(_) => {
-                        log::info!(
-                            "Removed old version of {}: {}",
-                            backend_type,
-                            backend_type_path.display()
-                        );
-                        removed_paths.push(backend_type_path.to_string_lossy().to_string());
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to remove old backend version: {} - {}",
-                            backend_type_path.display(),
-                            e
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(removed_paths)
-}
-
 /// Deprecated: decided by atomic-chat-core since 2026-09-27 (ADR 2026-09-27-the-core-is-the-only-source-of-hardware-facts-and-backend-decisions); kept as the fixture source for the core's contract tests.
 #[tauri::command]
 pub fn should_migrate_backend(

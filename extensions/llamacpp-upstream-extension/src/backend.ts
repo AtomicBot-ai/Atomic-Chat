@@ -1,5 +1,4 @@
 import { getJanDataFolderPath, fs, joinPath } from '@janhq/core'
-import { BUNDLED_MANIFEST_BASELINE } from './bundledManifestBaseline'
 import { getProxyConfig } from './util'
 import { getBackendCatalog } from './adapter/coreRuntime'
 import type { CoreBackendCatalog, CoreProxyConfig } from './adapter/coreRuntime'
@@ -18,9 +17,10 @@ import type { SettingUpdateResult } from '../../../src-tauri/plugins/tauri-plugi
 // this machine can run, which one is recommended) is a question for
 // atomic-chat-core: `loadCatalog` below asks `POST /backends/llamacpp-upstream/catalog`
 // and everything in this extension reads from that one answer. The core owns
-// the manifest transport (the atomic-chat-conf mirror, its fallbacks and its
-// offline baseline), the hardware probe and the tier policy, so a decision is
-// made once, from one set of facts, for the app and the CLI alike.
+// the release list (atomic-chat-conf's llamacpp-upstream-releases.json, which
+// release each core may take, its fallbacks and its offline baseline), the
+// hardware probe and the tier policy, so a decision is made once, from one set
+// of facts, for the app and the CLI alike.
 //
 // The *archives* come from wherever the manifest's `download_base` points —
 // normally our own signed mirror in atomic-chat-conf, whose Windows binaries
@@ -44,12 +44,6 @@ export interface UpstreamManifest {
   download_base?: string
   assets: UpstreamManifestAsset[]
 }
-
-// Tag of the bundled offline baseline. It is NOT a pin: a live manifest
-// carrying a newer tag is followed as-is, which is what lets an upstream
-// engine update reach users without an app release. Derived from the generated
-// baseline so there is no second place to keep in step with the manifest.
-export const BUNDLED_BASELINE_TAG = BUNDLED_MANIFEST_BASELINE.tag_name
 
 /**
  * The last catalog the core answered with. Every reader in this session shares

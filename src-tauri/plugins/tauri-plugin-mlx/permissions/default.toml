@@ -1,5 +1,0 @@
-[default]
-description = "Default permissions for the MLX plugin"
-permissions = [
-    "allow-get-mlx-server-version",
-]

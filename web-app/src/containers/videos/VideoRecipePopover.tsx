@@ -1,3 +1,6 @@
+import { getProviderTitle } from '@/lib/utils'
+import { isRemoteRecipeEngine } from '@/services/diffusion/types'
+import type { DiffusionRecipeEngine } from '@/services/diffusion/types'
 import { memo } from 'react'
 import { IconCopy, IconInfoCircle, IconRestore } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -12,6 +15,12 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { captureVideoGalleryAction } from '@/lib/diffusion/telemetry'
 import { formatSeconds, secondsForFrames } from '@/lib/video/duration'
 import type { VideoRecipe } from '@/services/diffusion/types'
+
+function engineLabel(engine: DiffusionRecipeEngine): string {
+  if (isRemoteRecipeEngine(engine)) return `${getProviderTitle(engine.provider)} · ${engine.api}`
+  return `${engine.kind} · ${engine.backend}${engine.cpuFallback ? ' (cpu)' : ''}`
+}
+
 
 type VideoRecipePopoverProps = {
   recipe: VideoRecipe
@@ -32,25 +41,29 @@ export const VideoRecipePopover = memo(function VideoRecipePopover({
 }: VideoRecipePopoverProps) {
   const { t } = useTranslation()
 
+  const remote = isRemoteRecipeEngine(recipe.engine)
+  const seconds = recipe.durationSecs ?? secondsForFrames(recipe.frameCount, recipe.fps)
   const rows: Array<[string, string]> = [
     [t('videos:viewer.details.model'), recipe.model.displayName],
     [t('videos:viewer.details.size'), `${recipe.width}×${recipe.height}`],
-    [
+  ]
+  // A provider's clip says its length, not its frames, and has no steps or CFG of its own.
+  if (!remote)
+    rows.push([
       t('videos:viewer.details.frames'),
       t('videos:viewer.details.framesValue', {
         frames: recipe.frameCount,
         fps: recipe.fps,
       }),
-    ],
-    [
-      t('videos:viewer.details.duration'),
-      t('videos:viewer.details.seconds', {
-        seconds: formatSeconds(secondsForFrames(recipe.frameCount, recipe.fps)),
-      }),
-    ],
-    [t('videos:viewer.details.steps'), String(recipe.steps)],
-    [t('videos:viewer.details.cfg'), String(recipe.cfgScale)],
-  ]
+    ])
+  rows.push([
+    t('videos:viewer.details.duration'),
+    t('videos:viewer.details.seconds', { seconds: formatSeconds(seconds) }),
+  ])
+  if (!remote) {
+    rows.push([t('videos:viewer.details.steps'), String(recipe.steps)])
+    rows.push([t('videos:viewer.details.cfg'), String(recipe.cfgScale)])
+  }
   if (recipe.guidance !== null) {
     rows.push([t('videos:viewer.details.guidance'), String(recipe.guidance)])
   }
@@ -58,12 +71,7 @@ export const VideoRecipePopover = memo(function VideoRecipePopover({
   if (recipe.samplingMethod) {
     rows.push([t('videos:viewer.details.sampler'), recipe.samplingMethod])
   }
-  rows.push([
-    t('videos:viewer.details.engine'),
-    `${recipe.engine.kind} · ${recipe.engine.backend}${
-      recipe.engine.cpuFallback ? ' (cpu)' : ''
-    }`,
-  ])
+  rows.push([t('videos:viewer.details.engine'), engineLabel(recipe.engine)])
   rows.push([
     t('videos:viewer.details.took'),
     t('videos:viewer.details.seconds', {

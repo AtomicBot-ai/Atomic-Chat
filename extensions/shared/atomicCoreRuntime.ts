@@ -260,6 +260,81 @@ export interface CoreBackendUpdateCheckRequest {
   proxy?: CoreProxyConfig | null
 }
 
+/**
+ * An engine build the core installs itself (`/engine-builds/:engine`, core 0.12.0): MLX's
+ * `mlx-server`, bundled with the installer or downloaded by the core. snake_case on the wire.
+ */
+export type CoreEngineBuildId = 'sd-cpp' | 'mlx'
+
+export interface CoreEngineBuildRef {
+  tag: string
+  backend_id: string
+  origin: 'downloaded' | 'bundled'
+}
+
+export interface CoreInstalledEngineBuild extends CoreEngineBuildRef {
+  installed_at_ms: number | null
+  published_at?: string | null
+  removable: boolean
+  in_use: boolean
+  active: boolean
+}
+
+export interface CoreEngineBuildCatalog {
+  engine: CoreEngineBuildId
+  manifest: {
+    tag: string
+    published_at?: string
+    source: 'remote' | 'cache'
+    fetched_at: number
+    error: string | null
+  } | null
+  manifest_error: string | null
+  host_backend_id: string | null
+  host_reason: string | null
+  installed: CoreInstalledEngineBuild[]
+  active: CoreInstalledEngineBuild | null
+}
+
+export interface CoreEngineBuildUpdateCheck {
+  /** `true` only for a build strictly newer than the active one. */
+  update_needed: boolean
+  current: CoreEngineBuildRef | null
+  target: {
+    tag: string
+    backend_id: string
+    published_at?: string
+    download_bytes: number
+  } | null
+}
+
+export interface CoreEngineBuildInstallResult {
+  installed: boolean
+  reason?: 'already-installed' | 'active-is-newer'
+  build: CoreEngineBuildRef
+  retired: CoreEngineBuildRef[]
+  kept_in_use: CoreEngineBuildRef[]
+}
+
+/** `POST /engines/:engine/update` for a llama.cpp provider (openspec change `unify-engine-lifecycle`). */
+export interface CoreEngineUpdateRequest {
+  task_id: string
+  /** The build to move to; without `version`, the newest of `variant` in the catalog. */
+  target?: { version?: string; variant: string }
+  force?: boolean
+  proxy?: CoreProxyConfig | null
+  app_version?: string | null
+}
+
+export interface CoreEngineUpdateResult {
+  updated: boolean
+  reason?: 'already-active' | 'no-update'
+  /** The build the next load runs from. */
+  active: { version: string; variant: string } | null
+  retired: { version: string; variant: string }[]
+  kept_in_use: { version: string; variant: string }[]
+}
+
 export interface CoreModelCapabilities {
   modelId: string
   maxCtxTrain?: number
@@ -530,6 +605,45 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
     })
   }
 
+  /** What the core has installed of `engine` and what this host would install. Reads only. */
+  async function engineBuildCatalog(
+    engine: CoreEngineBuildId,
+    request: { force?: boolean; proxy?: CoreProxyConfig | null } = {}
+  ): Promise<CoreEngineBuildCatalog> {
+    return call('POST', `/engine-builds/${engine}/catalog`, request)
+  }
+
+  /** Whether the manifest names a build strictly newer than the active one. Reads only. */
+  async function checkEngineBuildUpdates(
+    engine: CoreEngineBuildId,
+    request: { force?: boolean; proxy?: CoreProxyConfig | null } = {}
+  ): Promise<CoreEngineBuildUpdateCheck> {
+    return call('POST', `/engine-builds/${engine}/updates`, request)
+  }
+
+  /**
+   * Install this host's build of `engine` under `taskId` (progress and cancel as for a backend
+   * install); the core unloads the sessions of other builds and retires them.
+   */
+  async function installEngineBuild(
+    engine: CoreEngineBuildId,
+    taskId: string,
+    proxy: CoreProxyConfig | null = null
+  ): Promise<CoreEngineBuildInstallResult> {
+    return call('POST', `/engine-builds/${engine}/install`, {
+      task_id: taskId,
+      ...(proxy ? { proxy } : {}),
+    })
+  }
+
+  /**
+   * Have the core install a build of this provider and make it the active one: it writes
+   * `version_backend` and unloads the provider's models (`POST /engines/:engine/update`).
+   */
+  async function updateEngine(request: CoreEngineUpdateRequest): Promise<CoreEngineUpdateResult> {
+    return call('POST', `/engines/${provider}/update`, request)
+  }
+
   async function cancelBackendDownload(taskId: string): Promise<boolean> {
     const response = await call<{ cancelled: boolean }>(
       'POST',
@@ -642,8 +756,12 @@ export function createCoreRuntime(provider: CoreProvider, invoke: Invoke) {
     checkBackendUpdates,
     listInstalledBackends,
     installBackend,
+    updateEngine,
     cancelBackendDownload,
     removeBackend,
+    engineBuildCatalog,
+    checkEngineBuildUpdates,
+    installEngineBuild,
     getOptimalCache,
     setOptimalCache,
     getOptimalSnapshot,

@@ -69,6 +69,23 @@ done
 "${RES_BIN_DIR}/atomic-chat-core" --version >/dev/null \
   || { echo "The bundled atomic-chat-core does not run — its bun payload is damaged."; exit 1; }
 
+# Tauri's linuxdeploy-plugin-gtk writes an AppRun hook that does
+# `export GDK_BACKEND=x11` unconditionally, so on a Wayland session the app
+# runs under XWayland and the compositor upscales it as a bitmap (blurry under
+# fractional scaling, e.g. Hyprland). The crash that line worked around
+# (tauri-apps/tauri#8541) is WebKit's DMA-BUF renderer, which main.rs already
+# disables on Linux. Drop the line: GTK then picks Wayland when
+# WAYLAND_DISPLAY is set and falls back to X11 otherwise, and a user can still
+# force X11 with GDK_BACKEND=x11 themselves.
+GTK_HOOK="${APP_DIR}/apprun-hooks/linuxdeploy-plugin-gtk.sh"
+if [ -f "${GTK_HOOK}" ]; then
+  sed -i '/^export GDK_BACKEND=x11/d' "${GTK_HOOK}"
+  if grep -q 'GDK_BACKEND' "${GTK_HOOK}"; then
+    echo "${GTK_HOOK} still sets GDK_BACKEND; the AppImage would run under XWayland."
+    exit 1
+  fi
+fi
+
 # Remove the AppImage produced by `tauri build` — we are about to
 # repackage from the unpacked AppDir.
 APP_IMAGE_FILE=$(ls ./src-tauri/target/release/bundle/appimage/ | grep -E '\.AppImage$' | head -1 || true)

@@ -17,6 +17,22 @@
  * handed explicit file paths at load time. It never resolves the catalog.
  */
 
+import type {
+  EngineBuildCatalog,
+  EngineBuildCatalogRequest,
+  EngineBuildInstallRequest,
+  EngineBuildInstallResult,
+  EngineBuildRemoveResult,
+  EngineBuildUpdateCheck,
+  EngineBuildUpdateCheckRequest,
+} from '@/services/engine-builds/types'
+import type {
+  MediaDialect,
+  MediaTarget,
+  RemoteImageOptions,
+  RemoteVideoOptions,
+} from '@/services/media/types'
+
 /** Which native engine serves generation. `diffusers` arrives in phase 1b. */
 export type DiffusionEngineId = 'sd-cpp' | 'diffusers'
 
@@ -205,6 +221,16 @@ export type NativeDiffusionErrorCode =
   | 'BACKEND_IN_USE'
   | 'NOT_CONFIGURED'
   | 'INTERNAL'
+  /** Remote media: a cloud or self-hosted provider's model. */
+  | 'REMOTE_NOT_CONFIGURED'
+  | 'REMOTE_AUTH_FAILED'
+  | 'REMOTE_REJECTED'
+  | 'REMOTE_CONTENT_BLOCKED'
+  | 'REMOTE_RATE_LIMITED'
+  | 'REMOTE_QUOTA'
+  | 'REMOTE_UNAVAILABLE'
+  | 'REMOTE_TIMEOUT'
+  | 'REMOTE_UNSUPPORTED'
 
 export type DiffusionError = {
   code: NativeDiffusionErrorCode
@@ -295,6 +321,13 @@ export type ImageGenerateRequest = {
   referenceImages?: ImageSource[]
   /** Denoise strength 0..1 for transform / inpaint / extend / upscale. */
   strength?: number
+  /**
+   * A cloud or self-hosted provider's model instead of the resident one. `width`, `height`,
+   * `steps` and `cfgScale` are still sent; a model without such a control ignores them.
+   */
+  target?: MediaTarget
+  /** What only a remote model takes; ignored without `target`. */
+  remote?: RemoteImageOptions
 }
 
 export type ImageJobState =
@@ -371,16 +404,37 @@ export type ImageRecipe = {
     /** Basename of the transformer file, so two quants of one repo stay distinguishable. */
     filename: string
   }
-  engine: {
-    kind: DiffusionEngineId
-    backend: DiffusionBackend
-    tag: string
-    offload: DiffusionOffloadPolicy
-    cpuFallback: boolean
-  }
+  engine: DiffusionRecipeEngine
+  /** What a remote model was asked besides the fields above; absent for a local one. */
+  remote?: RemoteImageOptions
   createdAtMs: number
   durationMs: number
 }
+
+/** The engine the core ran, as a recipe records it. */
+export type LocalRecipeEngine = {
+  kind: DiffusionEngineId
+  backend: DiffusionBackend
+  tag: string
+  offload: DiffusionOffloadPolicy
+  cpuFallback: boolean
+}
+
+/**
+ * A cloud or self-hosted provider made it. The recipe's `model.family` then holds the provider id
+ * (not a `DiffusionFamilyId`) and `model.filename` is empty: check `engine.kind` first.
+ */
+export type RemoteRecipeEngine = {
+  kind: 'remote'
+  provider: string
+  api: MediaDialect
+}
+
+export type DiffusionRecipeEngine = LocalRecipeEngine | RemoteRecipeEngine
+
+export const isRemoteRecipeEngine = (
+  engine: DiffusionRecipeEngine
+): engine is RemoteRecipeEngine => engine.kind === 'remote'
 
 export type GalleryImageItem = {
   /** `<jobId>-<index:02>`; also the file stem. */
@@ -425,16 +479,6 @@ export type DiffusionModelFile = {
   bytes: number
 }
 
-export type DiffusionBackendInstallRecord = {
-  tag: string
-  backendId: string
-  backend: DiffusionBackend
-  engine: DiffusionEngineId
-  sha256: string | null
-  installedAtMs: number
-  dir: string
-}
-
 /**
  * The core's image-generation configuration. It lives only in the core's
  * memory and each `configure` replaces all of it, so the app sends every
@@ -465,7 +509,7 @@ export type VideoJobState = ImageJobState
 export type VideoJobPhase = ImageJobPhase
 
 /** The one container sd.cpp writes that the webview plays: VP8 in WebM. */
-export type VideoOutputFormat = 'webm'
+export type VideoOutputFormat = 'webm' | 'mp4'
 
 /** What the loaded video model can do; the Video page gates its form on this. */
 export type VideoCapabilities = {
@@ -508,6 +552,10 @@ export type VideoGenerateRequest = {
   initImage?: ImageSource
   /** Reserved for `image-to-video`: the last frame. */
   endImage?: ImageSource
+  /** A cloud or self-hosted provider's model instead of the resident one. */
+  target?: MediaTarget
+  /** What only a remote model takes; ignored without `target`. */
+  remote?: RemoteVideoOptions
 }
 
 /** Which memory a clip competes for: Apple's unified memory, a discrete GPU's, or system RAM. */
@@ -590,15 +638,13 @@ export type VideoRecipe = {
     /** Basename of the transformer file. */
     filename: string
   }
-  engine: {
-    kind: DiffusionEngineId
-    backend: DiffusionBackend
-    tag: string
-    offload: DiffusionOffloadPolicy
-    cpuFallback: boolean
-  }
+  engine: DiffusionRecipeEngine
   createdAtMs: number
   durationMs: number
+  /** A remote clip's length in seconds (its `fps` and `frameCount` are then 0). */
+  durationSecs?: number
+  /** What a remote model was asked; absent for a local one. */
+  remote?: RemoteVideoOptions
 }
 
 export type GalleryVideoItem = {
@@ -660,23 +706,20 @@ export interface DiffusionService {
   configure(config: DiffusionConfig): Promise<DiffusionStatus>
   getStatus(): Promise<DiffusionStatus>
 
-  // --- engine binary --------------------------------------------------------
+  // --- engine builds (the core's `/engine-builds/sd-cpp/*`) ----------------
+  /** The installed builds, the active one, and what this host would install from the manifest. */
+  engineCatalog(request?: EngineBuildCatalogRequest): Promise<EngineBuildCatalog>
+  /** Whether the manifest names a build strictly newer than the active one. */
+  checkEngineUpdate(
+    request?: EngineBuildUpdateCheckRequest
+  ): Promise<EngineBuildUpdateCheck>
   /**
-   * Called after the archive has been downloaded and decompressed into `dir`:
-   * sets the executable bits, writes the ownership marker and install record,
-   * and probes `sd-cli --help` to make sure this really is stable-diffusion.cpp.
+   * Download, verify, probe and activate this host's build under the
+   * caller's `task_id`; the core unloads sessions of other builds and removes
+   * the builds nobody runs from.
    */
-  finalizeBackendInstall(args: {
-    dir: string
-    tag: string
-    backendId: string
-    backend: DiffusionBackend
-    engine: DiffusionEngineId
-    sha256?: string
-  }): Promise<DiffusionBackendInstallRecord>
-  listInstalledBackends(): Promise<DiffusionBackendInstallRecord[]>
-  /** Refuses (`BACKEND_IN_USE`) while a session runs from that tree, and refuses trees without the ownership marker. */
-  removeBackend(dir: string): Promise<void>
+  installEngine(request: EngineBuildInstallRequest): Promise<EngineBuildInstallResult>
+  removeEngineBuild(tag: string, backendId: string): Promise<EngineBuildRemoveResult>
 
   // --- model files ---------------------------------------------------------
   listModelFiles(): Promise<DiffusionModelFile[]>

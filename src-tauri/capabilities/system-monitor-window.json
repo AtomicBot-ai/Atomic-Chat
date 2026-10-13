@@ -17,7 +17,6 @@
     "hardware:default",
     "llamacpp:default",
     "llamacpp-upstream:default",
-    "mlx:default",
     "store:default",
     "vector-db:default",
     "rag:default",

@@ -20,7 +20,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::find_latest_version_for_backend,
             backend::prioritize_backends,
             backend::check_backend_for_updates,
-            backend::remove_old_backend_versions,
             backend::should_migrate_backend,
             backend::handle_setting_update,
             backend::install_bundled_backend

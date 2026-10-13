@@ -32,9 +32,10 @@ fn message(error: CoreError) -> String {
 }
 
 /// The control API body for a registration. `api_key: null` clears a stored
-/// key, which is what an app registration without a key means.
+/// key, which is what an app registration without a key means. `media` goes
+/// only when the app sent it: absent, the core keeps what it has stored.
 pub fn provider_body(request: &RegisterProviderRequest) -> Value {
-    json!({
+    let mut body = json!({
         "api_key": request.api_key,
         "base_url": request.base_url,
         "custom_headers": request
@@ -43,7 +44,11 @@ pub fn provider_body(request: &RegisterProviderRequest) -> Value {
             .map(|h| json!({"header": h.header, "value": h.value}))
             .collect::<Vec<_>>(),
         "models": request.models,
-    })
+    });
+    if let (Some(media), Some(fields)) = (&request.media, body.as_object_mut()) {
+        fields.insert("media".to_string(), media.clone());
+    }
+    body
 }
 
 async fn apply<R: Runtime>(
@@ -150,6 +155,7 @@ mod tests {
                 value: "acme".into(),
             }],
             models: vec!["llama3".into()],
+            media: None,
         });
         assert_eq!(
             body,
@@ -160,5 +166,22 @@ mod tests {
                 "models": ["llama3"],
             })
         );
+    }
+
+    #[test]
+    fn a_registration_carries_its_media_models_as_the_app_sent_them() {
+        let media = json!({
+            "image_api": "openai-images",
+            "models": [{"id": "x/z-image-turbo", "kind": "image"}],
+        });
+        let body = provider_body(&RegisterProviderRequest {
+            provider: "ollama".into(),
+            api_key: None,
+            base_url: Some("http://localhost:11434/v1".into()),
+            custom_headers: vec![],
+            models: vec![],
+            media: Some(media.clone()),
+        });
+        assert_eq!(body["media"], media);
     }
 }

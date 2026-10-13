@@ -7,6 +7,35 @@ import type { DiffusionFamilyId } from '@/services/diffusion/types'
 // matters — more specific families first (e.g. deepseek before qwen, since
 // "DeepSeek-R1-Distill-Qwen" should resolve to DeepSeek).
 const FAMILY_LOGO_RULES: Array<[RegExp, string]> = [
+  // Image and video models of cloud and self-hosted providers (remote media), ahead of the chat
+  // families so `google/veo-3.1` or `minimax/hailuo-3` find their own mark. Marks from
+  // @lobehub/icons-static-svg 1.95.1, except HiDream (its Hugging Face organisation avatar) and
+  // HeyGen (its site favicon), which that set lacks.
+  [/nano-?banana|gemini-[\d.]+-(?:flash|pro)(?:-lite)?-image/i, '/svg/nanobanana-color.svg'],
+  [/\bveo[-_ ]?\d|\bimagen/i, '/svg/google-color.svg'],
+  [/\bsora\b|sora-\d/i, '/svg/sora-color.svg'],
+  [/dall-?e/i, '/svg/dalle-color.svg'],
+  [/gpt-image|chatgpt-image|gpt-[\d.]+-image/i, '/svg/openai-mark.svg'],
+  [/grok-imagine/i, '/images/model-provider/xai.svg'],
+  [/seedream|seedance|dreamina/i, '/svg/bytedance-color.svg'],
+  [/kling|kwaivgi/i, '/svg/kling-color.svg'],
+  [/hailuo/i, '/svg/hailuo-color.svg'],
+  [/\bimage-01\b|minimax-h\d/i, '/svg/minimax.svg'],
+  [/runway|\bgen-4|\baleph-\d/i, '/svg/runway.svg'],
+  [/\bluma\b|luma\/|\bray-\d/i, '/svg/luma.svg'],
+  [/\bpika/i, '/svg/pika.svg'],
+  [/ideogram/i, '/svg/ideogram.svg'],
+  [/recraft/i, '/svg/recraft.svg'],
+  [/hunyuan|\bhy-image/i, '/svg/hunyuan-color.svg'],
+  [/\bvidu/i, '/svg/vidu-color.svg'],
+  [/pixverse/i, '/svg/pixverse-color.svg'],
+  [/happyhorse/i, '/svg/happyhorse.svg'],
+  [/hidream/i, '/svg/hidream.webp'],
+  [/heygen|avatar-iv/i, '/svg/heygen.png'],
+  [/^krea\//i, '/svg/krea.svg'],
+  [/mai-image/i, '/svg/microsoft-color.svg'],
+  [/ming-image|inclusionai/i, '/images/model-provider/inclusionai.webp'],
+  [/stable[-_ ]?diffusion|stable-image|stability|\bsd[_-]?xl|sdxl|\bsd[_-]?3|\bsd[_-]?1\.?5|v1-5-pruned|\bsd-turbo/i, '/svg/stability-color.svg'],
   [/deepseek/i, '/svg/deepseek-color.svg'],
   // EmbeddingGemma carries the Gemma mark itself, not Google's "G".
   [/embeddinggemma/i, '/svg/gemma-color.svg'],
@@ -65,6 +94,15 @@ const MONOCHROME_FAMILY_LOGOS: ReadonlySet<string> = new Set([
   '/svg/lightricks.svg',
   '/svg/openai-mark.svg',
   '/svg/z-image.svg',
+  // Remote media marks drawn in one color.
+  '/svg/runway.svg',
+  '/svg/luma.svg',
+  '/svg/pika.svg',
+  '/svg/ideogram.svg',
+  '/svg/recraft.svg',
+  '/svg/krea.svg',
+  '/svg/happyhorse.svg',
+  '/images/model-provider/xai.svg',
 ])
 
 // Explicit icon keys addressable from the staff-picks manifest. Curators pick

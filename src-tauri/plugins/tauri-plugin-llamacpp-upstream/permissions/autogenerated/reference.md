@@ -15,7 +15,6 @@ Default permissions for the llamacpp plugin
 - `allow-find-latest-version-for-backend`
 - `allow-prioritize-backends`
 - `allow-check-backend-for-updates`
-- `allow-remove-old-backend-versions`
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
 - `allow-install-bundled-backend`
@@ -390,32 +389,6 @@ Enables the read_gguf_metadata command without any pre-configured scope.
 <td>
 
 Denies the read_gguf_metadata command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp-upstream:allow-remove-old-backend-versions`
-
-</td>
-<td>
-
-Enables the remove_old_backend_versions command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`llamacpp-upstream:deny-remove-old-backend-versions`
-
-</td>
-<td>
-
-Denies the remove_old_backend_versions command without any pre-configured scope.
 
 </td>
 </tr>

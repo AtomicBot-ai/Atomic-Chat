@@ -10,7 +10,6 @@ import {
   parseVersionBackendSetting,
   getBackendArchiveName,
   getBackendDownloadUrl,
-  BUNDLED_BASELINE_TAG,
   resolveGpuFamilyConcrete,
   isConcreteOfGpuFamily,
   friendlyBackendLabel,
@@ -21,8 +20,6 @@ import {
   mergeBackendOptions,
   cleanupIncompleteBackends,
 } from '../backend'
-import { BUNDLED_MANIFEST_BASELINE } from '../bundledManifestBaseline'
-import UPSTREAM_MANIFEST_FIXTURE from '../../../../tests/fixtures/registries/upstream-manifest.json'
 import { getBackendCatalog } from '../adapter/coreRuntime'
 import type { CoreBackendCatalog } from '../adapter/coreRuntime'
 import { fs, getJanDataFolderPath } from '@janhq/core'
@@ -439,19 +436,6 @@ describe('backend catalog from the core', () => {
     expect(catalogSnapshot()).toEqual(good)
     // And the memo still serves it without another round trip.
     await expect(listSupportedBackends()).resolves.toEqual(good.available)
-  })
-
-  it('ships a baseline generated from the committed manifest fixture', () => {
-    expect(BUNDLED_MANIFEST_BASELINE.tag_name).toBe(
-      UPSTREAM_MANIFEST_FIXTURE.tag_name
-    )
-    expect(BUNDLED_MANIFEST_BASELINE.assets).toEqual(
-      UPSTREAM_MANIFEST_FIXTURE.assets
-    )
-    expect(BUNDLED_MANIFEST_BASELINE.download_base).toBe(
-      (UPSTREAM_MANIFEST_FIXTURE as { download_base?: string }).download_base
-    )
-    expect(BUNDLED_BASELINE_TAG).toBe(UPSTREAM_MANIFEST_FIXTURE.tag_name)
   })
 })
 

@@ -64,7 +64,6 @@ dependencies = [
  "tauri-plugin-llamacpp",
  "tauri-plugin-llamacpp-upstream",
  "tauri-plugin-log",
- "tauri-plugin-mlx",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-os",
@@ -8071,15 +8070,6 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.18",
  "time",
-]
-
-[[package]]
-name = "tauri-plugin-mlx"
-version = "0.6.599"
-dependencies = [
- "serde",
- "tauri",
- "tauri-plugin",
 ]
 
 [[package]]
