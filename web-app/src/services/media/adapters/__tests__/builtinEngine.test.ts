@@ -244,8 +244,8 @@ describe('built-in engine specifics', () => {
     expect(capabilities.models[0].install).toMatchObject({ installed: true, installable: true })
     expect(capabilities.models[1].install).toMatchObject({ installed: false, installable: true })
     expect(capabilities.features?.install).toBe(true)
-    // The engine does not yet surface job progress; don't advertise it.
-    expect(capabilities.features?.progress).toBe(false)
+    // Progress is the engine's stdout step bar, parsed by Rust and read on poll.
+    expect(capabilities.features?.progress).toBe(true)
     expect(capabilities.recommended).toEqual([
       { task: 'text_to_image', model_id: 'builtin-engine:sd-1.5' },
     ])
@@ -336,6 +336,27 @@ describe('built-in engine specifics', () => {
 
     expect(done.state).toBe('succeeded')
     expect(done.outputs).toEqual([{ kind: 'inline', base64: PNG_BASE64, mime: 'image/png' }])
+    expect(done.progress).toBe(100)
+  })
+
+  it('turns the engine stdout step bar into poll progress', async () => {
+    const instance = adapter()
+    const submitted = await instance.submit({
+      client_job_id: 'c2',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'x' },
+    })
+    fake.states = ['running']
+    // Rust emits this from the engine's `|=====> | 3/20` stdout bar.
+    fake.listeners.get('media-engine-progress')?.({ current: 3, total: 20 })
+
+    const snapshot = await instance.poll(submitted)
+
+    expect(snapshot.state).toBe('running')
+    expect(snapshot.progress).toBe(15)
+    expect(snapshot.step).toEqual({ current: 3, total: 20 })
   })
 
   it('reports a job the engine forgot as failed, not retryable', async () => {

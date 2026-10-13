@@ -658,7 +658,39 @@ export function createBuiltinEngineAdapter(
     }
   }
 
+  // The engine runs one job at a time, so a single "latest step" is enough. Rust
+  // parses the engine's stdout progress bar and emits it on this Tauri event;
+  // here it becomes the `progress`/`step` fields of the next poll.
+  let latestProgress: { current: number; total: number } | null = null
+  let progressListening = false
+
+  function ensureProgressListener(): void {
+    if (progressListening) return
+    progressListening = true
+    void transport
+      .listen<{ current: number; total: number }>('media-engine-progress', (progress) => {
+        latestProgress = progress
+      })
+      .catch(() => {
+        // A runtime without the progress event still generates fine; the bar
+        // just stays quiet until the job lands.
+        progressListening = false
+      })
+  }
+
+  function progressOf(): Pick<MediaJobSnapshot, 'progress' | 'step'> {
+    if (!latestProgress || latestProgress.total <= 0) {
+      return { progress: null, step: null }
+    }
+    const { current, total } = latestProgress
+    return {
+      progress: Math.round((current / total) * 100),
+      step: { current, total },
+    }
+  }
+
   async function poll(handle: MediaJobHandle, signal?: AbortSignal): Promise<MediaJobSnapshot> {
+    ensureProgressListener()
     const providerJobId = handle.provider_job_id
     if (!providerJobId) {
       throw new BuiltinEngineError(
@@ -700,6 +732,7 @@ export function createBuiltinEngineAdapter(
     return snapshot(handle, providerJobId, state, {
       queue_position: job.queue_position ?? null,
       ...(state === 'succeeded' ? { outputs: outputsOf(job) } : {}),
+      ...(state === 'succeeded' ? { progress: 100, step: null } : progressOf()),
       ...(job.started ? { started_at: job.started * 1000 } : {}),
       ...(job.completed ? { finished_at: job.completed * 1000 } : {}),
     })
@@ -737,11 +770,10 @@ export function createBuiltinEngineAdapter(
         features: {
           // Waiting jobs can be cancelled; one already generating cannot yet.
           cancel: true,
-          // Honest: the engine's job endpoint reports only status and queue
-          // position, and the Rust stdout progress parser is not forwarded to
-          // the frontend. Flip back to true only once `poll`/`subscribe`
-          // actually emits `progress` (0..100).
-          progress: false,
+          // Progress is the engine's stdout step bar, parsed by Rust and read
+          // here on each poll (the job endpoint itself reports only status and
+          // queue position).
+          progress: true,
           queue: true,
           events: false,
           install: true,
@@ -751,6 +783,10 @@ export function createBuiltinEngineAdapter(
     },
 
     async submit(req: NormalizedMediaRequest, signal?: AbortSignal): Promise<MediaJobSnapshot> {
+      // A new job resets the progress bar so the last job's tail is never shown
+      // as this one's.
+      latestProgress = null
+      ensureProgressListener()
       const localId = localIdOf(req.model_id, providerId)
       // Loads the model the first time, which can take a while; a later job for
       // the same model returns straight away.

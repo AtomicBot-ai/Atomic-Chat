@@ -15,7 +15,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::{Runtime, State};
+use tauri::{Emitter, Runtime, State};
 use tokio::{process::Child, sync::Mutex};
 
 use super::{
@@ -478,6 +478,15 @@ pub struct StartedEngine {
     pub base_url: String,
 }
 
+/// One step-progress update read from the engine's stdout progress bar. The
+/// engine runs one job at a time, so the frontend attaches this to whichever
+/// job is currently generating.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct EngineProgress {
+    pub current: u32,
+    pub total: u32,
+}
+
 /// Run the engine for `model_id`, stopping any other model first. Returns once
 /// the model is loaded and the engine takes jobs.
 #[tauri::command]
@@ -499,6 +508,7 @@ pub async fn media_engine_start<R: Runtime>(
         let _ = stop_server(&mut previous.child).await;
     }
 
+    let progress_app = app.clone();
     let data_dir = get_jan_data_folder_path(app);
     let variant = this_computers_variant()?;
     let port = pick_free_port()?;
@@ -510,6 +520,9 @@ pub async fn media_engine_start<R: Runtime>(
         &args,
         &format!("{base_url}{READY_PATH}"),
         START_TIMEOUT,
+        move |current, total| {
+            let _ = progress_app.emit("media-engine-progress", EngineProgress { current, total });
+        },
     )
     .await?;
     *running = Some(RunningEngine {
@@ -823,6 +836,7 @@ mod tests {
             &args,
             &format!("{base}{READY_PATH}"),
             START_TIMEOUT,
+            |_, _| {},
         )
         .await
         .unwrap();
