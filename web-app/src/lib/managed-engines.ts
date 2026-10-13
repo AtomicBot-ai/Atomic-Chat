@@ -33,8 +33,17 @@ export const VLLM_ENGINE: ManagedEngine = {
   i18n: 'vllm',
 }
 
-/** vLLM first (spec `vllm-desktop`: "В списках провайдеров vLLM MUST стоять раньше TensorRT-LLM"). */
-const DEFAULT_ENGINES: readonly ManagedEngine[] = [VLLM_ENGINE, TENSORRT_LLM_ENGINE]
+export const SGLANG_ENGINE: ManagedEngine = {
+  id: 'sglang',
+  label: 'SGLang',
+  i18n: 'sglang',
+}
+
+/**
+ * vLLM first (spec `vllm-desktop`: "В списках провайдеров vLLM MUST стоять раньше TensorRT-LLM"),
+ * then SGLang, then TensorRT-LLM (spec `sglang-desktop`, "Порядок трёх движков").
+ */
+const DEFAULT_ENGINES: readonly ManagedEngine[] = [VLLM_ENGINE, SGLANG_ENGINE, TENSORRT_LLM_ENGINE]
 
 let engines: readonly ManagedEngine[] = DEFAULT_ENGINES
 

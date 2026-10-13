@@ -53,6 +53,7 @@ const ALL_FORMATS: readonly ModelFormat[] = [
   'gguf',
   'mlx',
   'vllm',
+  'sglang',
   'tensorrt-llm',
   'atomic-prism',
 ]
@@ -65,6 +66,7 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'gguf': 'GGUF',
   'mlx': 'MLX',
   'vllm': 'vLLM',
+  'sglang': 'SGLang',
   'tensorrt-llm': 'TensorRT-LLM',
   'atomic-prism': 'PrismML',
 }
@@ -77,7 +79,7 @@ export function isManagedFormat(format: ModelFormat | undefined): boolean {
 /**
  * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, each managed engine
  * where its provider is shown and a card is new enough (`useManagedHubStates()[…].hub.visible`),
- * in registry order — vLLM before TensorRT-LLM — then PrismML where its provider is shown
+ * in registry order — vLLM, SGLang, TensorRT-LLM — then PrismML where its provider is shown
  * (`usePrismHubVisible()`): the core hides it where PrismML publishes no build.
  */
 export function hubFormats(options: {

@@ -10,6 +10,8 @@ describe('isLocalProvider', () => {
     expect(isLocalProvider('tensorrt-llm')).toBe(true)
     expect(LOCAL_PROVIDER_NAMES).toContain('vllm')
     expect(isLocalProvider('vllm')).toBe(true)
+    expect(LOCAL_PROVIDER_NAMES).toContain('sglang')
+    expect(isLocalProvider('sglang')).toBe(true)
     expect(isLocalProvider('nvidia')).toBe(false)
   })
 })

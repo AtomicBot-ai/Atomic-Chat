@@ -55,6 +55,12 @@ describe('sortProvidersForSettings', () => {
     ).toEqual(['llamacpp-upstream', 'llamacpp', 'vllm', 'tensorrt-llm', 'openai'])
   })
 
+  it('puts SGLang right after vLLM, before TensorRT-LLM (spec sglang-desktop "Порядок трёх движков")', () => {
+    expect(
+      order(['tensorrt-llm', 'sglang', 'openai', 'vllm', 'llamacpp-upstream'])
+    ).toEqual(['llamacpp-upstream', 'vllm', 'sglang', 'tensorrt-llm', 'openai'])
+  })
+
   it('puts TensorRT-LLM after both llama.cpp engines on Linux', () => {
     // Linux ships no MLX and no Foundation Models, so the local engines are
     // upstream, turboquant and TensorRT-LLM, in that order, ahead of the cloud.

@@ -25,11 +25,13 @@ pub const PROVIDER_MLX: &str = "mlx";
 /// Never searched by default — the proxy does not route to it — but the webview asks the resolver
 /// for its sessions by this name.
 pub const PROVIDER_FOUNDATION_MODELS: &str = "foundation-models";
-/// The managed engines (change `add-vllm-runtime`, design D14): the core runs each in a container
-/// and serves every session on a loopback gateway that checks the session's key. Linux, and Windows
-/// in Atomic Chat's WSL distribution. Not in the default search order either: on desktop the core's
-/// own `:1337` routes them; the app asks for them by name (chat, agent).
-pub const MANAGED_PROVIDERS: [&str; 2] = ["vllm", "tensorrt-llm"];
+/// The managed engines (change `add-vllm-runtime`, design D14; SGLang, change `add-sglang-runtime`):
+/// the core runs each in a container and serves every session on a loopback gateway that checks the
+/// session's key. Linux, and Windows in Atomic Chat's WSL distribution. Not in the default search
+/// order either: on desktop the core's own `:1337` routes them; the app asks for them by name (chat,
+/// agent). Rust cannot read the webview's registry (`lib/managed-engines.ts`), so a new engine is
+/// added here by hand, in the same order.
+pub const MANAGED_PROVIDERS: [&str; 3] = ["vllm", "sglang", "tensorrt-llm"];
 
 /// Whether `provider` is a managed engine: its sessions are containers behind the core's gateway.
 pub fn is_managed_provider(provider: &str) -> bool {
@@ -180,6 +182,19 @@ mod tests {
         assert_eq!(PROVIDER_SEARCH_ORDER.last(), Some(&PROVIDER_ATOMIC_PRISM));
         let prism = session("bonsai", 3001, PROVIDER_ATOMIC_PRISM, false);
         assert!(SessionResolver::new(core_with(vec![prism])).any_loaded().await);
+    }
+
+    #[tokio::test]
+    async fn a_managed_session_is_found_by_naming_its_engine_and_never_by_the_default_search() {
+        // change add-sglang-runtime: `sglang` is the third managed engine, asked for by name like the
+        // other two; the proxy's default search never routes to one.
+        for provider in ["vllm", "sglang", "tensorrt-llm"] {
+            assert!(is_managed_provider(provider), "{provider}");
+            let r = SessionResolver::new(core_with(vec![session("Qwen/Qwen3.5-2B", 4001, provider, false)]));
+            assert_eq!(r.find_in(provider, "Qwen/Qwen3.5-2B").await.unwrap().provider, provider);
+            assert!(r.find("Qwen/Qwen3.5-2B").await.is_none(), "{provider}");
+        }
+        assert_eq!(MANAGED_PROVIDERS, ["vllm", "sglang", "tensorrt-llm"]);
     }
 
     #[tokio::test]

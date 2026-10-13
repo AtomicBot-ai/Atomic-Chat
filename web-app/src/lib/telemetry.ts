@@ -92,6 +92,7 @@ export type LoadBackend =
   | 'foundation-models'
   | 'tensorrt-llm'
   | 'vllm'
+  | 'sglang'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -373,7 +374,8 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'mlx' ||
     provider === 'foundation-models' ||
     provider === 'tensorrt-llm' ||
-    provider === 'vllm'
+    provider === 'vllm' ||
+    provider === 'sglang'
   )
     return provider
   return 'unknown'

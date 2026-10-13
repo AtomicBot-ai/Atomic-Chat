@@ -159,6 +159,7 @@ test('no extension calls a plugin command that used to own a model process', () 
     'foundation-models-extension',
     'tensorrt-llm-extension',
     'vllm-extension',
+    'sglang-extension',
     'download-extension',
   ]) {
     for (const path of sourcesUnder(join(REPO_ROOT, 'extensions', extension, 'src'))) {
@@ -232,7 +233,7 @@ test('no extension injects hardware facts or reads them from the plugin', () => 
 
 test('no extension asks who owns the runtime any more', () => {
   const offenders = []
-  for (const extension of ['llamacpp-extension', 'llamacpp-upstream-extension', 'atomic-prism-extension', 'mlx-extension', 'foundation-models-extension', 'tensorrt-llm-extension', 'vllm-extension', 'download-extension']) {
+  for (const extension of ['llamacpp-extension', 'llamacpp-upstream-extension', 'atomic-prism-extension', 'mlx-extension', 'foundation-models-extension', 'tensorrt-llm-extension', 'vllm-extension', 'sglang-extension', 'download-extension']) {
     for (const path of sourcesUnder(join(REPO_ROOT, 'extensions', extension, 'src'))) {
       const source = readFileSync(path, 'utf8')
       for (const needle of ['coreOwnsRuntime', 'withRuntimeLoad', 'active_runtime', 'atomic_core_begin_runtime_load', 'get_atomic_core_flags'])

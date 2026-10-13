@@ -43,6 +43,10 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('vllm')).toBe('/images/model-provider/vllm.svg')
   })
 
+  it('marks SGLang with its own monogram', () => {
+    expect(getProviderLogo('sglang')).toBe('/images/model-provider/sglang.svg')
+  })
+
   it('marks PrismML with its own mark, the one its Bonsai models carry in the Hub', () => {
     expect(getProviderLogo('atomic-prism')).toBe(
       '/images/model-provider/prism-ml.webp'
@@ -81,6 +85,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('aimlapi')).toBe('AI/ML API')
     expect(getProviderTitle('tensorrt-llm')).toBe('TensorRT-LLM')
     expect(getProviderTitle('vllm')).toBe('vLLM')
+    expect(getProviderTitle('sglang')).toBe('SGLang')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
   })
 

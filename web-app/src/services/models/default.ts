@@ -106,7 +106,7 @@ const isTauriRuntime = (): boolean => {
 // `getActiveModels()` reports and what `stopAllModels()` / `stopAllModelsExcept()`
 // unload. An engine missing here is invisible to the provider page's Stop, which
 // then shows its model stopped while it keeps running (task 3.14, F-9).
-// The managed engines (`lib/managed-engines.ts`: vLLM, TensorRT-LLM) are local too.
+// The managed engines (`lib/managed-engines.ts`: vLLM, SGLang, TensorRT-LLM) are local too.
 const localProviders = (): string[] => [
   'llamacpp',
   'llamacpp-upstream',

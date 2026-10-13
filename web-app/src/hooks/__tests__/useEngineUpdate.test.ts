@@ -222,6 +222,31 @@ describe('useEngineUpdate', () => {
     })
   })
 
+  it('offers an SGLang update too, on its own page (change add-sglang-runtime)', async () => {
+    hold(
+      versions('sglang', {
+        kind: 'managed',
+        active_choice: 'core',
+        active: { version: 'sglang-0.5.21-r1', variant: 'linux/amd64' },
+        update: {
+          needed: true,
+          target: { version: 'sglang-0.5.22-r1', variant: 'linux/amd64' },
+          apply: 'reinstall',
+        },
+      })
+    )
+    const { result } = renderHook(() => useEngineUpdate())
+    expect(result.current.offer?.provider).toBe('sglang')
+
+    await act(() => result.current.applyUpdate())
+
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/settings/providers/$providerName',
+      params: { providerName: 'sglang' },
+      search: { engineUpdate: true },
+    })
+  })
+
   it('brings the offer back when the core refuses the update', async () => {
     updateEngineWithProgress.mockRejectedValue({
       code: 'ENGINE_INSTALL_FAILED',

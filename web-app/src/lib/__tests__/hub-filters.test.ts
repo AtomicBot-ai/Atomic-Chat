@@ -216,6 +216,14 @@ describe('hubFormats', () => {
     expect(HUB_FORMAT_LABELS.vllm).toBe('vLLM')
   })
 
+  it('offers vLLM, SGLang, TensorRT-LLM in that order (spec sglang-desktop "Порядок трёх движков")', () => {
+    expect(
+      hubFormats({ mlx: false, managed: ['tensorrt-llm', 'sglang', 'vllm'] })
+    ).toEqual(['gguf', 'vllm', 'sglang', 'tensorrt-llm'])
+    expect(hubFormats({ mlx: false, managed: ['sglang'] })).toEqual(['gguf', 'sglang'])
+    expect(HUB_FORMAT_LABELS.sglang).toBe('SGLang')
+  })
+
   it('offers PrismML only where its provider is', () => {
     expect(hubFormats({ mlx: true, managed: [], prism: true })).toEqual([
       'gguf',
@@ -241,6 +249,7 @@ describe('engine in the Hub URL', () => {
     expect(parseHubEngine('mlx')).toBe('mlx')
     expect(parseHubEngine('tensorrt-llm')).toBe('tensorrt-llm')
     expect(parseHubEngine('vllm')).toBe('vllm')
+    expect(parseHubEngine('sglang')).toBe('sglang')
     expect(parseHubEngine('atomic-prism')).toBe('atomic-prism')
     expect(parseHubEngine('onnx')).toBeUndefined()
     expect(parseHubEngine(undefined)).toBeUndefined()

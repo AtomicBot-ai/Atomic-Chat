@@ -97,6 +97,9 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/nvidia.svg'
     case 'vllm':
       return '/images/model-provider/vllm.svg'
+    // A monogram until there is an approved mark, like vLLM's (change add-sglang-runtime, D7).
+    case 'sglang':
+      return '/images/model-provider/sglang.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -215,6 +218,8 @@ export const getProviderTitle = (provider: string) => {
       return 'TensorRT-LLM'
     case 'vllm':
       return 'vLLM'
+    case 'sglang':
+      return 'SGLang'
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'

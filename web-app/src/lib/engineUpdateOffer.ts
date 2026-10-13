@@ -34,6 +34,7 @@ export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
   'sd-cpp',
   'tensorrt-llm',
   'vllm',
+  'sglang',
 ]
 
 /** One entry per engine; a newer target replaces the previous decision. */

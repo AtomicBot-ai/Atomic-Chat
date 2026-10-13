@@ -1,3 +1,4 @@
+import { managedEngines } from '@/lib/managed-engines'
 import { getProviderTitle } from '@/lib/utils'
 
 /**
@@ -21,11 +22,20 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   'llamacpp': 3,
   'atomic-prism': 4,
   'foundation-models': 5,
-  // The managed engines (Linux and Windows), so they never share the list with
-  // MLX or Foundation Models: they follow the llama.cpp engines there, vLLM
-  // first (change add-vllm-runtime).
-  'vllm': 6,
-  'tensorrt-llm': 7,
+}
+
+/**
+ * The managed engines (Linux and Windows) never share the list with MLX or
+ * Foundation Models: they follow the llama.cpp engines there, in registry
+ * order — vLLM, SGLang, TensorRT-LLM (changes add-vllm-runtime,
+ * add-sglang-runtime). Read from the registry, so a new engine needs no entry.
+ */
+const MANAGED_PRIORITY_FROM = 6
+
+const providerPriority = (provider: string): number => {
+  if (Object.hasOwn(PROVIDER_PRIORITY, provider)) return PROVIDER_PRIORITY[provider]
+  const managed = managedEngines().findIndex((engine) => engine.id === provider)
+  return managed === -1 ? Number.MAX_SAFE_INTEGER : MANAGED_PRIORITY_FROM + managed
 }
 
 /**
@@ -36,8 +46,8 @@ export const sortProvidersForSettings = <T extends { provider: string }>(
   providers: T[]
 ): T[] =>
   providers.slice().sort((a, b) => {
-    const aPriority = PROVIDER_PRIORITY[a.provider] ?? Number.MAX_SAFE_INTEGER
-    const bPriority = PROVIDER_PRIORITY[b.provider] ?? Number.MAX_SAFE_INTEGER
+    const aPriority = providerPriority(a.provider)
+    const bPriority = providerPriority(b.provider)
 
     if (aPriority !== bPriority) {
       return aPriority - bPriority

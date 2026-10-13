@@ -28,6 +28,7 @@ export type CoreProvider =
   | 'foundation-models'
   | 'tensorrt-llm'
   | 'vllm'
+  | 'sglang'
 
 export type Invoke = <T>(
   command: string,

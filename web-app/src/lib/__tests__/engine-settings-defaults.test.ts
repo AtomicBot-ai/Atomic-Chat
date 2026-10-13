@@ -115,4 +115,14 @@ describe('TensorRT-LLM defaults', () => {
       withDefaultEngineSettings('vllm', settings).map((s) => s.controller_props.value)
     ).toEqual([1, 'auto'])
   })
+
+  it('resets SGLang to its core schema defaults', () => {
+    const settings = [setting('max_running_requests', 2), setting('cuda_graphs', 'auto')]
+
+    expect(hasEngineSettingDefaults('sglang')).toBe(true)
+    expect(customEngineSettingKeys('sglang', settings)).toEqual(['max_running_requests'])
+    expect(
+      withDefaultEngineSettings('sglang', settings).map((s) => s.controller_props.value)
+    ).toEqual([1, 'auto'])
+  })
 })

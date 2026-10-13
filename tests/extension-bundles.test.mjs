@@ -24,6 +24,7 @@ const EXTENSIONS = [
   'foundation-models-extension',
   'tensorrt-llm-extension',
   'vllm-extension',
+  'sglang-extension',
 ]
 
 for (const extension of EXTENSIONS) {

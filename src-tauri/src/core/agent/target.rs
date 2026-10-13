@@ -298,10 +298,27 @@ mod tests {
     }
 
     #[test]
+    fn an_sglang_session_is_reached_through_its_gateway_with_its_key() {
+        // spec sglang-desktop "Чат с моделью SGLang": Agent turns go to the session the core serves.
+        let mut request = request("Qwen/Qwen3.5-2B");
+        request.provider = Some("sglang".into());
+        let mut session = container_session(4003, "sglang-key");
+        session.model_id = "Qwen/Qwen3.5-2B".into();
+
+        let target = managed_target(&session, &request);
+
+        assert_eq!(target.kind, OpenAiTargetKind::LocalManaged);
+        assert_eq!(target.base_url, "http://127.0.0.1:4003/v1");
+        assert_eq!(target.api_key.as_deref(), Some("sglang-key"));
+        assert!(!target.has_vision);
+    }
+
+    #[test]
     fn only_the_managed_engines_route_to_a_session_gateway() {
         use crate::core::sessions::resolver::is_managed_provider;
         assert!(is_managed_provider("tensorrt-llm"));
         assert!(is_managed_provider("vllm"));
+        assert!(is_managed_provider("sglang"));
         for other in ["llamacpp", "llamacpp-upstream", "mlx", "foundation-models", "openai"] {
             assert!(!is_managed_provider(other), "{other}");
         }

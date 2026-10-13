@@ -78,6 +78,15 @@ test('Linux and Windows build the vLLM extension, macOS does not (change add-vll
   assert.ok(!names('darwin').includes('@janhq/vllm-extension'))
 })
 
+test('Linux and Windows build the SGLang extension, macOS does not (change add-sglang-runtime)', () => {
+  // Same platforms as vLLM; the core hides it until conf publishes `runtimes/sglang.json`
+  // (design D9).
+  const names = (platform) => builtHere(platform).map((pkg) => pkg.name)
+  assert.ok(names('linux').includes('@janhq/sglang-extension'))
+  assert.ok(names('win32').includes('@janhq/sglang-extension'))
+  assert.ok(!names('darwin').includes('@janhq/sglang-extension'))
+})
+
 test('each extension this platform builds has a pre-install tarball under the name the installer looks for', () => {
   const tarballs = readdirSync(PRE_INSTALL).filter((name) => name.endsWith('.tgz'))
 
