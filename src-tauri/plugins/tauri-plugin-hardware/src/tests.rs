@@ -1,5 +1,5 @@
 use crate::commands::*;
-use crate::types::CpuStaticInfo;
+use crate::types::{CpuStaticInfo, GpuInfo, Vendor};
 use tauri::test::mock_app;
 
 #[test]
@@ -12,6 +12,30 @@ fn test_system_info() {
 fn test_system_usage() {
     let usage = get_system_usage();
     println!("System Usage Info: {:?}", usage);
+}
+
+#[test]
+fn test_unsupported_gpu_usage_is_explicitly_unavailable() {
+    let gpu = GpuInfo {
+        name: "Test GPU".to_string(),
+        total_memory: 4096,
+        vendor: Vendor::Intel,
+        uuid: "test-gpu".to_string(),
+        driver_version: "test".to_string(),
+        nvidia_info: None,
+        vulkan_info: None,
+    };
+
+    let usage = gpu.get_usage_unsupported();
+    assert!(!usage.available);
+    assert_eq!(usage.used_memory, 0);
+    assert_eq!(usage.total_memory, 0);
+    assert_eq!(usage.utilization_percent, None);
+    assert_eq!(usage.temperature_c, None);
+    assert_eq!(usage.power_w, None);
+    assert_eq!(usage.power_limit_w, None);
+    assert_eq!(usage.clock_graphics_mhz, None);
+    assert_eq!(usage.clock_memory_mhz, None);
 }
 
 #[cfg(test)]

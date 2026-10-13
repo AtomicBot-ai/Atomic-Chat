@@ -1421,6 +1421,7 @@ fn build_llamacpp_config(
         device: String::new(),
         split_mode: String::new(),
         main_gpu: 0,
+        tensor_split: String::new(),
         flash_attn: "auto".to_string(),
         cont_batching: true,
         no_mmap: false,

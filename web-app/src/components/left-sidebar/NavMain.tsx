@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { ChevronRight, LayoutGrid as LayoutGridIcon } from 'lucide-react'
+import {
+  ChevronRight,
+  Clapperboard as MediaIcon,
+  LayoutGrid as LayoutGridIcon,
+} from 'lucide-react'
 import {
   Collapsible,
   CollapsibleContent,
@@ -132,7 +136,7 @@ export function NavMain() {
             className="data-[active=true]:bg-sidebar-foreground/15"
           >
             <Link to={route.media}>
-              <BlocksIcon className="text-foreground/70" size={16} />
+              <MediaIcon className="text-foreground/70" size={16} />
               <span>{t('media:settings.title', { defaultValue: 'Media' })}</span>
             </Link>
           </SidebarMenuButton>

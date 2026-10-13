@@ -92,8 +92,14 @@ import type { ServiceHub } from '@/services'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import {
   isLocalProvider as isLocalProviderName,
+  isLoopbackUrl,
   isSubscriptionProvider,
 } from '@/utils/registerRemoteProvider'
+import {
+  applyPrivacyGate,
+  readPrivacyGateSettings,
+  rehydrateUIMessageStream,
+} from '@/lib/privacy-gate'
 
 /// Local inference backends (mlx, llamacpp, llamacpp-upstream,
 /// foundation-models) get special handling at the `streamText` boundary:
@@ -916,8 +922,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
         this.lastChatTemplateKwargs =
           effectiveReasoningOverride.chat_template_kwargs as
-            | Record<string, unknown>
-            | undefined
+            Record<string, unknown> | undefined
       } catch (error) {
         console.error('Failed to create model:', error)
         throw new Error(
@@ -1039,6 +1044,26 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ? foldSystemIntoFirstUserMessage(modelMessages, systemWithSkills)
         : modelMessages
 
+    // The privacy gate is an egress boundary, not a provider-specific patch.
+    // It is applied after all message preparation but before streamText sends
+    // anything to a remote provider. Local providers remain untouched.
+    const privacySettings = readPrivacyGateSettings()
+    const privacyStaysOnDevice =
+      isLocalProviderName(effectiveProviderName) ||
+      (!isSubscriptionProvider(effectiveProviderName) &&
+        isLoopbackUrl(provider.base_url))
+    const privacyRequest =
+      !privacyStaysOnDevice && privacySettings.enabled
+        ? applyPrivacyGate({
+            messages: finalModelMessages,
+            system: effectiveSystemMessage,
+            customTerms: privacySettings.customTerms,
+          })
+        : null
+    const outboundModelMessages = privacyRequest?.messages ?? finalModelMessages
+    const outboundSystemMessage =
+      privacyRequest?.system ?? effectiveSystemMessage
+
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),
     // not on the `start` event, so the wall-clock fallback measures decode
@@ -1071,11 +1096,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const result = streamText({
       model: this.model,
-      messages: finalModelMessages,
+      messages: outboundModelMessages,
       abortSignal: options.abortSignal,
       tools: activeTools,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
-      system: effectiveSystemMessage,
+      system: outboundSystemMessage,
       maxOutputTokens,
       // Local engines answer a prompt that does not fit with a fast,
       // deterministic error; retrying it (the SDK default for 5xx) only
@@ -1094,7 +1119,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     let draftTokensTotal: number | null = null
     let draftTokensAccepted: number | null = null
 
-    const uiStream = result.toUIMessageStream({
+    const providerUiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
         // Start the wall-clock timer on the first generated delta (text or
         // reasoning), NOT on `start` — the latter fires before prefill, so
@@ -1108,8 +1133,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
         if (part.type === 'finish-step') {
           const pm = part.providerMetadata?.providerMetadata as
-            | Record<string, unknown>
-            | undefined
+            Record<string, unknown> | undefined
           tokensPerSecond = (pm?.tokensPerSecond as number) || 0
           draftTokensTotal = (pm?.draftTokensTotal as number) ?? null
           draftTokensAccepted = (pm?.draftTokensAccepted as number) ?? null
@@ -1199,8 +1223,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // Call the token usage callback with usage data when stream completes
         if (responseMessage) {
           const metadata = responseMessage.metadata as
-            | Record<string, unknown>
-            | undefined
+            Record<string, unknown> | undefined
           const usage = metadata?.usage as LanguageModelUsage | undefined
           if (usage) {
             this.onTokenUsage?.(usage, responseMessage.id)
@@ -1208,6 +1231,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       },
     })
+
+    const uiStream =
+      privacyRequest && privacySettings.rehydrateResponses
+        ? rehydrateUIMessageStream(providerUiStream, privacyRequest.state)
+        : providerUiStream
 
     // When continuing a truncated response, inject the partial content as the
     // very first text-delta so the new message immediately shows it and the

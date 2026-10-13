@@ -43,6 +43,20 @@ pub fn parse_progress(chunk: &str) -> Option<(u32, u32)> {
     latest
 }
 
+/// Appends `chunk` to the `carry` buffer and returns the latest progress in the
+/// combined text, trimming `carry` back to the tail after the last delimiter.
+/// A progress bar can straddle two reads, so the carry lets the next chunk
+/// complete it.
+fn parse_stream_progress(carry: &mut String, chunk: &str) -> Option<(u32, u32)> {
+    carry.push_str(chunk);
+    let progress = parse_progress(carry);
+    *carry = carry
+        .rsplit_once(['\r', '\n', '\u{1b}'])
+        .map(|(_, tail)| tail.to_string())
+        .unwrap_or_default();
+    progress
+}
+
 /// Starts `program` with `args`, then waits until `ready_url` answers with
 /// success, the program exits, or `timeout` passes. On any failure the
 /// program is stopped before the error is returned.
@@ -51,6 +65,7 @@ pub async fn start_server(
     args: &[String],
     ready_url: &str,
     timeout: Duration,
+    on_progress: impl Fn(u32, u32) + Send + Sync + 'static,
 ) -> Result<Child, String> {
     let mut command = tokio::process::Command::new(program);
     command
@@ -68,7 +83,7 @@ pub async fn start_server(
             program.display()
         )
     })?;
-    drain_output(&mut child);
+    drain_output(&mut child, on_progress);
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(500))
@@ -115,19 +130,25 @@ pub async fn stop_server(child: &mut Child) -> Result<(), String> {
         .map_err(|error| format!("Could not stop the media engine: {error}"))
 }
 
-/// Reads the engine's output so it never blocks on a full pipe, and logs it.
-fn drain_output(child: &mut Child) {
+/// Reads the engine's output so it never blocks on a full pipe, logs it, and
+/// reports step progress through `on_progress`.
+fn drain_output(
+    child: &mut Child,
+    on_progress: impl Fn(u32, u32) + Send + Sync + 'static,
+) {
     if let Some(mut stdout) = child.stdout.take() {
         tokio::spawn(async move {
             let mut buffer = [0_u8; 4096];
+            let mut carry = String::new();
             while let Ok(read) = stdout.read(&mut buffer).await {
                 if read == 0 {
                     break;
                 }
-                log::debug!(
-                    "media engine: {}",
-                    String::from_utf8_lossy(&buffer[..read]).trim_end()
-                );
+                let chunk = String::from_utf8_lossy(&buffer[..read]);
+                log::debug!("media engine: {}", chunk.trim_end());
+                if let Some((current, total)) = parse_stream_progress(&mut carry, &chunk) {
+                    on_progress(current, total);
+                }
             }
         });
     }
@@ -224,6 +245,16 @@ mod tests {
         assert_eq!(parse_progress("loaded 3/4 tensors"), None);
     }
 
+    #[test]
+    fn progress_split_across_reads_is_still_read() {
+        let mut carry = String::new();
+        // A bar cut between the count and its total, then completed next read.
+        assert_eq!(parse_stream_progress(&mut carry, "\r  |=====> | 3"), None);
+        assert_eq!(parse_stream_progress(&mut carry, "/20 - 3.38s/it"), Some((3, 20)));
+        // The next update is reported on its own.
+        assert_eq!(parse_stream_progress(&mut carry, "\r  |=====> | 4/20"), Some((4, 20)));
+    }
+
     #[tokio::test]
     async fn an_engine_that_exits_at_once_is_reported_with_its_exit_code() {
         let (program, args) = exits_with_3();
@@ -234,6 +265,7 @@ mod tests {
             &args,
             &format!("http://127.0.0.1:{}/sdcpp/v1/capabilities", unused_port()),
             Duration::from_secs(20),
+            |_, _| {},
         )
         .await
         .unwrap_err();
@@ -254,6 +286,7 @@ mod tests {
             &args,
             &format!("http://127.0.0.1:{port}/sdcpp/v1/capabilities"),
             Duration::from_secs(20),
+            |_, _| {},
         )
         .await
         .expect("ready once the address answers");
@@ -273,6 +306,7 @@ mod tests {
             &args,
             &format!("http://127.0.0.1:{}/sdcpp/v1/capabilities", unused_port()),
             Duration::from_secs(2),
+            |_, _| {},
         )
         .await
         .unwrap_err();

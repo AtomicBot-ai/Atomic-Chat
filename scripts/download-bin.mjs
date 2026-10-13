@@ -170,7 +170,7 @@ async function main() {
   }
   try {
     mkdirSync('scripts/dist')
-  } catch (err) {
+  } catch {
     // Expect EEXIST error if the directory already exists
   }
 
@@ -239,7 +239,7 @@ async function main() {
         }
       )
     }
-  } catch (err) {
+  } catch {
     // Expect EEXIST error
   }
   try {
@@ -258,7 +258,7 @@ async function main() {
         }
       )
     }
-  } catch (err) {
+  } catch {
     // Expect EEXIST error
   }
   console.log('Bun downloaded.')
@@ -318,7 +318,7 @@ async function main() {
         }
       )
     }
-  } catch (err) {
+  } catch {
     // Expect EEXIST error
   }
   try {
@@ -334,7 +334,7 @@ async function main() {
         }
       )
     }
-  } catch (err) {
+  } catch {
     // Expect EEXIST error
   }
   console.log('UV downloaded.')

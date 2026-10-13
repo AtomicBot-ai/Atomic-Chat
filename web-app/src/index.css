@@ -423,3 +423,61 @@
     0 0 16px 2px var(--action-hover-glow),
     inset 0 0 8px var(--action-hover-glow);
 }
+
+/*
+ * Sidebar collapse / expand (the user, 2026-10-09): "Create a transition
+ * graphic that is pleasing to the eye." The width itself already eases; these
+ * add the part you actually look at - collapsing, the icons spring in one after
+ * another from the left; expanding, each label fades and slides out from its
+ * icon. The icons also grow and shrink with a stroke that stays the same
+ * thickness (see the menu button variants in components/ui/sidebar.tsx).
+ */
+@keyframes rail-icon-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.55);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateX(1px) scale(1.06);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rail-label-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.group[data-collapsible='icon'] [data-sidebar='menu-item'] {
+  animation: rail-icon-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.group[data-collapsible='icon'] [data-sidebar='menu-item']:nth-child(2) { animation-delay: 30ms; }
+.group[data-collapsible='icon'] [data-sidebar='menu-item']:nth-child(3) { animation-delay: 60ms; }
+.group[data-collapsible='icon'] [data-sidebar='menu-item']:nth-child(4) { animation-delay: 90ms; }
+.group[data-collapsible='icon'] [data-sidebar='menu-item']:nth-child(5) { animation-delay: 120ms; }
+.group[data-collapsible='icon'] [data-sidebar='menu-item']:nth-child(6) { animation-delay: 150ms; }
+.group[data-collapsible='icon'] [data-sidebar='menu-item']:nth-child(7) { animation-delay: 180ms; }
+
+.group[data-state='expanded'] [data-sidebar='menu-button'] > :not(:first-child) {
+  animation: rail-label-in 0.32s ease-out 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .group[data-collapsible='icon'] [data-sidebar='menu-item'],
+  .group[data-state='expanded'] [data-sidebar='menu-button'] > :not(:first-child) {
+    animation: none;
+  }
+}

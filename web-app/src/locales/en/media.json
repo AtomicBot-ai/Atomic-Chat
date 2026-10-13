@@ -10,6 +10,7 @@
     "baseUrl": "Base URL",
     "adapter": "Adapter",
     "apiKey": "API key",
+    "basicAuth": "API credentials (only if started with --api-auth)",
     "save": "Save provider",
     "cancel": "Cancel",
     "remove": "Remove",
@@ -27,7 +28,11 @@
       "atomic-media-worker": "Radium Media Worker",
       "comfyui": "ComfyUI",
       "openai-images": "OpenAI-compatible images",
-      "custom-http": "Custom HTTP"
+      "custom-http": "Custom HTTP",
+      "a1111": "AUTOMATIC1111",
+      "replicate": "Replicate",
+      "fal-ai": "fal.ai",
+      "stability-ai": "Stability AI"
     },
     "modelCount": "Models: {{count}}",
     "checkForNew": "Check for new providers"

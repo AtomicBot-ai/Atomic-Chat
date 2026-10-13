@@ -1,0 +1,11 @@
+name: Rust verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/radium-ci.yml

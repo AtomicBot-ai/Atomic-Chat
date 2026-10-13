@@ -28,6 +28,36 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+// jsdom 26 keeps `localStorage` on the window prototype and no longer copies it
+// onto the test global, so bare `localStorage` reads `undefined`. Provide the
+// in-memory storage the rest of the suite expects; specs that install their own
+// `localStorage` mock replace this wholesale and are unaffected.
+const localStorageBacking = new Map<string, string>()
+const localStorageShim: Storage = {
+  get length() {
+    return localStorageBacking.size
+  },
+  clear() {
+    localStorageBacking.clear()
+  },
+  getItem(key: string) {
+    return localStorageBacking.has(key) ? localStorageBacking.get(key)! : null
+  },
+  key(index: number) {
+    return Array.from(localStorageBacking.keys())[index] ?? null
+  },
+  removeItem(key: string) {
+    localStorageBacking.delete(key)
+  },
+  setItem(key: string, value: string) {
+    localStorageBacking.set(key, String(value))
+  },
+}
+Object.defineProperty(window, 'localStorage', {
+  configurable: true,
+  value: localStorageShim,
+})
+
 // `isPlatformTauri()` now probes for the real IPC bridge instead of trusting a
 // build-time define, so the suite has to declare which platform it stands in.
 // This is the desktop app's test suite, so present the bridge; the handful of

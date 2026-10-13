@@ -68,6 +68,8 @@ export type MediaAsset = {
   duration_ms?: number
   created_at: number
   favourite?: boolean
+  /** A name the user gave it. Display only; the file on disk is untouched. */
+  name?: string
   provenance: MediaAssetProvenance
 }
 
@@ -93,6 +95,13 @@ export type MaterializeDeps = {
   fs: MediaFileSystem
   /** `AppConfiguration.data_folder`. Never assumed. */
   dataFolder: () => Promise<string>
+  /**
+   * A folder the user chose for generated files, if any. When it returns a
+   * path, outputs are written there under readable names instead of under
+   * `<data_folder>/media/outputs/`. The index and thumbnails stay in the data
+   * folder either way.
+   */
+  outputFolder?: () => Promise<string | undefined>
   fetchBytes: (url: string) => Promise<{ bytes: Uint8Array; mime?: string }>
   now: () => number
   newId: () => string
@@ -143,6 +152,41 @@ function mimeOfPath(path: string, declared?: string): string {
     ([, value]) => value === extension
   )
   return found?.[0] ?? 'application/octet-stream'
+}
+
+/** Characters Windows, macOS and Linux all accept in a file name. */
+function slugify(value: string): string {
+  return (
+    value
+      .normalize('NFKD')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+      .toLowerCase() || 'media'
+  )
+}
+
+/**
+ * A readable file name for an asset, e.g. `flux-schnell-20260909-142501.png`.
+ *
+ * Used for files written to a user-chosen folder and as the default in the
+ * "Save as" dialog, so a generation is recognisable outside the app instead of
+ * being a bare ULID.
+ */
+export function suggestedFileName(
+  asset: Pick<MediaAsset, 'name' | 'created_at' | 'mime' | 'path'> & {
+    provenance: Pick<MediaAssetProvenance, 'model_label'>
+  }
+): string {
+  const date = new Date(asset.created_at)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const stamp =
+    `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
+    `-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`
+  const base = asset.name?.trim()
+    ? slugify(asset.name)
+    : `${slugify(asset.provenance.model_label)}-${stamp}`
+  return `${base}.${extensionOf(asset.mime, asset.path)}`
 }
 
 function decodeBase64(base64: string): Uint8Array {
@@ -243,13 +287,33 @@ async function assetFrom(
     )
   }
 
-  const date = new Date(createdAt)
-  const year = String(date.getUTCFullYear())
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const directory = fs.join(root, 'outputs', year, month)
-  await fs.mkdir(directory)
+  const extension = extensionOf(mime, ref.kind === 'url' ? ref.url : undefined)
+  const chosenFolder = await deps.outputFolder?.().catch(() => undefined)
 
-  const path = fs.join(directory, `${assetId}.${extensionOf(mime, ref.kind === 'url' ? ref.url : undefined)}`)
+  let path: string
+  if (chosenFolder) {
+    // The user's own folder: a readable name, with the id's tail so two
+    // generations in the same second can never overwrite one another.
+    await fs.mkdir(chosenFolder)
+    const readable = suggestedFileName({
+      created_at: createdAt,
+      mime,
+      path: `x.${extension}`,
+      provenance: { model_label: context.model_label },
+    })
+    const dot = readable.lastIndexOf('.')
+    path = fs.join(
+      chosenFolder,
+      `${readable.slice(0, dot)}-${assetId.slice(-6).toLowerCase()}${readable.slice(dot)}`
+    )
+  } else {
+    const date = new Date(createdAt)
+    const year = String(date.getUTCFullYear())
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const directory = fs.join(root, 'outputs', year, month)
+    await fs.mkdir(directory)
+    path = fs.join(directory, `${assetId}.${extension}`)
+  }
   await writeAtomic(fs, path, bytes)
 
   const asset: Omit<MediaAsset, 'thumb_path'> = {

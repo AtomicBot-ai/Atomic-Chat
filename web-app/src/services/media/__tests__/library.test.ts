@@ -336,3 +336,21 @@ describe('remove deletes the bytes, not just the record', () => {
     expect(fs.files.has(drop.path)).toBe(false)
   })
 })
+
+describe('createMediaLibrary — rename', () => {
+  it('sets, trims and clears a display name without touching the file', async () => {
+    const fs = fakeFs()
+    const library = createMediaLibrary({ fs, dataFolder: async () => DATA_FOLDER })
+    const item = asset('A')
+    await library.load()
+    await library.add([item])
+    fs.files.set(item.path, new Uint8Array([1]))
+
+    await library.rename('A', '  Sunset  ')
+    expect(library.list()[0]?.name).toBe('Sunset')
+
+    await library.rename('A', '   ')
+    expect(library.list()[0]?.name).toBeUndefined()
+    expect(fs.files.has(item.path)).toBe(true)
+  })
+})

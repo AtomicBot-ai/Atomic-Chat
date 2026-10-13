@@ -6,6 +6,7 @@
  * @module llamacpp-extension/src/index
  */
 
+import { planGpuPlacement } from './gpuPlacement'
 import {
   AIEngine,
   getJanDataFolderPath,
@@ -527,6 +528,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
+  /// Which GPUs each loaded model occupies, for the GPU Placement setting.
+  private gpuAssignments = new Map<string, string[]>()
   private sessionCache = new Map<string, SessionInfo>()
   /// Tracks the ctx_size a model was last loaded with so the Local API
   /// Server auto-increase flow knows the "current" value — the extension's
@@ -5128,6 +5131,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // Migrate old env vars
     if (typeof cfg.fit === 'string') cfg.fit = true
 
+    await this.applyGpuPlacement(cfg, modelId, isEmbedding)
+
     logger.info(
       'Calling Tauri command load_llama_model with config:',
       JSON.stringify(cfg)
@@ -5608,6 +5613,44 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
   }
 
+  /// Apply the GPU Placement setting: decide which graphics card(s) this model
+  /// loads onto and write the result into `cfg`. A no-op for `manual`, for
+  /// embedding / voice models, and wherever no GPU can be listed - a placement
+  /// failure must never stop a model from loading.
+  private async applyGpuPlacement(
+    cfg: Partial<LlamacppConfig> & Record<string, any>,
+    modelId: string,
+    isEmbedding: boolean
+  ): Promise<void> {
+    const mode = cfg.gpu_placement ?? 'manual'
+    if (mode === 'manual' || isEmbedding) return
+    try {
+      const devices = await this.getDevices()
+      const loaded = new Set(await this.getLoadedModels())
+      for (const id of [...this.gpuAssignments.keys()]) {
+        if (!loaded.has(id)) this.gpuAssignments.delete(id)
+      }
+      const plan = planGpuPlacement({
+        mode,
+        devices,
+        assigned: this.gpuAssignments,
+        tensorSplit: cfg.tensor_split,
+      })
+      if (!plan) return
+      cfg.device = plan.device
+      cfg.split_mode = plan.split_mode
+      cfg.main_gpu = plan.main_gpu
+      cfg.tensor_split = plan.tensor_split
+      this.gpuAssignments.set(modelId, plan.assigned)
+      logger.info(
+        `GPU placement "${mode}" put "${modelId}" on ${plan.device}` +
+          (plan.tensor_split ? ` (split ${plan.tensor_split})` : '')
+      )
+    } catch (error) {
+      logger.warn(`GPU placement skipped for "${modelId}": ${error}`)
+    }
+  }
+
   override async unload(modelId: string): Promise<UnloadResult> {
     const sInfo: SessionInfo =
       this.sessionCache.get(modelId) ?? (await this.findSessionByModel(modelId))
@@ -5620,6 +5663,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
       if (result.success) {
         this.sessionCache.delete(modelId)
+        this.gpuAssignments.delete(modelId)
         logger.info(`Successfully unloaded model with PID ${pid}`)
       } else {
         logger.warn(`Failed to unload model: ${result.error}`)

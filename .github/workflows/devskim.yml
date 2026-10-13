@@ -40,6 +40,14 @@ jobs:
           # detection is covered by gitleaks (super-linter) and CodeQL; leaving
           # DS173237 on only produced noise that failed the code-scanning check.
           exclude-rules: DS173237
+          # src-tauri/resources/agent-skills/ is third-party skill content
+          # bundled verbatim (Anthropic, NVIDIA, UI UX Pro Max): example
+          # scripts, templates and eval helpers that Radium ships as data and
+          # never executes itself. Its findings (seeded random for eval splits,
+          # localhost in test helpers, CDN scripts in templates) are not ours
+          # to fix in vendored code, so the tree is excluded like it is from
+          # super-linter. The first two globs are the action's defaults, kept.
+          ignore-globs: "**/.git/**,**/bin/**,**/src-tauri/resources/agent-skills/**"
 
       - name: Upload DevSkim scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d #@v4.38.3

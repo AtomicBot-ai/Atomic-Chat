@@ -1,0 +1,3 @@
+[codespell]
+# Generated lockfiles contain exact dependency names, not editable prose.
+skip = *.lock

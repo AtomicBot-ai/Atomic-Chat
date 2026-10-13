@@ -5,19 +5,12 @@
  * been written yet — later in startup `main.tsx` itself may write it (the
  * `preloadModelOnStartup` reset).
  *
- * Policy: fresh installs get TurboQuant disabled (`active: false` on first
- * provider registration in `useModelProvider.setProviders`), re-enableable
- * via the Settings → Model Providers toggle. Existing profiles — anything
- * with a persisted `model-provider` blob or a completed onboarding — keep
- * today's behavior (active), including Windows profiles whose `llamacpp`
- * entry was dropped from the blob by zustand migration v13: the blob itself
- * still exists, so they classify as existing.
- *
- * The verdict is frozen into a localStorage flag so the classification never
- * flips on later launches (by the second launch every install has a blob).
+ * Policy (decision D41): TurboQuant is ON by default — fresh installs and
+ * existing profiles alike — re-disableable via the Settings → Model Providers
+ * toggle. The verdict is frozen into a localStorage flag so the classification
+ * never flips on later launches, and so a profile that already recorded the
+ * earlier "disabled on fresh installs" verdict under the same key keeps it.
  */
-
-import { localStorageKey } from '@/constants/localStorage'
 
 const TURBOQUANT_DEFAULT_ACTIVE_KEY = 'atomic_turboquant_default_active_v1'
 
@@ -29,15 +22,9 @@ const TURBOQUANT_DEFAULT_ACTIVE_KEY = 'atomic_turboquant_default_active_v1'
 export function runTurboquantDefaultMigration(): void {
   try {
     if (localStorage.getItem(TURBOQUANT_DEFAULT_ACTIVE_KEY) !== null) return
-    const isExistingProfile =
-      localStorage.getItem(localStorageKey.modelProvider) !== null ||
-      localStorage.getItem(localStorageKey.setupCompleted) === 'true'
-    localStorage.setItem(
-      TURBOQUANT_DEFAULT_ACTIVE_KEY,
-      isExistingProfile ? 'true' : 'false'
-    )
+    localStorage.setItem(TURBOQUANT_DEFAULT_ACTIVE_KEY, 'true')
     console.info(
-      `[migration:turboquant-default] ${isExistingProfile ? 'existing profile: turboquant stays active' : 'fresh install: turboquant disabled by default'}`
+      '[migration:turboquant-default] turboquant enabled by default (D41)'
     )
   } catch (err) {
     console.warn(

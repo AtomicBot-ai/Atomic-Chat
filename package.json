@@ -75,7 +75,8 @@
   "resolutions": {
     "yallist": "4.0.0",
     "@types/react": "19.1.2",
-    "@types/react-dom": "19.1.2"
+    "@types/react-dom": "19.1.2",
+    "rehype-katex/katex": "0.18.2"
   },
   "packageManager": "yarn@4.5.3"
 }

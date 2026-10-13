@@ -4,15 +4,62 @@ import DownloadManager, { buildAuthHeaders, isHuggingFaceUrl } from './index'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-
-
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(),
+  listen: vi.fn().mockResolvedValue(() => {}),
 }))
+
+// Mock console.error to avoid noise in test output
+const originalConsoleError = console.error
+beforeEach(() => {
+  console.error = vi.fn()
+  vi.clearAllMocks()
+})
+afterEach(() => {
+  console.error = originalConsoleError
+})
+
+describe('DownloadManager', () => {
+  let downloadManager: DownloadManager
+
+  beforeEach(() => {
+    downloadManager = new DownloadManager()
+  })
+
+  describe('cancelDownload', () => {
+    it('throws an error if invoke fails', async () => {
+      const mockError = new Error('Tauri invoke failed')
+      vi.mocked(invoke).mockRejectedValueOnce(mockError)
+
+      await expect(downloadManager.cancelDownload('task-123')).rejects.toThrow(
+        'Tauri invoke failed'
+      )
+      expect(console.error).toHaveBeenCalledWith(
+        'Error cancelling download:',
+        mockError
+      )
+    })
+  })
+
+  describe('downloadFiles', () => {
+    it('throws an error if invoke fails', async () => {
+      const mockError = new Error('Tauri invoke failed')
+      vi.mocked(invoke).mockRejectedValueOnce(mockError)
+
+      await expect(
+        downloadManager.downloadFiles([], 'task-123')
+      ).rejects.toThrow('Tauri invoke failed')
+      expect(console.error).toHaveBeenCalledWith(
+        'Error downloading task',
+        'task-123',
+        mockError
+      )
+    })
+  })
+})
 
 describe('isHuggingFaceUrl', () => {
   it.each([
@@ -82,34 +129,43 @@ describe('buildAuthHeaders', () => {
 })
 
 describe('DownloadManager', () => {
-  let originalConsoleError: any;
+  let originalConsoleError: any
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    originalConsoleError = console.error;
-    console.error = vi.fn();
+    vi.clearAllMocks()
+    originalConsoleError = console.error
+    console.error = vi.fn()
   })
 
   afterEach(() => {
-    console.error = originalConsoleError;
+    console.error = originalConsoleError
   })
 
   it('unlistens to event when invoke fails in downloadFiles', async () => {
-    const unlistenMock = vi.fn();
-    (listen as any).mockResolvedValue(unlistenMock);
+    const unlistenMock = vi.fn()
+    ;(listen as any).mockResolvedValue(unlistenMock)
 
-    const expectedError = new Error('Invoke failed');
-    (invoke as any).mockRejectedValue(expectedError);
+    const expectedError = new Error('Invoke failed')
+    ;(invoke as any).mockRejectedValue(expectedError)
 
-    const manager = new DownloadManager();
-    const taskId = 'test-task';
-    const items = [{ url: 'http://example.com', save_path: '/tmp/test' }];
+    const manager = new DownloadManager()
+    const taskId = 'test-task'
+    const items = [{ url: 'http://example.com', save_path: '/tmp/test' }]
 
-    await expect(manager.downloadFiles(items, taskId)).rejects.toThrow('Invoke failed');
+    await expect(manager.downloadFiles(items, taskId)).rejects.toThrow(
+      'Invoke failed'
+    )
 
-    expect(listen).toHaveBeenCalledWith(`download-${taskId}`, expect.any(Function));
-    expect(invoke).toHaveBeenCalledWith('download_files', expect.any(Object));
-    expect(unlistenMock).toHaveBeenCalledTimes(1);
-    expect(console.error).toHaveBeenCalledWith('Error downloading task', taskId, expectedError);
+    expect(listen).toHaveBeenCalledWith(
+      `download-${taskId}`,
+      expect.any(Function)
+    )
+    expect(invoke).toHaveBeenCalledWith('download_files', expect.any(Object))
+    expect(unlistenMock).toHaveBeenCalledTimes(1)
+    expect(console.error).toHaveBeenCalledWith(
+      'Error downloading task',
+      taskId,
+      expectedError
+    )
   })
 })

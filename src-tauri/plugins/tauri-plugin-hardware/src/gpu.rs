@@ -37,8 +37,15 @@ impl GpuInfo {
     pub fn get_usage_unsupported(&self) -> GpuUsage {
         GpuUsage {
             uuid: self.uuid.clone(),
+            available: false,
             used_memory: 0,
             total_memory: 0,
+            utilization_percent: None,
+            temperature_c: None,
+            power_w: None,
+            power_limit_w: None,
+            clock_graphics_mhz: None,
+            clock_memory_mhz: None,
         }
     }
 }

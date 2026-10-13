@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { Sidebar, SidebarProvider, SidebarRail } from './sidebar'
 
 describe('SidebarRail', () => {
-  it('toggles the sidebar on click and keeps the hover glow enabled', async () => {
+  it('toggles the sidebar on click and opts out of the hover glow', async () => {
     const user = userEvent.setup()
 
     render(
@@ -21,7 +21,9 @@ describe('SidebarRail', () => {
       name: 'Toggle or resize sidebar',
     })
 
-    expect(rail).not.toHaveAttribute('data-no-hover-glow')
+    // The rail is a full-height drag strip; glowing it painted a tall white bar
+    // down the sidebar edge (the user, 2026-10-09).
+    expect(rail).toHaveAttribute('data-no-hover-glow')
     expect(rail.closest('[data-state="expanded"]')).toBeTruthy()
 
     await user.click(rail)

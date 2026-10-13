@@ -4033,6 +4033,25 @@ async fn start_server_internal<R: Runtime>(
     let bound_addr = listener.local_addr()?;
     let actual_port = bound_addr.port();
 
+    // Security: the /v1 API resolves and attaches the user's stored cloud
+    // provider keys server-side, so anything that can reach the socket can
+    // drive those paid accounts. When no API key is set the server performs
+    // no authentication at all, so refuse to listen on any address a remote
+    // host could reach. Loopback stays unrestricted for the common local case.
+    if proxy_api_key.is_empty() && !bound_addr.ip().is_loopback() {
+        log::error!(
+            "Refusing to bind the Local API Server to {} (non-loopback) without an API key",
+            bound_addr.ip()
+        );
+        return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+            "The Local API Server needs an API key before it can listen on a \
+             non-loopback address such as 0.0.0.0 or a LAN IP. Set one in \
+             Settings \u{2192} Local API Server, or keep the host as \
+             127.0.0.1."
+                .to_string(),
+        ));
+    }
+
     let config = ProxyConfig {
         prefix,
         proxy_api_key,

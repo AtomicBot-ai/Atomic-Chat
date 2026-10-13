@@ -59,8 +59,15 @@ impl GpuInfo {
                 };
                 return Ok(GpuUsage {
                     uuid: self.uuid.clone(),
+                    available: true,
                     total_memory: read_mem(&device_path.join("mem_info_vram_total")),
                     used_memory: read_mem(&device_path.join("mem_info_vram_used")),
+                    utilization_percent: None,
+                    temperature_c: None,
+                    power_w: None,
+                    power_limit_w: None,
+                    clock_graphics_mhz: None,
+                    clock_memory_mhz: None,
                 });
             }
             Err(format!("GPU not found").into())
@@ -101,8 +108,15 @@ impl GpuInfo {
         match memory_usage_map.get(&self.name) {
             Some(&used_memory) => GpuUsage {
                 uuid: self.uuid.clone(),
+                available: true,
                 used_memory: used_memory as u64,
                 total_memory: self.total_memory,
+                utilization_percent: None,
+                temperature_c: None,
+                power_w: None,
+                power_limit_w: None,
+                clock_graphics_mhz: None,
+                clock_memory_mhz: None,
             },
             None => self.get_usage_unsupported(),
         }
@@ -112,7 +126,7 @@ impl GpuInfo {
 #[cfg(target_os = "windows")]
 mod windows_impl {
     use libc;
-    use libloading::{Library, Symbol};
+    use libloading::Library;
     use std::collections::HashMap;
     use std::ffi::{c_char, c_int, c_void, CStr};
     use std::mem::{self, MaybeUninit};
@@ -173,8 +187,9 @@ mod windows_impl {
                 *lib.get::<Adl2AdapterAdapterInfoGet>(b"ADL2_Adapter_AdapterInfo_Get\0")?;
             let get_adapter_active =
                 *lib.get::<Adl2AdapterActiveGet>(b"ADL2_Adapter_Active_Get\0")?;
-            let get_dedicated_vram_usage = *lib
-                .get::<Adl2AdapterDedicatedVramUsageGet>(b"ADL2_Adapter_DedicatedVRAMUsage_Get\0")?;
+            let get_dedicated_vram_usage = *lib.get::<Adl2AdapterDedicatedVramUsageGet>(
+                b"ADL2_Adapter_DedicatedVRAMUsage_Get\0",
+            )?;
 
             Ok(Self {
                 _lib: lib,

@@ -34,7 +34,7 @@ export function setVersion(version, { root } = {}) {
   const updates = FILES.map((rel) => {
     const file = path.join(repo, rel)
     const text = readFileSync(file, 'utf8')
-    const line = /^(  "version":\s*")\d+\.\d+\.\d+(")/m
+    const line = /^( {2}"version":\s*")\d+\.\d+\.\d+(")/m
     if (!line.test(text)) {
       throw new Error(`Could not find the top-level version line in ${rel}`)
     }

@@ -11,6 +11,7 @@ import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 
 import HeaderPage from '@/containers/HeaderPage'
 import HeaderContextSize from '@/containers/HeaderContextSize'
+import MediaChatSettingsDialog from '@/containers/MediaChatSettingsDialog'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
@@ -37,6 +38,13 @@ import {
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
 import { generateId } from 'ai'
+import {
+  defaultChatGenerationDeps,
+  generateMediaForChat,
+  type ChatMediaOverrides,
+} from '@/services/media/chatGeneration'
+import { useMediaChatMode } from '@/stores/media-chat-mode-store'
+import { useMediaChatSettings } from '@/stores/media-chat-settings-store'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
@@ -1212,6 +1220,109 @@ function ThreadDetail() {
   )
 
   // Consolidated function to process and send a message
+  /**
+   * A media-mode turn: the prompt goes to the image or video model chosen on
+   * the Media page (its last used settings), not to the language model, and the
+   * result is shown inline in the assistant's reply.
+   */
+  const processMediaMessage = useCallback(
+    async (
+      text: string,
+      task: 'text_to_image' | 'text_to_video',
+      overrides?: ChatMediaOverrides
+    ) => {
+      await useThreads.getState().awaitThreadPersistence(threadId)
+
+      const userMessage = newUserThreadContent(threadId, text, [])
+      addMessage(userMessage)
+      const userUi = convertThreadMessagesToUIMessages([userMessage])[0]
+      if (userUi) useChatSessions.getState().upsertMessage(threadId, userUi)
+      useOptimisticUserMessage.getState().clear(threadId)
+
+      const thread = useThreads.getState().getThreadById(threadId)
+      if (thread && (thread.title === 'New Thread' || !thread.title)) {
+        useThreads.getState().updateThread(threadId, {
+          title: text.length > 50 ? `${text.slice(0, 47)}...` : text,
+        })
+      }
+
+      const assistantId = generateId()
+      const build = (
+        textValue: string,
+        status: MessageStatus,
+        media?: unknown[]
+      ): ThreadMessage => ({
+        type: 'text',
+        role: ChatCompletionRole.Assistant,
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: textValue, annotations: [] },
+          },
+        ],
+        id: assistantId,
+        object: 'thread.message',
+        thread_id: threadId,
+        status,
+        created_at: Date.now(),
+        completed_at: Date.now(),
+        metadata: media ? { media } : {},
+      })
+
+      // Show a placeholder straight away - video can take minutes.
+      const pending = build(
+        task === 'text_to_video' ? 'Generating video…' : 'Generating image…',
+        MessageStatus.Pending
+      )
+      const pendingUi = convertThreadMessagesToUIMessages([pending])[0]
+      if (pendingUi) useChatSessions.getState().upsertMessage(threadId, pendingUi)
+
+      let finished: ThreadMessage
+      try {
+        const result = await generateMediaForChat(
+          task,
+          text,
+          await defaultChatGenerationDeps(),
+          {
+            onUpdate: (entry) => {
+              const percent =
+                typeof entry.progress === 'number'
+                  ? ` ${Math.round(entry.progress * (entry.progress <= 1 ? 100 : 1))}%`
+                  : ''
+              const label = `${task === 'text_to_video' ? 'Generating video' : 'Generating image'}…${percent}`
+              const ui = convertThreadMessagesToUIMessages([
+                build(label, MessageStatus.Pending),
+              ])[0]
+              if (ui) useChatSessions.getState().upsertMessage(threadId, ui)
+            },
+          },
+          overrides
+        )
+        finished = build(
+          `${result.model_label}: “${text}”`,
+          MessageStatus.Ready,
+          result.assets.map((asset) => ({
+            asset_id: asset.asset_id,
+            path: asset.path,
+            mime: asset.mime,
+            media_type: asset.media_type,
+            model_label: result.model_label,
+            prompt: text,
+          }))
+        )
+      } catch (error) {
+        finished = build(
+          error instanceof Error ? error.message : String(error),
+          MessageStatus.Error
+        )
+      }
+      addMessage(finished)
+      const finishedUi = convertThreadMessagesToUIMessages([finished])[0]
+      if (finishedUi) useChatSessions.getState().upsertMessage(threadId, finishedUi)
+    },
+    [addMessage, threadId]
+  )
+
   const processAndSendMessage = useCallback(
     async (
       text: string,
@@ -1219,6 +1330,14 @@ function ThreadDetail() {
       documentsFromPayload?: Attachment[],
       agentSkillName?: string
     ) => {
+      // Media mode: generate instead of asking the language model. Park the
+      // prompt in the settings popup so the user can pick "use last used
+      // settings" or an explicit resolution/length before anything runs.
+      const mediaTask = useMediaChatMode.getState().task
+      if (mediaTask) {
+        useMediaChatSettings.getState().open({ task: mediaTask, text })
+        return
+      }
       // Documents may be passed explicitly via the initial-message payload
       // (home → new thread flow). In that case the store has already been
       // cleared synchronously on send to avoid the chip lingering in the
@@ -2139,6 +2258,12 @@ function ThreadDetail() {
           </div>
         </div>
       </div>
+      <MediaChatSettingsDialog
+        onConfirm={(task, text, overrides) =>
+          processMediaMessage(text, task, overrides)
+        }
+        onCancel={() => useOptimisticUserMessage.getState().clear(threadId)}
+      />
     </AgentWorkspaceLayout>
   )
 }

@@ -12,6 +12,7 @@ import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DriverOutdatedBanner } from '@/containers/DriverOutdatedBanner'
 import { buildFallbackDevices } from '@/lib/gpuFallback'
+import PerformanceBenchmarkPanel from '@/containers/PerformanceBenchmarkPanel'
 
 export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitorContent,
@@ -32,7 +33,9 @@ function SystemMonitorContent() {
   // Poll system usage every 5 seconds
   useEffect(() => {
     const intervalId = setInterval(() => {
-      serviceHub.hardware().getSystemUsage()
+      serviceHub
+        .hardware()
+        .getSystemUsage()
         .then((data) => {
           if (data) {
             updateSystemUsage(data)
@@ -49,6 +52,15 @@ function SystemMonitorContent() {
   // Calculate RAM usage percentage
   const ramUsagePercentage =
     toNumber(systemUsage.used_memory / hardwareData.total_memory) * 100
+
+  const liveGpuUsage = systemUsage.gpus.filter((gpu) => gpu.available === true)
+  const aggregateGpu = liveGpuUsage.reduce(
+    (acc, gpu) => ({
+      used: acc.used + gpu.used_memory,
+      total: acc.total + gpu.total_memory,
+    }),
+    { used: 0, total: 0 }
+  )
 
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto p-6">
@@ -153,10 +165,7 @@ function SystemMonitorContent() {
               {t('system-monitor:activeGpus')}
             </h2>
             {hardwareData.gpus.length > 0 && llamacppDevices.length === 0 && (
-              <DriverOutdatedBanner
-                gpus={hardwareData.gpus}
-                className="mb-4"
-              />
+              <DriverOutdatedBanner gpus={hardwareData.gpus} className="mb-4" />
             )}
             <div className="flex flex-col gap-2">
               {llamacppDevices.length > 0 ? (
@@ -219,9 +228,113 @@ function SystemMonitorContent() {
                 </div>
               )}
             </div>
+
+            {liveGpuUsage.length > 0 && (
+              <div className="mt-5 pt-4 border-t border-border/60 space-y-4">
+                <div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Combined live VRAM
+                    </span>
+                    <span className="text-foreground">
+                      {formatMegaBytes(aggregateGpu.used)} /{' '}
+                      {formatMegaBytes(aggregateGpu.total)}
+                    </span>
+                  </div>
+                  <Progress
+                    value={
+                      aggregateGpu.total > 0
+                        ? (aggregateGpu.used / aggregateGpu.total) * 100
+                        : 0
+                    }
+                    className="h-2 w-full mt-2"
+                  />
+                </div>
+
+                {liveGpuUsage.map((usage) => {
+                  const gpu = hardwareData.gpus.find(
+                    (candidate) => candidate.uuid === usage.uuid
+                  )
+                  const powerPercent =
+                    typeof usage.power_w === 'number' &&
+                    typeof usage.power_limit_w === 'number' &&
+                    usage.power_limit_w > 0
+                      ? (usage.power_w / usage.power_limit_w) * 100
+                      : null
+                  return (
+                    <div
+                      key={usage.uuid}
+                      className="rounded-md border border-border/60 p-3 space-y-2"
+                    >
+                      <div className="font-medium text-sm">
+                        {gpu?.name ?? usage.uuid}
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                        <span className="text-muted-foreground">GPU load</span>
+                        <span className="text-right">
+                          {typeof usage.utilization_percent === 'number'
+                            ? `${usage.utilization_percent}%`
+                            : '—'}
+                        </span>
+                        <span className="text-muted-foreground">VRAM</span>
+                        <span className="text-right">
+                          {formatMegaBytes(usage.used_memory)} /{' '}
+                          {formatMegaBytes(usage.total_memory)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          Temperature
+                        </span>
+                        <span className="text-right">
+                          {typeof usage.temperature_c === 'number'
+                            ? `${usage.temperature_c} °C`
+                            : '—'}
+                        </span>
+                        <span className="text-muted-foreground">Power</span>
+                        <span className="text-right">
+                          {typeof usage.power_w === 'number'
+                            ? `${usage.power_w.toFixed(1)} W`
+                            : '—'}
+                          {typeof usage.power_limit_w === 'number' &&
+                            ` / ${usage.power_limit_w.toFixed(1)} W`}
+                        </span>
+                        <span className="text-muted-foreground">
+                          Graphics clock
+                        </span>
+                        <span className="text-right">
+                          {typeof usage.clock_graphics_mhz === 'number'
+                            ? `${usage.clock_graphics_mhz} MHz`
+                            : '—'}
+                        </span>
+                        <span className="text-muted-foreground">
+                          Memory clock
+                        </span>
+                        <span className="text-right">
+                          {typeof usage.clock_memory_mhz === 'number'
+                            ? `${usage.clock_memory_mhz} MHz`
+                            : '—'}
+                        </span>
+                      </div>
+                      {typeof usage.utilization_percent === 'number' && (
+                        <Progress
+                          value={usage.utilization_percent}
+                          className="h-2 w-full"
+                        />
+                      )}
+                      {powerPercent !== null && (
+                        <div className="text-xs text-muted-foreground">
+                          {powerPercent.toFixed(1)}% of enforced power limit
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      <PerformanceBenchmarkPanel />
     </div>
   )
 }

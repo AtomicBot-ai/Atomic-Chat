@@ -3,7 +3,11 @@ use crate::types::{GpuInfo, GpuUsage};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use {
     crate::types::Vendor,
-    nvml_wrapper::{error::NvmlError, Nvml},
+    nvml_wrapper::{
+        enum_wrappers::device::{Clock, TemperatureSensor},
+        error::NvmlError,
+        Nvml,
+    },
     std::sync::RwLock,
 };
 
@@ -143,11 +147,27 @@ impl GpuInfo {
             let nvml = nvml.ok_or(NvmlError::Unknown)?;
             let device = nvml.device_by_index(index)?;
             let mem_info = device.memory_info()?;
+            let utilization_percent = device.utilization_rates().ok().map(|value| value.gpu);
+            let temperature_c = device.temperature(TemperatureSensor::Gpu).ok();
+            let power_w = device.power_usage().ok().map(|mw| mw as f64 / 1000.0);
+            let power_limit_w = device
+                .enforced_power_limit()
+                .ok()
+                .map(|mw| mw as f64 / 1000.0);
+            let clock_graphics_mhz = device.clock_info(Clock::Graphics).ok();
+            let clock_memory_mhz = device.clock_info(Clock::Memory).ok();
 
             Ok(GpuUsage {
                 uuid: self.uuid.clone(),
+                available: true,
                 used_memory: mem_info.used / (1024 * 1024), // bytes to MiB
                 total_memory: mem_info.total / (1024 * 1024), // bytes to MiB
+                utilization_percent,
+                temperature_c,
+                power_w,
+                power_limit_w,
+                clock_graphics_mhz,
+                clock_memory_mhz,
             })
         })
     }

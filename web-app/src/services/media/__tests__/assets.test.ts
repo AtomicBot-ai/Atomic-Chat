@@ -17,6 +17,7 @@ import type { MediaJobSnapshot, NormalizedMediaRequest } from '../contract'
 import {
   MEDIA_ASSET_MAX_BYTES,
   materialize,
+  suggestedFileName,
   type MaterializeContext,
   type MediaFileSystem,
 } from '../assets'
@@ -382,5 +383,33 @@ describe('materialize — batches', () => {
     const assets = await materialize(snapshot([]), context, deps())
 
     expect(assets).toEqual([])
+  })
+})
+
+describe('materialize — a folder the user chose', () => {
+  it('writes there under a readable name instead of the data folder', async () => {
+    const assets = await materialize(
+      snapshot([{ kind: 'url', url: 'https://cdn.example/img.png' }]),
+      context,
+      deps({ outputFolder: async () => 'D:\\My Renders' })
+    )
+
+    expect(assets[0]?.path).toMatch(
+      /^D:\\My Renders\\[a-z0-9-]+-20260909-120000-000001\.png$/
+    )
+    expect(fs.dirs.has('D:\\My Renders')).toBe(true)
+  })
+
+  it('suggests a name with the user-given name taking priority', () => {
+    const base = {
+      created_at: Date.parse('2026-09-09T12:00:00Z'),
+      mime: 'video/mp4',
+      path: 'x.mp4',
+      provenance: { model_label: 'Wan 2.2' },
+    }
+    expect(suggestedFileName(base)).toBe('wan-2-2-20260909-120000.mp4')
+    expect(suggestedFileName({ ...base, name: 'Beach / sunset!' })).toBe(
+      'beach-sunset.mp4'
+    )
   })
 })

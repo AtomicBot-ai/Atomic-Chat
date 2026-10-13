@@ -22,7 +22,10 @@ import { BASELINE_MEDIA_PROVIDERS } from '@/constants/mediaProviders'
 
 const URL = 'https://example.invalid/media/registry.json'
 
-function manifest(providers: unknown[], schemaVersion = MEDIA_REGISTRY_SCHEMA_VERSION) {
+function manifest(
+  providers: unknown[],
+  schemaVersion = MEDIA_REGISTRY_SCHEMA_VERSION
+) {
   return {
     schema_version: schemaVersion,
     updated_at: '2026-09-10T00:00:00Z',
@@ -63,6 +66,19 @@ afterEach(() => {
 })
 
 describe('the seven failure modes', () => {
+  it.each(['a1111', 'replicate', 'fal-ai', 'stability-ai'])(
+    'accepts the bundled %s adapter from the registry',
+    async (adapter) => {
+      vi.stubGlobal(
+        'fetch',
+        respondWith(manifest([remoteProvider({ id: adapter, adapter })]))
+      )
+      const result = await getMediaProvidersOrFallback({ url: URL })
+      expect(result.providers).toContainEqual(
+        expect.objectContaining({ id: adapter, adapter })
+      )
+    }
+  )
   it('fetch succeeds: returns remote and caches it', async () => {
     vi.stubGlobal('fetch', respondWith(manifest([remoteProvider()])))
 
@@ -125,7 +141,9 @@ describe('the seven failure modes', () => {
     // configure providers from fields this build does not know how to read.
     vi.stubGlobal(
       'fetch',
-      respondWith(manifest([remoteProvider()], MEDIA_REGISTRY_SCHEMA_VERSION + 1))
+      respondWith(
+        manifest([remoteProvider()], MEDIA_REGISTRY_SCHEMA_VERSION + 1)
+      )
     )
 
     const result = await getMediaProvidersOrFallback({ url: URL })
@@ -161,7 +179,9 @@ describe('the registry is untrusted input', () => {
   it('drops a provider naming an adapter this build does not have', async () => {
     vi.stubGlobal(
       'fetch',
-      respondWith(manifest([remoteProvider({ adapter: 'some-future-adapter' })]))
+      respondWith(
+        manifest([remoteProvider({ adapter: 'some-future-adapter' })])
+      )
     )
 
     const result = await getMediaProvidersOrFallback({ url: URL })
@@ -173,7 +193,9 @@ describe('the registry is untrusted input', () => {
     // file:// or a custom scheme would point the app at something local.
     vi.stubGlobal(
       'fetch',
-      respondWith(manifest([remoteProvider({ base_url: 'file:///etc/passwd' })]))
+      respondWith(
+        manifest([remoteProvider({ base_url: 'file:///etc/passwd' })])
+      )
     )
 
     const result = await getMediaProvidersOrFallback({ url: URL })
@@ -206,7 +228,10 @@ describe('the registry is untrusted input', () => {
       respondWith(
         manifest([
           remoteProvider({
-            auth: { type: 'api_key', setting_key: 'media.someone-elses.api_key' },
+            auth: {
+              type: 'api_key',
+              setting_key: 'media.someone-elses.api_key',
+            },
           }),
         ])
       )

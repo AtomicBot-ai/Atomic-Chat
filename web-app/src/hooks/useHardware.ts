@@ -64,6 +64,14 @@ export interface SystemUsage {
     uuid: string
     used_memory: number
     total_memory: number
+    /** Present on native builds that expose live GPU telemetry. */
+    available?: boolean
+    utilization_percent?: number | null
+    temperature_c?: number | null
+    power_w?: number | null
+    power_limit_w?: number | null
+    clock_graphics_mhz?: number | null
+    clock_memory_mhz?: number | null
   }[]
 }
 

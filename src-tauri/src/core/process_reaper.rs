@@ -29,7 +29,9 @@ use crate::core::app::commands::get_jan_data_folder_path;
 /// Executable file-name prefixes for the backends we manage.
 // `sd-server` is the built-in media engine (Task 30), downloaded under the
 // data folder like llama.cpp.
-const BACKEND_NAME_PREFIXES: [&str; 3] = ["llama-server", "mlx-server", "sd-server"];
+// `ollama` is Radium's managed Ollama. Like the others it only qualifies when
+// it runs from inside the data folder, so a user's own Ollama is never touched.
+const BACKEND_NAME_PREFIXES: [&str; 4] = ["llama-server", "mlx-server", "sd-server", "ollama"];
 
 /// How long to wait after `SIGTERM` before escalating survivors to `SIGKILL`.
 const GRACE_PERIOD: Duration = Duration::from_millis(1500);

@@ -58,8 +58,17 @@ pub struct SystemInfo {
 #[derive(Serialize, Clone, Debug)]
 pub struct GpuUsage {
     pub uuid: String,
+    /// Whether the live telemetry below was measured successfully.
+    /// Unsupported/unavailable is distinct from a real zero reading.
+    pub available: bool,
     pub used_memory: u64,
     pub total_memory: u64,
+    pub utilization_percent: Option<u32>,
+    pub temperature_c: Option<u32>,
+    pub power_w: Option<f64>,
+    pub power_limit_w: Option<f64>,
+    pub clock_graphics_mhz: Option<u32>,
+    pub clock_memory_mhz: Option<u32>,
 }
 
 #[derive(Serialize, Clone, Debug)]

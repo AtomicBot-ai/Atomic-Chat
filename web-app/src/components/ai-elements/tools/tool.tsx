@@ -20,6 +20,7 @@ import {
 } from 'react'
 import { StickToBottom } from 'use-stick-to-bottom'
 import { CodeBlock, highlightCode } from '../code-block'
+import DOMPurify from 'dompurify'
 import { guessBlockLanguage, splitToolInput } from '@/lib/toolParamPreview'
 
 type ToolContextValue = {
@@ -306,11 +307,15 @@ const ToolTextBlock = memo(
               <>
                 <div
                   className={cn('dark:hidden', HIGHLIGHT_SURFACE)}
-                  dangerouslySetInnerHTML={{ __html: html }}
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: "Sanitized using DOMPurify."
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
                 />
                 <div
                   className={cn('hidden dark:block', HIGHLIGHT_SURFACE)}
-                  dangerouslySetInnerHTML={{ __html: darkHtml }}
+                  // biome-ignore lint/security/noDangerouslySetInnerHtml: "Sanitized using DOMPurify."
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(darkHtml),
+                  }}
                 />
               </>
             ) : (

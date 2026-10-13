@@ -43,15 +43,65 @@ const ADAPTER_OPTIONS: Array<{
     kind: 'local_worker',
   },
   { id: 'comfyui', label: 'ComfyUI', kind: 'local_comfy' },
-  { id: 'openai-images', label: 'OpenAI-compatible images', kind: 'remote_http' },
+  { id: 'a1111', label: 'AUTOMATIC1111', kind: 'local_worker' },
+  { id: 'replicate', label: 'Replicate', kind: 'remote_http' },
+  { id: 'fal-ai', label: 'fal.ai', kind: 'remote_http' },
+  { id: 'stability-ai', label: 'Stability AI', kind: 'remote_http' },
+  {
+    id: 'openai-images',
+    label: 'OpenAI-compatible images',
+    kind: 'remote_http',
+  },
   { id: 'custom-http', label: 'Custom HTTP', kind: 'remote_http' },
 ]
 
-/** Adapters that authenticate, and therefore need a credential field. */
-const NEEDS_KEY: ReadonlySet<MediaProviderAdapterId> = new Set([
-  'openai-images',
-  'custom-http',
-])
+/**
+ * Which adapters take a credential, and whether they can work without one.
+ *
+ * Required: the service rejects every request without a key, so the provider
+ * is saved pointing at its credential even when the field was left empty - it
+ * then reports "no API key configured" instead of silently sending nothing.
+ * Optional: a self-hosted or custom endpoint that may or may not want one.
+ */
+const CREDENTIAL: Partial<
+  Record<
+    MediaProviderAdapterId,
+    { required: boolean; labelKey: string; label: string; placeholder?: string }
+  >
+> = {
+  'openai-images': {
+    required: false,
+    labelKey: 'media:providers.apiKey',
+    label: 'API key',
+  },
+  'custom-http': {
+    required: false,
+    labelKey: 'media:providers.apiKey',
+    label: 'API key',
+  },
+  'replicate': {
+    required: true,
+    labelKey: 'media:providers.apiKey',
+    label: 'API key',
+  },
+  'fal-ai': {
+    required: true,
+    labelKey: 'media:providers.apiKey',
+    label: 'API key',
+  },
+  'stability-ai': {
+    required: true,
+    labelKey: 'media:providers.apiKey',
+    label: 'API key',
+  },
+  // --api-auth is HTTP Basic, so the credential is the user:password pair.
+  'a1111': {
+    required: false,
+    labelKey: 'media:providers.basicAuth',
+    label: 'API credentials (only if started with --api-auth)',
+    placeholder: 'user:password',
+  },
+}
 
 /**
  * A stable id derived from the name the user typed. Ids qualify every model id
@@ -118,8 +168,9 @@ export function ProviderList() {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
-  const [adapter, setAdapter] =
-    useState<MediaProviderAdapterId>('atomic-media-worker')
+  const [adapter, setAdapter] = useState<MediaProviderAdapterId>(
+    'atomic-media-worker'
+  )
   const [apiKey, setApiKey] = useState('')
 
   /**
@@ -144,6 +195,8 @@ export function ProviderList() {
     }
   }, [])
 
+  const credential = CREDENTIAL[adapter]
+
   const ordered = useMemo(
     () => [...providers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [providers]
@@ -164,7 +217,9 @@ export function ProviderList() {
 
     const id = providerIdFrom(label)
     const option = ADAPTER_OPTIONS.find((entry) => entry.id === adapter)
-    const wantsKey = NEEDS_KEY.has(adapter) && apiKey.trim().length > 0
+    const chosen = CREDENTIAL[adapter]
+    const typedKey = Boolean(chosen) && apiKey.trim().length > 0
+    const pointsAtKey = typedKey || chosen?.required === true
 
     const descriptor: MediaProviderDescriptor = {
       id,
@@ -174,7 +229,7 @@ export function ProviderList() {
       base_url: baseUrl.trim() || undefined,
       // Only ever a POINTER to the credential. The credential itself goes to
       // the secrets seam and never into this descriptor or localStorage.
-      auth: wantsKey
+      auth: pointsAtKey
         ? { type: 'api_key', setting_key: mediaSecretKey(id) }
         : { type: 'none' },
       enabled: true,
@@ -182,13 +237,16 @@ export function ProviderList() {
       order: providers.length,
     }
 
-    // Fire-and-forget is deliberate: the provider is added either way, and a
-    // credential store that refuses is reported by the adapter as "no API key
-    // configured" rather than by blocking the form on an IPC round trip.
-    if (wantsKey) void setMediaProviderSecret(id, apiKey)
+    // The provider is added at once; only its first health check waits for
+    // the credential store, so the check does not run before the key exists
+    // and report "needs a key" for a key that was just typed. A store that
+    // refuses is reported by the adapter as "no API key configured".
+    const saved = typedKey
+      ? setMediaProviderSecret(id, apiKey).catch(() => undefined)
+      : Promise.resolve()
     addProvider(descriptor)
     resetForm()
-    void refresh({ providerId: id })
+    void saved.then(() => refresh({ providerId: id }))
   }, [
     adapter,
     addProvider,
@@ -212,7 +270,11 @@ export function ProviderList() {
   )
 
   return (
-    <Card title={t('media:providers.cardTitle', { defaultValue: 'Media providers' })}>
+    <Card
+      title={t('media:providers.cardTitle', {
+        defaultValue: 'Media providers',
+      })}
+    >
       <CardItem
         title={t('media:providers.listTitle', {
           defaultValue: 'Configured providers',
@@ -298,34 +360,37 @@ export function ProviderList() {
                   ))}
                 </select>
               </div>
-              <div className="space-y-1">
-                <label htmlFor="media-provider-key">
-                  {t('media:providers.apiKey', { defaultValue: 'API key' })}
-                </label>
-                <Input
-                  id="media-provider-key"
-                  type="password"
-                  autoComplete="off"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                />
-                {canStoreSecrets === false && (
-                  <p className="text-xs text-destructive">
-                    {t('media:providers.secretUnavailable', {
-                      defaultValue:
-                        'This system has no credential store, so a key cannot be saved securely. On Linux this usually means no Secret Service provider is running.',
-                    })}
-                  </p>
-                )}
-                {canStoreSecrets === true && (
-                  <p className="text-xs text-muted-foreground">
-                    {t('media:providers.secretStored', {
-                      defaultValue:
-                        "Stored in your operating system's credential manager, never in the app's settings file.",
-                    })}
-                  </p>
-                )}
-              </div>
+              {credential && (
+                <div className="space-y-1">
+                  <label htmlFor="media-provider-key">
+                    {t(credential.labelKey, { defaultValue: credential.label })}
+                  </label>
+                  <Input
+                    id="media-provider-key"
+                    type="password"
+                    autoComplete="off"
+                    value={apiKey}
+                    placeholder={credential.placeholder}
+                    onChange={(event) => setApiKey(event.target.value)}
+                  />
+                  {canStoreSecrets === false && (
+                    <p className="text-xs text-destructive">
+                      {t('media:providers.secretUnavailable', {
+                        defaultValue:
+                          'This system has no credential store, so a key cannot be saved securely. On Linux this usually means no Secret Service provider is running.',
+                      })}
+                    </p>
+                  )}
+                  {canStoreSecrets === true && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('media:providers.secretStored', {
+                        defaultValue:
+                          "Stored in your operating system's credential manager, never in the app's settings file.",
+                      })}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSave}>
                   {t('media:providers.save', { defaultValue: 'Save provider' })}
@@ -361,9 +426,7 @@ export function ProviderList() {
                     })}
                   </span>
                 </span>
-                {detail && (
-                  <span className="text-destructive">{detail}</span>
-                )}
+                {detail && <span className="text-destructive">{detail}</span>}
               </span>
             }
             actions={

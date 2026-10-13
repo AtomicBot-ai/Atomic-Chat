@@ -32,6 +32,10 @@ pub struct LlamacppConfig {
     pub device: String,
     pub split_mode: String,
     pub main_gpu: i32,
+    /// Proportion of the model to put on each GPU, e.g. `3,1` (`--tensor-split`).
+    /// Empty leaves llama.cpp's own split.
+    #[serde(default)]
+    pub tensor_split: String,
     pub flash_attn: String,
     pub cont_batching: bool,
     pub no_mmap: bool,
@@ -428,6 +432,11 @@ impl ArgumentBuilder {
         if self.config.main_gpu != 0 {
             self.args.push("--main-gpu".to_string());
             self.args.push(self.config.main_gpu.to_string());
+        }
+
+        if !self.config.tensor_split.trim().is_empty() {
+            self.args.push("--tensor-split".to_string());
+            self.args.push(self.config.tensor_split.trim().to_string());
         }
     }
 
@@ -865,6 +874,7 @@ mod tests {
             device: String::new(),
             split_mode: "layer".to_string(),
             main_gpu: 0,
+            tensor_split: String::new(),
             flash_attn: "auto".to_string(),
             cont_batching: false,
             no_mmap: false,
@@ -1311,6 +1321,20 @@ mod tests {
         let args = builder.build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--chat-template");
+    }
+
+    #[test]
+    fn test_tensor_split_only_when_set() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+        assert_no_flag(&args, "--tensor-split");
+
+        let mut config = default_config();
+        config.tensor_split = " 3,1 ".to_string();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+        assert_arg_pair(&args, "--tensor-split", "3,1");
     }
 
     #[test]

@@ -15,6 +15,8 @@
 import { fs as coreFs } from '@janhq/core'
 import { create } from 'zustand'
 
+import { getServiceHub } from '@/hooks/useServiceHub'
+
 import type { MediaAsset, MediaFileSystem } from '@/services/media/assets'
 import {
   createMediaLibrary,
@@ -42,10 +44,19 @@ export const coreMediaFileSystem: MediaFileSystem = {
   },
 
   async writeBytes(path, bytes) {
-    // writeBlob takes base64, which is what the bridge can carry.
+    // `fs.writeBlob` was used here before, but no Rust command ever backed it,
+    // so every save threw and no generation reached the library. Base64 over a
+    // dedicated binary-write command is what actually works. Chunked, because
+    // spreading a multi-megabyte array into String.fromCharCode overflows the
+    // call stack.
     let binary = ''
-    for (const byte of bytes) binary += String.fromCharCode(byte)
-    await coreFs.writeBlob(path, btoa(binary))
+    const chunk = 0x8000
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+    }
+    await getServiceHub()
+      .core()
+      .invoke('write_binary_file', { path, dataBase64: btoa(binary) })
   },
 
   async readText(path) {
@@ -57,7 +68,8 @@ export const coreMediaFileSystem: MediaFileSystem = {
   },
 
   async remove(path) {
-    await coreFs.unlinkSync(path)
+    // `fs.unlinkSync` had no Rust command behind it either.
+    await getServiceHub().core().invoke('remove_file', { path })
   },
 
   async size(path) {
@@ -90,6 +102,7 @@ type MediaLibraryState = {
   add: (assets: MediaAsset[]) => Promise<void>
   remove: (assetId: string) => Promise<void>
   setFavourite: (assetId: string, favourite: boolean) => Promise<void>
+  rename: (assetId: string, name: string) => Promise<void>
 }
 
 /**
@@ -148,6 +161,11 @@ export const useMediaLibraryStore = create<MediaLibraryState>()((set) => {
 
     async setFavourite(assetId, favourite) {
       await instance().setFavourite(assetId, favourite)
+      sync()
+    },
+
+    async rename(assetId, name) {
+      await instance().rename(assetId, name)
       sync()
     },
   }

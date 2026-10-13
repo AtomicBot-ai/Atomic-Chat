@@ -49,7 +49,9 @@ jobs:
           # Markdown and duplicate-code rules only produces failures we must not
           # "fix" by editing vendored code. Exclude the whole vendored tree; the
           # skills are reviewed on import and gated by cargo tests instead.
-          FILTER_REGEX_EXCLUDE: "src-tauri/resources/agent-skills/"
+          # src-tauri/static/swagger-ui/ is the minified Swagger UI bundle,
+          # vendored as built; ESLint on it only reports minifier output.
+          FILTER_REGEX_EXCLUDE: "(src-tauri/resources/agent-skills/|src-tauri/static/swagger-ui/)"
           # JSCPD (off for now, see the end of this block) runs at threshold 0,
           # and src-tauri/src/lib.rs is excluded in
           # .github/linters/.jscpd.json because it holds two deliberately
@@ -128,3 +130,65 @@ jobs:
           VALIDATE_JSCPD: false
           VALIDATE_GITHUB_ACTIONS_ZIZMOR: false
           VALIDATE_YAML_PRETTIER: false
+          # TYPESCRIPT_ES and TSX run super-linter's own bundled ESLint config,
+          # not web-app/eslint.config.js. That config uses eslint-plugin-n's
+          # no-missing-import with no TypeScript resolver, so every `@/...`
+          # path alias and every npm import (the job never runs `yarn install`)
+          # is "Can't resolve", and eslint-plugin-react's legacy
+          # react-in-jsx-scope rejects the automatic JSX runtime. Any PR that
+          # touched a .ts/.tsx file went red. Pointing super-linter at the
+          # repo's flat config is not reliable: it imports @eslint/js,
+          # typescript-eslint, eslint-plugin-react-hooks/-refresh and globals,
+          # which resolve from the repo's node_modules, and this job has none.
+          # TS/TSX linting is enforced by `yarn lint` (the repo's real ESLint
+          # config) in `make verify` in radium-ci.yml, plus `tsc -b`
+          # (`make typecheck`) for imports and types.
+          VALIDATE_TYPESCRIPT_ES: false
+          VALIDATE_TSX: false
+          # The validators below are also new since v4 and check whole files,
+          # so a PR fails for lines it never touched. Measured on main
+          # (outside agent-skills) with super-linter v9.0.0's own tools:
+          # - Prettier: 288 of 311 Markdown files and 624 of 1629 TS/TSX/JSON
+          #   files are not Prettier-formatted. Nothing in this repository
+          #   enforces Prettier (`yarn lint` is ESLint only), so a PR touching
+          #   any of them failed MARKDOWN_PRETTIER / TYPESCRIPT_PRETTIER /
+          #   JSON_PRETTIER. Markdown style stays covered by markdownlint
+          #   (MARKDOWN, .github/linters/.markdownlint.json). Switch these on
+          #   together with a one-off `prettier --write` of the repository.
+          # - Python: the scripts here (autoqa/, scripts/, docs/tests/) follow
+          #   no single style. Black would reformat 14 of 22 files, Pylint flags
+          #   20, Flake8 10 and Ruff reports 83 findings, and Black, Flake8 and
+          #   Pylint disagree on line length (88/120/100), so no file can
+          #   satisfy all of them. isort rejects 7 files and mypy reports real
+          #   but pre-existing type errors in 6 (e.g. scripts/release-notes/,
+          #   scripts/live_test_support.py). These are developer scripts, not
+          #   shipped code; pick one Python toolchain (Ruff is the obvious
+          #   one), configure it in pyproject.toml, fix the files, then switch
+          #   the matching validator back on.
+          # - SHELL_SHFMT defaults to tab indentation; 22 of 33 shell scripts
+          #   use spaces (17 still differ even at 2-space indent). ShellCheck
+          #   (BASH) still lints every changed script.
+          # - CSS: super-linter's stylelint-config-standard does not know
+          #   Tailwind v4 (`@theme`, `@source`, `@custom-variant`, oklch
+          #   tokens), so 6 of 7 stylesheets fail. They are compiled, and so
+          #   checked, by the Tailwind/Vite web build that the Windows
+          #   installer build (windows-test-build.yml) runs.
+          VALIDATE_CSS_PRETTIER: false
+          VALIDATE_GRAPHQL_PRETTIER: false
+          VALIDATE_HTML_PRETTIER: false
+          VALIDATE_JAVASCRIPT_PRETTIER: false
+          VALIDATE_JSONC_PRETTIER: false
+          VALIDATE_JSON_PRETTIER: false
+          VALIDATE_JSX_PRETTIER: false
+          VALIDATE_MARKDOWN_PRETTIER: false
+          VALIDATE_TYPESCRIPT_PRETTIER: false
+          VALIDATE_VUE_PRETTIER: false
+          VALIDATE_CSS: false
+          VALIDATE_PYTHON_BLACK: false
+          VALIDATE_PYTHON_ISORT: false
+          VALIDATE_PYTHON_MYPY: false
+          VALIDATE_PYTHON_FLAKE8: false
+          VALIDATE_PYTHON_PYLINT: false
+          VALIDATE_PYTHON_RUFF: false
+          VALIDATE_PYTHON_RUFF_FORMAT: false
+          VALIDATE_SHELL_SHFMT: false

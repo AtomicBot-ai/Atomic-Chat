@@ -394,13 +394,14 @@ const SidebarRail = React.forwardRef<
       type="button"
       ref={combinedRef}
       data-sidebar="rail"
+      data-no-hover-glow
       aria-label="Toggle or resize sidebar"
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       title="Click to toggle, drag to resize"
       className={cn(
         //* Без видимой линии (::after), только ресайз и курсор
-        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 border-0 bg-transparent p-0 transition-all ease-linear sm:flex',
+        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 border-0 bg-transparent p-0 outline-none transition-all ease-linear focus:outline-none focus-visible:outline-none sm:flex',
         'group-data-[side=left]:-right-4 group-data-[side=right]:left-0',
         'cursor-ew-resize group-data-[side=left]:cursor-ew-resize group-data-[side=right]:cursor-ew-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
@@ -613,7 +614,7 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = 'SidebarMenuItem'
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0.5! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&_svg]:transition-[width,height] [&_svg]:duration-200 [&_svg]:ease-linear group-data-[collapsible=icon]:[&_svg]:size-9!',
+  'peer/menu-button flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-hidden ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 group-has-data-[sidebar=menu-action]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0.5! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&_svg]:transition-[width,height,stroke-width] [&_svg]:duration-300 [&_svg]:ease-[cubic-bezier(0.22,1,0.36,1)] group-data-[collapsible=icon]:[&_svg]:size-[25px]! group-data-[collapsible=icon]:[&_svg]:stroke-[1.28] [&_svg]:block group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:[&>*:not(:first-child)]:hidden',
   {
     variants: {
       variant: {

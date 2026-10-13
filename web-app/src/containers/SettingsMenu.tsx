@@ -115,6 +115,14 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
+    // Saved prompts, including the recurring agent jobs. The settings menu is
+    // also where telemetry, sub-agent, IDE and panel settings will be added.
+    {
+      title: 'common:prompts',
+      route: route.settings.prompts,
+      hasSubMenu: false,
+      isEnabled: true,
+    },
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
@@ -126,6 +134,13 @@ const SettingsMenu = () => {
       route: route.settings.hardware,
       hasSubMenu: false,
       isEnabled: true,
+    },
+    {
+      title: 'common:runtimes',
+      route: route.settings.runtimes,
+      hasSubMenu: false,
+      // The scan and catalog commands exist in the desktop build only.
+      isEnabled: IS_TAURI && !IS_IOS && !IS_ANDROID,
     },
     {
       title: 'common:media',

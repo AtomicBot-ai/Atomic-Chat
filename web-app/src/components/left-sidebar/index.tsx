@@ -11,6 +11,10 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import { useRef } from 'react'
+import {
+  DownloadDrawer,
+  DownloadRailButton,
+} from '@/containers/downloads/DownloadDrawer'
 
 import {
   Sidebar,
@@ -83,6 +87,9 @@ export function LeftSidebar() {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
+              <DownloadRailButton />
+            </SidebarMenuItem>
+            <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
                 isActive={pathname.startsWith('/settings')}
@@ -104,6 +111,7 @@ export function LeftSidebar() {
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
+      <DownloadDrawer />
     </div>
   )
 }

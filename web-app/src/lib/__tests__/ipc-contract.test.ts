@@ -30,6 +30,7 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'media_engine_start',
   'media_engine_status',
   'media_engine_stop',
+  'media_upscaler_install',
   // Radium Media provider credentials, in the OS credential store. Desktop
   // only on purpose: mobile has no media providers, and shipping a credential
   // surface it does not need would widen the attack surface for nothing.
@@ -50,6 +51,30 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'panels_remove',
   'panels_request',
   'post_local_http',
+  // Settings > Runtimes: the inference runtime catalog and the loopback scan
+  // for running runtimes. Desktop only on purpose: the `core::runtimes`
+  // module is compiled out of mobile builds, which run no local runtimes. See
+  // docs/decisions/2026-09-24-integrate-inference-runtimes-behind-one-
+  // adapter-layer.md.
+  'runtimes_catalog',
+  'runtimes_detect',
+  // Settings > Runtimes > Ollama: install, run, configure and manage models
+  // of Radium's Ollama. Desktop only for the same reason. See docs/decisions/
+  // 2026-09-25-manage-ollama-from-radium.md.
+  'ollama_delete_model',
+  'ollama_install',
+  'ollama_load_model',
+  'ollama_logs',
+  'ollama_models',
+  'ollama_pull',
+  'ollama_pull_cancel',
+  'ollama_restart',
+  'ollama_settings_set',
+  'ollama_start',
+  'ollama_status',
+  'ollama_stop',
+  'ollama_take_over',
+  'ollama_unload_model',
   'set_telemetry_consent',
   'set_telemetry_context',
   'set_telemetry_user',

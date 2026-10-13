@@ -1,6 +1,7 @@
 {
   "assistants": "Assistants",
   "hardware": "Hardware",
+  "runtimes": "Runtimes",
   "media": "Media",
   "mcp-servers": "MCP Servers",
   "connectors": "Connectors",
@@ -25,6 +26,7 @@
   "interface": "Interface",
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
+  "prompts": "Prompts",
   "newChat": "New Chat",
   "newTask": "New Task",
   "newBadge": "New",

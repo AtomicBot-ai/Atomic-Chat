@@ -18,6 +18,11 @@ use serde::Serialize;
 /// Where models live, relative to Radium's data folder.
 pub const MODELS_DIR: &str = "media/models";
 
+/// Where upscaler models live, relative to Radium's data folder. The engine
+/// scans this folder directly (`--hires-upscalers-dir`), so each `.pth` file
+/// must sit at its top level rather than in a per-model subfolder.
+pub const UPSCALERS_DIR: &str = "media/upscalers";
+
 /// Joins a model and one of its sizes in the id the Media page uses:
 /// `sd-1.5@q4_0`. A model id on its own means its default size.
 pub const QUANT_SEPARATOR: char = '@';
@@ -69,6 +74,48 @@ impl CatalogFile {
     }
 }
 
+/// One `.pth` file of an upscaler, pinned to a Hugging Face commit.
+///
+/// Upscalers are not model files: they have no quantisations or shared parts,
+/// and the engine finds them by scanning `media/upscalers` rather than loading
+/// them through a `--model`-style flag. They therefore have their own, smaller
+/// descriptor instead of a `CatalogFile`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpscalerFile {
+    pub repo: &'static str,
+    /// A full commit hash, never a branch name, so the file cannot change.
+    pub revision: &'static str,
+    /// The path inside the repository.
+    pub file: &'static str,
+    pub sha256: &'static str,
+    pub size: u64,
+}
+
+impl UpscalerFile {
+    pub fn url(&self) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            self.repo, self.revision, self.file
+        )
+    }
+
+    /// The file's own name, without the folders inside its repository.
+    pub fn file_name(&self) -> &'static str {
+        self.file.rsplit('/').next().unwrap_or(self.file)
+    }
+}
+
+/// A standalone upscaler the engine's hires stage uses to enlarge a finished
+/// image. A single `.pth` file; the engine selects it by the file's own name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpscalerModel {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// What it is good for, in plain words.
+    pub note: &'static str,
+    pub file: UpscalerFile,
+}
+
 /// One size of a model's main file. A smaller file downloads and loads faster
 /// and needs less memory, and loses a little detail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -82,6 +129,27 @@ pub struct CatalogQuant {
     pub file: CatalogFile,
 }
 
+/// How far a video model can be pushed, and the frame count it wants.
+///
+/// Present only on video models. The frame rule (`frame_modulus`/`frame_offset`)
+/// mirrors what the engine's server requires: Wan wants `n % 4 == 1` frames,
+/// so a requested duration in seconds is converted to a frame count on that
+/// lattice rather than the exact `seconds * fps`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct VideoDefaults {
+    /// Frames per second used when none is chosen.
+    pub fps: u32,
+    pub fps_min: u32,
+    pub fps_max: u32,
+    /// Video length choices in seconds, shortest first.
+    pub length_seconds: &'static [u32],
+    /// The length the picker starts on.
+    pub default_length_seconds: u32,
+    /// Frame counts must satisfy `n % frame_modulus == frame_offset`.
+    pub frame_modulus: u32,
+    pub frame_offset: u32,
+}
+
 /// Settings a model works well with out of the box.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct GenerationDefaults {
@@ -90,6 +158,12 @@ pub struct GenerationDefaults {
     pub steps: u32,
     pub cfg_scale: f32,
     pub sampler: &'static str,
+    /// Resolution ladder the engine supports for this model, native/default
+    /// first (the first entry is always `width` × `height`). Larger entries are
+    /// still native model sizes, not upscales — upscaling is a separate stage.
+    pub resolutions: &'static [[u32; 2]],
+    /// Present only for video models: how long a clip can be, and how many frames.
+    pub video: Option<VideoDefaults>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -146,6 +220,8 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 20,
             cfg_scale: 7.0,
             sampler: "euler_a",
+            resolutions: &[[512, 512], [512, 768], [768, 512]],
+            video: None,
         },
         quants: &[
             CatalogQuant {
@@ -219,6 +295,8 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 25,
             cfg_scale: 7.0,
             sampler: "euler_a",
+            resolutions: &[[1024, 1024], [832, 1216], [1216, 832]],
+            video: None,
         },
         quants: &[
             CatalogQuant {
@@ -304,6 +382,8 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 4,
             cfg_scale: 1.0,
             sampler: "euler",
+            resolutions: &[[1024, 1024], [832, 1216], [1216, 832]],
+            video: None,
         },
         quants: &[
             CatalogQuant {
@@ -402,6 +482,18 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 20,
             cfg_scale: 6.0,
             sampler: "euler",
+            resolutions: &[[832, 480]],
+            video: Some(VideoDefaults {
+                fps: 16,
+                fps_min: 1,
+                fps_max: 30,
+                // Wan 2.2 5B is a short-clip model; longer runs come from a
+                // cloud provider (fal's A14B) or a larger local model.
+                length_seconds: &[1, 2, 3, 4, 5, 8],
+                default_length_seconds: 2,
+                frame_modulus: 4,
+                frame_offset: 1,
+            }),
         },
         quants: &[
             CatalogQuant {
@@ -514,6 +606,43 @@ pub fn find_model(id: &str) -> Option<&'static CatalogModel> {
     CATALOG.iter().find(|model| model.id == id)
 }
 
+/// Every upscaler Radium offers to enlarge finished images.
+static UPSCALERS: [UpscalerModel; 2] = [
+    UpscalerModel {
+        id: "realesrgan-x4",
+        label: "Real-ESRGAN 4×",
+        note: "General-purpose 4× upscaler; good for photos and illustrations.",
+        file: UpscalerFile {
+            repo: "ai-forever/Real-ESRGAN",
+            revision: "8110204ebf8d25c031b66c26c2d1098aa831157e",
+            file: "RealESRGAN_x4.pth",
+            sha256: "aa00f09ad753d88576b21ed977e97d634976377031b178acc3b5b238df463400",
+            size: 67_040_989,
+        },
+    },
+    UpscalerModel {
+        id: "ultrasharp-4x",
+        label: "4×-UltraSharp",
+        note: "Sharper 4× upscaler tuned for fine detail and texture.",
+        file: UpscalerFile {
+            repo: "Kim2091/UltraSharp",
+            revision: "920fe218c211f831b43cb30327f203e2b59f5dab",
+            file: "4x-UltraSharp.pth",
+            sha256: "a5812231fc936b42af08a5edba784195495d303d5b3248c24489ef0c4021fe01",
+            size: 66_961_958,
+        },
+    },
+];
+
+/// Every upscaler in the catalog.
+pub fn upscalers() -> &'static [UpscalerModel] {
+    &UPSCALERS
+}
+
+pub fn find_upscaler(id: &str) -> Option<&'static UpscalerModel> {
+    UPSCALERS.iter().find(|upscaler| upscaler.id == id)
+}
+
 /// The model and size an id names: `sd-1.5` is its default size, and
 /// `sd-1.5@q4_0` its Q4_0 size.
 pub fn resolve_model(id: &str) -> Option<(&'static CatalogModel, &'static CatalogQuant)> {
@@ -576,6 +705,35 @@ pub fn model_install_plan(
         downloads,
         total_size,
         installed,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpscalerInstallPlan {
+    pub id: &'static str,
+    pub downloads: Vec<ModelDownload>,
+    pub total_size: u64,
+    pub installed: bool,
+}
+
+/// What to download for one upscaler under `data_dir`, and whether it is
+/// already complete there. The file lands flat in `media/upscalers` so the
+/// engine discovers it by scanning that folder.
+pub fn upscaler_install_plan(data_dir: &Path, upscaler: &UpscalerModel) -> UpscalerInstallPlan {
+    let file = &upscaler.file;
+    let download = ModelDownload {
+        url: file.url(),
+        save_path: format!("{UPSCALERS_DIR}/{}", file.file_name()),
+        sha256: file.sha256,
+        size: file.size,
+    };
+    let installed = std::fs::metadata(data_dir.join(&download.save_path))
+        .is_ok_and(|meta| meta.is_file() && meta.len() == download.size);
+    UpscalerInstallPlan {
+        id: upscaler.id,
+        total_size: download.size,
+        installed,
+        downloads: vec![download],
     }
 }
 
@@ -666,6 +824,8 @@ mod tests {
             steps: 1,
             cfg_scale: 1.0,
             sampler: "euler",
+            resolutions: &[[64, 64]],
+            video: None,
         },
         quants: &TINY_QUANTS,
         default_quant: "q4_0",
@@ -780,6 +940,67 @@ mod tests {
     }
 
     #[test]
+    fn only_video_models_declare_video_defaults() {
+        let wan = find_model("wan2.2-ti2v-5b").expect("Wan is in the catalog");
+        let video = wan
+            .defaults
+            .video
+            .expect("the video model declares video defaults");
+
+        assert!(video.fps_min <= video.fps && video.fps <= video.fps_max);
+        assert!(!video.length_seconds.is_empty());
+        assert!(
+            video
+                .length_seconds
+                .contains(&video.default_length_seconds),
+            "the default length is one of the offered lengths"
+        );
+        assert!(
+            video.length_seconds.windows(2).all(|pair| pair[0] < pair[1]),
+            "lengths are shortest first"
+        );
+        assert!(video.frame_modulus > 0);
+        assert!(video.frame_offset < video.frame_modulus);
+
+        for id in ["sd-1.5", "sdxl-1.0", "flux.1-schnell"] {
+            let model = find_model(id).expect("image model is in the catalog");
+            assert!(
+                model.defaults.video.is_none(),
+                "{} is an image model and must not declare video defaults",
+                id
+            );
+        }
+    }
+
+    #[test]
+    fn every_model_declares_a_resolution_ladder_starting_at_its_native_size() {
+        for model in catalog() {
+            let defaults = model.defaults;
+            assert!(
+                !defaults.resolutions.is_empty(),
+                "{} must offer at least one resolution",
+                model.id
+            );
+            assert_eq!(
+                defaults.resolutions[0],
+                [defaults.width, defaults.height],
+                "{}'s first resolution is its native size",
+                model.id
+            );
+            // No duplicate sizes in the ladder.
+            for i in 0..defaults.resolutions.len() {
+                for j in (i + 1)..defaults.resolutions.len() {
+                    assert_ne!(
+                        defaults.resolutions[i], defaults.resolutions[j],
+                        "{} lists the same size twice",
+                        model.id
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn an_id_names_a_model_and_optionally_one_of_its_sizes() {
         let (model, quant) = resolve_model("sd-1.5").unwrap();
         assert_eq!((model.id, quant.id), ("sd-1.5", "q8_0"));
@@ -877,5 +1098,107 @@ mod tests {
             model_install_plan(data.path(), &TINY, &TINY_QUANTS[0]).installed,
             "the smaller size is still there"
         );
+    }
+
+    fn assert_upscaler_pinned(upscaler: &UpscalerModel) {
+        let file = &upscaler.file;
+        assert!(
+            is_hex(file.revision, 40),
+            "{} is not pinned to a commit",
+            upscaler.id
+        );
+        assert!(
+            is_hex(file.sha256, 64),
+            "{} has no SHA-256",
+            upscaler.id
+        );
+        assert!(file.size > 0, "{}", upscaler.id);
+        assert!(
+            file.file_name().ends_with(".pth"),
+            "{} is not a .pth upscaler file",
+            upscaler.id
+        );
+        assert_eq!(
+            file.url(),
+            format!(
+                "https://huggingface.co/{}/resolve/{}/{}",
+                file.repo, file.revision, file.file
+            )
+        );
+    }
+
+    #[test]
+    fn every_upscaler_is_pinned_with_its_name_and_checksum() {
+        let catalog = upscalers();
+        assert!(!catalog.is_empty(), "the upscaler catalog is empty");
+        let mut ids = std::collections::BTreeSet::new();
+        for upscaler in catalog {
+            assert!(ids.insert(upscaler.id), "duplicate id {}", upscaler.id);
+            assert!(
+                upscaler
+                    .id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                "{} is not a plain id",
+                upscaler.id
+            );
+            assert!(
+                !upscaler.label.is_empty() && !upscaler.note.is_empty(),
+                "{}",
+                upscaler.id
+            );
+            assert_upscaler_pinned(upscaler);
+        }
+        assert!(find_upscaler("not-an-upscaler").is_none());
+    }
+
+    #[test]
+    fn an_upscaler_saves_flat_into_media_upscalers() {
+        let data = tempfile::TempDir::new().unwrap();
+        let realesrgan = find_upscaler("realesrgan-x4").unwrap();
+
+        let plan = upscaler_install_plan(data.path(), realesrgan);
+
+        assert_eq!(plan.id, "realesrgan-x4");
+        assert_eq!(plan.total_size, 67_040_989);
+        assert_eq!(
+            plan.downloads,
+            [ModelDownload {
+                url: "https://huggingface.co/ai-forever/Real-ESRGAN/resolve/8110204ebf8d25c031b66c26c2d1098aa831157e/RealESRGAN_x4.pth".to_string(),
+                save_path: "media/upscalers/RealESRGAN_x4.pth".to_string(),
+                sha256: realesrgan.file.sha256,
+                size: 67_040_989,
+            }]
+        );
+        assert!(!plan.installed);
+    }
+
+    #[test]
+    fn an_upscaler_counts_as_installed_only_at_its_full_size() {
+        // A made-up tiny upscaler, so the test never writes tens of megabytes.
+        let tiny = UpscalerModel {
+            id: "tiny-x4",
+            label: "Tiny 4×",
+            note: "Test only.",
+            file: UpscalerFile {
+                repo: "example/tiny-upscaler",
+                revision: "0123456789abcdef0123456789abcdef01234567",
+                file: "tiny-x4.pth",
+                sha256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                size: 6,
+            },
+        };
+        let data = tempfile::TempDir::new().unwrap();
+        let folder = data.path().join("media/upscalers");
+        std::fs::create_dir_all(&folder).unwrap();
+
+        std::fs::write(folder.join("tiny-x4.pth"), b"12345").unwrap();
+        assert!(
+            !upscaler_install_plan(data.path(), &tiny).installed,
+            "the file is cut short"
+        );
+
+        std::fs::write(folder.join("tiny-x4.pth"), b"123456").unwrap();
+        assert!(upscaler_install_plan(data.path(), &tiny).installed);
     }
 }

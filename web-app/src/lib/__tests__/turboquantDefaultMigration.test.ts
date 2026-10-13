@@ -13,13 +13,13 @@ beforeEach(() => {
 })
 
 describe('runTurboquantDefaultMigration', () => {
-  it('classifies a fresh install as turboquant-disabled', () => {
+  it('enables turboquant for a fresh install (D41)', () => {
     runTurboquantDefaultMigration()
-    expect(localStorage.getItem(FLAG_KEY)).toBe('false')
-    expect(turboquantDefaultActive()).toBe(false)
+    expect(localStorage.getItem(FLAG_KEY)).toBe('true')
+    expect(turboquantDefaultActive()).toBe(true)
   })
 
-  it('keeps turboquant active for a profile with a persisted model-provider blob', () => {
+  it('enables turboquant for a profile with a persisted model-provider blob', () => {
     // Windows profiles that went through zustand migration v13 have the blob
     // but no `llamacpp` entry inside it — the blob alone marks them existing.
     localStorage.setItem(localStorageKey.modelProvider, '{"state":{}}')
@@ -28,7 +28,7 @@ describe('runTurboquantDefaultMigration', () => {
     expect(turboquantDefaultActive()).toBe(true)
   })
 
-  it('keeps turboquant active for a profile that completed onboarding without a blob', () => {
+  it('enables turboquant for a profile that completed onboarding without a blob', () => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
     runTurboquantDefaultMigration()
     expect(localStorage.getItem(FLAG_KEY)).toBe('true')
@@ -36,11 +36,11 @@ describe('runTurboquantDefaultMigration', () => {
 
   it('never overwrites an existing verdict on later launches', () => {
     runTurboquantDefaultMigration()
-    expect(localStorage.getItem(FLAG_KEY)).toBe('false')
+    expect(localStorage.getItem(FLAG_KEY)).toBe('true')
     // By the second launch the blob exists — the frozen verdict must win.
     localStorage.setItem(localStorageKey.modelProvider, '{"state":{}}')
     runTurboquantDefaultMigration()
-    expect(localStorage.getItem(FLAG_KEY)).toBe('false')
+    expect(localStorage.getItem(FLAG_KEY)).toBe('true')
   })
 })
 

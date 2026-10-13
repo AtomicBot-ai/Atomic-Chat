@@ -124,10 +124,17 @@ function cloudOptions(
     if (!isProviderConnected(provider)) continue
 
     const models = provider.models ?? []
-    const preferred =
-      (lastUsed?.provider === provider.provider &&
-        models.find((model) => model.id === lastUsed.model)) ||
-      models[0]
+
+    let preferredModel = undefined
+    if (lastUsed?.provider === provider.provider) {
+      for (let i = 0; i < models.length; i++) {
+        if (models[i].id === lastUsed.model) {
+          preferredModel = models[i]
+          break
+        }
+      }
+    }
+    const preferred = preferredModel || models[0]
     if (!preferred) continue
 
     options.push({
@@ -209,10 +216,7 @@ export function replyGateContext(providers: ModelProvider[]): {
  *    one, on a default engine when there is one. It loads fastest.
  */
 export type ReplyResolution =
-  | 'last_used'
-  | 'cloud'
-  | 'single_local'
-  | 'smallest_local'
+  'last_used' | 'cloud' | 'single_local' | 'smallest_local'
 
 /**
  * Parameter count named in a model id, in billions, or `undefined`.

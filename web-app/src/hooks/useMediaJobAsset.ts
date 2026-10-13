@@ -30,6 +30,7 @@ import {
   mediaDataFolder,
   useMediaLibraryStore,
 } from '@/stores/media-library-store'
+import { chosenMediaOutputFolder } from '@/stores/media-output-store'
 import { isTerminalMediaJobState } from '@/services/media/jobManager'
 import type { MediaJobEntry } from '@/services/media/jobManager'
 import type { MediaJobSnapshot } from '@/services/media/contract'
@@ -38,6 +39,7 @@ import type { MediaJobSnapshot } from '@/services/media/contract'
 export const browserMaterializeDeps: MaterializeDeps = {
   fs: coreMediaFileSystem,
   dataFolder: mediaDataFolder,
+  outputFolder: chosenMediaOutputFolder,
   fetchBytes: async (url: string) => {
     const response = await fetch(url)
     if (!response.ok) {

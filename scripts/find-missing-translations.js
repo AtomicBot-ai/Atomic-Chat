@@ -129,7 +129,7 @@ function checkTranslations() {
       name: file,
       content: JSON.parse(fs.readFileSync(path.join(englishDir, file), 'utf8')),
     }))
-  } catch (e) {
+  } catch {
     console.error(`Error: File '${englishDir}' is not a valid JSON file`)
     process.exit(1)
   }
@@ -161,7 +161,7 @@ function checkTranslations() {
 
       try {
         localeContent = JSON.parse(fs.readFileSync(localeFilePath, 'utf8'))
-      } catch (e) {
+      } catch {
         console.error(
           `Error: File '${localeFilePath}' is not a valid JSON file`
         )

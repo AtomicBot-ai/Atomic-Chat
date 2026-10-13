@@ -40,8 +40,15 @@ test('every file command follows the chosen models folder', () => {
     return commands.slice(start, next < 0 ? undefined : next)
   }
   assert.match(body('join_path'), /redirect_for_app/, 'join_path no longer redirects')
-  assert.match(body('write_yaml'), /redirect_for_app/, 'write_yaml no longer redirects')
-  assert.match(body('read_yaml'), /redirect_for_app/, 'read_yaml no longer redirects')
+  const scopedStart = commands.indexOf('fn get_scoped_path')
+  assert.ok(scopedStart >= 0, 'shared YAML scope helper is missing')
+  const scopedEnd = commands.indexOf('#[tauri::command]', scopedStart)
+  const scopedBody = commands.slice(scopedStart, scopedEnd)
+  assert.match(scopedBody, /redirect_for_app/, 'YAML scope helper no longer redirects')
+  assert.match(scopedBody, /is_within_app_folders/, 'YAML scope helper no longer checks scope')
+  assert.match(scopedBody, /chosen_models_folder/, 'YAML scope helper ignores the chosen folder')
+  assert.match(body('write_yaml'), /get_scoped_path\(&app, save_path[,)]/, 'write_yaml bypasses scope helper')
+  assert.match(body('read_yaml'), /get_scoped_path\(&app, path[,)]/, 'read_yaml bypasses scope helper')
   assert.match(body('rm'), /is_within_app_folders/, 'rm cannot delete in the models folder')
 })
 

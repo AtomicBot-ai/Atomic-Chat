@@ -72,6 +72,8 @@ export type LlamacppConfig = {
   device: string
   split_mode: string
   main_gpu: number
+  tensor_split?: string
+  gpu_placement?: string
   flash_attn: string
   cont_batching: boolean
   mtp: boolean

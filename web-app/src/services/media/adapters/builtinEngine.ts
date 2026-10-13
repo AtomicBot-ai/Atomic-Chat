@@ -43,12 +43,24 @@ import type {
   MediaProviderHealth,
   NormalizedMediaRequest,
 } from '../contract'
+import { sdStepsSpec } from './sharedParams'
 
 export const BUILTIN_ENGINE_PROVIDER_ID = 'builtin-engine'
 
 // --- what the Rust side reports ---------------------------------------------
 
 export type EngineModelTask = 'text_to_image' | 'text_to_video'
+
+/** How far a video model can be pushed, and the frame count it wants. */
+export type EngineVideoDefaults = {
+  fps: number
+  fps_min: number
+  fps_max: number
+  length_seconds: number[]
+  default_length_seconds: number
+  frame_modulus: number
+  frame_offset: number
+}
 
 export type EngineModelStatus = {
   id: string
@@ -64,6 +76,10 @@ export type EngineModelStatus = {
     steps: number
     cfg_scale: number
     sampler: string
+    /** Resolution ladder, native/default first (serialized from the Rust catalog). */
+    resolutions?: Array<[number, number]>
+    /** Present only on video models (serialized from the Rust catalog). */
+    video?: EngineVideoDefaults | null
   }
   /** The default size's download, and whether it is complete. */
   size_bytes: number
@@ -91,11 +107,21 @@ export type EngineQuantStatus = {
   files: EngineFileStatus[]
 }
 
+export type EngineUpscalerStatus = {
+  id: string
+  label: string
+  note: string
+  file_name: string
+  size_bytes: number
+  installed: boolean
+}
+
 export type EngineStatus = {
   variant: string
   engine_installed: boolean
   engine_size_bytes: number
   models: EngineModelStatus[]
+  upscalers: EngineUpscalerStatus[]
   running_model: string | null
   base_url: string | null
 }
@@ -169,16 +195,39 @@ const MIME: Record<string, string> = {
 /** Pictures the engine takes as a starting image or a frame. */
 const IMAGE_ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp']
 
-/** Video length choices, in seconds (the user, 2026-09-15: "length etc"). */
-const LENGTH_SECONDS = [1, 2, 3, 4, 5, 8]
+/**
+ * Fallback video limits when a model does not declare its own. Models now carry
+ * these in `defaults.video` (from the Rust catalog); the fallback only keeps an
+ * unknown model from rendering an empty picker.
+ */
+const FALLBACK_VIDEO: EngineVideoDefaults = {
+  fps: 16,
+  fps_min: 1,
+  fps_max: 30,
+  length_seconds: [1, 2, 3, 4, 5, 8],
+  default_length_seconds: 2,
+  frame_modulus: 4,
+  frame_offset: 1,
+}
 
 /**
- * Frames for a video of `seconds` at `fps`. Wan wants 4k + 1 frames, so the
- * count is rounded to the nearest such number, and never below 5.
+ * Frames for a video of `seconds` at `fps`, snapped to the lattice
+ * `n % modulus == offset` the model wants. Wan is 4k + 1, so the count is
+ * rounded to the nearest such number and never below `modulus + offset`.
  */
-export function framesFor(seconds: number, fps: number): number {
-  const k = Math.max(1, Math.round((seconds * fps - 1) / 4))
-  return 4 * k + 1
+export function framesFor(
+  seconds: number,
+  fps: number,
+  rule: { modulus: number; offset: number } = { modulus: 4, offset: 1 }
+): number {
+  const modulus = Math.max(1, Math.round(rule.modulus))
+  const offset = Math.round(rule.offset)
+  const k = Math.max(1, Math.round((seconds * fps - offset) / modulus))
+  return modulus * k + offset
+}
+
+function videoDefaultsOf(model: EngineModelStatus): EngineVideoDefaults {
+  return model.defaults.video ?? FALLBACK_VIDEO
 }
 
 const isDataUrl = (value: unknown): value is string =>
@@ -238,7 +287,7 @@ function reasonOf(body: { error?: unknown; message?: unknown } | undefined): str
 }
 
 function resolutionSpec(model: EngineModelStatus): MediaParamSpec {
-  const sizes: Array<[number, number]> = [
+  const sizes: Array<[number, number]> = model.defaults.resolutions ?? [
     [model.defaults.width, model.defaults.height],
     ...(FAMILY_SIZES[model.family] ?? []),
   ]
@@ -260,7 +309,16 @@ function resolutionSpec(model: EngineModelStatus): MediaParamSpec {
   }
 }
 
-function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamSpec[] {
+/** The engine names a model-backed upscaler by its `.pth` stem. */
+function upscalerEngineName(fileName: string): string {
+  return fileName.replace(/\.pth$/i, '')
+}
+
+function paramsFor(
+  model: EngineModelStatus,
+  task: EngineModelTask,
+  upscalers: EngineUpscalerStatus[] = []
+): MediaParamSpec[] {
   const specs: MediaParamSpec[] = [
     { id: 'prompt', type: 'text', group: 'core', label: 'Prompt', required: true },
     { id: 'negative_prompt', type: 'text', group: 'core', label: 'Negative prompt' },
@@ -283,15 +341,7 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
           help: 'Optional: a picture to change so it matches the prompt.',
         },
     resolutionSpec(model),
-    {
-      id: 'steps',
-      type: 'int',
-      group: 'sampling',
-      label: 'Steps',
-      min: 1,
-      max: 150,
-      default: model.defaults.steps,
-    },
+    sdStepsSpec(model.defaults.steps),
     {
       id: 'guidance_scale',
       type: 'float',
@@ -304,19 +354,85 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
     },
   ]
   if (task === 'text_to_image') {
-    specs.push({
-      id: 'strength',
-      type: 'float',
-      group: 'core',
-      label: 'How much to change it',
-      help: 'Low keeps the starting image; high follows the prompt more.',
-      min: 0.05,
-      max: 1,
-      step: 0.05,
-      default: 0.75,
-      widget: 'slider',
-      depends_on: [{ param: 'init_image', truthy: true }],
-    })
+    specs.push(
+      {
+        id: 'strength',
+        type: 'float',
+        group: 'core',
+        label: 'How much to change it',
+        help: 'Low keeps the starting image; high follows the prompt more.',
+        min: 0.05,
+        max: 1,
+        step: 0.05,
+        default: 0.75,
+        widget: 'slider',
+        depends_on: [{ param: 'init_image', truthy: true }],
+      },
+      // Hires fix (the engine's `hires` field): render again at a multiple of
+      // the chosen size for much more detail. On by default so images are
+      // "as high-definition as the engine allows"; the upscaler/scale/strength
+      // knobs stay under Advanced for power users.
+      {
+        id: 'hires',
+        type: 'bool',
+        group: 'core',
+        label: 'HD upscale',
+        help: 'Rework the image at a larger size for much more detail. Slower, but far sharper.',
+        widget: 'switch',
+        default: true,
+      },
+      {
+        id: 'hires_upscaler',
+        type: 'enum',
+        group: 'advanced',
+        label: 'Upscaler',
+        advanced: true,
+        depends_on: [{ param: 'hires', truthy: true }],
+        options: [
+          { value: 'Latent', label: 'Latent (detail)' },
+          { value: 'Lanczos', label: 'Lanczos (sharp)' },
+          { value: 'Nearest', label: 'Nearest (fast)' },
+          // Model-backed upscalers (Real-ESRGAN, 4×-UltraSharp) from the Rust
+          // catalog. The engine names each by its `.pth` stem, so the value
+          // below is what `hires.upscaler` must send.
+          ...upscalers.map((upscaler) => ({
+            value: upscalerEngineName(upscaler.file_name),
+            label: upscaler.installed
+              ? `${upscaler.label} (HD quality)`
+              : `${upscaler.label} (HD quality · downloads on first use)`,
+          })),
+        ],
+        default: 'Latent',
+      },
+      {
+        id: 'hires_scale',
+        type: 'enum',
+        group: 'advanced',
+        label: 'Scale',
+        advanced: true,
+        depends_on: [{ param: 'hires', truthy: true }],
+        options: [
+          { value: 2, label: '2×' },
+          { value: 3, label: '3×' },
+          { value: 4, label: '4×' },
+        ],
+        default: 2,
+      },
+      {
+        id: 'hires_denoising_strength',
+        type: 'float',
+        group: 'advanced',
+        label: 'Detail strength',
+        help: 'Low keeps the first pass; high reworks more and can drift from the prompt.',
+        advanced: true,
+        depends_on: [{ param: 'hires', truthy: true }],
+        min: 0.2,
+        max: 0.9,
+        step: 0.05,
+        default: 0.7,
+        widget: 'slider',
+      }
+    )
   }
   if (task === 'text_to_video') {
     specs.push(
@@ -333,13 +449,21 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
         type: 'enum',
         group: 'motion',
         label: 'Length',
-        options: LENGTH_SECONDS.map((seconds) => ({
+        options: videoDefaultsOf(model).length_seconds.map((seconds) => ({
           value: seconds,
           label: seconds === 1 ? '1 second' : `${seconds} seconds`,
         })),
-        default: 2,
+        default: videoDefaultsOf(model).default_length_seconds,
       },
-      { id: 'fps', type: 'int', group: 'motion', label: 'FPS', min: 1, max: 30, default: 16 }
+      {
+        id: 'fps',
+        type: 'int',
+        group: 'motion',
+        label: 'FPS',
+        min: videoDefaultsOf(model).fps_min,
+        max: videoDefaultsOf(model).fps_max,
+        default: videoDefaultsOf(model).fps,
+      }
     )
   }
   specs.push({ id: 'seed', type: 'seed', group: 'advanced', label: 'Seed', advanced: true })
@@ -358,7 +482,8 @@ function memoryFor(model: EngineModelStatus, sizeBytes: number): number {
  */
 function modelDescriptors(
   model: EngineModelStatus,
-  providerId: string
+  providerId: string,
+  upscalers: EngineUpscalerStatus[] = []
 ): MediaModelDescriptor[] {
   const tasks = model.tasks.filter(
     (task) => task === MEDIA_TASK.TEXT_TO_IMAGE || task === MEDIA_TASK.TEXT_TO_VIDEO
@@ -369,7 +494,7 @@ function modelDescriptors(
     local_id: localId,
     family: model.family,
     tasks,
-    params: Object.fromEntries(tasks.map((task) => [task, paramsFor(model, task)])),
+    params: Object.fromEntries(tasks.map((task) => [task, paramsFor(model, task, upscalers)])),
     license: { id: model.license, url: model.license_url },
     outputs: Object.fromEntries(
       tasks.map((task) => [
@@ -459,6 +584,17 @@ export function engineRequestBody(req: NormalizedMediaRequest): Record<string, u
       body.strength = params.strength
     }
   }
+  // Hires fix: re-render at a multiple of the chosen size for more detail.
+  // Only image jobs take it; the engine spells it exactly like its `img_gen`
+  // schema (`hires.enabled/upscaler/scale/denoising_strength`).
+  if (req.task !== MEDIA_TASK.TEXT_TO_VIDEO && params.hires === true) {
+    body.hires = {
+      enabled: true,
+      upscaler: String(params.hires_upscaler ?? 'Latent'),
+      scale: Number(params.hires_scale ?? 2),
+      denoising_strength: Number(params.hires_denoising_strength ?? 0.7),
+    }
+  }
   if (req.task === MEDIA_TASK.TEXT_TO_VIDEO) {
     if (isDataUrl(params.end_image)) body.end_image = params.end_image
     const fps = typeof params.fps === 'number' ? params.fps : 16
@@ -534,7 +670,75 @@ export function createBuiltinEngineAdapter(
     }
   }
 
+  // The engine runs one job at a time, so a single "latest step" is enough. Rust
+  // parses the engine's stdout progress bar and emits it on this Tauri event;
+  // here it becomes the `progress`/`step` fields of the next poll.
+  let latestProgress: { current: number; total: number } | null = null
+  let progressListening = false
+
+  function ensureProgressListener(): void {
+    if (progressListening) return
+    progressListening = true
+    void transport
+      .listen<{ current: number; total: number }>('media-engine-progress', (progress) => {
+        latestProgress = progress
+      })
+      .catch(() => {
+        // A runtime without the progress event still generates fine; the bar
+        // just stays quiet until the job lands.
+        progressListening = false
+      })
+  }
+
+  function progressOf(): Pick<MediaJobSnapshot, 'progress' | 'step'> {
+    if (!latestProgress || latestProgress.total <= 0) {
+      return { progress: null, step: null }
+    }
+    const { current, total } = latestProgress
+    return {
+      progress: Math.round((current / total) * 100),
+      step: { current, total },
+    }
+  }
+
+  // The engine's built-in hires upscalers need no download. A model-backed one
+  // is named by its `.pth` stem and must live in `media/upscalers` first.
+  const BUILTIN_UPSCALERS = new Set(['None', 'Latent', 'Lanczos', 'Nearest'])
+
+  /**
+   * Downloads a model-backed upscaler before the engine starts, so choosing it
+   * on first use "just works". The engine scans `media/upscalers` once at
+   * startup, so this must finish before `media_engine_start`.
+   */
+  async function ensureUpscaler(hiresUpscaler: unknown, signal?: AbortSignal): Promise<void> {
+    if (typeof hiresUpscaler !== 'string' || BUILTIN_UPSCALERS.has(hiresUpscaler)) return
+    const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
+    const match = status.upscalers.find(
+      (upscaler) => upscalerEngineName(upscaler.file_name) === hiresUpscaler
+    )
+    if (!match || match.installed) return
+    // Same event-name rules as model downloads: letters, digits, `-` and `_`.
+    const taskId = `media-upscaler-${match.id.replace(/[^A-Za-z0-9_-]/g, '_')}`
+    const unlisten = await transport.listen<{ transferred: number; total: number }>(
+      `download-${taskId}`,
+      (progress) => {
+        latestProgress = { current: progress.transferred, total: progress.total }
+      }
+    )
+    const onAbort = () => {
+      void transport.invoke('cancel_download_task', { taskId })
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    try {
+      await transport.invoke('media_upscaler_install', { upscalerId: match.id, taskId }, signal)
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+      unlisten()
+    }
+  }
+
   async function poll(handle: MediaJobHandle, signal?: AbortSignal): Promise<MediaJobSnapshot> {
+    ensureProgressListener()
     const providerJobId = handle.provider_job_id
     if (!providerJobId) {
       throw new BuiltinEngineError(
@@ -576,6 +780,7 @@ export function createBuiltinEngineAdapter(
     return snapshot(handle, providerJobId, state, {
       queue_position: job.queue_position ?? null,
       ...(state === 'succeeded' ? { outputs: outputsOf(job) } : {}),
+      ...(state === 'succeeded' ? { progress: 100, step: null } : progressOf()),
       ...(job.started ? { started_at: job.started * 1000 } : {}),
       ...(job.completed ? { finished_at: job.completed * 1000 } : {}),
     })
@@ -595,7 +800,9 @@ export function createBuiltinEngineAdapter(
 
     async capabilities(signal?: AbortSignal): Promise<MediaCapabilities> {
       const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
-      const models = status.models.flatMap((model) => modelDescriptors(model, providerId))
+      const models = status.models.flatMap((model) =>
+        modelDescriptors(model, providerId, status.upscalers)
+      )
       const taskIds = [...new Set(models.flatMap((model) => model.tasks))]
       return {
         contract_version: MEDIA_CONTRACT_VERSION,
@@ -613,6 +820,9 @@ export function createBuiltinEngineAdapter(
         features: {
           // Waiting jobs can be cancelled; one already generating cannot yet.
           cancel: true,
+          // Progress is the engine's stdout step bar, parsed by Rust and read
+          // here on each poll (the job endpoint itself reports only status and
+          // queue position).
           progress: true,
           queue: true,
           events: false,
@@ -623,7 +833,18 @@ export function createBuiltinEngineAdapter(
     },
 
     async submit(req: NormalizedMediaRequest, signal?: AbortSignal): Promise<MediaJobSnapshot> {
+      // A new job resets the progress bar so the last job's tail is never shown
+      // as this one's.
+      latestProgress = null
+      ensureProgressListener()
       const localId = localIdOf(req.model_id, providerId)
+      // A model-backed upscaler must be on disk before the engine starts (it
+      // scans `media/upscalers` once), so install it first on demand.
+      if (req.task !== MEDIA_TASK.TEXT_TO_VIDEO && req.params.hires === true) {
+        await ensureUpscaler(req.params.hires_upscaler, signal)
+        // The upscaler's download bar is not this job's generation bar.
+        latestProgress = null
+      }
       // Loads the model the first time, which can take a while; a later job for
       // the same model returns straight away.
       const started = await transport.invoke<StartedEngine>(

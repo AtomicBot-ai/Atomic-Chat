@@ -130,6 +130,8 @@ mod tests {
         steps: 1,
         cfg_scale: 1.0,
         sampler: "euler",
+        resolutions: &[[64, 64]],
+        video: None,
     };
 
     const TINY_IMAGE: CatalogModel = CatalogModel {

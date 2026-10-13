@@ -22,6 +22,10 @@ export type MediaProviderAdapterId =
   | 'comfyui'
   | 'openai-images'
   | 'custom-http'
+  | 'a1111'
+  | 'replicate'
+  | 'fal-ai'
+  | 'stability-ai'
 
 export type MediaProviderDescriptor = {
   id: string
@@ -64,11 +68,7 @@ export type NormalizedMediaRequest = {
 }
 
 export type MediaJobState =
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
+  'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export type MediaOutputRef =
   | { kind: 'local_path'; path: string; mime?: string }

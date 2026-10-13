@@ -1,5 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { RenderMarkdown } from '../RenderMarkdown'
 
 vi.mock('@i18n/react-i18next-compat', () => ({
@@ -144,6 +146,25 @@ describe('RenderMarkdown', () => {
       // Display math should be rendered
       expect(katexContainer).toBeTruthy()
       expect(katexError).toBeNull()
+    })
+
+    it('renders math with the same KaTeX release as the stylesheet it loads', () => {
+      // KaTeX 0.18 prefixed its layout classes (base -> katex-base, strut ->
+      // katex-strut). HTML from an older KaTeX under the newer stylesheet
+      // loses line layout and sizing, so renderer and CSS must agree.
+      const stylesheet = readFileSync(
+        createRequire(import.meta.url).resolve('katex/dist/katex.min.css'),
+        'utf8'
+      )
+      render(<RenderMarkdown content={'$$\\frac{a}{b} + x^2$$'} />)
+      const math = document.querySelector('.katex-html')
+      expect(math).toBeTruthy()
+      const layoutClasses = ['katex-base', 'katex-strut']
+      for (const name of layoutClasses) {
+        expect(math?.querySelector(`.${name}`)).toBeTruthy()
+        expect(stylesheet).toContain(`.${name}`)
+      }
+      expect(math?.querySelector('.base, .strut')).toBeNull()
     })
   })
 

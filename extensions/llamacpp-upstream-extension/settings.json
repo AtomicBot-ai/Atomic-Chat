@@ -276,6 +276,48 @@
     }
   },
   {
+    "key": "gpu_placement",
+    "title": "GPU Placement",
+    "description": "How models are placed on your graphics cards when more than one is installed. Picks the device, split mode and tensor split for you each time a model loads. Choose Manual to use the fields below as written.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "manual",
+      "options": [
+        {
+          "value": "manual",
+          "name": "Manual (use the settings below)"
+        },
+        {
+          "value": "single",
+          "name": "One model on one GPU (the one with most free memory)"
+        },
+        {
+          "value": "per_gpu",
+          "name": "One model on each GPU (needs Auto-Unload off)"
+        },
+        {
+          "value": "many_small",
+          "name": "Several small models on each GPU (needs Auto-Unload off)"
+        },
+        {
+          "value": "spread",
+          "name": "One big model spread across all GPUs"
+        }
+      ]
+    }
+  },
+  {
+    "key": "tensor_split",
+    "title": "Tensor Split",
+    "description": "Manual only: proportion of the model on each GPU, e.g. '3,1' puts three quarters on the first. Leave empty for llama.cpp's default. With 'One big model spread across all GPUs' this is filled in from each card's free memory unless you set it.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "3,1",
+      "type": "text"
+    }
+  },
+  {
     "key": "flash_attn",
     "title": "Flash Attention",
     "description": "Enable Flash Attention for optimized performance.",

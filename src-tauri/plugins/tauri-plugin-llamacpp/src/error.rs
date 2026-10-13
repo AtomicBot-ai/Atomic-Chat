@@ -73,7 +73,6 @@ impl LlamacppError {
             );
         }
 
-
         // A library path was invalid or a required dynamic library is missing.
         if lower_stderr.contains("cannot load library")
             || lower_stderr.contains("library not found")
@@ -85,13 +84,21 @@ impl LlamacppError {
             );
         }
 
-        // TODO: add others
         let is_out_of_memory = lower_stderr.contains("out of memory")
             || lower_stderr.contains("failed to allocate")
             || lower_stderr.contains("insufficient memory")
             || lower_stderr.contains("erroroutofdevicememory") // vulkan specific
             || lower_stderr.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
-            || lower_stderr.contains("cuda_error_out_of_memory"); // CUDA-specific
+            || lower_stderr.contains("cuda_error_out_of_memory") // CUDA-specific
+            || lower_stderr.contains("cudaerrormemoryallocation") // CUDA
+            || lower_stderr.contains("hiperroroutofmemory") // ROCm/HIP
+            || lower_stderr.contains("musaerrormemoryallocation") // MUSA
+            || lower_stderr.contains("cl_out_of_resources") // OpenCL
+            || lower_stderr.contains("cl_out_of_host_memory") // OpenCL
+            || lower_stderr.contains("erroroutofhostmemory") // Vulkan
+            || lower_stderr.contains("ggml_status_alloc_failed") // GGML
+            || lower_stderr.contains("not enough space in the buffer") // GGML alloc
+            || lower_stderr.contains("unable to allocate"); // General/Hexagon/llama-model
 
         if is_out_of_memory {
             return Self::new(

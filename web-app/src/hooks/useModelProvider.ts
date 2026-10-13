@@ -172,9 +172,10 @@ export const useModelProvider = create<ModelProviderState>()(
               }),
               api_key: existingProvider?.api_key || provider.api_key,
               base_url: existingProvider?.base_url || provider.base_url,
-              // First registration: TurboQuant defaults to disabled on fresh
-              // installs (re-enableable via the Settings toggle); everything
-              // else — and every already-persisted provider — keeps its value.
+              // First registration: TurboQuant defaults to enabled on fresh
+              // installs (D41, re-disableable via the Settings toggle);
+              // everything else — and every already-persisted provider —
+              // keeps its value.
               active: existingProvider
                 ? existingProvider.active
                 : provider.provider === LEGACY_LLAMACPP_PROVIDER

@@ -42,6 +42,8 @@ export type MediaLibrary = {
   add: (assets: MediaAsset[]) => Promise<void>
   remove: (assetId: string) => Promise<void>
   setFavourite: (assetId: string, favourite: boolean) => Promise<void>
+  /** Give an asset a display name; an empty name clears it. */
+  rename: (assetId: string, name: string) => Promise<void>
   /** True when the index on disk came from a newer build and must not be written. */
   readOnly: () => boolean
   subscribe: (listener: () => void) => () => void
@@ -216,6 +218,21 @@ export function createMediaLibrary(deps: MediaLibraryDeps): MediaLibrary {
       assets = assets.map((entry) =>
         entry.asset_id === assetId ? { ...entry, favourite } : entry
       )
+      notify()
+      await save()
+    },
+
+    async rename(assetId, name) {
+      const target = assets.find((entry) => entry.asset_id === assetId)
+      if (!target) return
+      const trimmed = name.trim()
+      assets = assets.map((entry) => {
+        if (entry.asset_id !== assetId) return entry
+        const next = { ...entry }
+        if (trimmed) next.name = trimmed
+        else delete next.name
+        return next
+      })
       notify()
       await save()
     },
