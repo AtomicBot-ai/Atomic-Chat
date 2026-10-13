@@ -167,6 +167,13 @@ function isUnsupportedBaseGemmaMlx(model: CatalogModel) {
   return !isInstruct && !isDrafterArtifact
 }
 
+// A card with safetensors weights and nothing a llama.cpp or MLX provider
+// loads: what the managed engines (vLLM, TensorRT-LLM) serve.
+function isSafetensorsCheckpoint(model: CatalogModel) {
+  const is_mlx = model.is_mlx ?? model.library_name === 'mlx'
+  return !is_mlx && !model.quants?.length && (model.num_safetensors ?? 0) > 0
+}
+
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -1055,6 +1062,24 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   const selectedRepo = modelSearchParam ?? null
 
+  // A link names a repository and no format, and the Hub opens on GGUF. A
+  // safetensors checkpoint opened that way is a managed engine's wherever one
+  // is offered: its card then asks every visible engine for a verdict, whatever
+  // format the list shows. Where none is offered it stays as it is.
+  const deepLinkedCard = useMemo<CatalogModel | null>(() => {
+    if (!deepLinkedModel) return null
+    if (visibleManaged === '' || !isSafetensorsCheckpoint(deepLinkedModel)) {
+      return deepLinkedModel
+    }
+    return { ...deepLinkedModel, is_mlx: false, is_managed: true }
+  }, [deepLinkedModel, visibleManaged])
+  // The managed format a card reads as: the one the Hub shows, else the first
+  // engine offered, in registry order.
+  const cardManagedFormat = (managedSelected?.id ??
+    (visibleManaged === '' ? undefined : visibleManaged.split(',')[0])) as
+    | ModelFormat
+    | undefined
+
   const selectedItem = useMemo(() => {
     if (!selectedRepo) return null
     const fromList = listItems.find(
@@ -1065,11 +1090,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (fromSources) {
       return { model: fromSources, pick: pickByRepo.get(selectedRepo) }
     }
-    if (deepLinkedModel?.model_name === selectedRepo) {
-      return { model: deepLinkedModel, pick: pickByRepo.get(selectedRepo) }
+    if (deepLinkedCard?.model_name === selectedRepo) {
+      return { model: deepLinkedCard, pick: pickByRepo.get(selectedRepo) }
     }
     return null
-  }, [selectedRepo, listItems, sources, deepLinkedModel, pickByRepo])
+  }, [selectedRepo, listItems, sources, deepLinkedCard, pickByRepo])
 
   // Deep link into a repo the catalog does not carry: resolve it from HF once.
   useEffect(() => {
@@ -1462,7 +1487,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         <ModelDetailPanel
           model={selectedItem?.model ?? null}
           pick={selectedItem?.pick}
-          managedFormat={managedSelected ? (managedSelected.id as ModelFormat) : undefined}
+          managedFormat={cardManagedFormat}
         />
       </div>
     </div>
