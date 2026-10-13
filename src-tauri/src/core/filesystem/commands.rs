@@ -6,8 +6,33 @@ use crate::core::app::models_folder::{
     chosen_models_folder, is_within_app_folders, redirect_for_app,
 };
 use rfd::AsyncFileDialog;
+use std::collections::HashSet;
 use std::fs;
+use std::sync::Mutex;
 use tauri::Runtime;
+
+/// Paths the user granted via a native dialog this session. Managed as Tauri
+/// state: `save_dialog` inserts the picked path and `write_file_sync` only
+/// accepts paths in here (or inside the app's own folders), so a compromised
+/// extension cannot use the legacy write primitive on arbitrary files.
+#[derive(Default)]
+pub struct DialogGrants {
+    write: Mutex<HashSet<std::path::PathBuf>>,
+}
+
+/// Normalize `path` into a stable comparison key. Canonicalizing the parent
+/// (which must exist for a save-dialog pick) plus the leaf name tolerates the
+/// case/normalization differences between the dialog's raw path and the path
+/// that comes back through `resolve_path`.
+fn grant_key(path: &std::path::Path) -> std::path::PathBuf {
+    let normalized = jan_utils::normalize_path(path);
+    if let (Some(parent), Some(name)) = (normalized.parent(), normalized.file_name()) {
+        if let Ok(canonical_parent) = parent.canonicalize() {
+            return canonical_parent.join(name);
+        }
+    }
+    normalized
+}
 
 #[tauri::command]
 pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
@@ -180,16 +205,42 @@ pub fn read_file_chunk<R: Runtime>(
     Ok(tauri::ipc::Response::new(buf))
 }
 
+/// A path may be written only if the user granted it via the native save dialog
+/// this session, or it lives inside the app's own folders. Anything else is
+/// refused so a compromised extension cannot write arbitrary files.
+fn is_allowed_write_path<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    grants: &DialogGrants,
+    path: &std::path::Path,
+) -> bool {
+    let data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
+    if is_within_app_folders(path, &data_folder, chosen_models_folder(app).as_deref()) {
+        return true;
+    }
+    grants
+        .write
+        .lock()
+        .map(|granted| granted.contains(&grant_key(path)))
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 pub fn write_file_sync<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
+    grants: tauri::State<'_, DialogGrants>,
     args: Vec<String>,
 ) -> Result<(), String> {
     if args.len() < 2 || args[0].is_empty() || args[1].is_empty() {
         return Err("write_file_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_path(app_handle.clone(), &args[0]);
+    if !is_allowed_write_path(&app_handle, &grants, &path) {
+        return Err(format!(
+            "write_file_sync error: {} was not picked in a save dialog and is outside the app's folders",
+            path.display()
+        ));
+    }
     let content = &args[1];
     fs::write(&path, content).map_err(|e| e.to_string())
 }
@@ -662,7 +713,10 @@ pub async fn open_dialog(
 }
 
 #[tauri::command]
-pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<String>, String> {
+pub async fn save_dialog(
+    grants: tauri::State<'_, DialogGrants>,
+    options: Option<DialogOpenOptions>,
+) -> Result<Option<String>, String> {
     let mut dialog = AsyncFileDialog::new();
 
     if let Some(opts) = options {
@@ -692,5 +746,12 @@ pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<St
     }
 
     let result = dialog.save_file().await;
+    if let Some(file) = result.as_ref() {
+        grants
+            .write
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(grant_key(file.path()));
+    }
     Ok(result.map(|file| file.path().to_string_lossy().to_string()))
 }

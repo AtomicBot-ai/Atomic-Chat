@@ -475,6 +475,7 @@ pub fn run() {
 
     let app = app_builder
         .manage(core::media::runtime::MediaEngineState::default())
+        .manage(core::filesystem::commands::DialogGrants::default())
         .manage(core::runtimes::ollama::OllamaState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
