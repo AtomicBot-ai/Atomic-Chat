@@ -161,6 +161,14 @@ describe('OllamaPanel', () => {
     // on to nodes that may have been replaced.
     const rowsNow = () =>
       within(screen.getByTestId('ollama-models')).getAllByRole('listitem')
+    // Every action button is disabled while another action is still
+    // settling, so wait for it to be enabled before clicking.
+    const enabledButton = (row: number, name: string | RegExp) =>
+      waitFor(() => {
+        const button = within(rowsNow()[row]).getByRole('button', { name })
+        expect(button).toBeEnabled()
+        return button
+      })
     const rows = await waitFor(() => {
       const found = rowsNow()
       expect(found).toHaveLength(2)
@@ -169,19 +177,19 @@ describe('OllamaPanel', () => {
     expect(rows[0].textContent).toContain('in memory')
     expect(screen.getByText('2 installed · 1 in memory')).toBeInTheDocument()
 
-    fireEvent.click(within(rowsNow()[0]).getByRole('button', { name: 'Unload' }))
+    fireEvent.click(await enabledButton(0, 'Unload'))
     await waitFor(() =>
       expect(api.unloadModel).toHaveBeenCalledWith('http://127.0.0.1:11434', 'qwen3:8b')
     )
-    fireEvent.click(within(rowsNow()[1]).getByRole('button', { name: 'Load' }))
+    fireEvent.click(await enabledButton(1, 'Load'))
     await waitFor(() =>
       expect(api.loadModel).toHaveBeenCalledWith('http://127.0.0.1:11434', 'gemma3:27b')
     )
 
     // Delete asks once more, showing what it frees.
-    fireEvent.click(within(rowsNow()[1]).getByRole('button', { name: 'Delete gemma3:27b' }))
+    fireEvent.click(await enabledButton(1, 'Delete gemma3:27b'))
     expect(api.deleteModel).not.toHaveBeenCalled()
-    fireEvent.click(within(rowsNow()[1]).getByRole('button', { name: /Delete 16 GB\?/ }))
+    fireEvent.click(await enabledButton(1, /Delete 16 GB\?/))
     await waitFor(() =>
       expect(api.deleteModel).toHaveBeenCalledWith('http://127.0.0.1:11434', 'gemma3:27b')
     )
