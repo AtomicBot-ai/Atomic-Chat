@@ -1,0 +1,47 @@
+name: "Build summary"
+description: "Write the facts needed to compare build timings into the job summary"
+
+# What makes two runs comparable: the commit and attempt, the runner image,
+# the toolchains, whether the Rust cache hit, and the size of what was built.
+# Step timings themselves are in the run's own UI and API.
+
+inputs:
+  rust-cache-hit:
+    description: "Swatinem/rust-cache's cache-hit output (empty when the step did not run)"
+    required: false
+    default: ""
+  files:
+    description: "Newline-separated paths or globs whose sizes to list (built binary, installers)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Write the job summary
+      shell: bash
+      env:
+        RUST_CACHE_HIT: ${{ inputs.rust-cache-hit }}
+        FILES: ${{ inputs.files }}
+        RUNNER_LABEL: ${{ runner.name }}
+      run: |
+        set +e
+        line() { printf -- '- %s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; }
+        version_of() { "$@" 2>/dev/null | head -1; }
+        printf '### %s\n\n' "$GITHUB_JOB" >> "$GITHUB_STEP_SUMMARY"
+        line "Commit \`${GITHUB_SHA:0:9}\`, attempt ${GITHUB_RUN_ATTEMPT}"
+        line "Runner: ${RUNNER_LABEL} (${RUNNER_OS} ${RUNNER_ARCH}), image ${ImageOS:-?} ${ImageVersion:-?}"
+        line "rustc: $(version_of rustc -V) · cargo: $(version_of cargo -V)"
+        command -v node > /dev/null && line "node: $(version_of node -v) · yarn: $(version_of yarn -v)"
+        command -v xcodebuild > /dev/null && line "Xcode: $(xcodebuild -version 2>/dev/null | tr '\n' ' ')"
+        [ -n "$RUST_CACHE_HIT" ] && line "Rust cache exact hit: ${RUST_CACHE_HIT}"
+        if [ -n "$FILES" ]; then
+          printf '\n| File | Bytes |\n| --- | ---: |\n' >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r pattern; do
+            [ -n "$pattern" ] || continue
+            for file in $pattern; do
+              [ -f "$file" ] && printf '| `%s` | %s |\n' "$file" "$(wc -c < "$file" | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+            done
+          done <<< "$FILES"
+        fi
+        exit 0

@@ -77,6 +77,7 @@ After changes in **web-app** no restart is needed — hot reload kicks in. After
 - **"The service is no longer running"** — usually means the process has already exited (the window was closed or Ctrl+C was pressed). Just run `yarn dev` again.
 - **The window does not open / hangs** — make sure port 1420 is free (`lsof -i :1420`), kill old processes and run `yarn dev` again.
 - **After switching branches or pulling** — if needed, run `make dev` once (full install and build), then go back to just `yarn dev`.
+- **A new `src-tauri/.env` is ignored** — the build script watches that file only while it exists, so after creating it run `touch src-tauri/build.rs` once; edits to an existing `.env` are picked up on their own.
 
 ---
 
