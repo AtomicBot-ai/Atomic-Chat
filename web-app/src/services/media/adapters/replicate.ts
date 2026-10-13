@@ -71,6 +71,7 @@ import {
   snapshotFor,
   type MediaHttpAdapterOptions,
 } from './http'
+import { PROMPT, SEED } from './sharedParams'
 
 export class ReplicateError extends MediaHttpError {
   constructor(
@@ -122,25 +123,6 @@ type ReplicateProblem = {
 }
 
 // --- declared models ---------------------------------------------------------
-
-const PROMPT: MediaParamSpec = {
-  id: 'prompt',
-  type: 'text',
-  label: 'Prompt',
-  group: 'core',
-  order: 1,
-  required: true,
-  widget: 'textarea',
-}
-
-const SEED: MediaParamSpec = {
-  id: 'seed',
-  type: 'seed',
-  label: 'Seed',
-  group: 'sampling',
-  order: 9,
-  min: 0,
-}
 
 /**
  * Declared from each model's published input schema. Ids are Replicate's own

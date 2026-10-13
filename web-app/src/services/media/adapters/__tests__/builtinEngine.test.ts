@@ -96,6 +96,28 @@ const STATUS: EngineStatus = {
   ],
 }
 
+const STATUS_WITH_UPSCALERS: EngineStatus = {
+  ...STATUS,
+  upscalers: [
+    {
+      id: 'realesrgan-x4',
+      label: 'Real-ESRGAN 4×',
+      note: 'General-purpose 4× upscaler.',
+      file_name: 'RealESRGAN_x4.pth',
+      size_bytes: 67_000_000,
+      installed: false,
+    },
+    {
+      id: 'ultrasharp-4x',
+      label: '4×-UltraSharp',
+      note: 'Sharper 4× upscaler.',
+      file_name: '4x-UltraSharp.pth',
+      size_bytes: 66_800_000,
+      installed: true,
+    },
+  ],
+}
+
 const BASE_URL = 'http://127.0.0.1:41234'
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
@@ -144,6 +166,10 @@ const transport: BuiltinEngineTransport = {
     }
     if (command === 'media_engine_install') {
       fake.listeners.get(`download-${args?.taskId}`)?.({ transferred: 512, total: 1024 })
+      return undefined as T
+    }
+    if (command === 'media_upscaler_install') {
+      fake.listeners.get(`download-${args?.taskId}`)?.({ transferred: 300, total: 600 })
       return undefined as T
     }
     return undefined as T
@@ -756,5 +782,81 @@ describe('a model offered in several sizes', () => {
       command: 'media_engine_install',
       args: { modelId: 'sd-1.5@q4_0', taskId: 'media-engine-sd-1_5_q4_0' },
     })
+  })
+})
+
+describe('model-backed HD upscalers', () => {
+  const upscalerTransport: BuiltinEngineTransport = {
+    ...transport,
+    invoke: async (command, args, signal) => {
+      if (command === 'media_engine_status') return STATUS_WITH_UPSCALERS
+      return transport.invoke(command, args, signal)
+    },
+  }
+  const adapter = () => createBuiltinEngineAdapter(descriptor, upscalerTransport)
+
+  it('lists the catalog upscalers by their engine stem, HD-quality labelled', async () => {
+    const [image] = (await adapter().capabilities()).models
+    const upscaler = image.params.text_to_image.find((spec) => spec.id === 'hires_upscaler')
+
+    expect(upscaler?.options).toEqual([
+      { value: 'Latent', label: 'Latent (detail)' },
+      { value: 'Lanczos', label: 'Lanczos (sharp)' },
+      { value: 'Nearest', label: 'Nearest (fast)' },
+      { value: 'RealESRGAN_x4', label: 'Real-ESRGAN 4× (HD quality · downloads on first use)' },
+      { value: '4x-UltraSharp', label: '4×-UltraSharp (HD quality)' },
+    ])
+  })
+
+  it('downloads a not-installed upscaler before the engine starts', async () => {
+    const instance = adapter()
+    await instance.submit({
+      client_job_id: 'u1',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'a dragon', hires: true, hires_upscaler: 'RealESRGAN_x4' },
+    })
+
+    const commands = fake.invoked.map((call) => call.command)
+    expect(commands.indexOf('media_upscaler_install')).toBeGreaterThanOrEqual(0)
+    expect(commands.indexOf('media_upscaler_install')).toBeLessThan(
+      commands.indexOf('media_engine_start')
+    )
+    expect(fake.invoked.find((call) => call.command === 'media_upscaler_install')?.args).toEqual({
+      upscalerId: 'realesrgan-x4',
+      taskId: 'media-upscaler-realesrgan-x4',
+    })
+    // The chosen stem is sent verbatim as the engine's `hires.upscaler`.
+    expect(fake.fetched[0]?.body).toMatchObject({
+      hires: { enabled: true, upscaler: 'RealESRGAN_x4' },
+    })
+  })
+
+  it('does not re-download an upscaler that is already installed', async () => {
+    const instance = adapter()
+    await instance.submit({
+      client_job_id: 'u2',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'a dragon', hires: true, hires_upscaler: '4x-UltraSharp' },
+    })
+
+    expect(fake.invoked.map((call) => call.command)).not.toContain('media_upscaler_install')
+    expect(fake.invoked.map((call) => call.command)).toContain('media_engine_start')
+  })
+
+  it('leaves the built-in upscalers alone', async () => {
+    const instance = adapter()
+    await instance.submit({
+      client_job_id: 'u3',
+      provider_id: 'builtin-engine',
+      model_id: 'builtin-engine:sd-1.5',
+      task: 'text_to_image',
+      params: { prompt: 'a dragon', hires: true, hires_upscaler: 'Latent' },
+    })
+
+    expect(fake.invoked.map((call) => call.command)).not.toContain('media_upscaler_install')
   })
 })

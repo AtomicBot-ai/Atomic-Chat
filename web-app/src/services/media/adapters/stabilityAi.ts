@@ -69,6 +69,7 @@ import {
   snapshotFor,
   type MediaHttpAdapterOptions,
 } from './http'
+import { NEGATIVE_PROMPT, PROMPT } from './sharedParams'
 
 export class StabilityAiError extends MediaHttpError {
   constructor(
@@ -135,24 +136,8 @@ const MIME_BY_FORMAT: Record<string, string> = {
 
 function textToImageParams(): MediaParamSpec[] {
   return [
-    {
-      id: 'prompt',
-      type: 'text',
-      label: 'Prompt',
-      group: 'core',
-      order: 1,
-      required: true,
-      max_length: 10_000,
-      widget: 'textarea',
-    },
-    {
-      id: 'negative_prompt',
-      type: 'text',
-      label: 'Negative prompt',
-      group: 'core',
-      order: 2,
-      max_length: 10_000,
-    },
+    { ...PROMPT, max_length: 10_000 },
+    { ...NEGATIVE_PROMPT, max_length: 10_000 },
     {
       id: 'aspect_ratio',
       type: 'enum',

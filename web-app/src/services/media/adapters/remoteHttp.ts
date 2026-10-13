@@ -57,6 +57,7 @@ import type {
   MediaProviderHealth,
   NormalizedMediaRequest,
 } from '../contract'
+import { PROMPT } from './sharedParams'
 
 /** Resolves a configured secret by the `setting_key` naming where it lives. */
 export type MediaSecretResolver = (
@@ -114,15 +115,7 @@ const QUALITIES = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
  */
 function declaredModels(providerId: string): MediaModelDescriptor[] {
   const params: MediaParamSpec[] = [
-    {
-      id: 'prompt',
-      type: 'text',
-      label: 'Prompt',
-      group: 'core',
-      order: 1,
-      required: true,
-      widget: 'textarea',
-    },
+    PROMPT,
     {
       id: 'size',
       type: 'enum',

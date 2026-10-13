@@ -16,6 +16,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { Forward, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -35,6 +36,7 @@ export type MediaReRunRequest = {
 type AssetDetailProps = {
   asset: MediaAsset
   onReRun?: (request: MediaReRunRequest) => void
+  onContinue?: (asset: MediaAsset) => Promise<void> | void
   onDelete?: (assetId: string) => void
 }
 
@@ -44,12 +46,18 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function AssetDetail({ asset, onReRun, onDelete }: AssetDetailProps) {
+export function AssetDetail({
+  asset,
+  onReRun,
+  onContinue,
+  onDelete,
+}: AssetDetailProps) {
   const { t } = useTranslation()
   const { provenance } = asset
   const rename = useMediaLibraryStore((state) => state.rename)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(asset.name ?? '')
+  const [continuing, setContinuing] = useState(false)
 
   const handleSaveAs = async () => {
     try {
@@ -106,6 +114,16 @@ export function AssetDetail({ asset, onReRun, onDelete }: AssetDetailProps) {
     // one place for every path into generation.
     delete params.seed
     onReRun?.({ ...baseRequest, params })
+  }
+
+  const handleContinue = async () => {
+    if (!onContinue) return
+    setContinuing(true)
+    try {
+      await onContinue(asset)
+    } finally {
+      setContinuing(false)
+    }
   }
 
   return (
@@ -172,6 +190,22 @@ export function AssetDetail({ asset, onReRun, onDelete }: AssetDetailProps) {
       </dl>
 
       <div className="flex flex-wrap gap-2">
+        {onContinue && asset.media_type === 'video' && (
+          <Button
+            size="sm"
+            onClick={() => void handleContinue()}
+            disabled={continuing}
+          >
+            {continuing ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Forward className="mr-1 h-3.5 w-3.5" />
+            )}
+            {t('media:asset.continue', {
+              defaultValue: 'Continue this video',
+            })}
+          </Button>
+        )}
         <Button size="sm" onClick={() => void handleSaveAs()}>
           {t('media:asset.saveAs', { defaultValue: 'Save as…' })}
         </Button>

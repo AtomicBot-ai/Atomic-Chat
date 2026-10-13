@@ -29,6 +29,7 @@ const ALL = '__all__'
 
 type MediaLibraryProps = {
   onReRun?: (request: MediaReRunRequest) => void
+  onContinue?: (asset: MediaAsset) => Promise<void> | void
 }
 
 /** The thumbnail if one was made, else the asset itself. */
@@ -99,7 +100,7 @@ function Tile({
   )
 }
 
-export function MediaLibrary({ onReRun }: MediaLibraryProps) {
+export function MediaLibrary({ onReRun, onContinue }: MediaLibraryProps) {
   const { t } = useTranslation()
   const assets = useMediaLibraryStore((state) => state.assets)
   const loaded = useMediaLibraryStore((state) => state.loaded)
@@ -228,6 +229,7 @@ export function MediaLibrary({ onReRun }: MediaLibraryProps) {
           <AssetDetail
             asset={selected}
             onReRun={onReRun}
+            onContinue={onContinue}
             onDelete={(assetId) => {
               setSelectedId(null)
               void remove(assetId)

@@ -43,6 +43,7 @@ import type {
   MediaProviderHealth,
   NormalizedMediaRequest,
 } from '../contract'
+import { sdStepsSpec } from './sharedParams'
 
 export const BUILTIN_ENGINE_PROVIDER_ID = 'builtin-engine'
 
@@ -308,7 +309,16 @@ function resolutionSpec(model: EngineModelStatus): MediaParamSpec {
   }
 }
 
-function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamSpec[] {
+/** The engine names a model-backed upscaler by its `.pth` stem. */
+function upscalerEngineName(fileName: string): string {
+  return fileName.replace(/\.pth$/i, '')
+}
+
+function paramsFor(
+  model: EngineModelStatus,
+  task: EngineModelTask,
+  upscalers: EngineUpscalerStatus[] = []
+): MediaParamSpec[] {
   const specs: MediaParamSpec[] = [
     { id: 'prompt', type: 'text', group: 'core', label: 'Prompt', required: true },
     { id: 'negative_prompt', type: 'text', group: 'core', label: 'Negative prompt' },
@@ -331,15 +341,7 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
           help: 'Optional: a picture to change so it matches the prompt.',
         },
     resolutionSpec(model),
-    {
-      id: 'steps',
-      type: 'int',
-      group: 'sampling',
-      label: 'Steps',
-      min: 1,
-      max: 150,
-      default: model.defaults.steps,
-    },
+    sdStepsSpec(model.defaults.steps),
     {
       id: 'guidance_scale',
       type: 'float',
@@ -390,6 +392,15 @@ function paramsFor(model: EngineModelStatus, task: EngineModelTask): MediaParamS
           { value: 'Latent', label: 'Latent (detail)' },
           { value: 'Lanczos', label: 'Lanczos (sharp)' },
           { value: 'Nearest', label: 'Nearest (fast)' },
+          // Model-backed upscalers (Real-ESRGAN, 4×-UltraSharp) from the Rust
+          // catalog. The engine names each by its `.pth` stem, so the value
+          // below is what `hires.upscaler` must send.
+          ...upscalers.map((upscaler) => ({
+            value: upscalerEngineName(upscaler.file_name),
+            label: upscaler.installed
+              ? `${upscaler.label} (HD quality)`
+              : `${upscaler.label} (HD quality · downloads on first use)`,
+          })),
         ],
         default: 'Latent',
       },
@@ -471,7 +482,8 @@ function memoryFor(model: EngineModelStatus, sizeBytes: number): number {
  */
 function modelDescriptors(
   model: EngineModelStatus,
-  providerId: string
+  providerId: string,
+  upscalers: EngineUpscalerStatus[] = []
 ): MediaModelDescriptor[] {
   const tasks = model.tasks.filter(
     (task) => task === MEDIA_TASK.TEXT_TO_IMAGE || task === MEDIA_TASK.TEXT_TO_VIDEO
@@ -482,7 +494,7 @@ function modelDescriptors(
     local_id: localId,
     family: model.family,
     tasks,
-    params: Object.fromEntries(tasks.map((task) => [task, paramsFor(model, task)])),
+    params: Object.fromEntries(tasks.map((task) => [task, paramsFor(model, task, upscalers)])),
     license: { id: model.license, url: model.license_url },
     outputs: Object.fromEntries(
       tasks.map((task) => [
@@ -689,6 +701,42 @@ export function createBuiltinEngineAdapter(
     }
   }
 
+  // The engine's built-in hires upscalers need no download. A model-backed one
+  // is named by its `.pth` stem and must live in `media/upscalers` first.
+  const BUILTIN_UPSCALERS = new Set(['None', 'Latent', 'Lanczos', 'Nearest'])
+
+  /**
+   * Downloads a model-backed upscaler before the engine starts, so choosing it
+   * on first use "just works". The engine scans `media/upscalers` once at
+   * startup, so this must finish before `media_engine_start`.
+   */
+  async function ensureUpscaler(hiresUpscaler: unknown, signal?: AbortSignal): Promise<void> {
+    if (typeof hiresUpscaler !== 'string' || BUILTIN_UPSCALERS.has(hiresUpscaler)) return
+    const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
+    const match = status.upscalers.find(
+      (upscaler) => upscalerEngineName(upscaler.file_name) === hiresUpscaler
+    )
+    if (!match || match.installed) return
+    // Same event-name rules as model downloads: letters, digits, `-` and `_`.
+    const taskId = `media-upscaler-${match.id.replace(/[^A-Za-z0-9_-]/g, '_')}`
+    const unlisten = await transport.listen<{ transferred: number; total: number }>(
+      `download-${taskId}`,
+      (progress) => {
+        latestProgress = { current: progress.transferred, total: progress.total }
+      }
+    )
+    const onAbort = () => {
+      void transport.invoke('cancel_download_task', { taskId })
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    try {
+      await transport.invoke('media_upscaler_install', { upscalerId: match.id, taskId }, signal)
+    } finally {
+      signal?.removeEventListener('abort', onAbort)
+      unlisten()
+    }
+  }
+
   async function poll(handle: MediaJobHandle, signal?: AbortSignal): Promise<MediaJobSnapshot> {
     ensureProgressListener()
     const providerJobId = handle.provider_job_id
@@ -752,7 +800,9 @@ export function createBuiltinEngineAdapter(
 
     async capabilities(signal?: AbortSignal): Promise<MediaCapabilities> {
       const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
-      const models = status.models.flatMap((model) => modelDescriptors(model, providerId))
+      const models = status.models.flatMap((model) =>
+        modelDescriptors(model, providerId, status.upscalers)
+      )
       const taskIds = [...new Set(models.flatMap((model) => model.tasks))]
       return {
         contract_version: MEDIA_CONTRACT_VERSION,
@@ -788,6 +838,13 @@ export function createBuiltinEngineAdapter(
       latestProgress = null
       ensureProgressListener()
       const localId = localIdOf(req.model_id, providerId)
+      // A model-backed upscaler must be on disk before the engine starts (it
+      // scans `media/upscalers` once), so install it first on demand.
+      if (req.task !== MEDIA_TASK.TEXT_TO_VIDEO && req.params.hires === true) {
+        await ensureUpscaler(req.params.hires_upscaler, signal)
+        // The upscaler's download bar is not this job's generation bar.
+        latestProgress = null
+      }
       // Loads the model the first time, which can take a while; a later job for
       // the same model returns straight away.
       const started = await transport.invoke<StartedEngine>(

@@ -81,6 +81,7 @@ import {
   snapshotFor,
   type MediaHttpAdapterOptions,
 } from './http'
+import { NEGATIVE_PROMPT, PROMPT, sdStepsSpec } from './sharedParams'
 
 export class A1111Error extends MediaHttpError {
   constructor(
@@ -152,22 +153,8 @@ const RESOLUTIONS: Array<[number, number]> = [
 
 function generationParams(samplers: string[]): MediaParamSpec[] {
   const specs: MediaParamSpec[] = [
-    {
-      id: 'prompt',
-      type: 'text',
-      label: 'Prompt',
-      group: 'core',
-      order: 1,
-      required: true,
-      widget: 'textarea',
-    },
-    {
-      id: 'negative_prompt',
-      type: 'text',
-      label: 'Negative prompt',
-      group: 'core',
-      order: 2,
-    },
+    PROMPT,
+    NEGATIVE_PROMPT,
     {
       id: 'resolution',
       type: 'resolution',
@@ -194,14 +181,8 @@ function generationParams(samplers: string[]): MediaParamSpec[] {
       default: 1,
     },
     {
-      id: 'steps',
-      type: 'int',
-      label: 'Steps',
-      group: 'sampling',
+      ...sdStepsSpec(20),
       order: 1,
-      min: 1,
-      max: 150,
-      default: 20,
     },
     {
       id: 'guidance_scale',

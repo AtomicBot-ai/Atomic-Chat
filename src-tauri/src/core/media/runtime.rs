@@ -356,11 +356,44 @@ pub fn unpack_archive(archive: &Path, into: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Unpack every downloaded archive of `plan`, then remove the archives.
+/// The SHA-256 of a file on disk, as lowercase hex. Used to re-verify a
+/// downloaded archive against its pinned checksum before it is unpacked, so a
+/// file corrupted or tampered with after download is never trusted.
+fn file_sha256(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let file = fs::File::open(path)
+        .map_err(|error| format!("Could not open {}: {error}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Unpack every downloaded archive of `plan`, then remove the archives. Each
+/// archive is re-checked against its pinned SHA-256 first: the download manager
+/// verifies on arrival, this closes the window between download and unpack.
 pub fn finish_engine_install(data_dir: &Path, plan: &EngineInstallPlan) -> Result<(), String> {
     let install_dir = under(data_dir, &plan.install_dir);
     for download in &plan.downloads {
         let archive = under(data_dir, &download.save_path);
+        let actual = file_sha256(&archive)?;
+        if actual != download.sha256 {
+            return Err(format!(
+                "The downloaded engine archive {} failed its checksum check; \
+                 re-download it to continue.",
+                archive.display()
+            ));
+        }
         unpack_archive(&archive, &install_dir)?;
     }
     if !under(data_dir, &plan.executable).is_file() {
@@ -495,6 +528,14 @@ pub async fn media_engine_start<R: Runtime>(
     engine: State<'_, MediaEngineState>,
     model_id: String,
 ) -> Result<StartedEngine, String> {
+    // Validate everything that can fail before touching the running engine, so
+    // a bad model id or a missing download never takes down a working one.
+    let data_dir = get_jan_data_folder_path(app.clone());
+    let variant = this_computers_variant()?;
+    let port = pick_free_port()?;
+    let (program, args) = start_command(&data_dir, variant, &model_id, port)?;
+    let base_url = server_base_url(port);
+
     let mut running = engine.running.lock().await;
     if let Some(current) = running.as_mut() {
         if current.model_id == model_id && matches!(current.child.try_wait(), Ok(None)) {
@@ -509,11 +550,6 @@ pub async fn media_engine_start<R: Runtime>(
     }
 
     let progress_app = app.clone();
-    let data_dir = get_jan_data_folder_path(app);
-    let variant = this_computers_variant()?;
-    let port = pick_free_port()?;
-    let (program, args) = start_command(&data_dir, variant, &model_id, port)?;
-    let base_url = server_base_url(port);
     log::info!("Starting the media engine for {model_id} on {base_url}");
     let child = start_server(
         &program,
@@ -707,20 +743,33 @@ mod tests {
         zip.finish().unwrap();
     }
 
+    /// Puts a zip in place for each download of `plan` and points the plan's
+    /// pinned checksum at the zip that was actually written, so the checksum
+    /// check in `finish_engine_install` passes for a test-made archive.
+    fn write_archives_matching_their_pins(
+        tmp: &Path,
+        plan: &mut EngineInstallPlan,
+        program_name: &str,
+    ) {
+        for download in &mut plan.downloads {
+            let archive = under(tmp, &download.save_path);
+            fs::create_dir_all(archive.parent().unwrap()).unwrap();
+            zip_with(
+                &archive,
+                &[(program_name, &b"engine"[..]), ("lib/helper.dll", &b"dll"[..])],
+            );
+            let hash: &'static str = Box::leak(file_sha256(&archive).unwrap().into_boxed_str());
+            download.sha256 = hash;
+        }
+    }
+
     #[test]
     fn the_engine_archive_is_unpacked_and_then_removed() {
         let tmp = tempdir().unwrap();
         let variant = EngineVariant::WindowsCpu;
-        let plan = engine_install_plan(tmp.path(), variant);
+        let mut plan = engine_install_plan(tmp.path(), variant);
         let program_name = plan.executable.rsplit('/').next().unwrap().to_string();
-        for download in &plan.downloads {
-            let archive = under(tmp.path(), &download.save_path);
-            fs::create_dir_all(archive.parent().unwrap()).unwrap();
-            zip_with(
-                &archive,
-                &[(&program_name, b"engine"), ("lib/helper.dll", b"dll")],
-            );
-        }
+        write_archives_matching_their_pins(tmp.path(), &mut plan, &program_name);
 
         finish_engine_install(tmp.path(), &plan).unwrap();
 
@@ -739,13 +788,35 @@ mod tests {
     #[test]
     fn an_archive_without_the_engine_program_is_an_error() {
         let tmp = tempdir().unwrap();
-        let plan = engine_install_plan(tmp.path(), EngineVariant::WindowsCpu);
+        let mut plan = engine_install_plan(tmp.path(), EngineVariant::WindowsCpu);
+        for download in &mut plan.downloads {
+            let archive = under(tmp.path(), &download.save_path);
+            fs::create_dir_all(archive.parent().unwrap()).unwrap();
+            zip_with(&archive, &[("readme.txt", &b"no engine here"[..])]);
+            let hash: &'static str = Box::leak(file_sha256(&archive).unwrap().into_boxed_str());
+            download.sha256 = hash;
+        }
+        assert!(finish_engine_install(tmp.path(), &plan).is_err());
+    }
+
+    #[test]
+    fn an_archive_whose_checksum_does_not_match_its_pin_is_refused() {
+        let tmp = tempdir().unwrap();
+        let variant = EngineVariant::WindowsCpu;
+        let plan = engine_install_plan(tmp.path(), variant);
+        let program_name = plan.executable.rsplit('/').next().unwrap().to_string();
         for download in &plan.downloads {
             let archive = under(tmp.path(), &download.save_path);
             fs::create_dir_all(archive.parent().unwrap()).unwrap();
-            zip_with(&archive, &[("readme.txt", b"no engine here")]);
+            // The archive is written but its pinned checksum is left as the
+            // real engine's, so the re-check must refuse it before unpacking.
+            zip_with(&archive, &[(&program_name, &b"tampered"[..])]);
         }
-        assert!(finish_engine_install(tmp.path(), &plan).is_err());
+
+        let error = finish_engine_install(tmp.path(), &plan).unwrap_err();
+
+        assert!(error.contains("checksum"), "{error}");
+        assert!(!under(tmp.path(), &plan.executable).exists());
     }
 
     #[test]
