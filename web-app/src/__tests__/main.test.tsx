@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 
 // Mock ReactDOM
 const mockRender = vi.fn()
@@ -26,6 +26,15 @@ vi.mock('../routeTree.gen', () => ({
 // Mock CSS imports
 vi.mock('../index.css', () => ({}))
 vi.mock('../i18n', () => ({}))
+
+// Importing main pulls in the whole app, whose modules log asynchronously.
+// A log still in flight when the worker shuts down is reported by vitest 5
+// as an unhandled error, so keep console output local to this file.
+beforeAll(() => {
+  for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+    vi.spyOn(console, method).mockImplementation(() => undefined)
+  }
+})
 
 describe('main.tsx', () => {
   let mockGetElementById: any
