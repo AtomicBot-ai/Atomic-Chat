@@ -111,6 +111,29 @@ describe('privacy gate', () => {
     )
   })
 
+  it('redacts nested data and type values while preserving media payloads', () => {
+    const input = {
+      data: { type: 'ops@example.com', data: ['ops@example.com'] },
+      media: { mediaType: 'application/pdf', data: 'ops@example.com' },
+      image: 'data:image/png;base64,AAAA',
+    }
+    const { messages } = applyPrivacyGate({
+      messages: [input],
+      requestId: 'keys',
+    })
+
+    expect(messages[0].data).toEqual({
+      type: '[RDM_keys_EMAIL_1]',
+      data: ['[RDM_keys_EMAIL_1]'],
+    })
+    expect(messages[0].media).toEqual(input.media)
+    expect(messages[0].image).toBe(input.image)
+    expect(input.data).toEqual({
+      type: 'ops@example.com',
+      data: ['ops@example.com'],
+    })
+  })
+
   it('restores a placeholder split across streamed deltas', () => {
     const state = createPrivacyState([], 'abc123')
     const token = redactText('me@example.com', state)
@@ -121,6 +144,66 @@ describe('privacy gate', () => {
         .map((piece) => rehydrator.push(piece))
         .join('') + rehydrator.flush()
     expect(shown).toBe('Write to me@example.com today.')
+  })
+
+  it('preserves SDK discriminators when custom terms match their names', () => {
+    const { messages } = applyPrivacyGate({
+      messages: [{ content: [
+        { type: 'text', text: 'text at ops@example.com' },
+        { type: 'tool-result', output: { type: 'json', value: { data: 'json' } } },
+      ] }],
+      customTerms: ['text', 'json'],
+      requestId: 'parts',
+    })
+    expect(messages[0].content[0].type).toBe('text')
+    expect(messages[0].content[0].text).not.toContain('ops@example.com')
+    expect(messages[0].content[0].text).not.toContain('text')
+    expect(messages[0].content[1].output?.type).toBe('json')
+    expect(messages[0].content[1].output?.value.data).not.toBe('json')
+  })
+
+  it.each(
+    Array.from({ length: '[RDM_split_EMAIL_1]'.length - 1 }, (_, i) => i + 1)
+  )('restores a UI placeholder split at character %i', async (split) => {
+    const state = createPrivacyState([], 'split')
+    const token = redactText('ops@example.com', state)
+    const out = await collect(
+      [
+        { type: 'text-delta', id: 'a', delta: `Hello ${token.slice(0, split)}` },
+        { type: 'text-delta', id: 'a', delta: token.slice(split) },
+        { type: 'text-end', id: 'a' },
+      ],
+      state
+    )
+
+    expect(out).toEqual([
+      { type: 'text-delta', id: 'a', delta: 'Hello ' },
+      { type: 'text-delta', id: 'a', delta: 'ops@example.com' },
+      { type: 'text-end', id: 'a' },
+    ])
+  })
+
+  it('isolates interleaved UI parts and flushes incomplete tails at their end', async () => {
+    const state = createPrivacyState([], 'split')
+    const token = redactText('ops@example.com', state)
+
+    expect(
+      await collect(
+        [
+          { type: 'text-delta', id: 'a', delta: '[RDM_' },
+          { type: 'text-delta', id: 'b', delta: token },
+          { type: 'text-end', id: 'a' },
+          { type: 'text-delta', id: 'c', delta: 'tail [' },
+        ],
+        state
+      )
+    ).toEqual([
+      { type: 'text-delta', id: 'b', delta: 'ops@example.com' },
+      { type: 'text-delta', id: 'a', delta: '[RDM_' },
+      { type: 'text-end', id: 'a' },
+      { type: 'text-delta', id: 'c', delta: 'tail ' },
+      { type: 'text-delta', id: 'c', delta: '[' },
+    ])
   })
 
   it('does not hold back brackets that cannot become a placeholder', () => {

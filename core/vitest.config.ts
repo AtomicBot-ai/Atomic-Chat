@@ -9,7 +9,7 @@ export default defineConfig({
     coverage: {
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['node_modules/', 'dist/', 'src/**/*.test.ts'],
+      exclude: ['node_modules/', 'dist/', 'src/**/*.test.ts', 'src/**/*.d.ts'],
     },
     include: ['src/**/*.test.ts'],
     exclude: ['node_modules/', 'dist/', 'coverage'],

@@ -73,6 +73,20 @@ describe('getModelToStart', () => {
     expect(result?.model).toBe('model-b')
   })
 
+  it('uses the active selection when the saved provider is gone and no local fallback exists', () => {
+    localStorage.setItem(
+      localStorageKey.lastUsedModel,
+      JSON.stringify({ provider: 'removed-server', model: 'old-model' })
+    )
+    const selected = makeProvider('custom-provider', ['selected-model'])
+
+    expect(getModelToStart({
+      selectedModel: { id: 'selected-model' } as never,
+      selectedProvider: 'custom-provider',
+      getProviderByName: lookup([selected]),
+    })).toEqual({ model: 'selected-model', provider: selected })
+  })
+
   it('still honors lastUsedModel on an active provider', () => {
     localStorage.setItem(
       localStorageKey.lastUsedModel,

@@ -500,10 +500,12 @@ test-hardening-contracts:
 		tests/scrollbar-arrows.test.mjs \
 		tests/radium-logo.test.mjs \
 		tests/upstream-backend-resolver.test.mjs \
+		tests/rocm-html-cleanup.test.mjs \
 		tests/panel-contract.test.mjs \
 		tests/panel-sandbox.test.mjs \
 		tests/capability-remote-grants.test.mjs \
 		tests/csp-connect-src.test.mjs
+	python3 -m unittest discover -s tests -p test_concurrent_demo_security.py
 
 # Every build gets a new version number (tracker D34). VERSION=x.y.z sets one.
 bump-version:

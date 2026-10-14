@@ -43,7 +43,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 #@v5
         with:
-          node-version: '20'
+          node-version: '24'
           # v5 would otherwise cache Yarn from package.json's packageManager
           # before corepack has activated Yarn 4 below; the Cache Yarn step
           # already does this.

@@ -12,15 +12,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
+      // Coverage is global for projects. Keep unimported production files in
+      // the report, and match paths relative to this repository in Vitest 5.
+      include: ['core/src/**/*.{ts,tsx}', 'web-app/src/**/*.{ts,tsx}'],
       exclude: [
-        'docs',
-        '**/*/dist',
-        'node_modules',
-        'src/**/*.test.ts',
-        'src/**/*.test.tsx',
-        'src/test/**/*',
-        'src-tauri',
-        'extensions',
+        '**/*.d.ts',
+        '**/src/**/*.test.ts',
+        '**/src/**/*.test.tsx',
+        '**/src/test/**/*',
       ],
     },
   },

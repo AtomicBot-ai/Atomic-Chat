@@ -22,6 +22,7 @@ export default defineConfig({
         'node_modules/',
         'dist/',
         'coverage/',
+        'src/**/*.d.ts',
         'src/**/*.test.ts',
         'src/**/*.test.tsx',
         'src/test/**/*',

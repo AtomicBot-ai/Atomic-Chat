@@ -7,6 +7,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { seedServiceHub } from '@/test/service-hub'
+import { writePrivacyGateSettings } from '../privacy-gate'
 import {
   CustomChatTransport,
   resolveTokenSpeed,
@@ -961,4 +962,71 @@ describe('CustomChatTransport grammar-safe tool schemas', () => {
 
     expect(await sendAndCaptureSchema()).toEqual(boundedTool.inputSchema)
   })
+})
+
+describe('privacy provider boundary', () => {
+  it.each([
+    ['openai', false],
+    ['chatgpt', false],
+    ['custom-proxy', false],
+    ['mlx', true],
+    ['llamacpp-upstream', true],
+  ] as const)(
+    'uses provider identity for %s on loopback',
+    async (provider, local) => {
+      writePrivacyGateSettings({
+        enabled: true,
+        customTerms: [],
+        rehydrateResponses: true,
+      })
+      try {
+        useModelProvider.setState((state) => ({
+          selectedProvider: provider,
+          providers: [
+            {
+              ...state.providers[0],
+              provider,
+              base_url: 'http://127.0.0.1:1337/v1',
+            },
+          ],
+        }))
+        const model = fakeStreamingModel([
+          { type: 'stream-start', warnings: [] },
+          {
+            type: 'finish',
+            finishReason: 'stop',
+            usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
+          },
+        ])
+        vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+        const transport = new CustomChatTransport()
+        await readChunks(
+          (await transport.sendMessages({
+            chatId: 'privacy',
+            trigger: 'submit-message',
+            messageId: undefined,
+            abortSignal: undefined,
+            messages: [
+              {
+                ...userMessage,
+                parts: [{ type: 'text', text: 'ops@example.com' }],
+              },
+            ],
+          })) as ReadableStream<Record<string, unknown>>
+        )
+        const prompt = JSON.stringify(
+          vi.mocked((model as Exclude<LanguageModel, string>).doStream)
+            .mock.calls[0][0]
+        )
+        if (local) {
+          expect(prompt).toContain('ops@example.com')
+        } else {
+          expect(prompt).not.toContain('ops@example.com')
+          expect(prompt).toContain('[RDM_')
+        }
+      } finally {
+        localStorage.removeItem('privacy-gate')
+      }
+    }
+  )
 })

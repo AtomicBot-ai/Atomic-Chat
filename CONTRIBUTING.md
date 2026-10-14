@@ -136,7 +136,7 @@ Atomic-Chat/
 ### The Scenic Route (Build from Source)
 
 **Prerequisites:**
-- Node.js ≥ 20.0.0
+- Node.js ≥ 22.12.0 (Node.js 24 is used in CI; required by Vitest 5)
 - Yarn ≥ 4.5.3
 - Make ≥ 3.81
 - Rust (for Tauri)

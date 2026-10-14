@@ -50,18 +50,15 @@ impl GpuInfo {
                     continue;
                 }
 
-                let read_mem = |path: &Path| -> u64 {
-                    fs::read_to_string(path)
-                        .map(|content| content.trim().parse::<u64>().unwrap_or(0))
-                        .unwrap_or(0)
-                        / 1024
-                        / 1024 // Convert bytes to MiB
+                let read_mem = |path: &Path| -> Result<u64, Box<dyn std::error::Error>> {
+                    let bytes = fs::read_to_string(path)?.trim().parse::<u64>()?;
+                    Ok(bytes / 1024 / 1024) // Convert bytes to MiB
                 };
                 return Ok(GpuUsage {
                     uuid: self.uuid.clone(),
                     available: true,
-                    total_memory: read_mem(&device_path.join("mem_info_vram_total")),
-                    used_memory: read_mem(&device_path.join("mem_info_vram_used")),
+                    total_memory: read_mem(&device_path.join("mem_info_vram_total"))?,
+                    used_memory: read_mem(&device_path.join("mem_info_vram_used"))?,
                     utilization_percent: None,
                     temperature_c: None,
                     power_w: None,

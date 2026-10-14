@@ -112,6 +112,53 @@ describe('staff-picks-registry loader', () => {
     expect(isCacheFresh(cached)).toBe(true)
   })
 
+  it('still serves remote picks when cache writes exceed quota', async () => {
+    mockFetchSuccess(buildManifest())
+    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded')
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const result = await getStaffPicksOrFallback({ url: REMOTE_URL })
+    expect(result.source).toBe('remote')
+    expect(result.picks).toHaveLength(2)
+    expect(getCachedManifest()).toBeNull()
+    expect(warn).toHaveBeenCalledWith(
+      '[staff-picks-registry] Failed to write cache:', expect.any(Error)
+    )
+  })
+
+  it('tolerates storage denial for cache reads and clearing', () => {
+    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('storage disabled')
+    })
+    expect(getCachedManifest()).toBeNull()
+    expect(() => clearStaffPicksCache()).not.toThrow()
+  })
+
+  it('ignores corrupt cache timestamps and payloads', () => {
+    const key = 'atomic_staff_picks_cache_v1'
+    const timestamp = 'atomic_staff_picks_cache_ts_v1'
+    window.localStorage.setItem(key, JSON.stringify(buildManifest()))
+    window.localStorage.setItem(timestamp, 'invalid')
+    expect(getCachedManifest()).toBeNull()
+    window.localStorage.setItem(timestamp, String(Date.now()))
+    window.localStorage.setItem(key, JSON.stringify({ picks: [] }))
+    expect(getCachedManifest()).toBeNull()
+    window.localStorage.setItem(key, '{broken')
+    expect(getCachedManifest()).toBeNull()
+  })
+
+  it('reports a failed cache clear without throwing', () => {
+    vi.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {
+      throw new Error('storage disabled')
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    expect(() => clearStaffPicksCache()).not.toThrow()
+    expect(warn).toHaveBeenCalledWith(
+      '[staff-picks-registry] Failed to clear cache:', expect.any(Error)
+    )
+  })
+
   it('serves cached data on subsequent calls within TTL', async () => {
     const fetchMock = mockFetchSuccess(buildManifest())
 

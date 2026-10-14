@@ -213,4 +213,24 @@ describe('Privacy Settings Route', () => {
     fireEvent.click(analyticsSwitch)
     expect(analyticsSwitch).toBeInTheDocument()
   })
+
+  it('keeps draft whitespace while persisting normalized custom terms', () => {
+    const Component = PrivacyRoute.component as React.ComponentType
+    render(<Component />)
+    const terms = screen.getByPlaceholderText(/Project Falcon/)
+
+    fireEvent.change(terms, { target: { value: '  Falcon  \n\n' } })
+    expect(terms).toHaveValue('  Falcon  \n\n')
+    expect(JSON.parse(localStorage.getItem('privacy-gate')!).customTerms).toEqual(
+      ['Falcon']
+    )
+
+    fireEvent.change(terms, {
+      target: { value: '  Falcon  \n\n Northstar ' },
+    })
+    expect(terms).toHaveValue('  Falcon  \n\n Northstar ')
+    expect(JSON.parse(localStorage.getItem('privacy-gate')!).customTerms).toEqual(
+      ['Falcon', 'Northstar']
+    )
+  })
 })

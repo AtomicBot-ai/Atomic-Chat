@@ -167,6 +167,16 @@ describe('hub filter persistence', () => {
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
+
+  it('returns defaults and tolerates writes outside a browser', () => {
+    vi.stubGlobal('window', undefined)
+    try {
+      expect(readHubFilters()).toEqual(DEFAULT_HUB_FILTERS)
+      expect(() => writeHubFilters(DEFAULT_HUB_FILTERS)).not.toThrow()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
 
 describe('filterByFormats', () => {
@@ -294,6 +304,12 @@ describe('sortModels', () => {
     ])
   })
 
+  it('preserves the order of entries with equally unknown download sizes', () => {
+    const unknown = [gguf('org/first', 'unknown'), gguf('org/second', 'unknown')]
+    expect(sortModels(unknown, 'size-asc')).toEqual(unknown)
+    expect(sortModels(unknown, 'size-desc')).toEqual(unknown)
+  })
+
   it('sorts by downloads descending', () => {
     expect(sortModels(models, 'downloads').map((m) => m.model_name)).toEqual([
       'a/top',
@@ -320,7 +336,7 @@ describe('sortModels', () => {
     ).toEqual(['a/created-only', 'a/fresh', 'a/mid', 'a/top'])
   })
 
-  it('sinks entries with a missing or unparseable date to the bottom', () => {
+  it('sinks entries with a missing or unparsable date to the bottom', () => {
     // Date.parse returns NaN for garbage, and a NaN comparator result would
     // leave the whole order undefined rather than just those two entries.
     const withBadDates = [

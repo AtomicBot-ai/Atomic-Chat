@@ -199,6 +199,19 @@ export function redactText(text: string, state: PrivacyState): string {
  * Copy nested message values while redacting strings with the shared request state.
  * Preserve media payloads and structural fields such as tool names and call IDs.
  */
+const CONTENT_PART_FIELDS = new Map<string, string[]>([
+  ['text', ['text', 'value']],
+  ['image', ['image']],
+  ['file', ['data']],
+  ['reasoning', ['text']],
+  ['tool-call', ['toolCallId']],
+  ['tool-result', ['output']],
+  ['json', ['value']],
+  ['error-text', ['value']],
+  ['error-json', ['value']],
+  ['content', ['value']],
+])
+
 function redactValue<T>(value: T, state: PrivacyState): T {
   if (typeof value === 'string') {
     return redactText(value, state) as T
@@ -211,11 +224,16 @@ function redactValue<T>(value: T, state: PrivacyState): T {
     for (const [key, entry] of Object.entries(
       value as Record<string, unknown>
     )) {
+      // Preserve actual SDK discriminators, including when a custom term
+      // matches "text" or "json". Arbitrary user fields named type still redact.
+      const partFields = key === 'type' && typeof entry === 'string'
+        ? CONTENT_PART_FIELDS.get(entry)
+        : undefined
       if (
-        key === 'data' ||
+        partFields?.some((field) => field in value) ||
+        (key === 'data' && 'mediaType' in value) ||
         key === 'image' ||
         key === 'mediaType' ||
-        key === 'type' ||
         key === 'toolCallId' ||
         key === 'toolName'
       ) {

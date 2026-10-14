@@ -33,6 +33,21 @@ vi.mock('@/hooks/useFavoriteModel', () => ({
   useFavoriteModel: vi.fn(() => ({ favoriteModels: [] })),
 }))
 
+// These are catalog providers, not user-added endpoints. State the registry
+// boundary explicitly so its background fetch cannot change that distinction.
+vi.mock('@/stores/provider-registry-store', () => {
+  const providers = ['chatgpt', 'openai', 'anthropic', 'ollama'].map(
+    (provider) => ({ provider })
+  )
+  return {
+    isKnownProvider: (name: string) =>
+      providers.some((provider) => provider.provider === name),
+    useProviderRegistryStore: {
+      getState: () => ({ hasInitialized: true, providers }),
+    },
+  }
+})
+
 vi.mock('@/lib/platform/const', () => ({
   PlatformFeatures: {
     WEB_AUTO_MODEL_SELECTION: false,

@@ -27,6 +27,9 @@ function Privacy() {
   const [privacyGate, setPrivacyGate] = useState<PrivacyGateSettings>(() =>
     readPrivacyGateSettings()
   )
+  const [customTermsDraft, setCustomTermsDraft] = useState(() =>
+    privacyGate.customTerms.join('\n')
+  )
   const [previewInput, setPreviewInput] = useState(
     'Email chef@example.com from 10.1.2.3 and keep Project Falcon private.'
   )
@@ -97,9 +100,10 @@ function Privacy() {
                     </p>
                     <textarea
                       className="w-full min-h-24 rounded-md border border-border bg-background px-3 py-2 text-sm"
-                      value={privacyGate.customTerms.join('\n')}
+                      value={customTermsDraft}
                       placeholder={'Project Falcon\nClient Northstar'}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setCustomTermsDraft(event.target.value)
                         updatePrivacyGate({
                           ...privacyGate,
                           customTerms: event.target.value
@@ -107,7 +111,7 @@ function Privacy() {
                             .map((term) => term.trim())
                             .filter(Boolean),
                         })
-                      }
+                      }}
                     />
                   </div>
                 }

@@ -12,10 +12,10 @@
     "lines": 79.29
   },
   "web-app/src/containers/SetupBackendStep.tsx": {
-    "statements": 3.21,
-    "branches": 100,
-    "functions": 0,
-    "lines": 3.21
+    "statements": 97.27,
+    "branches": 81.94,
+    "functions": 100,
+    "lines": 99.01
   },
   "web-app/src/utils/getModelToStart.ts": {
     "statements": 10.2,

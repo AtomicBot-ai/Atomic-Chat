@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
+import { createJSONStorage } from 'zustand/middleware'
+import { DEFAULT_CTX_LEN } from '@janhq/core'
 import { useModelProvider } from '../useModelProvider'
 import type { PathService } from '@/services/path/types'
 import { seedServiceHub } from '@/test/service-hub'
@@ -653,5 +655,220 @@ describe('useModelProvider migrations', () => {
       ollama: false,
       'foundation-models': false,
     })
+  })
+})
+
+describe('useModelProvider persisted profile upgrades', () => {
+  const persistApi = useModelProvider.persist
+  const originalStorage = persistApi.getOptions().storage
+
+  beforeEach(() => {
+    localStorageMock.getItem.mockReturnValue(null)
+    act(() => {
+      useModelProvider.setState({
+        providers: [],
+        selectedProvider: 'llamacpp-upstream',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+    localStorageMock.setItem.mockClear()
+    persistApi.setOptions({
+      storage: createJSONStorage(() => localStorageMock),
+    })
+  })
+
+  afterEach(() => {
+    persistApi.setOptions({ storage: originalStorage })
+    localStorageMock.getItem.mockReturnValue(null)
+  })
+
+  async function restoreProfile(state: unknown, version: number) {
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === 'jan-model-provider' ? JSON.stringify({ state, version }) : null
+    )
+    await act(async () => {
+      await persistApi.rehydrate()
+    })
+    return useModelProvider.getState()
+  }
+
+  it('upgrades a legacy local profile without losing templates or custom inference settings', async () => {
+    const customizedSettings = {
+      chatTemplate: '{{ messages }}',
+      override_tensor_buffer_t: { controller_props: { value: 'layers.*=CPU' } },
+      no_kv_offload: { controller_props: { value: true } },
+      batch_size: { controller_props: { value: 512 } },
+      cpu_moe: { controller_props: { value: true } },
+      n_cpu_moe: { controller_props: { value: 12 } },
+      auto_increase_ctx_len: { controller_props: { value: false } },
+      ctx_len: { controller_props: { value: 8192, placeholder: '8192' } },
+    }
+    const restored = await restoreProfile(
+      {
+        providers: [
+          {
+            provider: 'llamacpp',
+            active: true,
+            settings: [{ key: 'cont_batching', description: 'Old description' }],
+            models: [
+              { id: 'defaults.gguf', capabilities: ['completion'] },
+              {
+                id: 'custom.gguf',
+                capabilities: ['completion', 'proactive'],
+                settings: customizedSettings,
+              },
+              {
+                id: 'current.gguf',
+                settings: {
+                  chat_template: { controller_props: { value: 'my template' } },
+                  ctx_len: {
+                    controller_props: { value: 32768, placeholder: '32768' },
+                  },
+                },
+              },
+            ],
+          },
+          {
+            provider: 'mlx',
+            active: true,
+            settings: [],
+            models: [
+              {
+                id: 'mlx-model',
+                settings: {
+                  ctx_len: {
+                    controller_props: { value: '8192', placeholder: '8192' },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+        selectedProvider: 'llamacpp',
+        selectedModel: { id: 'custom.gguf' },
+        deletedModels: ['removed.gguf'],
+      },
+      1
+    )
+
+    const provider = restored.getProviderByName('llamacpp')!
+    const [defaults, customized, current] = provider.models
+    expect(defaults.settings).toMatchObject({
+      chat_template: { controller_props: { value: '' } },
+      override_tensor_buffer_t: { controller_props: { value: '' } },
+      no_kv_offload: { controller_props: { value: false } },
+      batch_size: { controller_props: { value: 2048 } },
+      cpu_moe: { controller_props: { value: false } },
+      n_cpu_moe: { controller_props: { value: '' } },
+      auto_increase_ctx_len: { controller_props: { value: true } },
+    })
+    const { chatTemplate, ...preservedSettings } = customizedSettings
+    expect(customized.settings).toEqual({
+      ...preservedSettings,
+      chat_template: chatTemplate,
+      ctx_len: {
+        controller_props: {
+          value: DEFAULT_CTX_LEN,
+          placeholder: String(DEFAULT_CTX_LEN),
+        },
+      },
+    })
+    expect(customized.settings).not.toHaveProperty('chatTemplate')
+    expect(customized.capabilities).toEqual(['completion'])
+    expect(current.settings).toMatchObject({
+      chat_template: { controller_props: { value: 'my template' } },
+      ctx_len: { controller_props: { value: 32768, placeholder: '32768' } },
+    })
+    expect(restored.getProviderByName('mlx')?.models[0].settings?.ctx_len).toEqual({
+      controller_props: {
+        value: DEFAULT_CTX_LEN,
+        placeholder: String(DEFAULT_CTX_LEN),
+      },
+    })
+    expect(provider.settings[0].description).toContain('concurrent requests')
+    expect(restored.selectedProvider).toBe('llamacpp')
+    expect(restored.selectedModel?.id).toBe('custom.gguf')
+    expect(restored.deletedModels).toEqual(['removed.gguf'])
+    const persisted = JSON.parse(localStorageMock.setItem.mock.lastCall![1])
+    expect(persisted.version).toBe(15)
+    expect(persisted.state.providers).toEqual(restored.providers)
+  })
+
+  it.each([
+    {
+      profile: 'legacy cloud defaults',
+      baseUrl: 'https://api.anthropic.com',
+      customHeaders: undefined,
+      expectedUrl: 'https://api.anthropic.com/v1',
+      expectedHeaders: [
+        { header: 'anthropic-version', value: '2023-06-01' },
+        { header: 'anthropic-dangerous-direct-browser-access', value: 'true' },
+      ],
+    },
+    {
+      profile: 'a custom cloud gateway',
+      baseUrl: 'https://gateway.example/v1',
+      customHeaders: [{ header: 'x-gateway-token', value: 'keep-me' }],
+      expectedUrl: 'https://gateway.example/v1',
+      expectedHeaders: [{ header: 'x-gateway-token', value: 'keep-me' }],
+    },
+  ])('restores $profile and removes the retired provider', async ({
+    baseUrl,
+    customHeaders,
+    expectedUrl,
+    expectedHeaders,
+  }) => {
+    const restored = await restoreProfile(
+      {
+        providers: [
+          {
+            provider: 'anthropic',
+            active: true,
+            base_url: baseUrl,
+            custom_header: customHeaders,
+            settings: [
+              {
+                key: 'base-url',
+                controller_props: {
+                  value: baseUrl,
+                  placeholder: baseUrl,
+                },
+              },
+            ],
+            models: [],
+          },
+          {
+            provider: 'cohere',
+            active: true,
+            base_url: 'https://api.cohere.ai/compatibility/v1',
+            settings: [
+              {
+                key: 'base-url',
+                controller_props: {
+                  value: 'https://api.cohere.ai/compatibility/v1',
+                  placeholder: 'https://api.cohere.ai/compatibility/v1',
+                },
+              },
+            ],
+            models: [],
+          },
+        ],
+        selectedProvider: 'anthropic',
+        selectedModel: null,
+        deletedModels: [],
+      },
+      3
+    )
+
+    const provider = restored.getProviderByName('anthropic')!
+    expect(provider.base_url).toBe(expectedUrl)
+    expect(provider.settings[0].controller_props).toMatchObject({
+      value: expectedUrl,
+      placeholder: expectedUrl,
+    })
+    expect(provider.custom_header).toEqual(expectedHeaders)
+    expect(restored.getProviderByName('cohere')).toBeUndefined()
+    expect(restored.providers).toHaveLength(1)
   })
 })

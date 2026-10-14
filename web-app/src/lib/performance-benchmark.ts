@@ -428,7 +428,7 @@ function skippedInference(reason: string): BenchmarkResult[] {
 
 /**
  * Sample a loaded local model repeatedly for latency and throughput.
- * Return skipped results for both metrics if model discovery or any sample fails.
+ * Keep successful samples; skip both metrics if discovery or every sample fails.
  */
 async function runLocalApiBenchmarks(
   target: LocalApiTarget,
@@ -439,13 +439,19 @@ async function runLocalApiBenchmarks(
 
     const ttft: number[] = []
     const throughput: number[] = []
+    let lastError: unknown
     for (let index = 0; index < iterations; index += 1) {
-      const sample = await runLocalApiSample(target, model)
-      ttft.push(sample.ttftMs)
-      if (sample.tokensPerSecond !== null) {
-        throughput.push(sample.tokensPerSecond)
+      try {
+        const sample = await runLocalApiSample(target, model)
+        ttft.push(sample.ttftMs)
+        if (sample.tokensPerSecond !== null) {
+          throughput.push(sample.tokensPerSecond)
+        }
+      } catch (error) {
+        lastError = error
       }
     }
+    if (ttft.length === 0) throw lastError
 
     return [
       makeResult('inference.ttft', 'Local API TTFT', 'ms', false, ttft),

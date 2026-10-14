@@ -175,4 +175,57 @@ describe('local API inference benchmark', () => {
     expect(decode).toMatchObject({ skipped: true })
     expect(decode?.reason).toMatch(/could not be reached/)
   })
+
+  it.each([
+    [false, true, false],
+    [true, false, true],
+    [true, true, true],
+  ])(
+    'retains successful samples with failures %j, %j, %j',
+    async (...failures) => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [{ id: 'local' }] }))
+      )
+      for (const fails of failures) {
+        if (fails) {
+          fetchMock.mockRejectedValueOnce(new Error('sample failed'))
+        } else {
+          fetchMock.mockResolvedValueOnce(
+            sseResponse([
+              {
+                choices: [{ delta: { content: 'hello' } }],
+                usage: { completion_tokens: 5 },
+              },
+            ])
+          )
+        }
+      }
+      vi.stubGlobal('fetch', fetchMock)
+
+      const run = await runPerformanceBenchmarks({
+        sampleHardware: async () => ({}),
+        localApi: {
+          baseUrl: BASE,
+          loadedLocalModels: async () => ['local'],
+        },
+      })
+      const results = run.results.filter((result) =>
+        result.id.startsWith('inference.')
+      )
+      const successes = failures.filter((failed) => !failed).length
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+      expect(results).toHaveLength(2)
+      for (const result of results) {
+        expect(result.samples).toBe(successes)
+        if (successes) {
+          expect(result.skipped).toBeFalsy()
+          expect(result.median).toBeTypeOf('number')
+        } else {
+          expect(result.skipped).toBe(true)
+          expect(result.median).toBeNull()
+          expect(result.reason).toContain('sample failed')
+        }
+      }
+    }
+  )
 })

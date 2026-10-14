@@ -472,7 +472,7 @@ def _write_session_api_key(session_dir: pathlib.Path, api_key: str) -> None:
     if not api_key:
         return
     key_path = session_dir / _API_KEY_FILENAME
-    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(api_key)
 
@@ -744,34 +744,34 @@ async def _run_multi_window(
         json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",
     )
-    _write_session_api_key(session_dir, settings.api_key)
-    console.print(f"[dim]→ session dir: {session_dir}[/dim]")
-
-    # Reserve the top strip of the screen for the aggregate dashboard window
-    # (full width, ~28% of the screen). The agent grid fills the rest below.
-    screen_w, screen_h = _get_main_display_size()
-    menu_bar = 30
-    side_margin = 16
-    dash_h = max(220, int(screen_h * 0.28))
-    dash_bounds = (
-        side_margin,
-        menu_bar,
-        screen_w - side_margin,
-        menu_bar + dash_h,
-    )
-    agents_top_offset = menu_bar + dash_h + side_margin
-
-    console.print("[dim]→ opening aggregate dashboard window...[/dim]")
-    _spawn_dashboard_window(session_dir, bounds=dash_bounds)
-
-    console.print(f"[dim]→ spawning {n} agent Terminal.app windows...[/dim]")
-    _spawn_terminal_windows(session_dir, n, top_offset=agents_top_offset)
-
-    console.print(f"[bold]Waiting for {n} agents to finish...[/bold]\n")
-    deadline = time.monotonic() + 30 * 60
     results: dict[str, str] = {}
-    done: set[int] = set()
     try:
+        _write_session_api_key(session_dir, settings.api_key)
+        console.print(f"[dim]→ session dir: {session_dir}[/dim]")
+
+        # Reserve the top strip of the screen for the aggregate dashboard window
+        # (full width, ~28% of the screen). The agent grid fills the rest below.
+        screen_w, screen_h = _get_main_display_size()
+        menu_bar = 30
+        side_margin = 16
+        dash_h = max(220, int(screen_h * 0.28))
+        dash_bounds = (
+            side_margin,
+            menu_bar,
+            screen_w - side_margin,
+            menu_bar + dash_h,
+        )
+        agents_top_offset = menu_bar + dash_h + side_margin
+
+        console.print("[dim]→ opening aggregate dashboard window...[/dim]")
+        _spawn_dashboard_window(session_dir, bounds=dash_bounds)
+
+        console.print(f"[dim]→ spawning {n} agent Terminal.app windows...[/dim]")
+        _spawn_terminal_windows(session_dir, n, top_offset=agents_top_offset)
+
+        console.print(f"[bold]Waiting for {n} agents to finish...[/bold]\n")
+        deadline = time.monotonic() + 30 * 60
+        done: set[int] = set()
         while len(done) < n and time.monotonic() < deadline:
             for idx, agent in enumerate(session_agents):
                 if idx in done:
