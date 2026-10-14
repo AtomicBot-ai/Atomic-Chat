@@ -227,9 +227,11 @@ describe('CloudPage', () => {
       expect(auth.chatgptStatus.mock.calls.length).toBeGreaterThan(0)
     )
 
-    expect(
-      screen.getByText('cloud:subscription.connectInBrowser').closest('button')
-    ).toBeEnabled()
+    await waitFor(() =>
+      expect(
+        screen.getByText('cloud:subscription.connectInBrowser').closest('button')
+      ).toBeEnabled()
+    )
     // The device-code button is gone: the grant is not implemented and no
     // caller ever passed a handler, so it only ever rendered dead.
     expect(
@@ -260,11 +262,17 @@ describe('CloudPage', () => {
       new Error('cannot listen on 127.0.0.1:1455 for the sign-in callback')
     )
     render(<CloudPage />)
-    await waitFor(() =>
-      expect(auth.chatgptStatus.mock.calls.length).toBeGreaterThan(0)
-    )
+    // The status check only has to start for the call count to rise; the
+    // button stays disabled until it settles, so wait for it to be usable.
+    const connect = await waitFor(() => {
+      const button = screen
+        .getByText('cloud:subscription.connectInBrowser')
+        .closest('button')
+      expect(button).toBeEnabled()
+      return button!
+    })
 
-    fireEvent.click(screen.getByText('cloud:subscription.connectInBrowser'))
+    fireEvent.click(connect)
 
     expect(
       await screen.findByText(
