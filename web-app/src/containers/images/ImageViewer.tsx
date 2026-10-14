@@ -21,6 +21,8 @@ import {
 import DeleteGalleryImagesDialog from '@/containers/dialogs/DeleteGalleryImagesDialog'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
+import { useRemoteMediaGroups } from '@/hooks/useRemoteMedia'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { exportFilename, restoreDraftFromRecipe } from '@/lib/diffusion/recipe'
@@ -28,7 +30,10 @@ import { captureImageGalleryAction } from '@/lib/diffusion/telemetry'
 import { workflowPath } from '@/lib/diffusion/workflows'
 import { useImageGalleryStore } from '@/stores/image-gallery-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import type { GalleryImageItem } from '@/services/diffusion/types'
+import {
+  isRemoteRecipeEngine,
+  type GalleryImageItem,
+} from '@/services/diffusion/types'
 import { ImageRecipePopover } from './ImageRecipePopover'
 
 type ImageViewerProps = {
@@ -79,6 +84,8 @@ export const ImageViewer = memo(function ImageViewer({
   const loadedModelId = useImageGenerationStore(
     (state) => state.status?.model.loaded?.modelId ?? null
   )
+  const setSelectedRemote = useImageSetting((state) => state.setSelectedRemote)
+  const remoteGroups = useRemoteMediaGroups('image')
   const [fullscreen, setFullscreen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string[]>([])
 
@@ -125,6 +132,32 @@ export const ImageViewer = memo(function ImageViewer({
     (selectedArtifactId ?? loadedModelId) !== item.recipe.model.modelId
 
   const restore = () => {
+    const engine = item.recipe.engine
+    if (isRemoteRecipeEngine(engine)) {
+      // A provider's picture: its model becomes the pick again, with what it was asked.
+      const pick = {
+        provider: engine.provider,
+        model: item.recipe.model.modelId,
+      }
+      const { draft } = restoreDraftFromRecipe(item.recipe, runs)
+      applyDraft(draft, `remote:${pick.provider}/${pick.model}`)
+      useRemoteMediaForm.setState({ image: item.recipe.remote ?? {} })
+      captureImageGalleryAction('restore_recipe')
+      const offered = remoteGroups.some(
+        (group) =>
+          group.provider.provider === pick.provider &&
+          group.models.some(({ model }) => model.id === pick.model)
+      )
+      if (offered) {
+        setSelectedRemote(pick)
+        toast.success(t('images:viewer.restored'))
+      } else {
+        toast.warning(t('images:remote.restoreUnavailable'), {
+          description: item.recipe.model.displayName,
+        })
+      }
+      return
+    }
     const { draft, modelId } = restoreDraftFromRecipe(item.recipe, runs)
     // The numbers are the recipe model's: picking that model keeps them.
     applyDraft(draft, item.recipe.model.family)

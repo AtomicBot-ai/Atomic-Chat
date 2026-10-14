@@ -75,6 +75,48 @@ test('upstream manifest ties the mirror base to per-asset integrity data', () =>
   }
 })
 
+// The release list is what the core and the bundled build pick upstream
+// llama.cpp from; the legacy manifest is what already released cores follow,
+// so conf keeps it on a release of the list that every core runs.
+test('upstream release list pins every archive and carries the legacy manifest', () => {
+  const list = fixture('upstream-releases')
+  const manifest = fixture('upstream-manifest')
+  assert.equal(list.schema_version, 1)
+  assert.equal(list.download_base, manifest.download_base)
+  unique(
+    list.releases.map(({ tag }) => tag),
+    'releases must be unique'
+  )
+  const builds = list.releases.map(({ tag }) => Number(/^b(\d+)$/.exec(tag)?.[1]))
+  assert.deepEqual(
+    builds,
+    [...builds].sort((a, b) => b - a),
+    'releases must be listed newest first'
+  )
+  for (const release of list.releases) {
+    assert.match(release.min_core_version, /^\d+\.\d+\.\d+$/)
+    for (const asset of release.assets) {
+      assert.equal(asset.name.startsWith(`llama-${release.tag}-bin-`), true, asset.name)
+      assert.match(asset.sha256, /^[0-9a-f]{64}$/, `${asset.name} must carry a sha256`)
+      assert.equal(Number.isInteger(asset.size) && asset.size > 0, true, `${asset.name} must carry a size`)
+      assert.ok(['candidate', 'approved'].includes(asset.validation), asset.name)
+    }
+  }
+
+  const current = list.releases.find(({ tag }) => tag === manifest.tag_name)
+  assert.ok(current, `the legacy manifest's ${manifest.tag_name} must be listed`)
+  assert.equal(current.min_core_version, '0.0.0')
+  assert.equal(current.withdrawn, undefined)
+  for (const asset of manifest.assets.filter(({ sha256 }) => sha256)) {
+    const listed = current.assets.find(({ name }) => name === asset.name)
+    assert.deepEqual(
+      listed && { sha256: listed.sha256, size: listed.size, validation: listed.validation },
+      { sha256: asset.sha256, size: asset.size, validation: 'approved' },
+      asset.name
+    )
+  }
+})
+
 test('TurboQuant manifest ships one unified release for every backend', () => {
   const manifest = fixture('turboquant-manifest')
   assert.match(manifest.commit, /^[0-9a-f]{7,40}$/)

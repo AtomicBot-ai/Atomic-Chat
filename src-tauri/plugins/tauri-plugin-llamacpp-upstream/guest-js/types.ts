@@ -51,6 +51,8 @@ export interface GgufMetadata {
 // llama.cpp settings
 export type LlamacppConfig = {
   version_backend: string
+  /** Offer llama.cpp releases conf lists but has not approved yet (the core decides). */
+  allow_candidate_builds?: boolean
   auto_unload: boolean
   timeout: number
   llamacpp_env: string

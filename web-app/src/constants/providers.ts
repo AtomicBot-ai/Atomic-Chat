@@ -115,6 +115,75 @@ export const BASELINE_PROVIDERS: ProviderObject[] = [
     models: [],
   },
   {
+    // The user's own Automatic1111 / SD WebUI Forge: it makes images and
+    // nothing else, so it has no chat models card. Per-user like
+    // `llama-server` above, hence the baseline. The core speaks its
+    // `/sdapi/v1` API (adapter `a1111`, conf `providers/media.json`); the
+    // server must run with `--api`. `--api-auth user:pass` goes in the key
+    // field as `user:pass`.
+    active: true,
+    api_key: '',
+    base_url: 'http://127.0.0.1:7860',
+    explore_models_url:
+      'https://github.com/lllyasviel/stable-diffusion-webui-forge',
+    provider: 'automatic1111',
+    media_only: true,
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Address of your Automatic1111 or Forge server, started with `--api` (add `--listen` to reach it from another machine).',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://127.0.0.1:7860',
+          value: 'http://127.0.0.1:7860',
+        },
+      },
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Optional. `user:pass` when the server runs with `--api-auth`.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Leave empty for an unauthenticated server',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    // The user's own stable-diffusion.cpp server (`sd-server`): images only,
+    // like Automatic1111 above. It answers the A1111 `/sdapi/v1` routes, so
+    // the core speaks to it with the same `a1111` adapter (conf
+    // `providers/media.json`); it serves the one model it was started with
+    // and takes no key. 1234 is `sd-server`'s own default port.
+    active: true,
+    api_key: '',
+    base_url: 'http://127.0.0.1:1234',
+    explore_models_url: 'https://github.com/leejet/stable-diffusion.cpp',
+    provider: 'sdcpp-server',
+    media_only: true,
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Address of your stable-diffusion.cpp server, started with a model (`sd-server -m <model>`; add `--listen-ip 0.0.0.0` to reach it from another machine).',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://127.0.0.1:1234',
+          value: 'http://127.0.0.1:1234',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
     active: true,
     api_key: '',
     base_url: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',

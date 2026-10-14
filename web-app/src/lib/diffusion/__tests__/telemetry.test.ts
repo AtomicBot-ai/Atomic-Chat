@@ -15,8 +15,10 @@ import {
   captureImageGenerate,
   captureVideoGalleryAction,
   captureVideoGenerate,
+  mediaTargetProps,
   videoEstimateProps,
 } from '../telemetry'
+import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 describe('diffusion telemetry', () => {
   beforeEach(() => {
@@ -113,6 +115,46 @@ describe('diffusion telemetry', () => {
       ['video_gallery_action', { gallery_action: 'save_as' }],
       ['image_gallery_action', { gallery_action: 'reveal' }],
     ])
+  })
+
+  it("names where a run went, and never a provider name the user chose", () => {
+    useProviderRegistryStore.setState({
+      providers: [{ provider: 'openai' }] as never,
+    })
+    expect(mediaTargetProps(undefined)).toEqual({ media_target: 'local', media_provider: null })
+    expect(mediaTargetProps({ provider: 'openai', model: 'gpt-image-2' })).toEqual({
+      media_target: 'remote',
+      media_provider: 'openai',
+    })
+    expect(mediaTargetProps({ provider: 'automatic1111', model: 'sdxl' })).toEqual({
+      media_target: 'remote',
+      media_provider: 'automatic1111',
+    })
+    expect(mediaTargetProps({ provider: 'Acme render farm', model: 'x' })).toEqual({
+      media_target: 'remote',
+      media_provider: 'custom',
+    })
+
+    captureImageGenerate({
+      generate_status: 'completed',
+      model_family: null,
+      quant: null,
+      engine: null,
+      backend: null,
+      width: 1024,
+      height: 1024,
+      steps: 0,
+      batch_size: 1,
+      runs: 1,
+      duration_ms: 4_000,
+      error_code: null,
+      ...mediaTargetProps({ provider: 'openai', model: 'gpt-image-2' }),
+    })
+    expect(captured.events[0][1]).toMatchObject({
+      media_target: 'remote',
+      media_provider: 'openai',
+    })
+    expect(JSON.stringify(captured.events)).not.toContain('gpt-image-2')
   })
 
   it('keeps the image events as they were', () => {

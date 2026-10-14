@@ -11,6 +11,15 @@
     }
   },
   {
+    "key": "allow_candidate_builds",
+    "title": "Allow unverified llama.cpp builds",
+    "description": "Offer llama.cpp releases Atomic Chat has not verified yet. Off by default: only verified builds are recommended and offered as updates.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
     "key": "mtp",
     "title": "Enable MTP (Multi-Token Prediction)",
     "description": "Speed up generation with a compatible MTP head. Atomic Chat uses a built-in or matching downloaded head when available. Requires an MTP-capable llama.cpp backend and is mutually exclusive with DFlash.",

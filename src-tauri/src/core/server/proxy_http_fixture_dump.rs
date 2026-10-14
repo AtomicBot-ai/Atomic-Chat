@@ -760,6 +760,7 @@ async fn run_case(case: &Case) -> Value {
                     value: "from-provider".to_string(),
                 }],
                 models: vec![REMOTE_MODEL.to_string()],
+                media: None,
             },
         );
     }

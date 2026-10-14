@@ -9,6 +9,9 @@
  */
 
 import { queuedCapture } from '@/lib/telemetry-queue'
+import type { MediaTarget } from '@/services/media/types'
+import { useProviderRegistryStore } from '@/stores/provider-registry-store'
+import { isSelfHostedProviderName } from '@/utils/registerRemoteProvider'
 import type {
   DiffusionBackend,
   DiffusionEngineId,
@@ -21,7 +24,30 @@ import type {
 
 export type ImageGenerateStatus = 'completed' | 'failed' | 'cancelled'
 
-export type ImageGenerateProps = {
+/** Where a generation ran: this machine's engine, or a provider through the core. */
+export type MediaTargetProps = {
+  media_target: 'local' | 'remote'
+  /** The provider's catalog id; `custom` for one the user added, whose name is theirs. */
+  media_provider: string | null
+}
+
+/** The target fields of `image_generate` and `video_generate`, from the request's target. */
+export function mediaTargetProps(
+  target: MediaTarget | undefined
+): MediaTargetProps {
+  if (!target) return { media_target: 'local', media_provider: null }
+  const known =
+    isSelfHostedProviderName(target.provider) ||
+    useProviderRegistryStore
+      .getState()
+      .providers.some((provider) => provider.provider === target.provider)
+  return {
+    media_target: 'remote',
+    media_provider: known ? target.provider : 'custom',
+  }
+}
+
+export type ImageGenerateProps = MediaTargetProps & {
   generate_status: ImageGenerateStatus
   model_family: DiffusionFamilyId | null
   quant: string | null
@@ -50,6 +76,8 @@ export function captureImageGenerate(props: ImageGenerateProps): void {
     runs: props.runs,
     duration_ms: props.duration_ms,
     error_code: props.error_code,
+    media_target: props.media_target,
+    media_provider: props.media_provider,
   })
 }
 
@@ -87,7 +115,7 @@ export function captureImageGalleryAction(action: ImageGalleryAction): void {
   queuedCapture('image_gallery_action', { gallery_action: action })
 }
 
-export type VideoGenerateProps = {
+export type VideoGenerateProps = MediaTargetProps & {
   generate_status: ImageGenerateStatus
   model_family: DiffusionFamilyId | null
   quant: string | null
@@ -153,6 +181,8 @@ export function captureVideoGenerate(props: VideoGenerateProps): void {
     estimate_high_s: props.estimate_high_s,
     estimate_basis: props.estimate_basis,
     slowdown_seen: props.slowdown_seen,
+    media_target: props.media_target,
+    media_provider: props.media_provider,
   })
 }
 

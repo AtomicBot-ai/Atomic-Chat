@@ -2011,7 +2011,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
       key === 'version_backend'
         ? stripBom(this.config.version_backend || '')
         : undefined
+    // `updateSettings` reports every setting on each save, changed or not.
+    const candidateBuildsChanged =
+      key === 'allow_candidate_builds' &&
+      !this.isInitializing &&
+      this.config.allow_candidate_builds !== value
     this.config[key] = value
+    if (candidateBuildsChanged) void this.applyCandidateBuildsChange()
 
     // Mutual exclusivity between DFlash and MTP speculative-decoding modes.
     // The UI (`$providerName.tsx`) owns persistence of both keys via
@@ -4125,6 +4131,23 @@ export default class llamacpp_upstream_extension extends AIEngine {
     } catch (error) {
       if (this.coreReady?.promise === promise) this.coreReady = undefined
       throw error
+    }
+  }
+
+  /**
+   * `allow_candidate_builds` decides which llama.cpp releases the core offers: its catalog and its
+   * update checks read the core's own copy of the setting, which hears of a change only when the
+   * settings are imported — before a model load, otherwise. Import now, then rebuild the version
+   * list from the catalog the new value gives.
+   */
+  private async applyCandidateBuildsChange(): Promise<void> {
+    try {
+      await this.ensureCoreIsReady()
+      await this.configureBackends()
+    } catch (error) {
+      logger.warn(
+        `[allow_candidate_builds] could not hand the change to the core: ${coreRuntime.describeCoreError(error)}`
+      )
     }
   }
 

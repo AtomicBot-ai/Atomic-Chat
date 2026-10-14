@@ -87,6 +87,8 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('vllm')).toBe('vLLM')
     expect(getProviderTitle('sglang')).toBe('SGLang')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
+    expect(getProviderTitle('automatic1111')).toBe('Automatic1111 / Forge')
+    expect(getProviderTitle('sdcpp-server')).toBe('stable-diffusion.cpp server')
   })
 
   it('capitalizes first letter for unknown providers', () => {

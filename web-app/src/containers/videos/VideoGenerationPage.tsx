@@ -10,6 +10,7 @@ import { ImageErrorBanner } from '@/containers/images/ImageErrorBanner'
 import { ImageSetupCard } from '@/containers/images/ImageSetupCard'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
+import { useHasRemoteMedia, useRemoteMediaTarget } from '@/hooks/useRemoteMedia'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useVideoForm } from '@/hooks/useVideoForm'
 import { useVideoGallery } from '@/hooks/useVideoGallery'
@@ -103,7 +104,12 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
   )
   const [modelsOpen, setModelsOpen] = useState(false)
 
-  const modelPicked = useMediaTarget('video').artifactId !== null
+  // A connected provider's models open the studio without the local engine.
+  const hasRemote = useHasRemoteMedia('video')
+  const remoteTarget = useRemoteMediaTarget('video')
+  const studioReady = engine.installed || hasRemote
+  const modelPicked =
+    useMediaTarget('video').artifactId !== null || remoteTarget !== null
   const showLivePreview = generating && viewerMode === 'live'
   // An older core never says; absent reads as no slowdown.
   const slowedDown = generating && currentJob?.progress?.slowdown === true
@@ -138,7 +144,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
     }
   }, [clearJobError, clearModelError])
 
-  const onboarding = !engine.installed && gallery.items.length === 0
+  const onboarding = !studioReady && gallery.items.length === 0
   const openModels = useCallback(() => setModelsOpen(true), [])
 
   useEffect(() => {
@@ -176,6 +182,9 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
           return
         case 'openSettings':
           void navigate({ to: route.settings.media })
+          return
+        case 'openCloud':
+          void navigate({ to: route.cloud.index })
           return
         case 'openOutputFolder':
           if (status?.videoOutputDir) {
@@ -256,7 +265,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
       <div className="col-span-2 min-w-0">{header}</div>
 
       <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
-        {engine.installed ? (
+        {studioReady ? (
           <VideoPromptForm
             modelsOpen={modelsOpen}
             onModelsOpenChange={setModelsOpen}
@@ -296,7 +305,9 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
               modality="video"
               modelPicked={modelPicked}
               onDownloadModel={
-                engine.installed && !hasModel ? openModels : undefined
+                engine.installed && !hasModel && !remoteTarget
+                  ? openModels
+                  : undefined
               }
             />
           </div>

@@ -18,6 +18,10 @@ pub struct RegisterProviderRequest {
     pub base_url: Option<String>,
     pub custom_headers: Vec<ProviderCustomHeader>,
     pub models: Vec<String>,
+    /// The image and video models enabled for this provider (`{image_api?, video_api?, models}`),
+    /// passed to the core as it came; absent keeps what the core has stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<serde_json::Value>,
 }
 
 /// Register a remote provider configuration
@@ -60,6 +64,7 @@ pub async fn register_provider_config<R: Runtime>(
             })
             .collect(),
         models: request.models, // Models will be added when they are configured
+        media: request.media,
     };
 
     let provider_name = request.provider.clone();

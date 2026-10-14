@@ -339,7 +339,8 @@
       "reduceSize": "Try 768×768",
       "reduceUpscale": "Try a smaller scale",
       "pickSmallerQuant": "Pick a smaller quant",
-      "retry": "Try again"
+      "retry": "Try again",
+      "openCloud": "Открыть Cloud"
     },
     "ENGINE_MISSING": {
       "title": "Медиадвижок не установлен",
@@ -428,10 +429,64 @@
     "INTERNAL": {
       "title": "Something went wrong",
       "body": "An unexpected error happened in the renderer. The details below may help."
+    },
+    "REMOTE_NOT_CONFIGURED": {
+      "title": "Провайдер не подключён",
+      "body": "Подключите его на странице Cloud или выберите другую модель."
+    },
+    "REMOTE_AUTH_FAILED": {
+      "title": "Провайдер не принял ключ",
+      "body": "Проверьте API-ключ на странице Cloud."
+    },
+    "REMOTE_REJECTED": {
+      "title": "Провайдер отклонил запрос",
+      "body": "Попробуйте другие настройки или другую модель."
+    },
+    "REMOTE_CONTENT_BLOCKED": {
+      "title": "Провайдер заблокировал промпт",
+      "body": "Запрос остановил фильтр безопасности. Переформулируйте промпт и попробуйте снова."
+    },
+    "REMOTE_RATE_LIMITED": {
+      "title": "Слишком много запросов",
+      "body": "Провайдер просит подождать. Попробуйте ещё раз чуть позже."
+    },
+    "REMOTE_QUOTA": {
+      "title": "Закончились кредиты",
+      "body": "У аккаунта у провайдера не осталось квоты. Пополните её или используйте другого провайдера."
+    },
+    "REMOTE_UNAVAILABLE": {
+      "title": "Провайдер недоступен",
+      "body": "Он не ответил или ответил ошибкой. Попробуйте позже."
+    },
+    "REMOTE_TIMEOUT": {
+      "title": "Провайдер не успел",
+      "body": "Ответ не пришёл вовремя. Провайдер всё равно может списать оплату за запрос."
+    },
+    "REMOTE_UNSUPPORTED": {
+      "title": "Модель так не умеет",
+      "body": "Выберите другой режим или другую модель."
     }
   },
   "notifications": {
     "readyTitle": "Images ready",
     "readyBody": "{{count}} new images are in the gallery."
+  },
+  "remote": {
+    "search": "Поиск моделей",
+    "noMatch": "Ничего не найдено",
+    "connect": "Добавить облачные или свои модели",
+    "connectProvider": "Или подключите облачного либо своего провайдера",
+    "cloud": "Облако",
+    "selfHosted": "Свой сервер",
+    "otherModel": "Другая модель",
+    "auto": "Авто",
+    "size": "Размер",
+    "aspectRatio": "Соотношение сторон",
+    "resolution": "Разрешение",
+    "quality": "Качество",
+    "background": "Фон",
+    "outputFormat": "Формат файла",
+    "localNeedsEngine": "Для моделей на этом устройстве нужен медиа-движок.",
+    "restoreUnavailable": "Настройки восстановлены, но эта модель больше не подключена"
   }
 }

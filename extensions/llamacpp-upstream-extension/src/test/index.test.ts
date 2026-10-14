@@ -347,6 +347,66 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('allow_candidate_builds', () => {
+    const watchCoreHandOff = () => {
+      const order: string[] = []
+      extension['ensureCoreIsReady'] = vi.fn(async () => {
+        order.push('import')
+      })
+      vi.spyOn(extension, 'configureBackends').mockImplementation(async () => {
+        order.push('catalog')
+      })
+      return order
+    }
+
+    it('imports a change into the core, then rebuilds the version list from the new catalog', async () => {
+      const order = watchCoreHandOff()
+      extension['isInitializing'] = false
+      extension['config'] = { allow_candidate_builds: false } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+
+      await vi.waitFor(() => expect(order).toEqual(['import', 'catalog']))
+      expect(extension['config'].allow_candidate_builds).toBe(true)
+    })
+
+    it('does nothing for a save that leaves it as it was', async () => {
+      const order = watchCoreHandOff()
+      extension['isInitializing'] = false
+      extension['config'] = { allow_candidate_builds: true } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+      await Promise.resolve()
+
+      expect(order).toEqual([])
+    })
+
+    it('leaves the first catalog to the start-up pass', async () => {
+      const order = watchCoreHandOff()
+      extension['isInitializing'] = true
+      extension['config'] = { allow_candidate_builds: false } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+      await Promise.resolve()
+
+      expect(order).toEqual([])
+    })
+
+    it('logs, and keeps the new value, when the core cannot take it', async () => {
+      extension['ensureCoreIsReady'] = vi.fn().mockRejectedValue(new Error('core gone'))
+      const configure = vi.spyOn(extension, 'configureBackends').mockResolvedValue()
+      extension['isInitializing'] = false
+      extension['config'] = { allow_candidate_builds: false } as any
+
+      extension.onSettingUpdate('allow_candidate_builds', true)
+
+      await vi.waitFor(() => expect(extension['ensureCoreIsReady']).toHaveBeenCalled())
+      await Promise.resolve()
+      expect(configure).not.toHaveBeenCalled()
+      expect(extension['config'].allow_candidate_builds).toBe(true)
+    })
+  })
+
   describe('installBackend', () => {
     it('normalizes an upstream macOS tarball before validating it', async () => {
       const archivePath = '/downloads/llama-b9702-bin-macos-arm64.tar.gz'

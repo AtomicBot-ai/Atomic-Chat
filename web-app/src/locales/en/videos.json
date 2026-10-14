@@ -53,7 +53,9 @@
       "noModel": "Download a video model first.",
       "modelLoading": "The model is still loading.",
       "emptyPrompt": "Write a prompt first.",
-      "busy": "A generation is already running."
+      "busy": "A generation is already running.",
+      "noSource": "Pick the first frame first.",
+      "unsupportedWorkflow": "This model cannot do this mode."
     }
   },
   "workflow": {
@@ -181,5 +183,10 @@
   "download": {
     "finishingModel": "Checking video model",
     "modelReady": "Video model is ready"
+  },
+  "remote": {
+    "seconds": "{{seconds}} s",
+    "audio": "Sound",
+    "firstFrame": "First frame"
   }
 }

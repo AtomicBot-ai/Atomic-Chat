@@ -340,7 +340,8 @@
       "reduceSize": "Try 768×768",
       "reduceUpscale": "Try a smaller scale",
       "pickSmallerQuant": "Pick a smaller quant",
-      "retry": "Try again"
+      "retry": "Try again",
+      "openCloud": "Open Cloud"
     },
     "ENGINE_UPDATE_REQUIRED": {
       "title": "Media engine update required",
@@ -433,10 +434,64 @@
     "INTERNAL": {
       "title": "Something went wrong",
       "body": "An unexpected error happened in the renderer. The details below may help."
+    },
+    "REMOTE_NOT_CONFIGURED": {
+      "title": "The provider is not connected",
+      "body": "Connect it on the Cloud page, or pick another model."
+    },
+    "REMOTE_AUTH_FAILED": {
+      "title": "The provider refused the key",
+      "body": "Check the API key on the Cloud page."
+    },
+    "REMOTE_REJECTED": {
+      "title": "The provider refused the request",
+      "body": "Try other settings, or another model."
+    },
+    "REMOTE_CONTENT_BLOCKED": {
+      "title": "The provider blocked this prompt",
+      "body": "Its safety filter stopped the request. Rephrase the prompt and try again."
+    },
+    "REMOTE_RATE_LIMITED": {
+      "title": "Too many requests",
+      "body": "The provider asks to slow down. Wait a moment and try again."
+    },
+    "REMOTE_QUOTA": {
+      "title": "Out of credits",
+      "body": "The provider says the account has no quota left. Top it up, or use another provider."
+    },
+    "REMOTE_UNAVAILABLE": {
+      "title": "The provider is unavailable",
+      "body": "It did not answer, or answered with an error. Try again later."
+    },
+    "REMOTE_TIMEOUT": {
+      "title": "The provider took too long",
+      "body": "Nothing came back in time. The provider may still charge for the request."
+    },
+    "REMOTE_UNSUPPORTED": {
+      "title": "The model cannot do this",
+      "body": "Pick another mode, or another model."
     }
   },
   "notifications": {
     "readyTitle": "Images ready",
     "readyBody": "{{count}} new images are in the gallery."
+  },
+  "remote": {
+    "search": "Search models",
+    "noMatch": "No models match",
+    "connect": "Add cloud or self-hosted models",
+    "connectProvider": "Or use a cloud or self-hosted provider",
+    "cloud": "Cloud",
+    "selfHosted": "Self-hosted",
+    "otherModel": "Other model",
+    "auto": "Auto",
+    "size": "Size",
+    "aspectRatio": "Aspect ratio",
+    "resolution": "Resolution",
+    "quality": "Quality",
+    "background": "Background",
+    "outputFormat": "File format",
+    "localNeedsEngine": "Models on this device need the media engine.",
+    "restoreUnavailable": "The settings are back, but this model is no longer connected"
   }
 }

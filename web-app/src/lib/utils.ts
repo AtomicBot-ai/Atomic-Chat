@@ -127,6 +127,12 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/azure.svg'
     case 'xai':
       return '/images/model-provider/xai.svg'
+    // AUTOMATIC1111's own mark, @lobehub/icons-static-svg 1.95.1; Forge has none of its own.
+    case 'automatic1111':
+      return '/images/model-provider/automatic1111.svg'
+    // The project's cat, cropped from stable-diffusion.cpp's own assets/logo.png (leejet/stable-diffusion.cpp).
+    case 'sdcpp-server':
+      return '/images/model-provider/sdcpp-server.png'
     case 'minimax':
       return '/svg/minimax.svg'
     case 'nvidia':
@@ -212,6 +218,10 @@ export const getProviderTitle = (provider: string) => {
     // connects to, as opposed to the two engines the app starts itself.
     case 'llamacpp-server':
       return 'llama.cpp server'
+    case 'automatic1111':
+      return 'Automatic1111 / Forge'
+    case 'sdcpp-server':
+      return 'stable-diffusion.cpp server'
     case 'mlx':
       return 'MLX'
     case 'tensorrt-llm':

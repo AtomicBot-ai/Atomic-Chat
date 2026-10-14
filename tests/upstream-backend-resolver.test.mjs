@@ -4,6 +4,9 @@ import test from 'node:test'
 
 import {
   assetNameFor,
+  compareVersions,
+  manifestForTag,
+  pickRelease,
   pickSource,
   resolveCudaFamily,
 } from '../scripts/resolve-upstream-backend.mjs'
@@ -188,3 +191,73 @@ test('a hash without a size is not trusted', () => {
   assert.equal(source.sha256, undefined)
   assert.match(source.url, /ggml-org/)
 })
+
+// The release list as atomic-chat-conf publishes it (backends/llamacpp-upstream-releases.json).
+const archive = (tag, suffix, validation = 'approved') => ({
+  name: `llama-${tag}-bin-${suffix}`,
+  sha256: HASH,
+  size: 10,
+  validation,
+})
+const LIST = {
+  schema_version: 1,
+  download_base: MIRROR,
+  releases: [
+    // Needs a core with the fix it depends on.
+    { tag: 'b11600', min_core_version: '0.16.0', assets: [archive('b11600', 'macos-arm64.tar.gz')] },
+    {
+      tag: 'b11550',
+      min_core_version: '0.0.0',
+      withdrawn: { reason: 'crashes on load' },
+      assets: [archive('b11550', 'macos-arm64.tar.gz')],
+    },
+    {
+      tag: 'b11500',
+      min_core_version: '0.15.0',
+      assets: [
+        archive('b11500', 'macos-arm64.tar.gz'),
+        archive('b11500', 'win-cuda-13.3-x64.zip'),
+        archive('b11500', 'win-cuda-13.4-x64.zip', 'candidate'),
+        archive('b11500', 'ubuntu-x64.tar.gz', 'candidate'),
+      ],
+    },
+    {
+      tag: 'b11463',
+      min_core_version: '0.0.0',
+      assets: [archive('b11463', 'ubuntu-x64.tar.gz'), archive('b11463', 'macos-arm64.tar.gz')],
+    },
+  ],
+}
+
+test('the bundled build is the one the pinned core would take', () => {
+  const pick = (coreVersion, backend) => pickRelease(LIST, { coreVersion, backend })
+  // Newest release this core meets, skipping one withdrawn and one for a newer core.
+  assert.deepEqual(pick('0.15.0', 'macos-arm64'), { tag: 'b11500', backend: 'macos-arm64' })
+  assert.deepEqual(pick('0.16.2', 'macos-arm64'), { tag: 'b11600', backend: 'macos-arm64' })
+  assert.deepEqual(pick('0.14.0', 'macos-arm64'), { tag: 'b11463', backend: 'macos-arm64' })
+  // A candidate archive is never bundled: Linux stays on the older approved build.
+  assert.deepEqual(pick('0.15.0', 'linux-cpu-x64'), { tag: 'b11463', backend: 'linux-cpu-x64' })
+  // A CUDA family resolves against approved archives only.
+  assert.deepEqual(pick('0.15.0', 'win-cuda-13-x64'), { tag: 'b11500', backend: 'win-cuda-13.3-x64' })
+  assert.equal(pick('0.15.0', 'win-vulkan-x64'), null)
+  assert.equal(pickRelease(null, { coreVersion: '0.15.0', backend: 'macos-arm64' }), null)
+})
+
+test('any listed tag downloads from the mirror against its hash', () => {
+  const manifest = manifestForTag(LIST, 'b11500')
+  const asset = 'llama-b11500-bin-win-cuda-13.4-x64.zip'
+  assert.deepEqual(pickSource(manifest, 'b11500', asset), {
+    url: `${MIRROR}/b11500/${asset}`,
+    sha256: HASH,
+    size: 10,
+  })
+  assert.equal(manifestForTag(LIST, 'b10344'), null)
+  assert.equal(manifestForTag(null, 'b11500'), null)
+})
+
+test('core versions compare numerically, as the core compares them', () => {
+  assert.equal(compareVersions('0.15.0', '0.9.9'), 1)
+  assert.equal(compareVersions('0.15.0', '0.15.0'), 0)
+  assert.equal(compareVersions('0.15', '0.15.1'), -1)
+})
+

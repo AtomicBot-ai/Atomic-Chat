@@ -127,6 +127,42 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('My Custom Model')
   })
 
+  it('keeps a provider’s media models when a refresh rebuilds the list', () => {
+    const { result } = renderHook(() => useModelProvider())
+    const media = {
+      image_api: 'openai-images',
+      models: [{ id: 'gpt-image-2', kind: 'image' }],
+    }
+    act(() => {
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'openai',
+            active: true,
+            api_key: 'sk-test',
+            models: [{ id: 'gpt-5', capabilities: ['completion'] }],
+            settings: [],
+            media,
+          },
+        ] as any,
+      })
+    })
+
+    // The registry refresh knows nothing of what the user enabled for media.
+    act(() => {
+      result.current.setProviders([
+        {
+          provider: 'openai',
+          active: true,
+          models: [{ id: 'gpt-5', capabilities: ['completion'] }],
+          settings: [],
+        },
+      ] as any)
+    })
+
+    expect(result.current.getProviderByName('openai')?.media).toEqual(media)
+  })
+
   it('should preserve existing model settings by exact id in setProviders', () => {
     const { result } = renderHook(() => useModelProvider())
 

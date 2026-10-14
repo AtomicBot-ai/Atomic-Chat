@@ -16,19 +16,30 @@
 // release job — and every one of them hardcoded the ggml-org download base.
 // Node (unlike a make recipe) reads the same from bash, pwsh and make.
 //
-// It mirrors the client's own logic in
-// extensions/llamacpp-upstream-extension/src/backend.ts: the manifest in
-// atomic-chat-conf is authoritative for the tag, `download_base` points at our
-// signed mirror, and a tag we have not mirrored falls back to the ggml-org CDN
-// without a hash.
+// It picks what the pinned core would offer on its own: the release list in
+// atomic-chat-conf (backends/llamacpp-upstream-releases.json), newest release
+// first, takes the first one that is not withdrawn, whose `min_core_version`
+// the pinned core (package.json `atomicCore.version`) meets and whose archive
+// for this backend is approved. The installer and the runtime catalog then
+// start on the same build. `download_base` points at our signed mirror; every
+// listed tag, a pinned one included, downloads against its hash. When conf has
+// no release list yet (404, or a schema this script does not read) the legacy
+// backends/manifest.json decides, as it did before; a tag in neither falls
+// back to the ggml-org CDN without a hash.
 //
 // Usage:
 //   node scripts/resolve-upstream-backend.mjs --backend macos-arm64
 //   node scripts/resolve-upstream-backend.mjs --backend win-cuda-13-x64
 //   node scripts/resolve-upstream-backend.mjs --backend linux-cpu-x64 --tag b10344
+//   node scripts/resolve-upstream-backend.mjs --backend macos-arm64 \
+//     --releases-from ../atomic-chat-conf/backends/llamacpp-upstream-releases.json \
+//     --core-version 0.15.0
 
+import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
+const RELEASES_URL =
+  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/llamacpp-upstream-releases.json'
 const MANIFEST_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/manifest.json'
 const GGML_ORG_DOWNLOAD_BASE =
@@ -112,6 +123,94 @@ export function pickSource(manifest, tag, asset) {
   }
 }
 
+/** Dotted-numeric comparison, as the core's `compareVersions`. Returns -1, 0 or 1. */
+export function compareVersions(a, b) {
+  const pa = String(a).split('.')
+  const pb = String(b).split('.')
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = Number(pa[i] ?? 0) || 0
+    const y = Number(pb[i] ?? 0) || 0
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
+}
+
+const buildOf = (tag) => Number(/^b(\d+)$/.exec(tag ?? '')?.[1] ?? 0)
+
+/**
+ * One listed release in the legacy manifest's shape, for pickSource: any
+ * listed tag downloads from the mirror against its hash. `null` when the tag
+ * is not listed.
+ */
+export function manifestForTag(list, tag) {
+  const release = (list?.releases ?? []).find((r) => r.tag === tag)
+  if (!release) return null
+  return {
+    tag_name: release.tag,
+    download_base: list.download_base,
+    assets: (release.assets ?? []).map(({ name, sha256, size }) => ({ name, sha256, size })),
+  }
+}
+
+/**
+ * The release the pinned core would take for this backend: newest first, not
+ * withdrawn, `min_core_version` met, the backend's archive approved and
+ * hashed. A CUDA family id resolves against that release's approved archives.
+ * Returns `{ tag, backend }` with the concrete backend id, or `null`.
+ */
+export function pickRelease(list, { coreVersion, backend }) {
+  const releases = [...(list?.releases ?? [])].sort((a, b) => buildOf(b.tag) - buildOf(a.tag))
+  for (const release of releases) {
+    if (release.withdrawn) continue
+    if (compareVersions(coreVersion, release.min_core_version ?? '0.0.0') < 0) continue
+    const names = (release.assets ?? [])
+      .filter((a) => a.validation === 'approved' && a.sha256 && a.size)
+      .map((a) => a.name)
+    const concrete = WIN_CUDA_FAMILY_RE.test(backend)
+      ? resolveCudaFamily(backend, release.tag, names)
+      : backend
+    if (concrete && names.includes(assetNameFor(release.tag, concrete))) {
+      return { tag: release.tag, backend: concrete }
+    }
+  }
+  return null
+}
+
+/**
+ * The release list, or `null` when conf does not publish one this script can
+ * read (a 404 before it did, another schema). A network failure is fatal: a
+ * build must not silently fall back to an older rule.
+ */
+async function fetchReleases(from) {
+  if (from) return JSON.parse(readFileSync(from, 'utf8'))
+  const resp = await fetch(RELEASES_URL, {
+    headers: { 'User-Agent': 'atomic-chat-ci', 'Accept': 'application/json' },
+  })
+  if (!resp.ok) {
+    process.stderr.write(`Release list returned HTTP ${resp.status}; using the legacy manifest\n`)
+    return null
+  }
+  let list
+  try {
+    list = await resp.json()
+  } catch {
+    process.stderr.write('Release list is not valid JSON; using the legacy manifest\n')
+    return null
+  }
+  if (list?.schema_version !== 1 || !Array.isArray(list.releases)) {
+    process.stderr.write('Release list has a schema this script does not read; using the legacy manifest\n')
+    return null
+  }
+  return list
+}
+
+function pinnedCoreVersion() {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const version = pkg.atomicCore?.version
+  if (!version) die('package.json has no atomicCore.version')
+  return version
+}
+
 async function fetchManifest(url = MANIFEST_URL) {
   const resp = await fetch(url, {
     headers: { 'User-Agent': 'atomic-chat-ci', 'Accept': 'application/json' },
@@ -136,7 +235,7 @@ async function main() {
   const backend = args.backend
   if (!backend) {
     process.stderr.write(
-      'usage: resolve-upstream-backend.mjs --backend <id> [--tag <pin>]\n'
+      'usage: resolve-upstream-backend.mjs --backend <id> [--tag <pin>] [--core-version x.y.z] [--releases-from <file>]\n'
     )
     process.exit(2)
   }
@@ -153,9 +252,23 @@ async function main() {
     )
   }
 
+  const list = await fetchReleases(args['releases-from'])
   let manifest = null
+  let picked = null
   if (pinned) {
     process.stderr.write(`Using pinned upstream release: ${pinned}\n`)
+    // Listed: from the mirror against its hash. Anything else: the CDN, as before.
+    manifest = manifestForTag(list, pinned)
+  } else if (list) {
+    const coreVersion = args['core-version'] ?? pinnedCoreVersion()
+    picked = pickRelease(list, { coreVersion, backend })
+    if (!picked) {
+      die(
+        `no approved release in the release list carries ${backend} for core ${coreVersion} (approve one in atomic-chat-conf/backends/llamacpp-upstream-releases.json)`
+      )
+    }
+    process.stderr.write(`Release list: ${picked.tag} is the newest approved ${picked.backend} for core ${coreVersion}\n`)
+    manifest = manifestForTag(list, picked.tag)
   } else {
     process.stderr.write(
       'Resolving backend index from the atomic-chat-conf manifest (ATO-199)...\n'
@@ -166,8 +279,9 @@ async function main() {
   const tag = pinned ?? manifest.tag_name
   const assetNames = (manifest?.assets ?? []).map((a) => a.name)
 
-  let resolvedBackend = backend
-  if (WIN_CUDA_FAMILY_RE.test(backend)) {
+  // pickRelease already resolved a CUDA family against approved archives only.
+  let resolvedBackend = picked?.backend ?? backend
+  if (!picked && WIN_CUDA_FAMILY_RE.test(backend)) {
     resolvedBackend = resolveCudaFamily(backend, tag, assetNames)
     if (!resolvedBackend) {
       die(
@@ -178,7 +292,7 @@ async function main() {
   }
 
   const asset = assetNameFor(tag, resolvedBackend)
-  if (manifest && !assetNames.includes(asset)) {
+  if (!pinned && manifest && !assetNames.includes(asset)) {
     die(
       `manifest tag ${tag} does not list ${asset} (update atomic-chat-conf/backends/manifest.json)`
     )

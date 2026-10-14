@@ -5,6 +5,17 @@ import { readFileBytes } from '@/lib/readFileBytes'
 import { drawOutpaint, loadImage } from '@/containers/images/canvas'
 import { parseSeedText, useImageForm } from '@/hooks/useImageForm'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
+import {
+  useRemoteMediaTarget,
+  type ResolvedRemoteTarget,
+} from '@/hooks/useRemoteMedia'
+import { useRemoteMediaForm } from '@/hooks/useRemoteMediaForm'
+import {
+  effectiveImageOptions,
+  parseSize,
+  remoteImageCapabilities,
+} from '@/lib/media-capabilities'
+import type { ImageModelDescriptor } from '@/services/media/types'
 import { previewImageCapabilities } from '@/lib/diffusion/capabilities'
 import { workflowNeedsLlmVision } from '@/lib/diffusion/models'
 import { anySide, outpaintGeometry } from '@/lib/diffusion/outpaint'
@@ -54,6 +65,8 @@ export type ImageGenerationHandle = {
   baseSeed: number | null
   /** The size the job produces, for the form's readouts. */
   outputSize: { width: number; height: number }
+  /** The picked provider model, when the form generates with one instead of a local checkpoint. */
+  remote: ResolvedRemoteTarget<ImageModelDescriptor> | null
   generate: () => Promise<void>
   stop: () => Promise<void>
 }
@@ -102,6 +115,17 @@ export function useImageGeneration(): ImageGenerationHandle {
     }))
   )
   const target = useMediaTarget('image')
+  const remote = useRemoteMediaTarget('image')
+  const remoteForm = useRemoteMediaForm((state) => state.image)
+  const remoteCapabilities = useMemo(
+    () => (remote ? remoteImageCapabilities(remote.descriptor) : null),
+    [remote]
+  )
+  const remoteOptions = useMemo(
+    () =>
+      remote ? effectiveImageOptions(remote.descriptor, remoteForm) : null,
+    [remote, remoteForm]
+  )
   const {
     status,
     capabilities: residentCapabilities,
@@ -142,7 +166,10 @@ export function useImageGeneration(): ImageGenerationHandle {
     () => (targetFamily ? previewImageCapabilities(targetFamily) : null),
     [targetFamily]
   )
-  const capabilities = modelReady ? residentCapabilities : previewCapabilities
+  // A provider's model is described by the catalog; nothing needs to be resident.
+  const capabilities =
+    remoteCapabilities ??
+    (modelReady ? residentCapabilities : previewCapabilities)
   // The target is resident but its report is still being read (a start from
   // elsewhere, the app launching): starting it again would be a reload.
   const targetResident =
@@ -180,6 +207,16 @@ export function useImageGeneration(): ImageGenerationHandle {
   const outputSize = useMemo(() => {
     const source = form.sourceImage
     const formSize = { width: form.width, height: form.height }
+    if (remote && remoteCapabilities) {
+      // A listed size is the size; a free range is the form's; otherwise the provider decides.
+      const listed = parseSize(remoteOptions?.size)
+      if (listed) return listed
+      if (remote.descriptor.params.size?.kind === 'range') return formSize
+      return {
+        width: remoteCapabilities.defaults.width,
+        height: remoteCapabilities.defaults.height,
+      }
+    }
     if (!source || !spec.needsSource) return formSize
     switch (form.workflow) {
       case 'transform':
@@ -210,7 +247,14 @@ export function useImageGeneration(): ImageGenerationHandle {
       default:
         return formSize
     }
-  }, [form, spec.needsSource, constraints])
+  }, [
+    form,
+    spec.needsSource,
+    constraints,
+    remote,
+    remoteCapabilities,
+    remoteOptions,
+  ])
 
   const request = useMemo<ImageGenerateRequest>(() => {
     const trimmedNegative = form.negativePrompt.trim()
@@ -233,6 +277,17 @@ export function useImageGeneration(): ImageGenerationHandle {
       samplingMethod: capabilities?.defaults.samplingMethod,
       flowShift: capabilities?.defaults.flowShift,
       workflow: form.workflow,
+    }
+    if (remote && remoteCapabilities) {
+      const params = remote.descriptor.params
+      base.target = remote.target
+      base.remote = remoteOptions ?? {}
+      base.steps = params.steps ? form.steps : 0
+      base.cfgScale = params.cfg ? form.cfgScale : 0
+      base.batchSize = Math.min(form.batchSize, remoteCapabilities.maxBatch)
+      if (!params.guidance) delete base.guidance
+      delete base.samplingMethod
+      delete base.flowShift
     }
     if (!spec.needsSource || !source) return base
     switch (form.workflow) {
@@ -261,36 +316,66 @@ export function useImageGeneration(): ImageGenerationHandle {
       default:
         return base
     }
-  }, [form, capabilities, outputSize, spec.needsSource])
+  }, [
+    form,
+    capabilities,
+    outputSize,
+    spec.needsSource,
+    remote,
+    remoteCapabilities,
+    remoteOptions,
+  ])
 
-  const disabledReason: GenerateDisabledReason | null = generating
-    ? 'busy'
-    : !engineInstalled
-      ? 'noEngine'
-      : loadingArtifactId || readingResident
-        ? 'modelLoading'
-        : targetArtifactId === null
-          ? // Nothing to run. A resident model that cannot do this mode is
-            // why, when there is one; otherwise none is installed or picked.
-            residentCapabilities &&
-            !residentCapabilities.workflows.includes(form.workflow)
-            ? 'unsupportedWorkflow'
-            : 'noModel'
-          : residentLacksWorkflow ||
-              (capabilities && !capabilities.workflows.includes(form.workflow))
-            ? 'unsupportedWorkflow'
-            : spec.needsSource && !form.sourceImage
-              ? 'noSource'
-              : form.workflow === 'inpaint' && !form.maskBase64
-                ? 'noMask'
-                : form.workflow === 'extend' && !anySide(form.sides)
-                  ? 'noSides'
-                  : request.prompt.length === 0
-                    ? 'emptyPrompt'
-                    : null
+  const remoteDisabled: GenerateDisabledReason | null = !remote
+    ? null
+    : generating
+      ? 'busy'
+      : !remote.descriptor.workflows.some((w) => w === form.workflow)
+        ? 'unsupportedWorkflow'
+        : spec.needsSource && !form.sourceImage
+          ? 'noSource'
+          : form.workflow === 'inpaint' && !form.maskBase64
+            ? 'noMask'
+            : request.prompt.length === 0
+              ? 'emptyPrompt'
+              : null
+
+  const disabledReason: GenerateDisabledReason | null = remote
+    ? remoteDisabled
+    : generating
+      ? 'busy'
+      : !engineInstalled
+        ? 'noEngine'
+        : loadingArtifactId || readingResident
+          ? 'modelLoading'
+          : targetArtifactId === null
+            ? // Nothing to run. A resident model that cannot do this mode is
+              // why, when there is one; otherwise none is installed or picked.
+              residentCapabilities &&
+              !residentCapabilities.workflows.includes(form.workflow)
+              ? 'unsupportedWorkflow'
+              : 'noModel'
+            : residentLacksWorkflow ||
+                (capabilities &&
+                  !capabilities.workflows.includes(form.workflow))
+              ? 'unsupportedWorkflow'
+              : spec.needsSource && !form.sourceImage
+                ? 'noSource'
+                : form.workflow === 'inpaint' && !form.maskBase64
+                  ? 'noMask'
+                  : form.workflow === 'extend' && !anySide(form.sides)
+                    ? 'noSides'
+                    : request.prompt.length === 0
+                      ? 'emptyPrompt'
+                      : null
 
   const generate = useCallback(async () => {
-    if (disabledReason || targetArtifactId === null) return
+    if (disabledReason) return
+    if (remote) {
+      await startGeneration({ request, runs: form.runs, baseSeed })
+      return
+    }
+    if (targetArtifactId === null) return
     if (!modelReady) {
       // Start the picked model first. A failed start leaves its error on
       // the page and nothing is submitted.
@@ -334,6 +419,7 @@ export function useImageGeneration(): ImageGenerationHandle {
     await startGeneration({ request: submitted, runs: form.runs, baseSeed })
   }, [
     disabledReason,
+    remote,
     targetArtifactId,
     modelReady,
     loadModel,
@@ -352,13 +438,17 @@ export function useImageGeneration(): ImageGenerationHandle {
     stopRequested,
     modelReady,
     targetArtifactId,
-    targetFamilyId: target.familyId,
+    // A provider's model adopts the form like a family of its own: its defaults, once.
+    targetFamilyId: remote
+      ? `remote:${remote.target.provider}/${remote.target.model}`
+      : target.familyId,
     capabilities,
     canGenerate: disabledReason === null,
     disabledReason,
     request,
     baseSeed,
     outputSize,
+    remote,
     generate,
     stop,
   }

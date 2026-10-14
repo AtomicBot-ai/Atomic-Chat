@@ -30,6 +30,10 @@ pub struct ProviderConfig {
     pub base_url: Option<String>,
     pub custom_headers: Vec<ProviderCustomHeader>,
     pub models: Vec<String>,
+    /// The media part of the registration, kept to hand the core again after a restart: without
+    /// it a re-registration would leave the core's stored media as it was, never updated.
+    #[serde(default)]
+    pub media: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

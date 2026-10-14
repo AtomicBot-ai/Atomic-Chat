@@ -28,6 +28,7 @@ import { FitBadge } from '@/containers/hub/FitBadge'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useImageArtifact } from '@/hooks/useImageArtifact'
+import { useImageEngine } from '@/hooks/useImageEngine'
 import { useSelectedArtifact } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { fitForQuant, recommendedQuant } from '@/lib/diffusion/fit'
@@ -47,6 +48,7 @@ import type {
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageArtifactDownloadButton } from './ImageArtifactDownloadButton'
 import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
+import { RemoteModelSections } from './RemoteModelSections'
 
 type ImageModelSelectorProps = {
   /** `dialog` hides Remove and keeps the list short; `page` is the full manager. */
@@ -64,6 +66,8 @@ type ImageModelSelectorProps = {
   className?: string
   /** Setup closes as soon as a background download has been accepted. */
   onDownloadStarted?: (artifactId: string) => void
+  /** The picker closes once a provider's model is picked. */
+  onRemotePicked?: () => void
 }
 
 const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
@@ -80,6 +84,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   workflow,
   className,
   onDownloadStarted,
+  onRemotePicked,
 }: ImageModelSelectorProps) {
   const { t } = useTranslation()
   const noneInCatalogKey =
@@ -90,6 +95,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
   const installedArtifacts = useImageGenerationStore(
     (state) => state.installedArtifacts
   )
+  const engineInstalled = useImageEngine().installed
 
   const families = useMemo(
     () =>
@@ -124,14 +130,38 @@ export const ImageModelSelector = memo(function ImageModelSelector({
     return { installed, available }
   }, [families, installedIds])
 
+  // The connected providers' models do not wait for the local catalog: they are offered on a
+  // machine whose catalog never loads, too.
+  const remote =
+    variant === 'page' ? (
+      <RemoteModelSections
+        kind={modality}
+        onPicked={onRemotePicked}
+        {...(workflow !== undefined ? { workflow } : {})}
+      />
+    ) : null
+
+  // Opened for a provider's models before the engine is on disk: the local list waits for it.
+  if (variant === 'page' && !engineInstalled) {
+    return (
+      <div className={cn('space-y-2', className)}>
+        <LocalEngineRow modality={modality} />
+        {remote}
+      </div>
+    )
+  }
+
   if (!catalog) {
     return (
-      <p
-        className="text-sm text-muted-foreground"
-        data-testid="image-models-loading"
-      >
-        {t('images:model.loadingCatalog')}
-      </p>
+      <div className={cn('space-y-2', className)}>
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="image-models-loading"
+        >
+          {t('images:model.loadingCatalog')}
+        </p>
+        {remote}
+      </div>
     )
   }
 
@@ -197,6 +227,7 @@ export const ImageModelSelector = memo(function ImageModelSelector({
       {families.length === 0 && (
         <p className="text-sm text-muted-foreground">{t(noneInCatalogKey)}</p>
       )}
+      {remote}
     </div>
   )
 })
@@ -319,6 +350,40 @@ function SetupFamilyRow({
           variant="primary"
           onRequestDownload={start}
         />
+      )}
+    </div>
+  )
+}
+
+/** The local list's place while the engine is missing: one row that installs it. */
+function LocalEngineRow({ modality }: { modality: DiffusionModality }) {
+  const { t } = useTranslation()
+  const engine = useImageEngine()
+  const ns = modality === 'video' ? 'videos' : 'images'
+  const unsupported =
+    engine.hostBackendId === null && !engine.resolvingHostBackend
+  const { transferred, total } = engine.progress
+  const percent = total > 0 ? Math.round((transferred / total) * 100) : 0
+  return (
+    <div
+      className="flex items-center gap-2.5 rounded-lg px-2.5 py-2"
+      data-testid="image-models-engine-missing"
+    >
+      <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+        {unsupported
+          ? t('images:setup.engine.unsupported')
+          : t('images:remote.localNeedsEngine')}
+      </p>
+      {!unsupported && (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0 tabular-nums"
+          disabled={engine.installing || engine.resolvingHostBackend}
+          onClick={() => void engine.startInstall()}
+        >
+          {engine.installing ? `${percent}%` : t(`${ns}:setup.card.engine`)}
+        </Button>
       )}
     </div>
   )
