@@ -161,7 +161,9 @@ defaults on conflict.
 4. **Verify before you finish.** Run `make verify` for agent-authored changes.
    For focused iteration, TS/JS uses lint + tests in the affected workspace;
    Rust uses `cargo check` and `cargo clippy` in `src-tauri/`.
-5. **Never commit unless explicitly asked.**
+5. **Commit and push when work is ready.** The owner gives standing approval
+   to commit and push to `walladanger/Radium` without asking first. Never
+   push to upstream (AtomicBot-ai, janhq) or open PRs there without asking.
 6. **No new top-level folders, config files or runtime dependencies** without
    the user's explicit "ok" (name + reason first).
 7. **No destructive commands** — `rm -rf`, `git push --force`, `cargo clean
