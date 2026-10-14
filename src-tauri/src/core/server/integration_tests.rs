@@ -451,3 +451,66 @@ async fn polling_endpoints_stay_out_of_the_dashboard() {
 
     harness.stop().await;
 }
+
+/// POST a chat completion carrying `origin` (or none) the way a browser
+/// `fetch(..., { mode: 'no-cors' })` would: a simple content type, so no
+/// preflight runs first.
+async fn post_chat_from_origin(proxy_port: u16, origin: Option<&str>) -> reqwest::StatusCode {
+    let mut request = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/chat/completions"))
+        .header("content-type", "text/plain;charset=UTF-8")
+        .body(
+            serde_json::json!({
+                "model": "test-model",
+                "stream": true,
+                "messages": [{"role": "user", "content": "hi"}]
+            })
+            .to_string(),
+        );
+    if let Some(origin) = origin {
+        request = request.header("origin", origin);
+    }
+    request.send().await.expect("proxy should respond").status()
+}
+
+/// A web page the user happens to visit must not be able to make the server
+/// run inference (and spend the user's stored cloud provider keys) just
+/// because it cannot read the reply.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cross_site_post_is_refused_before_it_reaches_a_model() {
+    let harness = Harness::start("test-model", false).await;
+
+    for origin in ["https://evil.example", "http://192.168.1.50:3000", "null"] {
+        assert_eq!(
+            post_chat_from_origin(harness.proxy_port, Some(origin)).await,
+            reqwest::StatusCode::FORBIDDEN,
+            "origin {origin} must be refused"
+        );
+    }
+    assert!(
+        harness.seen_upstream_body.lock().unwrap().is_none(),
+        "a refused request must never reach the upstream model"
+    );
+
+    harness.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_app_webview_and_non_browser_clients_are_still_served() {
+    let harness = Harness::start("test-model", false).await;
+
+    for origin in [
+        None,
+        Some("tauri://localhost"),
+        Some("http://tauri.localhost"),
+        Some("http://localhost:1420"),
+    ] {
+        assert_eq!(
+            post_chat_from_origin(harness.proxy_port, origin).await,
+            reqwest::StatusCode::OK,
+            "origin {origin:?} must be served"
+        );
+    }
+
+    harness.stop().await;
+}

@@ -2164,6 +2164,21 @@ async fn inner_proxy_request<R: Runtime>(
         log::debug!("Bypassing host validation for whitelisted path: {path}");
     }
 
+    if !is_whitelisted_path && !is_request_origin_allowed(&origin_header, &config.trusted_hosts) {
+        log::warn!("Refusing request from untrusted origin '{origin_header}' to {path}");
+        state.endpoint = Some(endpoint_from_path(path.as_str()));
+        state.error_kind = Some("origin");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Vary", "Origin")
+            .body(Body::from(format!(
+                "Origin '{origin_header}' is not allowed. Web pages can only call this server \
+                 from a trusted host; add it in Settings \u{2192} Local API Server \u{2192} \
+                 Trusted Hosts."
+            )))
+            .unwrap());
+    }
+
     if !is_whitelisted_path && !config.proxy_api_key.is_empty() {
         // Check Authorization header (Bearer token)
         let auth_valid = parts
@@ -3848,6 +3863,39 @@ async fn inner_proxy_request<R: Runtime>(
     }
 }
 
+/// Origins the app's own webview uses when it calls this server: `tauri://localhost`
+/// on macOS/Linux and `http(s)://tauri.localhost` on Windows.
+const APP_WEBVIEW_ORIGINS: [&str; 3] = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+];
+
+/// Whether a request carrying this `Origin` header may be served.
+///
+/// Browsers attach `Origin` to every cross-site POST, including `no-cors`
+/// "simple" requests that skip the CORS preflight. Without this check any web
+/// page could make the server run inference — through the user's stored cloud
+/// provider keys — even though the page can never read the reply. Non-browser
+/// clients (SDKs, curl, coding agents) send no `Origin` and are unaffected; the
+/// app's webview and trusted hosts are allowed. Opaque origins (`null`, from
+/// sandboxed iframes or `file:` pages) are refused.
+fn is_request_origin_allowed(origin: &str, trusted_hosts: &[Vec<String>]) -> bool {
+    if origin.is_empty() {
+        return true;
+    }
+    if APP_WEBVIEW_ORIGINS
+        .iter()
+        .any(|app| app.eq_ignore_ascii_case(origin))
+    {
+        return true;
+    }
+    if !origin.contains("://") {
+        return false;
+    }
+    is_valid_host(&extract_host_from_origin(origin), trusted_hosts)
+}
+
 fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
@@ -4534,6 +4582,66 @@ async fn forward_non_streaming(
         if sender.send_data(bytes).await.is_err() {
             log::debug!("Client disconnected");
         }
+    }
+}
+
+#[cfg(test)]
+mod request_origin_tests {
+    use super::is_request_origin_allowed;
+
+    /// Allowed with the default settings, i.e. no extra trusted hosts.
+    fn allowed_by_default(origin: &str) -> bool {
+        is_request_origin_allowed(origin, &[vec![]])
+    }
+
+    #[test]
+    fn a_request_without_an_origin_is_allowed() {
+        assert!(allowed_by_default(""));
+    }
+
+    #[test]
+    fn the_app_webview_origins_are_allowed() {
+        for origin in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+        ] {
+            assert!(allowed_by_default(origin), "{origin}");
+        }
+    }
+
+    #[test]
+    fn loopback_origins_are_allowed() {
+        for origin in ["http://localhost:1420", "http://127.0.0.1:5173"] {
+            assert!(allowed_by_default(origin), "{origin}");
+        }
+    }
+
+    #[test]
+    fn other_sites_and_opaque_origins_are_refused() {
+        for origin in [
+            "https://evil.example",
+            "http://192.168.1.50:3000",
+            "null",
+            "https://tauri.localhost.evil.example",
+        ] {
+            assert!(!allowed_by_default(origin), "{origin}");
+        }
+    }
+
+    #[test]
+    fn a_trusted_host_is_allowed_as_an_origin() {
+        let trusted = vec![vec!["192.168.1.50".to_string()]];
+        assert!(is_request_origin_allowed(
+            "http://192.168.1.50:3000",
+            &trusted
+        ));
+    }
+
+    #[test]
+    fn a_wildcard_trusted_host_allows_any_origin() {
+        let trusted = vec![vec!["*".to_string()]];
+        assert!(is_request_origin_allowed("https://evil.example", &trusted));
     }
 }
 

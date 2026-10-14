@@ -85,13 +85,21 @@ impl LlamacppError {
             );
         }
 
-        // TODO: add others
         let is_out_of_memory = lower_stderr.contains("out of memory")
             || lower_stderr.contains("failed to allocate")
             || lower_stderr.contains("insufficient memory")
             || lower_stderr.contains("erroroutofdevicememory") // vulkan specific
             || lower_stderr.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
-            || lower_stderr.contains("cuda_error_out_of_memory"); // CUDA-specific
+            || lower_stderr.contains("cuda_error_out_of_memory") // CUDA-specific
+            || lower_stderr.contains("cudaerrormemoryallocation") // CUDA
+            || lower_stderr.contains("hiperroroutofmemory") // ROCm/HIP
+            || lower_stderr.contains("musaerrormemoryallocation") // MUSA
+            || lower_stderr.contains("cl_out_of_resources") // OpenCL
+            || lower_stderr.contains("cl_out_of_host_memory") // OpenCL
+            || lower_stderr.contains("erroroutofhostmemory") // Vulkan
+            || lower_stderr.contains("ggml_status_alloc_failed") // GGML
+            || lower_stderr.contains("not enough space in the buffer") // GGML alloc
+            || lower_stderr.contains("unable to allocate"); // General/Hexagon/llama-model
 
         if is_out_of_memory {
             return Self::new(
@@ -322,6 +330,30 @@ mod tests {
         );
 
         assert!(matches!(error.code, ErrorCode::OutOfMemory));
+    }
+
+    /// The default provider must recognise the same out-of-memory signatures
+    /// as the TurboQuant one, or AMD/Vulkan/OpenCL/MUSA users get a generic
+    /// load failure instead of the OOM message and recovery path.
+    #[test]
+    fn backend_specific_out_of_memory_errors_are_classified() {
+        for stderr in [
+            "CUDA error: cudaErrorMemoryAllocation\n",
+            "HIP error: hipErrorOutOfMemory\n",
+            "MUSA error: musaErrorMemoryAllocation\n",
+            "OpenCL error CL_OUT_OF_RESOURCES\n",
+            "OpenCL error CL_OUT_OF_HOST_MEMORY\n",
+            "vk::Device::allocateMemory: ErrorOutOfHostMemory\n",
+            "ggml_gallocr_reserve_n: GGML_STATUS_ALLOC_FAILED\n",
+            "ggml_tallocr_alloc: not enough space in the buffer\n",
+            "llama_model_load: unable to allocate CPU buffer\n",
+        ] {
+            let error = LlamacppError::from_process_output(&exit_code(1), stderr, "");
+            assert!(
+                matches!(error.code, ErrorCode::OutOfMemory),
+                "{stderr:?} should be classified as out of memory"
+            );
+        }
     }
 
     #[test]
