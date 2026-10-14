@@ -19,6 +19,10 @@ pub enum ResourceClass {
     /// serialized within its group: the hint comes from an external server, so
     /// it never earns `PureRead`'s parallelism.
     McpRead,
+    /// `agent.delegate`: runs a whole specialist turn that may read, write and
+    /// request approvals of its own. Needs no approval itself, but must run
+    /// solo — other class groups in a batch execute concurrently with it.
+    Delegation,
     Unknown,
 }
 
@@ -67,6 +71,7 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.proc.stop"
         | "os.http.request"
         | "skill.run_script" => ResourceClass::ApprovalGated,
+        "agent.delegate" => ResourceClass::Delegation,
         "reply" | "finish" => ResourceClass::Terminal,
         _ => ResourceClass::Unknown,
     }
@@ -89,7 +94,19 @@ pub fn resource_class_for_call(tool_name: &str, mcp: Option<&dyn McpBridge>) -> 
 pub fn is_batchable(class: ResourceClass) -> bool {
     !matches!(
         class,
-        ResourceClass::ApprovalGated | ResourceClass::Terminal | ResourceClass::Unknown
+        ResourceClass::ApprovalGated
+            | ResourceClass::Delegation
+            | ResourceClass::Terminal
+            | ResourceClass::Unknown
+    )
+}
+
+/// Classes that must be the only call in their batch. A batch that mixes one
+/// in is salvaged by keeping the first such call and dropping the rest.
+pub fn runs_solo(class: ResourceClass) -> bool {
+    matches!(
+        class,
+        ResourceClass::ApprovalGated | ResourceClass::Delegation
     )
 }
 
@@ -129,6 +146,16 @@ mod tests {
         assert!(!is_parallel_within_group(ResourceClass::Vision));
         assert!(!is_batchable(ResourceClass::ApprovalGated));
         assert!(!is_batchable(ResourceClass::Terminal));
+    }
+
+    #[test]
+    fn delegation_runs_solo_without_being_approval_gated() {
+        let class = resource_class_for("agent.delegate");
+        assert_eq!(class, ResourceClass::Delegation);
+        assert!(!is_batchable(class));
+        assert!(runs_solo(class));
+        assert!(runs_solo(ResourceClass::ApprovalGated));
+        assert!(!runs_solo(ResourceClass::FsWrite));
     }
 
     #[test]

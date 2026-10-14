@@ -453,5 +453,38 @@
     ],
     "decision": "docs/decisions/2026-10-09-organize-skills-by-creator-and-category.md",
     "status": "checked"
+  },
+  {
+    "id": "agent-specialists",
+    "feature": "Agent specialists and delegation",
+    "forUsers": "Any assistant can be marked as a specialist. In agent mode the thread's assistant becomes a coordinator that hands matching tasks to those specialists, each working with its own instructions, and uses their answers; every risky action a specialist takes still asks the user first.",
+    "paths": [
+      "src-tauri/src/core/agent/delegation.rs",
+      "src-tauri/src/core/agent/resource_class.rs",
+      "src-tauri/src/core/agent/prompt.rs",
+      "src-tauri/src/core/agent/grammar.rs",
+      "web-app/src/lib/agent-specialists.ts",
+      "web-app/src/containers/dialogs/AddEditAssistant.tsx"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --no-default-features --features test-tauri --lib -- core::agent::delegation_tests core::agent::resource_class",
+        "cwd": "src-tauri",
+        "files": [
+          "src-tauri/src/core/agent/delegation_tests.rs",
+          "src-tauri/src/core/agent/resource_class.rs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/lib/__tests__/agent-specialists.test.ts src/containers/dialogs/__tests__/AddEditAssistant.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/lib/__tests__/agent-specialists.test.ts",
+          "web-app/src/containers/dialogs/__tests__/AddEditAssistant.test.tsx"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-10-10-let-the-agent-delegate-tasks-to-specialist-assistants.md",
+    "status": "pending"
   }
 ]

@@ -182,6 +182,23 @@ pub struct AgentTurnRequest {
     /// without documents.
     #[serde(default)]
     pub rag: Option<AgentRagRequest>,
+    /// Specialists this turn may hand work to with `agent.delegate`. Empty
+    /// removes the tool from the prompt, grammar, schema and dispatch.
+    #[serde(default)]
+    pub specialists: Vec<AgentSpecialist>,
+}
+
+/// A specialist agent the coordinating turn can delegate to. The frontend
+/// resolves it from an assistant profile; `instructions` arrive rendered.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentSpecialist {
+    /// The name the coordinator passes to `agent.delegate`.
+    pub name: String,
+    /// One line telling the coordinator when to use this specialist.
+    pub description: String,
+    /// The specialist's own system instructions.
+    #[serde(default)]
+    pub instructions: Option<String>,
 }
 
 /// Per-turn RAG context. Collection names are computed frontend-side

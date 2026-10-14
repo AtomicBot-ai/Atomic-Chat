@@ -89,6 +89,7 @@ impl ToolFixture {
                 docs: None,
                 disabled_tools: &std::collections::BTreeSet::new(),
                 auto_approve_mcp: true,
+                delegate: None,
             },
         )
         .await
@@ -1307,6 +1308,7 @@ async fn symlink_escape_requires_folder_access_and_denial_prevents_read() {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         },
     )
     .await;

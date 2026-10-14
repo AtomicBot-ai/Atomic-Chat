@@ -28,6 +28,19 @@ describe('presentGenericTool', () => {
     })
   })
 
+  it('names the specialist a task was handed to', () => {
+    expect(
+      presentGenericTool({
+        toolName: 'agent.delegate',
+        input: { specialist: 'Network', task: 'Why is the Wi-Fi slow?' },
+        state: 'input-available',
+      })
+    ).toMatchObject({
+      title: 'Asking specialist',
+      subtitle: 'Network',
+    })
+  })
+
   it('humanizes unknown MCP tool names', () => {
     expect(
       presentGenericTool({

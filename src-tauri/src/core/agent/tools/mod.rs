@@ -59,6 +59,14 @@ pub trait FolderAccessHook: Send + Sync {
     async fn request(&self, request: FolderAccessRequest) -> Result<bool, String>;
 }
 
+/// Runs a specialist's turn for `agent.delegate`. Present only on turns that
+/// carry specialists; a specialist's own turn never gets one, so delegation
+/// is one level deep.
+#[async_trait]
+pub trait DelegateHook: Send + Sync {
+    async fn delegate(&self, specialist: &str, task: &str) -> ToolOutcome;
+}
+
 #[async_trait]
 pub trait DesktopServices: Send + Sync {
     async fn write_clipboard(&self, text: String) -> Result<(), String>;
@@ -96,6 +104,8 @@ pub struct ToolContext<'a> {
     /// Auto-approve MCP-origin tools (legacy chat `allowAllMCPPermissions`).
     /// Never widens approval for built-in tools.
     pub auto_approve_mcp: bool,
+    /// Runs `agent.delegate`. `None` when the turn has no specialists.
+    pub delegate: Option<&'a dyn DelegateHook>,
 }
 
 pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolOutcome {
@@ -163,6 +173,7 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         "skill.run_script" => skill_run_script::execute(&call.args, context).await,
         "skill.view" => skill_view::execute(&call.args, context).await,
         "tool.view" => tool_view::execute(&call.args, context.loaded_tools, context.mcp).await,
+        "agent.delegate" => delegate(&call.args, context).await,
         "reply" => required_string(&call.args, "text")
             .map(ToolOutcome::ok)
             .map_err(ToolOutcome::error),
@@ -172,6 +183,22 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         _ => Err(ToolOutcome::error(format!("Unknown tool: {}", call.tool))),
     };
     result.unwrap_or_else(|outcome| outcome)
+}
+
+async fn delegate(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
+    let Some(hook) = context.delegate else {
+        return Err(ToolOutcome::error(
+            "No specialists are available in this conversation",
+        ));
+    };
+    let specialist = required_string(args, "specialist").map_err(ToolOutcome::error)?;
+    let task = required_string(args, "task").map_err(ToolOutcome::error)?;
+    if task.trim().is_empty() {
+        return Err(ToolOutcome::error(
+            "`task` must describe the work to hand over",
+        ));
+    }
+    Ok(hook.delegate(specialist.trim(), &task).await)
 }
 
 async fn authorize_call(
@@ -770,6 +797,7 @@ mod tests {
                 docs: None,
                 disabled_tools: &std::collections::BTreeSet::new(),
                 auto_approve_mcp: true,
+                delegate: None,
             };
             let outcome = execute(
                 &ToolCallPayload {
@@ -835,6 +863,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
 
         let outcome = execute(
@@ -896,6 +925,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
         let outcome = execute(
             &ToolCallPayload {
@@ -947,6 +977,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
 
         let clipboard = execute(
@@ -1011,6 +1042,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
 
         let blocked = authorize_call(
@@ -1072,6 +1104,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
         let original = ToolCallPayload {
             tool: "os.fs.trash".into(),
@@ -1131,6 +1164,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
         let escaped = ToolCallPayload {
             tool: "os.fs.trash".into(),
@@ -1188,6 +1222,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
 
         let denied = authorize_call(
@@ -1242,6 +1277,7 @@ mod tests {
             docs: None,
             disabled_tools: &std::collections::BTreeSet::new(),
             auto_approve_mcp: true,
+            delegate: None,
         };
 
         let denied = execute(

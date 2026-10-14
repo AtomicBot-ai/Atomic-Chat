@@ -150,6 +150,9 @@ const TOOL_PERMISSIONS: Record<string, [PermissionId, PermissionLevel] | null> =
     'vision.describe': ['lookAtImages', 'reads'],
     'tool.view': null,
     'skill.view': null,
+    // Hands work to another assistant; that assistant's own actions are
+    // reviewed one by one, so delegating grants nothing by itself.
+    'agent.delegate': null,
     'reply': null,
     'finish': null,
   }

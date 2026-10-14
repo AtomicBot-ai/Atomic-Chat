@@ -174,6 +174,7 @@ impl LiveHarness {
                     mcp: None,
                     disabled_tools: &std::collections::BTreeSet::new(),
                     auto_approve_mcp: true,
+                    delegate: None,
                     docs: None,
                     documents_note: None,
                     client: &self.client,

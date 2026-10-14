@@ -475,6 +475,13 @@ pub const ITERATION_ONE_TOOLS: &[ToolDescriptor] = &[
         examples: &[],
     },
     ToolDescriptor {
+        name: "agent.delegate",
+        summary: "Hand one self-contained task to a specialist listed under ### specialists and get its final answer back. The specialist cannot see this conversation, so put every fact it needs into `task`. Must be the only call in its step.",
+        args_schema: r#"{ specialist: string, task: string }"#,
+        tier: ToolTier::Frequent,
+        examples: &[],
+    },
+    ToolDescriptor {
         name: "reply",
         summary: "Final natural-language answer; ends the macro-turn. Never use to announce a pending action; keep text short (no huge dumps). If the task requires an exact answer format or marker, `text` must be ONLY that bare value or marker line — no preamble or commentary.",
         args_schema: r#"{ text: string }"#,
@@ -625,6 +632,36 @@ pub struct StablePrefixArgs<'a> {
     pub mcp_omitted: usize,
     pub profile: crate::core::agent::model_profile::AgentModelProfile,
     pub thinking: bool,
+    /// Specialists this turn may hand work to with `agent.delegate`. Empty
+    /// omits the `### specialists` section, keeping the prefix byte-identical
+    /// to turns without delegation.
+    pub specialists: &'a [SpecialistSummary],
+}
+
+/// A specialist as the coordinating model sees it in `### specialists`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecialistSummary {
+    pub name: String,
+    pub description: String,
+}
+
+/// Upper bound on one specialist's description in the roster.
+const MAX_SPECIALIST_DESCRIPTION_CHARS: usize = 300;
+
+fn render_specialists(specialists: &[SpecialistSummary]) -> String {
+    let mut section = String::from(
+        "### specialists\nYou coordinate these specialists. When a task clearly fits one, hand it \
+         over with `agent.delegate` instead of doing it yourself, then use its answer. Do the \
+         work yourself when none fits.",
+    );
+    for specialist in specialists {
+        let description = bounded_chars(
+            specialist.description.trim(),
+            MAX_SPECIALIST_DESCRIPTION_CHARS,
+        );
+        section.push_str(&format!("\n- {}: {}", specialist.name, description));
+    }
+    section
 }
 
 pub fn build_stable_prefix_for_profile(
@@ -647,6 +684,7 @@ pub fn build_stable_prefix_for_profile(
         mcp_omitted: 0,
         profile,
         thinking,
+        specialists: &[],
     })
 }
 
@@ -662,6 +700,7 @@ pub fn build_stable_prefix_with(args: &StablePrefixArgs<'_>) -> String {
         mcp_omitted,
         profile,
         thinking,
+        specialists,
     } = *args;
     let persona = system_persona
         .map(str::to_string)
@@ -767,6 +806,10 @@ pub fn build_stable_prefix_with(args: &StablePrefixArgs<'_>) -> String {
         ]
         .join("\n"),
     );
+
+    if !specialists.is_empty() {
+        sections.push(render_specialists(specialists));
+    }
 
     // Rendered last on purpose: the sections above are byte-identical across
     // threads, so a shared llama.cpp slot re-ingests only from here down when

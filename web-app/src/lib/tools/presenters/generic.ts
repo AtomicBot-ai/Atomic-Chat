@@ -162,6 +162,11 @@ const ACTION_LABELS: Record<string, ActionLabel> = {
     completed: 'Sent notification',
     failed: 'Could not send notification',
   },
+  'agent.delegate': {
+    active: 'Asking specialist',
+    completed: 'Specialist answered',
+    failed: 'Specialist could not finish',
+  },
 }
 
 function humanizeToolName(toolName: string): string {
@@ -176,6 +181,7 @@ function readSubtitle(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return undefined
   const values = input as Record<string, unknown>
   const value =
+    values.specialist ??
     values.path ??
     values.url ??
     values.query ??

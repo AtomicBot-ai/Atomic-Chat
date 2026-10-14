@@ -204,6 +204,7 @@ mod tests {
             web_search: true,
             mcp_enabled: true,
             auto_approve_mcp: true,
+            specialists: Vec::new(),
             disabled_mcp_tools: Vec::new(),
             rag: None,
         }

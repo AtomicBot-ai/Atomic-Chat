@@ -77,6 +77,20 @@ export type AgentTurnRequest = {
    * (see `@/lib/rag-collections`) and reach the backend verbatim.
    */
   rag?: AgentRagRequest
+  /**
+   * Assistants the agent may hand tasks to with `agent.delegate`. Omitting it
+   * (or sending none) keeps delegation off for the turn.
+   */
+  specialists?: AgentSpecialist[]
+}
+
+/** An assistant offered to the agent as a specialist it can delegate to. */
+export type AgentSpecialist = {
+  name: string
+  /** When the coordinator should use it. */
+  description: string
+  /** Its own rendered system instructions. */
+  instructions?: string
 }
 
 export type AgentRagRequest = {

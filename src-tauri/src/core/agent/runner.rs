@@ -28,7 +28,7 @@ use super::prompt::{build_prompt_dynamic, build_prompt_parts_dynamic, format_wor
 use super::pty::PtyRegistry;
 use super::rag_bridge::DocsBridge;
 use super::reply_stream::ReplyStreamScanner;
-use super::resource_class::{is_batchable, resource_class_for_call, ResourceClass};
+use super::resource_class::{is_batchable, resource_class_for_call, runs_solo, ResourceClass};
 use super::session::AgentSessionState;
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::token_budget::{
@@ -79,6 +79,8 @@ pub struct RunTurnInput<'a> {
     pub disabled_tools: &'a std::collections::BTreeSet<String>,
     /// Auto-approve MCP-origin tools (migrated chat `allowAllMCPPermissions`).
     pub auto_approve_mcp: bool,
+    /// Runs `agent.delegate`. `None` disables delegation for this turn.
+    pub delegate: Option<&'a dyn tools::DelegateHook>,
     pub client: &'a dyn AgentLlmClient,
     pub approval: &'a dyn ApprovalHook,
     pub folder_access: &'a dyn FolderAccessHook,
@@ -569,6 +571,7 @@ pub async fn run_turn(
             docs: input.docs,
             disabled_tools: input.disabled_tools,
             auto_approve_mcp: input.auto_approve_mcp,
+            delegate: input.delegate,
             session_id: input.session_id,
             working_dir: input.working_dir,
             editable_roots: input.editable_roots,
@@ -743,7 +746,7 @@ fn validate_batch(
                 message: format!("Unknown tool in batch: {}", call.tool),
             });
         }
-        if calls.len() > 1 && class == ResourceClass::ApprovalGated {
+        if calls.len() > 1 && runs_solo(class) {
             issues.push(BatchValidationIssue {
                 kind: BatchValidationKind::ApprovalGatedSolo,
                 message: format!("Tool must run solo: {}", call.tool),
@@ -789,8 +792,8 @@ fn trim_to_first_approval_gated(
 ) -> (Vec<ToolCallPayload>, Vec<String>) {
     let kept_index = calls
         .iter()
-        .position(|call| resource_class_for_call(&call.tool, mcp) == ResourceClass::ApprovalGated)
-        .expect("approval-only validation requires an approval-gated call");
+        .position(|call| runs_solo(resource_class_for_call(&call.tool, mcp)))
+        .expect("approval-only validation requires a solo-only call");
     let kept = calls[kept_index].clone();
     let dropped = calls
         .iter()

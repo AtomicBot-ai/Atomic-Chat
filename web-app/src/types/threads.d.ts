@@ -69,6 +69,11 @@ type Assistant = {
    * must stay outside `parameters` — that bag reaches the request body as is.
    */
   sampling_overridden?: boolean
+  /**
+   * Offered to the agent as a specialist it can hand tasks to with
+   * `agent.delegate` (see `@/lib/agent-specialists`).
+   */
+  specialist?: boolean
   // tool_steps?: number
 }
 

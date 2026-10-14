@@ -12,6 +12,7 @@ import { IconMoodSmile } from '@tabler/icons-react'
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
 
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 
 import { useTheme } from '@/hooks/useTheme'
 import { defaultAssistant } from '@/hooks/useAssistant'
@@ -42,6 +43,8 @@ export default function AddEditAssistant({
   const [instructions, setInstructions] = useState(
     initialData?.instructions || ''
   )
+  const [specialist, setSpecialist] = useState(initialData?.specialist === true)
+  const [specialistError, setSpecialistError] = useState<string | null>(null)
   const { isDark } = useTheme()
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
@@ -78,6 +81,8 @@ export default function AddEditAssistant({
       setName(initialData.name)
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
+      setSpecialist(initialData.specialist === true)
+      setSpecialistError(null)
       setShowEmojiPicker(false)
       // setToolStepsInput(String(initialData.tool_steps ?? 20))
     } else if (open) {
@@ -91,6 +96,8 @@ export default function AddEditAssistant({
     setName('')
     setDescription(undefined)
     setInstructions('')
+    setSpecialist(false)
+    setSpecialistError(null)
     setNameError(null)
     setShowEmojiPicker(false)
     // setToolStepsInput('20')
@@ -102,6 +109,13 @@ export default function AddEditAssistant({
       return
     }
     setNameError(null)
+    // A specialist is chosen by its description; without one the agent
+    // could never tell when to delegate to it.
+    if (specialist && !description?.trim()) {
+      setSpecialistError(t('assistants:specialistNeedsDescription'))
+      return
+    }
+    setSpecialistError(null)
 
     // const parsedToolSteps = Number(toolStepsInput)
     const assistant: Assistant = {
@@ -116,6 +130,7 @@ export default function AddEditAssistant({
       // built-in defaults so the popover opens on sane values.
       parameters: initialData?.parameters ?? { ...defaultAssistant.parameters },
       sampling_overridden: initialData?.sampling_overridden,
+      specialist,
       // tool_steps: isNaN(parsedToolSteps) ? 20 : parsedToolSteps,
     }
     onSave(assistant)
@@ -225,6 +240,30 @@ export default function AddEditAssistant({
             <div className="text-xs text-muted-foreground">
               {t('assistants:instructionsDateHint')}
             </div>
+          </div>
+
+          <div className="flex items-start justify-between gap-4 pt-2">
+            <div className="space-y-1">
+              <label htmlFor="assistant-specialist" className="text-sm">
+                {t('assistants:specialist')}
+              </label>
+              <div className="text-xs text-muted-foreground">
+                {t('assistants:specialistDesc')}
+              </div>
+              {specialistError && (
+                <div className="text-xs text-destructive">
+                  {specialistError}
+                </div>
+              )}
+            </div>
+            <Switch
+              id="assistant-specialist"
+              checked={specialist}
+              onCheckedChange={(checked) => {
+                setSpecialist(checked)
+                if (!checked) setSpecialistError(null)
+              }}
+            />
           </div>
         </div>
 

@@ -252,6 +252,11 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"title\"" ws ":" ws non-empty-string ( ws "," ws "\"body\"" ws ":" ws string )? ws "}""#,
     },
     ToolGrammar {
+        name: "agent.delegate",
+        rule: "agent-delegate",
+        args: r#""{" ws "\"specialist\"" ws ":" ws non-empty-string ws "," ws "\"task\"" ws ":" ws non-empty-string ws "}""#,
+    },
+    ToolGrammar {
         name: "reply",
         rule: "reply",
         args: r#""{" ws "\"text\"" ws ":" ws non-empty-string ws "}""#,
@@ -339,6 +344,7 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.clipboard.read",
     "os.clipboard.write",
     "os.notify",
+    "agent.delegate",
     "reply",
     "finish",
 ];
@@ -413,7 +419,7 @@ pub fn tool_call_grammar_dynamic(
     }
 
     // At most one prelude: emitting two would duplicate `prelude-trail-ws` and
-    // make the grammar unparseable.
+    // make the grammar unparsable.
     let prelude = match (profile.reasoning_open_tag(), profile.reasoning_close_tag()) {
         (Some(open), Some(close)) => Some(("channel", open, close)),
         _ if thinking => Some(("think", GENERIC_THINK_OPEN, GENERIC_THINK_CLOSE)),
@@ -433,7 +439,7 @@ pub fn tool_call_grammar_dynamic(
     if step_rules.is_empty() || terminal_rules.is_empty() {
         // Unreachable while `reply` and `finish` stay undisablable — the loop
         // has no way to end without them — but an empty alternation would be
-        // unparseable GBNF, so degrade to the unpositioned form.
+        // unparsable GBNF, so degrade to the unpositioned form.
         let call_rules = [step_rules.as_slice(), terminal_rules.as_slice()].concat();
         writeln!(
             grammar,
@@ -782,7 +788,7 @@ mod tests {
         for profile in [AgentModelProfile::Plain, AgentModelProfile::Gemma4Think] {
             for thinking in [false, true] {
                 let grammar = tool_call_grammar_for_profile(&registry, profile, thinking);
-                // A duplicate rule definition would make the GBNF unparseable.
+                // A duplicate rule definition would make the GBNF unparsable.
                 assert!(grammar.matches("prelude-trail-ws ::=").count() <= 1);
             }
         }

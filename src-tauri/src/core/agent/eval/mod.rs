@@ -469,6 +469,7 @@ async fn run_task_sample(
             mcp: None,
             disabled_tools: &disabled_tools,
             auto_approve_mcp: true,
+            delegate: None,
             docs: None,
             documents_note: None,
             client,

@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::approval::ApprovalGate;
 use super::attachments::stage_attachments;
+use super::delegation::{PreparedSpecialist, SpecialistDelegator, DELEGATE_TOOL};
 use super::folder_access::FolderAccessGate;
 use super::llm_client::{
     find_session_by_model_and_backend, AgentLlmClient, ContextExpansionHook, LlamaServerClient,
@@ -25,15 +26,15 @@ use super::openai_client::{
 };
 use super::path_policy::{canonical_directory, expand_home, lexical_normalize, EditableRoots};
 use super::prompt::{
-    build_stable_prefix_with, CapabilitiesSummary, SkillDescriptor, StablePrefixArgs,
-    DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
+    build_stable_prefix_with, CapabilitiesSummary, SkillDescriptor, SpecialistSummary,
+    StablePrefixArgs, DEFAULT_MAX_PARALLEL_TOOL_CALLS, ITERATION_ONE_TOOLS,
 };
 use super::rag_bridge::{DocsBridge, LiveDocsBridge};
 use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id, AgentReseedMessage};
 use super::skills::load_registry;
 use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
-use super::tools::DesktopServices;
+use super::tools::{DelegateHook, DesktopServices};
 use super::types::{
     AgentApprovalDecision, AgentEvent, AgentFolderAccessDecision, AgentReasoning, AgentTurnRequest,
     ApprovalDecision,
@@ -551,6 +552,11 @@ pub async fn agent_run_turn<R: Runtime>(
                 .map(str::to_owned),
         );
     }
+    // Without specialists `agent.delegate` leaves the prompt, grammar, schema
+    // and dispatch, so turns that never delegate keep a byte-identical prefix.
+    if request.specialists.is_empty() {
+        disabled_tools.insert(DELEGATE_TOOL.to_owned());
+    }
     let enabled_descriptors: Vec<super::prompt::ToolDescriptor> = ITERATION_ONE_TOOLS
         .iter()
         .filter(|descriptor| !disabled_tools.contains(descriptor.name))
@@ -597,6 +603,14 @@ pub async fn agent_run_turn<R: Runtime>(
     let docs: Option<&dyn DocsBridge> =
         docs_bridge.as_ref().map(|bridge| bridge as &dyn DocsBridge);
     let documents_note = request.rag.as_ref().map(format_documents_note);
+    let specialist_summaries = request
+        .specialists
+        .iter()
+        .map(|specialist| SpecialistSummary {
+            name: specialist.name.trim().to_owned(),
+            description: specialist.description.trim().to_owned(),
+        })
+        .collect::<Vec<_>>();
     let stable_prefix = build_stable_prefix_with(&StablePrefixArgs {
         tool_descriptors: &enabled_descriptors,
         skill_descriptors: &skill_descriptors,
@@ -611,7 +625,40 @@ pub async fn agent_run_turn<R: Runtime>(
             .unwrap_or(0),
         profile: model_profile,
         thinking: reasoning.is_on(),
+        specialists: &specialist_summaries,
     });
+    // A specialist works with the coordinator's tools minus `agent.delegate`
+    // and follows its own instructions instead of the thread assistant's.
+    let mut specialist_disabled_tools = disabled_tools.clone();
+    specialist_disabled_tools.insert(DELEGATE_TOOL.to_owned());
+    let specialist_descriptors: Vec<super::prompt::ToolDescriptor> = enabled_descriptors
+        .iter()
+        .filter(|descriptor| descriptor.name != DELEGATE_TOOL)
+        .cloned()
+        .collect();
+    let prepared_specialists = request
+        .specialists
+        .iter()
+        .map(|specialist| PreparedSpecialist {
+            name: specialist.name.trim().to_owned(),
+            stable_prefix: build_stable_prefix_with(&StablePrefixArgs {
+                tool_descriptors: &specialist_descriptors,
+                skill_descriptors: &skill_descriptors,
+                capabilities: &capabilities,
+                max_parallel_tool_calls: DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+                system_persona: None,
+                assistant_instructions: specialist.instructions.as_deref(),
+                mcp_tools: mcp.map(|bridge| bridge.descriptors()).unwrap_or(&[]),
+                mcp_omitted: mcp_bridge
+                    .as_ref()
+                    .map(|bridge| bridge.omitted())
+                    .unwrap_or(0),
+                profile: model_profile,
+                thinking: reasoning.is_on(),
+                specialists: &[],
+            }),
+        })
+        .collect::<Vec<_>>();
     let approval_events = on_event.clone();
     let approval = ApprovalGate::new(
         request.run_id.clone(),
@@ -640,6 +687,37 @@ pub async fn agent_run_turn<R: Runtime>(
         app_handle: app_handle.clone(),
     };
     let code_index_cache = data_folder.join(CODE_INDEX_CACHE_DIR);
+    let max_steps = request.max_steps.unwrap_or(MAX_STEPS);
+    let delegator = (!prepared_specialists.is_empty()).then(|| SpecialistDelegator {
+        specialists: prepared_specialists,
+        run_id: &request.run_id,
+        session_id: &request.session_id,
+        model_profile,
+        working_dir: &working_dir,
+        editable_roots: &editable_roots,
+        external_read_only_roots: &trusted_read_roots[..external_read_only_count],
+        trusted_read_roots: &trusted_read_roots,
+        max_steps,
+        reasoning: reasoning.clone(),
+        sampling: &sampling,
+        mcp,
+        docs,
+        documents_note: documents_note.as_deref(),
+        disabled_tools: &specialist_disabled_tools,
+        auto_approve_mcp: request.auto_approve_mcp,
+        client: client.as_ref(),
+        approval: &approval,
+        folder_access: &folder_access,
+        desktop: &desktop,
+        cancellation: &cancellation,
+        skill_registry: &skill_registry,
+        bundled_script_runtime: bundled_script_runtime.as_deref(),
+        pty: &state.agent_pty_sessions,
+        cache_dir: &code_index_cache,
+    });
+    let delegate_hook: Option<&dyn DelegateHook> = delegator
+        .as_ref()
+        .map(|delegator| delegator as &dyn DelegateHook);
     let session_lock = get_session_lock(&state.agent_session_locks, &request.session_id).await;
     let result = {
         let _session_guard = session_lock.lock().await;
@@ -657,12 +735,13 @@ pub async fn agent_run_turn<R: Runtime>(
                         editable_roots: &editable_roots,
                         external_read_only_roots: &trusted_read_roots[..external_read_only_count],
                         trusted_read_roots: &trusted_read_roots,
-                        max_steps: request.max_steps.unwrap_or(MAX_STEPS),
+                        max_steps,
                         reasoning: reasoning.clone(),
                         sampling: &sampling,
                         mcp,
                         disabled_tools: &disabled_tools,
                         auto_approve_mcp: request.auto_approve_mcp,
+                        delegate: delegate_hook,
                         docs,
                         documents_note: documents_note.as_deref(),
                         client: client.as_ref(),
@@ -885,6 +964,7 @@ fn validate_request(request: &AgentTurnRequest) -> Result<(), String> {
             validate_collection_name(project)?;
         }
     }
+    super::delegation::validate_specialists(&request.specialists)?;
     Ok(())
 }
 

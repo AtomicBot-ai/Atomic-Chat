@@ -232,7 +232,28 @@ model contradicted itself rather than repeating itself.
 - Document index: `docs.list`, `docs.retrieve`, `docs.chunks` (thread/project
   vector collections; present only on turns that carry `rag`).
 - Tool discovery: `tool.view`.
+- Delegation: `agent.delegate` (present only on turns that carry specialists;
+  see "Specialist delegation").
 - Terminals: `reply` and `finish`.
+
+### Specialist delegation
+
+Assistants marked as specialists arrive on the turn request as `specialists`
+(name, description, rendered instructions). The coordinator sees them under
+`### specialists` and calls `agent.delegate { specialist, task }`.
+`delegation::SpecialistDelegator` runs a nested `run_turn` with:
+
+- the specialist's own stable prefix (its instructions, no roster, no
+  `agent.delegate` — delegation is one level deep);
+- a fresh in-memory session (`<session>--<slug>`) that sees only `task`;
+- the coordinator's client, roots, MCP/docs bridges, approval gate and
+  cancellation token, with steps capped at 24.
+
+Only the specialist's final `AssistantReply` returns, as the tool observation;
+its lifecycle events are not forwarded. `ResourceClass::Delegation` needs no
+approval but runs solo (`runs_solo`), since class groups in a batch execute
+concurrently. Without specialists the tool is disabled everywhere and the
+prefix is byte-identical to a turn without delegation.
 
 ### Attachment contract
 
