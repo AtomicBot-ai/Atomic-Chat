@@ -41,6 +41,11 @@ export type ChatMediaOverrides = {
   resolution?: string
   /** Video length in seconds. Ignored for images and when using last used. */
   length_seconds?: number
+  /**
+   * Continue the most recent video: its last frame becomes the new clip's
+   * first frame. Only for `text_to_video`; overrides the other choices.
+   */
+  continueLastVideo?: boolean
 }
 
 /** The choices the chat popup can offer for a task, before any prompt. */
@@ -64,6 +69,10 @@ export type ChatGenerationDeps = {
   addToLibrary: (assets: MediaAsset[]) => Promise<void>
   newId: () => string
   appVersion: string
+  /** Every asset in the library, for "continue last video". */
+  assets: () => MediaAsset[]
+  /** Reads a stored video's last frame as a JPEG data URL. */
+  extractLastFrame: (path: string, mime: string) => Promise<string>
 }
 
 export type ChatGenerationResult = {
@@ -81,6 +90,14 @@ export class NoMediaModelError extends Error {
         : 'No image model is set up. Open Media, pick an image model and generate once.'
     )
     this.name = 'NoMediaModelError'
+  }
+}
+
+/** What a user sees when they ask to continue but no video exists yet. */
+export class NoVideoToContinueError extends Error {
+  constructor() {
+    super('No video to continue yet. Generate a video first.')
+    this.name = 'NoVideoToContinueError'
   }
 }
 
@@ -239,6 +256,58 @@ export function resolveChatRequest(
   }
 }
 
+/**
+ * Continue the most recent video from the chat prompt: find it, read its last
+ * frame, and run its own model again with that frame as `init_image` and the
+ * new prompt. The old `end_image` and `seed` are dropped, mirroring the
+ * library's Continue button.
+ */
+export async function resolveChatContinueRequest(
+  task: string,
+  prompt: string,
+  deps: Pick<
+    ChatGenerationDeps,
+    'capabilities' | 'newId' | 'assets' | 'extractLastFrame'
+  >
+): Promise<{ request: NormalizedMediaRequest; model: MediaModelDescriptor }> {
+  if (task !== 'text_to_video') throw new NoVideoToContinueError()
+
+  const latest = deps
+    .assets()
+    .filter((asset) => asset.media_type === 'video')
+    .sort((a, b) => b.created_at - a.created_at)[0]
+  if (!latest) throw new NoVideoToContinueError()
+
+  const providerCaps = deps.capabilities()[latest.provenance.provider_id]
+  const model = providerCaps?.models?.find(
+    (entry) => entry.id === latest.provenance.model_id
+  )
+  if (!model) {
+    throw new Error('The model that made the last video is no longer available.')
+  }
+
+  const initImage = await deps.extractLastFrame(latest.path, latest.mime)
+  const params: Record<string, unknown> = {
+    ...latest.provenance.params,
+    prompt,
+    init_image: initImage,
+  }
+  delete params.end_image
+  delete params.seed
+
+  return {
+    model,
+    request: {
+      client_job_id: deps.newId(),
+      provider_id: latest.provenance.provider_id,
+      model_id: latest.provenance.model_id,
+      task,
+      params,
+      ...(latest.provenance.device ? { device: latest.provenance.device } : {}),
+    },
+  }
+}
+
 /** Resolves when the job reaches a terminal state. */
 function untilTerminal(
   manager: MediaJobManager,
@@ -275,7 +344,9 @@ export async function generateMediaForChat(
   // Capabilities are not persisted; a fresh app start has none until asked.
   if (Object.keys(deps.capabilities()).length === 0) await deps.refresh()
 
-  const { request, model } = resolveChatRequest(task, prompt, deps, overrides)
+  const { request, model } = overrides.continueLastVideo
+    ? await resolveChatContinueRequest(task, prompt, deps)
+    : resolveChatRequest(task, prompt, deps, overrides)
   await deps.manager.submit(request)
   const entry = await untilTerminal(
     deps.manager,
@@ -309,13 +380,19 @@ export async function generateMediaForChat(
 
 /** The real dependencies. Built lazily so importing this stays side-effect free. */
 export async function defaultChatGenerationDeps(): Promise<ChatGenerationDeps> {
-  const [{ useMediaProviderStore }, { useMediaLastUsedStore }, library, hook] =
-    await Promise.all([
-      import('@/stores/media-provider-store'),
-      import('@/stores/media-last-used-store'),
-      import('@/stores/media-library-store'),
-      import('@/hooks/useMediaJobAsset'),
-    ])
+  const [
+    { useMediaProviderStore },
+    { useMediaLastUsedStore },
+    library,
+    hook,
+    { extractLastFrameDataUrl },
+  ] = await Promise.all([
+    import('@/stores/media-provider-store'),
+    import('@/stores/media-last-used-store'),
+    import('@/stores/media-library-store'),
+    import('@/hooks/useMediaJobAsset'),
+    import('@/containers/media/videoLastFrame'),
+  ])
   return {
     manager: mediaJobManager,
     providers: () => useMediaProviderStore.getState().providers,
@@ -324,6 +401,8 @@ export async function defaultChatGenerationDeps(): Promise<ChatGenerationDeps> {
     lastUsed: (task) => useMediaLastUsedStore.getState().byTask[task],
     materializeDeps: hook.browserMaterializeDeps,
     addToLibrary: (assets) => library.useMediaLibraryStore.getState().add(assets),
+    assets: () => library.useMediaLibraryStore.getState().assets,
+    extractLastFrame: extractLastFrameDataUrl,
     newId: () => ulid(),
     appVersion: VERSION,
   }

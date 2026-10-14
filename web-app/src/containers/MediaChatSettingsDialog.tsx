@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { IconLoader2, IconPhoto, IconSparkles, IconVideo } from '@tabler/icons-react'
+import {
+  IconLoader2,
+  IconPhoto,
+  IconPlayerPlayFilled,
+  IconSparkles,
+  IconVideo,
+} from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -86,6 +92,7 @@ const MediaChatSettingsDialog = ({
   const [useLastUsed, setUseLastUsed] = useState(true)
   const [resolution, setResolution] = useState<string>('')
   const [lengthSeconds, setLengthSeconds] = useState<number | undefined>(undefined)
+  const [continueLastVideo, setContinueLastVideo] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -94,6 +101,7 @@ const MediaChatSettingsDialog = ({
     setSettings(null)
     setError(null)
     setSubmitting(false)
+    setContinueLastVideo(false)
     ;(async () => {
       try {
         const deps = await defaultChatGenerationDeps()
@@ -137,7 +145,9 @@ const MediaChatSettingsDialog = ({
   const submit = async () => {
     setSubmitting(true)
     const overrides: ChatMediaOverrides = { useLastUsed }
-    if (!useLastUsed) {
+    if (isVideo && continueLastVideo) {
+      overrides.continueLastVideo = true
+    } else if (!useLastUsed) {
       if (resolution) overrides.resolution = resolution
       if (isVideo && lengthSeconds !== undefined) {
         overrides.length_seconds = lengthSeconds
@@ -178,6 +188,32 @@ const MediaChatSettingsDialog = ({
           <p className="py-2 text-sm text-destructive">{error}</p>
         ) : (
           <div className="flex flex-col gap-4">
+            {isVideo && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="flex flex-col gap-0.5">
+                  <Label htmlFor="media-chat-continue">
+                    {t('chat:mediaSettings.continueLast', {
+                      defaultValue: 'Continue last video',
+                    })}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {t('chat:mediaSettings.continueLastHint', {
+                      defaultValue:
+                        'Start from the last frame of your most recent video',
+                    })}
+                  </span>
+                </div>
+                <Switch
+                  id="media-chat-continue"
+                  data-testid="media-chat-continue"
+                  checked={continueLastVideo}
+                  onCheckedChange={setContinueLastVideo}
+                />
+              </div>
+            )}
+
+            {!continueLastVideo && (
+              <>
             <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor="media-chat-use-last">
@@ -269,6 +305,8 @@ const MediaChatSettingsDialog = ({
                 </RadioGroup>
               </div>
             )}
+              </>
+            )}
           </div>
         )}
 
@@ -289,10 +327,14 @@ const MediaChatSettingsDialog = ({
           >
             {submitting ? (
               <IconLoader2 className="animate-spin" size={16} />
+            ) : continueLastVideo ? (
+              <IconPlayerPlayFilled size={16} />
             ) : (
               <meta.Icon size={16} />
             )}
-            {t('chat:mediaSettings.generate', { defaultValue: 'Generate' })}
+            {continueLastVideo
+              ? t('chat:mediaSettings.continue', { defaultValue: 'Continue' })
+              : t('chat:mediaSettings.generate', { defaultValue: 'Generate' })}
           </Button>
         </DialogFooter>
       </DialogContent>

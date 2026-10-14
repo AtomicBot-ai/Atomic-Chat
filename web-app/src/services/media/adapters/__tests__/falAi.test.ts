@@ -166,6 +166,14 @@ const MODELS_LISTING = {
         status: 'active',
       },
     },
+    {
+      endpoint_id: 'fal-ai/wan/v2.2-a14b/image-to-video',
+      metadata: {
+        display_name: 'Wan-2.2 Image-to-Video A14B',
+        category: 'image-to-video',
+        status: 'active',
+      },
+    },
   ],
   next_cursor: null,
   has_more: false,
@@ -448,6 +456,38 @@ describe('fal.ai — queue lifecycle', () => {
     expect(fps?.advanced).toBe(true)
   })
 
+  it('declares an image-to-video model and passes its starting image through', async () => {
+    const models = (await create().capabilities()).models
+    const i2v = models.find(
+      (model) =>
+        model.local_id === 'fal-ai/wan/v2.2-a14b/image-to-video'
+    )!
+    const specs = i2v.params.text_to_video
+    const image = specs.find((spec) => spec.id === 'image_url')
+
+    expect(i2v.tasks).toEqual([MEDIA_TASK.TEXT_TO_VIDEO])
+    expect(image).toMatchObject({
+      type: 'image_ref',
+      accept: ['image/png', 'image/jpeg', 'image/webp'],
+    })
+
+    const dataUrl = 'data:image/png;base64,AAAA'
+    await create().submit({
+      client_job_id: '01JFALJOB000000000000000',
+      provider_id: 'fal-ai',
+      model_id: 'fal-ai:fal-ai/wan/v2.2-a14b/image-to-video',
+      task: MEDIA_TASK.TEXT_TO_VIDEO,
+      params: { prompt: 'pan over the meadow', image_url: dataUrl, length_seconds: 5 },
+    })
+
+    expect(state.requests.at(-1)!.body).toEqual({
+      prompt: 'pan over the meadow',
+      image_url: dataUrl,
+      num_frames: 80,
+      frames_per_second: 16,
+    })
+  })
+
   it('treats a COMPLETED request with an error as failed, retryable per its error_type', async () => {
     const adapter = create()
     const submitted = await adapter.submit(request())
@@ -701,6 +741,7 @@ describe('fal.ai — capabilities, timeouts and aborts', () => {
       models: [
         { local_id: MODEL },
         { local_id: 'fal-ai/wan/v2.2-a14b/text-to-video' },
+        { local_id: 'fal-ai/wan/v2.2-a14b/image-to-video' },
       ],
     })
   })

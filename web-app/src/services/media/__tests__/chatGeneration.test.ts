@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   NoMediaModelError,
+  NoVideoToContinueError,
   chatMediaSettingsFor,
+  resolveChatContinueRequest,
   resolveChatRequest,
 } from '../chatGeneration'
+import type { MediaAsset } from '../assets'
 import type {
   MediaCapabilities,
   MediaModelDescriptor,
@@ -166,6 +169,102 @@ describe('chatMediaSettingsFor', () => {
     expect(() =>
       chatMediaSettingsFor('text_to_image', videoBase)
     ).toThrow(NoMediaModelError)
+  })
+})
+
+const videoAsset = (overrides: Partial<MediaAsset> = {}): MediaAsset => ({
+  asset_id: 'a1',
+  client_job_id: 'job-1',
+  name: 'a1.mp4',
+  media_type: 'video',
+  path: '/tmp/a1.mp4',
+  mime: 'video/mp4',
+  bytes: 1000,
+  created_at: 10,
+  provenance: {
+    provider_id: 'p',
+    model_id: 'p:v',
+    model_label: 'v',
+    params: { prompt: 'old', length_seconds: 8 },
+    task: 'text_to_video',
+    app_version: '0.0.0',
+    contract_version: 2,
+  },
+  ...overrides,
+})
+
+describe('resolveChatContinueRequest', () => {
+  const continueDeps = {
+    capabilities: () => ({ p: caps('p', [videoModel('p:v', 'p')]) }),
+    newId: () => 'job-2',
+    assets: () => [videoAsset()],
+    extractLastFrame: async () => 'data:image/png;base64,AAAA',
+  }
+
+  it('rebuilds the request from the latest video with a fresh last frame', async () => {
+    const { request, model } = await resolveChatContinueRequest(
+      'text_to_video',
+      'a follow up',
+      continueDeps
+    )
+    expect(model.id).toBe('p:v')
+    expect(request).toMatchObject({
+      client_job_id: 'job-2',
+      provider_id: 'p',
+      model_id: 'p:v',
+      params: {
+        prompt: 'a follow up',
+        length_seconds: 8,
+        init_image: 'data:image/png;base64,AAAA',
+      },
+    })
+    expect(request.params.end_image).toBeUndefined()
+    expect(request.params.seed).toBeUndefined()
+  })
+
+  it('picks the newest video asset only', async () => {
+    const extract = async (path: string) => `frame:${path}`
+    const { request } = await resolveChatContinueRequest('text_to_video', 'x', {
+      ...continueDeps,
+      assets: () => [
+        videoAsset({ asset_id: 'older', created_at: 1, path: '/tmp/older.mp4' }),
+        videoAsset({ asset_id: 'newer', created_at: 99, path: '/tmp/newer.mp4' }),
+      ],
+      extractLastFrame: extract,
+    })
+    expect(request.params.init_image).toBe('frame:/tmp/newer.mp4')
+  })
+
+  it('ignores non-video assets when looking for the latest video', async () => {
+    await expect(
+      resolveChatContinueRequest('text_to_video', 'x', {
+        ...continueDeps,
+        assets: () => [
+          videoAsset({ media_type: 'image', created_at: 99 }),
+        ],
+      })
+    ).rejects.toThrow(NoVideoToContinueError)
+  })
+
+  it('rejects when there is no video to continue', async () => {
+    await expect(
+      resolveChatContinueRequest('text_to_video', 'x', {
+        ...continueDeps,
+        assets: () => [],
+      })
+    ).rejects.toThrow(NoVideoToContinueError)
+    await expect(
+      resolveChatContinueRequest('text_to_image', 'x', continueDeps)
+    ).rejects.toThrow(NoVideoToContinueError)
+  })
+
+  it('errors when the original model is gone', async () => {
+    await expect(
+      resolveChatContinueRequest('text_to_video', 'x', {
+        ...continueDeps,
+        capabilities: () => ({ p: caps('p', []) }),
+      })
+    ).rejects.toThrow(/no longer available/)
   })
 })
 

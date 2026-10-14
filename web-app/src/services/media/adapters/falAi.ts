@@ -344,6 +344,25 @@ function declaredModels(providerId: string): MediaModelDescriptor[] {
     SEED,
   ]
 
+  // Image-to-video: same motion/sampling knobs as text-to-video, but led by a
+  // starting image instead of `negative_prompt`. fal's `image_url` accepts a
+  // data URL, which is exactly what the form's image input produces, so no
+  // submit-time conversion is needed.
+  const wanImageInput: MediaParamSpec = {
+    id: 'image_url',
+    type: 'image_ref',
+    label: 'Starting image',
+    help: 'The picture the video starts from. Its aspect ratio is kept.',
+    group: 'core',
+    order: 1,
+    accept: ['image/png', 'image/jpeg', 'image/webp'],
+  }
+  const wan22I2v: MediaParamSpec[] = [
+    PROMPT,
+    wanImageInput,
+    ...wan22.filter((spec) => spec.id !== 'prompt'),
+  ]
+
   return [
     {
       id: `${providerId}:fal-ai/flux/schnell`,
@@ -365,6 +384,18 @@ function declaredModels(providerId: string): MediaModelDescriptor[] {
       family: 'wan2.2',
       tasks: [MEDIA_TASK.TEXT_TO_VIDEO],
       params: { [MEDIA_TASK.TEXT_TO_VIDEO]: wan22 },
+      outputs: { [MEDIA_TASK.TEXT_TO_VIDEO]: { media_type: 'video' } },
+      install: { installed: true, installable: false },
+      cost: { unit: 'usd' },
+    },
+    {
+      id: `${providerId}:fal-ai/wan/v2.2-a14b/image-to-video`,
+      provider_id: providerId,
+      local_id: 'fal-ai/wan/v2.2-a14b/image-to-video',
+      label: 'Wan 2.2 A14B (image to video)',
+      family: 'wan2.2',
+      tasks: [MEDIA_TASK.TEXT_TO_VIDEO],
+      params: { [MEDIA_TASK.TEXT_TO_VIDEO]: wan22I2v },
       outputs: { [MEDIA_TASK.TEXT_TO_VIDEO]: { media_type: 'video' } },
       install: { installed: true, installable: false },
       cost: { unit: 'usd' },
