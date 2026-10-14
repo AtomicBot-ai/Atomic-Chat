@@ -183,14 +183,27 @@ export function expandModelNames(name) {
   )
 }
 
+/**
+ * Reduce an HTML fragment to its text. Tags are removed repeatedly until none
+ * remain (so nested/overlapping input such as `<scr<b>ipt>` cannot reassemble
+ * into a tag), then any stray angle brackets are dropped; GPU names never
+ * contain them.
+ */
+export function stripTags(fragment) {
+  let text = fragment
+  let previous
+  do {
+    previous = text
+    text = text.replace(/<[^>]*>/g, '')
+  } while (text !== previous)
+  return text.replace(/[<>]/g, '')
+}
+
 export function parseRocmTable(html) {
   const rows = []
   for (const row of html.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) ?? []) {
     const cells = [...row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((cell) =>
-      cell[1]
-        .replace(/<[^>]+>/g, '')
-        .replace(/&amp;/g, '&')
-        .trim()
+      stripTags(cell[1]).replace(/&amp;/g, '&').trim()
     )
     // Name | Architecture | LLVM target | Runtime | HIP SDK | [debugger]
     if (cells.length < 5) continue

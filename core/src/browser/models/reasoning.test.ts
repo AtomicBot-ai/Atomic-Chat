@@ -152,3 +152,13 @@ describe('detectReasoningControls', () => {
     ).toEqual({ supportsThinking: true })
   })
 })
+
+describe('detectReasoningControls regex hardening', () => {
+  it('stays fast on templates with many repeated reasoning_effort tokens', () => {
+    const hostile =
+      '{{ reasoning_effort }}\n' + 'reasoning_effort '.repeat(40_000) + ' not in ['
+    const start = Date.now()
+    detectReasoningControls(hostile)
+    expect(Date.now() - start).toBeLessThan(2000)
+  })
+})

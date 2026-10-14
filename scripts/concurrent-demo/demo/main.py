@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import pathlib
 import subprocess
 import sys
@@ -128,7 +129,7 @@ def _open_terminal_window(
 ) -> None:
     """Open a single Terminal.app window running `cmd`, tiled to `bounds`."""
     x1, y1, x2, y2 = bounds
-    ascript = (
+    apple_script = (
         'tell application "Terminal"\n'
         "    activate\n"
         f'    set newTab to do script "{_applescript_escape(cmd)}"\n'
@@ -138,7 +139,7 @@ def _open_terminal_window(
         f'    set custom title of newTab to "{_applescript_escape(title)}"\n'
         "end tell\n"
     )
-    subprocess.run(["osascript", "-e", ascript], check=False)
+    subprocess.run(["osascript", "-e", apple_script], check=False)
 
 
 def _spawn_dashboard_window(
@@ -459,6 +460,45 @@ async def _run(
     return exit_code
 
 
+# The API key is deliberately NOT written into session.json (that directory is
+# kept after the run for inspection). Child windows spawned through Terminal.app
+# do not inherit this process's environment, so when a key is configured it is
+# handed over through a separate owner-only (0600) file that the parent deletes
+# as soon as the run ends.
+_API_KEY_FILENAME = "api_key"
+
+
+def _write_session_api_key(session_dir: pathlib.Path, api_key: str) -> None:
+    if not api_key:
+        return
+    key_path = session_dir / _API_KEY_FILENAME
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(api_key)
+
+
+def _remove_session_api_key(session_dir: pathlib.Path) -> None:
+    try:
+        (session_dir / _API_KEY_FILENAME).unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+
+
+def _resolve_session_api_key(
+    session: dict[str, Any], session_dir: pathlib.Path
+) -> str:
+    """Env var wins; then the ephemeral key file; then legacy session.json."""
+    env_key = os.environ.get("ATOMIC_API_KEY")
+    if env_key:
+        return env_key
+    try:
+        return (session_dir / _API_KEY_FILENAME).read_text(encoding="utf-8").strip()
+    except OSError:
+        return session.get("api_key", "") or ""
+
+
 async def _run_solo_agent(
     session: dict[str, Any],
     agent_idx: int,
@@ -472,7 +512,7 @@ async def _run_solo_agent(
     """
     settings = ClientSettings(
         base_url=session["base_url"],
-        api_key=session["api_key"],
+        api_key=_resolve_session_api_key(session, session_dir),
         model=session["model"],
     )
     agent = session["agents"][agent_idx]
@@ -697,7 +737,6 @@ async def _run_multi_window(
         "topic": topic,
         "model": settings.model,
         "base_url": settings.base_url,
-        "api_key": settings.api_key,
         "system_prompt": scenario.get("system_prompt", ""),
         "agents": session_agents,
     }
@@ -705,6 +744,7 @@ async def _run_multi_window(
         json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",
     )
+    _write_session_api_key(session_dir, settings.api_key)
     console.print(f"[dim]→ session dir: {session_dir}[/dim]")
 
     # Reserve the top strip of the screen for the aggregate dashboard window
@@ -762,6 +802,9 @@ async def _run_multi_window(
             await asyncio.sleep(0.4)
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted — rendering partial results.[/yellow]")
+    finally:
+        # Children read the key once at start-up; never leave it on disk.
+        _remove_session_api_key(session_dir)
 
     # Signal the dashboard window that the show is over so it can exit its
     # poll loop (it will still wait for a final keypress before closing).
@@ -799,7 +842,7 @@ async def _run_session_dashboard(
     """
     settings = ClientSettings(
         base_url=session["base_url"],
-        api_key=session["api_key"],
+        api_key=_resolve_session_api_key(session, session_dir),
         model=session["model"],
     )
     scenario_name = session.get("scenario_name", "demo")

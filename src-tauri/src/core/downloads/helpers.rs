@@ -366,6 +366,13 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
     false
 }
 
+/// Whether the user explicitly opted in to skipping TLS certificate
+/// verification for traffic routed through the configured proxy.
+/// Defaults to `false` (verification enabled) when unset.
+pub fn proxy_ignores_ssl(proxy_config: &ProxyConfig) -> bool {
+    proxy_config.ignore_ssl == Some(true)
+}
+
 pub fn _get_client_for_item(
     item: &DownloadItem,
     header_map: &HeaderMap,
@@ -382,12 +389,6 @@ pub fn _get_client_for_item(
 
     // Add proxy configuration if provided
     if let Some(proxy_config) = &item.proxy {
-        // Handle SSL verification settings
-        if proxy_config.ignore_ssl.unwrap_or(false) {
-            client_builder = client_builder.danger_accept_invalid_certs(true);
-            log::info!("SSL certificate verification disabled for URL {}", item.url);
-        }
-
         // Note: reqwest doesn't have fine-grained SSL verification controls
         // for verify_proxy_ssl, verify_proxy_host_ssl, verify_peer_ssl, verify_host_ssl
         // These settings are handled by the underlying TLS implementation
@@ -398,6 +399,20 @@ pub fn _get_client_for_item(
             let proxy = create_proxy_from_config(proxy_config)?;
             client_builder = client_builder.proxy(proxy);
             log::info!("Using proxy {} for URL {}", proxy_config.url, item.url);
+
+            // The user's explicit "ignore SSL" proxy setting exists for
+            // TLS-intercepting (corporate) proxies. Only honour it for
+            // requests that actually go through that proxy; direct
+            // connections (no_proxy matches) always keep certificate
+            // verification enabled.
+            let accept_invalid_certs = proxy_ignores_ssl(proxy_config);
+            if accept_invalid_certs {
+                log::warn!(
+                    "SSL certificate verification disabled (proxy 'ignore SSL' setting) for URL {}",
+                    item.url
+                );
+            }
+            client_builder = client_builder.danger_accept_invalid_certs(accept_invalid_certs);
         } else {
             log::info!("Bypassing proxy for URL {}", item.url);
         }

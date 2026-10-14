@@ -914,3 +914,34 @@ async fn a_model_download_lands_in_the_chosen_models_folder() {
     assert!(!data.join("llamacpp/models/fixture").exists());
     server.abort();
 }
+
+#[test]
+fn test_proxy_ignores_ssl_is_opt_in() {
+    let mut config = create_test_proxy_config("http://proxy.example.com:8080");
+    config.ignore_ssl = None;
+    assert!(!proxy_ignores_ssl(&config));
+    config.ignore_ssl = Some(false);
+    assert!(!proxy_ignores_ssl(&config));
+    config.ignore_ssl = Some(true);
+    assert!(proxy_ignores_ssl(&config));
+}
+
+#[test]
+fn test_client_creation_with_ssl_settings_and_bypassed_url() {
+    // ignore_ssl must not affect hosts that bypass the proxy; client creation
+    // should still succeed.
+    let mut proxy_config = create_test_proxy_config("http://proxy.example.com:8080");
+    proxy_config.ignore_ssl = Some(true);
+    proxy_config.no_proxy = Some(vec!["example.com".to_string()]);
+
+    let download_item = DownloadItem {
+        url: "https://example.com/file.zip".to_string(),
+        save_path: "downloads/file.zip".to_string(),
+        proxy: Some(proxy_config),
+        sha256: None,
+        size: None,
+        model_id: None,
+    };
+
+    assert!(_get_client_for_item(&download_item, &HeaderMap::new()).is_ok());
+}

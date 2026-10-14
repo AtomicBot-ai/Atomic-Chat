@@ -90,8 +90,10 @@ const hasThinkingTags = (template: string): boolean =>
  * accepting `high`), so it does not describe the legal set.
  */
 const extractDeclaredEfforts = (template: string): string[] | undefined => {
+  // Quantifiers are bounded so the scan stays linear on adversarial or very
+  // large templates (a `{% ... %}` guard is far shorter than these limits).
   const guard = template.match(
-    /reasoning_effort[^%}]*?\bnot\s+in\s*[[(]([^\])]*)[\])]/i
+    /reasoning_effort[^%}]{0,200}?\bnot\s{1,20}in\s{0,20}[[(]([^\])]{0,500})[\])]/i
   )
   if (guard) {
     const values = [...guard[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) =>

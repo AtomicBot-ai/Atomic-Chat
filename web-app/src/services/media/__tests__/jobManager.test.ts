@@ -678,8 +678,9 @@ describe('createMediaJobManager — submit retry', () => {
     expect(adapter.submit).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(4000)
-    await submitted
+    const entry = await submitted
     expect(adapter.submit).toHaveBeenCalledTimes(2)
+    expect(entry.state).toBe('queued')
     manager.dispose()
   })
 
