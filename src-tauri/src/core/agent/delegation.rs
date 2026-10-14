@@ -82,6 +82,9 @@ pub fn validate_specialists(specialists: &[AgentSpecialist]) -> Result<(), Strin
 pub struct PreparedSpecialist {
     pub name: String,
     pub stable_prefix: String,
+    /// The shared disabled set plus `agent.delegate` and the tool packs this
+    /// specialist does not have.
+    pub disabled_tools: BTreeSet<String>,
 }
 
 /// Everything a specialist's nested turn shares with the coordinator.
@@ -100,8 +103,6 @@ pub struct SpecialistDelegator<'a> {
     pub mcp: Option<&'a dyn McpBridge>,
     pub docs: Option<&'a dyn DocsBridge>,
     pub documents_note: Option<&'a str>,
-    /// The coordinator's disabled set plus `agent.delegate`.
-    pub disabled_tools: &'a BTreeSet<String>,
     pub auto_approve_mcp: bool,
     pub client: &'a dyn AgentLlmClient,
     pub approval: &'a dyn ApprovalHook,
@@ -181,7 +182,7 @@ impl DelegateHook for SpecialistDelegator<'_> {
                 mcp: self.mcp,
                 docs: self.docs,
                 documents_note: self.documents_note,
-                disabled_tools: self.disabled_tools,
+                disabled_tools: &prepared.disabled_tools,
                 auto_approve_mcp: self.auto_approve_mcp,
                 delegate: None,
                 client: self.client,

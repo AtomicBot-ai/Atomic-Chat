@@ -186,6 +186,10 @@ pub struct AgentTurnRequest {
     /// removes the tool from the prompt, grammar, schema and dispatch.
     #[serde(default)]
     pub specialists: Vec<AgentSpecialist>,
+    /// Optional tool families enabled for the coordinator (e.g. `network`).
+    /// Their tools are absent from the turn unless listed.
+    #[serde(default)]
+    pub tool_packs: Vec<String>,
 }
 
 /// A specialist agent the coordinating turn can delegate to. The frontend
@@ -199,6 +203,9 @@ pub struct AgentSpecialist {
     /// The specialist's own system instructions.
     #[serde(default)]
     pub instructions: Option<String>,
+    /// Tool families this specialist gets on top of the shared tools.
+    #[serde(default)]
+    pub tool_packs: Vec<String>,
 }
 
 /// Per-turn RAG context. Collection names are computed frontend-side

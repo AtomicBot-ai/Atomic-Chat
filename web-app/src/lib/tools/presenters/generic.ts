@@ -162,6 +162,81 @@ const ACTION_LABELS: Record<string, ActionLabel> = {
     completed: 'Sent notification',
     failed: 'Could not send notification',
   },
+  'net.system_map': {
+    active: "Mapping this computer's network",
+    completed: 'Mapped the network setup',
+    failed: 'Could not map the network',
+  },
+  'net.connectivity': {
+    active: 'Checking the connection',
+    completed: 'Checked the connection',
+    failed: 'Could not check the connection',
+  },
+  'net.interfaces': {
+    active: 'Reading network adapters',
+    completed: 'Read network adapters',
+    failed: 'Could not read network adapters',
+  },
+  'net.wifi_status': {
+    active: 'Checking Wi-Fi',
+    completed: 'Checked Wi-Fi',
+    failed: 'Could not check Wi-Fi',
+  },
+  'net.dns_lookup': {
+    active: 'Looking up name',
+    completed: 'Looked up name',
+    failed: 'Name lookup failed',
+  },
+  'net.ping': {
+    active: 'Pinging',
+    completed: 'Pinged',
+    failed: 'Ping failed',
+  },
+  'net.traceroute': {
+    active: 'Tracing route',
+    completed: 'Traced route',
+    failed: 'Could not trace route',
+  },
+  'net.neighbors': {
+    active: 'Finding devices on the network',
+    completed: 'Found devices on the network',
+    failed: 'Could not list devices',
+  },
+  'net.port_check': {
+    active: 'Checking ports',
+    completed: 'Checked ports',
+    failed: 'Could not check ports',
+  },
+  'net.dns_flush': {
+    active: 'Clearing DNS cache',
+    completed: 'Cleared DNS cache',
+    failed: 'Could not clear DNS cache',
+  },
+  'net.dhcp_renew': {
+    active: 'Renewing IP address',
+    completed: 'Renewed IP address',
+    failed: 'Could not renew IP address',
+  },
+  'net.adapter_restart': {
+    active: 'Restarting adapter',
+    completed: 'Restarted adapter',
+    failed: 'Could not restart adapter',
+  },
+  'net.set_dns': {
+    active: 'Changing DNS servers',
+    completed: 'Changed DNS servers',
+    failed: 'Could not change DNS servers',
+  },
+  'net.wifi_reconnect': {
+    active: 'Reconnecting Wi-Fi',
+    completed: 'Reconnected Wi-Fi',
+    failed: 'Could not reconnect Wi-Fi',
+  },
+  'net.stack_reset': {
+    active: 'Resetting network stack',
+    completed: 'Reset network stack (restart needed)',
+    failed: 'Could not reset network stack',
+  },
   'agent.delegate': {
     active: 'Asking specialist',
     completed: 'Specialist answered',
@@ -182,6 +257,8 @@ function readSubtitle(input: unknown): string | undefined {
   const values = input as Record<string, unknown>
   const value =
     values.specialist ??
+    values.host ??
+    values.adapter ??
     values.path ??
     values.url ??
     values.query ??

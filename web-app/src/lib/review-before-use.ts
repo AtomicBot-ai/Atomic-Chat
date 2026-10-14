@@ -20,11 +20,13 @@ export const PERMISSION_IDS = [
   'sendWebRequests',
   'changeFiles',
   'trashFiles',
+  'changeNetwork',
   'changeClipboard',
   'showNotifications',
   'readFiles',
   'readGit',
   'seePrograms',
+  'inspectNetwork',
   'browseWeb',
   'searchDocuments',
   'transcribeMedia',
@@ -58,11 +60,13 @@ export type PermissionId =
   | 'sendWebRequests'
   | 'changeFiles'
   | 'trashFiles'
+  | 'changeNetwork'
   | 'changeClipboard'
   | 'showNotifications'
   | 'readFiles'
   | 'readGit'
   | 'seePrograms'
+  | 'inspectNetwork'
   | 'browseWeb'
   | 'searchDocuments'
   | 'transcribeMedia'
@@ -153,6 +157,21 @@ const TOOL_PERMISSIONS: Record<string, [PermissionId, PermissionLevel] | null> =
     // Hands work to another assistant; that assistant's own actions are
     // reviewed one by one, so delegating grants nothing by itself.
     'agent.delegate': null,
+    'net.dns_flush': ['changeNetwork', 'changes'],
+    'net.dhcp_renew': ['changeNetwork', 'changes'],
+    'net.adapter_restart': ['changeNetwork', 'changes'],
+    'net.set_dns': ['changeNetwork', 'changes'],
+    'net.wifi_reconnect': ['changeNetwork', 'changes'],
+    'net.stack_reset': ['changeNetwork', 'risky'],
+    'net.system_map': ['inspectNetwork', 'reads'],
+    'net.connectivity': ['inspectNetwork', 'reads'],
+    'net.interfaces': ['inspectNetwork', 'reads'],
+    'net.wifi_status': ['inspectNetwork', 'reads'],
+    'net.dns_lookup': ['inspectNetwork', 'reads'],
+    'net.ping': ['inspectNetwork', 'reads'],
+    'net.traceroute': ['inspectNetwork', 'reads'],
+    'net.neighbors': ['inspectNetwork', 'reads'],
+    'net.port_check': ['inspectNetwork', 'reads'],
     'reply': null,
     'finish': null,
   }

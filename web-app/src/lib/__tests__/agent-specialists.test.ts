@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildAgentSpecialists, MAX_AGENT_SPECIALISTS } from '../agent-specialists'
+import {
+  agentToolPacks,
+  buildAgentSpecialists,
+  MAX_AGENT_SPECIALISTS,
+} from '../agent-specialists'
 
 function assistant(overrides: Partial<Assistant>): Assistant {
   return {
@@ -80,5 +84,16 @@ describe('buildAgentSpecialists', () => {
     expect(buildAgentSpecialists(many, undefined)).toHaveLength(
       MAX_AGENT_SPECIALISTS
     )
+  })
+
+  it('passes along known tool packs and drops unknown ones', () => {
+    const tooled = assistant({
+      ...network,
+      tool_packs: ['network', 'teleportation'],
+    })
+    expect(buildAgentSpecialists([tooled], undefined)[0].tool_packs).toEqual([
+      'network',
+    ])
+    expect(agentToolPacks(undefined)).toEqual([])
   })
 })

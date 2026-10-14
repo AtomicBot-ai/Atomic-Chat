@@ -57,6 +57,7 @@ async fn run_coordinator(
         specialists: vec![PreparedSpecialist {
             name: "Network".into(),
             stable_prefix: NETWORK_PREFIX.into(),
+            disabled_tools: specialist_disabled.clone(),
         }],
         run_id: "test-run",
         session_id: "test-session",
@@ -71,7 +72,6 @@ async fn run_coordinator(
         mcp: None,
         docs: None,
         documents_note: None,
-        disabled_tools: &specialist_disabled,
         auto_approve_mcp: true,
         client: &client,
         approval,
@@ -313,6 +313,7 @@ fn specialist(name: &str, description: &str) -> AgentSpecialist {
         name: name.into(),
         description: description.into(),
         instructions: None,
+        tool_packs: Vec::new(),
     }
 }
 

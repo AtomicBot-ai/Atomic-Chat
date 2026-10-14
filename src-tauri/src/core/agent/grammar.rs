@@ -252,6 +252,81 @@ const STATIC_TOOL_GRAMMARS: &[ToolGrammar] = &[
         args: r#""{" ws "\"title\"" ws ":" ws non-empty-string ( ws "," ws "\"body\"" ws ":" ws string )? ws "}""#,
     },
     ToolGrammar {
+        name: "net.system_map",
+        rule: "net-system-map",
+        args: r#""{" ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.connectivity",
+        rule: "net-connectivity",
+        args: r#""{" ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.interfaces",
+        rule: "net-interfaces",
+        args: r#""{" ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.wifi_status",
+        rule: "net-wifi-status",
+        args: r#""{" ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.dns_lookup",
+        rule: "net-dns-lookup",
+        args: r#""{" ws "\"name\"" ws ":" ws non-empty-string ( ws "," ws "\"server\"" ws ":" ws string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.ping",
+        rule: "net-ping",
+        args: r#""{" ws "\"host\"" ws ":" ws non-empty-string ( ws "," ws "\"count\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.traceroute",
+        rule: "net-traceroute",
+        args: r#""{" ws "\"host\"" ws ":" ws non-empty-string ( ws "," ws "\"maxHops\"" ws ":" ws positive-integer )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.neighbors",
+        rule: "net-neighbors",
+        args: r#""{" ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.port_check",
+        rule: "net-port-check",
+        args: r#""{" ws "\"host\"" ws ":" ws non-empty-string ws "," ws "\"ports\"" ws ":" ws positive-integer-array ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.dns_flush",
+        rule: "net-dns-flush",
+        args: r#""{" ws ( "\"reason\"" ws ":" ws string ws )? "}""#,
+    },
+    ToolGrammar {
+        name: "net.dhcp_renew",
+        rule: "net-dhcp-renew",
+        args: r#""{" ws ( "\"adapter\"" ws ":" ws non-empty-string ( ws "," ws "\"reason\"" ws ":" ws string )? | "\"reason\"" ws ":" ws string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.adapter_restart",
+        rule: "net-adapter-restart",
+        args: r#""{" ws "\"adapter\"" ws ":" ws non-empty-string ( ws "," ws "\"reason\"" ws ":" ws string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.set_dns",
+        rule: "net-set-dns",
+        args: r#""{" ws "\"adapter\"" ws ":" ws non-empty-string ws "," ws "\"servers\"" ws ":" ws string-array ( ws "," ws "\"reason\"" ws ":" ws string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.wifi_reconnect",
+        rule: "net-wifi-reconnect",
+        args: r#""{" ws ( "\"adapter\"" ws ":" ws non-empty-string ( ws "," ws "\"reason\"" ws ":" ws string )? | "\"reason\"" ws ":" ws string )? ws "}""#,
+    },
+    ToolGrammar {
+        name: "net.stack_reset",
+        rule: "net-stack-reset",
+        args: r#""{" ws ( "\"reason\"" ws ":" ws string ws )? "}""#,
+    },
+    ToolGrammar {
         name: "agent.delegate",
         rule: "agent-delegate",
         args: r#""{" ws "\"specialist\"" ws ":" ws non-empty-string ws "," ws "\"task\"" ws ":" ws non-empty-string ws "}""#,
@@ -275,6 +350,7 @@ call-suffix ::= ws "}"
 string-map ::= "{" ws ( string ws ":" ws string ( ws "," ws string ws ":" ws string )* )? ws "}"
 string-array ::= "[" ws ( string ( ws "," ws string )* )? ws "]"
 non-empty-string-array ::= "[" ws non-empty-string ( ws "," ws non-empty-string )* ws "]"
+positive-integer-array ::= "[" ws positive-integer ( ws "," ws positive-integer )* ws "]"
 
 string ::= "\"" chars "\""
 non-empty-string ::= "\"" char+ "\""
@@ -344,6 +420,21 @@ pub const GRAMMAR_TOOL_NAMES: &[&str] = &[
     "os.clipboard.read",
     "os.clipboard.write",
     "os.notify",
+    "net.system_map",
+    "net.connectivity",
+    "net.interfaces",
+    "net.wifi_status",
+    "net.dns_lookup",
+    "net.ping",
+    "net.traceroute",
+    "net.neighbors",
+    "net.port_check",
+    "net.dns_flush",
+    "net.dhcp_renew",
+    "net.adapter_restart",
+    "net.set_dns",
+    "net.wifi_reconnect",
+    "net.stack_reset",
     "agent.delegate",
     "reply",
     "finish",

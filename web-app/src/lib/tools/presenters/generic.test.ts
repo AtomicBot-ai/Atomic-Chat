@@ -41,6 +41,23 @@ describe('presentGenericTool', () => {
     })
   })
 
+  it('names the network check and its target', () => {
+    expect(
+      presentGenericTool({
+        toolName: 'net.ping',
+        input: { host: '192.168.1.1', count: 4 },
+        state: 'output-available',
+      })
+    ).toMatchObject({ title: 'Pinged', subtitle: '192.168.1.1' })
+    expect(
+      presentGenericTool({
+        toolName: 'net.set_dns',
+        input: { adapter: 'Wi-Fi', servers: ['1.1.1.1'] },
+        state: 'input-available',
+      })
+    ).toMatchObject({ title: 'Changing DNS servers', subtitle: 'Wi-Fi' })
+  })
+
   it('humanizes unknown MCP tool names', () => {
     expect(
       presentGenericTool({

@@ -82,7 +82,12 @@ export type AgentTurnRequest = {
    * (or sending none) keeps delegation off for the turn.
    */
   specialists?: AgentSpecialist[]
+  /** Tool families enabled for the thread's assistant (e.g. `network`). */
+  tool_packs?: AgentToolPack[]
 }
+
+/** Optional tool families an assistant can switch on. */
+export type AgentToolPack = 'network'
 
 /** An assistant offered to the agent as a specialist it can delegate to. */
 export type AgentSpecialist = {
@@ -91,6 +96,8 @@ export type AgentSpecialist = {
   description: string
   /** Its own rendered system instructions. */
   instructions?: string
+  /** Tool families this specialist gets on top of the shared tools. */
+  tool_packs?: AgentToolPack[]
 }
 
 export type AgentRagRequest = {

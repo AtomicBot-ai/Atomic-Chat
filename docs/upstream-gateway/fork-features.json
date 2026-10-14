@@ -486,5 +486,36 @@
     ],
     "decision": "docs/decisions/2026-10-10-let-the-agent-delegate-tasks-to-specialist-assistants.md",
     "status": "pending"
+  },
+  {
+    "id": "agent-network-tools",
+    "feature": "Network specialist tools",
+    "forUsers": "An assistant with Network tools turned on (or the Network specialist template) can diagnose the connection, Wi-Fi, DNS and devices on the local network, and fix common problems — flush DNS, renew the IP address, restart an adapter, change DNS servers, reconnect Wi-Fi. Every fix asks first and shows what it will affect, how long it disrupts the connection, and how to undo it.",
+    "paths": [
+      "src-tauri/src/core/agent/tools/net/**",
+      "web-app/src/containers/ApprovalBlastRadius.tsx",
+      "web-app/src/lib/blast-radius.ts",
+      "web-app/src/lib/assistant-templates.ts"
+    ],
+    "checks": [
+      {
+        "run": "cargo test --no-default-features --features test-tauri --lib -- core::agent::tools::net core::agent::resource_class",
+        "cwd": "src-tauri",
+        "files": [
+          "src-tauri/src/core/agent/tools/net/parse_tests.rs",
+          "src-tauri/src/core/agent/tools/net/mod.rs"
+        ]
+      },
+      {
+        "run": "npx vitest run src/containers/__tests__/ApprovalBlastRadius.test.tsx src/containers/dialogs/__tests__/AddEditAssistant.test.tsx",
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/containers/__tests__/ApprovalBlastRadius.test.tsx",
+          "web-app/src/containers/dialogs/__tests__/AddEditAssistant.test.tsx"
+        ]
+      }
+    ],
+    "decision": "docs/decisions/2026-10-10-give-the-agent-network-tools-behind-a-tool-pack-with-blast-radius-approvals.md",
+    "status": "pending"
   }
 ]

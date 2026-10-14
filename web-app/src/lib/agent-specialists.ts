@@ -1,4 +1,4 @@
-import type { AgentSpecialist } from '@/types/agent'
+import type { AgentSpecialist, AgentToolPack } from '@/types/agent'
 import { renderInstructions } from '@/lib/instructionTemplate'
 
 /** Matches the backend's per-turn roster limit. */
@@ -6,8 +6,19 @@ export const MAX_AGENT_SPECIALISTS = 12
 
 type SpecialistCandidate = Pick<
   Assistant,
-  'id' | 'name' | 'description' | 'instructions' | 'specialist'
+  'id' | 'name' | 'description' | 'instructions' | 'specialist' | 'tool_packs'
 >
+
+const KNOWN_TOOL_PACKS: readonly AgentToolPack[] = ['network']
+
+/** The assistant's tool packs the backend knows; anything else is dropped. */
+export function agentToolPacks(
+  assistant: Pick<Assistant, 'tool_packs'> | undefined
+): AgentToolPack[] {
+  return (assistant?.tool_packs ?? []).filter((pack): pack is AgentToolPack =>
+    (KNOWN_TOOL_PACKS as readonly string[]).includes(pack)
+  )
+}
 
 /**
  * The specialists an agent turn may delegate to: every assistant the user
@@ -33,6 +44,7 @@ export function buildAgentSpecialists(
       name,
       description,
       instructions: renderInstructions(assistant.instructions || undefined),
+      tool_packs: agentToolPacks(assistant),
     })
     if (specialists.length === MAX_AGENT_SPECIALISTS) break
   }

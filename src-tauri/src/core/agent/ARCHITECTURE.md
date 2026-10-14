@@ -234,6 +234,14 @@ model contradicted itself rather than repeating itself.
 - Tool discovery: `tool.view`.
 - Delegation: `agent.delegate` (present only on turns that carry specialists;
   see "Specialist delegation").
+- Network (the `network` tool pack; present only when the turn's assistant
+  or specialist enables it): diagnose `net.system_map`, `net.connectivity`,
+  `net.interfaces`, `net.wifi_status`, `net.dns_lookup`, `net.ping`,
+  `net.traceroute`, `net.neighbors`, `net.port_check`; fix (approval-gated,
+  with a `blastRadius` in the approval preview) `net.dns_flush`,
+  `net.dhcp_renew`, `net.adapter_restart`, `net.set_dns`,
+  `net.wifi_reconnect`, `net.stack_reset`. Commands are fixed per OS in
+  `tools/net/platform.rs`; fixes retry behind the OS admin prompt when needed.
 - Terminals: `reply` and `finish`.
 
 ### Specialist delegation

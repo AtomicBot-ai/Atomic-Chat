@@ -57,7 +57,16 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "docs.chunks"
         | "os.media.transcribe"
         | "os.media.youtube"
-        | "os.clipboard.read" => ResourceClass::PureRead,
+        | "os.clipboard.read"
+        | "net.system_map"
+        | "net.connectivity"
+        | "net.interfaces"
+        | "net.wifi_status"
+        | "net.dns_lookup"
+        | "net.ping"
+        | "net.traceroute"
+        | "net.neighbors"
+        | "net.port_check" => ResourceClass::PureRead,
         "vision.describe" => ResourceClass::Vision,
         "os.clipboard.write" | "os.notify" => ResourceClass::MemoryWrite,
         "os.fs.write" | "os.fs.mkdir" | "os.fs.edit" => ResourceClass::FsWrite,
@@ -70,7 +79,13 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
         | "os.proc.write"
         | "os.proc.stop"
         | "os.http.request"
-        | "skill.run_script" => ResourceClass::ApprovalGated,
+        | "skill.run_script"
+        | "net.dns_flush"
+        | "net.dhcp_renew"
+        | "net.adapter_restart"
+        | "net.set_dns"
+        | "net.wifi_reconnect"
+        | "net.stack_reset" => ResourceClass::ApprovalGated,
         "agent.delegate" => ResourceClass::Delegation,
         "reply" | "finish" => ResourceClass::Terminal,
         _ => ResourceClass::Unknown,
@@ -146,6 +161,20 @@ mod tests {
         assert!(!is_parallel_within_group(ResourceClass::Vision));
         assert!(!is_batchable(ResourceClass::ApprovalGated));
         assert!(!is_batchable(ResourceClass::Terminal));
+    }
+
+    #[test]
+    fn network_diagnosis_reads_and_every_network_fix_asks_first() {
+        for tool in crate::core::agent::tools::net::NET_DIAGNOSE_TOOLS {
+            assert_eq!(resource_class_for(tool), ResourceClass::PureRead, "{tool}");
+        }
+        for tool in crate::core::agent::tools::net::NET_FIX_TOOLS {
+            assert_eq!(
+                resource_class_for(tool),
+                ResourceClass::ApprovalGated,
+                "{tool}"
+            );
+        }
     }
 
     #[test]

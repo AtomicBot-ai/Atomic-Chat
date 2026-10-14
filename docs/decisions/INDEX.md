@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-273 records, 2026-05-19 → 2026-10-12.
+275 records, 2026-05-19 → 2026-10-12.
 
 <!-- Counted from the files on disk, not by arithmetic. Verified by counting *.md excluding INDEX and _TEMPLATE. -->
 
@@ -79,8 +79,9 @@ library on disk, and how the frozen surface is allowed to change.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (46)
+## Agent mode — autonomous loop, tools, skills, workspace (47)
 
+- **2026-10-10** — [Give the agent network tools behind a tool pack, with blast-radius approvals](2026-10-10-give-the-agent-network-tools-behind-a-tool-pack-with-blast-radius-approvals.md)
 - **2026-10-10** — [Let the agent delegate tasks to specialist assistants](2026-10-10-let-the-agent-delegate-tasks-to-specialist-assistants.md)
 - **2026-10-09** — [Organize skills by creator and category, with nested folders](2026-10-09-organize-skills-by-creator-and-category.md)
 - **2026-08-27** — [Give the agent native RAG tools over the existing vector collections](2026-08-27-native-agent-rag-tools.md)

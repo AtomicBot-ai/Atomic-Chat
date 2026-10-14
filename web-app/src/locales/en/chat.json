@@ -67,7 +67,28 @@
     "approveOnce": "Approve once",
     "resolveFailed": "Failed to send the approval decision.",
     "showDetails": "Show details",
-    "hideDetails": "Hide details"
+    "hideDetails": "Hide details",
+    "blastRadius": {
+      "changes": "Changes",
+      "disruption": "Disruption",
+      "affects": "Affects",
+      "undo": "Undo",
+      "needsAdmin": "Asks for administrator rights",
+      "needsReboot": "Needs a restart",
+      "risk": {
+        "low": "Low risk",
+        "medium": "Medium risk",
+        "high": "High risk"
+      },
+      "agentReason": "Why",
+      "review": {
+        "title": "Second opinion",
+        "agree": "Agrees",
+        "concern": "Has a concern",
+        "disagree": "Disagrees",
+        "unavailable": "Not available"
+      }
+    }
   },
   "agentFolderAccess": {
     "title": "Allow folder access",

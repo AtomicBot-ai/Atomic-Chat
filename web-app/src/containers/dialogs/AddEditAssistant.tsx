@@ -13,6 +13,7 @@ import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
 
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
+import { NETWORK_SPECIALIST_TEMPLATE } from '@/lib/assistant-templates'
 
 import { useTheme } from '@/hooks/useTheme'
 import { defaultAssistant } from '@/hooks/useAssistant'
@@ -45,6 +46,9 @@ export default function AddEditAssistant({
   )
   const [specialist, setSpecialist] = useState(initialData?.specialist === true)
   const [specialistError, setSpecialistError] = useState<string | null>(null)
+  const [networkPack, setNetworkPack] = useState(
+    initialData?.tool_packs?.includes('network') === true
+  )
   const { isDark } = useTheme()
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const emojiPickerRef = useRef<HTMLDivElement>(null)
@@ -82,6 +86,7 @@ export default function AddEditAssistant({
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
       setSpecialist(initialData.specialist === true)
+      setNetworkPack(initialData.tool_packs?.includes('network') === true)
       setSpecialistError(null)
       setShowEmojiPicker(false)
       // setToolStepsInput(String(initialData.tool_steps ?? 20))
@@ -97,6 +102,7 @@ export default function AddEditAssistant({
     setDescription(undefined)
     setInstructions('')
     setSpecialist(false)
+    setNetworkPack(false)
     setSpecialistError(null)
     setNameError(null)
     setShowEmojiPicker(false)
@@ -131,6 +137,7 @@ export default function AddEditAssistant({
       parameters: initialData?.parameters ?? { ...defaultAssistant.parameters },
       sampling_overridden: initialData?.sampling_overridden,
       specialist,
+      tool_packs: networkPack ? ['network'] : [],
       // tool_steps: isNaN(parsedToolSteps) ? 20 : parsedToolSteps,
     }
     onSave(assistant)
@@ -150,6 +157,27 @@ export default function AddEditAssistant({
               : t('assistants:addAssistant')}
           </DialogTitle>
         </DialogHeader>
+        {!editingKey && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => {
+              const template = NETWORK_SPECIALIST_TEMPLATE
+              setAvatar(template.avatar)
+              setName(template.name)
+              setDescription(template.description)
+              setInstructions(template.instructions)
+              setSpecialist(template.specialist)
+              setNetworkPack(template.tool_packs.includes('network'))
+              setNameError(null)
+              setSpecialistError(null)
+            }}
+          >
+            {t('assistants:useNetworkTemplate')}
+          </Button>
+        )}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -263,6 +291,22 @@ export default function AddEditAssistant({
                 setSpecialist(checked)
                 if (!checked) setSpecialistError(null)
               }}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 pt-2">
+            <div className="space-y-1">
+              <label htmlFor="assistant-network-pack" className="text-sm">
+                {t('assistants:networkPack')}
+              </label>
+              <div className="text-xs text-muted-foreground">
+                {t('assistants:networkPackDesc')}
+              </div>
+            </div>
+            <Switch
+              id="assistant-network-pack"
+              checked={networkPack}
+              onCheckedChange={setNetworkPack}
             />
           </div>
         </div>

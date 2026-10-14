@@ -74,6 +74,8 @@ type Assistant = {
    * `agent.delegate` (see `@/lib/agent-specialists`).
    */
   specialist?: boolean
+  /** Optional agent tool families this assistant switches on (e.g. `network`). */
+  tool_packs?: string[]
   // tool_steps?: number
 }
 

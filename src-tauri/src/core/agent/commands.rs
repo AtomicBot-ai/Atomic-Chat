@@ -34,6 +34,7 @@ use super::runner::{run_turn, RunTurnInput, MAX_STEPS};
 use super::session::{load_session, save_session, validate_session_id, AgentReseedMessage};
 use super::skills::load_registry;
 use super::target::{resolve_agent_target, resolve_mlx_target, AgentTarget};
+use super::tools::net::{net_tool_names, NETWORK_PACK};
 use super::tools::{DelegateHook, DesktopServices};
 use super::types::{
     AgentApprovalDecision, AgentEvent, AgentFolderAccessDecision, AgentReasoning, AgentTurnRequest,
@@ -552,6 +553,10 @@ pub async fn agent_run_turn<R: Runtime>(
                 .map(str::to_owned),
         );
     }
+    // What the coordinator and its specialists share; each then adds its own
+    // tool-pack and delegation choices.
+    let base_disabled_tools = disabled_tools.clone();
+    disabled_tools.extend(disabled_by_tool_packs(&request.tool_packs));
     // Without specialists `agent.delegate` leaves the prompt, grammar, schema
     // and dispatch, so turns that never delegate keep a byte-identical prefix.
     if request.specialists.is_empty() {
@@ -627,36 +632,40 @@ pub async fn agent_run_turn<R: Runtime>(
         thinking: reasoning.is_on(),
         specialists: &specialist_summaries,
     });
-    // A specialist works with the coordinator's tools minus `agent.delegate`
-    // and follows its own instructions instead of the thread assistant's.
-    let mut specialist_disabled_tools = disabled_tools.clone();
-    specialist_disabled_tools.insert(DELEGATE_TOOL.to_owned());
-    let specialist_descriptors: Vec<super::prompt::ToolDescriptor> = enabled_descriptors
-        .iter()
-        .filter(|descriptor| descriptor.name != DELEGATE_TOOL)
-        .cloned()
-        .collect();
+    // A specialist works with the coordinator's shared tools, its own tool
+    // packs, no `agent.delegate`, and its own instructions.
     let prepared_specialists = request
         .specialists
         .iter()
-        .map(|specialist| PreparedSpecialist {
-            name: specialist.name.trim().to_owned(),
-            stable_prefix: build_stable_prefix_with(&StablePrefixArgs {
-                tool_descriptors: &specialist_descriptors,
-                skill_descriptors: &skill_descriptors,
-                capabilities: &capabilities,
-                max_parallel_tool_calls: DEFAULT_MAX_PARALLEL_TOOL_CALLS,
-                system_persona: None,
-                assistant_instructions: specialist.instructions.as_deref(),
-                mcp_tools: mcp.map(|bridge| bridge.descriptors()).unwrap_or(&[]),
-                mcp_omitted: mcp_bridge
-                    .as_ref()
-                    .map(|bridge| bridge.omitted())
-                    .unwrap_or(0),
-                profile: model_profile,
-                thinking: reasoning.is_on(),
-                specialists: &[],
-            }),
+        .map(|specialist| {
+            let mut specialist_disabled = base_disabled_tools.clone();
+            specialist_disabled.extend(disabled_by_tool_packs(&specialist.tool_packs));
+            specialist_disabled.insert(DELEGATE_TOOL.to_owned());
+            let specialist_descriptors: Vec<super::prompt::ToolDescriptor> = ITERATION_ONE_TOOLS
+                .iter()
+                .filter(|descriptor| !specialist_disabled.contains(descriptor.name))
+                .cloned()
+                .collect();
+            PreparedSpecialist {
+                name: specialist.name.trim().to_owned(),
+                stable_prefix: build_stable_prefix_with(&StablePrefixArgs {
+                    tool_descriptors: &specialist_descriptors,
+                    skill_descriptors: &skill_descriptors,
+                    capabilities: &capabilities,
+                    max_parallel_tool_calls: DEFAULT_MAX_PARALLEL_TOOL_CALLS,
+                    system_persona: None,
+                    assistant_instructions: specialist.instructions.as_deref(),
+                    mcp_tools: mcp.map(|bridge| bridge.descriptors()).unwrap_or(&[]),
+                    mcp_omitted: mcp_bridge
+                        .as_ref()
+                        .map(|bridge| bridge.omitted())
+                        .unwrap_or(0),
+                    profile: model_profile,
+                    thinking: reasoning.is_on(),
+                    specialists: &[],
+                }),
+                disabled_tools: specialist_disabled,
+            }
         })
         .collect::<Vec<_>>();
     let approval_events = on_event.clone();
@@ -703,7 +712,6 @@ pub async fn agent_run_turn<R: Runtime>(
         mcp,
         docs,
         documents_note: documents_note.as_deref(),
-        disabled_tools: &specialist_disabled_tools,
         auto_approve_mcp: request.auto_approve_mcp,
         client: client.as_ref(),
         approval: &approval,
@@ -947,6 +955,16 @@ async fn clear_pending_folder_access_for_run(state: &AppState, run_id: &str) {
     }
 }
 
+/// Tools that stay off because their tool pack is not enabled for this agent.
+fn disabled_by_tool_packs(packs: &[String]) -> Vec<String> {
+    let network = packs.iter().any(|pack| pack == NETWORK_PACK);
+    if network {
+        Vec::new()
+    } else {
+        net_tool_names().map(str::to_owned).collect()
+    }
+}
+
 fn validate_request(request: &AgentTurnRequest) -> Result<(), String> {
     if request.run_id.trim().is_empty() {
         return Err("run_id must not be empty".into());
@@ -965,7 +983,18 @@ fn validate_request(request: &AgentTurnRequest) -> Result<(), String> {
         }
     }
     super::delegation::validate_specialists(&request.specialists)?;
+    validate_tool_packs(&request.tool_packs)?;
+    for specialist in &request.specialists {
+        validate_tool_packs(&specialist.tool_packs)?;
+    }
     Ok(())
+}
+
+fn validate_tool_packs(packs: &[String]) -> Result<(), String> {
+    match packs.iter().find(|pack| pack.as_str() != NETWORK_PACK) {
+        Some(unknown) => Err(format!("Unknown tool pack: '{unknown}'")),
+        None => Ok(()),
+    }
 }
 
 /// Collection names become SQLite file names under the vector-db base dir;
