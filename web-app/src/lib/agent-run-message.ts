@@ -36,6 +36,9 @@ export function buildAgentRunSummary(state: AgentRunState): AgentRunSummary {
 
   return {
     run_id: state.runId ?? '',
+    ...(state.status === 'finished' && (state.noToolReplyCount ?? 0) >= 2
+      ? { no_tool_warning: true }
+      : {}),
     status: state.status,
     finish_reason: state.trace.finishReason,
     step_count: state.trace.stepCount,

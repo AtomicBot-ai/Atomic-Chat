@@ -173,7 +173,10 @@
     "turnOff": "Turn off Agent mode",
     "providerUnavailable": "Agent mode needs a local model, or a cloud provider with an API key.",
     "providerKeyMissing": "Add an API key for this provider in Settings to use Agent mode.",
-    "modelWithoutTools": "This model cannot call tools, so Agent mode is off for it and your messages go to chat. Pick a model with tool calling to use Agent mode."
+    "modelWithoutTools": "This model cannot call tools, so Agent mode is off for it and your messages go to chat. Pick a model with tool calling to use Agent mode.",
+    "noToolsTitle": "No tool calls in the last two Agent replies",
+    "noToolsBody": "If you expected actions, this model or its chat template may not work well with Agent mode. Try another model from the model picker, or turn off Agent mode to continue chatting.",
+    "noToolsFallback": "Turn off Agent mode"
   },
   "agentApprovals": {
     "manualSelected": "Ask for approval",

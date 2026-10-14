@@ -1,3 +1,4 @@
+import { AgentNoToolsWarning } from '@/containers/AgentNoToolsWarning'
 import {
   memo,
   useState,
@@ -554,6 +555,13 @@ export const MessageItem = memo(
               return null
           }
         })}
+
+        {message.role === 'assistant' &&
+          !isRequestActive &&
+          (message.metadata as { agent_run?: AgentRunSummary } | undefined)
+            ?.agent_run?.no_tool_warning === true && (
+            <AgentNoToolsWarning allowFallback={isLastMessage} />
+          )}
 
         {isEditing && !firstTextBlockKey && renderEditor('inline-editor')}
 

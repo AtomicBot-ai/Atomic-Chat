@@ -286,6 +286,9 @@ export type AgentRunTrace = {
 }
 
 export type AgentRunState = {
+  /** In-memory, thread-local consecutive replies for the same provider/model. */
+  modelKey?: string
+  noToolReplyCount?: number
   runId?: string
   startedAtMs?: number
   finishedAtMs?: number
@@ -299,6 +302,7 @@ export type AgentRunState = {
 }
 
 export type AgentRunSummary = {
+  no_tool_warning?: boolean
   run_id: string
   status: AgentRunStatus
   finish_reason?: AgentTurnFinishReason

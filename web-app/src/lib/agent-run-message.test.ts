@@ -102,3 +102,17 @@ describe('agent run message projection', () => {
     expect(claimAgentRunPersistence(persisted, undefined)).toBe(false)
   })
 })
+
+it('persists the advisory only for a repeated successful no-tool reply', () => {
+  const state = finishedRun()
+  state.modelKey = 'private-provider/model-id'
+  state.noToolReplyCount = 1
+  expect(buildAgentRunSummary(state).no_tool_warning).toBeUndefined()
+  state.noToolReplyCount = 2
+  expect(buildAgentRunSummary(state).no_tool_warning).toBe(true)
+  expect(JSON.stringify(buildAgentRunSummary(state))).not.toContain(
+    state.modelKey
+  )
+  state.status = 'cancelled'
+  expect(buildAgentRunSummary(state).no_tool_warning).toBeUndefined()
+})

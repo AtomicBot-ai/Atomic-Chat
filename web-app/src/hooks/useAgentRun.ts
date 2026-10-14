@@ -59,6 +59,8 @@ export function reduceAgentRunState(
       return {
         ...createAgentRunState(),
         runId: event.run_id,
+        modelKey: state.modelKey,
+        noToolReplyCount: state.noToolReplyCount,
         startedAtMs: state.startedAtMs ?? nowMs,
         status: 'running',
       }
@@ -172,6 +174,16 @@ export function reduceAgentRunState(
         },
       }
     case 'turn_finished': {
+      // Duplicate terminal notifications must not count as another reply.
+      if (state.finishedAtMs !== undefined) return state
+      const noToolReply =
+        state.modelKey !== undefined &&
+        !state.trace.error &&
+        (event.reason === 'reply' || event.reason === 'finish') &&
+        Boolean(state.trace.assistantText.trim()) &&
+        !state.trace.tools.some(
+          ({ call }) => call.tool !== 'reply' && call.tool !== 'finish'
+        )
       const status =
         event.reason === 'cancelled'
           ? 'cancelled'
@@ -181,6 +193,9 @@ export function reduceAgentRunState(
       return {
         ...state,
         finishedAtMs: nowMs,
+        noToolReplyCount: noToolReply
+          ? Math.min(2, (state.noToolReplyCount ?? 0) + 1)
+          : 0,
         usage: event.usage ?? state.usage,
         status,
         pendingApproval: undefined,
@@ -200,7 +215,7 @@ export function reduceAgentRunState(
 type AgentRunStore = {
   runs: Record<string, AgentRunState>
   getRun: (threadId: string) => AgentRunState
-  startRun: (threadId: string, runId: string) => void
+  startRun: (threadId: string, runId: string, modelKey?: string) => void
   applyEvent: (threadId: string, event: AgentEvent) => void
   setApprovalResolving: (threadId: string, resolving: boolean) => void
   setFolderAccessResolving: (threadId: string, resolving: boolean) => void
@@ -213,13 +228,19 @@ type AgentRunStore = {
 export const useAgentRun = create<AgentRunStore>()((set, get) => ({
   runs: {},
   getRun: (threadId) => get().runs[threadId] ?? createAgentRunState(),
-  startRun: (threadId, runId) => {
+  startRun: (threadId, runId, modelKey) => {
     set((state) => ({
       runs: {
         ...state.runs,
         [threadId]: {
           ...createAgentRunState(),
           runId,
+          modelKey,
+          noToolReplyCount:
+            modelKey !== undefined &&
+            state.runs[threadId]?.modelKey === modelKey
+              ? (state.runs[threadId]?.noToolReplyCount ?? 0)
+              : 0,
           startedAtMs: Date.now(),
           status: 'running',
         },

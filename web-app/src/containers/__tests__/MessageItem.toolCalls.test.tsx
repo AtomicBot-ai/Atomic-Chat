@@ -683,3 +683,38 @@ describe('MessageItem tool calls', () => {
     expect(screen.queryByText('activity.working')).not.toBeInTheDocument()
   })
 })
+
+it('renders the persisted advisory alongside an Agent reply', () => {
+  const message: UIMessage = {
+    id: 'warned',
+    role: 'assistant',
+    parts: [{ type: 'text', text: 'I will do it.' }],
+    metadata: {
+      agent_run: {
+        run_id: 'run',
+        status: 'finished',
+        tools: [],
+        loops: [],
+        no_tool_warning: true,
+      },
+    },
+  }
+  renderLast(message, 'ready')
+  expect(screen.getByTestId('agent-no-tools-warning')).toBeInTheDocument()
+  expect(screen.getByText('I will do it.')).toBeInTheDocument()
+})
+
+it('does not warn on a normal Agent answer', () => {
+  renderLast(
+    {
+      id: 'normal',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'Hello' }],
+      metadata: {
+        agent_run: { run_id: 'run', status: 'finished', tools: [], loops: [] },
+      },
+    },
+    'ready'
+  )
+  expect(screen.queryByTestId('agent-no-tools-warning')).toBeNull()
+})
