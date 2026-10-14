@@ -14,18 +14,23 @@
  * Mirrors MediaStudio.test.tsx's setup: the real provider store and the real
  * form, with only the generation and materialisation hooks stubbed.
  */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MediaStudio } from '../MediaStudio'
 import { upcastV1Capabilities } from '@/services/media/contract'
 import type { MediaProviderDescriptor } from '@/services/media/contract'
 import type { AtomicMediaCapabilities } from '@/services/atomicMedia/types'
+import type { MediaLibrary as MediaLibraryService } from '@/services/media/library'
 import {
   clearPendingMediaReRun,
   setPendingMediaReRun,
   takePendingMediaReRun,
 } from '@/services/media/rerun'
+import {
+  __setMediaLibrary,
+  useMediaLibraryStore,
+} from '@/stores/media-library-store'
 import { useMediaProviderStore } from '@/stores/media-provider-store'
 import fixture from '@/services/media/contract/__tests__/fixtures/worker-v1-capabilities.json'
 
@@ -131,18 +136,50 @@ describe('a re-run handed over from the library', () => {
   })
 })
 
-describe('the library entry point', () => {
-  it('renders whatever link the route supplies', () => {
-    render(<MediaStudio libraryLink={<a href="/media/library">Library</a>} />)
+/** A library backed by nothing, so the Library tab renders without a disk. */
+function emptyLibrary(): MediaLibraryService {
+  return {
+    load: async () => {},
+    list: () => [],
+    add: async () => {},
+    remove: async () => {},
+    setFavourite: async () => {},
+    readOnly: () => false,
+    subscribe: () => () => {},
+  }
+}
 
-    expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()
+describe('the library entry point', () => {
+  beforeEach(() => {
+    __setMediaLibrary(emptyLibrary())
+    useMediaLibraryStore.setState({
+      assets: [],
+      loading: false,
+      loaded: false,
+      readOnly: false,
+    })
   })
 
-  it('renders nothing when no link is supplied', () => {
-    // Injected rather than built here on purpose: the studio must stay
-    // renderable without a router, which is what MediaStudio.test.tsx relies on.
+  it('opens in the Create view and offers a Library tab', () => {
     render(<MediaStudio />)
 
-    expect(screen.queryByRole('link', { name: 'Library' })).toBeNull()
+    expect(screen.getByLabelText('Prompt')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Library' })).toBeInTheDocument()
+  })
+
+  it('switches to the Library tab and back', () => {
+    render(<MediaStudio />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+
+    expect(screen.queryByLabelText('Prompt')).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Library' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Create' }))
+
+    expect(screen.getByLabelText('Prompt')).toBeInTheDocument()
   })
 })

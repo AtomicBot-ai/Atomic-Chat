@@ -28,6 +28,16 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { ulid } from 'ulidx'
+import {
+  IconArrowsDiagonal,
+  IconBrush,
+  IconMovie,
+  IconMusic,
+  IconPhoto,
+  IconVideo,
+  IconWand,
+  IconZoomIn,
+} from '@tabler/icons-react'
 
 import { cn } from '@/lib/utils'
 import { validateParams } from '@/services/media/contract'
@@ -91,9 +101,70 @@ type InstallState =
   | { phase: 'downloading'; modelId: string; percent: number | null }
   | { phase: 'failed'; modelId: string; detail: string }
 
-/** Presentation label, falling back to the id so an unknown task still shows. */
-function taskLabel(task: MediaTaskPresentation): string {
-  return task.label ?? task.id
+/**
+ * Friendly presentation for the well-known tasks.
+ *
+ * The v1 upcaster emits tasks with only an id, so a tab would otherwise read
+ * `text_to_video` - an implementation detail, not a word a person thinks in.
+ * Known ids get a human label and an icon that implies the action (Phase 4:
+ * user-friendly-first). A provider-supplied `label`/`label_key` always wins:
+ * the map is only the fallback for the id-only tasks the upcaster produces, and
+ * an unknown task degrades to a readable id tab instead of a crash.
+ */
+const TASK_META: Record<
+  string,
+  { labelKey: string; defaultValue: string; icon: typeof IconPhoto }
+> = {
+  text_to_image: {
+    labelKey: 'media:form.taskNames.text_to_image',
+    defaultValue: 'Image',
+    icon: IconPhoto,
+  },
+  image_to_image: {
+    labelKey: 'media:form.taskNames.image_to_image',
+    defaultValue: 'Edit image',
+    icon: IconPhoto,
+  },
+  text_to_video: {
+    labelKey: 'media:form.taskNames.text_to_video',
+    defaultValue: 'Video',
+    icon: IconVideo,
+  },
+  image_to_video: {
+    labelKey: 'media:form.taskNames.image_to_video',
+    defaultValue: 'Animate image',
+    icon: IconVideo,
+  },
+  text_to_audio: {
+    labelKey: 'media:form.taskNames.text_to_audio',
+    defaultValue: 'Audio',
+    icon: IconMusic,
+  },
+  text_to_speech: {
+    labelKey: 'media:form.taskNames.text_to_speech',
+    defaultValue: 'Speech',
+    icon: IconMusic,
+  },
+  upscale: {
+    labelKey: 'media:form.taskNames.upscale',
+    defaultValue: 'Upscale',
+    icon: IconZoomIn,
+  },
+  inpaint: {
+    labelKey: 'media:form.taskNames.inpaint',
+    defaultValue: 'Inpaint',
+    icon: IconBrush,
+  },
+  outpaint: {
+    labelKey: 'media:form.taskNames.outpaint',
+    defaultValue: 'Outpaint',
+    icon: IconArrowsDiagonal,
+  },
+  interpolate: {
+    labelKey: 'media:form.taskNames.interpolate',
+    defaultValue: 'Interpolate',
+    icon: IconMovie,
+  },
 }
 
 function byOrder<T extends { order?: number }>(a: T, b: T): number {
@@ -259,22 +330,37 @@ export function MediaGenerationForm({
           aria-label={t('media:form.task', { defaultValue: 'Generation task' })}
           className="mb-4 flex items-center gap-1 rounded-lg bg-muted/70 p-1"
         >
-          {orderedTasks.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              role="tab"
-              aria-selected={entry.id === task}
-              onClick={() => onTaskChange(entry.id)}
-              className={cn(
-                'flex-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition',
-                entry.id === task &&
-                  'bg-background text-foreground shadow-sm ring-1 ring-border/60'
-              )}
-            >
-              {taskLabel(entry)}
-            </button>
-          ))}
+          {orderedTasks.map((entry) => {
+            const meta = TASK_META[entry.id]
+            // A provider-supplied label (or label_key) is the contract's own
+            // presentation and wins; the friendly map only renames the impl-
+            // detail ids the v1 upcaster emits with no label at all.
+            const label = entry.label
+              ? entry.label
+              : entry.label_key
+                ? t(entry.label_key)
+                : meta
+                  ? t(meta.labelKey, { defaultValue: meta.defaultValue })
+                  : entry.id
+            const Icon = meta?.icon ?? IconWand
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={entry.id === task}
+                onClick={() => onTaskChange(entry.id)}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition',
+                  entry.id === task &&
+                    'bg-background text-foreground shadow-sm ring-1 ring-border/60'
+                )}
+              >
+                <Icon size={14} aria-hidden="true" />
+                <span className="truncate">{label}</span>
+              </button>
+            )
+          })}
         </div>
 
         {providerModels.length === 0 ? (
@@ -477,9 +563,10 @@ export function MediaGenerationForm({
               type="button"
               onClick={submit}
               disabled={!canGenerate}
-              className="rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Generate
+              <IconWand size={15} aria-hidden="true" />
+              {t('media:form.generate', { defaultValue: 'Generate' })}
             </button>
           )}
         </div>

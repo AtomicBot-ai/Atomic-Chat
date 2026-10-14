@@ -117,13 +117,21 @@ describe('MediaStudio', () => {
   it('offers a tab for every task the provider declares', () => {
     render(<MediaStudio />)
 
-    const tabs = screen.getAllByRole('tab').map((node) => node.textContent)
+    // Scoped to the task tablist: the studio also has Create/Library tabs now,
+    // which are a different concern (Phase 4).
+    const taskTabs = within(
+      screen.getByRole('tablist', { name: 'Generation task' })
+    ).getAllByRole('tab')
 
-    // The fixture's one model declares both, and the hardcoded MODES list this
-    // replaced could only ever show what was compiled into it.
-    expect(tabs).toEqual(
-      (capabilities.tasks ?? []).map((task) => task.label ?? task.id)
-    )
+    const declared = capabilities.tasks ?? []
+    expect(taskTabs).toHaveLength(declared.length)
+
+    // An impl-detail id is not what a person thinks in: the tab reads "Video",
+    // not "text_to_video" (Phase 4 friendly labels).
+    const labels = taskTabs.map((node) => node.textContent)
+    expect(labels).toEqual(expect.arrayContaining(['Video', 'Animate image']))
+    expect(labels).not.toContain('text_to_video')
+    expect(labels).not.toContain('image_to_video')
   })
 
   it('submits a request routed to the provider that owns the model', () => {
