@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ExtensionManager } from '@/lib/extension'
 import { hadLegacyPerThreadAgentMode } from '@/lib/legacy-agent-mode'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 /**
  * Thinking effort scale shared by the chat-input pill and Settings → General.
  * `max` means the model's own strongest effort value, or no thinking-token cap
@@ -59,6 +61,13 @@ type GeneralSettingState = {
    */
   agentModeEnabled: boolean
   setAgentModeEnabled: (value: boolean) => void
+  /**
+   * Offer the model `run_command` / `run_script` in chat. On by default; each
+   * call still goes through the thread's approval mode. Toggled from the
+   * composer "+" menu.
+   */
+  chatExecEnabled: boolean
+  setChatExecEnabled: (value: boolean) => void
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
@@ -99,6 +108,8 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         ),
       agentModeEnabled: false,
       setAgentModeEnabled: (value) => set({ agentModeEnabled: value }),
+      chatExecEnabled: true,
+      setChatExecEnabled: (value) => set({ chatExecEnabled: value }),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
@@ -183,3 +194,18 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     }
   )
 )
+
+/**
+ * Whether turns route on Agent mode. The persisted `agentModeEnabled` is kept
+ * as the user left it, but counts only while the platform feature is on — it
+ * is hidden for now (ADR 2026-10-15-hide-agent-mode), and deleting state a
+ * later release may need is what ADR 2026-09-14 warns against.
+ */
+export function isAgentModeOn(
+  state: Pick<GeneralSettingState, 'agentModeEnabled'>
+): boolean {
+  return (
+    Boolean(PlatformFeatures[PlatformFeature.AGENT_MODE]) &&
+    state.agentModeEnabled
+  )
+}

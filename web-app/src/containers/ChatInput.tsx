@@ -48,11 +48,12 @@ import {
   IconX,
   IconFolderPlus,
   IconPaperclip,
+  IconTerminal2,
   IconLoader2,
   IconMusic,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { captureChatSendBlocked } from '@/lib/chat-telemetry'
 import { describeProviderState } from '@/lib/onboarding'
@@ -105,6 +106,8 @@ import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import {
@@ -279,9 +282,13 @@ const ChatInput = memo(function ChatInput({
   // simply the default — no guard needed.
   const agentProvider = useAgentProvider()
   const agentProviderResolved = Boolean(agentProvider)
-  const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
+  const agentModeEnabled = useGeneralSetting(isAgentModeOn)
   const setAgentModeEnabled = useGeneralSetting(
     (state) => state.setAgentModeEnabled
+  )
+  const chatExecEnabled = useGeneralSetting((state) => state.chatExecEnabled)
+  const setChatExecEnabled = useGeneralSetting(
+    (state) => state.setChatExecEnabled
   )
   const agentRouteActive =
     useMessageExecutionRoute().route === 'agent-ipc' ||
@@ -3215,21 +3222,46 @@ const ChatInput = memo(function ChatInput({
                           menu: its button is a toolbar fixture like the
                           web-search globe, with each connector's on/off
                           switch inside its dropdown.) */}
-                      <DropdownMenuItem
-                        onClick={() => setAgentModeEnabled(!agentModeEnabled)}
-                      >
-                        <RobotHeadIcon
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                        <span>{t('chat:agentMode.menuItem')}</span>
-                        {agentModeEnabled && (
-                          <IconCheck
-                            size={16}
-                            className="ml-auto text-primary"
+                      {PlatformFeatures[PlatformFeature.AGENT_MODE] && (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            setAgentModeEnabled(!agentModeEnabled)
+                          }
+                        >
+                          <RobotHeadIcon
+                            size={18}
+                            className="text-muted-foreground"
                           />
-                        )}
-                      </DropdownMenuItem>
+                          <span>{t('chat:agentMode.menuItem')}</span>
+                          {agentModeEnabled && (
+                            <IconCheck
+                              size={16}
+                              className="ml-auto text-primary"
+                            />
+                          )}
+                        </DropdownMenuItem>
+                      )}
+                      {/* Lets the model run terminal commands and scripts
+                          (`run_command` / `run_script`); every call still
+                          goes through the approval mode beside this menu. */}
+                      {PlatformFeatures[PlatformFeature.CHAT_EXEC] && (
+                        <DropdownMenuItem
+                          onClick={() => setChatExecEnabled(!chatExecEnabled)}
+                          data-testid="chat-exec-toggle"
+                        >
+                          <IconTerminal2
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                          <span>{t('chat:chatExec.menuItem')}</span>
+                          {chatExecEnabled && (
+                            <IconCheck
+                              size={16}
+                              className="ml-auto text-primary"
+                            />
+                          )}
+                        </DropdownMenuItem>
+                      )}
                       {/* Workspace folders ride in the same attach menu: for
                           the agent they are just another kind of context. The
                           project composer hides it — that page has no files

@@ -37,6 +37,8 @@ import { isRootDir } from '@/utils/path'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
 import { setLaunchAtStartup } from '@/lib/launchAtStartup'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -412,16 +414,20 @@ function General() {
                   />
                 }
               />
-              <CardItem
-                title={t('settings:chatBehavior.legacyChatEngine')}
-                description={t('settings:chatBehavior.legacyChatEngineDesc')}
-                actions={
-                  <Switch
-                    checked={legacyChatEngine}
-                    onCheckedChange={setLegacyChatEngine}
-                  />
-                }
-              />
+              {/* Only meaningful next to Agent mode: with it hidden every
+                  turn already runs on the chat pipeline. */}
+              {PlatformFeatures[PlatformFeature.AGENT_MODE] && (
+                <CardItem
+                  title={t('settings:chatBehavior.legacyChatEngine')}
+                  description={t('settings:chatBehavior.legacyChatEngineDesc')}
+                  actions={
+                    <Switch
+                      checked={legacyChatEngine}
+                      onCheckedChange={setLegacyChatEngine}
+                    />
+                  }
+                />
+              )}
             </Card>
 
             {/* Privacy / Analytics */}

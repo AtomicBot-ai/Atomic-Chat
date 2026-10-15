@@ -1,5 +1,6 @@
 import { ToolUIPart } from 'ai'
 import type { AgentRunSummary } from '@/types/agent'
+import type { ChatExecToolOutput } from '@/lib/chat-exec-tools'
 
 export type ToolPresentation =
   | {
@@ -44,6 +45,20 @@ export type ToolPresentation =
       rawInput?: unknown
       rawOutput?: unknown
       errorText?: string
+    }
+  | {
+      /** Chat's own `run_command` / `run_script` (lib/chat-exec-tools). */
+      kind: 'chat_exec'
+      title: string
+      subtitle?: string
+      /** Display name of a script's language; absent for a command. */
+      language?: string
+      /** The command line or the script. */
+      source?: string
+      output?: ChatExecToolOutput
+      errorText?: string
+      /** Ran, but did not succeed: non-zero exit, timeout or Stop. */
+      failed: boolean
     }
 
 export type TraceBlock =

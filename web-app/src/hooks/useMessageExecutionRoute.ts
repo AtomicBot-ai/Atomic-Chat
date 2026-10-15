@@ -1,5 +1,5 @@
 import { useAgentProvider } from '@/hooks/useAgentProvider'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { agentProviderBlockReason } from '@/lib/agent-provider'
 import { agentModelBlockReason } from '@/lib/managed-engine/chat'
@@ -17,7 +17,7 @@ import { shouldSuppressToolsForUpstreamDflash } from '@/lib/custom-chat-transpor
  */
 export function useMessageExecutionRoute(): ResolvedMessageExecutionRoute {
   const legacyChatEngine = useGeneralSetting((s) => s.legacyChatEngine)
-  const agentModeSelected = useGeneralSetting((s) => s.agentModeEnabled)
+  const agentModeSelected = useGeneralSetting(isAgentModeOn)
   const provider = useAgentProvider()
   const selectedModel = useModelProvider((s) => s.selectedModel)
 

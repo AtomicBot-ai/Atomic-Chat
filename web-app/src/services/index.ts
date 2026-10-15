@@ -44,6 +44,8 @@ import { DefaultMediaService } from './media/default'
 import type { MediaService } from './media/types'
 import { DefaultModelSetupService } from './model-setup/default'
 import type { ModelSetupService } from './model-setup/types'
+import { DefaultChatExecService } from './chat-exec/default'
+import type { ChatExecService } from './chat-exec/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -97,6 +99,7 @@ export interface ServiceHub {
   embedding(): EmbeddingService
   media(): MediaService
   modelSetup(): ModelSetupService
+  chatExec(): ChatExecService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -128,6 +131,7 @@ class PlatformServiceHub implements ServiceHub {
   private embeddingService: EmbeddingService = new DefaultEmbeddingService()
   private mediaService: MediaService = new DefaultMediaService()
   private modelSetupService: ModelSetupService = new DefaultModelSetupService()
+  private chatExecService: ChatExecService = new DefaultChatExecService()
   private initialized = false
 
   /**
@@ -167,6 +171,7 @@ class PlatformServiceHub implements ServiceHub {
           embeddingModule,
           modelSetupModule,
           mediaModule,
+          chatExecModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -188,6 +193,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./embedding/tauri'),
           import('./model-setup/tauri'),
           import('./media/tauri'),
+          import('./chat-exec/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -210,6 +216,7 @@ class PlatformServiceHub implements ServiceHub {
         this.embeddingService = new embeddingModule.TauriEmbeddingService()
         this.mediaService = new mediaModule.TauriMediaService()
         this.modelSetupService = new modelSetupModule.TauriModelSetupService()
+        this.chatExecService = new chatExecModule.TauriChatExecService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,
@@ -405,6 +412,11 @@ class PlatformServiceHub implements ServiceHub {
   media(): MediaService {
     this.ensureInitialized()
     return this.mediaService
+  }
+
+  chatExec(): ChatExecService {
+    this.ensureInitialized()
+    return this.chatExecService
   }
 }
 

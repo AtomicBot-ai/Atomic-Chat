@@ -1,4 +1,4 @@
-use tauri::Runtime;
+use tauri::{Manager, Runtime};
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use super::db;
@@ -65,8 +65,18 @@ pub async fn delete_thread<R: Runtime>(
         return db::db_delete_thread(app_handle, &thread_id).await;
     }
 
-    let data_folder = get_jan_data_folder_path(app_handle);
-    file_store::delete_thread(&data_folder, &thread_id)
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    file_store::delete_thread(&data_folder, &thread_id)?;
+    // Commands the chat ran keep their files in a folder of the thread's own.
+    crate::core::chat_exec::forget_thread(
+        app_handle
+            .try_state::<crate::core::chat_exec::ChatExecState>()
+            .as_deref(),
+        &data_folder,
+        &thread_id,
+    )
+    .await;
+    Ok(())
 }
 
 /// Lists all messages for a given thread by reading and parsing its messages.jsonl file.

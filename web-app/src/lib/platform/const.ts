@@ -100,4 +100,11 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // registered on mobile or web in the first place. The Windows and Linux
   // arm64 bundles ship without the TurboQuant engine.
   [PlatformFeature.TURBOQUANT_ENGINE]: !((IS_WINDOWS || IS_LINUX) && IS_ARM64),
+
+  // Hidden on every platform (ADR 2026-10-15-hide-agent-mode).
+  [PlatformFeature.AGENT_MODE]: false,
+
+  // Commands and scripts from chat — desktop platforms only.
+  [PlatformFeature.CHAT_EXEC]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }

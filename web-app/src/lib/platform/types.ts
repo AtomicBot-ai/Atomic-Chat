@@ -82,4 +82,13 @@ export enum PlatformFeature {
   // The TurboQuant llama.cpp fork (`llamacpp` provider). It is not shipped on
   // Windows or Linux arm64, where upstream llama.cpp is the only engine.
   TURBOQUANT_ENGINE = 'turboquantEngine',
+
+  // Agent mode (the Rust agent engine as an opt-in for chat turns). Hidden
+  // while it is unfinished; the persisted toggle is kept so bringing it back
+  // is this flag alone.
+  AGENT_MODE = 'agentMode',
+
+  // Running terminal commands and scripts from chat. Needs native process
+  // spawning, so desktop only.
+  CHAT_EXEC = 'chatExec',
 }

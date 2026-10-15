@@ -20,7 +20,11 @@ const NOTES = 'ATOMIC-E2E-AGENT-NOTES 3c9d: the ferry leaves at six.'
 const WRITTEN = 'ATOMIC-E2E-AGENT-WROTE 70fa'
 const ATTACH_MENU = 'button[aria-haspopup="menu"].rounded-full.mr-2'
 
-describe.skipIf(!CAN_RUN_FAKE_BACKEND).each([
+// Agent mode is hidden in the app (ADR 2026-10-15-hide-agent-mode): no menu
+// item turns it on. This scenario waits for the mode to come back.
+const AGENT_MODE_SHOWN = false
+
+describe.skipIf(!AGENT_MODE_SHOWN || !CAN_RUN_FAKE_BACKEND).each([
   { decision: 'Deny', name: 'refused' },
   // "Allow" grants the folder for this run; "Always Allow" would add it to the thread's folders.
   { decision: 'Allow', name: 'allowed' },

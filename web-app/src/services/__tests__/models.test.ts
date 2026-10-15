@@ -221,7 +221,61 @@ describe('DefaultModelsService', () => {
     })
   })
 
+  describe('pullModelWithMetadata under another provider', () => {
+    it('imports through that provider with the hashes and sizes it was given, and keeps them for a resume', async () => {
+      const prism = { ...mockEngine, import: vi.fn().mockResolvedValue(undefined) }
+      mockEngineManager.get.mockImplementation((provider?: string) =>
+        provider === 'atomic-prism' ? prism : mockEngine
+      )
+      const { useDownloadStore } = await import('@/hooks/useDownloadStore')
+      const known = {
+        provider: 'atomic-prism',
+        modelSha256: 'a'.repeat(64),
+        modelSize: 2_000,
+        mmprojSha256: 'c'.repeat(64),
+        mmprojSize: 500,
+      }
+
+      await modelsService.pullModelWithMetadata(
+        'prism-ml/Bonsai-8B-PQ2_0',
+        'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/Bonsai-8B-PQ2_0.gguf',
+        'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/mmproj-Q8_0.gguf',
+        'hf_token',
+        true,
+        false,
+        known
+      )
+
+      expect(prism.import).toHaveBeenCalledWith('prism-ml/Bonsai-8B-PQ2_0', {
+        modelPath:
+          'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/Bonsai-8B-PQ2_0.gguf',
+        mmprojPath:
+          'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/mmproj-Q8_0.gguf',
+        modelSha256: 'a'.repeat(64),
+        modelSize: 2_000,
+        mmprojSha256: 'c'.repeat(64),
+        mmprojSize: 500,
+        resume: false,
+      })
+      expect(mockEngine.import).not.toHaveBeenCalled()
+      expect(
+        useDownloadStore.getState().resumeParams['prism-ml/Bonsai-8B-PQ2_0']
+      ).toMatchObject({ provider: 'atomic-prism', modelSha256: 'a'.repeat(64) })
+    })
+  })
+
   describe('abortDownload', () => {
+    it('stops a PrismML download too: Bonsai files download under atomic-prism', async () => {
+      const prism = { ...mockEngine, abortImport: vi.fn() }
+      mockEngineManager.get.mockImplementation((provider?: string) =>
+        provider === 'atomic-prism' ? prism : mockEngine
+      )
+
+      await modelsService.abortDownload('prism-ml/Bonsai-8B-PQ2_0')
+
+      expect(prism.abortImport).toHaveBeenCalledWith('prism-ml/Bonsai-8B-PQ2_0')
+    })
+
     it('should abort download successfully', async () => {
       const id = 'model1'
 

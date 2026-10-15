@@ -6,6 +6,7 @@ import {
 import { DefaultEmbeddingService } from '@/services/embedding/default'
 import { DefaultMediaService } from '@/services/media/default'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
+import { DefaultChatExecService } from '@/services/chat-exec/default'
 
 type ServiceInstances = {
   [Name in keyof ServiceHub]: ReturnType<ServiceHub[Name]>
@@ -57,6 +58,7 @@ export function createMockServiceHub(
     embedding: overrides.embedding ?? new DefaultEmbeddingService(),
     media: overrides.media ?? new DefaultMediaService(),
     modelSetup: overrides.modelSetup ?? new DefaultModelSetupService(),
+    chatExec: overrides.chatExec ?? new DefaultChatExecService(),
   }
 
   return {
@@ -88,6 +90,7 @@ export function createMockServiceHub(
     embedding: () => services.embedding,
     media: () => services.media,
     modelSetup: () => services.modelSetup,
+    chatExec: () => services.chatExec,
   }
 }
 

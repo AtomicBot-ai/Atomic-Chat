@@ -3,6 +3,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
 import { useToolAvailable } from './useToolAvailable'
+import { ensureChatExecStatus } from './useChatExecStatus'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 
@@ -145,6 +146,9 @@ export const useTools = () => {
         console.error('Failed to fetch MCP tools:', error)
       }
     }
+    // What chat can run (and, on Windows, the sandbox probe) is asked once
+    // per session; start it now rather than on the first send.
+    void ensureChatExecStatus()
     void getToolSnapshot()
       .then(setTools)
       .catch((error) => {

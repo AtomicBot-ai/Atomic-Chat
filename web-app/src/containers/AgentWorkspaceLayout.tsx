@@ -18,7 +18,7 @@ import { AgentWorkspaceFiles } from './AgentWorkspaceFiles'
 import { AgentWorkspacePreview } from './AgentWorkspacePreview'
 import { ArtifactPanel } from './ArtifactPanel'
 import { RunSettingsPanel } from './RunSettingsPanel'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useDesktopScreen } from '@/hooks/useMediaQuery'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -103,7 +103,7 @@ export function AgentWorkspaceLayout({
   const artifactOpen = useArtifactStore((state) => state.isOpen)
   const artifactTitle = useArtifactStore((state) => state.title)
   const [filesOpen, setFilesOpen] = useState(false)
-  const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
+  const agentModeEnabled = useGeneralSetting(isAgentModeOn)
   const filesAvailable = filesEnabled && agentModeEnabled
   const settingsOpen = useRunSettingsPanel((state) => state.isOpen)
   const openSettings = useRunSettingsPanel((state) => state.open)

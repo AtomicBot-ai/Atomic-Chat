@@ -15,7 +15,7 @@ import {
 import { seedServiceHub } from '@/test/service-hub'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 import type { CatalogModel } from '@/services/models/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { DownloadOptionsSelect } from './DownloadOptionsSelect'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
@@ -48,9 +48,7 @@ for (const language of ['en', 'de-DE']) {
           setFontSize(font)
           setTheme('light')
           seedServiceHub({ modelSetup: new FakeService() })
-          useModelSetupStore.setState({
-            setups: {},
-            progress: {},
+          useModelCompatibilityStore.setState({
             verdicts: {
               [PATH]: {
                 outcome: 'engine_required',

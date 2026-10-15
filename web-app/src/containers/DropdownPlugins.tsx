@@ -32,9 +32,11 @@ import {
 } from '@/constants/mcp-connectors'
 import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServerStatuses } from '@/hooks/useMCPServerStatuses'
 import { effectiveMcpStatus } from '@/lib/mcp-effective-status'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { useMCPServerToggle } from '@/hooks/useMCPServerToggle'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { useThreads } from '@/hooks/useThreads'
@@ -262,7 +264,7 @@ export default memo(function DropdownPlugins({
   // tooling. A user who switched one on has no way to tell that from here —
   // it simply never shows up and the model reports it has no such tool. Say
   // so, once, and only while it is actually true for this session.
-  const agentModeEnabled = useGeneralSetting((state) => state.agentModeEnabled)
+  const agentModeEnabled = useGeneralSetting(isAgentModeOn)
   const hasActiveSystemServer = useMemo(
     () =>
       Object.entries(mcpServers).some(
@@ -271,7 +273,11 @@ export default memo(function DropdownPlugins({
       ),
     [mcpServers]
   )
-  const showSystemServerNote = hasActiveSystemServer && !agentModeEnabled
+  // While Agent mode is hidden there is nothing to point the user at.
+  const showSystemServerNote =
+    PlatformFeatures[PlatformFeature.AGENT_MODE] &&
+    hasActiveSystemServer &&
+    !agentModeEnabled
 
   const activeConnectors = entries.filter((entry) => entry.active).length
   // Connectors whose tools actually ride this chat's requests.

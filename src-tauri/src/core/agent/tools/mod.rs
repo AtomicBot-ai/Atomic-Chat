@@ -13,6 +13,11 @@ mod notify;
 mod proc;
 mod shell;
 mod skill_run_script;
+// Shared with chat commands (`core::chat_exec`): one interpreter table and
+// one process-tree kill for every script the app runs.
+pub(crate) use skill_run_script::{
+    configure_process_tree, interpreter_invocation, terminate_process_tree,
+};
 mod skill_view;
 pub(super) mod tool_view;
 mod vision;

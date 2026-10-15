@@ -1,14 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { seedServiceHub } from '@/test/service-hub'
-import { useModelProvider } from '@/hooks/useModelProvider'
-import { useModelSetupStore } from '@/stores/model-setup-store'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 import type {
   CompatibilityVerdict,
-  ModelSetup,
-  ModelSetupPlan,
+  PrismCatalog,
+  PrismFamiliesResponse,
 } from '@/services/model-setup/types'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -37,53 +35,62 @@ const verdict = (
   reason: 'r',
 })
 
-const plan = (overrides: Partial<ModelSetupPlan> = {}): ModelSetupPlan => ({
-  digest: 'digest-1',
-  model_id: 'prism-ml/Bonsai-8B-PQ2_0',
-  provider: 'atomic-prism',
-  verdict: verdict(),
-  engine: {
-    provider: 'atomic-prism',
-    version: 'prism-b9000-abcdef0',
-    backend: 'macos-arm64',
-    installed: false,
-    download_size: 20_000_000,
-  },
-  model: { ...file, size: 2_000_000_000 },
-  projector: { ...file, file: 'mmproj.gguf', size: 500_000_000 },
-  total_download_bytes: 2_520_000_000,
-  free_bytes: 100_000_000_000,
-  blockers: [],
-  ...overrides,
-})
+const families: PrismFamiliesResponse = {
+  rules_version: 1,
+  families: [
+    {
+      id: 'bonsai-8b',
+      title: 'Bonsai 8B',
+      repo: file.repo,
+      revision: 'b072e1d',
+      files: [
+        {
+          file: file.file,
+          size: 2_000_000_000,
+          sha256: 'a'.repeat(64),
+          treatment: 'prism_required',
+          default: true,
+        },
+      ],
+      projectors: [
+        {
+          file: 'mmproj.gguf',
+          size: 500_000_000,
+          sha256: 'c'.repeat(64),
+          default: true,
+        },
+      ],
+    },
+  ],
+}
 
-const setup = (overrides: Partial<ModelSetup> = {}): ModelSetup => ({
-  setup_id: 's1',
-  request_id: 'r1',
-  revision: 1,
-  stage: 'downloading_model',
-  request: file,
-  plan: plan(),
-  task_ids: { engine: 'te', model: 'tm', projector: 'tp' },
-  created_at: 1,
-  updated_at: 1,
-  ...overrides,
+const catalog = (over: Partial<PrismCatalog> = {}): PrismCatalog => ({
+  installed: [],
+  available: [{ version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }],
+  recommended: 'prism-b9000-abcdef0/macos-arm64',
+  releases: [
+    {
+      tag: 'prism-b9000-abcdef0',
+      variants: [{ id: 'macos-arm64', size: 20_000_000 }],
+    },
+  ],
+  ...over,
 })
 
 class FakeService extends DefaultModelSetupService {
-  plan = vi.fn(async () => plan())
-  start = vi.fn(async () => setup({ stage: 'queued' }))
-  cancel = vi.fn(async () => setup({ stage: 'cancelled', revision: 9 }))
-  resume = vi.fn(async () => setup({ stage: 'downloading_model', revision: 9 }))
+  checkCompatibility = vi.fn(async () => verdict())
+  families = vi.fn(async () => families)
+  prismCatalog = vi.fn(async () => catalog())
+  diskAvailable = vi.fn(async () => 100_000_000_000 as number | null)
   override isSupported() {
     return true
   }
 }
 
 let service: FakeService
-const onReady = vi.fn()
+const onStart = vi.fn()
 
-const renderSheet = ({ installed = false } = {}) =>
+const renderSheet = () =>
   render(
     <ModelSetupSheet
       open
@@ -91,104 +98,159 @@ const renderSheet = ({ installed = false } = {}) =>
       file={file}
       modelName="Bonsai 8B"
       modelId="prism-ml/Bonsai-8B-PQ2_0"
-      installed={installed}
-      onReady={onReady}
+      onStart={onStart}
     />
   )
 
 describe('ModelSetupSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
-    useModelProvider.setState({ deletedModels: [] })
     service = new FakeService()
     seedServiceHub({ modelSetup: service })
   })
 
-  it('shows what the setup downloads and starts it against the plan it showed', async () => {
+  it('shows the engine, the model, the projector and the bytes, from what the core reports', async () => {
     renderSheet()
 
     expect(await screen.findByTestId('model-setup-engine')).toHaveTextContent(
       'hub:prismSetupEngineDownload'
     )
-    expect(service.plan).toHaveBeenCalledWith({
+    expect(screen.getByTestId('model-setup-engine')).toHaveTextContent(
+      'prism-b9000-abcdef0'
+    )
+    expect(screen.getByText(/Bonsai-8B-PQ2_0\.gguf/)).toBeInTheDocument()
+    expect(screen.getByText(/mmproj\.gguf/)).toBeInTheDocument()
+    expect(screen.getByTestId('model-setup-total')).toHaveTextContent(
+      'hub:prismSetupFree'
+    )
+    // Planned in the app: the verdict, the families, the catalog and the
+    // disk, and no setup-plan route of the core.
+    expect(service.checkCompatibility).toHaveBeenCalledWith({
+      ...file,
+      inspect_remote: true,
+    })
+    expect(service.families).toHaveBeenCalled()
+    expect(service.prismCatalog).toHaveBeenCalled()
+    expect(service.diskAvailable).toHaveBeenCalled()
+  })
+
+  it('shows the plan the row already read without asking the core again', async () => {
+    const { loadPrismSetupPlan } = await import(
+      '@/services/model-setup/prism-setup'
+    )
+    const initialPlan = await loadPrismSetupPlan(service, {
       ...file,
       model_id: 'prism-ml/Bonsai-8B-PQ2_0',
       include_projector: true,
     })
-    expect(screen.getByText(/mmproj\.gguf/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByTestId('model-setup-start'))
-    await waitFor(() => expect(service.start).toHaveBeenCalled())
-    const [request] = service.start.mock.calls[0] as unknown as [
-      Record<string, unknown>,
-    ]
-    expect(request).toMatchObject({
-      ...file,
-      include_projector: true,
-      plan_digest: 'digest-1',
-    })
-    expect(request.request_id).toEqual(expect.any(String))
-    expect(await screen.findByTestId('model-setup-stage')).toHaveTextContent(
-      'hub:prismStage_queued'
+    vi.clearAllMocks()
+    render(
+      <ModelSetupSheet
+        open
+        onOpenChange={() => {}}
+        file={file}
+        modelName="Bonsai 8B"
+        modelId="prism-ml/Bonsai-8B-PQ2_0"
+        initialPlan={initialPlan}
+        onStart={onStart}
+      />
     )
+
+    expect(await screen.findByTestId('model-setup-engine')).toHaveTextContent(
+      'prism-b9000-abcdef0'
+    )
+    expect(service.prismCatalog).not.toHaveBeenCalled()
+    expect(service.checkCompatibility).not.toHaveBeenCalled()
   })
 
-  it('plans again without the projector when image support is turned off', async () => {
-    renderSheet()
-    const toggle = await screen.findByTestId('model-setup-vision')
-    service.plan.mockResolvedValue(plan({ projector: null }))
-
-    fireEvent.click(toggle)
-
-    await waitFor(() =>
-      expect(service.plan).toHaveBeenLastCalledWith(
-        expect.objectContaining({ include_projector: false })
-      )
-    )
-    await waitFor(() => expect(screen.queryByText(/mmproj\.gguf/)).toBeNull())
-  })
-
-  it('reviews a plan that went stale instead of starting a different one', async () => {
-    service.start.mockRejectedValueOnce({
-      code: 'MODEL_SETUP_PLAN_STALE',
-      message: 'stale',
-    })
+  it('starts the plan it showed, read again just before', async () => {
     renderSheet()
     await screen.findByTestId('model-setup-engine')
+
+    fireEvent.click(screen.getByTestId('model-setup-start'))
+
+    await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1))
+    expect(onStart.mock.calls[0][0]).toMatchObject({
+      model_id: 'prism-ml/Bonsai-8B-PQ2_0',
+      engine: { version: 'prism-b9000-abcdef0', installed: false },
+      projector: { file: 'mmproj.gguf' },
+    })
+    expect(service.prismCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves the projector out when image support is turned off', async () => {
+    renderSheet()
+    fireEvent.click(await screen.findByTestId('model-setup-vision'))
+
+    await waitFor(() => expect(screen.queryByText(/mmproj\.gguf/)).toBeNull())
+    fireEvent.click(screen.getByTestId('model-setup-start'))
+    await waitFor(() => expect(onStart).toHaveBeenCalled())
+    expect(onStart.mock.calls[0][0].projector).toBeNull()
+  })
+
+  it('shows a plan that changed instead of starting a different one', async () => {
+    renderSheet()
+    await screen.findByTestId('model-setup-engine')
+    // The build got installed meanwhile: nothing to download for the engine.
+    service.prismCatalog.mockResolvedValue(
+      catalog({
+        installed: [{ version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }],
+      })
+    )
 
     fireEvent.click(screen.getByTestId('model-setup-start'))
 
     expect(
       await screen.findByText('hub:prismSetupPlanChanged')
     ).toBeInTheDocument()
-    expect(service.plan).toHaveBeenCalledTimes(2)
-    expect(service.start).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('model-setup-engine')).toHaveTextContent(
+      'hub:prismSetupEngineInstalled'
+    )
+    expect(onStart).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('model-setup-start'))
+    await waitFor(() => expect(onStart).toHaveBeenCalledTimes(1))
   })
 
   it('cannot start a plan with blockers and says why', async () => {
-    service.plan.mockResolvedValue(
-      plan({
-        blockers: [
-          {
-            code: 'insufficient_disk_space',
-            message: 'Not enough disk space.',
-          },
-        ],
-      })
-    )
+    service.diskAvailable.mockResolvedValue(1_000)
+    service.checkCompatibility.mockResolvedValue({
+      ...verdict('engine_update_required'),
+      min_prism_build: 9999,
+    })
     renderSheet()
 
     expect(
-      await screen.findByText('Not enough disk space.')
+      await screen.findByText('hub:prismBlocker_no_engine_build')
     ).toBeInTheDocument()
+    expect(
+      screen.getByText(/hub:prismBlocker_insufficient_disk_space/)
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('model-setup-engine')).toHaveTextContent(
+      'hub:prismSetupEngineNone'
+    )
+    expect(screen.getByTestId('model-setup-start')).toBeDisabled()
+  })
+
+  it('names the replacement of a file in an old layout', async () => {
+    service.checkCompatibility.mockResolvedValue({
+      ...verdict('legacy_artifact'),
+      reason: 'An old layout.',
+      replacement: 'Bonsai-8B-PQ2_0-v2.gguf',
+    })
+    renderSheet()
+
+    expect(await screen.findByText(/An old layout\./)).toHaveTextContent(
+      'hub:prismSetupReplacement'
+    )
     expect(screen.getByTestId('model-setup-start')).toBeDisabled()
   })
 
   it('says a newer engine is coming next to the current one', async () => {
-    service.plan.mockResolvedValue(
-      plan({ verdict: verdict('engine_update_required') })
-    )
+    service.checkCompatibility.mockResolvedValue({
+      ...verdict('engine_update_required'),
+      min_prism_build: 9000,
+    })
     renderSheet()
 
     expect(
@@ -196,111 +258,14 @@ describe('ModelSetupSheet', () => {
     ).toHaveTextContent('hub:prismEngineUpdateRequired')
   })
 
-  it('follows a running setup and cancels it', async () => {
-    useModelSetupStore.setState({
-      setups: { s1: setup() },
-      progress: { tm: { transferred: 1_000_000_000, total: 2_000_000_000 } },
+  it('says what failed when the core cannot be asked', async () => {
+    service.prismCatalog.mockRejectedValue({
+      code: 'CORE_UNREACHABLE',
+      message: 'No core',
     })
     renderSheet()
 
-    expect(screen.getByTestId('model-setup-stage')).toHaveTextContent(
-      'hub:prismStage_downloading_model'
-    )
-    expect(screen.getByText('40%')).toBeInTheDocument()
-    expect(service.plan).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'common:cancel' }))
-    await waitFor(() => expect(service.cancel).toHaveBeenCalledWith('s1'))
-  })
-
-  it('resumes a setup the app closed on', async () => {
-    useModelSetupStore.setState({
-      setups: {
-        s1: setup({ stage: 'interrupted', stopped_at: 'downloading_model' }),
-      },
-    })
-    renderSheet()
-
-    expect(screen.getByText('hub:prismSetupInterrupted')).toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole('button', { name: 'hub:prismSetupResume' })
-    )
-    await waitFor(() => expect(service.resume).toHaveBeenCalledWith('s1'))
-  })
-
-  it('offers another try after a failure', async () => {
-    useModelSetupStore.setState({
-      setups: {
-        s1: setup({
-          stage: 'failed',
-          error: { code: 'DOWNLOAD_FAILED', message: 'network down' },
-        }),
-      },
-    })
-    renderSheet()
-
-    expect(screen.getByText(/hub:prismSetupFailed/)).toHaveTextContent(
-      'network down'
-    )
-    expect(await screen.findByTestId('model-setup-start')).toHaveTextContent(
-      'hub:prismSetupRetry'
-    )
-  })
-
-  it('opens a chat once the model is ready', async () => {
-    renderSheet()
-    await screen.findByTestId('model-setup-engine')
-
-    // Ready just now: the providers are still being read again, so the model
-    // is not listed yet.
-    act(() => {
-      useModelSetupStore.getState().apply({
-        type: 'changed',
-        setup: setup({ stage: 'ready', revision: 5, updated_at: Date.now() }),
-      })
-    })
-
-    expect(screen.getByTestId('model-setup-stage')).toHaveTextContent(
-      'hub:prismStage_ready'
-    )
-    fireEvent.click(screen.getByTestId('model-setup-new-chat'))
-    expect(onReady).toHaveBeenCalledWith('prism-ml/Bonsai-8B-PQ2_0')
-  })
-
-  it('keeps offering the chat of an installed model set up before this launch', () => {
-    useModelSetupStore.setState({ setups: { s1: setup({ stage: 'ready' }) } })
-    renderSheet({ installed: true })
-
-    expect(screen.getByTestId('model-setup-new-chat')).toBeInTheDocument()
-    expect(service.plan).not.toHaveBeenCalled()
-  })
-
-  it('sets the model up again once it was deleted, instead of a chat with nothing', async () => {
-    useModelSetupStore.setState({
-      setups: { s1: setup({ stage: 'ready', updated_at: Date.now() }) },
-    })
-    useModelProvider.setState({ deletedModels: ['prism-ml/Bonsai-8B-PQ2_0'] })
-    renderSheet()
-
-    expect(await screen.findByTestId('model-setup-start')).toHaveTextContent(
-      'hub:prismSetupStart'
-    )
-    expect(screen.queryByTestId('model-setup-new-chat')).toBeNull()
-    expect(screen.queryByTestId('model-setup-stage')).toBeNull()
-
-    await screen.findByTestId('model-setup-engine')
-    fireEvent.click(screen.getByTestId('model-setup-start'))
-    await waitFor(() => expect(service.start).toHaveBeenCalled())
-  })
-
-  it('sets the model up again when a setup from before this launch left no model', async () => {
-    useModelSetupStore.setState({ setups: { s1: setup({ stage: 'ready' }) } })
-    renderSheet()
-
-    expect(await screen.findByTestId('model-setup-engine')).toBeInTheDocument()
-    expect(screen.queryByTestId('model-setup-new-chat')).toBeNull()
-    expect(screen.getByTestId('model-setup-start')).toHaveTextContent(
-      'hub:prismSetupStart'
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('No core')
+    expect(screen.getByTestId('model-setup-start')).toBeDisabled()
   })
 })

@@ -4,6 +4,7 @@ pub mod artifact;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod atomic_core;
 pub mod auth;
+pub mod chat_exec;
 pub mod downloads;
 #[cfg(feature = "e2e")]
 pub mod e2e;
