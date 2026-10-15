@@ -73,12 +73,13 @@ export function FoundryLocalAccelerators() {
     setPreparing(true)
     setPrepareError(null)
     setSteps({})
-    // Registered before the call: the core reports steps before it answers.
-    const unlisten = await listen<FoundryLocalAcceleratorsEvent>(PREPARE_EVENT, (event) => {
-      const { accelerator, stage, fraction, reason } = event.payload
-      setSteps((current) => ({ ...current, [accelerator]: { stage, fraction, reason } }))
-    })
+    let unlisten: (() => void) | undefined
     try {
+      // Registered before the call: the core reports steps before it answers.
+      unlisten = await listen<FoundryLocalAcceleratorsEvent>(PREPARE_EVENT, (event) => {
+        const { accelerator, stage, fraction, reason } = event.payload
+        setSteps((current) => ({ ...current, [accelerator]: { stage, fraction, reason } }))
+      })
       await prepareFoundryLocalAccelerators(names)
     } catch (error) {
       const code = (error as { code?: unknown } | null | undefined)?.code
@@ -88,7 +89,7 @@ export function FoundryLocalAccelerators() {
           : t('providers:foundryLocal.accelerators.prepareFailed', { message: messageOf(error) })
       )
     } finally {
-      unlisten()
+      unlisten?.()
       setPreparing(false)
       setSteps({})
       // The core forgets its probe after a prepare: this read shows what the library registered.

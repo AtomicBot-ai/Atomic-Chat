@@ -101,10 +101,6 @@ export interface HubListSources {
   feedFormat: HuggingFaceFeedFormat
   /** Narrow feed and search rows with `passesManagedPrefilter`. */
   prefilter: boolean
-  /** Foundry Local: Microsoft's catalog after the curated list (`foundryLocalRows`). */
-  microsoftCatalog?: boolean
-  /** `false`: no Hugging Face feed or search under this format. */
-  huggingFace?: boolean
 }
 
 export function hubListSources(format: ModelFormat): HubListSources {
@@ -112,17 +108,10 @@ export function hubListSources(format: ModelFormat): HubListSources {
   if (isManagedProvider(format)) {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'safetensors', prefilter: true }
   }
-  // Foundry Local lists conf's curated models, then Microsoft's catalog; nothing from Hugging Face.
+  // Foundry Local lists conf's curated models, then Microsoft's catalog (`foundryLocalRows`); the
+  // route asks Hugging Face nothing under it, as under PrismML.
   if (format === 'foundry-local') {
-    return {
-      staffPicks: false,
-      catalog: false,
-      curated: true,
-      microsoftCatalog: true,
-      huggingFace: false,
-      feedFormat: 'gguf',
-      prefilter: false,
-    }
+    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
   }
   // PrismML lists the Bonsai families of the core's model rules, and nothing else.
   if (format === 'atomic-prism') {

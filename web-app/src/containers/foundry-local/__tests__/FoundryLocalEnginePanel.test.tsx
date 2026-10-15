@@ -129,4 +129,13 @@ describe('FoundryLocalEnginePanel', () => {
 
     expect(screen.getByText('providers:foundryLocal.telemetry')).toBeInTheDocument()
   })
+
+  it('says it is checking, not that there is no build, before the core has answered', () => {
+    hold(undefined)
+
+    render(<FoundryLocalEnginePanel />)
+
+    expect(screen.getByText('providers:foundryLocal.engine.checking')).toBeInTheDocument()
+    expect(screen.queryByText('providers:foundryLocal.engine.noBuild')).not.toBeInTheDocument()
+  })
 })

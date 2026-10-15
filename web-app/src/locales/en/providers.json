@@ -427,7 +427,8 @@
       "noBuild": "No Foundry Local build for this computer is available right now.",
       "installed": "Foundry Local {{version}}",
       "installedDescription": "The runtime models start from. Accelerators are prepared below.",
-      "update": "Update to {{version}}"
+      "update": "Update to {{version}}",
+      "checking": "Checking what is installed…"
     },
     "accelerators": {
       "title": "Accelerators",

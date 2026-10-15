@@ -1204,7 +1204,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (next.trim().length < 3) {
       setHuggingFaceRepo(null)
     }
-    if (!showOnlyDownloaded) {
+    // A format with its own list asks Hugging Face nothing.
+    if (!showOnlyDownloaded && !ownListFormat) {
       fetchExactRepo(next)
     }
   }
@@ -1387,7 +1388,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
               setShowOnlyDownloaded(checked)
               if (checked) {
                 setHuggingFaceRepo(null)
-              } else {
+              } else if (!ownListFormat) {
                 fetchExactRepo(searchValue)
               }
             }}
@@ -1415,7 +1416,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           ) : isEmpty ? (
             <HubNoResults
               message={
-                !isSearchMode && filters.onlyFitting && !managedFormat
+                !isSearchMode && filters.onlyFitting && !managedFormat && !foundryFormat
                   ? t('hub:noFittingPicks')
                   : t('hub:noModels')
               }

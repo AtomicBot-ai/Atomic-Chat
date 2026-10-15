@@ -426,7 +426,8 @@
       "noBuild": "Сборки Foundry Local для этого компьютера сейчас нет.",
       "installed": "Foundry Local {{version}}",
       "installedDescription": "Рантайм, из которого запускаются модели. Ускорители готовятся ниже.",
-      "update": "Обновить до {{version}}"
+      "update": "Обновить до {{version}}",
+      "checking": "Проверяем, что установлено…"
     },
     "accelerators": {
       "title": "Ускорители",

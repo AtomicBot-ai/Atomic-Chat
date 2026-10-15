@@ -313,7 +313,8 @@ export const indexedDbListCache: FoundryLocalListCache = {
 /** The document at `url`: a dev build's `file://` through the app's file command, else HTTP. */
 async function fetchJsonFrom(url: string): Promise<unknown> {
   if (url.startsWith('file://')) {
-    const path = decodeURIComponent(new URL(url).pathname)
+    // `file:///C:/…` has the pathname `/C:/…`; a Windows path starts at the drive letter.
+    const path = decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:\/)/, '$1')
     return JSON.parse(await invoke<string>('read_file_sync', { args: [path] }))
   }
   const get = async (fetcher: typeof fetch) => {

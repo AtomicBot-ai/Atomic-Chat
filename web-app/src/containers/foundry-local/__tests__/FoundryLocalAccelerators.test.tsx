@@ -210,4 +210,17 @@ describe('FoundryLocalAccelerators', () => {
     await waitFor(() => expect(core.foundryLocalAccelerators).toHaveBeenCalled())
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('lets the person try again when the progress events cannot be followed', async () => {
+    core.foundryLocalAccelerators.mockResolvedValue(answer([openvino()]))
+    const { listen } = await import('@tauri-apps/api/event')
+    vi.mocked(listen).mockRejectedValueOnce(new Error('event plugin not ready'))
+
+    render(<FoundryLocalAccelerators />)
+    await screen.findByTestId('foundry-accelerator-OpenVINOExecutionProvider')
+    fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' }))
+
+    expect(await screen.findByText(/providers:foundryLocal.accelerators.prepareFailed/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' })).toBeEnabled()
+  })
 })

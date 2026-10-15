@@ -198,8 +198,6 @@ describe('hubListSources', () => {
       staffPicks: false,
       catalog: false,
       curated: true,
-      microsoftCatalog: true,
-      huggingFace: false,
       feedFormat: 'gguf',
       prefilter: false,
     })

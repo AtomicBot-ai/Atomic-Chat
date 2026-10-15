@@ -36,6 +36,7 @@ export function FoundryLocalEnginePanel() {
   const { t } = useTranslation()
   const versions = useEngineVersionsStore((state) => state.engines[ENGINE])
   const refresh = useEngineVersionsStore((state) => state.refresh)
+  const storeError = useEngineVersionsStore((state) => state.error)
   const [progress, setProgress] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -92,7 +93,20 @@ export function FoundryLocalEnginePanel() {
         </h1>
       }
     >
-      {installed ? (
+      {!versions ? (
+        // The core's versions answer is not in yet: nothing is known about the engine.
+        <CardItem
+          title={t('providers:foundryLocal.engine.title')}
+          description={storeError ? storeError.message : t('providers:foundryLocal.engine.checking')}
+          actions={
+            storeError && (
+              <Button size="sm" variant="outline" onClick={() => void refresh()}>
+                {t('providers:foundryLocal.accelerators.checkAgain')}
+              </Button>
+            )
+          }
+        />
+      ) : installed ? (
         <CardItem
           title={t('providers:foundryLocal.engine.installed', {
             version: versions?.active?.version,

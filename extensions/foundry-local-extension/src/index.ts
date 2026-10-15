@@ -299,10 +299,18 @@ export default class FoundryLocalExtension extends AIEngine {
     return this.loadCancel.cancelLoad(modelId)
   }
 
-  /** The core answers only once the host process has exited (spec "Выгрузка"). */
+  /**
+   * The core answers only once the host process has exited (spec "Выгрузка"). Stopped means the
+   * core no longer serves the model: it answers `success` for an id it has no session for, so the
+   * session list has the last word, as for the managed engines.
+   */
   override async unload(modelId: string): Promise<UnloadResult> {
     try {
-      return await this.core.unload(modelId)
+      const result = await this.core.unload(modelId)
+      if (result.success && (await this.core.findSession(modelId))) {
+        return { success: false, error: `${LABEL} model ${modelId} is still loaded after the unload.` }
+      }
+      return result
     } catch (error) {
       return { success: false, error: describeCoreError(error) }
     }

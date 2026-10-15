@@ -286,12 +286,16 @@ describe('the Foundry Local extension', () => {
   })
 
   it('deletes a variant’s folder whole, unloading it first, and says how much it freed', async () => {
+    let loaded = true
     const calls = core(
       {
         'GET /sessions': () => ({
-          sessions: [{ provider: 'foundry-local', model_id: 'q', port: 1, pid: 2, api_key: 'k' }],
+          sessions: loaded ? [{ provider: 'foundry-local', model_id: 'q', port: 1, pid: 2, api_key: 'k' }] : [],
         }),
-        'POST /models/foundry-local/q/unload': () => ({ success: true }),
+        'POST /models/foundry-local/q/unload': () => {
+          loaded = false
+          return { success: true }
+        },
       },
       { [`${ROOT}/q/model.yml`]: { model_path: 'foundry-local/models/q', name: 'Q', size_bytes: 4_000_000_000 } }
     )
@@ -303,6 +307,7 @@ describe('the Foundry Local extension', () => {
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       'GET /sessions',
       'POST /models/foundry-local/q/unload',
+      'GET /sessions',
     ])
     expect(fsMock.rm).toHaveBeenCalledWith(`${ROOT}/q`)
   })
@@ -321,5 +326,19 @@ describe('the Foundry Local extension', () => {
 
     await expect(new FoundryLocalExtension().deleteWithReport('q')).rejects.toThrow(/could not stop q/)
     expect(fsMock.rm).not.toHaveBeenCalled()
+  })
+
+  it('does not report an unload the core still serves as done', async () => {
+    core({
+      'POST /models/foundry-local/q/unload': () => ({ success: true }),
+      'GET /sessions': () => ({
+        sessions: [{ provider: 'foundry-local', model_id: 'q', port: 1, pid: 2, api_key: 'k' }],
+      }),
+    })
+
+    const result = await new FoundryLocalExtension().unload('q')
+
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/still loaded/)
   })
 })
