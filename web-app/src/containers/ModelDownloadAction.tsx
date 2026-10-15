@@ -35,7 +35,7 @@ import {
 } from '@/services/model-setup/prism-setup'
 import type { PrismSetupPlan } from '@/services/model-setup/types'
 import { CatalogModel } from '@/services/models/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconLoader2, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
@@ -340,7 +340,7 @@ export const ModelDownloadAction = ({
         .checkCompatibility({ ...hubFile, provider: 'llamacpp-upstream' })
         .catch(() => null)
       // The row follows the answer: a PrismML file's download has its own id.
-      useModelSetupStore.getState().setVerdict(variant.path, judged)
+      useModelCompatibilityStore.getState().setVerdict(variant.path, judged)
     }
     const route = judged ? routeForVerdict(judged) : 'download'
     if (route === 'refuse' && judged) {

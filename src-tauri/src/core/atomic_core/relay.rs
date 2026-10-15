@@ -602,11 +602,11 @@ mod tests {
             "m"
         );
 
-        // A model setup's record reaches the webview whole, under its own name: the setup sheet
-        // keeps the highest `revision` it has seen.
+        // A core event reaches the webview whole, under its own name: the PrismML build a Bonsai
+        // download just activated arrives as the core sent it.
         core.emit(
-            "model-setup:changed",
-            json!({ "setup_id": "s1", "revision": 3, "stage": "downloading_model" }),
+            "engine:changed",
+            json!({ "engine": "atomic-prism", "active": { "version": "prism-b1-abcdef0" } }),
         )
         .await;
         wait_for(|| {
@@ -614,13 +614,13 @@ mod tests {
             async move {
                 sink.names()
                     .iter()
-                    .any(|n| n == "atomic-core://model-setup:changed")
+                    .any(|n| n == "atomic-core://engine:changed")
             }
         })
         .await;
         assert_eq!(
-            sink.payload_of("atomic-core://model-setup:changed").unwrap(),
-            json!({ "setup_id": "s1", "revision": 3, "stage": "downloading_model" })
+            sink.payload_of("atomic-core://engine:changed").unwrap(),
+            json!({ "engine": "atomic-prism", "active": { "version": "prism-b1-abcdef0" } })
         );
 
         let _ = cancel_tx.send(());

@@ -316,7 +316,7 @@ vi.mock('@/stores/model-catalog-store', () => ({
 
 import { Route } from '../index'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
@@ -1141,7 +1141,7 @@ describe('/hub route', () => {
     }
 
     beforeEach(() => {
-      useModelSetupStore.setState({ families: null })
+      useModelCompatibilityStore.setState({ families: null })
       providers(['llamacpp-upstream', 'atomic-prism'])
       mocks.prismFamilies.mockResolvedValue({
         rules_version: 1,

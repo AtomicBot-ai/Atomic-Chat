@@ -13,7 +13,7 @@ import type {
   PrismCatalog,
   PrismFamiliesResponse,
 } from '@/services/model-setup/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 
 const mocks = vi.hoisted(() => ({
   pullModelWithMetadata: vi.fn(() => Promise.resolve()),
@@ -272,7 +272,7 @@ describe('ModelDownloadAction', () => {
     }
 
     beforeEach(() => {
-      useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
+      useModelCompatibilityStore.setState({ verdicts: {} })
       rowVerdict = verdict('compatible', null)
       planVerdict = verdict('engine_required')
       diskVerdict = verdict('compatible')
@@ -303,7 +303,7 @@ describe('ModelDownloadAction', () => {
 
     /** The row's verdict as the Hub already asked it. */
     const known = (outcome: CompatibilityVerdict['outcome']) =>
-      useModelSetupStore.setState({
+      useModelCompatibilityStore.setState({
         verdicts: { [bonsai.path]: verdict(outcome) },
       })
 
@@ -341,7 +341,7 @@ describe('ModelDownloadAction', () => {
     })
 
     it('refuses a file no engine runs and names the replacement', async () => {
-      useModelSetupStore.setState({
+      useModelCompatibilityStore.setState({
         verdicts: {
           [bonsai.path]: {
             ...verdict('legacy_artifact', null),

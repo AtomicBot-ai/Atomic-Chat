@@ -693,8 +693,8 @@ export default class atomic_prism_extension extends AIEngine {
   }
 
   /**
-   * `allow_candidate_builds` decides what the core offers: its catalog, its update checks and the
-   * Hub's model setup plan read the core's own copy of the setting, which hears of a change only
+   * `allow_candidate_builds` decides what the core offers: its catalog (which the Hub's Bonsai
+   * plan reads too) and its update checks read the core's own copy of the setting, which hears of a change only
    * when the settings are imported — before a model load, otherwise. Import now, then rebuild the
    * version list from the catalog the new value gives.
    */
