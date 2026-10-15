@@ -161,7 +161,7 @@ async function listContainer(
       (marker ? `&marker=${encodeURIComponent(marker)}` : '')
     const { status, text } = await deps.getText(url)
     if (status !== 200) throw new FoundryLocalSourceUnavailableError(`the file listing answered HTTP ${status}`)
-    const xml = new DOMParser().parseFromString(text.replace(/^﻿/, ''), 'application/xml')
+    const xml = new DOMParser().parseFromString(text.replace(/^\uFEFF/, ''), 'application/xml')
     for (const blob of Array.from(xml.getElementsByTagName('Blob'))) {
       const name = blob.getElementsByTagName('Name')[0]?.textContent ?? ''
       const size = Number(blob.getElementsByTagName('Content-Length')[0]?.textContent)
