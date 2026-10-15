@@ -33,16 +33,22 @@ pub(crate) struct PolicyInput<'a> {
     pub container_id: &'a str,
     pub command_line: &'a str,
     pub workdir: &'a Path,
+    /// The user's Desktop, Documents and Downloads: writable like the chat
+    /// folder, so "put it on my desktop" works on every OS.
+    pub user_folders: &'a [PathBuf],
     pub env: &'a [(String, String)],
     pub readonly_paths: &'a [PathBuf],
     pub timeout_ms: u64,
 }
 
-/// The MXC request for one call: the chat folder is the only writable place,
-/// the runtime folders are read-only, the network is open (the user approved
-/// the call; `pip install` and `curl` are what commands are for), and nothing
-/// can reach the clipboard or other windows.
+/// The MXC request for one call: the chat folder and the user's Desktop,
+/// Documents and Downloads are the only writable places, the runtime folders
+/// are read-only, everything else (AppData, `.ssh`, the rest of the profile,
+/// the system) stays out of reach. The network is open (the user approved the
+/// call; `pip install` and `curl` are what commands are for), and nothing can
+/// reach the clipboard or other windows.
 pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
+    let writable = writable_roots(input.workdir, input.user_folders);
     json!({
         "version": CONTRACT_VERSION,
         "containerId": input.container_id,
@@ -60,8 +66,8 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
             "timeout": input.timeout_ms,
         },
         "filesystem": {
-            "readwritePaths": [path_text(input.workdir)],
-            "readonlyPaths": readonly_roots(input.readonly_paths, input.workdir),
+            "readwritePaths": writable.iter().map(|path| path_text(path)).collect::<Vec<_>>(),
+            "readonlyPaths": readonly_roots(input.readonly_paths, &writable),
             "deniedPaths": [],
         },
         "fallback": { "allowDaclMutation": false },
@@ -79,12 +85,27 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
     })
 }
 
-/// Existing, de-duplicated folders, none nested in another or in the
-/// writable chat folder (which already grants more).
-fn readonly_roots(paths: &[PathBuf], workdir: &Path) -> Vec<String> {
+/// The chat folder first, then each user folder that is not already inside
+/// it or another; never a drive root.
+fn writable_roots<'a>(workdir: &'a Path, user_folders: &'a [PathBuf]) -> Vec<&'a Path> {
+    let mut roots = vec![workdir];
+    for folder in user_folders {
+        let folder = folder.as_path();
+        if folder.parent().is_none() || roots.iter().any(|root| folder.starts_with(root)) {
+            continue;
+        }
+        roots.retain(|root| *root == workdir || !root.starts_with(folder));
+        roots.push(folder);
+    }
+    roots
+}
+
+/// Existing, de-duplicated folders, none nested in another or in a writable
+/// folder (which already grants more).
+fn readonly_roots(paths: &[PathBuf], writable: &[&Path]) -> Vec<String> {
     let mut roots: Vec<&PathBuf> = Vec::new();
     for path in paths {
-        if path.parent().is_none() || path.starts_with(workdir) {
+        if path.parent().is_none() || writable.iter().any(|root| path.starts_with(root)) {
             continue;
         }
         if roots.iter().any(|root| path.starts_with(root)) {
@@ -282,6 +303,7 @@ pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String>
             container_id: &container_id,
             command_line: &command_line,
             workdir: &workdir,
+            user_folders: &[],
             env: &env,
             readonly_paths: &[system_root],
             timeout_ms: 20_000,
@@ -384,6 +406,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: r#""C:\Windows\System32\cmd.exe" /d /s /c "dir""#,
             workdir: Path::new(r"C:\data\chat\t1"),
+            user_folders: &[],
             env: &[("SYSTEMROOT".into(), r"C:\Windows".into())],
             readonly_paths: &[PathBuf::from(r"C:\Windows")],
             timeout_ms: 120_000,
@@ -421,6 +444,39 @@ mod tests {
     }
 
     #[test]
+    fn lets_the_user_folders_be_written_beside_the_chat_folder() {
+        let base = std::env::temp_dir();
+        let chat = base.join("chat");
+        let policy = build_policy(&PolicyInput {
+            container_id: "atomic-1",
+            command_line: "cmd",
+            workdir: &chat,
+            user_folders: &[
+                base.join("Desktop"),
+                base.join("Documents"),
+                chat.join("inner"),
+            ],
+            env: &[],
+            readonly_paths: &[base.join("Documents").join("tools"), base.join("py")],
+            timeout_ms: 1,
+        });
+
+        assert_eq!(
+            policy["filesystem"]["readwritePaths"],
+            json!([
+                chat.display().to_string(),
+                base.join("Desktop").display().to_string(),
+                base.join("Documents").display().to_string(),
+            ])
+        );
+        // A runtime folder inside a writable one needs no read-only grant.
+        assert_eq!(
+            policy["filesystem"]["readonlyPaths"],
+            json!([base.join("py").display().to_string()])
+        );
+    }
+
+    #[test]
     fn grants_each_read_only_root_once() {
         let base = std::env::temp_dir();
         let roots = readonly_roots(
@@ -430,7 +486,7 @@ mod tests {
                 base.join("py").join("Lib"),
                 base.join("py"),
             ],
-            &base.join("chat"),
+            &[base.join("chat").as_path()],
         );
         assert_eq!(
             roots,
@@ -449,7 +505,7 @@ mod tests {
                 PathBuf::from("/data/chat/t1/.packages"),
                 PathBuf::from("/opt/py"),
             ],
-            Path::new("/data/chat/t1"),
+            &[Path::new("/data/chat/t1")],
         );
         assert_eq!(roots, vec!["/opt/py".to_owned()]);
     }
@@ -458,7 +514,7 @@ mod tests {
     fn a_wider_root_replaces_the_narrower_one_it_contains() {
         let roots = readonly_roots(
             &[PathBuf::from("/opt/py/lib"), PathBuf::from("/opt/py")],
-            Path::new("/w"),
+            &[Path::new("/w")],
         );
         assert_eq!(roots, vec!["/opt/py".to_owned()]);
     }
@@ -479,6 +535,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: &long,
             workdir: Path::new(r"C:\w"),
+            user_folders: &[],
             env: &[],
             readonly_paths: &[],
             timeout_ms: 1,

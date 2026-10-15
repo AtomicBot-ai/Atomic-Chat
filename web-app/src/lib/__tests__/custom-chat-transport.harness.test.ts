@@ -1335,6 +1335,7 @@ describe('CustomChatTransport commands and scripts', () => {
           shell: 'sh',
           languages: ['python'],
           sandbox: { kind: 'none', reason: null },
+          userFolders: [],
         }),
       } as never,
     })

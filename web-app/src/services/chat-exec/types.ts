@@ -20,6 +20,12 @@ export type ChatExecLanguage =
 /** `mxc`: inside Microsoft MXC on Windows. `none`: on the host, as the user. */
 export type ChatExecSandboxKind = 'mxc' | 'none'
 
+/** One of the user's own folders: `~/…` on macOS/Linux, absolute on Windows. */
+export type ChatExecUserFolder = {
+  kind: 'desktop' | 'documents' | 'downloads'
+  path: string
+}
+
 export type ChatExecStatus = {
   supported: boolean
   os: 'macos' | 'windows' | 'linux'
@@ -32,6 +38,8 @@ export type ChatExecStatus = {
     /** Why there is no sandbox where one was expected (Windows). */
     reason: string | null
   }
+  /** The user's Desktop, Documents and Downloads, where they exist. */
+  userFolders: ChatExecUserFolder[]
 }
 
 export type ChatExecRequest = {
@@ -54,6 +62,8 @@ export type ChatExecResult = {
   /** The chat's folder the call ran in. */
   workdir: string
   durationMs: number
+  /** A refusal the OS made, explained for the model (macOS privacy, the Windows sandbox). */
+  hint?: string | null
 }
 
 export const UNSUPPORTED_CHAT_EXEC_STATUS: ChatExecStatus = {
@@ -62,6 +72,7 @@ export const UNSUPPORTED_CHAT_EXEC_STATUS: ChatExecStatus = {
   shell: 'sh',
   languages: [],
   sandbox: { kind: 'none', reason: null },
+  userFolders: [],
 }
 
 export interface ChatExecService {

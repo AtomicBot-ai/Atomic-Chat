@@ -32,6 +32,10 @@ const macStatus: ChatExecStatus = {
   shell: 'sh',
   languages: ['python', 'javascript', 'shell'],
   sandbox: { kind: 'none', reason: null },
+  userFolders: [
+    { kind: 'desktop', path: '~/Desktop' },
+    { kind: 'documents', path: '~/Documents' },
+  ],
 }
 
 const windowsSandboxed: ChatExecStatus = {
@@ -40,6 +44,7 @@ const windowsSandboxed: ChatExecStatus = {
   shell: 'cmd',
   languages: ['python', 'powershell', 'shell'],
   sandbox: { kind: 'mxc', reason: null },
+  userFolders: [{ kind: 'desktop', path: 'C:\\Users\\me\\OneDrive\\Desktop' }],
 }
 
 const result = (overrides: Partial<ChatExecResult> = {}): ChatExecResult => ({
@@ -64,9 +69,42 @@ describe('chatExecTools', () => {
     const command = description(macStatus, 'run_command')
 
     expect(command).toContain('runs in sh')
-    expect(command).toContain("this chat's own folder")
+    expect(command).toContain('scratch folder of this chat')
     expect(command).not.toContain('Windows')
     expect(command).toContain('approves each call')
+  })
+
+  it("tells the model where the user's own folders are, so Desktop is not looked up in the scratch folder", () => {
+    const command = description(macStatus, 'run_command')
+
+    expect(command).toContain("not the user's home")
+    expect(command).toContain('Desktop/notes.txt lands in it')
+    expect(command).toContain(
+      "The user's own folders are Desktop: ~/Desktop; Documents: ~/Documents."
+    )
+    expect(description(macStatus, 'run_script')).toContain('Desktop: ~/Desktop')
+    expect(command).not.toContain('$HOME')
+  })
+
+  it('says how to quote a localized folder name with a space', () => {
+    const command = description(
+      {
+        ...macStatus,
+        os: 'linux',
+        userFolders: [{ kind: 'desktop', path: '~/Рабочий стол' }],
+      },
+      'run_command'
+    )
+
+    expect(command).toContain('Desktop: ~/Рабочий стол')
+    expect(command).toContain('inside quotes write "$HOME/…"')
+  })
+
+  it('names the Windows folders by full path and says the sandbox reaches them', () => {
+    const command = description(windowsSandboxed, 'run_command')
+
+    expect(command).toContain('Desktop: C:\\Users\\me\\OneDrive\\Desktop')
+    expect(command).toContain('only the chat folder and those user folders')
   })
 
   it('describes cmd and the sandbox when Windows runs it in MXC', () => {
@@ -220,6 +258,14 @@ describe('chatExecResultText', () => {
     expect(chatExecResultText(result({ truncated: true }))).toContain(
       'was left out'
     )
+    expect(
+      chatExecResultText(
+        result({
+          exitCode: 1,
+          hint: 'macOS blocked access to a protected location.',
+        })
+      )
+    ).toMatch(/\n\nNote: macOS blocked access to a protected location\.$/)
   })
 })
 

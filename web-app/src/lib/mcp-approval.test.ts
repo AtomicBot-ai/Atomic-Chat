@@ -63,6 +63,7 @@ describe('approveChatToolCall', () => {
         shell: 'sh',
         languages: ['python'],
         sandbox: { kind: 'none', reason: null },
+        userFolders: [],
       },
     })
   })

@@ -43,6 +43,8 @@ pub(crate) struct Prepared {
     pub wxc_exec: Option<PathBuf>,
     /// The PATH commands inherit and interpreters are found on.
     pub search_path: Option<OsString>,
+    /// The user's Desktop, Documents and Downloads (writable under MXC too).
+    pub user_folders: Vec<PathBuf>,
 }
 
 #[derive(Default)]

@@ -33,7 +33,7 @@ fn wxc_exec() -> PathBuf {
     path
 }
 
-fn policy_for(workdir: &Path, command: &str, timeout_ms: u64) -> String {
+fn policy_for(workdir: &Path, user_folders: &[PathBuf], command: &str, timeout_ms: u64) -> String {
     let cmd = system_root().join("System32").join("cmd.exe");
     let command_line = format!(
         "{} {}",
@@ -46,6 +46,7 @@ fn policy_for(workdir: &Path, command: &str, timeout_ms: u64) -> String {
         container_id: &container_id,
         command_line: &command_line,
         workdir,
+        user_folders,
         env: &env,
         readonly_paths: &[system_root()],
         timeout_ms,
@@ -54,7 +55,19 @@ fn policy_for(workdir: &Path, command: &str, timeout_ms: u64) -> String {
 }
 
 async fn run_sandboxed(workdir: &Path, command: &str, timeout_ms: u64) -> RunOutput {
-    let launch = executor_launch(&wxc_exec(), policy_for(workdir, command, timeout_ms));
+    run_sandboxed_with(workdir, &[], command, timeout_ms).await
+}
+
+async fn run_sandboxed_with(
+    workdir: &Path,
+    user_folders: &[PathBuf],
+    command: &str,
+    timeout_ms: u64,
+) -> RunOutput {
+    let launch = executor_launch(
+        &wxc_exec(),
+        policy_for(workdir, user_folders, command, timeout_ms),
+    );
     runner::run(
         &launch,
         Duration::from_millis(timeout_ms) + Duration::from_secs(HOST_TIMEOUT_GRACE_SECS),
@@ -76,7 +89,10 @@ fn explain(output: &RunOutput) -> String {
 #[ignore]
 async fn the_executor_accepts_the_apps_policy() {
     let scratch = tempfile::tempdir().unwrap();
-    let mut launch = executor_launch(&wxc_exec(), policy_for(scratch.path(), "echo ok", 10_000));
+    let mut launch = executor_launch(
+        &wxc_exec(),
+        policy_for(scratch.path(), &[], "echo ok", 10_000),
+    );
     launch.args.push("--dry-run".into());
 
     let output = runner::run(&launch, Duration::from_secs(30), &CancellationToken::new())
@@ -166,4 +182,29 @@ async fn a_command_reaches_the_internet() {
     .await;
 
     assert!(output.stdout.contains("reached"), "{}", explain(&output));
+}
+
+/// Stands in for the user's Desktop: a folder granted beside the chat folder.
+#[tokio::test]
+#[ignore]
+async fn a_command_writes_into_a_granted_user_folder() {
+    let scratch = tempfile::tempdir().unwrap();
+    let workdir = scratch.path().join("chat");
+    let desktop = scratch.path().join("Desktop");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::create_dir_all(&desktop).unwrap();
+
+    let output = run_sandboxed_with(
+        &workdir,
+        &[desktop.clone()],
+        &format!(
+            "echo hello>\"{}\\note.txt\" && echo done",
+            desktop.display()
+        ),
+        20_000,
+    )
+    .await;
+
+    assert!(output.stdout.contains("done"), "{}", explain(&output));
+    assert!(desktop.join("note.txt").is_file(), "{}", explain(&output));
 }

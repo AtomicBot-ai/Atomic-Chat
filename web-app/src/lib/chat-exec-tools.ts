@@ -13,6 +13,7 @@ import type {
   ChatExecSandboxKind,
   ChatExecService,
   ChatExecStatus,
+  ChatExecUserFolder,
 } from '@/services/chat-exec/types'
 import type { MCPTool } from '@/types/completion'
 
@@ -73,13 +74,42 @@ export function offeredChatExecToolNames(): ReadonlySet<string> {
   return isChatExecOffered() ? CHAT_EXEC_TOOLS : new Set()
 }
 
+const USER_FOLDER_NAMES: Record<ChatExecUserFolder['kind'], string> = {
+  desktop: 'Desktop',
+  documents: 'Documents',
+  downloads: 'Downloads',
+}
+
+/**
+ * Where a call runs and where the user's files are. Without the folders a
+ * model asked about "my desktop" looks in the scratch folder, finds nothing
+ * and reports it as the user's desktop.
+ */
 function placeSentence(status: ChatExecStatus): string {
-  const folder =
-    "It runs in this chat's own folder, which keeps its files between calls: create and read files there with relative paths."
-  if (status.os !== 'windows') return folder
-  return status.sandbox.kind === 'mxc'
-    ? `${folder} It runs in a Windows sandbox: only this folder can be written, and the rest of the computer cannot be read.`
-    : `${folder} It runs directly on the user's Windows computer.`
+  const sentences = [
+    "The working directory is a scratch folder of this chat (its files stay between calls), not the user's home: a relative path such as Desktop/notes.txt lands in it.",
+  ]
+  if (status.userFolders.length > 0) {
+    const folders = status.userFolders
+      .map((folder) => `${USER_FOLDER_NAMES[folder.kind]}: ${folder.path}`)
+      .join('; ')
+    const quoting =
+      status.os !== 'windows' &&
+      status.userFolders.some((folder) => folder.path.includes(' '))
+        ? ' (~ is $HOME; inside quotes write "$HOME/…")'
+        : ''
+    sentences.push(
+      `The user's own folders are ${folders}${quoting}. When the user asks about their files, use these paths.`
+    )
+  }
+  if (status.os === 'windows') {
+    sentences.push(
+      status.sandbox.kind === 'mxc'
+        ? 'It runs in a Windows sandbox: only the chat folder and those user folders can be reached; the rest of the computer cannot be read or written.'
+        : "It runs directly on the user's Windows computer."
+    )
+  }
+  return sentences.join(' ')
 }
 
 const TIMEOUT_SENTENCE = `It is stopped after timeout_seconds (default ${DEFAULT_TIMEOUT_SECONDS}, at most ${MAX_TIMEOUT_SECONDS}); interactive programs, servers and anything that waits for input will not work.`
@@ -250,6 +280,7 @@ export function chatExecResultText(result: ChatExecResult): string {
   if (result.truncated) {
     sections.push('(The middle of a long output was left out.)')
   }
+  if (result.hint) sections.push(`Note: ${result.hint}`)
   return sections.join('\n\n')
 }
 

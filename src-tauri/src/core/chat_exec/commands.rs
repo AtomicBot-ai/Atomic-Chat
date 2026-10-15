@@ -14,7 +14,7 @@ use super::{
     runtimes::{self, BundledBins, ManagedPython, RuntimeEnv},
     workdir::{self, ChatWorkdir},
     ChatExecRequest, ChatExecResult, ChatExecState, ChatExecStatus, ExecKind, Prepared,
-    SandboxKind, SandboxStatus, ScriptLanguage,
+    SandboxKind, SandboxStatus, ScriptLanguage, UserFolder,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 
@@ -73,6 +73,8 @@ async fn detect<R: Runtime>(app: &AppHandle<R>) -> Prepared {
         Default::default()
     };
     let (sandbox, wxc_exec) = detect_sandbox(app).await;
+    let folders = user_folders(app);
+    let home = app.path().home_dir().ok();
     let languages = ScriptLanguage::ALL
         .into_iter()
         .filter(|language| runtimes.contains_key(language))
@@ -90,12 +92,76 @@ async fn detect<R: Runtime>(app: &AppHandle<R>) -> Prepared {
             shell: if cfg!(windows) { "cmd" } else { "sh" },
             languages,
             sandbox,
+            user_folders: folders
+                .iter()
+                .map(|(kind, path)| UserFolder {
+                    kind,
+                    path: folder_for_model(path, home.as_deref()),
+                })
+                .collect(),
         },
         runtimes,
         bins,
         wxc_exec,
         search_path,
+        user_folders: folders.into_iter().map(|(_, path)| path).collect(),
     }
+}
+
+/// The user's Desktop, Documents and Downloads as the OS names them: XDG user
+/// dirs on Linux (often localized), known folders on Windows (often moved
+/// into OneDrive).
+fn user_folders<R: Runtime>(app: &AppHandle<R>) -> Vec<(&'static str, PathBuf)> {
+    let paths = app.path();
+    [
+        ("desktop", paths.desktop_dir()),
+        ("documents", paths.document_dir()),
+        ("downloads", paths.download_dir()),
+    ]
+    .into_iter()
+    .filter_map(|(kind, dir)| dir.ok().filter(|dir| dir.is_dir()).map(|dir| (kind, dir)))
+    .collect()
+}
+
+/// How a folder is named to the model: `~/…` under the home folder on
+/// macOS/Linux, so its descriptions carry no user name; Windows' cmd has no
+/// `~`, so there it is the full path.
+fn folder_for_model(path: &Path, home: Option<&Path>) -> String {
+    if cfg!(not(windows)) {
+        if let Some(rest) = home.and_then(|home| path.strip_prefix(home).ok()) {
+            return format!("~/{}", rest.display());
+        }
+    }
+    path.display().to_string()
+}
+
+/// What the model should be told when the OS, not the command, refused: it
+/// otherwise concludes the folder is simply out of its reach.
+fn failure_hint(os: &str, sandboxed: bool, exit_code: Option<i32>, output: &str) -> Option<String> {
+    if exit_code == Some(0) {
+        return None;
+    }
+    let denied = |patterns: &[&str]| patterns.iter().any(|pattern| output.contains(pattern));
+    if sandboxed
+        && denied(&[
+            "Access is denied",
+            "Permission denied",
+            "[WinError 5]",
+            "Отказано в доступе",
+        ])
+    {
+        return Some(
+            "The Windows sandbox lets commands reach only this chat's folder and the user's Desktop, Documents and Downloads; other locations are blocked on purpose."
+                .into(),
+        );
+    }
+    if os == "macos" && denied(&["Operation not permitted"]) {
+        return Some(
+            "macOS blocked access to a protected location. If the user declined the system prompt for that folder, they can allow Atomic Chat in System Settings → Privacy & Security → Files and Folders, then run it again."
+                .into(),
+        );
+    }
+    None
 }
 
 /// Sidecars sit beside the executable; bundled resources under
@@ -217,6 +283,7 @@ async fn recheck_sandbox<R: Runtime>(app: &AppHandle<R>, state: &ChatExecState) 
         bins: current.bins.clone(),
         wxc_exec,
         search_path: current.search_path.clone(),
+        user_folders: current.user_folders.clone(),
     }));
 }
 
@@ -341,6 +408,7 @@ async fn run_request<R: Runtime>(
                 container_id: &container_id,
                 command_line: &command_line,
                 workdir: &workdir.root,
+                user_folders: &prepared.user_folders,
                 env: &env,
                 readonly_paths: &readonly,
                 timeout_ms: timeout_secs * 1000,
@@ -386,6 +454,12 @@ async fn run_request<R: Runtime>(
         }
     }
     drop(run);
+    let hint = failure_hint(
+        prepared.status.os,
+        sandboxed,
+        output.exit_code,
+        &format!("{}\n{}", output.stdout, output.stderr),
+    );
     Ok(ChatExecResult {
         exit_code: output.exit_code,
         stdout: output.stdout,
@@ -400,6 +474,7 @@ async fn run_request<R: Runtime>(
         },
         workdir: workdir.root.display().to_string(),
         duration_ms: u64::try_from(output.duration.as_millis()).unwrap_or(u64::MAX),
+        hint,
     })
 }
 
@@ -605,6 +680,47 @@ mod tests {
         ] {
             assert!(!mentions_python(command), "{command}");
         }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn names_the_users_folders_from_home_without_the_user_name() {
+        let home = Path::new("/Users/someone");
+        assert_eq!(
+            folder_for_model(Path::new("/Users/someone/Desktop"), Some(home)),
+            "~/Desktop"
+        );
+        assert_eq!(
+            folder_for_model(Path::new("/Users/someone/Рабочий стол"), Some(home)),
+            "~/Рабочий стол"
+        );
+        assert_eq!(
+            folder_for_model(Path::new("/mnt/data/Downloads"), Some(home)),
+            "/mnt/data/Downloads"
+        );
+    }
+
+    #[test]
+    fn explains_a_refusal_the_os_made() {
+        let mac = failure_hint(
+            "macos",
+            false,
+            Some(1),
+            "ls: Desktop: Operation not permitted",
+        );
+        assert!(mac.unwrap().contains("Files and Folders"));
+
+        let windows = failure_hint("windows", true, Some(1), "Access is denied.");
+        assert!(windows
+            .unwrap()
+            .contains("Desktop, Documents and Downloads"));
+        assert!(failure_hint("windows", true, Some(1), "Отказано в доступе.").is_some());
+
+        // Not the OS's doing, or nothing failed: no hint.
+        assert!(failure_hint("windows", false, Some(1), "Access is denied.").is_none());
+        assert!(failure_hint("linux", false, Some(1), "Operation not permitted").is_none());
+        assert!(failure_hint("macos", false, Some(0), "Operation not permitted").is_none());
+        assert!(failure_hint("macos", false, Some(2), "No such file or directory").is_none());
     }
 
     #[test]

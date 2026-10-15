@@ -73,6 +73,16 @@ pub struct SandboxStatus {
     pub reason: Option<String>,
 }
 
+/// One of the user's own folders, as the model is told to reach it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserFolder {
+    /// `desktop`, `documents` or `downloads`.
+    pub kind: &'static str,
+    /// `~/…` under the home folder on macOS/Linux, absolute on Windows.
+    pub path: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatExecStatus {
@@ -83,6 +93,8 @@ pub struct ChatExecStatus {
     pub shell: &'static str,
     pub languages: Vec<ScriptLanguage>,
     pub sandbox: SandboxStatus,
+    /// The user's Desktop, Documents and Downloads, where they exist.
+    pub user_folders: Vec<UserFolder>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,4 +111,7 @@ pub struct ChatExecResult {
     /// The chat's folder the command ran in.
     pub workdir: String,
     pub duration_ms: u64,
+    /// What the model should know about a failure the OS caused (a macOS
+    /// privacy prompt, the Windows sandbox's reach).
+    pub hint: Option<String>,
 }

@@ -20,6 +20,7 @@ const windows = (sandbox: ChatExecStatus['sandbox']): ChatExecStatus => ({
   shell: 'cmd',
   languages: ['python'],
   sandbox,
+  userFolders: [],
 })
 
 function open(toolName: string, toolParameters: object) {
