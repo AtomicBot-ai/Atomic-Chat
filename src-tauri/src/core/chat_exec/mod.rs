@@ -17,6 +17,8 @@ mod workdir;
 
 #[cfg(test)]
 mod ipc_tests;
+#[cfg(all(test, windows))]
+mod mxc_windows_tests;
 
 use std::{
     collections::HashMap,
