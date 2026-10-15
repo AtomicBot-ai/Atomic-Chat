@@ -165,6 +165,8 @@ describe('DownloadManagement — a Bonsai download', () => {
       })
     )
     expect(hub.models.deleteModel).not.toHaveBeenCalled()
+    // Resumed, not paused any more.
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL_ID)).toBe(false)
   })
 
   it('removes a resumed file PrismML does not run and says why', async () => {
@@ -186,6 +188,7 @@ describe('DownloadManagement — a Bonsai download', () => {
         description: 'Another packing.',
       })
     )
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL_ID)).toBe(false)
   })
 
   it('leaves an ordinary GGUF resume unchecked', async () => {
@@ -201,5 +204,6 @@ describe('DownloadManagement — a Bonsai download', () => {
     )
     await act(async () => {})
     expect(hub.modelSetup.checkCompatibility).not.toHaveBeenCalled()
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL_ID)).toBe(false)
   })
 })

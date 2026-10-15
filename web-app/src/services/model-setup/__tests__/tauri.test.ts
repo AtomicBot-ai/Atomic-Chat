@@ -129,7 +129,7 @@ describe('TauriModelSetupService.onCoreReset', () => {
     unsubscribe()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(unlisten).toHaveBeenCalledTimes(1)
+    expect(unlisten.mock.calls.length).toBe(1)
   })
 })
 

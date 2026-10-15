@@ -244,13 +244,13 @@ describe('ModelDownloadAction', () => {
         },
       ],
     }
-    const build = { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }
+    const prismBuild = { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }
     const catalog = (installed: boolean): PrismCatalog => ({
-      installed: installed ? [build] : [],
-      available: [build],
+      installed: installed ? [prismBuild] : [],
+      available: [prismBuild],
       recommended: 'prism-b9000-abcdef0/macos-arm64',
       releases: [
-        { tag: build.version, variants: [{ id: build.backend, size: 20 }] },
+        { tag: prismBuild.version, variants: [{ id: prismBuild.backend, size: 20 }] },
       ],
     })
 
@@ -473,11 +473,11 @@ describe('ModelDownloadAction', () => {
         expect(mocks.pullModelWithMetadata).toHaveBeenCalled()
       )
       expect(mocks.installPrismBuild).toHaveBeenCalledWith(
-        expect.objectContaining(build),
+        expect.objectContaining(prismBuild),
         'engine-build-atomic-prism-prism-b9000-abcdef0'
       )
       expect(mocks.activatePrismBuild).toHaveBeenCalledWith(
-        expect.objectContaining(build)
+        expect.objectContaining(prismBuild)
       )
       const [installed] = mocks.installPrismBuild.mock.invocationCallOrder
       const [activated] = mocks.activatePrismBuild.mock.invocationCallOrder
