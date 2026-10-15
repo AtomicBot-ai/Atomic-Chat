@@ -8,6 +8,17 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 
+// Agent mode is hidden in the product (PlatformFeature.AGENT_MODE is off);
+// these tests exercise it, so the feature is on here and individual tests
+// flip it back off. Mutable on purpose: PlatformFeatures is read at render.
+const platformFeatures = vi.hoisted(() => ({}) as Record<string, boolean>)
+vi.mock('@/lib/platform/const', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/platform/const')>()
+  Object.assign(platformFeatures, actual.PlatformFeatures, { agentMode: true })
+  return { ...actual, PlatformFeatures: platformFeatures }
+})
+
 const media = vi.hoisted(() => ({ desktop: true }))
 const panelLayouts = vi.hoisted(() => ({ values: [] as number[][] }))
 const agentWorkspace = {

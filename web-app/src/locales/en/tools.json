@@ -7,6 +7,15 @@
     "allowOnce": "Allow Once",
     "alwaysAllow": "Allow in thread",
     "parameters": "Tool Parameters",
-    "permissionScope": "Permissions granted apply only to this conversation."
+    "permissionScope": "Permissions granted apply only to this conversation.",
+    "exec": {
+      "commandTitle": "Run this command?",
+      "scriptTitle": "Run this {{language}} script?",
+      "description": "The assistant wants to run it on your computer. Permissions granted apply only to this conversation.",
+      "sandboxed": "Runs in the Windows sandbox: it can change only this chat's folder and cannot read your other files.",
+      "unsandboxedWindows": "Runs on your computer without the Windows sandbox ({{reason}}), with your permissions. Review it before you allow it.",
+      "unsandboxed": "Runs on your computer with your permissions, in this chat's folder. Review it before you allow it.",
+      "timeout": "Stops after {{seconds}} s."
+    }
   }
 }

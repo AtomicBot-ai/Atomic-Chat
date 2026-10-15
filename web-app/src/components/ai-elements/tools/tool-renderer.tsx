@@ -21,11 +21,13 @@ import { Tool, ToolContent } from './tool'
 import { WebSearchToolRenderer } from './renderers/web-search-tool-renderer'
 import { WebFetchToolRenderer } from './renderers/web-fetch-tool-renderer'
 import { GenericToolRenderer } from './renderers/generic-tool-renderer'
+import { ChatExecToolRenderer } from './renderers/chat-exec-tool-renderer'
 
 export function toolIcon(
   toolName: string,
   kind: ToolPresentation['kind']
 ): LucideIcon {
+  if (kind === 'chat_exec') return SquareTerminal
   if (kind !== 'generic') return Globe
   if (/^os\.(web|http)\./.test(toolName)) return Globe
   if (/^os\.(shell|proc)\./.test(toolName)) return SquareTerminal
@@ -56,7 +58,10 @@ export function ToolRenderer({
     denied &&
     presentation.kind === 'generic' &&
     presentation.deniedReason === 'tool-loop'
-  const failed = state === 'output-error' || (denied && !loopSkipped)
+  const failed =
+    state === 'output-error' ||
+    (denied && !loopSkipped) ||
+    (presentation.kind === 'chat_exec' && presentation.failed)
   const Icon = running ? Loader2 : toolIcon(toolName, presentation.kind)
   const label = toolActivityLabel(toolName, presentation, state, t)
 
@@ -98,6 +103,10 @@ export function ToolRenderer({
 
         {presentation.kind === 'generic' && (
           <GenericToolRenderer presentation={presentation} />
+        )}
+
+        {presentation.kind === 'chat_exec' && (
+          <ChatExecToolRenderer presentation={presentation} />
         )}
       </ToolContent>
     </Tool>

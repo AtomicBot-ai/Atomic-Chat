@@ -201,6 +201,9 @@ pub fn run() {
         core::mcp::commands::get_mcp_server_statuses,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
+        core::chat_exec::commands::chat_exec_status,
+        core::chat_exec::commands::chat_exec_run,
+        core::chat_exec::commands::chat_exec_cancel,
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
         core::agent::commands::agent_kill_session_procs,
@@ -377,6 +380,9 @@ pub fn run() {
         core::mcp::commands::get_mcp_server_statuses,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
+        core::chat_exec::commands::chat_exec_status,
+        core::chat_exec::commands::chat_exec_run,
+        core::chat_exec::commands::chat_exec_cancel,
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
         core::agent::commands::agent_kill_session_procs,
@@ -453,6 +459,7 @@ pub fn run() {
     let app = app_builder
         // The last TensorRT-LLM models root the core named (outside the data folder on Windows).
         .manage(core::filesystem::model_roots::CoreModelRoot::default())
+        .manage(core::chat_exec::ChatExecState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
