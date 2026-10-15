@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { IconX } from '@tabler/icons-react'
-import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
@@ -124,9 +124,9 @@ export function FoundryLocalDownloadOptions({
         <h2 className="mb-3 text-sm font-medium">{t('hub:downloadOptions')}</h2>
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm">{fields.name}</span>
-          <div data-testid="foundry-local-actions">
-            <InstalledActions modelId={fields.model_id} />
-          </div>
+          <ActionColumn trash={<DeleteModelAction modelId={fields.model_id} provider={PROVIDER} />}>
+            <NewChatButton modelId={fields.model_id} />
+          </ActionColumn>
         </div>
       </section>
     )
@@ -173,14 +173,20 @@ export function FoundryLocalDownloadOptions({
           {selected && (
             // One width whatever the chosen variant offers (Download, or New chat and delete):
             // sized by content, the column resized the list on every pick.
-            <div data-testid="foundry-local-actions" className="flex w-44 shrink-0 justify-end">
+            <ActionColumn
+              trash={
+                downloadedIds.has(selected.id) ? (
+                  <DeleteModelAction modelId={selected.id} provider={PROVIDER} />
+                ) : null
+              }
+            >
               <Action
                 fields={fields}
                 variant={selected}
                 verdict={verdicts[selected.id]}
                 downloaded={downloadedIds.has(selected.id)}
               />
-            </div>
+            </ActionColumn>
           )}
         </div>
       )}
@@ -225,7 +231,7 @@ function Action({
   const toProviderPage = () =>
     navigate({ to: route.settings.providers, params: { providerName: PROVIDER } })
 
-  if (downloaded) return <InstalledActions modelId={variant.id} />
+  if (downloaded) return <NewChatButton modelId={variant.id} />
   if (!verdict || 'error' in verdict) return null
   if (verdict.verdict === 'engine-not-installed') {
     return (
@@ -330,8 +336,25 @@ function DownloadButton({
   )
 }
 
-/** "New chat" on `foundry-local` with the variant, and delete with the space it frees. */
-function InstalledActions({ modelId }: { modelId: string }) {
+/**
+ * The card's action column: one width whatever the chosen variant offers (Download, New chat, the
+ * provider page), and a slot for the trash that is there even when empty, so the main button keeps
+ * its place when another variant is chosen. Sized by content, the column resized the variant list
+ * on every pick, and without the slot the button jumped by the trash's width.
+ */
+function ActionColumn({ children, trash }: { children: ReactNode; trash: ReactNode }) {
+  return (
+    <div data-testid="foundry-local-actions" className="flex w-44 shrink-0 items-start justify-end gap-1">
+      <div data-testid="foundry-local-main-action" className="flex min-w-0 justify-end">
+        {children}
+      </div>
+      <div className="size-8 shrink-0">{trash}</div>
+    </div>
+  )
+}
+
+/** "New chat" on `foundry-local` with the variant; the delete sits in the column's trash slot. */
+function NewChatButton({ modelId }: { modelId: string }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -349,11 +372,8 @@ function InstalledActions({ modelId }: { modelId: string }) {
   }, [modelId, navigate, serviceHub])
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <Button size="sm" onClick={newChat}>
-        {t('hub:newChat')}
-      </Button>
-      <DeleteModelAction modelId={modelId} provider={PROVIDER} />
-    </div>
+    <Button size="sm" onClick={newChat}>
+      {t('hub:newChat')}
+    </Button>
   )
 }

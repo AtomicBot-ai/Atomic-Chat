@@ -106,6 +106,28 @@ for (const language of ['en', 'ru']) {
         expectNoHorizontalOverflow(screen.getByTestId('panel-frame'))
       })
 
+      it('keeps the main button where it was whichever variant is chosen, the trash slot kept', async () => {
+        render(
+          withTranslations(
+            <div data-testid="panel-frame" style={{ width: panelWidth(1280) }}>
+              <FoundryLocalDownloadOptions model={MODEL} platform="macos-arm64" />
+            </div>
+          )
+        )
+        await act(async () => {
+          await settle()
+        })
+        const mainButton = () => screen.getByTestId('foundry-local-main-action')
+        const newChatRight = mainButton().getBoundingClientRect().right
+
+        fireEvent.click(screen.getAllByRole('radio')[1])
+        await act(async () => {
+          await settle()
+        })
+
+        expect(mainButton().getBoundingClientRect().right).toBe(newChatRight)
+      })
+
       it('keeps the provider-page button inside its column', async () => {
         verdict.value = 'accelerator-not-prepared'
         useModelProvider.setState({ providers: [] })

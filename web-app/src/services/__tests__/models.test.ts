@@ -490,6 +490,35 @@ describe('DefaultModelsService', () => {
       expect(await modelsService.getActiveModels()).toEqual([])
     })
 
+    // change add-foundry-local: the composer's status dot and Stop read `getActiveModels()`; a
+    // Foundry Local variant missing from it showed a loaded model as not loaded.
+    it('counts a loaded Foundry Local variant as active and stops it', async () => {
+      let loaded = ['qwen3.5-0.8b-generic-gpu']
+      const foundry = {
+        ...mockEngine,
+        getLoadedModels: vi.fn(async () => loaded),
+        unload: vi.fn(async () => {
+          loaded = []
+          return { success: true }
+        }),
+      }
+      const idle = {
+        ...mockEngine,
+        getLoadedModels: vi.fn().mockResolvedValue([]),
+        unload: vi.fn(),
+      }
+      mockEngineManager.get.mockImplementation((provider: string) =>
+        provider === 'foundry-local' ? foundry : idle
+      )
+
+      expect(await modelsService.getActiveModels()).toEqual(['qwen3.5-0.8b-generic-gpu'])
+
+      await modelsService.stopAllModels()
+
+      expect(foundry.unload).toHaveBeenCalledWith('qwen3.5-0.8b-generic-gpu')
+      expect(await modelsService.getActiveModels()).toEqual([])
+    })
+
     it('should handle empty active models', async () => {
       mockEngine.getLoadedModels.mockResolvedValue(null)
 
