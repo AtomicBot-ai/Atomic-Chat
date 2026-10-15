@@ -100,7 +100,8 @@ export function getProviderLogo(provider: string) {
     // A monogram until there is an approved mark, like vLLM's (change add-sglang-runtime, D7).
     case 'sglang':
       return '/images/model-provider/sglang.svg'
-    // A monogram, not Microsoft's mark (change add-foundry-local).
+    // Our own mark in Fluent's palette (a chip with a spark): neither Microsoft's four-square logo
+    // nor the Foundry product icon, which are their trademarks (change add-foundry-local).
     case 'foundry-local':
       return '/images/model-provider/foundry-local.svg'
     case 'anthropic':
