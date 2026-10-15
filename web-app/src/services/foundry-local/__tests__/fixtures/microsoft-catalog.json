@@ -1,0 +1,1518 @@
+{
+ "_note": "Recorded 2026-10-16 from POST https://api.catalog.azureml.ms/asset-gallery/v1.0/models (labels: latest, DeploymentOptions: Foundry Local on Devices; 254 entries in 6 pages). Entries are kept whole; only a subset is kept, split into two pages, and the opaque continuationToken is shortened.",
+ "pages": [
+  {
+   "totalCount": 20,
+   "continuationToken": "page-2",
+   "summaries": [
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "automatic-speech-recognition"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "audio"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/openai-whisper-small/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "CUDAExecutionProvider",
+       "fileSizeBytes": 316267734,
+       "vRamFootprintBytes": 316267734
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/openai-whisper-small-cuda-gpu/versions/3",
+     "name": "openai-whisper-small-cuda-gpu",
+     "displayName": "openai-whisper-small-cuda-gpu",
+     "version": "3",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-26T18:31:51.9750144+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "automatic-speech-recognition"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "audio"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/openai-whisper-small/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "cpu",
+       "executionProvider": "CPUExecutionProvider",
+       "fileSizeBytes": 459461019,
+       "vRamFootprintBytes": 459461019
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/openai-whisper-small-generic-cpu/versions/4",
+     "name": "openai-whisper-small-generic-cpu",
+     "displayName": "openai-whisper-small-generic-cpu",
+     "version": "4",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-20T15:46:27.8695405+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/mistral-nemo-12b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "GPTQ"
+       ],
+       "device": "gpu",
+       "executionProvider": "WebGPUExecutionProvider",
+       "fileSizeBytes": 7828528461,
+       "vRamFootprintBytes": 7828528461
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/mistral-nemo-12b-instruct-generic-gpu/versions/1",
+     "name": "mistral-nemo-12b-instruct-generic-gpu",
+     "displayName": "mistral-nemo-12b-instruct-generic-gpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-13T05:02:02.9296162+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/mistral-nemo-12b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "GPTQ"
+       ],
+       "device": "cpu",
+       "executionProvider": "CPUExecutionProvider",
+       "fileSizeBytes": 7317018469,
+       "vRamFootprintBytes": 7317018469
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/mistral-nemo-12b-instruct-generic-cpu/versions/1",
+     "name": "mistral-nemo-12b-instruct-generic-cpu",
+     "displayName": "mistral-nemo-12b-instruct-generic-cpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-13T05:01:29.1381469+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/mistral-nemo-12b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "GPTQ"
+       ],
+       "device": "gpu",
+       "executionProvider": "CUDAExecutionProvider",
+       "fileSizeBytes": 7095179287,
+       "vRamFootprintBytes": 7095179287
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/mistral-nemo-12b-instruct-cuda-gpu/versions/1",
+     "name": "mistral-nemo-12b-instruct-cuda-gpu",
+     "displayName": "mistral-nemo-12b-instruct-cuda-gpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-13T05:00:59.1491654+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/olmo-3-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "GPTQ"
+       ],
+       "device": "gpu",
+       "executionProvider": "WebGPUExecutionProvider",
+       "fileSizeBytes": 5918277423,
+       "vRamFootprintBytes": 5918277423
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/olmo-3-7b-instruct-generic-gpu/versions/1",
+     "name": "olmo-3-7b-instruct-generic-gpu",
+     "displayName": "olmo-3-7b-instruct-generic-gpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-13T04:57:56.2473404+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/olmo-3-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "GPTQ"
+       ],
+       "device": "cpu",
+       "executionProvider": "CPUExecutionProvider",
+       "fileSizeBytes": 5581026315,
+       "vRamFootprintBytes": 5581026315
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/olmo-3-7b-instruct-generic-cpu/versions/1",
+     "name": "olmo-3-7b-instruct-generic-cpu",
+     "displayName": "olmo-3-7b-instruct-generic-cpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-13T04:57:31.9968984+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/olmo-3-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "GPTQ"
+       ],
+       "device": "gpu",
+       "executionProvider": "CUDAExecutionProvider",
+       "fileSizeBytes": 5445956474,
+       "vRamFootprintBytes": 5445956474
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/olmo-3-7b-instruct-cuda-gpu/versions/1",
+     "name": "olmo-3-7b-instruct-cuda-gpu",
+     "displayName": "olmo-3-7b-instruct-cuda-gpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-05-13T04:57:09.8355663+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "embeddings"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 1
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen3-embedding-0.6b/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "WebGPUExecutionProvider",
+       "fileSizeBytes": 540924753,
+       "vRamFootprintBytes": 540924753
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen3-embedding-0.6b-generic-gpu/versions/1",
+     "name": "qwen3-embedding-0.6b-generic-gpu",
+     "displayName": "qwen3-embedding-0.6b-generic-gpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-04-25T01:19:51.5558811+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "embeddings"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 1
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen3-embedding-0.6b/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "cpu",
+       "executionProvider": "CPUExecutionProvider",
+       "fileSizeBytes": 519582264,
+       "vRamFootprintBytes": 519582264
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen3-embedding-0.6b-generic-cpu/versions/1",
+     "name": "qwen3-embedding-0.6b-generic-cpu",
+     "displayName": "qwen3-embedding-0.6b-generic-cpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-04-22T03:29:06.7685685+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "embeddings"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 1
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen3-embedding-0.6b/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "CUDAExecutionProvider",
+       "fileSizeBytes": 501754600,
+       "vRamFootprintBytes": 501754600
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen3-embedding-0.6b-cuda-gpu/versions/1",
+     "name": "qwen3-embedding-0.6b-cuda-gpu",
+     "displayName": "qwen3-embedding-0.6b-cuda-gpu",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-04-22T03:25:51.7943793+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    }
+   ]
+  },
+  {
+   "totalCount": 20,
+   "continuationToken": null,
+   "summaries": [
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": null
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": null,
+      "supportedOutputModalities": null
+     },
+     "azureOffers": [
+      "VM"
+     ],
+     "variantInformation": null,
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/gemma-4-e2b-it/versions/1",
+     "name": "gemma-4-e2b-it",
+     "displayName": "gemma-4-e2b-it",
+     "version": "1",
+     "registryName": "azureml",
+     "publisher": null,
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-08-10T18:16:07.7039265+00:00",
+     "license": null,
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "npu",
+       "executionProvider": "OpenVINOExecutionProvider",
+       "fileSizeBytes": 4482717228,
+       "vRamFootprintBytes": 4482717228
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-openvino-npu/versions/4",
+     "name": "qwen2.5-7b-instruct-openvino-npu",
+     "displayName": "qwen2.5-7b-instruct-openvino-npu",
+     "version": "4",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-06-06T00:31:17.7544691+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "QuaRot",
+        "GPTQ"
+       ],
+       "device": "npu",
+       "executionProvider": "QNNExecutionProvider",
+       "fileSizeBytes": 7316493941,
+       "vRamFootprintBytes": 7316493941
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-qnn-npu/versions/3",
+     "name": "qwen2.5-7b-instruct-qnn-npu",
+     "displayName": "qwen2.5-7b-instruct-qnn-npu",
+     "version": "3",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2026-06-02T07:03:44.9229852+00:00",
+     "license": "MIT",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "npu",
+       "executionProvider": "VitisAIExecutionProvider",
+       "fileSizeBytes": 5583457484,
+       "vRamFootprintBytes": 5583775037
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-vitis-npu/versions/2",
+     "name": "qwen2.5-7b-instruct-vitis-npu",
+     "displayName": "qwen2.5-7b-instruct-vitis-npu",
+     "version": "2",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2025-11-14T11:31:03.9732436+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "NvTensorRTRTXExecutionProvider",
+       "fileSizeBytes": 5896554503,
+       "vRamFootprintBytes": 5896554503
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-trtrtx-gpu/versions/2",
+     "name": "qwen2.5-7b-instruct-trtrtx-gpu",
+     "displayName": "qwen2.5-7b-instruct-trtrtx-gpu",
+     "version": "2",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2025-11-14T11:13:37.1412529+00:00",
+     "license": "MIT",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "OpenVINOExecutionProvider",
+       "fileSizeBytes": 5141766983,
+       "vRamFootprintBytes": 5141766983
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-openvino-gpu/versions/2",
+     "name": "qwen2.5-7b-instruct-openvino-gpu",
+     "displayName": "qwen2.5-7b-instruct-openvino-gpu",
+     "version": "2",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2025-11-14T10:23:50.7812738+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "WebGPUExecutionProvider",
+       "fileSizeBytes": 5583457484,
+       "vRamFootprintBytes": 5583775037
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-generic-gpu/versions/4",
+     "name": "qwen2.5-7b-instruct-generic-gpu",
+     "displayName": "qwen2.5-7b-instruct-generic-gpu",
+     "version": "4",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2025-11-14T10:05:54.0052867+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "cpu",
+       "executionProvider": "CPUExecutionProvider",
+       "fileSizeBytes": 6614249635,
+       "vRamFootprintBytes": 6614446407
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-generic-cpu/versions/4",
+     "name": "qwen2.5-7b-instruct-generic-cpu",
+     "displayName": "qwen2.5-7b-instruct-generic-cpu",
+     "version": "4",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2025-11-14T09:44:23.5485412+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    },
+    {
+     "popularity": 1.0,
+     "inferenceTasks": [
+      "chat-completion"
+     ],
+     "fineTuningTasks": [],
+     "keywords": [],
+     "playgroundLimits": {
+      "rateLimitTier": null
+     },
+     "modelCapabilities": [],
+     "modelLimits": {
+      "textLimits": {
+       "inputContextWindow": null,
+       "maxOutputTokens": 2048
+      },
+      "otherLimits": {},
+      "supportedLanguages": [],
+      "supportedInputModalities": [
+       "text"
+      ],
+      "supportedOutputModalities": [
+       "text"
+      ]
+     },
+     "azureOffers": null,
+     "variantInformation": {
+      "parents": [
+       {
+        "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct/versions/1"
+       }
+      ],
+      "variantMetadata": {
+       "modelType": "ONNX",
+       "quantization": [
+        "RTN"
+       ],
+       "device": "gpu",
+       "executionProvider": "CUDAExecutionProvider",
+       "fileSizeBytes": 5078798827,
+       "vRamFootprintBytes": 5078995599
+      }
+     },
+     "deprecation": {
+      "inferenceRetirementDate": null
+     },
+     "author": null,
+     "allowedDeploymentTemplates": [],
+     "lifecycle": null,
+     "previewType": "hideUI",
+     "githubCopilotLocal": null,
+     "deploymentOptions": [
+      "Foundry Local on Devices"
+     ],
+     "deploymentOptionDetails": {},
+     "isDirectFromAzure": null,
+     "hiddenLayerScanned": null,
+     "hostedOn": [],
+     "deploymentSku": [],
+     "minQuotaTier": null,
+     "assetId": "azureml://registries/azureml/models/qwen2.5-7b-instruct-cuda-gpu/versions/4",
+     "name": "qwen2.5-7b-instruct-cuda-gpu",
+     "displayName": "qwen2.5-7b-instruct-cuda-gpu",
+     "version": "4",
+     "registryName": "azureml",
+     "publisher": "Microsoft",
+     "labels": [
+      "default",
+      "latest",
+      "invisibleLatest"
+     ],
+     "summary": null,
+     "createdTime": "2025-11-14T09:26:53.2294825+00:00",
+     "license": "apache-2.0",
+     "tradeRestricted": false
+    }
+   ]
+  }
+ ]
+}
