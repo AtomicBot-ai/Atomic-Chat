@@ -7,7 +7,7 @@ fn main() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    // WebKitGTK (2.48+) refuses media URLs outside blob/data/file/http(s)
+    // WebKitGTK (2.50.2+) refuses media URLs outside blob/data/file/http(s)
     // before building a pipeline, so a clip served as `asset://localhost/…`
     // fails with a bare FormatError. The web process inherits this variable.
     #[cfg(target_os = "linux")]
