@@ -7,6 +7,11 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useModelSetupDownloads } from '@/hooks/useModelSetup'
+import { PRISM_PROVIDER } from '@/lib/model-setup'
+import {
+  prismSetupDeps,
+  verifyPrismDownload,
+} from '@/services/model-setup/prism-setup'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
@@ -881,16 +886,39 @@ export function DownloadManagement() {
       clearPausedDownload(download.id)
       if (download.id !== download.name) clearPausedDownload(download.name)
       markResumableDownload(download.id)
+      const {
+        modelPath,
+        mmprojPath,
+        hfToken,
+        skipVerification,
+        ...pullOptions
+      } = params
       void serviceHub
         .models()
         .pullModelWithMetadata(
           download.id,
-          params.modelPath,
-          params.mmprojPath,
-          params.hfToken,
-          params.skipVerification ?? true,
-          true
+          modelPath,
+          mmprojPath,
+          hfToken,
+          skipVerification ?? true,
+          true,
+          pullOptions
         )
+        .then(async (refusal) => {
+          // A Bonsai file ends as the Hub's download does: kept only if the
+          // core says PrismML runs the file now on disk.
+          if (pullOptions.provider !== PRISM_PROVIDER || refusal) return
+          if (useDownloadStore.getState().pausedDownloads.has(download.id))
+            return
+          const result = await verifyPrismDownload(
+            download.id,
+            prismSetupDeps(serviceHub)
+          )
+          if (result.outcome === 'rejected')
+            toast.error(t('hub:prismModelRejected'), {
+              description: result.reason,
+            })
+        })
         .catch((error) => {
           console.error('[DownloadManagement] resume failed:', error)
         })

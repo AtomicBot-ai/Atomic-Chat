@@ -11,7 +11,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
+import { PRISM_PROVIDER } from '@/lib/model-setup'
 import { createSafeUnlisten } from '@/lib/tauriEvent'
+import { engineBuildProxy } from '@/services/engine-builds/core'
+import { activateEngineBuildThroughCore } from '@/services/engines/update'
 
 import { DefaultModelSetupService } from './default'
 import type {
@@ -22,7 +25,9 @@ import type {
   ModelSetupPlan,
   ModelSetupPlanRequest,
   ModelSetupStartRequest,
+  PrismCatalog,
   PrismFamiliesResponse,
+  PrismPack,
 } from './types'
 
 export const CHANGED_EVENT = 'atomic-core://model-setup:changed'
@@ -59,6 +64,43 @@ export class TauriModelSetupService extends DefaultModelSetupService {
     return coreCall<PrismFamiliesResponse>(
       'GET',
       '/models/atomic-prism/families'
+    )
+  }
+
+  override async prismCatalog(): Promise<PrismCatalog> {
+    return coreCall<PrismCatalog>(
+      'POST',
+      `/backends/${PRISM_PROVIDER}/catalog`,
+      { app_version: VERSION, proxy: engineBuildProxy() ?? null }
+    )
+  }
+
+  override async diskAvailable(): Promise<number | null> {
+    const { bytes } = await coreCall<{ bytes: number | null }>(
+      'POST',
+      '/disk/available',
+      {}
+    )
+    return bytes
+  }
+
+  override async installPrismBuild(
+    pack: PrismPack,
+    taskId: string
+  ): Promise<void> {
+    await coreCall('POST', `/backends/${PRISM_PROVIDER}/install`, {
+      version: pack.version,
+      backend: pack.backend,
+      task_id: taskId,
+      proxy: engineBuildProxy() ?? null,
+    })
+  }
+
+  override async activatePrismBuild(pack: PrismPack): Promise<void> {
+    await activateEngineBuildThroughCore(
+      PRISM_PROVIDER,
+      pack.version,
+      pack.backend
     )
   }
 

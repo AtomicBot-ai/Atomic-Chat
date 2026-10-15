@@ -161,6 +161,69 @@ export type PrismFamiliesResponse = {
   families: PrismFamily[]
 }
 
+/** A PrismML build: a release tag and the variant for this machine. */
+export type PrismPack = { version: string; backend: string }
+
+/**
+ * `POST /backends/atomic-prism/catalog`, the fields a Bonsai plan reads:
+ * the packs on disk, the hardware-fit offer (`available`), the core's pick
+ * for this machine and each offered release's download sizes.
+ */
+export type PrismCatalog = {
+  installed: PrismPack[]
+  available: (PrismPack & { order?: number })[]
+  recommended: string | null
+  releases?: { tag: string; variants: { id: string; size?: number }[] }[]
+}
+
+/** What the Hub asks to set up: one file of a repository, under the id it registers as. */
+export type PrismSetupRequest = {
+  repo: string
+  file: string
+  revision?: string
+  model_id: string
+  include_projector: boolean
+}
+
+export type PrismSetupArtifact = {
+  file: string
+  url: string
+  /** Bytes; `0` when the families did not say. */
+  size: number
+  sha256?: string
+}
+
+export type PrismSetupEngine = PrismPack & {
+  /** The build is on disk: nothing to download, at most an activation. */
+  installed: boolean
+  download_size: number
+}
+
+/**
+ * Why a Bonsai download cannot start. `unsupported` and `legacy_artifact`
+ * carry the core's own words; the app words the other two.
+ */
+export type PrismSetupBlocker =
+  | { code: 'unsupported'; message: string }
+  | { code: 'legacy_artifact'; message: string; replacement?: string }
+  | { code: 'no_engine_build' }
+  | { code: 'insufficient_disk_space'; needed: number; free: number }
+
+/** What a Bonsai download takes on this machine, built by the app from what the core reports. */
+export type PrismSetupPlan = {
+  model_id: string
+  verdict: CompatibilityVerdict
+  /** `null` when no PrismML build is involved or none fits. */
+  engine: PrismSetupEngine | null
+  model: PrismSetupArtifact
+  projector: PrismSetupArtifact | null
+  /** The file has a vision projector, whether or not this plan takes it. */
+  offers_projector: boolean
+  total_download_bytes: number
+  free_bytes: number | null
+  blockers: PrismSetupBlocker[]
+}
+
 export type ModelSetupEvent =
   | { type: 'changed'; setup: ModelSetup }
   | { type: 'progress'; taskId: string; transferred: number; total: number }
@@ -176,6 +239,14 @@ export interface ModelSetupService {
   plan(request: ModelSetupPlanRequest): Promise<ModelSetupPlan>
   /** The Bonsai models the Hub lists under PrismML. */
   families(): Promise<PrismFamiliesResponse>
+  /** The PrismML builds on disk and on offer for this machine. */
+  prismCatalog(): Promise<PrismCatalog>
+  /** Free bytes on the data drive; `null` when the platform cannot say. */
+  diskAvailable(): Promise<number | null>
+  /** Install a PrismML build under `taskId`; its bytes arrive as `download:progress`. */
+  installPrismBuild(pack: PrismPack, taskId: string): Promise<void>
+  /** Make an installed PrismML build the one the next load runs. */
+  activatePrismBuild(pack: PrismPack): Promise<void>
   start(request: ModelSetupStartRequest): Promise<ModelSetup>
   list(): Promise<ModelSetup[]>
   cancel(setupId: string): Promise<ModelSetup>

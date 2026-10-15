@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -14,8 +14,11 @@ import {
 } from '@/test/layout'
 import { seedServiceHub } from '@/test/service-hub'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
-import type { ModelSetup, ModelSetupPlan } from '@/services/model-setup/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import type {
+  CompatibilityVerdict,
+  PrismCatalog,
+  PrismFamiliesResponse,
+} from '@/services/model-setup/types'
 import { ModelSetupSheet } from './ModelSetupSheet'
 
 const GB = 1024 ** 3
@@ -26,102 +29,126 @@ const file = {
   file: 'Bonsai-8B-Instruct-Long-Context-Experimental-PQ2_0-00001-of-00002.gguf',
   revision: 'main',
 }
+const modelId = 'prism-ml/Bonsai-8B-Instruct-Long-Context-Experimental-PQ2_0'
 
-const plan: ModelSetupPlan = {
-  digest: 'd',
-  model_id: 'prism-ml/Bonsai-8B-Instruct-Long-Context-Experimental-PQ2_0',
+const verdict: CompatibilityVerdict = {
+  outcome: 'engine_update_required',
   provider: 'atomic-prism',
-  verdict: {
-    outcome: 'engine_update_required',
-    provider: 'atomic-prism',
-    requires: ['PQ2_0'],
-    evidence: 'rules',
-    rules_version: 1,
-    reason: 'r',
-  },
-  engine: {
-    provider: 'atomic-prism',
-    version: 'prism-b10234-abcdef0',
-    backend: 'win-cuda-12.4-x64',
-    installed: false,
-    download_size: 0.6 * GB,
-  },
-  model: { ...file, size: 14.7 * GB },
-  projector: {
-    ...file,
-    file: 'mmproj-Bonsai-8B-Instruct-F16.gguf',
-    size: 1.2 * GB,
-  },
-  total_download_bytes: 16.5 * GB,
-  free_bytes: 912 * GB,
-  blockers: [],
+  requires: ['PQ2_0'],
+  evidence: 'rules',
+  rules_version: 1,
+  min_prism_build: 10234,
+  reason: 'r',
+}
+
+const families: PrismFamiliesResponse = {
+  rules_version: 1,
+  families: [
+    {
+      id: 'bonsai-8b-instruct',
+      title: 'Bonsai 8B Instruct',
+      repo: file.repo,
+      revision: 'b072e1d',
+      files: [
+        {
+          file: file.file,
+          size: 14.7 * GB,
+          sha256: 'a'.repeat(64),
+          treatment: 'prism_required',
+          default: true,
+        },
+      ],
+      projectors: [
+        {
+          file: 'mmproj-Bonsai-8B-Instruct-F16.gguf',
+          size: 1.2 * GB,
+          sha256: 'c'.repeat(64),
+          default: true,
+        },
+      ],
+    },
+  ],
+}
+
+const catalog: PrismCatalog = {
+  installed: [],
+  available: [{ version: 'prism-b10234-abcdef0', backend: 'win-cuda-12.4-x64' }],
+  recommended: 'prism-b10234-abcdef0/win-cuda-12.4-x64',
+  releases: [
+    {
+      tag: 'prism-b10234-abcdef0',
+      variants: [{ id: 'win-cuda-12.4-x64', size: 0.6 * GB }],
+    },
+  ],
 }
 
 class FakeService extends DefaultModelSetupService {
+  freeBytes = 912 * GB
   override isSupported() {
     return true
   }
-  override async plan() {
-    return plan
+  override async checkCompatibility() {
+    return verdict
+  }
+  override async families() {
+    return families
+  }
+  override async prismCatalog() {
+    return catalog
+  }
+  override async diskAvailable() {
+    return this.freeBytes
   }
 }
 
-const running: ModelSetup = {
-  setup_id: 's1',
-  request_id: 'r1',
-  revision: 1,
-  stage: 'downloading_projector',
-  request: file,
-  plan,
-  task_ids: { engine: 'te', model: 'tm', projector: 'tp' },
-  created_at: 1,
-  updated_at: 1,
-}
-
 describe('model setup sheet geometry', () => {
+  let service: FakeService
   beforeEach(() => {
-    useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
-    seedServiceHub({ modelSetup: new FakeService() })
+    service = new FakeService()
+    seedServiceHub({ modelSetup: service })
   })
+
+  const renderSheet = () =>
+    render(
+      withTranslations(
+        <ModelSetupSheet
+          open
+          onOpenChange={() => {}}
+          file={file}
+          modelName="Bonsai 8B Instruct Long Context Experimental"
+          modelId={modelId}
+          onStart={() => {}}
+        />
+      )
+    )
 
   for (const theme of ['light', 'dark'] as const) {
     for (const fontSize of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
-      it(`fits the plan and the progress without sideways scrolling (${fontSize}, ${theme})`, async () => {
+      it(`fits the plan without sideways scrolling (${fontSize}, ${theme})`, async () => {
         await page.viewport(fontSize === XL_FONT_SIZE ? 1024 : 1280, 800)
         setTheme(theme)
         setFontSize(fontSize)
-        render(
-          withTranslations(
-            <ModelSetupSheet
-              open
-              onOpenChange={() => {}}
-              file={file}
-              modelName="Bonsai 8B Instruct Long Context Experimental"
-              modelId={plan.model_id}
-              onReady={() => {}}
-            />
-          )
-        )
+        renderSheet()
         await screen.findByTestId('model-setup-engine')
         await settle()
 
         const sheet = screen.getByTestId('model-setup-sheet')
-        const width = sheet.getBoundingClientRect().width
         expectNoHorizontalOverflow(sheet)
         expectOneLine(screen.getByTestId('model-setup-total'))
+      })
 
-        // Worst-case readout: everything downloaded, a three-digit percentage.
-        act(() =>
-          useModelSetupStore.setState({
-            setups: { s1: running },
-            progress: { tp: { transferred: 1.2 * GB, total: 1.2 * GB } },
-          })
-        )
+      it(`fits a disk-space blocker without sideways scrolling (${fontSize}, ${theme})`, async () => {
+        await page.viewport(fontSize === XL_FONT_SIZE ? 1024 : 1280, 800)
+        setTheme(theme)
+        setFontSize(fontSize)
+        service.freeBytes = 3.4 * GB
+        renderSheet()
+        await screen.findByTestId('model-setup-engine')
         await settle()
-        expect(screen.getByText('100%')).toBeInTheDocument()
-        expectOneLine(screen.getByTestId('model-setup-stage'))
-        expect(sheet.getBoundingClientRect().width).toBeCloseTo(width, 0)
+
+        const sheet = screen.getByTestId('model-setup-sheet')
         expectNoHorizontalOverflow(sheet)
+        expect(screen.getByTestId('model-setup-start')).toBeDisabled()
       })
     }
   }

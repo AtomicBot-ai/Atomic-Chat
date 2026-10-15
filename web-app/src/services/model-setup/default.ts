@@ -15,7 +15,9 @@ import type {
   ModelSetupPlanRequest,
   ModelSetupService,
   ModelSetupStartRequest,
+  PrismCatalog,
   PrismFamiliesResponse,
+  PrismPack,
 } from './types'
 
 export const MODEL_SETUP_UNSUPPORTED =
@@ -37,6 +39,22 @@ export class DefaultModelSetupService implements ModelSetupService {
   }
 
   async families(): Promise<PrismFamiliesResponse> {
+    throw new Error(MODEL_SETUP_UNSUPPORTED)
+  }
+
+  async prismCatalog(): Promise<PrismCatalog> {
+    throw new Error(MODEL_SETUP_UNSUPPORTED)
+  }
+
+  async diskAvailable(): Promise<number | null> {
+    throw new Error(MODEL_SETUP_UNSUPPORTED)
+  }
+
+  async installPrismBuild(_pack: PrismPack, _taskId: string): Promise<void> {
+    throw new Error(MODEL_SETUP_UNSUPPORTED)
+  }
+
+  async activatePrismBuild(_pack: PrismPack): Promise<void> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 

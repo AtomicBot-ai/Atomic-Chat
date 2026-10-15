@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   currentSetupTask,
+  isPrismDownloadOnly,
   isFinalSetup,
   isRunningSetup,
   isStandingReadySetup,
   latestSetupFor,
   mergeSetup,
   parseHubFileUrl,
+  planPrismSetup,
   prismFamilyCard,
   prismFamilyCards,
   requiresPrism,
@@ -15,12 +17,14 @@ import {
   setupBytes,
   setupSteps,
   setupsUnderWay,
+  type PrismPlanInput,
 } from '@/lib/model-setup'
 import type {
   CompatibilityOutcome,
   CompatibilityVerdict,
   ModelSetup,
   ModelSetupPlan,
+  PrismCatalog,
   PrismFamily,
 } from '@/services/model-setup/types'
 
@@ -404,5 +408,218 @@ describe('Bonsai families as Hub cards', () => {
       'prism-ml/Ternary-Bonsai-2-27B-gguf',
       'prism-ml/Bonsai-8B-gguf',
     ])
+  })
+})
+
+describe('planPrismSetup: what a Bonsai download takes, from what the core reports', () => {
+  const repo = 'prism-ml/Bonsai-8B-gguf'
+  const family: PrismFamily = {
+    id: 'bonsai-8b',
+    title: 'Bonsai 8B',
+    repo,
+    revision: 'b072e1d',
+    files: [
+      {
+        file: 'Bonsai-8B-PQ2_0.gguf',
+        size: 2_000,
+        sha256: 'a'.repeat(64),
+        treatment: 'prism_required',
+        default: true,
+      },
+    ],
+    projectors: [
+      { file: 'mmproj-F16.gguf', size: 900, sha256: 'b'.repeat(64) },
+      {
+        file: 'mmproj-Q8_0.gguf',
+        size: 500,
+        sha256: 'c'.repeat(64),
+        default: true,
+      },
+    ],
+  }
+  const catalog = (over: Partial<PrismCatalog> = {}): PrismCatalog => ({
+    installed: [],
+    available: [
+      { version: 'prism-b9000-abcdef0', backend: 'macos-arm64', order: 1 },
+      { version: 'prism-b9100-1234567', backend: 'macos-arm64', order: 2 },
+    ],
+    recommended: 'prism-b9100-1234567/macos-arm64',
+    releases: [
+      {
+        tag: 'prism-b9100-1234567',
+        variants: [{ id: 'macos-arm64', size: 30 }],
+      },
+      {
+        tag: 'prism-b9000-abcdef0',
+        variants: [{ id: 'macos-arm64', size: 20 }],
+      },
+    ],
+    ...over,
+  })
+  const request = {
+    repo,
+    file: 'Bonsai-8B-PQ2_0.gguf',
+    revision: 'main',
+    model_id: 'prism-ml/Bonsai-8B-PQ2_0',
+    include_projector: true,
+  }
+  const input = (over: Partial<PrismPlanInput> = {}): PrismPlanInput => ({
+    request,
+    verdict: verdict('engine_required', 'atomic-prism'),
+    families: [family],
+    catalog: catalog(),
+    freeBytes: 1_000_000,
+    ...over,
+  })
+
+  it('installs the recommended build and downloads the model and its default projector at the pinned revision', () => {
+    const plan = planPrismSetup(input())
+
+    expect(plan.model_id).toBe('prism-ml/Bonsai-8B-PQ2_0')
+    expect(plan.engine).toEqual({
+      version: 'prism-b9100-1234567',
+      backend: 'macos-arm64',
+      installed: false,
+      download_size: 30,
+    })
+    expect(plan.model).toEqual({
+      file: 'Bonsai-8B-PQ2_0.gguf',
+      url: `https://huggingface.co/${repo}/resolve/b072e1d/Bonsai-8B-PQ2_0.gguf`,
+      size: 2_000,
+      sha256: 'a'.repeat(64),
+    })
+    expect(plan.projector).toEqual({
+      file: 'mmproj-Q8_0.gguf',
+      url: `https://huggingface.co/${repo}/resolve/b072e1d/mmproj-Q8_0.gguf`,
+      size: 500,
+      sha256: 'c'.repeat(64),
+    })
+    expect(plan.offers_projector).toBe(true)
+    expect(plan.total_download_bytes).toBe(30 + 2_000 + 500)
+    expect(plan.free_bytes).toBe(1_000_000)
+    expect(plan.blockers).toEqual([])
+    expect(isPrismDownloadOnly(plan)).toBe(false)
+  })
+
+  it('leaves the projector out when image support is off, and still offers it', () => {
+    const plan = planPrismSetup(
+      input({ request: { ...request, include_projector: false } })
+    )
+
+    expect(plan.projector).toBeNull()
+    expect(plan.offers_projector).toBe(true)
+    expect(plan.total_download_bytes).toBe(30 + 2_000)
+  })
+
+  it('takes no build older than the file needs', () => {
+    const plan = planPrismSetup(
+      input({
+        verdict: {
+          ...verdict('engine_update_required', 'atomic-prism'),
+          min_prism_build: 9050,
+        },
+        catalog: catalog({ recommended: 'prism-b9000-abcdef0/macos-arm64' }),
+      })
+    )
+
+    expect(plan.engine).toMatchObject({
+      version: 'prism-b9100-1234567',
+      backend: 'macos-arm64',
+    })
+  })
+
+  it('counts nothing to download for a build already on disk', () => {
+    const plan = planPrismSetup(
+      input({
+        catalog: catalog({
+          installed: [
+            { version: 'prism-b9100-1234567', backend: 'macos-arm64' },
+          ],
+        }),
+      })
+    )
+
+    expect(plan.engine).toMatchObject({ installed: true, download_size: 0 })
+    expect(plan.total_download_bytes).toBe(2_000 + 500)
+    expect(isPrismDownloadOnly(plan)).toBe(true)
+  })
+
+  it('downloads only the files for a model PrismML already runs', () => {
+    const plan = planPrismSetup(
+      input({
+        verdict: {
+          ...verdict('compatible', 'atomic-prism'),
+          installed_prism_build: 9000,
+        },
+        catalog: catalog({
+          installed: [
+            { version: 'prism-b9100-1234567', backend: 'macos-arm64' },
+            { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' },
+          ],
+        }),
+      })
+    )
+
+    expect(plan.engine).toEqual({
+      version: 'prism-b9000-abcdef0',
+      backend: 'macos-arm64',
+      installed: true,
+      download_size: 0,
+    })
+    expect(isPrismDownloadOnly(plan)).toBe(true)
+  })
+
+  it('is blocked when no offered build is new enough', () => {
+    const plan = planPrismSetup(
+      input({
+        verdict: {
+          ...verdict('engine_update_required', 'atomic-prism'),
+          min_prism_build: 9999,
+        },
+      })
+    )
+
+    expect(plan.engine).toBeNull()
+    expect(plan.blockers).toEqual([{ code: 'no_engine_build' }])
+    expect(isPrismDownloadOnly(plan)).toBe(false)
+  })
+
+  it('is blocked when the drive cannot take the download', () => {
+    const plan = planPrismSetup(input({ freeBytes: 1_000 }))
+
+    expect(plan.blockers).toEqual([
+      { code: 'insufficient_disk_space', needed: 2_530, free: 1_000 },
+    ])
+  })
+
+  it('passes on what the core refused the file for', () => {
+    expect(
+      planPrismSetup(input({ verdict: verdict('unsupported') })).blockers
+    ).toEqual([{ code: 'unsupported', message: 'r' }])
+    expect(
+      planPrismSetup(
+        input({
+          verdict: { ...verdict('legacy_artifact'), replacement: 'v2.gguf' },
+        })
+      ).blockers
+    ).toEqual([{ code: 'legacy_artifact', message: 'r', replacement: 'v2.gguf' }])
+  })
+
+  it('downloads a file the families do not list as it is, with no projector', () => {
+    const plan = planPrismSetup(
+      input({
+        request: { ...request, file: 'Other.gguf', revision: undefined },
+        catalog: catalog({ releases: undefined }),
+      })
+    )
+
+    expect(plan.model).toEqual({
+      file: 'Other.gguf',
+      url: `https://huggingface.co/${repo}/resolve/main/Other.gguf`,
+      size: 0,
+    })
+    expect(plan.projector).toBeNull()
+    expect(plan.offers_projector).toBe(false)
+    expect(plan.engine?.download_size).toBe(0)
   })
 })

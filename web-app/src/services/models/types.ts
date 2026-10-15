@@ -88,6 +88,21 @@ export interface DownloadRefusal {
   available: number
 }
 
+/**
+ * What a caller of `pullModelWithMetadata` already knows: the llama.cpp
+ * provider that imports and lists the model (the platform's default when
+ * absent) and the files' expected hashes and sizes, which the downloader then
+ * verifies. A Bonsai file downloads under `atomic-prism`, with the hashes and
+ * sizes of the core's Bonsai families.
+ */
+export interface PullModelOptions {
+  provider?: string
+  modelSha256?: string
+  modelSize?: number
+  mmprojSha256?: string
+  mmprojSize?: number
+}
+
 /** Hugging Face's own orders for a listing (`sort=` on `/api/models`). */
 export type HuggingFaceFeedSort =
   | 'trending'
@@ -222,7 +237,8 @@ export interface ModelsService {
     mmprojPath?: string,
     mmprojSha256?: string,
     mmprojSize?: number,
-    resume?: boolean
+    resume?: boolean,
+    provider?: string
   ): Promise<void>
   pullModelWithMetadata(
     id: string,
@@ -230,7 +246,8 @@ export interface ModelsService {
     mmprojPath?: string,
     hfToken?: string,
     skipVerification?: boolean,
-    resume?: boolean
+    resume?: boolean,
+    options?: PullModelOptions
   ): Promise<DownloadRefusal | undefined>
   abortDownload(id: string): Promise<void>
   /** Resolves with what the delete freed when the engine measures it (TensorRT-LLM does). */

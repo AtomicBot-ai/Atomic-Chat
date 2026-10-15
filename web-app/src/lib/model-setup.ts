@@ -12,7 +12,14 @@ import {
   type ModelSetupError,
   type ModelSetupPlan,
   type ModelSetupStage,
+  type PrismCatalog,
   type PrismFamily,
+  type PrismPack,
+  type PrismSetupArtifact,
+  type PrismSetupBlocker,
+  type PrismSetupEngine,
+  type PrismSetupPlan,
+  type PrismSetupRequest,
 } from '@/services/model-setup/types'
 import type { CatalogModel } from '@/services/models/types'
 
@@ -246,6 +253,171 @@ export function setupBytes(
       transferred += Math.min(reported?.transferred ?? 0, size)
   }
   return { transferred, total }
+}
+
+/** What {@link planPrismSetup} reads: the request and what the core answered for it. */
+export type PrismPlanInput = {
+  request: PrismSetupRequest
+  /** The core's verdict on the file under `atomic-prism`. */
+  verdict: CompatibilityVerdict
+  families: readonly PrismFamily[]
+  catalog: PrismCatalog
+  /** Free bytes on the data drive; `null` when the platform cannot say. */
+  freeBytes: number | null
+}
+
+/** The build number of a PrismML tag (`prism-b9100-1234567` → 9100); `0` for anything else. */
+export function prismTagBuild(tag: string): number {
+  const match = /^prism-b(\d+)-[0-9a-f]{7}$/.exec(tag)
+  return match ? Number(match[1]) : 0
+}
+
+const hubUrl = (repo: string, revision: string, file: string) =>
+  `https://huggingface.co/${repo}/resolve/${revision}/${file}`
+
+/**
+ * The offered build to install for a file that needs build `minBuild`: the
+ * core's own pick when it is new enough, else the newest of the same variant,
+ * else the best-ordered one that is. `null` when no offered build is.
+ */
+function choosePrismPack(
+  catalog: PrismCatalog,
+  minBuild: number | undefined
+): PrismPack | null {
+  const fits = catalog.available.filter(
+    (pack) => minBuild === undefined || prismTagBuild(pack.version) >= minBuild
+  )
+  const [version, backend] = (catalog.recommended ?? '').split('/')
+  const pick =
+    fits.find((pack) => pack.version === version && pack.backend === backend) ??
+    fits
+      .filter((pack) => pack.backend === backend)
+      .sort((a, b) => prismTagBuild(b.version) - prismTagBuild(a.version))[0] ??
+    [...fits].sort((a, b) => (b.order ?? 0) - (a.order ?? 0))[0]
+  return pick ? { version: pick.version, backend: pick.backend } : null
+}
+
+function prismEngineOf(
+  verdict: CompatibilityVerdict,
+  catalog: PrismCatalog,
+  blockers: PrismSetupBlocker[]
+): PrismSetupEngine | null {
+  if (verdict.provider !== PRISM_PROVIDER) return null
+  const onDisk = (pack: PrismPack) =>
+    catalog.installed.some(
+      (p) => p.version === pack.version && p.backend === pack.backend
+    )
+  if (verdict.outcome === 'compatible') {
+    // PrismML already runs it: the build the verdict read, as installed.
+    const current =
+      catalog.installed.find(
+        (pack) => prismTagBuild(pack.version) === verdict.installed_prism_build
+      ) ?? catalog.installed[0]
+    return current
+      ? { ...current, installed: true, download_size: 0 }
+      : null
+  }
+  if (
+    verdict.outcome !== 'engine_required' &&
+    verdict.outcome !== 'engine_update_required'
+  )
+    return null
+  const pack = choosePrismPack(catalog, verdict.min_prism_build)
+  if (!pack) {
+    blockers.push({ code: 'no_engine_build' })
+    return null
+  }
+  const installed = onDisk(pack)
+  const size =
+    catalog.releases
+      ?.find((release) => release.tag === pack.version)
+      ?.variants.find((variant) => variant.id === pack.backend)?.size ?? 0
+  return { ...pack, installed, download_size: installed ? 0 : size }
+}
+
+/**
+ * What a Bonsai download takes on this machine: the PrismML build when the
+ * file needs one that is missing or too old, the file and its default vision
+ * projector at the family's pinned revision, the bytes in all and what blocks
+ * it. Built in the app from the core's verdict, its Bonsai families, its
+ * PrismML catalog and the free disk space; nothing here asks the core.
+ */
+export function planPrismSetup(input: PrismPlanInput): PrismSetupPlan {
+  const { request, verdict, catalog } = input
+  const blockers: PrismSetupBlocker[] = []
+  if (verdict.outcome === 'unsupported')
+    blockers.push({ code: 'unsupported', message: verdict.reason })
+  if (verdict.outcome === 'legacy_artifact')
+    blockers.push({
+      code: 'legacy_artifact',
+      message: verdict.reason,
+      ...(verdict.replacement ? { replacement: verdict.replacement } : {}),
+    })
+  const engine = prismEngineOf(verdict, catalog, blockers)
+
+  const family = input.families.find(
+    (candidate) =>
+      candidate.repo === request.repo &&
+      candidate.files.some((file) => file.file === request.file)
+  )
+  const listed = family?.files.find((file) => file.file === request.file)
+  const model: PrismSetupArtifact =
+    family && listed
+      ? {
+          file: listed.file,
+          url: hubUrl(family.repo, family.revision, listed.file),
+          size: listed.size,
+          sha256: listed.sha256,
+        }
+      : {
+          file: request.file,
+          url: hubUrl(request.repo, request.revision ?? 'main', request.file),
+          size: 0,
+        }
+  const defaultProjector = family?.projectors.find((p) => p.default)
+  const projector: PrismSetupArtifact | null =
+    family && defaultProjector && request.include_projector
+      ? {
+          file: defaultProjector.file,
+          url: hubUrl(family.repo, family.revision, defaultProjector.file),
+          size: defaultProjector.size,
+          sha256: defaultProjector.sha256,
+        }
+      : null
+
+  const total =
+    (engine?.download_size ?? 0) + model.size + (projector?.size ?? 0)
+  if (input.freeBytes !== null && total > input.freeBytes)
+    blockers.push({
+      code: 'insufficient_disk_space',
+      needed: total,
+      free: input.freeBytes,
+    })
+
+  return {
+    model_id: request.model_id,
+    verdict,
+    engine,
+    model,
+    projector,
+    offers_projector: !!defaultProjector,
+    total_download_bytes: total,
+    free_bytes: input.freeBytes,
+    blockers,
+  }
+}
+
+/**
+ * Whether a Bonsai plan asks nothing of the user: the build it needs is on
+ * disk (an activation at most) and nothing blocks the download. Such a
+ * download starts at once; any other plan is shown in the setup sheet first.
+ */
+export function isPrismDownloadOnly(plan: PrismSetupPlan): boolean {
+  return (
+    !!plan.engine?.installed &&
+    plan.verdict.outcome !== 'engine_update_required' &&
+    plan.blockers.length === 0
+  )
 }
 
 /** A file size the way the Hub's catalog spells it: `7.2 GB`, `629.2 MB`. */

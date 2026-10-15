@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { IconAlertTriangle, IconLoader2 } from '@tabler/icons-react'
+import { IconLoader2 } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -10,33 +10,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
 import { FamilyLogoMark } from '@/containers/ModelLogo'
-import { useHubFileSetup, useModelSetupBytes } from '@/hooks/useModelSetup'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { bytesUnit, formatBytes, shortModelName } from '@/lib/downloadFormat'
 import {
-  bytesUnit,
-  formatBytes,
-  formatProgressPair,
-  shortModelName,
-} from '@/lib/downloadFormat'
-import {
-  isFinalSetup,
-  isRunningSetup,
-  isStandingReadySetup,
   PRISM_PROVIDER,
   setupErrorText as errorText,
   type HubFile,
 } from '@/lib/model-setup'
 import { getProviderLogo } from '@/lib/utils'
+import { loadPrismSetupPlan } from '@/services/model-setup/prism-setup'
 import type {
-  ModelSetupError,
-  ModelSetupPlan,
+  PrismSetupBlocker,
+  PrismSetupPlan,
 } from '@/services/model-setup/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
 
 export type ModelSetupSheetProps = {
   open: boolean
@@ -44,28 +33,52 @@ export type ModelSetupSheetProps = {
   file: HubFile
   /** What the Hub calls the model, for the title. */
   modelName: string
-  /** The id the model registers under, so the Hub recognises it once set up. */
+  /** The id the model registers under, so the Hub recognises it once downloaded. */
   modelId: string
-  /**
-   * The model is listed under a provider. A `ready` setup whose model is not
-   * listed, or was deleted, is planned again instead of offering its chat.
-   */
-  installed: boolean
-  /** The setup is `ready`: open a chat with the model. */
-  onReady: (modelId: string) => void
+  /** Set up: run the plan the sheet showed. The sheet closes; the row and the download panel follow. */
+  onStart: (plan: PrismSetupPlan) => void
 }
-
-const STALE_PLAN = 'MODEL_SETUP_PLAN_STALE'
 
 /** `442 MB`, `16.50 GB`: a size with its unit, for one value on its own. */
 const sizeText = (bytes: number) => `${formatBytes(bytes)} ${bytesUnit(bytes)}`
 
+/** What decides the work: a plan that differs in any of these is shown again before it runs. */
+const planKey = (plan: PrismSetupPlan) =>
+  JSON.stringify([
+    plan.verdict.outcome,
+    plan.engine,
+    plan.model,
+    plan.projector,
+    plan.blockers.map((blocker) => blocker.code),
+  ])
+
+type Translate = (key: string, options?: Record<string, unknown>) => string
+
+function blockerText(blocker: PrismSetupBlocker, t: Translate): string {
+  switch (blocker.code) {
+    case 'unsupported':
+      return blocker.message
+    case 'legacy_artifact':
+      return blocker.replacement
+        ? `${blocker.message} ${t('hub:prismSetupReplacement', { file: blocker.replacement })}`
+        : blocker.message
+    case 'no_engine_build':
+      return t('hub:prismBlocker_no_engine_build')
+    case 'insufficient_disk_space':
+      return t('hub:prismBlocker_insufficient_disk_space', {
+        needed: sizeText(blocker.needed),
+        free: sizeText(blocker.free),
+      })
+  }
+}
+
 /**
- * "Set up Bonsai": the one step between a PrismML-only file in the Hub and a
- * chat with it. The core plans what it takes on this machine — the PrismML
- * engine when it is missing or too old, the model, its vision projector — and
- * runs it as one operation that survives this sheet, the app and a restart;
- * the sheet shows the plan, starts it, and follows it.
+ * "Set up Bonsai": the one step between a PrismML-only file in the Hub and its
+ * download. The app plans what it takes on this machine from what the core
+ * reports — the PrismML engine when it is missing or too old, the model, its
+ * vision projector, the bytes and what blocks it — and shows it. Set up reads
+ * the plan again and runs it only if nothing changed; the row and the
+ * download panel follow it from there.
  */
 export function ModelSetupSheet({
   open,
@@ -73,96 +86,65 @@ export function ModelSetupSheet({
   file,
   modelName,
   modelId,
-  installed,
-  onReady,
+  onStart,
 }: ModelSetupSheetProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const setup = useHubFileSetup(file)
-  const bytes = useModelSetupBytes(setup)
 
   const [includeProjector, setIncludeProjector] = useState(true)
-  const [offersProjector, setOffersProjector] = useState(false)
-  const [plan, setPlan] = useState<ModelSetupPlan | null>(null)
+  const [plan, setPlan] = useState<PrismSetupPlan | null>(null)
   const [planError, setPlanError] = useState<string | null>(null)
-  const [planStale, setPlanStale] = useState(false)
+  const [planChanged, setPlanChanged] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const deleted = useModelProvider(
-    (state) =>
-      !!setup &&
-      Array.isArray(state.deletedModels) &&
-      state.deletedModels.includes(setup.plan.model_id)
-  )
-  const ready = !!setup && isStandingReadySetup(setup, { installed, deleted })
-  const showPlan = !setup || (isFinalSetup(setup) && !ready)
-
-  const loadPlan = useCallback(async () => {
-    setPlanError(null)
-    try {
-      const next = await serviceHub.modelSetup().plan({
+  const loadPlan = useCallback(
+    () =>
+      loadPrismSetupPlan(serviceHub.modelSetup(), {
         ...file,
         model_id: modelId,
         include_projector: includeProjector,
-      })
-      setPlan(next)
-      if (next.projector) setOffersProjector(true)
-    } catch (error) {
-      setPlan(null)
-      setPlanError(errorText(error))
-    }
-  }, [serviceHub, file, modelId, includeProjector])
+      }),
+    [serviceHub, file, modelId, includeProjector]
+  )
 
   useEffect(() => {
-    if (open && showPlan) void loadPlan()
-  }, [open, showPlan, loadPlan])
+    if (!open) return
+    let current = true
+    setPlanError(null)
+    setPlanChanged(false)
+    loadPlan()
+      .then((next) => current && setPlan(next))
+      .catch((error) => {
+        if (!current) return
+        setPlan(null)
+        setPlanError(errorText(error))
+      })
+    return () => {
+      current = false
+    }
+  }, [open, loadPlan])
 
   const start = useCallback(async () => {
     if (!plan) return
     setBusy(true)
-    setPlanStale(false)
     try {
-      const started = await serviceHub.modelSetup().start({
-        ...file,
-        model_id: modelId,
-        include_projector: includeProjector,
-        request_id: crypto.randomUUID(),
-        plan_digest: plan.digest,
-      })
-      useModelSetupStore.getState().apply({ type: 'changed', setup: started })
-    } catch (error) {
-      if ((error as ModelSetupError | undefined)?.code === STALE_PLAN) {
-        setPlanStale(true)
-        await loadPlan()
-      } else {
-        setPlanError(errorText(error))
+      const fresh = await loadPlan()
+      if (planKey(fresh) !== planKey(plan)) {
+        setPlan(fresh)
+        setPlanChanged(true)
+        return
       }
+      onOpenChange(false)
+      onStart(fresh)
+    } catch (error) {
+      setPlanError(errorText(error))
     } finally {
       setBusy(false)
     }
-  }, [serviceHub, plan, file, modelId, includeProjector, loadPlan])
+  }, [plan, loadPlan, onOpenChange, onStart])
 
-  const act = useCallback(
-    async (action: 'cancel' | 'resume') => {
-      if (!setup) return
-      setBusy(true)
-      try {
-        const next = await serviceHub.modelSetup()[action](setup.setup_id)
-        useModelSetupStore.getState().apply({ type: 'changed', setup: next })
-      } catch (error) {
-        setPlanError(errorText(error))
-      } finally {
-        setBusy(false)
-      }
-    },
-    [serviceHub, setup]
-  )
-
-  const percent =
-    bytes.total > 0 ? Math.round((bytes.transferred / bytes.total) * 100) : 0
   const blocked = !!plan && plan.blockers.length > 0
-  const engineUpdate =
-    (plan ?? setup?.plan)?.verdict.outcome === 'engine_update_required'
+  const engineUpdate = plan?.verdict.outcome === 'engine_update_required'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,53 +180,14 @@ export function ModelSetupSheet({
             </p>
           )}
 
-          {setup && !showPlan && (
-            <div
-              className="flex flex-col gap-2 rounded-lg border bg-secondary/50 p-3"
-              aria-live="polite"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span
-                  className="min-w-0 truncate font-medium"
-                  data-testid="model-setup-stage"
-                >
-                  {t(`hub:prismStage_${setup.stage}`)}
-                </span>
-                {isRunningSetup(setup) && (
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    {percent}%
-                  </span>
-                )}
-              </div>
-              {setup.stage !== 'ready' && <Progress value={percent} />}
-              {bytes.total > 0 && setup.stage !== 'ready' && (
-                <p className="text-xs tabular-nums text-muted-foreground">
-                  {formatProgressPair(bytes.transferred, bytes.total)}
-                </p>
-              )}
-              {setup.stage === 'interrupted' && (
-                <p className="text-xs text-muted-foreground">
-                  {t('hub:prismSetupInterrupted')}
-                </p>
-              )}
-            </div>
-          )}
-
-          {setup && showPlan && setup.stage !== 'cancelled' && setup.error && (
-            <p className="flex items-start gap-2 text-xs text-destructive">
-              <IconAlertTriangle size={14} className="mt-0.5 shrink-0" />
-              {t('hub:prismSetupFailed', { error: errorText(setup.error) })}
-            </p>
-          )}
-
-          {showPlan && !plan && !planError && (
+          {!plan && !planError && (
             <p className="flex items-center justify-center gap-2 rounded-lg border bg-secondary/50 p-3 text-muted-foreground">
               <IconLoader2 size={14} className="animate-spin" />
               {t('hub:prismSetupPlanning')}
             </p>
           )}
 
-          {showPlan && plan && (
+          {plan && (
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-lg border bg-secondary/50 p-3">
               <dt className="text-muted-foreground">
                 {t('hub:prismSetupEngine')}
@@ -291,7 +234,7 @@ export function ModelSetupSheet({
             </dl>
           )}
 
-          {showPlan && offersProjector && (
+          {plan?.offers_projector && (
             <label className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
               <span className="min-w-0">{t('hub:prismSetupVision')}</span>
               <Switch
@@ -303,19 +246,15 @@ export function ModelSetupSheet({
             </label>
           )}
 
-          {showPlan && plan && blocked && (
+          {plan && blocked && (
             <ul className="flex flex-col gap-1 text-xs text-destructive">
               {plan.blockers.map((blocker) => (
-                <li key={blocker.code}>
-                  {blocker.message}
-                  {blocker.replacement &&
-                    ` ${t('hub:prismSetupReplacement', { file: blocker.replacement })}`}
-                </li>
+                <li key={blocker.code}>{blockerText(blocker, t)}</li>
               ))}
             </ul>
           )}
 
-          {planStale && (
+          {planChanged && (
             <p className="text-xs text-muted-foreground">
               {t('hub:prismSetupPlanChanged')}
             </p>
@@ -329,46 +268,14 @@ export function ModelSetupSheet({
         </div>
 
         <DialogFooter className="mt-2">
-          {setup && ready ? (
-            <Button
-              size="sm"
-              onClick={() => onReady(setup.plan.model_id)}
-              data-testid="model-setup-new-chat"
-            >
-              {t('hub:newChat')}
-            </Button>
-          ) : setup && !showPlan ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => void act('cancel')}
-              >
-                {t('common:cancel')}
-              </Button>
-              {setup.stage === 'interrupted' && (
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void act('resume')}
-                >
-                  {t('hub:prismSetupResume')}
-                </Button>
-              )}
-            </>
-          ) : (
-            <Button
-              size="sm"
-              disabled={busy || !plan || blocked}
-              onClick={() => void start()}
-              data-testid="model-setup-start"
-            >
-              {setup && setup.stage !== 'ready'
-                ? t('hub:prismSetupRetry')
-                : t('hub:prismSetupStart')}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            disabled={busy || !plan || blocked}
+            onClick={() => void start()}
+            data-testid="model-setup-start"
+          >
+            {t('hub:prismSetupStart')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
