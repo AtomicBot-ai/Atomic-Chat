@@ -9,7 +9,9 @@
     <!-- Bun also maps writable-then-executable pages, which allow-jit alone does not cover. -->
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
-    <!-- The core spawns llama-server, which dlopens ggml/CUDA dylibs by name. -->
+    <!-- The core spawns llama-server, which dlopens ggml/CUDA dylibs by name, and the app core's
+         foundry-host mode loads Microsoft's Foundry Local dylibs, signed by Microsoft's Team ID:
+         library validation would refuse both (openspec change add-foundry-local, task 8.5). -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
 </dict>

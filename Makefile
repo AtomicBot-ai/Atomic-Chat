@@ -433,7 +433,8 @@ test-hardening-contracts:
 		tests/core-settings-schema.test.mjs \
 		tests/desktop-legacy-path.test.mjs \
 		tests/extension-bundles.test.mjs \
-		tests/cli-launch-catalog.test.mjs
+		tests/cli-launch-catalog.test.mjs \
+		tests/macos-signing.test.mjs
 
 test-coverage-critical:
 	yarn test:coverage

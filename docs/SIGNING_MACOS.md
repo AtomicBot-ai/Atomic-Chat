@@ -53,7 +53,7 @@ You should see the chain **Developer ID** → **Developer ID Certification Autho
 
 Before the bundle phase, `src-tauri/scripts/strip-macos-xattrs.sh` runs (strips `xattr`); otherwise `codesign` sometimes fails with `resource fork, Finder information, or similar detritus not allowed`.
 
-Tauri signs only `Contents/MacOS/*`. The CLI copies from `bundle.resources` land in `Contents/Resources/resources/bin/` **without** being re-signed, which makes notarytool reject the archive. The `src-tauri/scripts/sign-macos-resource-binaries.sh` script (in the `beforeBundleCommand` chain) signs `jan-cli`, `mlx-server`, `foundation-models-server` in `resources/bin/` before they are copied into the bundle — when `APPLE_SIGNING_IDENTITY` is set.
+Tauri signs only `Contents/MacOS/*`. The CLI copies from `bundle.resources` land in `Contents/Resources/resources/bin/` **without** being re-signed, which makes notarytool reject the archive. The `src-tauri/scripts/sign-macos-resource-binaries.sh` script (in the `beforeBundleCommand` chain) signs `jan-cli`, `atomic-chat-core`, `atomic-chat-app-core`, `mlx-server`, `foundation-models-server` in `resources/bin/` before they are copied into the bundle (the three core binaries with `Entitlements.sidecar.plist`: Bun's JIT, and dylibs signed by other teams — llama.cpp builds and Microsoft's Foundry Local libraries) — when `APPLE_SIGNING_IDENTITY` is set.
 
 ---
 

@@ -25,14 +25,16 @@ sign_if_macho() {
   if file "$f" | grep -q 'Mach-O'; then
     echo "codesign (resources): $f"
     local entitlements="$ENT"
+    #? The core binaries: Bun's JIT, and dylibs signed by other teams (llama.cpp builds,
+    #? Microsoft's Foundry Local libraries the app core's foundry-host mode loads).
     case "$(basename "$f")" in
-      jan-cli|atomic-chat-core) entitlements="$SIDE_ENT" ;;
+      jan-cli|atomic-chat-core|atomic-chat-app-core) entitlements="$SIDE_ENT" ;;
     esac
     codesign --force --sign "$IDENTITY" --options runtime --timestamp --entitlements "$entitlements" "$f"
   fi
 }
 
-for name in jan-cli atomic-chat-core mlx-server foundation-models-server; do
+for name in jan-cli atomic-chat-core atomic-chat-app-core mlx-server foundation-models-server; do
   sign_if_macho "$BIN/$name"
 done
 
