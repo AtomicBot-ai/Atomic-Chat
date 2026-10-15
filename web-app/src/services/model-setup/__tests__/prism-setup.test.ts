@@ -191,6 +191,21 @@ describe('verifyPrismDownload', () => {
   })
 })
 
+describe('verifyPrismDownload when the core cannot be asked', () => {
+  it('keeps the model unchecked instead of calling the download a failure', async () => {
+    const { deps } = recordingDeps({
+      check: vi.fn(async () => {
+        throw { code: 'CORE_UNREACHABLE', message: 'No core' }
+      }),
+    })
+
+    await expect(verifyPrismDownload('m', deps)).resolves.toEqual({
+      outcome: 'unchecked',
+    })
+    expect(deps.remove).not.toHaveBeenCalled()
+  })
+})
+
 describe('loadPrismSetupPlan', () => {
   it('builds the plan from the verdict, the families, the PrismML catalog and the free space', async () => {
     const families: PrismFamiliesResponse = {

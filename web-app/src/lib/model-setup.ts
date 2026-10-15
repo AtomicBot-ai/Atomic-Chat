@@ -96,6 +96,12 @@ export type PrismPlanInput = {
   catalog: PrismCatalog
   /** Free bytes on the data drive; `null` when the platform cannot say. */
   freeBytes: number | null
+  /**
+   * Bytes the app's downloader keeps free on top of the files: its preflight
+   * refuses a pull without them, so a plan that ignored them could install the
+   * engine and then have the model refused.
+   */
+  headroomBytes?: number
 }
 
 /** The build number of a PrismML tag (`prism-b9100-1234567` → 9100); `0` for anything else. */
@@ -219,10 +225,11 @@ export function planPrismSetup(input: PrismPlanInput): PrismSetupPlan {
 
   const total =
     (engine?.download_size ?? 0) + model.size + (projector?.size ?? 0)
-  if (input.freeBytes !== null && total > input.freeBytes)
+  const needed = total + (input.headroomBytes ?? 0)
+  if (input.freeBytes !== null && needed > input.freeBytes)
     blockers.push({
       code: 'insufficient_disk_space',
-      needed: total,
+      needed,
       free: input.freeBytes,
     })
 

@@ -232,9 +232,17 @@ export const ModelDownloadAction = ({
   const [prismStage, setPrismStage] = useState<PrismSetupStage | null>(null)
   const [engineProgress, setEngineProgress] = useState(0)
   const setupModelId = quantModelIds(model, variant.model_id)[1]
+  const [sheetPlan, setSheetPlan] = useState<PrismSetupPlan | null>(null)
   // A file only PrismML runs downloads under the id the old core setup
-  // registered it as, so a model set up before reads as downloaded.
-  const rowModelId = requiresPrism(verdict) ? setupModelId : variant.model_id
+  // registered it as, so a model set up before reads as downloaded. A
+  // download already running under that id keeps the row on it even while
+  // the verdict is being asked again (a new core generation forgets them).
+  const prismDownloadRunning =
+    localDownloadingModels.has(setupModelId) || setupModelId in downloads
+  const rowModelId =
+    requiresPrism(verdict) || prismDownloadRunning || prismStage !== null
+      ? setupModelId
+      : variant.model_id
 
   // Install the build when it is missing, make it active, download the model
   // and its projector under PrismML with the app's own downloader, then keep
@@ -315,6 +323,7 @@ export const ModelDownloadAction = ({
         include_projector: true,
       })
       if (!isPrismDownloadOnly(plan)) {
+        setSheetPlan(plan)
         setSetupOpen(true)
         return
       }
@@ -408,6 +417,7 @@ export const ModelDownloadAction = ({
       file={hubFile}
       modelName={model.model_name}
       modelId={setupModelId}
+      initialPlan={sheetPlan}
       onStart={(plan) => void runSetup(plan)}
     />
   ) : null

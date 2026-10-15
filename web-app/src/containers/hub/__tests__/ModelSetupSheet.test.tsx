@@ -134,6 +134,35 @@ describe('ModelSetupSheet', () => {
     expect(service.diskAvailable).toHaveBeenCalled()
   })
 
+  it('shows the plan the row already read without asking the core again', async () => {
+    const { loadPrismSetupPlan } = await import(
+      '@/services/model-setup/prism-setup'
+    )
+    const initialPlan = await loadPrismSetupPlan(service, {
+      ...file,
+      model_id: 'prism-ml/Bonsai-8B-PQ2_0',
+      include_projector: true,
+    })
+    vi.clearAllMocks()
+    render(
+      <ModelSetupSheet
+        open
+        onOpenChange={() => {}}
+        file={file}
+        modelName="Bonsai 8B"
+        modelId="prism-ml/Bonsai-8B-PQ2_0"
+        initialPlan={initialPlan}
+        onStart={onStart}
+      />
+    )
+
+    expect(await screen.findByTestId('model-setup-engine')).toHaveTextContent(
+      'prism-b9000-abcdef0'
+    )
+    expect(service.prismCatalog).not.toHaveBeenCalled()
+    expect(service.checkCompatibility).not.toHaveBeenCalled()
+  })
+
   it('starts the plan it showed, read again just before', async () => {
     renderSheet()
     await screen.findByTestId('model-setup-engine')

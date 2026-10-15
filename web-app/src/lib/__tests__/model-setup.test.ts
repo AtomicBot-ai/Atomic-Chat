@@ -338,6 +338,14 @@ describe('planPrismSetup: what a Bonsai download takes, from what the core repor
     ])
   })
 
+  it("counts the downloader's headroom: a plan that fits is one the pull will not refuse", () => {
+    const plan = planPrismSetup(input({ freeBytes: 3_000, headroomBytes: 1_000 }))
+
+    expect(plan.blockers).toEqual([
+      { code: 'insufficient_disk_space', needed: 3_530, free: 3_000 },
+    ])
+  })
+
   it('passes on what the core refused the file for', () => {
     expect(
       planPrismSetup(input({ verdict: verdict('unsupported') })).blockers

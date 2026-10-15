@@ -510,6 +510,25 @@ describe('ModelDownloadAction', () => {
       expect(await screen.findByRole('button', { name: 'hub:download' })).toBeEnabled()
     })
 
+    it('keeps following a running Bonsai download when the verdict is forgotten', async () => {
+      // A new core generation cleared the verdicts; the download goes on.
+      useDownloadStore.setState({
+        localDownloadingModels: new Set([prismId]),
+      })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'common:cancelDownload' })
+      )
+
+      await waitFor(() =>
+        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
+      )
+      expect(screen.queryByRole('button', { name: 'hub:download' })).toBeNull()
+    })
+
     it('cancels a running Bonsai download from the row, like any download', async () => {
       known('compatible')
       useDownloadStore.setState({

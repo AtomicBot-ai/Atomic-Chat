@@ -35,6 +35,8 @@ export type ModelSetupSheetProps = {
   modelName: string
   /** The id the model registers under, so the Hub recognises it once downloaded. */
   modelId: string
+  /** The plan the row just read, shown at once instead of asking the core again. */
+  initialPlan?: PrismSetupPlan | null
   /** Set up: run the plan the sheet showed. The sheet closes; the row and the download panel follow. */
   onStart: (plan: PrismSetupPlan) => void
 }
@@ -86,6 +88,7 @@ export function ModelSetupSheet({
   file,
   modelName,
   modelId,
+  initialPlan = null,
   onStart,
 }: ModelSetupSheetProps) {
   const { t } = useTranslation()
@@ -109,9 +112,20 @@ export function ModelSetupSheet({
 
   useEffect(() => {
     if (!open) return
-    let current = true
     setPlanError(null)
     setPlanChanged(false)
+    // The row's plan holds for the projector it was read with; Set up reads
+    // it again before anything runs.
+    if (
+      initialPlan &&
+      (!initialPlan.offers_projector ||
+        includeProjector === (initialPlan.projector !== null)) &&
+      initialPlan.model_id === modelId
+    ) {
+      setPlan(initialPlan)
+      return
+    }
+    let current = true
     loadPlan()
       .then((next) => current && setPlan(next))
       .catch((error) => {
@@ -122,7 +136,7 @@ export function ModelSetupSheet({
     return () => {
       current = false
     }
-  }, [open, loadPlan])
+  }, [open, loadPlan, initialPlan, includeProjector, modelId])
 
   const start = useCallback(async () => {
     if (!plan) return

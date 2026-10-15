@@ -11,6 +11,7 @@ import { deleteLocalModel } from '@/lib/model-deletion'
 import { planPrismSetup, PRISM_PROVIDER } from '@/lib/model-setup'
 import type { ServiceHub } from '@/services'
 import { sanitizeTaskId } from '@/services/diffusion/transfer'
+import { getDownloadFreeSpace } from '@/services/models/downloadPreflight'
 import {
   ENGINE_BUILD_TASK_PREFIX,
   followCoreDownload,
@@ -34,7 +35,7 @@ export async function loadPrismSetupPlan(
   service: ModelSetupService,
   request: PrismSetupRequest
 ): Promise<PrismSetupPlan> {
-  const [verdict, families, catalog, freeBytes] = await Promise.all([
+  const [verdict, families, catalog, freeBytes, space] = await Promise.all([
     service.checkCompatibility({
       repo: request.repo,
       file: request.file,
@@ -44,6 +45,7 @@ export async function loadPrismSetupPlan(
     service.families(),
     service.prismCatalog(),
     service.diskAvailable().catch(() => null),
+    getDownloadFreeSpace(),
   ])
   return planPrismSetup({
     request,
@@ -51,6 +53,7 @@ export async function loadPrismSetupPlan(
     families: families.families,
     catalog,
     freeBytes,
+    headroomBytes: space?.headroom ?? 0,
   })
 }
 
@@ -86,6 +89,11 @@ export type PrismSetupOutcome =
   | { outcome: 'refused' }
   /** The file on disk is not one PrismML runs; it was removed. */
   | { outcome: 'rejected'; reason: string }
+  /**
+   * The core could not be asked about the file (restarting, unreachable). The
+   * model stays: the load gate reads its header before it ever runs.
+   */
+  | { outcome: 'unchecked' }
 
 /**
  * Keep a downloaded model only if PrismML runs the file now on disk: the
@@ -96,7 +104,13 @@ export async function verifyPrismDownload(
   modelId: string,
   deps: Pick<PrismSetupDeps, 'check' | 'remove'>
 ): Promise<PrismSetupOutcome> {
-  const verdict = await deps.check(modelId)
+  let verdict: CompatibilityVerdict
+  try {
+    verdict = await deps.check(modelId)
+  } catch (error) {
+    console.warn(`[prism-setup] could not check ${modelId} on disk:`, error)
+    return { outcome: 'unchecked' }
+  }
   if (verdict.outcome === 'compatible') return { outcome: 'ready' }
   await deps.remove(modelId)
   return { outcome: 'rejected', reason: verdict.reason }
