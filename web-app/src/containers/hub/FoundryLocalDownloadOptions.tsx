@@ -155,7 +155,7 @@ export function FoundryLocalDownloadOptions({
                   aria-label={`${variantLabel(variant)} ${variant.id}`}
                   onClick={() => setPicked(variant.id)}
                   className={cn(
-                    'flex w-full flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-accent',
+                    'flex w-full min-w-0 flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-accent',
                     checked && 'border-border bg-accent'
                   )}
                 >
@@ -171,7 +171,9 @@ export function FoundryLocalDownloadOptions({
             })}
           </div>
           {selected && (
-            <div data-testid="foundry-local-actions">
+            // One width whatever the chosen variant offers (Download, or New chat and delete):
+            // sized by content, the column resized the list on every pick.
+            <div data-testid="foundry-local-actions" className="flex w-44 shrink-0 justify-end">
               <Action
                 fields={fields}
                 variant={selected}
@@ -203,7 +205,8 @@ function VerdictLine({
         : entry.verdict === 'ok'
           ? t('hub:foundryLocal.runsHere')
           : (entry.reason ?? entry.verdict)
-  return <span className="text-xs text-muted-foreground">{text}</span>
+  // The core's reasons carry long library names (`WebGpuExecutionProvider`): break inside them.
+  return <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{text}</span>
 }
 
 function Action({
@@ -226,14 +229,26 @@ function Action({
   if (!verdict || 'error' in verdict) return null
   if (verdict.verdict === 'engine-not-installed') {
     return (
-      <Button size="sm" variant="outline" onClick={toProviderPage}>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={toProviderPage}
+        // The column is fixed; a long label wraps inside it rather than spilling over the list.
+        className="h-auto max-w-full whitespace-normal py-1.5 text-center"
+      >
         {t('hub:foundryLocal.installEngine')}
       </Button>
     )
   }
   if (verdict.verdict === 'accelerator-not-prepared') {
     return (
-      <Button size="sm" variant="outline" onClick={toProviderPage}>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={toProviderPage}
+        // The column is fixed; a long label wraps inside it rather than spilling over the list.
+        className="h-auto max-w-full whitespace-normal py-1.5 text-center"
+      >
         {t('hub:foundryLocal.prepareAccelerator')}
       </Button>
     )
@@ -282,7 +297,7 @@ function DownloadButton({
   }, [downloadId, fields, variant, serviceHub, t])
 
   return (
-    <div className="flex max-w-60 flex-col items-end gap-2">
+    <div className="flex w-full flex-col items-end gap-2">
       {isDownloading ? (
         <Button
           type="button"
