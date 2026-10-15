@@ -32,6 +32,7 @@ export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
   'atomic-prism',
   'mlx',
   'sd-cpp',
+  'foundry-local',
   'tensorrt-llm',
   'vllm',
   'sglang',
