@@ -1,0 +1,38 @@
+{
+ "_note": "Recorded 2026-10-16 from GET https://eastus.api.azureml.ms/modelregistry/v1.0/registry/models/nonazureaccount?assetId=azureml://registries/azureml/models/qwen3-0.6b-generic-gpu/versions/2; modelEntity trimmed to the fields the app reads, the SAS signature redacted.",
+ "blobSasUri": "https://amlwlrt4use01.blob.core.windows.net/azureml-47d2813d-bdb5-5bdd-a3c0-b7db6c40aef9?skoid=ae296635-a062-480a-961d-a5eb81651294&sktid=33e01921-4d64-4f8c-a055-5bdaffd5e33d&skt=2026-10-15T14%3A41%3A43Z&ske=2026-10-16T06%3A51%3A43Z&sks=b&skv=2025-01-05&sv=2025-01-05&st=2026-10-15T22%3A01%3A55Z&se=2026-10-16T06%3A11%3A55Z&sr=c&sp=rl&sig=REDACTED",
+ "blobManifestDigest": "7KDBKC5Rjq6NZcEkVAzT7IykmgzHzLw3farBKDOcDk/CjUk78EOHXpIDzJuuCvIF6psk1Hg53l7JgD3d/9/dUw==",
+ "modelEntity": {
+  "assetId": "azureml://registries/azureml/models/qwen3-0.6b-generic-gpu/versions/2",
+  "name": "qwen3-0.6b-generic-gpu",
+  "version": 2,
+  "kvTags": {
+   "directoryPath": "v2",
+   "toolResponseStart": "<tool_response>",
+   "capabilities": "reasoning,tool-calling",
+   "contextLength": "40960",
+   "toolResponseEnd": "</tool_response>",
+   "minFLVersion": "0.0.0",
+   "foundryLocal": "",
+   "licenseDescription": "This model is provided under the License Terms available at <https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/LICENSE>.",
+   "task": "chat-completion",
+   "inputModalities": "text",
+   "alias": "qwen3-0.6b",
+   "toolRegisterStart": "<tools>",
+   "disable-maap": "true",
+   "reasoningEnd": "</think>",
+   "promptTemplate": "{\"system\": \"<|im_start|>system\\n{Content}<|im_end|>\", \"user\": \"<|im_start|>user\\n{Content}<|im_end|>\", \"assistant\": \"<|im_start|>assistant\\n{Content}<|im_end|>\", \"prompt\": \"<|im_start|>user\\n{Content}<|im_end|>\\n<|im_start|>assistant\"}",
+   "reasoningStart": "<think>",
+   "supportsReasoning": "true",
+   "toolCallEnd": "</tool_call>",
+   "toolRegisterEnd": "</tools>",
+   "toolCallStart": "<tool_call>",
+   "maxOutputTokens": "2048",
+   "license": "apache-2.0",
+   "supportsToolCalling": "true",
+   "deploymentOptions": "Foundry Local on Devices",
+   "outputModalities": "text",
+   "author": "Microsoft"
+  }
+ }
+}

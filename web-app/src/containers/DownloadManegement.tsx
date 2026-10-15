@@ -59,6 +59,7 @@ import {
   isEmbeddingDownloadTaskId,
 } from '@/lib/embedding/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
+import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -192,6 +193,7 @@ export function DownloadManagement() {
     // shows the model's name instead.
     const rowName = (id: string) =>
       (isManagedDownloadId(id) && downloadOriginByModelId[id]) ||
+      (isFoundryLocalDownloadId(id) && downloadOriginByModelId[id]) ||
       (isEmbeddingDownloadTaskId(id) &&
         embeddingCatalog.models.find(
           (model) => embeddingDownloadTaskId(model.id) === id
@@ -792,7 +794,8 @@ export function DownloadManagement() {
   // not from here.
   // Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
   // Managed models are cancel-only too: Download again in the Hub resumes
-  // from the files on disk (change add-tensorrt-llm-model-hub, design D6).
+  // from the files on disk (change add-tensorrt-llm-model-hub, design D6);
+  // so are Foundry Local variants (change add-foundry-local).
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&
@@ -801,7 +804,8 @@ export function DownloadManagement() {
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&
-    !isManagedDownloadId(id)
+    !isManagedDownloadId(id) &&
+    !isFoundryLocalDownloadId(id)
 
   const handlePauseDownload = useCallback(
     (download: { id: string; name: string }) => {

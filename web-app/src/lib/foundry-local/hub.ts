@@ -9,7 +9,10 @@
 
 import type { FoundryLocalModel } from '@/services/foundry-local/curated'
 import type { CatalogModel as MicrosoftModel } from '@/services/foundry-local/microsoft-catalog'
-import type { FoundryLocalHubModel } from '@/services/foundry-local/types'
+import type {
+  FoundryLocalHubModel,
+  FoundryLocalHubVariant,
+} from '@/services/foundry-local/types'
 import type { CatalogModel } from '@/services/models/types'
 
 export const FOUNDRY_LOCAL_HUB_PREFIX = 'foundry-local/'
@@ -84,4 +87,20 @@ export function foundryLocalMatches(model: CatalogModel, query: string): boolean
   if (words.length === 0) return true
   const text = `${fields.model_id} ${fields.name} ${fields.summary}`.toLowerCase()
   return words.every((word) => text.includes(word))
+}
+
+const ACCELERATOR_LABELS: Record<FoundryLocalHubVariant['execution_provider'], string> = {
+  cpu: 'CPU',
+  cuda: 'CUDA',
+  webgpu: 'WebGPU',
+  openvino: 'OpenVINO',
+  qnn: 'QNN',
+  vitisai: 'Vitis AI',
+}
+
+/** How a variant is named: its accelerator, and the device where the accelerator has more than one. */
+export function variantLabel(variant: Pick<FoundryLocalHubVariant, 'execution_provider' | 'device'>): string {
+  const accelerator = ACCELERATOR_LABELS[variant.execution_provider]
+  const showDevice = variant.device === 'npu' || (variant.execution_provider === 'openvino' && variant.device === 'gpu')
+  return showDevice ? `${accelerator} ${variant.device.toUpperCase()}` : accelerator
 }
