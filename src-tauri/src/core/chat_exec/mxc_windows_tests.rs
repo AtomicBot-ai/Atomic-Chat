@@ -208,3 +208,64 @@ async fn a_command_writes_into_a_granted_user_folder() {
     assert!(output.stdout.contains("done"), "{}", explain(&output));
     assert!(desktop.join("note.txt").is_file(), "{}", explain(&output));
 }
+
+/// `dir` queries volume/ancestor metadata before listing the granted folder.
+/// Enumeration must fix that without allowing reads or writes next to it.
+#[tokio::test]
+#[ignore]
+async fn lists_a_granted_folder_without_opening_its_neighbors() {
+    let scratch = tempfile::tempdir().unwrap();
+    let workdir = scratch.path().join("chat");
+    let downloads = scratch.path().join("Downloads with spaces");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::create_dir_all(&downloads).unwrap();
+    std::fs::write(downloads.join("sentinel.txt"), "ATOMIC-GRANTED-CANARY").unwrap();
+    let secret = scratch.path().join("outside.txt");
+    std::fs::write(&secret, "ATOMIC-SECRET-CANARY").unwrap();
+    let escape = scratch.path().join("escape.txt");
+
+    let listed = run_sandboxed_with(
+        &workdir,
+        &[downloads.clone()],
+        &format!(
+            "dir \"{}\" && type \"{}\\sentinel.txt\"",
+            downloads.display(),
+            downloads.display()
+        ),
+        20_000,
+    )
+    .await;
+    assert_eq!(listed.exit_code, Some(0), "{}", explain(&listed));
+    assert!(
+        listed.stdout.contains("sentinel.txt"),
+        "{}",
+        explain(&listed)
+    );
+    assert!(
+        listed.stdout.contains("ATOMIC-GRANTED-CANARY"),
+        "{}",
+        explain(&listed)
+    );
+    assert!(!listed.stdout.contains('\u{fffd}'), "{}", explain(&listed));
+
+    let denied = run_sandboxed_with(
+        &workdir,
+        &[downloads],
+        &format!(
+            "type \"{}\" & echo escape>\"{}\"",
+            secret.display(),
+            escape.display()
+        ),
+        20_000,
+    )
+    .await;
+    assert_ne!(denied.exit_code, Some(0), "{}", explain(&denied));
+    assert!(
+        !denied.stdout.contains("ATOMIC-SECRET-CANARY"),
+        "{}",
+        explain(&denied)
+    );
+    assert!(!denied.stderr.is_empty(), "{}", explain(&denied));
+    assert!(!denied.stderr.contains('\u{fffd}'), "{}", explain(&denied));
+    assert!(!escape.exists(), "{}", explain(&denied));
+}

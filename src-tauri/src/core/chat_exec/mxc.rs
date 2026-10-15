@@ -49,6 +49,13 @@ pub(crate) struct PolicyInput<'a> {
 /// reach the clipboard or other windows.
 pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
     let writable = writable_roots(input.workdir, input.user_folders);
+    let readonly = readonly_roots(input.readonly_paths, &writable);
+    let enumerate = ancestor_directories(
+        writable
+            .iter()
+            .copied()
+            .chain(readonly.iter().map(Path::new)),
+    );
     json!({
         "version": CONTRACT_VERSION,
         "containerId": input.container_id,
@@ -67,7 +74,7 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
         },
         "filesystem": {
             "readwritePaths": writable.iter().map(|path| path_text(path)).collect::<Vec<_>>(),
-            "readonlyPaths": readonly_roots(input.readonly_paths, &writable),
+            "readonlyPaths": readonly,
             "deniedPaths": [],
         },
         "fallback": { "allowDaclMutation": false },
@@ -81,8 +88,29 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
         "processContainer": {
             "leastPrivilege": false,
             "capabilities": ["internetClient"],
+            "filesystem": { "enumeratePaths": enumerate },
         },
     })
+}
+
+/// `dir` and runtime path resolution query ancestors (including the volume
+/// root) even when the target folder itself is granted. Enumeration permits
+/// those queries without exposing file contents. Never turn these ancestors
+/// into read-only grants: that can expose unrelated files on the same volume.
+fn ancestor_directories<'a>(paths: impl Iterator<Item = &'a Path>) -> Vec<String> {
+    let mut ancestors = Vec::new();
+    for path in paths {
+        for parent in path.ancestors().skip(1).filter(|path| path.is_absolute()) {
+            let parent = path_text(parent);
+            if !ancestors
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(&parent))
+            {
+                ancestors.push(parent);
+            }
+        }
+    }
+    ancestors
 }
 
 /// The chat folder first, then each user folder that is not already inside
@@ -241,7 +269,7 @@ pub(crate) fn is_timeout(error: &MxcError) -> bool {
 }
 
 /// `wxc-exec --probe` prints which isolation tier this machine would get.
-/// Only the base container qualifies.
+/// Only the base container with native directory enumeration qualifies.
 pub(crate) fn check_probe_output(stdout: &str) -> Result<(), String> {
     let value: Value = serde_json::from_str(stdout.trim())
         .map_err(|_| "The Windows sandbox probe returned no readable answer".to_owned())?;
@@ -250,6 +278,12 @@ pub(crate) fn check_probe_output(stdout: &str) -> Result<(), String> {
         .and_then(Value::as_str)
         .unwrap_or_default();
     if normalized(tier) == "basecontainer" {
+        if value["probes"]["baseContainerSupportsEnumeratePaths"].as_bool() != Some(true) {
+            return Err(
+                "This Windows does not support the sandbox's directory-enumeration permissions. Update Windows to use sandboxed chat commands."
+                    .into(),
+            );
+        }
         return Ok(());
     }
     let warning = value
@@ -265,8 +299,8 @@ pub(crate) fn check_probe_output(stdout: &str) -> Result<(), String> {
     })
 }
 
-/// Probe the executor, then prove it: a run must write inside its folder and
-/// fail to read a file next to it.
+/// Probe the executor, then prove it: a run must list and write inside its
+/// folder and fail to read a file next to it.
 #[cfg(windows)]
 pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String> {
     use std::time::Duration;
@@ -293,7 +327,8 @@ pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String>
         let system_root = system_root();
         let cmd = system_root.join("System32").join("cmd.exe");
         let script = format!(
-            "echo inside>inside.txt && (type \"{}\" >nul 2>&1 && echo ATOMIC-LEAK || echo ATOMIC-DENIED)",
+            "dir \"{}\" >nul && echo inside>inside.txt && (type \"{}\" >nul 2>&1 && echo ATOMIC-LEAK || echo ATOMIC-DENIED)",
+            workdir.display(),
             canary.display()
         );
         let command_line = format!("{} {}", quote_windows_arg(&cmd.display().to_string()), cmd_arguments(&script));
@@ -591,7 +626,9 @@ mod tests {
 
     #[test]
     fn accepts_only_the_base_container_tier() {
-        assert!(check_probe_output(r#"{"tier":"base-container","warnings":[]}"#).is_ok());
+        assert!(check_probe_output(
+            r#"{"tier":"base-container","probes":{"baseContainerSupportsEnumeratePaths":true},"warnings":[]}"#
+        ).is_ok());
         let dacl = check_probe_output(
             r#"{"tier":"appcontainer-dacl","warnings":["run wxc-host-prep prepare-system-drive"]}"#,
         )
@@ -599,6 +636,59 @@ mod tests {
         assert!(dacl.contains("appcontainer-dacl"), "{dacl}");
         assert!(dacl.contains("prepare-system-drive"), "{dacl}");
         assert!(check_probe_output("not json").is_err());
+    }
+
+    #[test]
+    fn requires_enumeration_support_before_offering_the_sandbox() {
+        for probe in [
+            r#"{"tier":"base-container"}"#,
+            r#"{"tier":"base-container","probes":{"baseContainerSupportsEnumeratePaths":false}}"#,
+        ] {
+            assert!(check_probe_output(probe)
+                .unwrap_err()
+                .contains("directory-enumeration"));
+        }
+    }
+
+    #[test]
+    fn grants_ancestors_only_enumeration_not_file_access() {
+        let base = std::env::temp_dir();
+        let chat = base.join("chat");
+        let downloads = base.join("profile").join("Downloads");
+        let runtime = base.join("tools").join("python");
+        let policy = build_policy(&PolicyInput {
+            container_id: "atomic-1",
+            command_line: "cmd",
+            workdir: &chat,
+            user_folders: &[downloads.clone()],
+            env: &[],
+            readonly_paths: &[runtime.clone()],
+            timeout_ms: 1,
+        });
+        assert_eq!(
+            policy["filesystem"]["readwritePaths"],
+            json!([chat, downloads])
+        );
+        assert_eq!(policy["filesystem"]["readonlyPaths"], json!([runtime]));
+        let enumerate = policy["processContainer"]["filesystem"]["enumeratePaths"]
+            .as_array()
+            .unwrap();
+        for path in [&chat, &downloads, &runtime] {
+            for parent in path.ancestors().skip(1) {
+                assert!(
+                    enumerate.contains(&json!(parent)),
+                    "missing {}",
+                    parent.display()
+                );
+            }
+        }
+        let mut unique = enumerate
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), enumerate.len());
     }
 
     #[test]

@@ -19,6 +19,7 @@ use crate::core::agent::tools::{
     configure_process_tree, terminate_process_tree, MAX_TOOL_OUTPUT_CHARS,
 };
 use crate::core::process_env::sanitize_tokio_command;
+use crate::core::system::commands::decode_console_bytes;
 
 /// Bytes kept from the start and from the end of each stream. What falls in
 /// between is counted, not stored, so a runaway `yes` costs no memory.
@@ -175,7 +176,7 @@ impl Capture {
         if self.dropped == 0 {
             let mut bytes = self.head;
             bytes.extend_from_slice(&tail);
-            let text = String::from_utf8_lossy(&bytes).into_owned();
+            let text = decode_console_bytes(&bytes);
             let total = text.chars().count();
             if total <= max_chars {
                 return (text, false);
@@ -190,8 +191,8 @@ impl Capture {
             );
         }
         let half = max_chars / 2;
-        let head = String::from_utf8_lossy(&self.head);
-        let tail_text = String::from_utf8_lossy(&tail);
+        let head = decode_truncated_part(&self.head, true);
+        let tail_text = decode_truncated_part(&tail, false);
         let start: String = head.chars().take(half).collect();
         let tail_chars = tail_text.chars().count();
         let end: String = tail_text
@@ -208,6 +209,25 @@ impl Capture {
     }
 }
 
+/// A capture boundary can cut a UTF-8 character. That is not evidence of OEM
+/// output: retain UTF-8 decoding when only the boundary bytes are incomplete.
+fn decode_truncated_part(bytes: &[u8], is_head: bool) -> String {
+    let start = if is_head {
+        0
+    } else {
+        bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte & 0xc0 == 0x80)
+            .count()
+    };
+    match std::str::from_utf8(&bytes[start..]) {
+        Ok(_) => String::from_utf8_lossy(bytes).into_owned(),
+        Err(error) if error.error_len().is_none() => String::from_utf8_lossy(bytes).into_owned(),
+        Err(_) => decode_console_bytes(bytes),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,6 +237,28 @@ mod tests {
         let mut capture = Capture::default();
         capture.push(b"hello\n");
         assert_eq!(capture.render(100), ("hello\n".to_owned(), false));
+    }
+
+    #[test]
+    fn preserves_utf8_output_split_across_reads() {
+        let text = "Привет, 日本語\n";
+        let mut capture = Capture::default();
+        for byte in text.as_bytes() {
+            capture.push(&[*byte]);
+        }
+        assert_eq!(capture.render(100), (text.to_owned(), false));
+    }
+
+    #[test]
+    fn keeps_utf8_when_the_bounded_capture_cuts_a_character() {
+        // Each character is three bytes, so neither 64 KiB boundary is aligned.
+        let text = "日".repeat(HEAD_BYTES);
+        let mut capture = Capture::default();
+        capture.push(text.as_bytes());
+        let (rendered, truncated) = capture.render(100);
+        assert!(truncated);
+        assert!(rendered.starts_with(&"日".repeat(50)));
+        assert!(rendered.ends_with(&"日".repeat(50)));
     }
 
     #[test]
