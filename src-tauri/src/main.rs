@@ -7,25 +7,6 @@ fn main() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    // WebKitGTK (2.50.2+) refuses media URLs outside blob/data/file/http(s)
-    // before building a pipeline, so a clip served as `asset://localhost/…`
-    // fails with a bare FormatError. The web process inherits this variable.
-    #[cfg(target_os = "linux")]
-    {
-        let key = "WEBKIT_GST_ALLOWED_URI_PROTOCOLS";
-        match std::env::var(key) {
-            Ok(existing) if !existing.is_empty() => {
-                if !existing
-                    .split(',')
-                    .any(|p| p.trim().eq_ignore_ascii_case("asset"))
-                {
-                    std::env::set_var(key, format!("{},asset", existing));
-                }
-            }
-            _ => std::env::set_var(key, "asset"),
-        }
-    }
-
     // The AppImage carries its own GStreamer, older than a rolling distro's.
     // Both default to ~/.cache/gstreamer-1.0/registry.<arch>.bin and rewrite
     // each other's cache in their own format, so ours gets a file of its own.

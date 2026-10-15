@@ -13,7 +13,6 @@ import {
 import { notifyWhenAway } from '@/lib/notifications'
 import { capturePosterForClip, PosterBackfillQueue } from '@/lib/video/poster'
 import { validateVideoRequest } from '@/lib/video/validate'
-import { webviewAutoloadsVideo } from '@/lib/video/webview-playback'
 import type {
   DiffusionError,
   DiffusionEvent,
@@ -109,11 +108,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
     },
   })
 
-  /** Queue a poster, unless the webview may not load clips unasked (Linux). */
-  const requestPoster = (item: GalleryVideoItem) => {
-    if (!webviewAutoloadsVideo()) return
-    posters.request(item)
-  }
+  const requestPoster = (item: GalleryVideoItem) => posters.request(item)
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<VideoJob> =>

@@ -13,6 +13,12 @@ const files = vi.hoisted(() => ({
   })),
 }))
 vi.mock('@/lib/readFileBytes', () => ({ readFileBytes: files.readFileBytes }))
+// Linux's player reads no asset:// (WebKitGTK); everywhere else it does.
+const playback = vi.hoisted(() => ({ readsAsset: true }))
+vi.mock('@/lib/video/webview-playback', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/video/webview-playback')>()),
+  webviewReadsAssetMedia: () => playback.readsAsset,
+}))
 
 import {
   capturePosterForClip,
@@ -176,6 +182,59 @@ describe('capturePosterPng', () => {
 describe('capturePosterForClip', () => {
   beforeEach(() => {
     files.readFileBytes.mockClear()
+    playback.readsAsset = true
+  })
+
+  it('captures from a blob: URL of the bytes where the player reads no asset:// (Linux), and lets it go', async () => {
+    playback.readsAsset = false
+    const originalCreateUrl = URL.createObjectURL
+    const originalRevoke = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:clip')
+    URL.revokeObjectURL = vi.fn()
+    const sources: string[] = []
+    const crossOrigins: Array<string | null> = []
+    const originalCreate = document.createElement.bind(document)
+    const spy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tag: string) => {
+        const element = originalCreate(tag)
+        if (tag === 'video') {
+          const media = element as HTMLVideoElement
+          media.load = vi.fn()
+          Object.defineProperty(media, 'src', {
+            set: (value: string) => {
+              sources.push(value)
+              crossOrigins.push(media.crossOrigin)
+              queueMicrotask(() =>
+                media.dispatchEvent(new Event('loadeddata'))
+              )
+            },
+            get: () => '',
+          })
+        }
+        if (tag === 'canvas') {
+          const canvas = element as HTMLCanvasElement
+          canvas.getContext = vi.fn(() => ({
+            drawImage: vi.fn(),
+          })) as unknown as HTMLCanvasElement['getContext']
+          canvas.toDataURL = vi.fn(() => 'data:image/png;base64,QUJD')
+        }
+        return element
+      })
+
+    await expect(capturePosterForClip('/data/videos/a.webm')).resolves.toBe(
+      'QUJD'
+    )
+    expect(files.readFileBytes).toHaveBeenCalledWith('/data/videos/a.webm', {
+      maxBytes: MAX_POSTER_SOURCE_BYTES,
+    })
+    expect(sources).toEqual(['blob:clip'])
+    expect(crossOrigins).toEqual([null])
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:clip')
+
+    spy.mockRestore()
+    URL.createObjectURL = originalCreateUrl
+    URL.revokeObjectURL = originalRevoke
   })
 
   it('goes through the asset protocol, and never reads the bytes when the canvas stays clean', async () => {

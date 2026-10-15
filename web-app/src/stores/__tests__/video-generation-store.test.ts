@@ -23,11 +23,6 @@ vi.mock('@/lib/video/poster', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/video/poster')>()),
   capturePosterForClip: poster.capture,
 }))
-const playback = vi.hoisted(() => ({ autoloads: true }))
-vi.mock('@/lib/video/webview-playback', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/video/webview-playback')>()),
-  webviewAutoloadsVideo: () => playback.autoloads,
-}))
 const notifications = vi.hoisted(() => ({ notify: vi.fn() }))
 vi.mock('@/lib/notifications', () => ({
   notifyWhenAway: notifications.notify,
@@ -64,7 +59,6 @@ describe('video-generation-store', () => {
     captured.events.length = 0
     poster.capture.mockClear()
     poster.capture.mockResolvedValue('UE5H')
-    playback.autoloads = true
     notifications.notify.mockClear()
     resetVideoGenerationForTests()
     useVideoGalleryStore.getState().reset()
@@ -502,15 +496,5 @@ describe('video-generation-store', () => {
       warn.mockRestore()
     })
 
-    it('makes none where the webview may not load clips unasked (Linux)', async () => {
-      playback.autoloads = false
-      useVideoGenerationStore
-        .getState()
-        .requestPoster(makeVideoItem({ id: 'old', posterPath: null }))
-      await flush()
-      expect(poster.capture).not.toHaveBeenCalled()
-      expect(fake.setVideoPoster).not.toHaveBeenCalled()
-      expect(useVideoGenerationStore.getState().posterFailedIds).toEqual([])
-    })
   })
 })

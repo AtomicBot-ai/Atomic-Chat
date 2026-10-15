@@ -12,7 +12,11 @@
 import { convertFileSrc } from '@tauri-apps/api/core'
 
 import { readFileBytes } from '@/lib/readFileBytes'
-import { clipMediaType } from '@/lib/video/webview-playback'
+import {
+  clipBlobUrl,
+  clipMediaType,
+  webviewReadsAssetMedia,
+} from '@/lib/video/webview-playback'
 import type { GalleryVideoItem } from '@/services/diffusion/types'
 
 /** The longer side of a poster, in pixels. Matches the image thumbnails. */
@@ -171,11 +175,23 @@ export function capturePosterPng(
  * asset response without CORS headers before decoding a byte, which is the
  * same clip the viewer plays without one. A clip that will not decode from
  * the data URL either is the clip's own fault.
+ *
+ * Where the player cannot read asset:// (Linux), from a blob: URL of the
+ * bytes only: a data: URL needs GStreamer's `dataurisrc`, which the AppImage
+ * does not carry (it is in gst-plugins-bad).
  */
 export async function capturePosterForClip(
   path: string,
   options: CapturePosterOptions = {}
 ): Promise<string> {
+  if (!webviewReadsAssetMedia()) {
+    const url = await clipBlobUrl(path, MAX_POSTER_SOURCE_BYTES)
+    try {
+      return await capturePosterPng(url, { ...options, crossOrigin: null })
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
   try {
     return await capturePosterPng(convertFileSrc(path), options)
   } catch (error) {

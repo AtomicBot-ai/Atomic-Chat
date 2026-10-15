@@ -36,8 +36,10 @@ import {
 } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import {
+  clipBlobUrl,
   webviewAutoloadsVideo,
   webviewCanPlay,
+  webviewReadsAssetMedia,
 } from '@/lib/video/webview-playback'
 import { useVideoGalleryStore } from '@/stores/video-gallery-store'
 import { VideoRecipePopover } from './VideoRecipePopover'
@@ -96,6 +98,21 @@ export const VideoViewer = memo(function VideoViewer({
   const [unplayableId, setUnplayableId] = useState<string | null>(null)
   // The clip whose Play was pressed, where the player is not mounted unasked.
   const [armedId, setArmedId] = useState<string | null>(null)
+  // Where the player cannot read asset:// (Linux): the clip as a blob: URL,
+  // read when Play is pressed and revoked when another clip replaces it.
+  const [blobSrc, setBlobSrc] = useState<{ id: string; url: string } | null>(
+    null
+  )
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!blobSrc) return
+    return () => URL.revokeObjectURL(blobSrc.url)
+  }, [blobSrc])
+  // A clip can be hundreds of MB: let it go as soon as another is shown.
+  useEffect(() => {
+    if (blobSrc && blobSrc.id !== item?.id) setBlobSrc(null)
+  }, [blobSrc, item?.id])
 
   const requestDelete = useCallback(() => {
     if (!item) return
@@ -133,16 +150,34 @@ export const VideoViewer = memo(function VideoViewer({
     )
   }
 
-  const src = convertFileSrc(item.path)
+  const src =
+    blobSrc?.id === item.id ? blobSrc.url : convertFileSrc(item.path)
   const poster = item.posterPath ? convertFileSrc(item.posterPath) : undefined
   const unplayable = unplayableId === item.id
   const autoloads = webviewAutoloadsVideo()
   const armed = autoloads || armedId === item.id
 
   const play = () => {
+    const { id, path } = item
     // Asking the registry builds no pipeline; a clip it cannot demux would hang.
-    if (webviewCanPlay(item.path)) setArmedId(item.id)
-    else setUnplayableId(item.id)
+    if (!webviewCanPlay(path)) {
+      setUnplayableId(id)
+      return
+    }
+    if (webviewReadsAssetMedia()) {
+      setArmedId(id)
+      return
+    }
+    setLoadingId(id)
+    clipBlobUrl(path)
+      .then((url) => {
+        setBlobSrc({ id, url })
+        setArmedId(id)
+      })
+      .catch(() => setUnplayableId(id))
+      .finally(() =>
+        setLoadingId((current) => (current === id ? null : current))
+      )
   }
   // A provider's file whose header the core could not read has no size: 16:9 frames it.
   const [frameWidth, frameHeight] =
@@ -293,6 +328,7 @@ export const VideoViewer = memo(function VideoViewer({
                 size="icon"
                 className="absolute rounded-full bg-background/80 backdrop-blur"
                 aria-label={t('videos:viewer.play')}
+                disabled={loadingId === item.id}
                 onClick={play}
                 data-testid="video-play"
               >
