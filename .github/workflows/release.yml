@@ -1572,6 +1572,10 @@ jobs:
       - name: Install Linux system dependencies
         # WebKitGTK 4.1 stack + Tauri AppImage build deps. Ubuntu 22.04
         # ships `libwebkit2gtk-4.1-dev` as expected by Tauri 2.x.
+        # The GStreamer plugins are what `bundleMediaFramework` copies into
+        # the AppImage: without them on this machine it ships the Ubuntu
+        # libgstreamer alone, which looks for plugins under Ubuntu's path and
+        # finds none on Arch/Fedora, so <video> hangs (tauri-apps/tauri#4642).
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -1588,6 +1592,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libjavascriptcoregtk-4.1-dev \
             libasound2-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
             pkg-config \
             patchelf \
             squashfs-tools \
@@ -1905,6 +1911,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libjavascriptcoregtk-4.1-dev \
             libasound2-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
             pkg-config \
             patchelf \
             squashfs-tools \
