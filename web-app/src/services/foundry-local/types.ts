@@ -92,8 +92,11 @@ export interface FoundryLocalCheckResult {
   accelerator: string | null
 }
 
-/** Where a Model Hub entry of Foundry Local comes from. */
-export type FoundryLocalOrigin = 'curated' | 'microsoft'
+/**
+ * Where a Model Hub entry of Foundry Local comes from: conf's curated list, Microsoft's catalog, or —
+ * in "Downloaded" — a variant on disk, known only by its id and the name its `model.yml` gives it.
+ */
+export type FoundryLocalOrigin = 'curated' | 'microsoft' | 'installed'
 
 /**
  * A variant as the Hub card and the installer use it, whichever list it came from. A curated

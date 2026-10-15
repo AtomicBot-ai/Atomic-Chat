@@ -29,6 +29,11 @@ export const LLAMACPP_PROVIDERS = [
   'atomic-prism',
 ] as const
 export const MLX_PROVIDER = 'mlx'
+/**
+ * Foundry Local variants (change add-foundry-local): their own folders under
+ * `<data>/foundry-local/models`, listed by variant id. Kept apart from the GGUF and MLX ids.
+ */
+export const FOUNDRY_LOCAL_PROVIDER = 'foundry-local'
 /** Every provider whose models the GGUF and MLX rows of the Hub may claim. */
 export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const
 /**
@@ -50,7 +55,7 @@ export function managedProviderIds(): string[] {
 const sanitizeMlxId = (id: string): string =>
   id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 
-type InstalledKind = 'gguf' | 'mlx' | 'managed'
+type InstalledKind = 'gguf' | 'mlx' | 'managed' | 'foundry-local'
 type InstalledModel = { model: Model; kind: InstalledKind }
 
 /**
@@ -61,9 +66,11 @@ type InstalledModel = { model: Model; kind: InstalledKind }
 function collectLocalModels(providers: readonly ModelProvider[]): {
   local: Map<string, InstalledModel>
   managed: Map<string, InstalledModel>
+  foundry: Map<string, InstalledModel>
 } {
   const local = new Map<string, InstalledModel>()
   const managed = new Map<string, InstalledModel>()
+  const foundry = new Map<string, InstalledModel>()
 
   const add = (
     out: Map<string, InstalledModel>,
@@ -85,8 +92,9 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   for (const name of LLAMACPP_PROVIDERS) add(local, modelsOf(name), 'gguf')
   add(local, modelsOf(MLX_PROVIDER), 'mlx')
   for (const name of managedProviderIds()) add(managed, modelsOf(name), 'managed')
+  add(foundry, modelsOf(FOUNDRY_LOCAL_PROVIDER), 'foundry-local')
 
-  return { local, managed }
+  return { local, managed, foundry }
 }
 
 /**
@@ -165,6 +173,24 @@ function synthesizeEntry(id: string, installed: InstalledModel): CatalogModel {
     is_mlx: installed.kind === 'mlx',
   }
 
+  // A variant on disk: the card offers "New chat" and delete for it, nothing else.
+  if (installed.kind === 'foundry-local') {
+    return {
+      model_name: `foundry-local/${id}`,
+      description: '',
+      downloads: 0,
+      is_foundry_local: true,
+      foundry_local: {
+        origin: 'installed',
+        model_id: id,
+        name: installed.model.name || id,
+        summary: '',
+        license: null,
+        variants: [],
+      },
+    }
+  }
+
   // The id is the Hugging Face repository: the card reads its README and asks the core again.
   if (installed.kind === 'managed') {
     return {
@@ -212,13 +238,15 @@ export function collectInstalledModels(
   catalog: readonly CatalogModel[],
   providers: readonly ModelProvider[]
 ): CatalogModel[] {
-  const { local, managed } = collectLocalModels(providers)
-  if (local.size === 0 && managed.size === 0) return []
+  const { local, managed, foundry } = collectLocalModels(providers)
+  if (local.size === 0 && managed.size === 0 && foundry.size === 0) return []
 
   const claimed = { local: new Set<string>(), managed: new Set<string>() }
   const rows: CatalogModel[] = []
 
   for (const entry of catalog) {
+    // A Foundry Local variant is never claimed by a catalog entry: it is listed by its own row.
+    if (entry.is_foundry_local) continue
     const [installed, taken] = entry.is_managed
       ? [managed, claimed.managed]
       : [local, claimed.local]
@@ -231,6 +259,7 @@ export function collectInstalledModels(
   for (const [installed, taken] of [
     [local, claimed.local],
     [managed, claimed.managed],
+    [foundry, new Set<string>()],
   ] as const) {
     for (const [id, model] of installed) {
       if (taken.has(id)) continue

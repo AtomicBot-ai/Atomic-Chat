@@ -284,4 +284,42 @@ describe('the Foundry Local extension', () => {
       code: 'FOUNDRY_LOCAL_ACCELERATOR_NOT_PREPARED',
     })
   })
+
+  it('deletes a variant’s folder whole, unloading it first, and says how much it freed', async () => {
+    const calls = core(
+      {
+        'GET /sessions': () => ({
+          sessions: [{ provider: 'foundry-local', model_id: 'q', port: 1, pid: 2, api_key: 'k' }],
+        }),
+        'POST /models/foundry-local/q/unload': () => ({ success: true }),
+      },
+      { [`${ROOT}/q/model.yml`]: { model_path: 'foundry-local/models/q', name: 'Q', size_bytes: 4_000_000_000 } }
+    )
+    tree({ [ROOT]: [`${ROOT}/q`], [`${ROOT}/q`]: [] }, [`${ROOT}/q/model.yml`])
+
+    const report = await new FoundryLocalExtension().deleteWithReport('q')
+
+    expect(report).toEqual({ freedBytes: 4_000_000_000 })
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /sessions',
+      'POST /models/foundry-local/q/unload',
+    ])
+    expect(fsMock.rm).toHaveBeenCalledWith(`${ROOT}/q`)
+  })
+
+  it('touches no file when the loaded variant would not unload', async () => {
+    core(
+      {
+        'GET /sessions': () => ({
+          sessions: [{ provider: 'foundry-local', model_id: 'q', port: 1, pid: 2, api_key: 'k' }],
+        }),
+        'POST /models/foundry-local/q/unload': () => ({ success: false, error: 'host did not exit' }),
+      },
+      { [`${ROOT}/q/model.yml`]: { model_path: 'foundry-local/models/q', name: 'Q', size_bytes: 1 } }
+    )
+    tree({ [ROOT]: [`${ROOT}/q`], [`${ROOT}/q`]: [] }, [`${ROOT}/q/model.yml`])
+
+    await expect(new FoundryLocalExtension().deleteWithReport('q')).rejects.toThrow(/could not stop q/)
+    expect(fsMock.rm).not.toHaveBeenCalled()
+  })
 })

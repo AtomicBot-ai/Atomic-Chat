@@ -207,4 +207,29 @@ describe('FoundryLocalDownloadOptions', () => {
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     expect(within(screen.getByTestId('foundry-local-actions')).getByRole('button', { name: /hub:newChat|common:newChat/ })).toBeInTheDocument()
   })
+
+  it('offers chat and delete, and asks nothing, for a variant found on disk in Downloaded', () => {
+    const installed: CatalogModel = {
+      model_name: 'foundry-local/qwen3-4b-generic-gpu',
+      description: '',
+      downloads: 0,
+      is_foundry_local: true,
+      foundry_local: {
+        origin: 'installed',
+        model_id: 'qwen3-4b-generic-gpu',
+        name: 'Qwen3 4B (WebGPU)',
+        summary: '',
+        license: null,
+        variants: [],
+      },
+    }
+
+    render(<FoundryLocalDownloadOptions model={installed} platform="macos-arm64" />)
+
+    expect(screen.getByText('Qwen3 4B (WebGPU)')).toBeInTheDocument()
+    const actions = screen.getByTestId('foundry-local-actions')
+    expect(within(actions).getByRole('button', { name: 'hub:newChat' })).toBeInTheDocument()
+    expect(within(actions).getByRole('button', { name: 'common:deleteModel.delete' })).toBeInTheDocument()
+    expect(core.checkFoundryLocalVariant).not.toHaveBeenCalled()
+  })
 })
