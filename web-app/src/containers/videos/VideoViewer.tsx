@@ -7,6 +7,7 @@ import {
   IconExternalLink,
   IconFolderOpen,
   IconMovie,
+  IconPlayerPlayFilled,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -34,6 +35,10 @@ import {
   type GalleryVideoItem,
 } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import {
+  webviewAutoloadsVideo,
+  webviewCanPlay,
+} from '@/lib/video/webview-playback'
 import { useVideoGalleryStore } from '@/stores/video-gallery-store'
 import { VideoRecipePopover } from './VideoRecipePopover'
 
@@ -61,6 +66,8 @@ const isEditableTarget = (target: EventTarget | null) => {
  * copy, reveal in the file manager, delete. The player is the browser's own
  * (controls, sound, fullscreen), fed over the asset protocol; a clip the
  * webview cannot decode gets a button that opens it in the system player.
+ * Where the webview may not load clips unasked (Linux), the player is mounted
+ * only once Play is pressed; until then the frame shows the poster.
  *
  * Arrow keys step through the gallery and Delete opens the confirmation —
  * unless focus is in a text field, where those keys mean what they always do.
@@ -87,6 +94,8 @@ export const VideoViewer = memo(function VideoViewer({
   const remoteGroups = useRemoteMediaGroups('video')
   const [pendingDelete, setPendingDelete] = useState<string[]>([])
   const [unplayableId, setUnplayableId] = useState<string | null>(null)
+  // The clip whose Play was pressed, where the player is not mounted unasked.
+  const [armedId, setArmedId] = useState<string | null>(null)
 
   const requestDelete = useCallback(() => {
     if (!item) return
@@ -127,6 +136,14 @@ export const VideoViewer = memo(function VideoViewer({
   const src = convertFileSrc(item.path)
   const poster = item.posterPath ? convertFileSrc(item.posterPath) : undefined
   const unplayable = unplayableId === item.id
+  const autoloads = webviewAutoloadsVideo()
+  const armed = autoloads || armedId === item.id
+
+  const play = () => {
+    // Asking the registry builds no pipeline; a clip it cannot demux would hang.
+    if (webviewCanPlay(item.path)) setArmedId(item.id)
+    else setUnplayableId(item.id)
+  }
   // A provider's file whose header the core could not read has no size: 16:9 frames it.
   const [frameWidth, frameHeight] =
     item.width > 0 && item.height > 0 ? [item.width, item.height] : [16, 9]
@@ -256,6 +273,32 @@ export const VideoViewer = memo(function VideoViewer({
                 {t('videos:viewer.openInPlayer')}
               </Button>
             </div>
+          ) : !armed ? (
+            <div
+              className="relative flex size-full items-center justify-center text-muted-foreground"
+              data-testid="video-play-gate"
+            >
+              {poster ? (
+                <img
+                  src={poster}
+                  alt=""
+                  draggable={false}
+                  className="absolute inset-0 block size-full object-contain"
+                />
+              ) : (
+                <IconMovie size={32} stroke={1.5} />
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute rounded-full bg-background/80 backdrop-blur"
+                aria-label={t('videos:viewer.play')}
+                onClick={play}
+                data-testid="video-play"
+              >
+                <IconPlayerPlayFilled size={18} />
+              </Button>
+            </div>
           ) : (
             <video
               key={item.id}
@@ -263,6 +306,7 @@ export const VideoViewer = memo(function VideoViewer({
               poster={poster}
               controls
               playsInline
+              autoPlay={!autoloads}
               preload="metadata"
               className="block size-full object-contain"
               data-testid="video-player"

@@ -48,6 +48,14 @@ vi.mock('@/lib/video/poster', async (importOriginal) => ({
   ),
 }))
 
+// What the webview may do unasked: everywhere but Linux it loads clips itself.
+const playback = vi.hoisted(() => ({ autoloads: true, canPlay: true }))
+vi.mock('@/lib/video/webview-playback', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/video/webview-playback')>()),
+  webviewAutoloadsVideo: () => playback.autoloads,
+  webviewCanPlay: () => playback.canPlay,
+}))
+
 import { useVideoGallery } from '@/hooks/useVideoGallery'
 import { DEFAULT_VIDEO_FORM, useVideoForm } from '@/hooks/useVideoForm'
 import { useVideoSetting } from '@/hooks/useVideoSetting'
@@ -134,6 +142,8 @@ describe('VideoViewer', () => {
     useVideoGenerationStore.getState().reset()
     poster.hold = false
     poster.release = null
+    playback.autoloads = true
+    playback.canPlay = true
     fake = makeFakeDiffusion()
     // The core answers with the same clip, now carrying its poster.
     fake.setVideoPoster.mockImplementation(async (id) => ({
@@ -315,6 +325,55 @@ describe('VideoViewer', () => {
     expect(useVideoGalleryStore.getState().selectedId).toBe('vjob-1')
     fireEvent.keyDown(document, { key: 'Delete' })
     expect(await screen.findByTestId('gallery-delete-confirm')).toBeInTheDocument()
+  })
+
+  describe('where the webview may not load clips unasked (Linux)', () => {
+    beforeEach(() => {
+      playback.autoloads = false
+    })
+
+    it('opens on the poster with no player and no poster capture, and plays on Play', async () => {
+      poster.hold = true
+      render(<Gallery />)
+      const gate = await screen.findByTestId('video-play-gate')
+      expect(gate.querySelector('img')?.getAttribute('src')).toMatch(/vjob-1\.thumb\.png$/)
+      expect(document.querySelector('video')).toBeNull()
+      // The tile without a poster keeps its mark: nothing loads the clip to make one.
+      expect(screen.getByTestId('video-tile-poster-missing')).toBeInTheDocument()
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(poster.release).toBeNull()
+      expect(fake.setVideoPoster).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await userEvent.click(screen.getByTestId('video-play'))
+      })
+      const player = screen.getByTestId('video-player') as HTMLVideoElement
+      expect(player.getAttribute('src')).toMatch(/vjob-1\.webm$/)
+      expect(player.autoplay).toBe(true)
+
+      // Another clip opens on its poster again.
+      await act(async () => {
+        await userEvent.click(screen.getByTestId('video-tile-vjob-2'))
+      })
+      expect(document.querySelector('video')).toBeNull()
+      expect(screen.getByTestId('video-play-gate')).toBeInTheDocument()
+    })
+
+    it('offers the system player instead of a player when the webview says it cannot decode the clip', async () => {
+      playback.canPlay = false
+      render(<Gallery />)
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId('video-play'))
+      })
+      expect(document.querySelector('video')).toBeNull()
+      expect(screen.getByTestId('video-playback-unsupported')).toBeInTheDocument()
+      await act(async () => {
+        await userEvent.click(screen.getByTestId('video-open-in-player'))
+      })
+      expect(openPath).toHaveBeenCalledWith('/data/videos/vjob-1.webm')
+    })
   })
 
   it('shows an empty state without a clip', () => {

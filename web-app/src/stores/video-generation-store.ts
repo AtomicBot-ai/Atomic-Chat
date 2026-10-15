@@ -13,6 +13,7 @@ import {
 import { notifyWhenAway } from '@/lib/notifications'
 import { capturePosterForClip, PosterBackfillQueue } from '@/lib/video/poster'
 import { validateVideoRequest } from '@/lib/video/validate'
+import { webviewAutoloadsVideo } from '@/lib/video/webview-playback'
 import type {
   DiffusionError,
   DiffusionEvent,
@@ -107,6 +108,12 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       }
     },
   })
+
+  /** Queue a poster, unless the webview may not load clips unasked (Linux). */
+  const requestPoster = (item: GalleryVideoItem) => {
+    if (!webviewAutoloadsVideo()) return
+    posters.request(item)
+  }
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<VideoJob> =>
@@ -213,7 +220,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
     if (job.state === 'completed') {
       useVideoGalleryStore.getState().prepend(job.outputs)
       for (const item of job.outputs) {
-        void posters.request(item)
+        requestPoster(item)
       }
     } else if (
       job.error &&
@@ -298,7 +305,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
           // gallery; show it, and give it a poster.
           if (!waiter && event.job.state === 'completed') {
             useVideoGalleryStore.getState().prepend(event.job.outputs)
-            for (const item of event.job.outputs) posters.request(item)
+            for (const item of event.job.outputs) requestPoster(item)
             if (current?.id === event.job.id) set({ currentJob: null })
           } else if (!waiter && isTerminal(event.job) && current?.id === event.job.id) {
             set({ currentJob: null })
@@ -390,7 +397,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
 
     clearError: () => set({ lastError: null }),
 
-    requestPoster: (item) => posters.request(item),
+    requestPoster,
 
     reset: () => {
       waiters.clear()

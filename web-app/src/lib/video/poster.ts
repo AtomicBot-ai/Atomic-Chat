@@ -12,6 +12,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core'
 
 import { readFileBytes } from '@/lib/readFileBytes'
+import { clipMediaType } from '@/lib/video/webview-playback'
 import type { GalleryVideoItem } from '@/services/diffusion/types'
 
 /** The longer side of a poster, in pixels. Matches the image thumbnails. */
@@ -188,8 +189,7 @@ export async function capturePosterForClip(
   const { bytes } = await readFileBytes(path, {
     maxBytes: MAX_POSTER_SOURCE_BYTES,
   })
-  const type = /\.mp4$/i.test(path) ? 'video/mp4' : 'video/webm'
-  return capturePosterPng(await dataUrlOf(bytes, type), {
+  return capturePosterPng(await dataUrlOf(bytes, clipMediaType(path)), {
     ...options,
     crossOrigin: null,
   })
