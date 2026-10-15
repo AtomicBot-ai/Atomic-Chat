@@ -147,6 +147,39 @@ async fn starts_a_real_core_and_attaches_to_it() {
     supervisor.detach().await;
 }
 
+#[tokio::test]
+async fn the_core_no_longer_sets_models_up() {
+    // Since core 0.17.0 the app downloads Bonsai itself (change
+    // remove-model-downloads-from-core): the snapshot carries no setups, and the
+    // setup routes are unknown to the core.
+    let Some(binary) = core_binary() else {
+        eprintln!("skipping: ATOMIC_CORE_BIN is not set");
+        return;
+    };
+    let live = LiveCore::new(&binary);
+    let supervisor = live.supervisor();
+    supervisor.ensure_attached(true).await.expect("attach");
+
+    let snapshot = supervisor
+        .call("GET", "/snapshot", None, false)
+        .await
+        .expect("snapshot");
+    assert!(
+        snapshot.get("model_setups").is_none(),
+        "the snapshot still lists model setups: {snapshot}"
+    );
+    let refused = supervisor
+        .call("GET", "/model-setups", None, false)
+        .await
+        .expect_err("the setup list must be an unknown route");
+    assert!(
+        refused.message.contains("No such control route"),
+        "{refused:?}"
+    );
+
+    supervisor.detach().await;
+}
+
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn the_core_finds_the_sidecar_servers_the_app_bundles() {
