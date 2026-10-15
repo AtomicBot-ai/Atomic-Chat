@@ -416,6 +416,36 @@
     },
     "otherOperation": "Сейчас устанавливается или удаляется {{engine}} ({{phase}}). Установка SGLang станет доступна, когда это закончится."
   },
+  "foundryLocal": {
+    "engine": {
+      "title": "Движок Foundry Local",
+      "notInstalled": "Foundry Local не установлен",
+      "installDescription": "Рантайм Microsoft Foundry Local {{version}}, около {{size}} для скачивания. Atomic Chat проверяет его и запускает каждую модель в отдельном процессе.",
+      "install": "Установить {{version}}",
+      "installing": "Скачивание… {{percent}}%",
+      "noBuild": "Сборки Foundry Local для этого компьютера сейчас нет.",
+      "installed": "Foundry Local {{version}}",
+      "installedDescription": "Рантайм, из которого запускаются модели. Ускорители готовятся ниже.",
+      "update": "Обновить до {{version}}"
+    },
+    "accelerators": {
+      "title": "Ускорители",
+      "description": "На чём Foundry Local может запускать модели на этом компьютере. Ускоритель скачивается у Microsoft, только когда вы его подготовите.",
+      "ready": "Готов",
+      "notPrepared": "Не подготовлен",
+      "preparing": "Подготовка…",
+      "downloading": "Скачивание… {{percent}}%",
+      "retry": "Повторить",
+      "prepare": "Подготовить",
+      "sizeWarning": "Подготовка скачивает файлы у Microsoft: CUDA — до 2 ГБ, WebGPU — около 10 МБ; NPU-плагины ставит Windows, это может занять несколько минут.",
+      "busy": "Ускорители уже готовятся. Дождитесь окончания.",
+      "prepareFailed": "Не удалось подготовить ускорители: {{message}}",
+      "checkAgain": "Проверить снова",
+      "none": "Foundry Local не нашёл здесь ускорителей. Модели для CPU работают.",
+      "device": "Устройство: {{device}}"
+    },
+    "telemetry": "Библиотека Microsoft Foundry Local всегда отправляет одно событие ProcessInfo (название приложения, операционная система и архитектура, имя процесса, признак виртуальной машины или контейнера, число ядер CPU и объём памяти; без идентификатора устройства). Atomic Chat выключает её необязательную телеметрию, а это событие выключить нельзя."
+  },
   "tensorrt": {
     "checkAgain": "Проверить снова",
     "version": "Установленный релиз: {{version}}",

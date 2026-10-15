@@ -4,6 +4,9 @@ import { DecisionModelsSection } from '@/containers/DecisionModelsSection'
 import { EmbeddingModelsSection } from '@/containers/EmbeddingModelsSection'
 import HeaderPage from '@/containers/HeaderPage'
 import { ManagedEngineSetupPanel } from '@/containers/managed-engine/ManagedEngineSetupPanel'
+import { FoundryLocalAccelerators } from '@/containers/foundry-local/FoundryLocalAccelerators'
+import { FoundryLocalEnginePanel } from '@/containers/foundry-local/FoundryLocalEnginePanel'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
 import { ManagedEngineSettingsCard } from '@/containers/managed-engine/ManagedEngineSettingsCard'
 import { ManagedEngineTroubleshooting } from '@/containers/managed-engine/ManagedEngineTroubleshooting'
@@ -332,6 +335,10 @@ function ProviderDetail() {
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   // A managed engine's models can be chosen once the engine is installed.
   const managed = managedEngine(providerName)
+  const foundryLocalBuild = useEngineVersionsStore((state) => {
+    const active = state.engines['foundry-local']?.active
+    return active ? `${active.version}/${active.variant}` : null
+  })
   const managedInstalled = useManagedEnvironmentStore(
     (state) => managed !== undefined && selectInstallation(state, managed.id)?.status === 'ready'
   )
@@ -2006,6 +2013,12 @@ function ProviderDetail() {
               />
             )}
             {managed && <ManagedEngineTroubleshooting engine={managed} />}
+            {/* Foundry Local: the runtime and its accelerators come before its settings and models. */}
+            {providerName === 'foundry-local' && <FoundryLocalEnginePanel />}
+            {providerName === 'foundry-local' && (
+              // Read again when the active build changes: a new build is probed afresh.
+              <FoundryLocalAccelerators key={foundryLocalBuild ?? 'none'} />
+            )}
             {managed && provider && (
               <ManagedEngineSettingsCard
                 engine={managed}
@@ -2798,7 +2811,8 @@ function ProviderDetail() {
                         provider.provider !== 'llamacpp' &&
                         provider.provider !== 'llamacpp-upstream' &&
                         provider.provider !== 'atomic-prism' &&
-                        provider.provider !== 'mlx' && (
+                        provider.provider !== 'mlx' &&
+                        provider.provider !== 'foundry-local' && (
                           <>
                             <Button
                               variant="secondary"

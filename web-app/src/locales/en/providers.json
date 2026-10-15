@@ -417,6 +417,36 @@
     },
     "otherOperation": "{{engine}} is being set up or removed now ({{phase}}). Installing SGLang can start once that finishes."
   },
+  "foundryLocal": {
+    "engine": {
+      "title": "Foundry Local engine",
+      "notInstalled": "Foundry Local is not installed",
+      "installDescription": "Microsoft's Foundry Local runtime {{version}}, about {{size}} to download. Atomic Chat checks it and runs each model in its own process.",
+      "install": "Install {{version}}",
+      "installing": "Downloading… {{percent}}%",
+      "noBuild": "No Foundry Local build for this computer is available right now.",
+      "installed": "Foundry Local {{version}}",
+      "installedDescription": "The runtime models start from. Accelerators are prepared below.",
+      "update": "Update to {{version}}"
+    },
+    "accelerators": {
+      "title": "Accelerators",
+      "description": "What Foundry Local can run models on here. An accelerator is downloaded from Microsoft only when you prepare it.",
+      "ready": "Ready",
+      "notPrepared": "Not prepared",
+      "preparing": "Preparing…",
+      "downloading": "Downloading… {{percent}}%",
+      "retry": "Retry",
+      "prepare": "Prepare",
+      "sizeWarning": "Preparing downloads from Microsoft: CUDA is up to 2 GB, WebGPU about 10 MB; NPU plugins are installed by Windows and can take a few minutes.",
+      "busy": "Accelerators are already being prepared. Wait for that to finish.",
+      "prepareFailed": "Preparing the accelerators failed: {{message}}",
+      "checkAgain": "Check again",
+      "none": "Foundry Local found no accelerator here. CPU models still run.",
+      "device": "Device: {{device}}"
+    },
+    "telemetry": "Microsoft's Foundry Local library always sends one ProcessInfo event (the app name, operating system and architecture, process name, whether it runs in a virtual machine or container, CPU count and memory size; no device ID). Atomic Chat turns off its optional telemetry and cannot turn off this event."
+  },
   "tensorrt": {
     "title": "TensorRT-LLM engine",
     "description": "NVIDIA's inference engine, run by Atomic Chat in a Docker container on your NVIDIA GPU.",
