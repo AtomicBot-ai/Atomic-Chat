@@ -16,6 +16,8 @@ import type {
   FoundryLocalExecutionProvider,
 } from '@/services/foundry-local/types'
 
+import { useFoundryLocalInstallStore } from './install-store'
+
 /** The core's `foundry-local:accelerators`, as the relay names it. */
 const PREPARE_EVENT = 'atomic-core://foundry-local:accelerators'
 
@@ -40,7 +42,9 @@ const messageOf = (error: unknown): string => {
  * Foundry Local's accelerators on the provider page (spec `foundry-local-desktop`, "Страница
  * провайдера ставит движок и готовит ускорители"): what the library of the installed build finds
  * here, which of them are prepared, and the step that prepares them — the library downloads them
- * (CUDA and WebGPU from Microsoft's CDN, NPU plugins through Windows ML) only when the person asks.
+ * (CUDA and WebGPU from Microsoft's CDN, NPU plugins through Windows ML) only when the person asks:
+ * right after they installed or updated the engine on this page (all of them, once), or with
+ * Prepare / Retry here.
  *
  * Progress comes as the core's `foundry-local:accelerators` events: a fraction for a CDN download,
  * only a start and an end for Windows ML. One accelerator failing does not stop the others; a
@@ -96,6 +100,19 @@ export function FoundryLocalAccelerators() {
       await read()
     }
   }
+
+  // Right after an install from this page: every accelerator a variant runs on, once.
+  const justInstalled = useFoundryLocalInstallStore((state) => state.justInstalled)
+  useEffect(() => {
+    if (!answer?.installed || !justInstalled || answer.build !== justInstalled || preparing) return
+    useFoundryLocalInstallStore.setState({ justInstalled: null })
+    const names = answer.accelerators
+      .filter((accelerator) => accelerator.execution_provider !== null && !accelerator.prepared)
+      .map((accelerator) => accelerator.name)
+    void prepare(names)
+    // `prepare` reads the state it needs when it runs; the answer and the mark decide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answer, justInstalled])
 
   if (loadError) {
     return (

@@ -27,6 +27,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 }))
 
 import { FoundryLocalAccelerators } from '../FoundryLocalAccelerators'
+import { useFoundryLocalInstallStore } from '../install-store'
 import type {
   FoundryLocalAccelerator,
   FoundryLocalAccelerators as Answer,
@@ -74,6 +75,7 @@ const row = (name: string) => screen.getByTestId(`foundry-accelerator-${name}`)
 beforeEach(() => {
   vi.clearAllMocks()
   events.handlers.clear()
+  useFoundryLocalInstallStore.setState({ justInstalled: null })
 })
 
 describe('FoundryLocalAccelerators', () => {
@@ -222,5 +224,46 @@ describe('FoundryLocalAccelerators', () => {
 
     expect(await screen.findByText(/providers:foundryLocal.accelerators.prepareFailed/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' })).toBeEnabled()
+  })
+
+  it('prepares every accelerator a variant runs on by itself right after the engine was installed', async () => {
+    useFoundryLocalInstallStore.setState({ justInstalled: 'v2.1.0/win-x64' })
+    core.foundryLocalAccelerators
+      .mockResolvedValueOnce(
+        answer([openvino(), cuda(), { name: 'NvTensorRTRTXExecutionProvider', execution_provider: null, device: 'gpu', prepared: false }])
+      )
+      .mockResolvedValue(answer([openvino({ prepared: true }), cuda({ prepared: true })]))
+    core.prepareFoundryLocalAccelerators.mockResolvedValue({
+      accelerators: [
+        { name: 'OpenVINOExecutionProvider', prepared: true },
+        { name: 'CUDAExecutionProvider', prepared: true },
+      ],
+    })
+
+    render(<FoundryLocalAccelerators />)
+
+    await waitFor(() =>
+      expect(core.prepareFoundryLocalAccelerators).toHaveBeenCalledWith([
+        'OpenVINOExecutionProvider',
+        'CUDAExecutionProvider',
+      ])
+    )
+    await waitFor(() =>
+      expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.ready')).toBeInTheDocument()
+    )
+    // Once: opening the page again later prepares nothing by itself.
+    expect(useFoundryLocalInstallStore.getState().justInstalled).toBeNull()
+  })
+
+  it('prepares nothing by itself for a build it was not told was just installed', async () => {
+    useFoundryLocalInstallStore.setState({ justInstalled: 'v2.0.0/win-x64' })
+    core.foundryLocalAccelerators.mockResolvedValue(answer([openvino()]))
+
+    render(<FoundryLocalAccelerators />)
+
+    const openvinoRow = await screen.findByTestId('foundry-accelerator-OpenVINOExecutionProvider')
+    expect(within(openvinoRow).getByText('providers:foundryLocal.accelerators.notPrepared')).toBeInTheDocument()
+    expect(useFoundryLocalInstallStore.getState().justInstalled).toBe('v2.0.0/win-x64')
+    expect(core.prepareFoundryLocalAccelerators).not.toHaveBeenCalled()
   })
 })

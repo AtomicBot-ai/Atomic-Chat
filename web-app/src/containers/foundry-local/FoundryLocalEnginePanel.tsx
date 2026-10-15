@@ -16,6 +16,8 @@ import {
 } from '@/services/engines/update'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
+import { useFoundryLocalInstallStore } from './install-store'
+
 const ENGINE = 'foundry-local'
 
 const messageOf = (error: unknown): string => {
@@ -64,25 +66,30 @@ export function FoundryLocalEnginePanel() {
   const latest = versions?.latest ?? null
   const offer = versions?.update.needed ? versions.update.target : null
 
+  // The new build's accelerators are prepared by the accelerators block as soon as it sees it.
+  const markInstalled = (build: string) => useFoundryLocalInstallStore.setState({ justInstalled: build })
+
   const install = () => {
     if (!latest) return
-    void run(() =>
-      installEngineBuildWithProgress(ENGINE, {
+    void run(async () => {
+      const result = await installEngineBuildWithProgress(ENGINE, {
         taskId: engineBuildTaskId(ENGINE, latest.version),
         onProgress,
       })
-    )
+      if (result?.build) markInstalled(`${result.build.tag}/${result.build.backend_id}`)
+    })
   }
 
   const applyUpdate = () => {
     if (!offer) return
-    void run(() =>
-      updateEngineWithProgress(ENGINE, {
+    void run(async () => {
+      const result = await updateEngineWithProgress(ENGINE, {
         taskId: engineUpdateTaskId(ENGINE, offer.version),
         backend: `${offer.version}/${offer.variant}`,
         onProgress,
       })
-    )
+      if (result?.updated && result.active) markInstalled(`${result.active.version}/${result.active.variant}`)
+    })
   }
 
   return (

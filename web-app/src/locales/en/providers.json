@@ -421,7 +421,7 @@
     "engine": {
       "title": "Foundry Local engine",
       "notInstalled": "Foundry Local is not installed",
-      "installDescription": "Microsoft's Foundry Local runtime {{version}}, about {{size}} to download. Atomic Chat checks it and runs each model in its own process.",
+      "installDescription": "Microsoft's Foundry Local runtime {{version}}, about {{size}} to download. Installing it also prepares its accelerators from Microsoft (CUDA is up to 2 GB; NPU plugins come through Windows). Atomic Chat checks it and runs each model in its own process.",
       "install": "Install {{version}}",
       "installing": "Downloading… {{percent}}%",
       "noBuild": "No Foundry Local build for this computer is available right now.",

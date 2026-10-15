@@ -25,6 +25,7 @@ vi.mock('@/containers/engines/InstalledEngineBuilds', () => ({
 }))
 
 import { FoundryLocalEnginePanel } from '../FoundryLocalEnginePanel'
+import { useFoundryLocalInstallStore } from '../install-store'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import type { EngineVersions } from '@/services/engines/types'
 
@@ -137,5 +138,42 @@ describe('FoundryLocalEnginePanel', () => {
 
     expect(screen.getByText('providers:foundryLocal.engine.checking')).toBeInTheDocument()
     expect(screen.queryByText('providers:foundryLocal.engine.noBuild')).not.toBeInTheDocument()
+  })
+
+  it('marks the build it installed, so the accelerators block prepares them right away', async () => {
+    useFoundryLocalInstallStore.setState({ justInstalled: null })
+    hold(versions())
+    install.installEngineBuildWithProgress.mockResolvedValue({
+      installed: true,
+      build: { tag: 'v2.1.0', backend_id: 'win-x64', origin: 'downloaded' },
+      retired: [],
+      kept_in_use: [],
+    })
+
+    render(<FoundryLocalEnginePanel />)
+    fireEvent.click(screen.getByRole('button', { name: /providers:foundryLocal.engine.install/ }))
+
+    await waitFor(() => expect(useFoundryLocalInstallStore.getState().justInstalled).toBe('v2.1.0/win-x64'))
+  })
+
+  it('marks the build an update moved to', async () => {
+    useFoundryLocalInstallStore.setState({ justInstalled: null })
+    hold(
+      versions({
+        active: { version: 'v2.1.0', variant: 'win-x64' },
+        update: { needed: true, target: { version: 'v2.2.0', variant: 'win-x64' }, apply: 'swap' },
+      })
+    )
+    update.updateEngineWithProgress.mockResolvedValue({
+      updated: true,
+      active: { version: 'v2.2.0', variant: 'win-x64' },
+      retired: [],
+      kept_in_use: [],
+    })
+
+    render(<FoundryLocalEnginePanel />)
+    fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.engine.update {"version":"v2.2.0"}' }))
+
+    await waitFor(() => expect(useFoundryLocalInstallStore.getState().justInstalled).toBe('v2.2.0/win-x64'))
   })
 })
