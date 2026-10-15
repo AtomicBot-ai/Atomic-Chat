@@ -10,6 +10,7 @@ import {
   type ModelLoadOptions,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+import type { FoundryLocalHubModel } from '@/services/foundry-local/types'
 
 // Types for model catalog
 export interface ModelQuant {
@@ -57,6 +58,12 @@ export interface CatalogModel {
   is_managed?: boolean
   /** What the Hub knows of a managed entry before the engines' verdicts. */
   managed?: ManagedCatalogFields
+  /**
+   * A Foundry Local model (change `add-foundry-local`), listed under the "Foundry Local" format from
+   * conf's curated list or Microsoft's catalog; never a Hugging Face repository.
+   */
+  is_foundry_local?: boolean
+  foundry_local?: FoundryLocalHubModel
 }
 
 export interface ManagedCatalogFields {

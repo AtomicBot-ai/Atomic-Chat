@@ -91,3 +91,42 @@ export interface FoundryLocalCheckResult {
   /** The library name of the accelerator the variant needs; `null` for the CPU. */
   accelerator: string | null
 }
+
+/** Where a Model Hub entry of Foundry Local comes from. */
+export type FoundryLocalOrigin = 'curated' | 'microsoft'
+
+/**
+ * A variant as the Hub card and the installer use it, whichever list it came from. A curated
+ * variant carries its files (sizes and sha256) and folder in the container; a catalog variant
+ * carries neither — the installer lists the container for them and checks sizes only.
+ */
+export interface FoundryLocalHubVariant {
+  id: string
+  device: FoundryLocalDevice
+  execution_provider: FoundryLocalExecutionProvider
+  /** `win-x64`, `win-arm64`, `macos-arm64`, `linux-x64`, `linux-arm64`. */
+  platforms: string[]
+  asset_id: string
+  version: string
+  /** All files together, when known. */
+  size_bytes: number | null
+  /** Only when smaller than the model's. */
+  context_length?: number
+  files?: Array<{ path: string; size: number; sha256: string }>
+  path_prefix?: string
+}
+
+/** The `foundry_local` part of a Hub entry (`CatalogModel.foundry_local`). */
+export interface FoundryLocalHubModel {
+  origin: FoundryLocalOrigin
+  model_id: string
+  /** The name shown on the row and the card. */
+  name: string
+  summary: string
+  license: string | null
+  /** Known for a curated model; a catalog model learns these from the resolve answer at install. */
+  context_length?: number
+  tools?: boolean
+  reasoning?: boolean
+  variants: FoundryLocalHubVariant[]
+}

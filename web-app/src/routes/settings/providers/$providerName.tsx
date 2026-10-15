@@ -2839,7 +2839,8 @@ function ProviderDetail() {
                         (provider.provider === 'llamacpp' ||
                           provider.provider === 'llamacpp-upstream' ||
                           provider.provider === 'atomic-prism' ||
-                          provider.provider === 'mlx') &&
+                          provider.provider === 'mlx' ||
+                          provider.provider === 'foundry-local') &&
                         !hasDownloadedModels && (
                           <Button
                             variant="default"
@@ -2854,7 +2855,9 @@ function ProviderDetail() {
                                       ? 'mlx'
                                       : provider.provider === 'atomic-prism'
                                         ? 'atomic-prism'
-                                        : 'gguf',
+                                        : provider.provider === 'foundry-local'
+                                          ? 'foundry-local'
+                                          : 'gguf',
                                 },
                               })
                             }

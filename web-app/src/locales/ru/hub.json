@@ -209,5 +209,10 @@
       "noSpace": "Недостаточно свободного места для этой модели в {{path}}: нужно {{needed}}, свободно {{free}}. Освободите место и попробуйте снова."
     },
     "installEngine": "Установить движок"
+  },
+  "foundryLocal": {
+    "curated": "Отобрано Atomic Chat",
+    "microsoftCatalog": "Каталог Microsoft",
+    "catalogUnavailable": "Каталог Microsoft сейчас недоступен. Показаны только модели, отобранные Atomic Chat."
   }
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import enHub from '@/locales/en/hub.json'
 import enProviders from '@/locales/en/providers.json'
+import ruHub from '@/locales/ru/hub.json'
 import ruProviders from '@/locales/ru/providers.json'
 
 // The Foundry Local screens read every text from the `foundryLocal` block, so a key missing in one
@@ -22,9 +24,12 @@ function leaves(block: Block, prefix = ''): Map<string, string> {
 const placeholders = (text: string) => [...text.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort()
 
 describe('the Foundry Local texts', () => {
-  it('has the same keys and placeholders in en and ru', () => {
-    const en = leaves((enProviders as unknown as Record<string, Block>).foundryLocal)
-    const ru = leaves((ruProviders as unknown as Record<string, Block>).foundryLocal ?? {})
+  it.each([
+    ['providers', enProviders, ruProviders],
+    ['hub', enHub, ruHub],
+  ])('%s.json has the same keys and placeholders in en and ru', (_file, enJson, ruJson) => {
+    const en = leaves((enJson as unknown as Record<string, Block>).foundryLocal)
+    const ru = leaves((ruJson as unknown as Record<string, Block>).foundryLocal ?? {})
 
     expect(en.size).toBeGreaterThan(0)
     expect([...ru.keys()].sort()).toEqual([...en.keys()].sort())

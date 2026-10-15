@@ -193,6 +193,7 @@ export type ModelFormat =
   | 'sglang'
   | 'tensorrt-llm'
   | 'atomic-prism'
+  | 'foundry-local'
 
 /**
  * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
@@ -202,6 +203,7 @@ export function modelFormat(
   model: CatalogModel,
   managedFormat: ModelFormat = 'tensorrt-llm'
 ): ModelFormat {
+  if (model.is_foundry_local) return 'foundry-local'
   if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'

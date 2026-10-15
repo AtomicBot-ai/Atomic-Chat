@@ -219,5 +219,10 @@
   "prismSetupPlanChanged": "The plan changed while you were reviewing it. Check it and start again.",
   "prismSetupStart": "Set up",
   "prismStage_installing_engine": "Installing the PrismML engine",
-  "prismCurated": "Bonsai models for PrismML"
+  "prismCurated": "Bonsai models for PrismML",
+  "foundryLocal": {
+    "curated": "Curated by Atomic Chat",
+    "microsoftCatalog": "Microsoft catalog",
+    "catalogUnavailable": "The Microsoft catalog is unavailable right now. Only the models Atomic Chat curated are shown."
+  }
 }

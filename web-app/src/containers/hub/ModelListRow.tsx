@@ -1,6 +1,8 @@
 import { ModelLogo } from '@/containers/ModelLogo'
 import { modelFormat, type ModelFormat } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
+import { foundryLocalOf } from '@/lib/foundry-local/hub'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 import type { StaffPick } from '@/services/staff-picks-registry'
@@ -32,9 +34,18 @@ export function ModelListRow({
   managedFormat,
   onSelect,
 }: ModelListRowProps) {
+  const { t } = useTranslation()
+  const foundry = foundryLocalOf(model)
   const name =
-    pick?.title || extractModelName(model.model_name) || model.model_name
-  const summary = pick?.summary || model.developer || ''
+    foundry?.name ||
+    pick?.title ||
+    extractModelName(model.model_name) ||
+    model.model_name
+  // A catalog entry says where it comes from: Microsoft's catalog, not checked by Atomic Chat.
+  const summary =
+    foundry?.origin === 'microsoft'
+      ? t('hub:foundryLocal.microsoftCatalog')
+      : foundry?.summary || pick?.summary || model.developer || ''
   const format = modelFormat(model, managedFormat)
 
   return (
