@@ -229,7 +229,7 @@
     "downloaded": "Downloaded",
     "checking": "Checking…",
     "runsHere": "Runs on this computer",
-    "installEngine": "Install Foundry Local",
+    "installEngine": "Install Foundry",
     "prepareAccelerator": "Prepare the accelerator",
     "sourceUnavailable": "The Foundry Local model source is unavailable."
   }

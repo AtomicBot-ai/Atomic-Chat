@@ -49,7 +49,7 @@ const verdictOf = (verdicts: Verdicts, variant: FoundryLocalHubVariant): string 
  * once their accelerator is prepared — and the action for the chosen one:
  *
  * - "Download" when the core says it runs (`ok`): the installer, under one row of the download panel;
- * - "Install Foundry Local" / "Prepare the accelerator" when the engine or the accelerator is
+ * - "Install Foundry" / "Prepare the accelerator" when the engine or the accelerator is
  *   missing: the provider page, rather than downloading a model that cannot run;
  * - "New chat" and delete once the variant is on disk.
  *
