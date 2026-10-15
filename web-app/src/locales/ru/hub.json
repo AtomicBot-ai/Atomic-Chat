@@ -213,6 +213,14 @@
   "foundryLocal": {
     "curated": "Отобрано Atomic Chat",
     "microsoftCatalog": "Каталог Microsoft",
-    "catalogUnavailable": "Каталог Microsoft сейчас недоступен. Показаны только модели, отобранные Atomic Chat."
+    "catalogUnavailable": "Каталог Microsoft сейчас недоступен. Показаны только модели, отобранные Atomic Chat.",
+    "notVerified": "Из каталога Microsoft, не проверено Atomic Chat: файлы проверяются только по размеру.",
+    "noVariantHere": "У этой модели нет варианта для этого компьютера.",
+    "downloaded": "Скачано",
+    "checking": "Проверка…",
+    "runsHere": "Работает на этом компьютере",
+    "installEngine": "Установить Foundry Local",
+    "prepareAccelerator": "Подготовить ускоритель",
+    "sourceUnavailable": "Источник моделей Foundry Local недоступен."
   }
 }

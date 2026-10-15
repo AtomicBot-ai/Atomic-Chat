@@ -223,6 +223,14 @@
   "foundryLocal": {
     "curated": "Curated by Atomic Chat",
     "microsoftCatalog": "Microsoft catalog",
-    "catalogUnavailable": "The Microsoft catalog is unavailable right now. Only the models Atomic Chat curated are shown."
+    "catalogUnavailable": "The Microsoft catalog is unavailable right now. Only the models Atomic Chat curated are shown.",
+    "notVerified": "From the Microsoft catalog, not verified by Atomic Chat: files are checked by size only.",
+    "noVariantHere": "This model has no variant for this computer.",
+    "downloaded": "Downloaded",
+    "checking": "Checking…",
+    "runsHere": "Runs on this computer",
+    "installEngine": "Install Foundry Local",
+    "prepareAccelerator": "Prepare the accelerator",
+    "sourceUnavailable": "The Foundry Local model source is unavailable."
   }
 }

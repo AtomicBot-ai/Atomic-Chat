@@ -4,6 +4,7 @@ import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { ManagedDownloadOptions } from '@/containers/hub/ManagedDownloadOptions'
+import { FoundryLocalDownloadOptions } from '@/containers/hub/FoundryLocalDownloadOptions'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -98,6 +99,11 @@ export function DownloadOptionsSelect({
     defaultQuant
 
   const fitKnown = budgetBytes > 0
+
+  // Foundry Local: its variants for this platform, each with the core's verdict.
+  if (model.is_foundry_local) {
+    return <FoundryLocalDownloadOptions model={model} sectionRef={sectionRef} />
+  }
 
   // One checkpoint, judged by the core rather than by size against memory.
   if (model.is_managed) {

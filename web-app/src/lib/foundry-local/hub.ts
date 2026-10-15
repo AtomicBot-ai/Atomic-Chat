@@ -104,3 +104,28 @@ export function variantLabel(variant: Pick<FoundryLocalHubVariant, 'execution_pr
   const showDevice = variant.device === 'npu' || (variant.execution_provider === 'openvino' && variant.device === 'gpu')
   return showDevice ? `${accelerator} ${variant.device.toUpperCase()}` : accelerator
 }
+
+/** This machine as conf's lists name platforms; the build's own target, so no probe is needed. */
+export function hostFoundryLocalPlatform(): string {
+  if (IS_MACOS) return 'macos-arm64'
+  if (IS_WINDOWS) return IS_ARM64 ? 'win-arm64' : 'win-x64'
+  return IS_ARM64 ? 'linux-arm64' : 'linux-x64'
+}
+
+const DEVICE_PREFERENCE: Record<FoundryLocalHubVariant['device'], number> = { npu: 0, gpu: 1, cpu: 2 }
+
+/**
+ * The variant a card opens on (spec "Вариант по умолчанию выбирается под железо"): NPU, then GPU,
+ * then CPU, among those the core says run here (`ok`) or will once their accelerator is prepared;
+ * in list order within a device. `undefined` when none qualifies, or before any verdict is in.
+ */
+export function pickDefaultVariant<V extends Pick<FoundryLocalHubVariant, 'id' | 'device'>>(
+  variants: readonly V[],
+  verdictOf: (variant: V) => string | undefined
+): V | undefined {
+  const usable = variants.filter((variant) => {
+    const verdict = verdictOf(variant)
+    return verdict === 'ok' || verdict === 'accelerator-not-prepared'
+  })
+  return [...usable].sort((a, b) => DEVICE_PREFERENCE[a.device] - DEVICE_PREFERENCE[b.device])[0]
+}
