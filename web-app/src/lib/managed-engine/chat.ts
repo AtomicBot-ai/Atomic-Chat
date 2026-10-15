@@ -18,21 +18,30 @@ import { isManagedProvider, managedEngine, type ManagedEngine } from '@/lib/mana
 
 export type AgentModelBlockReason = 'model-without-tools'
 
+/**
+ * Foundry Local (change `add-foundry-local`) follows the same rules: its session is the core's
+ * gateway in front of a host process, the core refuses `tools` to a variant the list does not
+ * declare tool calling for, the variant's context is fixed, and it takes no images.
+ */
+const isGatewayChatProvider = (providerName: string | undefined): boolean =>
+  isManagedProvider(providerName) || providerName === 'foundry-local'
+
 /** Why this model cannot serve an Agent turn, or `null` when its provider's rules apply. */
 export function agentModelBlockReason(
   providerName: string | undefined,
   model: Model | undefined
 ): AgentModelBlockReason | null {
-  if (!isManagedProvider(providerName) || !model) return null
+  if (!isGatewayChatProvider(providerName) || !model) return null
   return model.capabilities?.includes('tools') ? null : 'model-without-tools'
 }
 
 /**
  * Whether images may be attached for this model: its `vision` capability, except that no managed
- * engine's model takes images in this release, whatever its capabilities were edited to say.
+ * engine's or Foundry Local model takes images in this release, whatever its capabilities were
+ * edited to say.
  */
 export function imageAttachmentsAllowed(providerName: string | undefined, model: Model | undefined): boolean {
-  if (isManagedProvider(providerName)) return false
+  if (isGatewayChatProvider(providerName)) return false
   return model?.capabilities?.includes('vision') ?? false
 }
 
@@ -50,7 +59,7 @@ export function loadWatchdogMs(providerName: string | undefined, defaultMs: numb
 
 /** Whether the app may reload this provider's model with a larger context. */
 export function canGrowContext(providerName: string | undefined): boolean {
-  return !isManagedProvider(providerName)
+  return !isGatewayChatProvider(providerName)
 }
 
 export interface ContextOverflowGuidance {

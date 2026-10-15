@@ -33,6 +33,11 @@ pub const PROVIDER_FOUNDATION_MODELS: &str = "foundation-models";
 /// added here by hand, in the same order.
 pub const MANAGED_PROVIDERS: [&str; 3] = ["vllm", "sglang", "tensorrt-llm"];
 
+/// Microsoft Foundry Local (change `add-foundry-local`): the core runs each model in a host process
+/// behind a loopback gateway that checks the session's key. Not in the default search order: the
+/// core's own `:1337` routes it; the app asks for it by name (chat, agent).
+pub const PROVIDER_FOUNDRY_LOCAL: &str = "foundry-local";
+
 /// Whether `provider` is a managed engine: its sessions are containers behind the core's gateway.
 pub fn is_managed_provider(provider: &str) -> bool {
     MANAGED_PROVIDERS.contains(&provider)

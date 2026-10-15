@@ -22,6 +22,9 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   'llamacpp': 3,
   'atomic-prism': 4,
   'foundation-models': 5,
+  // Every desktop OS (change add-foundry-local): after the engines that share a model folder, before
+  // the managed ones.
+  'foundry-local': 6,
 }
 
 /**
@@ -30,7 +33,7 @@ const PROVIDER_PRIORITY: Record<string, number> = {
  * order — vLLM, SGLang, TensorRT-LLM (changes add-vllm-runtime,
  * add-sglang-runtime). Read from the registry, so a new engine needs no entry.
  */
-const MANAGED_PRIORITY_FROM = 6
+const MANAGED_PRIORITY_FROM = 7
 
 const providerPriority = (provider: string): number => {
   if (Object.hasOwn(PROVIDER_PRIORITY, provider)) return PROVIDER_PRIORITY[provider]

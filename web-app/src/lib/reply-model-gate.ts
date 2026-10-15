@@ -244,14 +244,19 @@ export function estimateQuantBits(modelId: string): number | undefined {
 
 /**
  * The engines a model is started on when the user did not name one, in order
- * of preference: upstream llama.cpp, then MLX. A send with nothing selected
- * starts on llama.cpp whenever it holds a model; MLX is taken only when it
- * does not. Both llama.cpp providers read the shared models dir, so one GGUF
+ * of preference: upstream llama.cpp, then MLX, then Foundry Local (change
+ * add-foundry-local: a Windows NPU laptop may hold only its variants). A send
+ * with nothing selected starts on llama.cpp whenever it holds a model; MLX is
+ * taken only when it does not, Foundry Local only when neither does. Both llama.cpp providers read the shared models dir, so one GGUF
  * is also listed under the TurboQuant fork — an opt-in, off on fresh installs,
  * and not something to choose for the user. The fork is still used when it is
  * the only engine holding a model.
  */
-const DEFAULT_LOCAL_ENGINES: readonly string[] = ['llamacpp-upstream', 'mlx']
+const DEFAULT_LOCAL_ENGINES: readonly string[] = [
+  'llamacpp-upstream',
+  'mlx',
+  'foundry-local',
+]
 
 /**
  * The option that should load fastest and in the least memory: fewest

@@ -521,6 +521,123 @@ describe('ModelFactory tensorrt-llm provider', () => {
   })
 })
 
+describe('ModelFactory foundry-local provider (change add-foundry-local)', () => {
+  const foundryProvider = {
+    provider: 'foundry-local',
+    base_url: 'http://example.invalid/v1',
+    api_key: '',
+    settings: [],
+    models: [],
+    active: true,
+  } as unknown as ProviderObject
+
+  const session = {
+    pid: 5151,
+    port: 4101,
+    model_id: 'qwen3-4b-generic-gpu',
+    api_key: 'foundry-key',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockStartModel.mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        startModel: mockStartModel,
+      } as ModelsService,
+    })
+    ModelFactory.invalidateLocalSessionCache('foundry-local')
+  })
+
+  async function foundryModel(
+    route: (command: string, args: Record<string, unknown>) => unknown
+  ) {
+    mockedInvoke.mockImplementation(async (command, args) =>
+      route(command, (args ?? {}) as Record<string, unknown>)
+    )
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+    await ModelFactory.createModel('qwen3-4b-generic-gpu', foundryProvider, {
+      temperature: 0.7,
+      top_k: 20,
+      repeat_penalty: 1.1,
+      n_predict: -1,
+      cache_prompt: true,
+      reasoning_format: 'deepseek',
+    })
+    const [modelId, config] = vi.mocked(OpenAICompatibleChatLanguageModel).mock
+      .calls[0] as unknown as [
+      string,
+      {
+        provider: string
+        url: (options: { path: string }) => string
+        headers: () => Record<string, string>
+        fetch: typeof fetch
+      },
+    ]
+    return { modelId, config }
+  }
+
+  it('starts the model through the core and talks to its session gateway with the session key', async () => {
+    const { modelId, config } = await foundryModel((command) =>
+      command === 'resolve_local_session' ? session : null
+    )
+
+    expect(mockStartModel).toHaveBeenCalledWith(foundryProvider, 'qwen3-4b-generic-gpu')
+    expect(modelId).toBe('qwen3-4b-generic-gpu')
+    expect(config.provider).toBe('foundry-local')
+    expect(config.url({ path: '/chat/completions' })).toBe(
+      'http://localhost:4101/v1/chat/completions'
+    )
+    expect(config.headers().Authorization).toBe('Bearer foundry-key')
+  })
+
+  it('sends the Foundry Local server only OpenAI fields: no llama.cpp knobs, no response_format', async () => {
+    let sentBody = ''
+    const { config } = await foundryModel((command, args) => {
+      if (command === 'resolve_local_session') return session
+      if (command === 'stream_local_http') {
+        sentBody = args.body as string
+        return Promise.reject('HTTP 400: {"error":{"message":"stop here"}}')
+      }
+      return null
+    })
+
+    await config.fetch('http://localhost:4101/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'qwen3-4b-generic-gpu',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        stream_options: { include_usage: true },
+        response_format: { type: 'json_object' },
+        tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+        tool_choice: 'auto',
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+    })
+
+    expect(JSON.parse(sentBody)).toEqual({
+      model: 'qwen3-4b-generic-gpu',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: 'auto',
+      temperature: 0.7,
+    })
+  })
+
+  it('fails with the provider named when the core serves no session after the start', async () => {
+    mockedInvoke.mockResolvedValue(null)
+
+    await expect(
+      ModelFactory.createModel('qwen3-4b-generic-gpu', foundryProvider)
+    ).rejects.toThrow('No running Foundry Local session found for model: qwen3-4b-generic-gpu')
+  })
+})
+
 describe('countLocalPromptTokens', () => {
   const session = { port: 4242, api_key: 'k', model_id: 'm' }
 

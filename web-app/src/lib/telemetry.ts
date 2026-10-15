@@ -93,6 +93,7 @@ export type LoadBackend =
   | 'tensorrt-llm'
   | 'vllm'
   | 'sglang'
+  | 'foundry-local'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -375,7 +376,8 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'foundation-models' ||
     provider === 'tensorrt-llm' ||
     provider === 'vllm' ||
-    provider === 'sglang'
+    provider === 'sglang' ||
+    provider === 'foundry-local'
   )
     return provider
   return 'unknown'

@@ -94,6 +94,10 @@ pub enum OpenAiTargetKind {
     /// it reads only the reasoning field the core's live tests showed it reading
     /// (`chat_template_kwargs`).
     LocalManaged,
+    /// A Foundry Local session (change `add-foundry-local`): the core's session gateway in front of
+    /// the model's host process. Its context is fixed by the variant, and the library splits
+    /// reasoning on the markers the variant was registered with, so no reasoning field is sent.
+    LocalFoundryLocal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -518,6 +522,9 @@ fn insert_reasoning_fields(
     reasoning: &CompletionReasoning,
 ) {
     let is_mlx = target.kind == OpenAiTargetKind::LocalMlx;
+    if target.kind == OpenAiTargetKind::LocalFoundryLocal {
+        return;
+    }
     if target.kind == OpenAiTargetKind::LocalManaged {
         // `trtllm-serve` and `vllm serve` hand `chat_template_kwargs` to the chat template, which is
         // how thinking is turned off. Nothing shows them reading `reasoning_effort` or a budget, so
@@ -1372,6 +1379,37 @@ mod tests {
 
         for field in ["reasoning_effort", "thinking_budget", "enable_thinking", "chat_template_kwargs"] {
             assert!(payload.get(field).is_none(), "unexpected {field}");
+        }
+    }
+
+    #[test]
+    fn foundry_local_targets_send_no_reasoning_field_either_way() {
+        // Foundry Local splits reasoning on the markers the variant was registered with; nothing
+        // shows its server reading a template kwarg, an effort or a budget (change add-foundry-local).
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalFoundryLocal, false))
+                .unwrap();
+        for reasoning in [
+            CompletionReasoning::Off,
+            CompletionReasoning::On {
+                tags: ReasoningTags {
+                    open: "<think>",
+                    close: "</think>",
+                },
+                budget_tokens: Some(1_024),
+                effort_value: Some("high".into()),
+            },
+        ] {
+            let payload =
+                client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
+            for field in [
+                "reasoning_effort",
+                "thinking_budget",
+                "enable_thinking",
+                "chat_template_kwargs",
+            ] {
+                assert!(payload.get(field).is_none(), "unexpected {field}");
+            }
         }
     }
 

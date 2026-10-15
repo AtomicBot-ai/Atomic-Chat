@@ -102,6 +102,7 @@ const SESSION_CACHED_PROVIDERS = [
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'foundry-local',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */

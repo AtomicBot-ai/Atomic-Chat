@@ -8,6 +8,7 @@
 //! | `llamacpp`, `llamacpp-upstream`, `atomic-prism` | direct `/completion` (GBNF, `cache_prompt`, `slot_id`) |
 //! | `mlx` | direct at the session port, like `createMlxModel` |
 //! | managed (`tensorrt-llm`, …) | direct at the session port (the core's gateway), like `createManagedModel` |
+//! | `foundry-local` | direct at the session port (the core's gateway), like `createFoundryModel` |
 //! | cloud | the Local API Server proxy, like `getLocalApiServerBaseURL` |
 //!
 //! Cloud credentials never reach this module: the proxy resolves the provider
@@ -100,6 +101,11 @@ pub async fn resolve_agent_target<R: Runtime>(
                 .await
                 .map(AgentTarget::OpenAi)
         }
+        Some(crate::core::sessions::resolver::PROVIDER_FOUNDRY_LOCAL) => {
+            resolve_foundry_local_target(app_handle, request)
+                .await
+                .map(AgentTarget::OpenAi)
+        }
         // Apple's on-device runtime has no OpenAI-compatible endpoint to talk
         // to; failing here beats a confusing transport error later.
         Some("foundation-models") => Err(AGENT_PROVIDER_UNSUPPORTED.to_string()),
@@ -175,6 +181,38 @@ pub(crate) fn managed_target(
         has_vision: false,
         context_window: request.context_window,
         json_schema: false,
+    }
+}
+
+/// A Foundry Local session as the agent talks to it, found in the core's mirror like a managed
+/// engine's.
+async fn resolve_foundry_local_target<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    request: &AgentTurnRequest,
+) -> Result<OpenAiTarget, String> {
+    let state: State<AppState> = app_handle.state();
+    let resolver = crate::core::sessions::resolver_for(app_handle, &state);
+    let info = resolver
+        .list_in(crate::core::sessions::resolver::PROVIDER_FOUNDRY_LOCAL)
+        .await
+        .into_iter()
+        .find(|info| super::llm_client::model_ids_match(&info.model_id, &request.model_id))
+        .ok_or_else(|| format!("no active session for model '{}'", request.model_id))?;
+    Ok(foundry_local_target(&info, request))
+}
+
+/// Pure so it can be tested without a Tauri runtime.
+///
+/// Like [`managed_target`]: the port is the core's session gateway, which checks the Bearer key.
+/// No `response_format` (the core declares no structured output for the provider), no vision (the
+/// provider serves chat only), and a kind of its own so no engine's reasoning field is sent.
+pub(crate) fn foundry_local_target(
+    info: &crate::core::sessions::resolver::ResolvedSession,
+    request: &AgentTurnRequest,
+) -> OpenAiTarget {
+    OpenAiTarget {
+        kind: OpenAiTargetKind::LocalFoundryLocal,
+        ..managed_target(info, request)
     }
 }
 
@@ -278,6 +316,34 @@ mod tests {
         assert!(!target.has_vision);
         // The gateway refuses `response_format` unless the model family declares structured
         // output, and nothing here knows the family: the prompt contract carries the shape.
+        assert!(!target.json_schema);
+    }
+
+    #[test]
+    fn a_foundry_local_session_is_reached_through_its_gateway_with_its_key() {
+        // change add-foundry-local: Agent turns on a variant with tool calling go to the session
+        // the core serves; no images, no response_format (the provider declares no structured
+        // output), and a target kind of its own, so no engine-specific reasoning field is sent.
+        let mut request = request("qwen3-4b-generic-gpu");
+        request.provider = Some("foundry-local".into());
+        request.capabilities = vec![VISION_CAPABILITY.into()];
+        let session: crate::core::sessions::resolver::ResolvedSession =
+            serde_json::from_value(serde_json::json!({
+                "pid": 5151,
+                "port": 4101,
+                "model_id": "qwen3-4b-generic-gpu",
+                "api_key": "foundry-key",
+                "provider": "foundry-local",
+            }))
+            .unwrap();
+
+        let target = foundry_local_target(&session, &request);
+
+        assert_eq!(target.kind, OpenAiTargetKind::LocalFoundryLocal);
+        assert_eq!(target.base_url, "http://127.0.0.1:4101/v1");
+        assert_eq!(target.api_key.as_deref(), Some("foundry-key"));
+        assert_eq!(target.model_id, "qwen3-4b-generic-gpu");
+        assert!(!target.has_vision);
         assert!(!target.json_schema);
     }
 

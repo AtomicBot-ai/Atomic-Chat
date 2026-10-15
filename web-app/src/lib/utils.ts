@@ -100,6 +100,9 @@ export function getProviderLogo(provider: string) {
     // A monogram until there is an approved mark, like vLLM's (change add-sglang-runtime, D7).
     case 'sglang':
       return '/images/model-provider/sglang.svg'
+    // A monogram, not Microsoft's mark (change add-foundry-local).
+    case 'foundry-local':
+      return '/images/model-provider/foundry-local.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -230,6 +233,8 @@ export const getProviderTitle = (provider: string) => {
       return 'vLLM'
     case 'sglang':
       return 'SGLang'
+    case 'foundry-local':
+      return 'Foundry Local'
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'

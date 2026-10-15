@@ -27,6 +27,19 @@ describe('agentModelBlockReason', () => {
   })
 })
 
+describe('Foundry Local models in chat (change add-foundry-local)', () => {
+  it('keeps a variant without tool calling out of Agent mode, and lets one with it in', () => {
+    // spec foundry-local-desktop "Модель без tool calling".
+    expect(agentModelBlockReason('foundry-local', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('foundry-local', model(['tools', 'reasoning']))).toBeNull()
+  })
+
+  it('never attaches images, and never grows the variant’s fixed context', () => {
+    expect(imageAttachmentsAllowed('foundry-local', model(['vision']))).toBe(false)
+    expect(canGrowContext('foundry-local')).toBe(false)
+  })
+})
+
 describe('canGrowContext', () => {
   it('never grows a TensorRT-LLM context: it is fixed when the container starts', () => {
     expect(canGrowContext('tensorrt-llm')).toBe(false)

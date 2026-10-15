@@ -139,6 +139,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'llamacpp-upstream',
   'atomic-prism',
   'foundation-models',
+  'foundry-local',
 ])
 
 const isLocalInferenceProvider = (provider: string): boolean =>

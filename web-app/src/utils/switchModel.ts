@@ -233,6 +233,7 @@ const LOCAL_PROVIDERS = [
   'atomic-prism',
   'mlx',
   'foundation-models',
+  'foundry-local',
 ] as const
 
 /** Every local engine provider, the managed engines last. */
