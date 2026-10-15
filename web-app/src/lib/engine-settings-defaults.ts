@@ -5,6 +5,7 @@ import mlxSettings from './core-settings-schema/mlx.json'
 import tensorrtLlmSettings from './core-settings-schema/tensorrt-llm.json'
 import vllmSettings from './core-settings-schema/vllm.json'
 import sglangSettings from './core-settings-schema/sglang.json'
+import foundryLocalSettings from './core-settings-schema/foundry-local.json'
 
 import { sameSettingValue } from '@/lib/model-settings-defaults'
 
@@ -47,6 +48,7 @@ const ENGINE_DEFAULTS: Record<string, Record<string, unknown>> = {
   'tensorrt-llm': toDefaults(tensorrtLlmSettings as SettingDefinition[]),
   'vllm': toDefaults(vllmSettings as SettingDefinition[]),
   'sglang': toDefaults(sglangSettings as SettingDefinition[]),
+  'foundry-local': toDefaults(foundryLocalSettings as SettingDefinition[]),
 }
 
 const defaultsFor = (providerName: string) =>

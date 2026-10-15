@@ -87,6 +87,15 @@ test('Linux and Windows build the SGLang extension, macOS does not (change add-s
   assert.ok(!names('darwin').includes('@janhq/sglang-extension'))
 })
 
+test('every desktop OS builds the Foundry Local extension (change add-foundry-local)', () => {
+  // The core decides where the provider runs (design D7); the app ships it everywhere and hides it
+  // where the core did not register it.
+  const names = (platform) => builtHere(platform).map((pkg) => pkg.name)
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    assert.ok(names(platform).includes('@janhq/foundry-local-extension'), platform)
+  }
+})
+
 test('each extension this platform builds has a pre-install tarball under the name the installer looks for', () => {
   const tarballs = readdirSync(PRE_INSTALL).filter((name) => name.endsWith('.tgz'))
 

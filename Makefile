@@ -365,6 +365,7 @@ test-extensions:
 		--include '@janhq/tensorrt-llm-extension' \
 		--include '@janhq/vllm-extension' \
 		--include '@janhq/sglang-extension' \
+		--include '@janhq/foundry-local-extension' \
 		run test:run
 
 # Tauri validates bundle.resources and externalBin paths while compiling the
