@@ -57,6 +57,8 @@ export function FoundryLocalAccelerators() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [preparing, setPreparing] = useState(false)
   const [steps, setSteps] = useState<Record<string, Step>>({})
+  /** The accelerators of the prepare in flight: "Preparing…" before the core reports a step. */
+  const [inFlight, setInFlight] = useState<string[]>([])
   const [prepareError, setPrepareError] = useState<string | null>(null)
 
   const read = useCallback(async (force = false) => {
@@ -75,6 +77,7 @@ export function FoundryLocalAccelerators() {
   const prepare = async (names: string[]) => {
     if (names.length === 0 || preparing) return
     setPreparing(true)
+    setInFlight(names)
     setPrepareError(null)
     setSteps({})
     let unlisten: (() => void) | undefined
@@ -95,6 +98,7 @@ export function FoundryLocalAccelerators() {
     } finally {
       unlisten?.()
       setPreparing(false)
+      setInFlight([])
       setSteps({})
       // The core forgets its probe after a prepare: this read shows what the library registered.
       await read()
@@ -146,6 +150,10 @@ export function FoundryLocalAccelerators() {
         <span className="text-xs">{t('providers:foundryLocal.accelerators.preparing')}</span>
       )
     }
+    // Asked for, nothing reported yet (a Windows ML accelerator waits its turn without a word).
+    if (!step && inFlight.includes(accelerator.name)) {
+      return <span className="text-xs">{t('providers:foundryLocal.accelerators.preparing')}</span>
+    }
     if (accelerator.prepared) {
       return (
         <span className="text-xs text-emerald-600 dark:text-emerald-400">
@@ -196,7 +204,8 @@ export function FoundryLocalAccelerators() {
           />
         </div>
       ))}
-      {unprepared.length > 0 && (
+      {/* While a prepare runs there is nothing to start: it covers every accelerator left. */}
+      {unprepared.length > 0 && !preparing && (
         <div className="mt-4 space-y-2">
           <p className="text-sm">{t('providers:foundryLocal.accelerators.sizeWarning')}</p>
           <Button

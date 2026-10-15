@@ -266,4 +266,20 @@ describe('FoundryLocalAccelerators', () => {
     expect(useFoundryLocalInstallStore.getState().justInstalled).toBe('v2.0.0/win-x64')
     expect(core.prepareFoundryLocalAccelerators).not.toHaveBeenCalled()
   })
+
+  it('offers no Prepare while a prepare runs, and marks what it prepares at once', async () => {
+    core.foundryLocalAccelerators.mockResolvedValue(answer([webgpu(), cuda()]))
+    core.prepareFoundryLocalAccelerators.mockReturnValue(new Promise(() => {}))
+
+    render(<FoundryLocalAccelerators />)
+    await screen.findByTestId('foundry-accelerator-WebGpuExecutionProvider')
+    fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' })).not.toBeInTheDocument()
+    )
+    // No event from the core yet: both still read as being prepared, not as "not prepared".
+    expect(within(row('WebGpuExecutionProvider')).getByText('providers:foundryLocal.accelerators.preparing')).toBeInTheDocument()
+    expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.preparing')).toBeInTheDocument()
+  })
 })

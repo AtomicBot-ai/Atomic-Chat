@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -175,5 +175,19 @@ describe('FoundryLocalEnginePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.engine.update {"version":"v2.2.0"}' }))
 
     await waitFor(() => expect(useFoundryLocalInstallStore.getState().justInstalled).toBe('v2.2.0/win-x64'))
+  })
+
+  it('shows a loader in the install button at once, before the core reports any progress', async () => {
+    hold(versions())
+    install.installEngineBuildWithProgress.mockReturnValue(new Promise(() => {}))
+
+    render(<FoundryLocalEnginePanel />)
+    const button = screen.getByRole('button', { name: /providers:foundryLocal.engine.install/ })
+    fireEvent.click(button)
+
+    await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'))
+    expect(within(button).getByTestId('foundry-engine-busy')).toBeInTheDocument()
+    // The label stays in the button (hidden), so the button keeps its size.
+    expect(button).toHaveTextContent('providers:foundryLocal.engine.install')
   })
 })

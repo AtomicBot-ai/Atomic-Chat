@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { IconLoader2 } from '@tabler/icons-react'
+import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -121,9 +122,9 @@ export function FoundryLocalEnginePanel() {
           description={t('providers:foundryLocal.engine.installedDescription')}
           actions={
             offer && (
-              <Button size="sm" disabled={busy} onClick={applyUpdate}>
+              <BusyButton busy={busy} onClick={applyUpdate}>
                 {t('providers:foundryLocal.engine.update', { version: offer.version })}
-              </Button>
+              </BusyButton>
             )
           }
         />
@@ -146,9 +147,9 @@ export function FoundryLocalEnginePanel() {
           }
           actions={
             latest && (
-              <Button size="sm" disabled={busy} onClick={install}>
+              <BusyButton busy={busy} onClick={install}>
                 {t('providers:foundryLocal.engine.install', { version: latest.version })}
-              </Button>
+              </BusyButton>
             )
           }
         />
@@ -170,5 +171,33 @@ export function FoundryLocalEnginePanel() {
 
       <p className="mt-4 text-xs leading-normal">{t('providers:foundryLocal.telemetry')}</p>
     </Card>
+  )
+}
+
+/**
+ * The install/update button: from the click until the core answers it shows a loader in place of
+ * its label. The core downloads the manifest and the archive's first bytes before any progress
+ * arrives, which took seconds with nothing but a greyed-out button. The label stays in the box,
+ * transparent, so the button keeps its size.
+ */
+function BusyButton({
+  busy,
+  onClick,
+  children,
+}: {
+  busy: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Button size="sm" disabled={busy} aria-busy={busy} onClick={onClick} className="relative">
+      {/* Transparent, not `invisible`: the label keeps naming the button for screen readers. */}
+      <span className={busy ? 'opacity-0' : undefined}>{children}</span>
+      {busy && (
+        <span className="absolute inset-0 flex items-center justify-center" data-testid="foundry-engine-busy">
+          <IconLoader2 size={16} className="animate-spin" aria-hidden />
+        </span>
+      )}
+    </Button>
   )
 }
