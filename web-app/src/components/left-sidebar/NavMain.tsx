@@ -166,7 +166,7 @@ export function NavMain() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         )}
-        {PlatformFeatures[PlatformFeature.MEDIA_GENERATION] && (
+        {PlatformFeatures[PlatformFeature.VIDEO_GENERATION] && (
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild

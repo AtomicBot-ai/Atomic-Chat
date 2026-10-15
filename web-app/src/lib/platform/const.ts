@@ -88,6 +88,10 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.MEDIA_GENERATION]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
+  // The Video page: media generation, except on Linux (see the feature).
+  [PlatformFeature.VIDEO_GENERATION]:
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid() && !IS_LINUX,
+
   // Public Remote access through the bundled cloudflared tunnel. Cloudflare
   // publishes no Windows arm64 build, so that bundle ships without it.
   [PlatformFeature.REMOTE_ACCESS]:

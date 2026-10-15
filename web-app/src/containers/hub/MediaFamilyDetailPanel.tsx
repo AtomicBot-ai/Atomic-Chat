@@ -30,6 +30,8 @@ import { artifactId } from '@/lib/diffusion/models'
 import { workflowsForFamily } from '@/lib/diffusion/workflows'
 import { formatBytes } from '@/lib/downloadFormat'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
 import type {
   DiffusionCatalogFamily,
@@ -339,6 +341,10 @@ function MediaQuantRow({
   const ready = artifact.complete && !artifact.downloading
   const openLabel =
     family.modality === 'video' ? t('hub:openInVideo') : t('hub:openInImages')
+  // No Video page on this platform (Linux): nothing to open a video model in.
+  const canOpen =
+    family.modality !== 'video' ||
+    PlatformFeatures[PlatformFeature.VIDEO_GENERATION]
 
   // Picking the checkpoint here is what makes the studio open on it, the
   // same selection a download from the studio's own list records.
@@ -405,6 +411,7 @@ function MediaQuantRow({
             className="w-24 justify-center"
             aria-label={openLabel}
             title={openLabel}
+            disabled={!canOpen}
             onClick={openInStudio}
           >
             {t('hub:open')}

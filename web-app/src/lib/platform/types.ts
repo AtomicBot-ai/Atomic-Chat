@@ -75,6 +75,12 @@ export enum PlatformFeature {
   // plugin that supervises `sd-server`, so desktop only.
   MEDIA_GENERATION = 'mediaGeneration',
 
+  // The Video page. Off on Linux, where WebKitGTK plays <video> through
+  // GStreamer and the AppImage finds no GStreamer plugins on Arch/Fedora:
+  // opening the page with any clip in the gallery hung the app
+  // (tauri-apps/tauri#4642). Images stay on.
+  VIDEO_GENERATION = 'videoGeneration',
+
   // Remote access over the internet via the bundled cloudflared tunnel. LAN
   // access to the local server is not part of it.
   REMOTE_ACCESS = 'remoteAccess',

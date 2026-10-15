@@ -24,7 +24,7 @@ export const Route = createFileRoute(route.videos.index as any)({
 function VideosRoute() {
   const search = Route.useSearch() as SearchParams
   return (
-    <PlatformGuard feature={PlatformFeature.MEDIA_GENERATION}>
+    <PlatformGuard feature={PlatformFeature.VIDEO_GENERATION}>
       <VideoGenerationPage search={search} />
     </PlatformGuard>
   )

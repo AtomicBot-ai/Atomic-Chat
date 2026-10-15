@@ -125,9 +125,13 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-// Media generation is desktop-only; the flag is flipped per test so both the
-// gated and the ungated sidebar can be checked from one file.
-const platform = vi.hoisted(() => ({ mediaGeneration: true }))
+// Media generation is desktop-only and Video is off on Linux; the flags are
+// flipped per test so the gated and the ungated sidebar can be checked from
+// one file.
+const platform = vi.hoisted(() => ({
+  mediaGeneration: true,
+  videoGeneration: true,
+}))
 vi.mock('@/lib/platform/const', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/platform/const')>()
   return {
@@ -135,7 +139,9 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
       get: (target, key) =>
         key === 'mediaGeneration'
           ? platform.mediaGeneration
-          : target[key as keyof typeof target],
+          : key === 'videoGeneration'
+            ? platform.videoGeneration
+            : target[key as keyof typeof target],
     }),
   }
 })
@@ -163,6 +169,7 @@ describe('NavMain', () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: '/' } as never)
     useLeftPanel.setState({ pluginsExpanded: false })
     platform.mediaGeneration = true
+    platform.videoGeneration = true
   })
 
   it('puts Images right after Models on desktop', () => {
@@ -178,11 +185,20 @@ describe('NavMain', () => {
 
   it('hides Images where the platform has no media generation', () => {
     platform.mediaGeneration = false
+    platform.videoGeneration = false
     render(<NavMain />)
 
     expect(screen.queryByTestId('images-link')).not.toBeInTheDocument()
     expect(screen.queryByTestId('videos-link')).not.toBeInTheDocument()
     expect(screen.getByText('common:modelHub')).toBeInTheDocument()
+  })
+
+  it('keeps Images and hides Video on Linux', () => {
+    platform.videoGeneration = false
+    render(<NavMain />)
+
+    expect(screen.getByTestId('images-link')).toBeInTheDocument()
+    expect(screen.queryByTestId('videos-link')).not.toBeInTheDocument()
   })
 
   it('puts Video right after Images as one row, and highlights it on its route', () => {
