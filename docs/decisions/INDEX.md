@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-408 records, 2026-05-19 → 2026-10-15.
+411 records, 2026-05-19 → 2026-10-15.
 
 ---
 
@@ -85,8 +85,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (46)
+## Agent mode — autonomous loop, tools, skills, workspace (49)
 
+- **2026-10-15** — [Hide Agent mode; every turn runs on the chat pipeline](2026-10-15-hide-agent-mode.md)
+- **2026-10-15** — [Run terminal commands and scripts from chat](2026-10-15-run-commands-and-scripts-from-chat.md)
+- **2026-10-15** — [Sandbox chat commands with Microsoft MXC on Windows](2026-10-15-sandbox-chat-commands-with-mxc-on-windows.md)
 - **2026-09-17** — [Fall back to keyless search when hosted Exa is unavailable](2026-09-17-fallback-to-keyless-search-when-hosted-exa-is-unavailable.md)
 - **2026-09-16** — [Reserve the thinking budget on top of the tool-call budget](2026-09-16-reserve-the-thinking-budget-on-top-of-the-tool-call-budget.md)
 - **2026-09-15** — [Restore loaded skills from disk, not from the session copy](2026-09-15-restore-loaded-skills-from-disk-not-from-the-session.md)

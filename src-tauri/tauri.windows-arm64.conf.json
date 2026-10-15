@@ -1,7 +1,7 @@
 {
   "bundle": {
     "targets": ["nsis"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/jan-cli.exe", "resources/bin/atomic-chat-core.exe", "resources/bin/atomic-chat-app-core.exe", "resources/llamacpp-backend-upstream/**/*"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/agent-skills/**/*", "resources/bin/jan-cli.exe", "resources/bin/atomic-chat-core.exe", "resources/bin/atomic-chat-app-core.exe", "resources/bin/mxc/wxc-exec.exe", "resources/llamacpp-backend-upstream/**/*", "licenses/mxc-LICENSE.txt"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"]
   }
 }

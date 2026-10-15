@@ -127,8 +127,14 @@ import { captureHandledError } from '@/lib/sentry'
 import { Button } from '@/components/ui/button'
 import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
-import { useToolApproval } from '@/hooks/useToolApproval'
-import { resolveMcpAutoApprove } from '@/lib/mcp-approval'
+import {
+  approveChatToolCall,
+  resolveMcpAutoApprove,
+} from '@/lib/mcp-approval'
+import {
+  offeredChatExecToolNames,
+  runChatExecToolCall,
+} from '@/lib/chat-exec-tools'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { buildAgentRagRequest } from '@/lib/agent-rag-request'
@@ -643,19 +649,16 @@ function ThreadDetail() {
           threadId,
           ragToolNames,
           mcpToolNames,
+          execToolNames: offeredChatExecToolNames(),
           // The composer's approval select governs chat tool calls too: an
           // explicit "skip" runs them silently, an explicit "manual" prompts
-          // even while the global MCP auto-approve switch is on.
-          approve: (toolName, currentThreadId, input) =>
-            resolveMcpAutoApprove(currentThreadId)
-              ? Promise.resolve(true)
-              : useToolApproval
-                  .getState()
-                  .showApprovalModal(toolName, currentThreadId, input, {
-                    bypassGlobalAutoApprove: true,
-                  }),
+          // even while the global MCP auto-approve switch is on. Commands and
+          // scripts ask unless the thread is on "skip" (lib/mcp-approval).
+          approve: approveChatToolCall,
           callRagTool: (args) => serviceHub.rag().callTool(args),
           callMcpTool: (args) => serviceHub.mcp().callTool(args),
+          callExecTool: (args) =>
+            runChatExecToolCall({ service: serviceHub.chatExec(), ...args }),
           // Resolve project scope from the live route-keyed thread record.
           getProjectId: () =>
             useThreads.getState().threads[threadId]?.metadata?.project?.id,

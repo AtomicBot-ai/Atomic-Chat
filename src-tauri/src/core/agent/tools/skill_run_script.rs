@@ -254,7 +254,7 @@ async fn join_output(
 }
 
 #[cfg(unix)]
-fn configure_process_tree(command: &mut Command) {
+pub(crate) fn configure_process_tree(command: &mut Command) {
     use std::os::unix::process::CommandExt;
 
     unsafe {
@@ -266,7 +266,7 @@ fn configure_process_tree(command: &mut Command) {
 }
 
 #[cfg(windows)]
-fn configure_process_tree(command: &mut Command) {
+pub(crate) fn configure_process_tree(command: &mut Command) {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -277,9 +277,9 @@ fn configure_process_tree(command: &mut Command) {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn configure_process_tree(_command: &mut Command) {}
+pub(crate) fn configure_process_tree(_command: &mut Command) {}
 
-async fn terminate_process_tree(child: &mut Child, pid: Option<u32>) {
+pub(crate) async fn terminate_process_tree(child: &mut Child, pid: Option<u32>) {
     #[cfg(unix)]
     if let Some(pid) = pid.and_then(|value| i32::try_from(value).ok()) {
         let _ = nix::sys::signal::killpg(
@@ -317,7 +317,7 @@ fn optional_string_array(args: &Value, key: &str) -> Result<Vec<String>, ToolOut
     }
 }
 
-fn interpreter_invocation(
+pub(crate) fn interpreter_invocation(
     script_path: &Path,
     user_args: Vec<String>,
     bundled_script_runtime: Option<&Path>,
@@ -336,10 +336,22 @@ fn interpreter_invocation(
             } else {
                 "pwsh".into()
             },
-            ["-NoProfile".into(), "-File".into(), path]
-                .into_iter()
-                .chain(user_args)
-                .collect(),
+            // Windows clients default to the `Restricted` execution policy,
+            // under which `-File` refuses every script; scope the bypass to
+            // this one process.
+            if cfg!(windows) {
+                vec![
+                    "-NoProfile".into(),
+                    "-ExecutionPolicy".into(),
+                    "Bypass".into(),
+                ]
+            } else {
+                vec!["-NoProfile".into()]
+            }
+            .into_iter()
+            .chain(["-File".into(), path])
+            .chain(user_args)
+            .collect(),
         ),
         "js" | "mjs" | "cjs" | "ts" => (
             bundled_script_runtime

@@ -1,4 +1,4 @@
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { agentProviderBlockReason } from '@/lib/agent-provider'
 import { agentModelBlockReason } from '@/lib/managed-engine/chat'
@@ -27,7 +27,7 @@ export function resolveThreadExecutionRoute(
 
   return resolveMessageExecutionRoute({
     legacyChatEngine: useGeneralSetting.getState().legacyChatEngine,
-    agentModeSelected: useGeneralSetting.getState().agentModeEnabled,
+    agentModeSelected: isAgentModeOn(useGeneralSetting.getState()),
     providerBlockReason: agentProviderBlockReason(provider),
     modelBlockReason: agentModelBlockReason(
       provider?.provider,

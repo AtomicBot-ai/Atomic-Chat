@@ -2168,7 +2168,7 @@ fn agent_install_spec(
 /// A sentinel wraps the value so rc files that echo to stdout don't corrupt it.
 /// Returns `None` on probe failure; callers then fall back to the inherited PATH.
 #[cfg(not(windows))]
-fn login_shell_path() -> Option<String> {
+pub(crate) fn login_shell_path() -> Option<String> {
     use std::sync::OnceLock;
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE

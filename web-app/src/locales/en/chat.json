@@ -161,7 +161,21 @@
         "error": "Could not read web page",
         "denied": "Reading web page was denied",
         "skipped": "Skipped repeatedly reading the same page"
+      },
+      "script": {
+        "running": "Running a {{target}} script…",
+        "success": "Ran a {{target}} script",
+        "error": "{{target}} script failed",
+        "denied": "Running a {{target}} script was denied",
+        "skipped": "Skipped repeating the same script"
       }
+    },
+    "exec": {
+      "openFolder": "Open chat folder",
+      "sandboxed": "Ran in the Windows sandbox",
+      "exitCode": "Exit code {{code}}",
+      "timedOut": "Timed out",
+      "cancelled": "Stopped"
     }
   },
   "workspacePreview": {
@@ -282,5 +296,8 @@
   "threadType": {
     "chat": "Chat thread",
     "agent": "Agent thread"
+  },
+  "chatExec": {
+    "menuItem": "Run commands"
   }
 }

@@ -23,6 +23,20 @@ import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
 import type { AgentSkill } from '@/services/agent/skills'
 
+// Agent mode is hidden in the product (PlatformFeature.AGENT_MODE is off);
+// these tests exercise it, so the feature is on here and individual tests
+// flip it back off. Mutable on purpose: PlatformFeatures is read at render.
+const platformFeatures = vi.hoisted(() => ({}) as Record<string, boolean>)
+vi.mock('@/lib/platform/const', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/platform/const')>()
+  Object.assign(platformFeatures, actual.PlatformFeatures, {
+    agentMode: true,
+    chatExec: true,
+  })
+  return { ...actual, PlatformFeatures: platformFeatures }
+})
+
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   downscaleImageDataUrl: vi.fn(),
@@ -201,7 +215,12 @@ describe('ChatInput', () => {
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({ agentModeEnabled: false })
+    useGeneralSetting.setState({
+      agentModeEnabled: false,
+      chatExecEnabled: true,
+    })
+    platformFeatures.agentMode = true
+    platformFeatures.chatExec = true
     useDownloadStore.setState({
       downloads: {},
       localDownloadingModels: new Set(),
@@ -1106,6 +1125,7 @@ describe('ChatInput', () => {
       'Add Images',
       'Add documents or files',
       'chat:agentMode.menuItem',
+      'chat:chatExec.menuItem',
     ])
     expect(screen.queryByText('plugins')).not.toBeInTheDocument()
 
@@ -1180,6 +1200,47 @@ describe('ChatInput', () => {
 
     fireEvent.click(screen.getByText('chat:agentMode.menuItem'))
     expect(useGeneralSetting.getState().agentModeEnabled).toBe(false)
+    unmount()
+  })
+
+  it('hides Agent mode while the feature is off, even with the stored toggle on', () => {
+    // An install that had Agent mode on keeps the persisted flag, but nothing
+    // offers or shows the mode while it is hidden.
+    platformFeatures.agentMode = false
+    useGeneralSetting.setState({ agentModeEnabled: true })
+    selectLocalProvider()
+
+    const { unmount } = render(<ChatInput initialMessage />)
+
+    expect(
+      screen.queryByText('chat:agentMode.menuItem')
+    ).not.toBeInTheDocument()
+    expect(
+      document.querySelector('[data-testid="agent-mode-chip"]')
+    ).not.toBeInTheDocument()
+    expect(useGeneralSetting.getState().agentModeEnabled).toBe(true)
+    unmount()
+  })
+
+  it('toggles running commands from the attach menu', () => {
+    const { unmount } = render(<ChatInput />)
+
+    fireEvent.click(screen.getByText('chat:chatExec.menuItem'))
+    expect(useGeneralSetting.getState().chatExecEnabled).toBe(false)
+
+    fireEvent.click(screen.getByText('chat:chatExec.menuItem'))
+    expect(useGeneralSetting.getState().chatExecEnabled).toBe(true)
+    unmount()
+  })
+
+  it('offers no command toggle where the platform cannot run commands', () => {
+    platformFeatures.chatExec = false
+
+    const { unmount } = render(<ChatInput />)
+
+    expect(
+      screen.queryByText('chat:chatExec.menuItem')
+    ).not.toBeInTheDocument()
     unmount()
   })
 

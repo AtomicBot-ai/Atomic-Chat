@@ -31,6 +31,11 @@ type ExecuteChatToolCallsOptions = {
   threadId: string
   ragToolNames: ReadonlySet<string>
   mcpToolNames: ReadonlySet<string>
+  /**
+   * `run_command` / `run_script` while chat offers them. Checked first: the
+   * built-in tools win a name clash with an MCP tool.
+   */
+  execToolNames?: ReadonlySet<string>
   approve: (
     toolName: string,
     threadId: string,
@@ -47,6 +52,14 @@ type ExecuteChatToolCallsOptions = {
     toolName: string
     arguments: object
   }) => Promise<ToolResult>
+  /** Runs an approved command/script; stops it when `signal` aborts. */
+  callExecTool?: (args: {
+    toolCallId: string
+    toolName: string
+    input: object
+    threadId: string
+    signal: AbortSignal
+  }) => Promise<{ output: unknown } | { error: string }>
   getProjectId: () => string | undefined
   processOutput: (content: unknown) => Promise<unknown>
   addToolOutput: (output: ChatToolOutput) => void
@@ -59,9 +72,11 @@ export async function executeChatToolCalls({
   threadId,
   ragToolNames,
   mcpToolNames,
+  execToolNames = new Set(),
   approve,
   callRagTool,
   callMcpTool,
+  callExecTool,
   getProjectId,
   processOutput,
   addToolOutput,
@@ -84,6 +99,31 @@ export async function executeChatToolCalls({
           toolCallId: toolCall.toolCallId,
           errorText: 'Tool execution denied by user',
         })
+        continue
+      }
+
+      if (execToolNames.has(toolCall.toolName) && callExecTool) {
+        const run = await callExecTool({
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          input: toolCall.input,
+          threadId,
+          signal,
+        })
+        addToolOutput(
+          'error' in run
+            ? {
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: `Error: ${run.error}`,
+              }
+            : {
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                output: run.output,
+              }
+        )
         continue
       }
 
