@@ -516,4 +516,13 @@ mod tests {
         assert_eq!(estimate_mib(4_000, 1_024), 4_000 + 1_024 + 512);
         assert_eq!(estimate_mib(40_000, 0), 44_000);
     }
+
+    #[test]
+    fn gpu_labels_are_short_stable_and_do_not_leak_the_raw_uuid() {
+        let uuid = "00000000-1111-2222-3333-444444444444";
+        let label = gpu_label(uuid);
+        assert_eq!(label.len(), 6);
+        assert!(!label.contains(uuid));
+        assert_eq!(label, gpu_label(uuid));
+    }
 }
