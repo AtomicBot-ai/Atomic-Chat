@@ -73,7 +73,19 @@ export type MediaJobState =
 export type MediaOutputRef =
   | { kind: 'local_path'; path: string; mime?: string }
   | { kind: 'url'; url: string; mime?: string; expires_at?: number }
-  | { kind: 'inline'; base64: string; mime: string }
+  | { kind: 'inline'; base64: string; mime: string; upscale?: MediaUpscaleInfo }
+
+/** How a finished image was enlarged after rendering (the output is upscaled). */
+export type MediaUpscaleInfo = {
+  /** `esrgan` (model upscaler, then Lanczos to the exact size) or `lanczos`. */
+  method: 'esrgan' | 'lanczos' | string
+  upscaler?: string | null
+  source_width: number
+  source_height: number
+  width: number
+  height: number
+  note?: string | null
+}
 
 export type MediaJobError = {
   code: string

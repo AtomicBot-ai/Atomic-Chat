@@ -52,7 +52,10 @@ pub async fn panels_install<R: Runtime>(
         .map_err(|error| format!("Panel install failed: {error}"))?
 }
 
-pub(super) fn install_from(root: &Path, source: &Path) -> Result<super::manifest::PanelManifest, String> {
+pub(super) fn install_from(
+    root: &Path,
+    source: &Path,
+) -> Result<super::manifest::PanelManifest, String> {
     let manifest_path = source.join("panel.json");
     let source_text = fs::read_to_string(&manifest_path)
         .map_err(|_| "That folder has no readable panel.json.".to_string())?;
@@ -75,7 +78,9 @@ pub(super) fn install_from(root: &Path, source: &Path) -> Result<super::manifest
     // without this, picking an already-installed panel's folder — or anything
     // beneath it — would delete the source and then copy nothing, losing the
     // panel outright.
-    if let (Ok(source_real), Ok(destination_real)) = (source.canonicalize(), destination.canonicalize()) {
+    if let (Ok(source_real), Ok(destination_real)) =
+        (source.canonicalize(), destination.canonicalize())
+    {
         if source_real == destination_real || source_real.starts_with(&destination_real) {
             return Err(
                 "That folder is already installed as this panel; copy it somewhere else first."

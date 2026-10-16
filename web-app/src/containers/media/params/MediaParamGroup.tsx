@@ -12,6 +12,7 @@ import { useState } from 'react'
 
 import { visibleParams, type MediaParamSpec } from '@/services/media/contract'
 import { MediaParamField } from './MediaParamField'
+import { SizeInsight } from './SizeInsight'
 import {
   DEFAULT_PARAM_GROUP,
   compareParamGroups,
@@ -79,6 +80,7 @@ export function MediaParamGroups({
           >
             {showAdvanced ? 'Hide advanced' : 'Show advanced'}
           </button>
+          {showAdvanced ? <SizeInsight specs={visible} values={values} /> : null}
           {showAdvanced
             ? [...advanced].sort(compareParamSpecs).map((spec) => (
                 <MediaParamField

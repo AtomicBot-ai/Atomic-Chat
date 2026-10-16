@@ -387,7 +387,11 @@ pub fn normalize_base_url(input: &str) -> Result<String, String> {
 
 async fn port_is_open(host: &str, port: u16) -> bool {
     matches!(
-        tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect((host, port))).await,
+        tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            tokio::net::TcpStream::connect((host, port))
+        )
+        .await,
         Ok(Ok(_))
     )
 }
@@ -406,9 +410,11 @@ pub async fn scan_ports(
     let client = client()?;
     let mut bases: Vec<String> = Vec::new();
 
-    let open = join_all(ports.iter().map(|port| async move {
-        port_is_open(host, *port).await.then_some(*port)
-    }))
+    let open = join_all(
+        ports
+            .iter()
+            .map(|port| async move { port_is_open(host, *port).await.then_some(*port) }),
+    )
     .await;
     for port in open.into_iter().flatten() {
         bases.push(format!("http://{host}:{port}"));
@@ -493,7 +499,10 @@ mod tests {
                 "/api/tags",
                 r#"{"models":[{"name":"qwen3:8b"},{"name":"llama3.2:3b"}]}"#,
             ),
-            ("/api/ps", r#"{"models":[{"name":"qwen3:8b","size_vram":5000000000}]}"#),
+            (
+                "/api/ps",
+                r#"{"models":[{"name":"qwen3:8b","size_vram":5000000000}]}"#,
+            ),
         ])
         .await
         .unwrap();
@@ -508,11 +517,17 @@ mod tests {
     #[tokio::test]
     async fn koboldcpp_is_not_mistaken_for_the_apis_it_emulates() {
         let found = detect(&[
-            ("/api/extra/version", r#"{"result":"KoboldCpp","version":"1.99"}"#),
+            (
+                "/api/extra/version",
+                r#"{"result":"KoboldCpp","version":"1.99"}"#,
+            ),
             // It also answers like Ollama and like OpenAI.
             ("/api/version", r#"{"version":"0.5.4"}"#),
             ("/api/tags", r#"{"models":[{"name":"koboldcpp/model"}]}"#),
-            ("/v1/models", r#"{"object":"list","data":[{"id":"koboldcpp/Mistral-7B"}]}"#),
+            (
+                "/v1/models",
+                r#"{"object":"list","data":[{"id":"koboldcpp/Mistral-7B"}]}"#,
+            ),
         ])
         .await
         .unwrap();
@@ -585,7 +600,10 @@ mod tests {
                  vllm:generation_tokens_total{model_name=\"Qwen/Qwen3-32B-AWQ\"} 400\n",
             ),
             ("/version", r#"{"version":"0.11.0"}"#),
-            ("/v1/models", r#"{"object":"list","data":[{"id":"Qwen/Qwen3-32B-AWQ"}]}"#),
+            (
+                "/v1/models",
+                r#"{"object":"list","data":[{"id":"Qwen/Qwen3-32B-AWQ"}]}"#,
+            ),
         ])
         .await
         .unwrap();
@@ -597,14 +615,20 @@ mod tests {
 
     #[tokio::test]
     async fn sglang_tgi_invokeai_and_a1111_are_each_recognised() {
-        let sglang = detect(&[("/get_model_info", r#"{"model_path":"Qwen/Qwen3-8B","is_generation":true}"#)])
-            .await
-            .unwrap();
+        let sglang = detect(&[(
+            "/get_model_info",
+            r#"{"model_path":"Qwen/Qwen3-8B","is_generation":true}"#,
+        )])
+        .await
+        .unwrap();
         assert_eq!(sglang.runtime_id, Some("sglang"));
 
-        let tgi = detect(&[("/info", r#"{"model_id":"mistralai/Mistral-7B","version":"3.3.7"}"#)])
-            .await
-            .unwrap();
+        let tgi = detect(&[(
+            "/info",
+            r#"{"model_id":"mistralai/Mistral-7B","version":"3.3.7"}"#,
+        )])
+        .await
+        .unwrap();
         assert_eq!(tgi.runtime_id, Some("hf-tgi"));
         assert_eq!(tgi.version.as_deref(), Some("3.3.7"));
 

@@ -2592,7 +2592,7 @@ async fn inner_proxy_request<R: Runtime>(
 
                             let (mlx_session_info, mlx_count) = {
                                 let mut mlx_session_info: Option<SessionInfo> = None;
-                                
+
                                 let mlx_guard = mlx_sessions.lock().await;
                                 let mlx_count = mlx_guard.len();
                                 if let Some(session) = mlx_guard.values().find(|s| {

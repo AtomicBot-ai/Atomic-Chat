@@ -223,7 +223,11 @@ pub async fn delete(base_url: &str, model: &str) -> Result<(), String> {
 
 /// Loads `model` into memory (`keep_alive` as given, or Ollama's setting),
 /// or unloads it with `keep_alive = Some("0")`.
-pub async fn set_loaded(base_url: &str, model: &str, keep_alive: Option<&str>) -> Result<(), String> {
+pub async fn set_loaded(
+    base_url: &str,
+    model: &str,
+    keep_alive: Option<&str>,
+) -> Result<(), String> {
     let model = check_model_name(model)?;
     let mut body = json!({ "model": model, "stream": false });
     if let Some(keep_alive) = keep_alive {
@@ -301,7 +305,9 @@ mod tests {
                 let method = first.next().unwrap_or("").to_string();
                 let path = first.next().unwrap_or("").to_string();
                 let body = text.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
-                log.lock().unwrap().push((method.clone(), path.clone(), body));
+                log.lock()
+                    .unwrap()
+                    .push((method.clone(), path.clone(), body));
                 let (status, reply) = routes
                     .get(&format!("{method} {path}"))
                     .cloned()
@@ -359,9 +365,11 @@ mod tests {
         .join("\n");
         let (base, seen) = serve(&[("POST /api/pull", 200, &stream)]);
         let mut updates = Vec::new();
-        pull(&base, "qwen3:8b", CancellationToken::new(), |p| updates.push(p))
-            .await
-            .unwrap();
+        pull(&base, "qwen3:8b", CancellationToken::new(), |p| {
+            updates.push(p)
+        })
+        .await
+        .unwrap();
         assert_eq!(updates.len(), 5);
         assert_eq!(updates[1].completed, Some(500));
         assert_eq!(updates[1].total, Some(2000));
@@ -398,7 +406,10 @@ mod tests {
         let cancel = CancellationToken::new();
         cancel.cancel();
         let error = pull(&base, "qwen3:8b", cancel, |_| {}).await.unwrap_err();
-        assert!(error.contains("cancelled") || error.contains("before Ollama"), "{error}");
+        assert!(
+            error.contains("cancelled") || error.contains("before Ollama"),
+            "{error}"
+        );
     }
 
     #[tokio::test]
@@ -429,7 +440,10 @@ mod tests {
             r#"{"error":"model 'nope' not found"}"#,
         )]);
         let error = delete(&base, "nope").await.unwrap_err();
-        assert!(error.contains("not found") && error.contains("404"), "{error}");
+        assert!(
+            error.contains("not found") && error.contains("404"),
+            "{error}"
+        );
     }
 
     #[test]

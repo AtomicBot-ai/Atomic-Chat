@@ -147,15 +147,11 @@ impl OllamaSettings {
         if self.context_length > 1_048_576 {
             return Err("Context length above 1,048,576 tokens is not supported".into());
         }
-        if !self.models_dir.trim().is_empty() && !Path::new(self.models_dir.trim()).is_absolute()
-        {
+        if !self.models_dir.trim().is_empty() && !Path::new(self.models_dir.trim()).is_absolute() {
             return Err("The models folder must be a full path".into());
         }
         for uuid in self.gpu_list() {
-            if !uuid
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-            {
+            if !uuid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
                 return Err(format!("{uuid:?} is not a GPU id"));
             }
         }
@@ -187,14 +183,21 @@ impl OllamaSettings {
     /// Windows still applies unless Radium's setting overrides it.
     pub fn env(&self) -> Result<Vec<(String, String)>, String> {
         let mut env = Vec::new();
-        let host = if self.allow_network { "0.0.0.0" } else { "127.0.0.1" };
+        let host = if self.allow_network {
+            "0.0.0.0"
+        } else {
+            "127.0.0.1"
+        };
         env.push(("OLLAMA_HOST".into(), format!("{host}:{}", self.port)));
         let models_dir = self.models_dir.trim();
         if !models_dir.is_empty() {
             env.push(("OLLAMA_MODELS".into(), models_dir.to_string()));
         }
         if self.context_length > 0 {
-            env.push(("OLLAMA_CONTEXT_LENGTH".into(), self.context_length.to_string()));
+            env.push((
+                "OLLAMA_CONTEXT_LENGTH".into(),
+                self.context_length.to_string(),
+            ));
         }
         if !self.keep_alive.is_empty() {
             env.push(("OLLAMA_KEEP_ALIVE".into(), self.keep_alive.clone()));
@@ -256,7 +259,10 @@ impl OllamaSettings {
 pub fn load(path: &Path) -> OllamaSettings {
     match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|error| {
-            log::warn!("[ollama] settings at {} unreadable: {error}", path.display());
+            log::warn!(
+                "[ollama] settings at {} unreadable: {error}",
+                path.display()
+            );
             OllamaSettings::default()
         }),
         Err(_) => OllamaSettings::default(),
@@ -297,7 +303,11 @@ mod tests {
         let settings = OllamaSettings {
             port: 11500,
             allow_network: true,
-            models_dir: if cfg!(windows) { r"D:\ollama\models".into() } else { "/data/ollama".into() },
+            models_dir: if cfg!(windows) {
+                r"D:\ollama\models".into()
+            } else {
+                "/data/ollama".into()
+            },
             context_length: 32768,
             keep_alive: "30m".into(),
             flash_attention: true,
@@ -314,7 +324,9 @@ mod tests {
         settings.validate().unwrap();
         let env = env_map(&settings);
         assert_eq!(env["OLLAMA_HOST"], "0.0.0.0:11500");
-        assert!(env["OLLAMA_MODELS"].ends_with("ollama") || env["OLLAMA_MODELS"].ends_with("models"));
+        assert!(
+            env["OLLAMA_MODELS"].ends_with("ollama") || env["OLLAMA_MODELS"].ends_with("models")
+        );
         assert_eq!(env["OLLAMA_CONTEXT_LENGTH"], "32768");
         assert_eq!(env["OLLAMA_KEEP_ALIVE"], "30m");
         assert_eq!(env["OLLAMA_FLASH_ATTENTION"], "1");
@@ -324,7 +336,10 @@ mod tests {
         assert_eq!(env["CUDA_VISIBLE_DEVICES"], "GPU-aaaa-1111,GPU-bbbb-2222");
         assert_eq!(env["CUDA_DEVICE_ORDER"], "PCI_BUS_ID");
         assert_eq!(env["OLLAMA_SCHED_SPREAD"], "1");
-        assert_eq!(env["OLLAMA_GPU_OVERHEAD"], (512u64 * 1024 * 1024).to_string());
+        assert_eq!(
+            env["OLLAMA_GPU_OVERHEAD"],
+            (512u64 * 1024 * 1024).to_string()
+        );
         assert_eq!(env["OLLAMA_NO_CLOUD"], "1");
     }
 
@@ -344,7 +359,10 @@ mod tests {
             ..OllamaSettings::default()
         };
         let env = settings.env().unwrap();
-        assert_eq!(env.iter().filter(|(k, _)| k == "OLLAMA_KEEP_ALIVE").count(), 1);
+        assert_eq!(
+            env.iter().filter(|(k, _)| k == "OLLAMA_KEEP_ALIVE").count(),
+            1
+        );
         let map: std::collections::HashMap<_, _> = env.into_iter().collect();
         assert_eq!(map["OLLAMA_KEEP_ALIVE"], "-1");
         assert_eq!(map["OLLAMA_DEBUG"], "1");
@@ -353,20 +371,46 @@ mod tests {
     #[test]
     fn bad_values_are_refused_with_a_reason() {
         let bad = |settings: OllamaSettings| settings.validate().unwrap_err();
-        assert!(bad(OllamaSettings { port: 1337, ..Default::default() }).contains("1337"));
-        assert!(bad(OllamaSettings { port: 80, ..Default::default() }).contains("1024"));
-        assert!(bad(OllamaSettings { keep_alive: "5 minutes".into(), ..Default::default() })
-            .contains("5m"));
-        assert!(bad(OllamaSettings { kv_cache_type: "q2".into(), ..Default::default() })
-            .contains("f16"));
-        assert!(bad(OllamaSettings { models_dir: "models".into(), ..Default::default() })
-            .contains("full path"));
-        assert!(bad(OllamaSettings { gpus: "GPU-1; rm".into(), ..Default::default() })
-            .contains("GPU id"));
-        assert!(bad(OllamaSettings { extra_env: "lower=1".into(), ..Default::default() })
-            .contains("Line 1"));
-        assert!(bad(OllamaSettings { extra_env: "NOEQUALS".into(), ..Default::default() })
-            .contains("KEY=VALUE"));
+        assert!(bad(OllamaSettings {
+            port: 1337,
+            ..Default::default()
+        })
+        .contains("1337"));
+        assert!(bad(OllamaSettings {
+            port: 80,
+            ..Default::default()
+        })
+        .contains("1024"));
+        assert!(bad(OllamaSettings {
+            keep_alive: "5 minutes".into(),
+            ..Default::default()
+        })
+        .contains("5m"));
+        assert!(bad(OllamaSettings {
+            kv_cache_type: "q2".into(),
+            ..Default::default()
+        })
+        .contains("f16"));
+        assert!(bad(OllamaSettings {
+            models_dir: "models".into(),
+            ..Default::default()
+        })
+        .contains("full path"));
+        assert!(bad(OllamaSettings {
+            gpus: "GPU-1; rm".into(),
+            ..Default::default()
+        })
+        .contains("GPU id"));
+        assert!(bad(OllamaSettings {
+            extra_env: "lower=1".into(),
+            ..Default::default()
+        })
+        .contains("Line 1"));
+        assert!(bad(OllamaSettings {
+            extra_env: "NOEQUALS".into(),
+            ..Default::default()
+        })
+        .contains("KEY=VALUE"));
     }
 
     #[test]
@@ -382,8 +426,14 @@ mod tests {
     #[test]
     fn only_auto_start_changes_without_a_restart() {
         let base = OllamaSettings::default();
-        let auto = OllamaSettings { auto_start: true, ..base.clone() };
-        let ctx = OllamaSettings { context_length: 8192, ..base.clone() };
+        let auto = OllamaSettings {
+            auto_start: true,
+            ..base.clone()
+        };
+        let ctx = OllamaSettings {
+            context_length: 8192,
+            ..base.clone()
+        };
         assert!(!base.needs_restart(&auto));
         assert!(base.needs_restart(&ctx));
     }
@@ -392,7 +442,10 @@ mod tests {
     fn settings_round_trip_and_a_damaged_file_falls_back_to_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("runtimes/ollama/settings.json");
-        let settings = OllamaSettings { context_length: 16384, ..Default::default() };
+        let settings = OllamaSettings {
+            context_length: 16384,
+            ..Default::default()
+        };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), settings);
 
@@ -409,7 +462,14 @@ mod tests {
     fn invalid_settings_are_never_written() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        assert!(save(&path, &OllamaSettings { port: 1337, ..Default::default() }).is_err());
+        assert!(save(
+            &path,
+            &OllamaSettings {
+                port: 1337,
+                ..Default::default()
+            }
+        )
+        .is_err());
         assert!(!path.exists());
     }
 }

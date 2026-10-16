@@ -41,6 +41,11 @@ const STATUS: EngineStatus = {
   running_model: null,
   base_url: null,
   upscalers: [],
+  output_sizes: [
+    { id: 'native', label: 'As rendered', long_edge: 0 },
+    { id: '4k', label: '4K (3840 long side · 3840 × 2160 at 16:9)', long_edge: 3840 },
+  ],
+  esrgan_available: true,
   models: [
     {
       id: 'sd-1.5',
@@ -56,14 +61,26 @@ const STATUS: EngineStatus = {
         steps: 20,
         cfg_scale: 7,
         sampler: 'euler_a',
-        resolutions: [
-          [512, 512],
-          [512, 768],
-          [768, 512],
-        ],
+        resolution: {
+          native: [512, 512],
+          multiple: 64,
+          min_side: 256,
+          max_side: 1024,
+          pixel_budget: 512 * 512,
+          comfortable_min_pixels: 384 * 384,
+          comfortable_max_pixels: 768 * 768,
+          vram_mb_per_megapixel: 2400,
+          extra_sizes: [],
+        },
       },
       size_bytes: 1_763_578_176,
       installed: true,
+      // As `media_engine_status` computes them from the rules (Rust).
+      size_presets: [
+        { aspect: '1:1', width: 512, height: 512, kind: 'native', label: '1:1 · 512 × 512 (native)', vram_mb: 3701 },
+        { aspect: '4:3', width: 576, height: 448, kind: 'aspect', label: '4:3 · 576 × 448', vram_mb: 3691 },
+        { aspect: '2:3', width: 448, height: 640, kind: 'aspect', label: '2:3 · 448 × 640', vram_mb: 3760 },
+      ],
     },
     {
       id: 'wan2.2-ti2v-5b',
@@ -79,7 +96,6 @@ const STATUS: EngineStatus = {
         steps: 30,
         cfg_scale: 5,
         sampler: 'euler',
-        resolutions: [[832, 480]],
         video: {
           fps: 16,
           fps_min: 1,
@@ -259,6 +275,12 @@ describeMediaAdapterConformance({
 
 describe('built-in engine specifics', () => {
   const adapter = () => createBuiltinEngineAdapter(descriptor, transport)
+  const baseRequest = () => ({
+    client_job_id: 'c1',
+    provider_id: 'builtin-engine',
+    model_id: 'builtin-engine:sd-1.5',
+    task: 'text_to_image' as const,
+  })
 
   it('lists every catalog model with its download state and a size to show', async () => {
     const capabilities = await adapter().capabilities()
@@ -277,33 +299,133 @@ describe('built-in engine specifics', () => {
     ])
   })
 
-  it('offers the catalog resolution ladder, native size first', async () => {
+  it('offers the Rust-computed aspect presets, native first, plus a custom size', async () => {
     const sd = (await adapter().capabilities()).models[0]
     const resolution = sd.params.text_to_image.find((p) => p.id === 'resolution')
 
     expect(resolution?.default).toBe('512x512')
-    expect(resolution?.options?.map((o) => o.value)).toEqual(['512x512', '512x768', '768x512'])
+    expect(resolution?.options?.map((o) => o.value)).toEqual([
+      '512x512',
+      '576x448',
+      '448x640',
+      'custom',
+    ])
+    expect(resolution?.options?.[0]).toMatchObject({ width: 512, height: 512, vram_mb: 3701 })
+    expect(resolution?.size_rules).toMatchObject({ multiple: 64, base_memory_mb: 3072 })
+    expect(resolution?.advanced).toBeFalsy()
   })
 
-  it('falls back to the family sizes when a model omits a ladder', async () => {
-    const noLadderStatus: EngineStatus = {
+  it('puts the custom width and height under Advanced, snapped to the model multiple', async () => {
+    const sd = (await adapter().capabilities()).models[0]
+    const width = sd.params.text_to_image.find((p) => p.id === 'custom_width')
+    expect(width).toMatchObject({
+      advanced: true,
+      min: 256,
+      max: 1024,
+      modulus: { modulus: 64, offset: 0 },
+      depends_on: [{ param: 'resolution', equals: 'custom' }],
+    })
+  })
+
+  it('offers the model size alone when the backend sends no presets', async () => {
+    const noPresets: EngineStatus = {
       ...STATUS,
       models: STATUS.models.map((m) => ({
         ...m,
-        defaults: { ...m.defaults, resolutions: undefined },
+        size_presets: undefined,
+        defaults: { ...m.defaults, resolution: undefined },
       })),
     }
     const noLadderTransport: BuiltinEngineTransport = {
       ...transport,
       invoke: async (command, args, signal) => {
-        if (command === 'media_engine_status') return noLadderStatus
+        if (command === 'media_engine_status') return noPresets as never
         return transport.invoke(command, args, signal)
       },
     }
     const caps = await createBuiltinEngineAdapter(descriptor, noLadderTransport).capabilities()
     const resolution = caps.models[0].params.text_to_image.find((p) => p.id === 'resolution')
 
-    expect(resolution?.options?.map((o) => o.value)).toEqual(['512x512', '512x768', '768x512'])
+    expect(resolution?.options?.map((o) => o.value)).toEqual(['512x512'])
+  })
+
+  it('shows output size up front and the upscaler choice under Advanced', async () => {
+    const [image, video] = (await adapter().capabilities()).models
+    const output = image.params.text_to_image.find((p) => p.id === 'output_size')
+    expect(output?.advanced).toBeFalsy()
+    expect(output?.options?.map((o) => o.value)).toEqual(['native', '4k'])
+    expect(output?.options?.[1].long_edge).toBe(3840)
+    const upscaler = image.params.text_to_image.find((p) => p.id === 'upscaler')
+    expect(upscaler?.advanced).toBe(true)
+    expect(upscaler?.depends_on).toEqual([{ param: 'output_size', in: ['4k'] }])
+    expect(video.params.text_to_video.some((p) => p.id === 'output_size')).toBe(false)
+  })
+
+  it('sends a custom size as the width and height', () => {
+    const body = engineRequestBody({
+      ...baseRequest(),
+      params: { prompt: 'x', resolution: 'custom', custom_width: 640, custom_height: 384 },
+    })
+    expect(body).toMatchObject({ width: 640, height: 384 })
+  })
+
+  it('upscales the finished image to the output size and labels it', async () => {
+    const upscaleCalls: Array<Record<string, unknown> | undefined> = []
+    const upscaling: BuiltinEngineTransport = {
+      ...transport,
+      invoke: async (command, args, signal) => {
+        if (command === 'media_upscale_image') {
+          upscaleCalls.push(args)
+          return {
+            image_base64: 'UPSCALED',
+            mime: 'image/png',
+            info: {
+              method: 'lanczos',
+              upscaler: null,
+              source_width: 512,
+              source_height: 512,
+              width: 3840,
+              height: 3840,
+              note: null,
+            },
+          } as never
+        }
+        return transport.invoke(command, args, signal)
+      },
+    }
+    fake.states = ['succeeded']
+    const engine = createBuiltinEngineAdapter(descriptor, upscaling)
+    const submitted = await engine.submit({
+      ...baseRequest(),
+      params: { prompt: 'x', resolution: '512x512', output_size: '4k', upscaler: 'lanczos' },
+    })
+    const first = await engine.poll(submitted)
+    const again = await engine.poll(submitted)
+
+    expect(first.outputs).toEqual([
+      {
+        kind: 'inline',
+        base64: 'UPSCALED',
+        mime: 'image/png',
+        upscale: expect.objectContaining({ width: 3840, method: 'lanczos' }),
+      },
+    ])
+    expect(again.outputs).toEqual(first.outputs)
+    expect(upscaleCalls).toEqual([
+      { imageBase64: PNG_BASE64, outputSize: '4k', upscaler: 'lanczos' },
+    ])
+  })
+
+  it('leaves the image alone when the output size is as rendered', async () => {
+    fake.states = ['succeeded']
+    const engine = adapter()
+    const submitted = await engine.submit({
+      ...baseRequest(),
+      params: { prompt: 'x', output_size: 'native' },
+    })
+    const done = await engine.poll(submitted)
+    expect(done.outputs).toEqual([{ kind: 'inline', base64: PNG_BASE64, mime: 'image/png' }])
+    expect(fake.invoked.some((call) => call.command === 'media_upscale_image')).toBe(false)
   })
 
   it('gives video models frames and FPS, and image models neither', async () => {

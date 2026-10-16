@@ -230,6 +230,24 @@ describe('materialize — inline', () => {
     expect(new TextDecoder().decode(fs.files.get(assets[0]!.path)!)).toBe('hello')
     expect(assets[0]?.bytes).toBe(5)
   })
+
+  it('records that an image was upscaled, and its finished size', async () => {
+    const upscale = {
+      method: 'esrgan',
+      upscaler: 'Real-ESRGAN 4×',
+      source_width: 1344,
+      source_height: 768,
+      width: 3840,
+      height: 2194,
+      note: null,
+    }
+    const assets = await materialize(
+      snapshot([{ kind: 'inline', base64: 'aGVsbG8=', mime: 'image/png', upscale }]),
+      context,
+      deps()
+    )
+    expect(assets[0]).toMatchObject({ upscale, width: 3840, height: 2194 })
+  })
 })
 
 describe('materialize — mime and media type', () => {

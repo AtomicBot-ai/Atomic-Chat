@@ -8,6 +8,7 @@
 
 pub mod catalog;
 pub mod engine;
+pub mod resolution;
 pub mod secrets;
 pub mod server;
 pub mod supervisor;
@@ -20,3 +21,7 @@ pub mod commands;
 /// Desktop only: installs and runs the built-in engine for the Media page.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod runtime;
+
+/// Desktop only: enlarges finished images to the chosen output size.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod upscale;

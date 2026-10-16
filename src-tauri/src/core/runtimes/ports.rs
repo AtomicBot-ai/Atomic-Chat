@@ -106,7 +106,10 @@ impl PortBroker {
 
     /// How many ports are leased right now.
     pub fn leased_count(&self) -> usize {
-        self.inner.lock().map(|inner| inner.leased.len()).unwrap_or(0)
+        self.inner
+            .lock()
+            .map(|inner| inner.leased.len())
+            .unwrap_or(0)
     }
 }
 
@@ -150,13 +153,18 @@ mod tests {
         let freed = second.port();
         drop(second);
         assert_eq!(broker.leased_count(), 2);
-        assert_eq!(broker.lease_in(40000..=40002, |_| true).unwrap().port(), freed);
+        assert_eq!(
+            broker.lease_in(40000..=40002, |_| true).unwrap().port(),
+            freed
+        );
     }
 
     #[test]
     fn a_port_another_program_holds_is_skipped() {
         let broker = PortBroker::new();
-        let lease = broker.lease_in(40010..=40012, |port| port != 40010).unwrap();
+        let lease = broker
+            .lease_in(40010..=40012, |port| port != 40010)
+            .unwrap();
         assert_eq!(lease.port(), 40011);
     }
 

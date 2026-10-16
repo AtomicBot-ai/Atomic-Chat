@@ -18,9 +18,7 @@ fn describe(error: CredentialError) -> String {
 
 #[tauri::command]
 pub fn media_secret_set(key: String, secret: String) -> Result<(), String> {
-    OsCredentialStore
-        .set(&key, &secret)
-        .map_err(describe)
+    OsCredentialStore.set(&key, &secret).map_err(describe)
 }
 
 #[tauri::command]

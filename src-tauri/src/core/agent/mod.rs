@@ -28,8 +28,8 @@ pub mod approval_allowlist;
 pub mod attachments;
 mod batch_executor;
 pub mod commands;
-pub mod delegation;
 pub mod compressor;
+pub mod delegation;
 #[cfg(feature = "gaia-eval")]
 pub mod eval;
 pub mod folder_access;
@@ -60,9 +60,9 @@ pub mod types;
 pub mod workspace;
 
 #[cfg(test)]
-mod model_e2e;
-#[cfg(test)]
 mod delegation_tests;
+#[cfg(test)]
+mod model_e2e;
 #[cfg(test)]
 mod runner_tests;
 #[cfg(test)]

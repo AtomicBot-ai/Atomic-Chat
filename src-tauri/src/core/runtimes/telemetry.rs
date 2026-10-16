@@ -205,9 +205,8 @@ pub fn engine_counters(prefix: &str, samples: &[Sample]) -> Option<EngineCounter
     };
     // The first name that is present wins, so a renamed metric is not added
     // to its old name.
-    let first_present = |names: &[&str]| -> Option<f64> {
-        names.iter().find_map(|name| sum(&[name]))
-    };
+    let first_present =
+        |names: &[&str]| -> Option<f64> { names.iter().find_map(|name| sum(&[name])) };
     let kv_cache_usage = map.kv_usage.iter().find_map(|(name, scale)| {
         let values: Vec<f64> = samples
             .iter()
@@ -535,10 +534,7 @@ sglang:token_usage{model_name="m",tp_rank="1"} 0.5
         // Radium's facade and TabbyAPI both echo the usage the engine reported.
         let mut tabby = span("tabbyapi", Layer::Wrapper, 1, Some((50, 20)));
         tabby.backend = Some("exllamav3".into());
-        let spans = vec![
-            span("radium", Layer::Wrapper, 0, Some((50, 20))),
-            tabby,
-        ];
+        let spans = vec![span("radium", Layer::Wrapper, 0, Some((50, 20))), tabby];
         let attributed = attribute(&spans);
         assert_eq!(attributed.len(), 1);
         assert_eq!(attributed[0].engine, "exllamav3");
@@ -558,7 +554,11 @@ sglang:token_usage{model_name="m",tp_rank="1"} 0.5
         assert_eq!(attributed[0].engine, "llama-cpp");
         assert_eq!(attributed[0].prompt_tokens, 40);
         assert_eq!(
-            attributed[0].layer_ms.iter().map(|(r, _)| r.as_str()).collect::<Vec<_>>(),
+            attributed[0]
+                .layer_ms
+                .iter()
+                .map(|(r, _)| r.as_str())
+                .collect::<Vec<_>>(),
             ["radium", "localai", "llama-cpp"]
         );
     }

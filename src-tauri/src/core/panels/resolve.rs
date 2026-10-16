@@ -56,7 +56,9 @@ pub fn resolve_panel_file(
         return Err(RefusedPath::Suspicious);
     }
 
-    let canonical_root = panel_root.canonicalize().map_err(|_| RefusedPath::Missing)?;
+    let canonical_root = panel_root
+        .canonicalize()
+        .map_err(|_| RefusedPath::Missing)?;
     let candidate = canonical_root.join(relative);
     let canonical = candidate.canonicalize().map_err(|_| RefusedPath::Missing)?;
 

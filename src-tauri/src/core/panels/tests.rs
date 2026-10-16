@@ -24,7 +24,8 @@ fn contract_dir() -> PathBuf {
 
 /// A panels root with one working panel in it.
 fn temp_root(name: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!("radium-panel-tests-{name}-{}", std::process::id()));
+    let root =
+        std::env::temp_dir().join(format!("radium-panel-tests-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("create panels root");
     root
@@ -39,15 +40,14 @@ fn write_panel(root: &Path, id: &str, manifest: &str, entry_body: &str) -> PathB
 }
 
 fn good_manifest(id: &str) -> String {
-    format!(
-        r#"{{ "contract": 1, "id": "{id}", "name": "Test panel", "entry": "index.html" }}"#
-    )
+    format!(r#"{{ "contract": 1, "id": "{id}", "name": "Test panel", "entry": "index.html" }}"#)
 }
 
 #[test]
 fn the_conformance_fixture_is_accepted() {
     let source = fs::read_to_string(fixtures().join("conformance/panel.json")).unwrap();
-    let manifest = parse_manifest(&source, Some("contract-conformance")).expect("fixture must pass");
+    let manifest =
+        parse_manifest(&source, Some("contract-conformance")).expect("fixture must pass");
     assert_eq!(manifest.contract, 1);
     assert_eq!(manifest.id, "contract-conformance");
     assert!(manifest.allows("storage"));
@@ -76,7 +76,11 @@ fn every_invalid_fixture_is_rejected_for_its_own_reason() {
         .filter_map(Result::ok)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
         .count();
-    assert_eq!(on_disk, cases.len(), "every invalid fixture needs a case here");
+    assert_eq!(
+        on_disk,
+        cases.len(),
+        "every invalid fixture needs a case here"
+    );
 
     for (file, expected) in cases {
         let source = fs::read_to_string(dir.join(file)).unwrap();
@@ -91,7 +95,9 @@ fn every_invalid_fixture_is_rejected_for_its_own_reason() {
 #[test]
 fn the_folder_name_has_to_match_the_id() {
     let errors = parse_manifest(&good_manifest("one-name"), Some("another-name")).unwrap_err();
-    assert!(errors.iter().any(|e| e.contains("must match the folder name")));
+    assert!(errors
+        .iter()
+        .any(|e| e.contains("must match the folder name")));
 }
 
 #[test]
@@ -110,7 +116,10 @@ fn core_permissions_are_the_portable_set_and_everything_else_is_namespaced() {
         let source = format!(
             r#"{{ "contract": 1, "id": "perm-panel", "name": "P", "entry": "index.html", "permissions": ["{permission}"]{extra} }}"#
         );
-        assert!(parse_manifest(&source, None).is_ok(), "{permission} must be accepted");
+        assert!(
+            parse_manifest(&source, None).is_ok(),
+            "{permission} must be accepted"
+        );
     }
     // Another host's capability, namespaced: expressible, so a panel stays
     // installable where it is understood.
@@ -125,19 +134,35 @@ fn core_permissions_are_the_portable_set_and_everything_else_is_namespaced() {
 fn asking_for_mcp_without_an_allowlist_is_refused_but_an_empty_one_is_not() {
     let with = r#"{ "contract": 1, "id": "mcp-panel", "name": "P", "entry": "index.html", "permissions": ["mcp.call"], "mcpServers": [] }"#;
     let without = r#"{ "contract": 1, "id": "mcp-panel", "name": "P", "entry": "index.html", "permissions": ["mcp.call"] }"#;
-    assert!(parse_manifest(with, None).is_ok(), "an empty allowlist is a deliberate nothing");
+    assert!(
+        parse_manifest(with, None).is_ok(),
+        "an empty allowlist is a deliberate nothing"
+    );
     assert!(parse_manifest(without, None).is_err());
 }
 
 #[test]
 fn a_traversing_request_is_refused_rather_than_clamped() {
     let root = temp_root("traversal");
-    let panel = write_panel(&root, "traversal-panel", &good_manifest("traversal-panel"), "<p>hi");
+    let panel = write_panel(
+        &root,
+        "traversal-panel",
+        &good_manifest("traversal-panel"),
+        "<p>hi",
+    );
     fs::write(root.join("secret.txt"), "not yours").unwrap();
 
-    for request in ["/../secret.txt", "/../../etc/passwd", "/nested/../../secret.txt"] {
+    for request in [
+        "/../secret.txt",
+        "/../../etc/passwd",
+        "/nested/../../secret.txt",
+    ] {
         let refusal = resolve_panel_file(&panel, request, "index.html").unwrap_err();
-        assert_eq!(refusal, RefusedPath::Suspicious, "{request} must be refused outright");
+        assert_eq!(
+            refusal,
+            RefusedPath::Suspicious,
+            "{request} must be refused outright"
+        );
     }
     // The entry itself still resolves.
     assert!(resolve_panel_file(&panel, "/", "index.html").is_ok());
@@ -148,7 +173,12 @@ fn a_traversing_request_is_refused_rather_than_clamped() {
 #[test]
 fn a_symlink_out_of_the_folder_is_refused_by_containment() {
     let root = temp_root("symlink");
-    let panel = write_panel(&root, "symlink-panel", &good_manifest("symlink-panel"), "<p>hi");
+    let panel = write_panel(
+        &root,
+        "symlink-panel",
+        &good_manifest("symlink-panel"),
+        "<p>hi",
+    );
     let outside = root.join("outside.html");
     fs::write(&outside, "<p>not yours").unwrap();
     std::os::unix::fs::symlink(&outside, panel.join("escape.html")).unwrap();
@@ -176,7 +206,8 @@ fn a_symlinked_manifest_makes_the_panel_broken_not_loaded() {
     assert!(registry
         .broken()
         .iter()
-        .any(|panel| panel.id == "sneaky-panel" && panel.errors.iter().any(|e| e.contains("symlink"))));
+        .any(|panel| panel.id == "sneaky-panel"
+            && panel.errors.iter().any(|e| e.contains("symlink"))));
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -185,7 +216,12 @@ fn a_broken_panel_is_reported_rather_than_hidden() {
     let root = temp_root("broken");
     write_panel(&root, "good-panel", &good_manifest("good-panel"), "<p>hi");
     // Valid JSON, invalid manifest.
-    write_panel(&root, "bad-panel", r#"{ "contract": 1, "id": "bad-panel" }"#, "<p>hi");
+    write_panel(
+        &root,
+        "bad-panel",
+        r#"{ "contract": 1, "id": "bad-panel" }"#,
+        "<p>hi",
+    );
     // Promises an entry it does not have.
     let missing = root.join("missing-entry");
     fs::create_dir_all(&missing).unwrap();
@@ -207,7 +243,12 @@ fn a_broken_panel_is_reported_rather_than_hidden() {
 #[test]
 fn served_panel_files_carry_the_restrictive_csp() {
     let root = temp_root("serve");
-    write_panel(&root, "served-panel", &good_manifest("served-panel"), "<p>hello");
+    write_panel(
+        &root,
+        "served-panel",
+        &good_manifest("served-panel"),
+        "<p>hello",
+    );
 
     let response = serve(&root, &contract_dir(), "served-panel", "/");
     assert_eq!(response.status(), 200);
@@ -216,8 +257,14 @@ fn served_panel_files_carry_the_restrictive_csp() {
         .get("Content-Security-Policy")
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    assert!(csp.contains("connect-src 'none'"), "a panel must not reach the network");
-    assert!(!csp.contains("unsafe-eval"), "unsafe-eval was dropped app-wide; panels do not get it back");
+    assert!(
+        csp.contains("connect-src 'none'"),
+        "a panel must not reach the network"
+    );
+    assert!(
+        !csp.contains("unsafe-eval"),
+        "unsafe-eval was dropped app-wide; panels do not get it back"
+    );
     assert_eq!(
         response.headers().get("Content-Type").unwrap(),
         "text/html; charset=utf-8"
@@ -228,7 +275,12 @@ fn served_panel_files_carry_the_restrictive_csp() {
 #[test]
 fn the_frozen_contract_files_are_served_to_every_panel() {
     let root = temp_root("shared");
-    write_panel(&root, "shared-panel", &good_manifest("shared-panel"), "<p>hi");
+    write_panel(
+        &root,
+        "shared-panel",
+        &good_manifest("shared-panel"),
+        "<p>hi",
+    );
 
     for (file, expected) in [
         ("/panel-sdk.js", "text/javascript; charset=utf-8"),
@@ -246,9 +298,18 @@ fn an_unknown_panel_and_a_refused_path_say_nothing_useful() {
     let root = temp_root("refusals");
     write_panel(&root, "known-panel", &good_manifest("known-panel"), "<p>hi");
 
-    assert_eq!(serve(&root, &contract_dir(), "no-such-panel", "/").status(), 404);
-    assert_eq!(serve(&root, &contract_dir(), "known-panel", "/../secret").status(), 403);
-    assert_eq!(serve(&root, &contract_dir(), "known-panel", "/nope.html").status(), 404);
+    assert_eq!(
+        serve(&root, &contract_dir(), "no-such-panel", "/").status(),
+        404
+    );
+    assert_eq!(
+        serve(&root, &contract_dir(), "known-panel", "/../secret").status(),
+        403
+    );
+    assert_eq!(
+        serve(&root, &contract_dir(), "known-panel", "/nope.html").status(),
+        404
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -425,7 +486,10 @@ fn an_undeclared_permission_is_denied_and_the_message_names_it() {
         let response = block_on(dispatch(&manifest, method, &json!({"key": "k"}), &host));
         assert_eq!(response.code(), Some("permission_denied"), "{method}");
         let error = response.error().unwrap();
-        assert!(error.contains(permission), "{method} should name {permission}: {error}");
+        assert!(
+            error.contains(permission),
+            "{method} should name {permission}: {error}"
+        );
     }
     // Nothing reached the app behind the denials.
     assert!(host.calls.lock().unwrap().is_empty());
@@ -440,7 +504,12 @@ fn storage_is_namespaced_to_the_panel_that_wrote_it() {
     let mut two = one.clone();
     two.id = "other-panel".to_string();
 
-    block_on(dispatch(&one, "storage.set", &json!({"key": "k", "value": 1}), &host));
+    block_on(dispatch(
+        &one,
+        "storage.set",
+        &json!({"key": "k", "value": 1}),
+        &host,
+    ));
     let mine = block_on(dispatch(&one, "storage.get", &json!({"key": "k"}), &host));
     let theirs = block_on(dispatch(&two, "storage.get", &json!({"key": "k"}), &host));
 
@@ -461,7 +530,10 @@ fn listing_tools_is_scoped_to_the_servers_the_manifest_names() {
     assert_eq!(tools[0]["server"], json!("server-a"));
     // The bridge asked only for the allowlisted server, so a host that
     // ignored the filter still could not widen it here.
-    assert_eq!(host.listed_for.lock().unwrap()[0], vec!["server-a".to_string()]);
+    assert_eq!(
+        host.listed_for.lock().unwrap()[0],
+        vec!["server-a".to_string()]
+    );
 }
 
 #[test]
@@ -477,7 +549,10 @@ fn naming_a_server_outside_the_allowlist_is_denied_before_anything_is_called() {
     ));
     assert_eq!(response.code(), Some("permission_denied"));
     assert!(response.error().unwrap().contains("server-b"));
-    assert!(host.calls.lock().unwrap().is_empty(), "nothing may be called");
+    assert!(
+        host.calls.lock().unwrap().is_empty(),
+        "nothing may be called"
+    );
 }
 
 #[test]
@@ -507,7 +582,11 @@ fn an_unqualified_tool_resolves_only_within_the_allowlist() {
     ));
     assert!(!ambiguous.is_ok());
     assert!(ambiguous.error().unwrap().contains("Pass `server`"));
-    assert_eq!(host.calls.lock().unwrap().len(), 1, "no second call was made");
+    assert_eq!(
+        host.calls.lock().unwrap().len(),
+        1,
+        "no second call was made"
+    );
 }
 
 #[test]
@@ -555,7 +634,11 @@ fn installing_validates_the_manifest_before_copying_anything() {
     let source = temp_root("install-invalid-src").join("staging");
     fs::create_dir_all(&source).unwrap();
     // Valid JSON, invalid manifest: no name, no entry.
-    fs::write(source.join("panel.json"), r#"{ "contract": 1, "id": "staging" }"#).unwrap();
+    fs::write(
+        source.join("panel.json"),
+        r#"{ "contract": 1, "id": "staging" }"#,
+    )
+    .unwrap();
     fs::write(source.join("index.html"), "<p>hi").unwrap();
 
     let error = install_from(&root, &source).unwrap_err();
@@ -613,7 +696,10 @@ fn installing_a_panel_onto_itself_is_refused_rather_than_deleting_it() {
     assert!(error.contains("already installed"), "got: {error}");
     // The panel is still there, which is the whole point.
     assert!(panel.join("index.html").is_file());
-    assert!(PanelRegistry::load(&root).unwrap().get("self-panel").is_some());
+    assert!(PanelRegistry::load(&root)
+        .unwrap()
+        .get("self-panel")
+        .is_some());
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -631,7 +717,11 @@ fn a_good_folder_installs_and_is_then_listed() {
     let manifest = install_from(&root, &panel_dir).expect("should install");
     assert_eq!(manifest.id, "nice-panel");
     // Nested files come along.
-    assert!(root.join("nice-panel").join("assets").join("style.css").is_file());
+    assert!(root
+        .join("nice-panel")
+        .join("assets")
+        .join("style.css")
+        .is_file());
 
     let registry = PanelRegistry::load(&root).unwrap();
     assert!(registry.get("nice-panel").is_some());

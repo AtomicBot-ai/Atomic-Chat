@@ -1726,7 +1726,11 @@ mod tests {
                 Layer::Wrapper => {
                     assert!(!runtime.wraps.is_empty(), "{} wraps nothing", runtime.id);
                     for inner in runtime.wraps {
-                        assert!(find(inner).is_some(), "{} wraps unknown {inner}", runtime.id);
+                        assert!(
+                            find(inner).is_some(),
+                            "{} wraps unknown {inner}",
+                            runtime.id
+                        );
                         assert_ne!(*inner, runtime.id);
                     }
                 }

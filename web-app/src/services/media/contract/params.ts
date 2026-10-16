@@ -8,6 +8,8 @@
  * pure, total, and free of I/O and React.
  */
 
+import type { MediaSizeRules } from '../resolution'
+
 export type MediaParamType =
   | 'string' // single-line
   | 'text' // multi-line (prompt, negative prompt)
@@ -34,6 +36,10 @@ export type MediaParamOption = {
   /** For type `resolution` only. */
   width?: number
   height?: number
+  /** For type `resolution` only: rough graphics memory for this size, MB. */
+  vram_mb?: number
+  /** For an output-size enum: long side of the finished image (0 = as rendered). */
+  long_edge?: number
 }
 
 /** Conditional visibility. All clauses must hold for the param to be shown. */
@@ -74,6 +80,12 @@ export type MediaParamSpec = {
 
   // enum / resolution
   options?: MediaParamOption[]
+  /**
+   * For type `resolution` only: the model's size rules (from the engine's
+   * catalog), so a custom size can be snapped and checked, plus the base
+   * memory the estimate starts from.
+   */
+  size_rules?: MediaSizeRules & { base_memory_mb?: number }
 
   // string / text
   max_length?: number

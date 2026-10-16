@@ -187,7 +187,8 @@ pub fn parse_manifest(source: &str, folder: Option<&str>) -> Result<PanelManifes
     let mut issues = Vec::new();
 
     match raw.contract {
-        Some(serde_json::Value::Number(ref number)) if number.as_u64() == Some(CONTRACT_VERSION as u64) => {}
+        Some(serde_json::Value::Number(ref number))
+            if number.as_u64() == Some(CONTRACT_VERSION as u64) => {}
         None => issues.push(format!("missing `contract` (expected {CONTRACT_VERSION})")),
         Some(ref other) => issues.push(format!(
             "`contract` is {other}, but this host implements {CONTRACT_VERSION}"
@@ -210,12 +211,16 @@ pub fn parse_manifest(source: &str, folder: Option<&str>) -> Result<PanelManifes
     let name = string_field(raw.name, "name", true, MAX_NAME_LEN, &mut issues);
     let entry = string_field(raw.entry, "entry", true, MAX_ENTRY_LEN, &mut issues);
     if !entry.is_empty() && !entry_is_valid(&entry) {
-        issues.push(
-            "`entry` must be a relative .html path inside the panel folder".to_string(),
-        );
+        issues.push("`entry` must be a relative .html path inside the panel folder".to_string());
     }
 
-    let description = string_field(raw.description, "description", false, MAX_DESCRIPTION_LEN, &mut issues);
+    let description = string_field(
+        raw.description,
+        "description",
+        false,
+        MAX_DESCRIPTION_LEN,
+        &mut issues,
+    );
     let author = string_field(raw.author, "author", false, MAX_AUTHOR_LEN, &mut issues);
     let version = match raw.version {
         None | Some(serde_json::Value::Null) => "0.0.0".to_string(),
@@ -263,8 +268,8 @@ pub fn parse_manifest(source: &str, folder: Option<&str>) -> Result<PanelManifes
     }
 
     let mut mcp_servers: Vec<String> = Vec::new();
-    let mcp_declared = raw.mcp_servers.is_some()
-        && !matches!(raw.mcp_servers, Some(serde_json::Value::Null));
+    let mcp_declared =
+        raw.mcp_servers.is_some() && !matches!(raw.mcp_servers, Some(serde_json::Value::Null));
     match raw.mcp_servers {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Array(items)) => {
@@ -273,12 +278,14 @@ pub fn parse_manifest(source: &str, folder: Option<&str>) -> Result<PanelManifes
             }
             for item in items {
                 match item {
-                    serde_json::Value::String(text) if !text.is_empty() && text.len() <= MAX_MCP_SERVER_LEN => {
+                    serde_json::Value::String(text)
+                        if !text.is_empty() && text.len() <= MAX_MCP_SERVER_LEN =>
+                    {
                         mcp_servers.push(text)
                     }
-                    serde_json::Value::String(_) => {
-                        issues.push(format!("each `mcpServers` entry must be 1-{MAX_MCP_SERVER_LEN} characters"))
-                    }
+                    serde_json::Value::String(_) => issues.push(format!(
+                        "each `mcpServers` entry must be 1-{MAX_MCP_SERVER_LEN} characters"
+                    )),
                     _ => issues.push("each `mcpServers` entry must be a string".to_string()),
                 }
             }
@@ -288,7 +295,11 @@ pub fn parse_manifest(source: &str, folder: Option<&str>) -> Result<PanelManifes
 
     // Asking for MCP access without naming any server is a mistake, not a
     // grant of everything. An explicitly empty list is a deliberate nothing.
-    if permissions.iter().any(|p| p == "mcp.read" || p == "mcp.call") && !mcp_declared {
+    if permissions
+        .iter()
+        .any(|p| p == "mcp.read" || p == "mcp.call")
+        && !mcp_declared
+    {
         issues.push(
             "`mcpServers` is required when `mcp.read` or `mcp.call` is requested; list the servers this panel may reach"
                 .to_string(),

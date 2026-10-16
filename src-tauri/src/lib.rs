@@ -297,6 +297,7 @@ pub fn run() {
         core::media::runtime::media_engine_start,
         core::media::runtime::media_engine_stop,
         core::media::runtime::media_upscaler_install,
+        core::media::upscale::media_upscale_image,
         core::runtimes::commands::runtimes_catalog,
         core::runtimes::commands::runtimes_detect,
         core::runtimes::ollama::commands::ollama_status,
@@ -815,14 +816,14 @@ pub fn run() {
                 #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 {
                     let engine = app_handle.state::<core::media::runtime::MediaEngineState>();
-                    tauri::async_runtime::block_on(
-                        core::media::runtime::stop_engine_on_exit(&engine),
-                    );
+                    tauri::async_runtime::block_on(core::media::runtime::stop_engine_on_exit(
+                        &engine,
+                    ));
                     // Radium's Ollama and the models it holds in GPU memory.
                     let ollama = app_handle.state::<core::runtimes::ollama::OllamaState>();
-                    tauri::async_runtime::block_on(
-                        core::runtimes::ollama::commands::stop_on_exit(&ollama),
-                    );
+                    tauri::async_runtime::block_on(core::runtimes::ollama::commands::stop_on_exit(
+                        &ollama,
+                    ));
                 }
 
                 // Check if cleanup already ran.

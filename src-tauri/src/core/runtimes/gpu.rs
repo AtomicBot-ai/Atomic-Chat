@@ -159,7 +159,9 @@ impl GpuLedger {
         let used = self
             .reserved_on(uuid)
             .max(gpu.measured_used_mib.unwrap_or(0));
-        gpu.total_mib.saturating_sub(HEADROOM_MIB).saturating_sub(used)
+        gpu.total_mib
+            .saturating_sub(HEADROOM_MIB)
+            .saturating_sub(used)
     }
 
     /// Where an instance needing `need_mib` would go under `profile`.
@@ -195,9 +197,7 @@ impl GpuLedger {
                     })
                 } else {
                     Err(PlacementError {
-                        message: format!(
-                            "Needs {need_mib} MiB but GPU {uuid} has {free} MiB free"
-                        ),
+                        message: format!("Needs {need_mib} MiB but GPU {uuid} has {free} MiB free"),
                         suggestion: if need_mib <= best_single.1 {
                             Some(Profile::Pinned {
                                 uuid: best_single.0.clone(),
@@ -226,10 +226,7 @@ impl GpuLedger {
             Profile::SplitTensor => {
                 let count = self.gpus.len() as Mib;
                 let each = need_mib.div_ceil(count);
-                let short = self
-                    .gpus
-                    .iter()
-                    .find(|gpu| self.free_mib(&gpu.uuid) < each);
+                let short = self.gpus.iter().find(|gpu| self.free_mib(&gpu.uuid) < each);
                 match short {
                     None => Ok(Placement {
                         profile: Profile::SplitTensor,
@@ -384,14 +381,21 @@ mod tests {
         assert_eq!(placement.shares.len(), 2);
         let total: Mib = placement.shares.iter().map(|(_, mib)| mib).sum();
         assert_eq!(total, 40_000);
-        assert_eq!(placement.llama_cpp_args()[..3], ["--split-mode", "layer", "--tensor-split"]);
+        assert_eq!(
+            placement.llama_cpp_args()[..3],
+            ["--split-mode", "layer", "--tensor-split"]
+        );
     }
 
     #[test]
     fn two_cards_are_not_one_48_gb_card() {
         let ledger = two_3090s();
         let error = ledger.plan(2 * PER_CARD + 1, &Profile::Auto).unwrap_err();
-        assert!(error.message.contains("across all GPUs"), "{}", error.message);
+        assert!(
+            error.message.contains("across all GPUs"),
+            "{}",
+            error.message
+        );
         assert_eq!(error.suggestion, None);
     }
 
@@ -428,7 +432,10 @@ mod tests {
     fn tensor_parallelism_needs_an_equal_share_on_every_card() {
         let mut ledger = two_3090s();
         let placement = ledger.plan(30_000, &Profile::SplitTensor).unwrap();
-        assert_eq!(placement.shares, vec![(A.into(), 15_000), (B.into(), 15_000)]);
+        assert_eq!(
+            placement.shares,
+            vec![(A.into(), 15_000), (B.into(), 15_000)]
+        );
         assert_eq!(placement.llama_cpp_args(), ["--split-mode", "tensor"]);
 
         ledger

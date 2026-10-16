@@ -28,6 +28,7 @@ import type {
   MediaOutputMediaType,
   MediaOutputRef,
   MediaTaskId,
+  MediaUpscaleInfo,
   NormalizedMediaRequest,
 } from './contract'
 
@@ -70,6 +71,8 @@ export type MediaAsset = {
   favourite?: boolean
   /** A name the user gave it. Display only; the file on disk is untouched. */
   name?: string
+  /** Present when the image was upscaled after rendering, and how. */
+  upscale?: MediaUpscaleInfo
   provenance: MediaAssetProvenance
 }
 
@@ -324,6 +327,9 @@ async function assetFrom(
     mime,
     bytes: bytes.byteLength,
     created_at: createdAt,
+    ...(ref.kind === 'inline' && ref.upscale
+      ? { upscale: ref.upscale, width: ref.upscale.width, height: ref.upscale.height }
+      : {}),
     provenance,
   }
 

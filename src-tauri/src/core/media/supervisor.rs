@@ -132,10 +132,7 @@ pub async fn stop_server(child: &mut Child) -> Result<(), String> {
 
 /// Reads the engine's output so it never blocks on a full pipe, logs it, and
 /// reports step progress through `on_progress`.
-fn drain_output(
-    child: &mut Child,
-    on_progress: impl Fn(u32, u32) + Send + Sync + 'static,
-) {
+fn drain_output(child: &mut Child, on_progress: impl Fn(u32, u32) + Send + Sync + 'static) {
     if let Some(mut stdout) = child.stdout.take() {
         tokio::spawn(async move {
             let mut buffer = [0_u8; 4096];
@@ -250,9 +247,15 @@ mod tests {
         let mut carry = String::new();
         // A bar cut between the count and its total, then completed next read.
         assert_eq!(parse_stream_progress(&mut carry, "\r  |=====> | 3"), None);
-        assert_eq!(parse_stream_progress(&mut carry, "/20 - 3.38s/it"), Some((3, 20)));
+        assert_eq!(
+            parse_stream_progress(&mut carry, "/20 - 3.38s/it"),
+            Some((3, 20))
+        );
         // The next update is reported on its own.
-        assert_eq!(parse_stream_progress(&mut carry, "\r  |=====> | 4/20"), Some((4, 20)));
+        assert_eq!(
+            parse_stream_progress(&mut carry, "\r  |=====> | 4/20"),
+            Some((4, 20))
+        );
     }
 
     #[tokio::test]

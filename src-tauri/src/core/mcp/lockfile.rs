@@ -152,7 +152,10 @@ pub async fn cleanup_all_stale_locks<R: Runtime>(app: &AppHandle<R>) -> Result<(
     let pattern = app_data_dir.join("mcp_lock_*.json");
     let pattern_str = pattern.to_string_lossy();
 
-    for path in glob::glob(&pattern_str).map_err(|e| format!("Glob error: {}", e))?.flatten() {
+    for path in glob::glob(&pattern_str)
+        .map_err(|e| format!("Glob error: {}", e))?
+        .flatten()
+    {
         if let Some(file_name) = path.file_name() {
             let file_name_str = file_name.to_string_lossy();
             if let Some(port_str) = file_name_str
@@ -183,7 +186,10 @@ pub fn cleanup_own_locks<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let pattern_str = pattern.to_string_lossy();
     let current_pid = std::process::id();
 
-    for path in glob::glob(&pattern_str).map_err(|e| format!("Glob error: {}", e))?.flatten() {
+    for path in glob::glob(&pattern_str)
+        .map_err(|e| format!("Glob error: {}", e))?
+        .flatten()
+    {
         if let Ok(content) = fs::read_to_string(&path) {
             if let Ok(lock) = serde_json::from_str::<McpLockFile>(&content) {
                 if lock.pid == current_pid {

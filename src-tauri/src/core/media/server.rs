@@ -130,7 +130,7 @@ mod tests {
         steps: 1,
         cfg_scale: 1.0,
         sampler: "euler",
-        resolutions: &[[64, 64]],
+        resolution: crate::core::media::resolution::SD1_RULES,
         video: None,
     };
 

@@ -50,8 +50,15 @@ pub trait PanelHost: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum PanelResponse {
-    Ok { ok: bool, result: Value },
-    Err { ok: bool, error: String, code: String },
+    Ok {
+        ok: bool,
+        result: Value,
+    },
+    Err {
+        ok: bool,
+        error: String,
+        code: String,
+    },
 }
 
 impl PanelResponse {

@@ -27,6 +27,7 @@ use super::{
         choose_engine_variant, engine_install_plan, host_platform, EngineInstallPlan,
         EngineVariant, GpuSummary, GpuVendor,
     },
+    resolution::{estimate_vram_mb, frames_for, presets, OutputSize, SizePreset, OUTPUT_SIZES},
     server::{pick_free_port, server_args, server_base_url},
     supervisor::{start_server, stop_server},
 };
@@ -100,7 +101,7 @@ fn detected_gpus() -> Vec<GpuSummary> {
 }
 
 /// The engine build for this computer, or why there is none.
-fn this_computers_variant() -> Result<EngineVariant, String> {
+pub(crate) fn this_computers_variant() -> Result<EngineVariant, String> {
     let (os, arch) = host_platform(std::env::consts::OS, std::env::consts::ARCH);
     choose_engine_variant(os, arch, &detected_gpus())
         .ok_or_else(|| "The built-in media engine has no build for this computer.".to_string())
@@ -130,6 +131,45 @@ pub struct ModelStatus {
     pub default_quant: &'static str,
     /// Every size offered, smallest first.
     pub quants: Vec<QuantStatus>,
+    /// The resolution picker's sizes, computed from `defaults.resolution`:
+    /// native first, then one per aspect ratio, then faster sizes.
+    pub size_presets: Vec<SizePresetStatus>,
+}
+
+/// One resolution preset with a rough memory estimate for it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SizePresetStatus {
+    #[serde(flatten)]
+    pub preset: SizePreset,
+    /// Rough graphics memory for one render at this size (for video, a clip
+    /// of the default length at the default frame rate).
+    pub vram_mb: u64,
+}
+
+/// Presets for a model with their rough memory needs.
+pub fn size_presets_for(model: &CatalogModel) -> Vec<SizePresetStatus> {
+    let rules = &model.defaults.resolution;
+    let frames = model.defaults.video.map(|video| {
+        frames_for(
+            video.default_length_seconds as f64,
+            video.fps,
+            video.frame_modulus,
+            video.frame_offset,
+        )
+    });
+    presets(rules)
+        .into_iter()
+        .map(|preset| SizePresetStatus {
+            vram_mb: estimate_vram_mb(
+                rules,
+                model.min_memory_mb,
+                preset.width,
+                preset.height,
+                frames,
+            ),
+            preset,
+        })
+        .collect()
 }
 
 /// One size of a model, and what downloading it saves.
@@ -174,6 +214,11 @@ pub struct EngineStatus {
     /// Every upscaler Radium knows, and whether its file is downloaded. The
     /// engine discovers installed ones by scanning `media/upscalers`.
     pub upscalers: Vec<UpscalerStatus>,
+    /// Output sizes a finished image can be upscaled to (up to 4K).
+    pub output_sizes: &'static [OutputSize],
+    /// Whether the installed engine ships its one-shot tool, which runs the
+    /// ESRGAN upscalers on a finished image (`sd-cli -M upscale`).
+    pub esrgan_available: bool,
     /// The model the engine is running, and where to send jobs for it.
     pub running_model: Option<String>,
     pub base_url: Option<String>,
@@ -203,6 +248,7 @@ pub fn model_statuses(data_dir: &Path) -> Vec<ModelStatus> {
                     .iter()
                     .map(|quant| quant_status(data_dir, model, quant))
                     .collect(),
+                size_presets: size_presets_for(model),
             }
         })
         .collect()
@@ -301,9 +347,8 @@ pub fn upscaler_downloads_needed(
     data_dir: &Path,
     upscaler_id: &str,
 ) -> Result<Vec<DownloadItem>, String> {
-    let upscaler = find_upscaler(upscaler_id).ok_or_else(|| {
-        format!("Radium has no upscaler called \"{upscaler_id}\".")
-    })?;
+    let upscaler = find_upscaler(upscaler_id)
+        .ok_or_else(|| format!("Radium has no upscaler called \"{upscaler_id}\"."))?;
     let plan = upscaler_install_plan(data_dir, upscaler);
     Ok(plan
         .downloads
@@ -454,6 +499,8 @@ pub async fn media_engine_status<R: Runtime>(
         engine_size_bytes: plan.downloads.iter().map(|download| download.size).sum(),
         models: model_statuses(&data_dir),
         upscalers: upscaler_statuses(&data_dir),
+        output_sizes: &OUTPUT_SIZES,
+        esrgan_available: super::upscale::upscale_tool(&data_dir, variant).is_some(),
         running_model: running.as_ref().map(|current| current.model_id.clone()),
         base_url: running
             .as_ref()
@@ -701,14 +748,19 @@ mod tests {
     fn a_fresh_data_folder_lists_every_upscaler_as_not_downloaded() {
         let tmp = tempdir().unwrap();
         let statuses = upscaler_statuses(tmp.path());
-        assert_eq!(statuses.len(), crate::core::media::catalog::upscalers().len());
+        assert_eq!(
+            statuses.len(),
+            crate::core::media::catalog::upscalers().len()
+        );
         assert!(statuses.iter().all(|upscaler| {
-            !upscaler.installed
-                && upscaler.size_bytes > 0
-                && upscaler.file_name.ends_with(".pth")
+            !upscaler.installed && upscaler.size_bytes > 0 && upscaler.file_name.ends_with(".pth")
         }));
-        assert!(statuses.iter().any(|upscaler| upscaler.id == "realesrgan-x4"));
-        assert!(statuses.iter().any(|upscaler| upscaler.id == "ultrasharp-4x"));
+        assert!(statuses
+            .iter()
+            .any(|upscaler| upscaler.id == "realesrgan-x4"));
+        assert!(statuses
+            .iter()
+            .any(|upscaler| upscaler.id == "ultrasharp-4x"));
     }
 
     #[test]
@@ -756,7 +808,10 @@ mod tests {
             fs::create_dir_all(archive.parent().unwrap()).unwrap();
             zip_with(
                 &archive,
-                &[(program_name, &b"engine"[..]), ("lib/helper.dll", &b"dll"[..])],
+                &[
+                    (program_name, &b"engine"[..]),
+                    ("lib/helper.dll", &b"dll"[..]),
+                ],
             );
             let hash: &'static str = Box::leak(file_sha256(&archive).unwrap().into_boxed_str());
             download.sha256 = hash;

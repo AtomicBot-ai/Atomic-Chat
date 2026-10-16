@@ -364,7 +364,10 @@ mod tests {
         let partial = dir.path().join("model.gguf.tmp");
         std::fs::write(&partial, vec![0u8; 4096]).unwrap();
 
-        assert_eq!(remaining_bytes(10_000, std::slice::from_ref(&partial)), 10_000 - 4096);
+        assert_eq!(
+            remaining_bytes(10_000, std::slice::from_ref(&partial)),
+            10_000 - 4096
+        );
         // A partial that is not there yet must not underflow the requirement.
         assert_eq!(
             remaining_bytes(10_000, &[dir.path().join("absent.tmp")]),

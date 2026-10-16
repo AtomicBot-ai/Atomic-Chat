@@ -26,4 +26,3 @@ pub mod system;
 pub mod telemetry;
 pub mod threads;
 pub mod tray_status;
-

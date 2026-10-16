@@ -101,13 +101,20 @@ fn system_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if cfg!(windows) {
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            candidates.push(PathBuf::from(local).join("Programs").join("Ollama").join("ollama.exe"));
+            candidates.push(
+                PathBuf::from(local)
+                    .join("Programs")
+                    .join("Ollama")
+                    .join("ollama.exe"),
+            );
         }
     } else {
         candidates.push(PathBuf::from("/usr/local/bin/ollama"));
         candidates.push(PathBuf::from("/usr/bin/ollama"));
         candidates.push(PathBuf::from("/opt/homebrew/bin/ollama"));
-        candidates.push(PathBuf::from("/Applications/Ollama.app/Contents/Resources/ollama"));
+        candidates.push(PathBuf::from(
+            "/Applications/Ollama.app/Contents/Resources/ollama",
+        ));
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
@@ -159,7 +166,11 @@ pub fn finish_install(data_dir: &Path, asset: &PinnedAsset) -> Result<PathBuf, S
     crate::core::media::runtime::unpack_archive(&archive, &staging)?;
     if find_exe_in(&staging).is_none() {
         let _ = std::fs::remove_dir_all(&staging);
-        return Err(format!("{} does not contain {}", asset.file_name, exe_name()));
+        return Err(format!(
+            "{} does not contain {}",
+            asset.file_name,
+            exe_name()
+        ));
     }
     let _ = std::fs::remove_dir_all(&target);
     std::fs::rename(&staging, &target).map_err(|error| error.to_string())?;
@@ -214,7 +225,8 @@ mod tests {
         let file = std::fs::File::create(path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
         for name in entries {
-            zip.start_file(*name, zip::write::FileOptions::default()).unwrap();
+            zip.start_file(*name, zip::write::FileOptions::default())
+                .unwrap();
             zip.write_all(b"x").unwrap();
         }
         zip.finish().unwrap();
@@ -228,7 +240,9 @@ mod tests {
         let exe = finish_install(data.path(), &WINDOWS_X64).unwrap();
         assert_eq!(exe, install_dir(data.path()).join(exe_name()));
         assert!(!archive.exists());
-        assert!(install_dir(data.path()).join("lib/ollama/cuda_v12/ggml-cuda.dll").exists());
+        assert!(install_dir(data.path())
+            .join("lib/ollama/cuda_v12/ggml-cuda.dll")
+            .exists());
     }
 
     #[test]

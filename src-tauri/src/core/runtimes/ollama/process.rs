@@ -82,7 +82,12 @@ fn http() -> Result<reqwest::Client, String> {
 
 /// Ollama's version if something answers `/api/version` at `base_url`.
 pub async fn version_at(base_url: &str) -> Option<String> {
-    let response = http().ok()?.get(format!("{base_url}/api/version")).send().await.ok()?;
+    let response = http()
+        .ok()?
+        .get(format!("{base_url}/api/version"))
+        .send()
+        .await
+        .ok()?;
     if !response.status().is_success() {
         return None;
     }
@@ -131,8 +136,8 @@ pub async fn start(
         .kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    // Its own process group, so stopping it also stops the model runners it
-    // starts.
+                                         // Its own process group, so stopping it also stops the model runners it
+                                         // starts.
     #[cfg(unix)]
     command.process_group(0);
 
@@ -140,9 +145,12 @@ pub async fn start(
         buffer.clear();
         buffer.push(format!("Starting {} serve", binary.path.display()));
     }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("Could not start Ollama ({}): {error}", binary.path.display()))?;
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "Could not start Ollama ({}): {error}",
+            binary.path.display()
+        )
+    })?;
     keep_output(&mut child, logs);
 
     let base_url = settings.base_url();
@@ -199,7 +207,10 @@ pub async fn stop(child: &mut Child) -> Result<(), String> {
         unsafe {
             libc::kill(-(pid as i32), libc::SIGTERM);
         }
-        if tokio::time::timeout(Duration::from_secs(5), child.wait()).await.is_err() {
+        if tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .is_err()
+        {
             unsafe {
                 libc::kill(-(pid as i32), libc::SIGKILL);
             }
@@ -313,7 +324,13 @@ mod tests {
 
     #[test]
     fn ollama_process_names_include_the_tray_app_and_nothing_else() {
-        for name in ["ollama", "ollama.exe", "Ollama.exe", "ollama app.exe", "Ollama App.exe"] {
+        for name in [
+            "ollama",
+            "ollama.exe",
+            "Ollama.exe",
+            "ollama app.exe",
+            "Ollama App.exe",
+        ] {
             assert!(is_ollama_process_name(name), "{name}");
         }
         for name in ["ollama-helper", "llama-server", "radium", "ollamax.exe"] {
@@ -335,7 +352,10 @@ mod tests {
                 exe: Some(PathBuf::from(r"C:\Ollama\ollama.exe")),
             },
         ];
-        assert_eq!(server_exe(&processes), Some(PathBuf::from(r"C:\Ollama\ollama.exe")));
+        assert_eq!(
+            server_exe(&processes),
+            Some(PathBuf::from(r"C:\Ollama\ollama.exe"))
+        );
         assert_eq!(server_exe(&processes[..1]), None);
     }
 
@@ -367,7 +387,11 @@ http.server.HTTPServer((host, int(port)), H).serve_forever()
     #[cfg(unix)]
     #[tokio::test]
     async fn start_waits_until_ollama_answers_keeps_its_log_and_stop_releases_the_port() {
-        if std::process::Command::new("python3").arg("--version").output().is_err() {
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
             return; // no interpreter for the stand-in
         }
         let dir = tempfile::tempdir().unwrap();
@@ -386,7 +410,10 @@ http.server.HTTPServer((host, int(port)), H).serve_forever()
         };
         let logs = Arc::new(StdMutex::new(LogBuffer::default()));
         let mut running = start(&binary, &settings, &logs).await.unwrap();
-        assert_eq!(version_at(&settings.base_url()).await.as_deref(), Some("0.34.4"));
+        assert_eq!(
+            version_at(&settings.base_url()).await.as_deref(),
+            Some("0.34.4")
+        );
         // Its own output reached the log, with the settings applied.
         tokio::time::sleep(Duration::from_millis(200)).await;
         let log = logs.lock().unwrap().tail(10).join("\n");
@@ -402,20 +429,36 @@ http.server.HTTPServer((host, int(port)), H).serve_forever()
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("ollama");
-        std::fs::write(&script, "#!/bin/sh\necho 'Error: listen tcp: address already in use' >&2\nexit 1\n").unwrap();
+        std::fs::write(
+            &script,
+            "#!/bin/sh\necho 'Error: listen tcp: address already in use' >&2\nexit 1\n",
+        )
+        .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let binary = Binary {
             path: script,
             source: super::super::install::BinarySource::System,
         };
         let logs = Arc::new(StdMutex::new(LogBuffer::default()));
-        let error = start(&binary, &OllamaSettings { port: 39999, ..Default::default() }, &logs)
-            .await
-            .err()
-            .unwrap();
+        let error = start(
+            &binary,
+            &OllamaSettings {
+                port: 39999,
+                ..Default::default()
+            },
+            &logs,
+        )
+        .await
+        .err()
+        .unwrap();
         assert!(error.contains("stopped while starting"), "{error}");
         // Give the pump a moment, then the reason is in the log.
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert!(logs.lock().unwrap().tail(5).join("\n").contains("address already in use"));
+        assert!(logs
+            .lock()
+            .unwrap()
+            .tail(5)
+            .join("\n")
+            .contains("address already in use"));
     }
 }

@@ -131,9 +131,10 @@ pub async fn ollama_install<R: Runtime>(
         model_id: Some("runtime:ollama".into()),
     };
     download_files(app, downloads, vec![item], &task_id, HashMap::new(), false).await?;
-    let path = tauri::async_runtime::spawn_blocking(move || install::finish_install(&data_dir, asset))
-        .await
-        .map_err(|error| error.to_string())??;
+    let path =
+        tauri::async_runtime::spawn_blocking(move || install::finish_install(&data_dir, asset))
+            .await
+            .map_err(|error| error.to_string())??;
     Ok(Binary {
         path,
         source: BinarySource::Radium,
@@ -187,20 +188,23 @@ async fn start_with<R: Runtime>(
         *guard = None;
     }
     if !crate::core::runtimes::ports::is_free_on_loopback(settings.port) {
-        return Err(if process::version_at(&settings.base_url()).await.is_some() {
-            format!(
+        return Err(
+            if process::version_at(&settings.base_url()).await.is_some() {
+                format!(
                 "Another Ollama is already running on port {}. Let Radium take it over, or connect to it instead.",
                 settings.port
             )
-        } else {
-            format!("Port {} is in use by another program; pick another port in Settings.", settings.port)
-        });
+            } else {
+                format!(
+                    "Port {} is in use by another program; pick another port in Settings.",
+                    settings.port
+                )
+            },
+        );
     }
     let binary = match binary_override.or_else(|| install::resolve(&data_dir)) {
         Some(binary) => binary,
-        None => {
-            return Err("Ollama is not installed. Install it from this panel first.".into())
-        }
+        None => return Err("Ollama is not installed. Install it from this panel first.".into()),
     };
     let running = process::start(&binary, &settings, &state.logs).await?;
     log::info!(
@@ -284,7 +288,10 @@ pub async fn ollama_take_over<R: Runtime>(
     log::info!(
         "[ollama] taking over {} external process(es): {:?}",
         processes.len(),
-        processes.iter().map(|p| (&p.name, p.pid)).collect::<Vec<_>>()
+        processes
+            .iter()
+            .map(|p| (&p.name, p.pid))
+            .collect::<Vec<_>>()
     );
     process::stop_external(&processes, settings.port).await?;
     let binary = install::resolve(&data_dir)

@@ -178,6 +178,25 @@ export function AssetDetail({
           )}
         </dd>
 
+        {asset.upscale ? (
+          <>
+            <dt className="text-muted-foreground">
+              {t('media:asset.upscaled', { defaultValue: 'Upscaled' })}
+            </dt>
+            <dd data-testid="asset-upscaled">
+              {asset.upscale.source_width} × {asset.upscale.source_height} →{' '}
+              {asset.upscale.width} × {asset.upscale.height} (
+              {asset.upscale.method === 'esrgan'
+                ? (asset.upscale.upscaler ?? 'ESRGAN')
+                : 'Lanczos'}
+              )
+              {asset.upscale.note ? (
+                <span className="block text-muted-foreground">{asset.upscale.note}</span>
+              ) : null}
+            </dd>
+          </>
+        ) : null}
+
         <dt className="text-muted-foreground">
           {t('media:asset.created', { defaultValue: 'Created' })}
         </dt>

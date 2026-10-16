@@ -29,6 +29,7 @@ dependencies = [
  "hostname",
  "hyper 0.14.32",
  "ignore",
+ "image",
  "indicatif",
  "jan-utils",
  "json5",

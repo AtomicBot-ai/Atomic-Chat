@@ -15,6 +15,8 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::resolution::{ResolutionRules, FLUX_RULES, SD1_RULES, SDXL_RULES, WAN22_5B_RULES};
+
 /// Where models live, relative to Radium's data folder.
 pub const MODELS_DIR: &str = "media/models";
 
@@ -139,6 +141,8 @@ pub struct CatalogQuant {
 pub struct VideoDefaults {
     /// Frames per second used when none is chosen.
     pub fps: u32,
+    /// The frame rate the model was trained at.
+    pub native_fps: u32,
     pub fps_min: u32,
     pub fps_max: u32,
     /// Video length choices in seconds, shortest first.
@@ -158,10 +162,10 @@ pub struct GenerationDefaults {
     pub steps: u32,
     pub cfg_scale: f32,
     pub sampler: &'static str,
-    /// Resolution ladder the engine supports for this model, native/default
-    /// first (the first entry is always `width` × `height`). Larger entries are
-    /// still native model sizes, not upscales — upscaling is a separate stage.
-    pub resolutions: &'static [[u32; 2]],
+    /// How this model wants its sizes: native size, size multiple, limits,
+    /// pixel budget. The picker's presets are computed from these
+    /// (`resolution::presets`); `width` × `height` is always `rules.native`.
+    pub resolution: ResolutionRules,
     /// Present only for video models: how long a clip can be, and how many frames.
     pub video: Option<VideoDefaults>,
 }
@@ -220,7 +224,7 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 20,
             cfg_scale: 7.0,
             sampler: "euler_a",
-            resolutions: &[[512, 512], [512, 768], [768, 512]],
+            resolution: SD1_RULES,
             video: None,
         },
         quants: &[
@@ -295,7 +299,7 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 25,
             cfg_scale: 7.0,
             sampler: "euler_a",
-            resolutions: &[[1024, 1024], [832, 1216], [1216, 832]],
+            resolution: SDXL_RULES,
             video: None,
         },
         quants: &[
@@ -382,7 +386,7 @@ static CATALOG: [CatalogModel; 4] = [
             steps: 4,
             cfg_scale: 1.0,
             sampler: "euler",
-            resolutions: &[[1024, 1024], [832, 1216], [1216, 832]],
+            resolution: FLUX_RULES,
             video: None,
         },
         quants: &[
@@ -477,14 +481,17 @@ static CATALOG: [CatalogModel; 4] = [
         tasks: &[ModelTask::TextToVideo],
         min_memory_mb: 12_288,
         defaults: GenerationDefaults {
-            width: 832,
-            height: 480,
+            // Wan 2.2 TI2V 5B's trained size and frame rate; 832 × 480 and
+            // smaller stay on offer as faster sizes.
+            width: 1280,
+            height: 704,
             steps: 20,
             cfg_scale: 6.0,
             sampler: "euler",
-            resolutions: &[[832, 480]],
+            resolution: WAN22_5B_RULES,
             video: Some(VideoDefaults {
-                fps: 16,
+                fps: 24,
+                native_fps: 24,
                 fps_min: 1,
                 fps_max: 30,
                 // Wan 2.2 5B is a short-clip model; longer runs come from a
@@ -824,7 +831,7 @@ mod tests {
             steps: 1,
             cfg_scale: 1.0,
             sampler: "euler",
-            resolutions: &[[64, 64]],
+            resolution: crate::core::media::resolution::SD1_RULES,
             video: None,
         },
         quants: &TINY_QUANTS,
@@ -950,13 +957,14 @@ mod tests {
         assert!(video.fps_min <= video.fps && video.fps <= video.fps_max);
         assert!(!video.length_seconds.is_empty());
         assert!(
-            video
-                .length_seconds
-                .contains(&video.default_length_seconds),
+            video.length_seconds.contains(&video.default_length_seconds),
             "the default length is one of the offered lengths"
         );
         assert!(
-            video.length_seconds.windows(2).all(|pair| pair[0] < pair[1]),
+            video
+                .length_seconds
+                .windows(2)
+                .all(|pair| pair[0] < pair[1]),
             "lengths are shortest first"
         );
         assert!(video.frame_modulus > 0);
@@ -973,31 +981,32 @@ mod tests {
     }
 
     #[test]
-    fn every_model_declares_a_resolution_ladder_starting_at_its_native_size() {
+    fn every_model_uses_its_native_size_as_default_and_offers_it_first() {
         for model in catalog() {
             let defaults = model.defaults;
-            assert!(
-                !defaults.resolutions.is_empty(),
-                "{} must offer at least one resolution",
-                model.id
-            );
             assert_eq!(
-                defaults.resolutions[0],
                 [defaults.width, defaults.height],
-                "{}'s first resolution is its native size",
+                defaults.resolution.native,
+                "{}'s default size is its native size",
                 model.id
             );
-            // No duplicate sizes in the ladder.
-            for i in 0..defaults.resolutions.len() {
-                for j in (i + 1)..defaults.resolutions.len() {
-                    assert_ne!(
-                        defaults.resolutions[i], defaults.resolutions[j],
-                        "{} lists the same size twice",
-                        model.id
-                    );
-                }
-            }
+            let presets = crate::core::media::resolution::presets(&defaults.resolution);
+            assert!(presets.len() >= 5, "{} offers too few sizes", model.id);
+            assert_eq!(
+                [presets[0].width, presets[0].height],
+                defaults.resolution.native
+            );
         }
+    }
+
+    #[test]
+    fn wan_2_2_5b_defaults_to_its_native_1280x704_at_24fps() {
+        let wan = find_model("wan2.2-ti2v-5b").unwrap();
+        assert_eq!((wan.defaults.width, wan.defaults.height), (1280, 704));
+        let video = wan.defaults.video.unwrap();
+        assert_eq!((video.fps, video.native_fps), (24, 24));
+        assert_eq!((video.frame_modulus, video.frame_offset), (4, 1));
+        assert_eq!(wan.defaults.resolution.multiple, 32);
     }
 
     #[test]
@@ -1107,11 +1116,7 @@ mod tests {
             "{} is not pinned to a commit",
             upscaler.id
         );
-        assert!(
-            is_hex(file.sha256, 64),
-            "{} has no SHA-256",
-            upscaler.id
-        );
+        assert!(is_hex(file.sha256, 64), "{} has no SHA-256", upscaler.id);
         assert!(file.size > 0, "{}", upscaler.id);
         assert!(
             file.file_name().ends_with(".pth"),

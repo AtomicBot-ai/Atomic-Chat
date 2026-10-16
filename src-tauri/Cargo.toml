@@ -203,6 +203,10 @@ windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem", "Win
 winreg = "0.52"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# Radium Media: Lanczos resize to the chosen output size (up to 4K) after the
+# engine's ESRGAN upscale, or on its own when no ESRGAN model is installed.
+# Already in the tree through Tauri; named by the user for this job.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # ATO / Radium Media: provider API keys live in the OS credential store, never
 # in localStorage. See docs/decisions/2026-09-10-store-media-provider-
 # credentials-in-the-os-credential-store.md. These four crates are the ones the

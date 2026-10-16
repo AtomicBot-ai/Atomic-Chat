@@ -44,6 +44,8 @@ import type {
   NormalizedMediaRequest,
 } from '../contract'
 import { sdStepsSpec } from './sharedParams'
+import { framesFor, type MediaSizeRules } from '../resolution'
+import type { MediaUpscaleInfo } from '../contract'
 
 export const BUILTIN_ENGINE_PROVIDER_ID = 'builtin-engine'
 
@@ -54,6 +56,8 @@ export type EngineModelTask = 'text_to_image' | 'text_to_video'
 /** How far a video model can be pushed, and the frame count it wants. */
 export type EngineVideoDefaults = {
   fps: number
+  /** The frame rate the model was trained at. */
+  native_fps?: number
   fps_min: number
   fps_max: number
   length_seconds: number[]
@@ -76,8 +80,8 @@ export type EngineModelStatus = {
     steps: number
     cfg_scale: number
     sampler: string
-    /** Resolution ladder, native/default first (serialized from the Rust catalog). */
-    resolutions?: Array<[number, number]>
+    /** Size rules from the Rust catalog (`resolution.rs`). */
+    resolution?: MediaSizeRules
     /** Present only on video models (serialized from the Rust catalog). */
     video?: EngineVideoDefaults | null
   }
@@ -88,7 +92,24 @@ export type EngineModelStatus = {
   default_quant?: string
   /** Every size offered, smallest first. */
   quants?: EngineQuantStatus[]
+  /**
+   * The resolution picker's sizes, computed in Rust from `defaults.resolution`:
+   * native first, then one per aspect ratio, then faster sizes.
+   */
+  size_presets?: EngineSizePreset[]
 }
+
+export type EngineSizePreset = {
+  aspect: string
+  width: number
+  height: number
+  kind: 'native' | 'aspect' | 'fast'
+  label: string
+  vram_mb: number
+}
+
+/** One output size a finished image can be upscaled to. */
+export type EngineOutputSize = { id: string; label: string; long_edge: number }
 
 export type EngineFileStatus = {
   role: string
@@ -122,6 +143,10 @@ export type EngineStatus = {
   engine_size_bytes: number
   models: EngineModelStatus[]
   upscalers: EngineUpscalerStatus[]
+  /** Output sizes up to 4K (from the Rust catalog). */
+  output_sizes?: EngineOutputSize[]
+  /** Whether the installed engine can run ESRGAN upscalers on a finished image. */
+  esrgan_available?: boolean
   running_model: string | null
   base_url: string | null
 }
@@ -210,21 +235,7 @@ const FALLBACK_VIDEO: EngineVideoDefaults = {
   frame_offset: 1,
 }
 
-/**
- * Frames for a video of `seconds` at `fps`, snapped to the lattice
- * `n % modulus == offset` the model wants. Wan is 4k + 1, so the count is
- * rounded to the nearest such number and never below `modulus + offset`.
- */
-export function framesFor(
-  seconds: number,
-  fps: number,
-  rule: { modulus: number; offset: number } = { modulus: 4, offset: 1 }
-): number {
-  const modulus = Math.max(1, Math.round(rule.modulus))
-  const offset = Math.round(rule.offset)
-  const k = Math.max(1, Math.round((seconds * fps - offset) / modulus))
-  return modulus * k + offset
-}
+export { framesFor }
 
 function videoDefaultsOf(model: EngineModelStatus): EngineVideoDefaults {
   return model.defaults.video ?? FALLBACK_VIDEO
@@ -232,25 +243,6 @@ function videoDefaultsOf(model: EngineModelStatus): EngineVideoDefaults {
 
 const isDataUrl = (value: unknown): value is string =>
   typeof value === 'string' && value.startsWith('data:')
-
-/** Extra sizes offered per model family, after the model's own default. */
-const FAMILY_SIZES: Record<string, Array<[number, number]>> = {
-  sd1: [
-    [512, 512],
-    [512, 768],
-    [768, 512],
-  ],
-  sdxl: [
-    [1024, 1024],
-    [832, 1216],
-    [1216, 832],
-  ],
-  flux: [
-    [1024, 1024],
-    [832, 1216],
-    [1216, 832],
-  ],
-}
 
 export class BuiltinEngineError extends Error {
   constructor(
@@ -286,27 +278,123 @@ function reasonOf(body: { error?: unknown; message?: unknown } | undefined): str
   return undefined
 }
 
+/** The value the resolution picker uses for "type my own size". */
+export const CUSTOM_RESOLUTION = 'custom'
+
 function resolutionSpec(model: EngineModelStatus): MediaParamSpec {
-  const sizes: Array<[number, number]> = model.defaults.resolutions ?? [
-    [model.defaults.width, model.defaults.height],
-    ...(FAMILY_SIZES[model.family] ?? []),
-  ]
+  // Every size comes from the Rust catalog; an older backend without presets
+  // still offers the model's own size.
+  const presets: EngineSizePreset[] = model.size_presets?.length
+    ? model.size_presets
+    : [
+        {
+          aspect: '',
+          width: model.defaults.width,
+          height: model.defaults.height,
+          kind: 'native',
+          label: `${model.defaults.width} × ${model.defaults.height}`,
+          vram_mb: model.min_memory_mb,
+        },
+      ]
   const seen = new Set<string>()
   const options: MediaParamOption[] = []
-  for (const [width, height] of sizes) {
-    const value = `${width}x${height}`
+  for (const preset of presets) {
+    const value = `${preset.width}x${preset.height}`
     if (seen.has(value)) continue
     seen.add(value)
-    options.push({ value, label: `${width} × ${height}`, width, height })
+    options.push({
+      value,
+      label: preset.label,
+      width: preset.width,
+      height: preset.height,
+      vram_mb: preset.vram_mb,
+    })
   }
+  const rules = model.defaults.resolution
+  if (rules) options.push({ value: CUSTOM_RESOLUTION, label: 'Custom size…' })
   return {
     id: 'resolution',
     type: 'resolution',
     group: 'output',
     label: 'Resolution',
+    help: rules
+      ? 'Aspect ratios at the size this model renders best. Custom size and memory estimate are under Show advanced.'
+      : undefined,
     default: `${model.defaults.width}x${model.defaults.height}`,
     options,
+    ...(rules ? { size_rules: { ...rules, base_memory_mb: model.min_memory_mb } } : {}),
   }
+}
+
+/** Custom width and height, shown only for the Custom size choice. */
+function customSizeSpecs(model: EngineModelStatus): MediaParamSpec[] {
+  const rules = model.defaults.resolution
+  if (!rules) return []
+  const side = (id: 'custom_width' | 'custom_height', label: string, value: number) => ({
+    id,
+    type: 'int' as const,
+    group: 'output',
+    label,
+    help: `Multiples of ${rules.multiple}, ${rules.min_side}–${rules.max_side}. Snapped automatically.`,
+    advanced: true,
+    min: rules.min_side,
+    max: rules.max_side,
+    step: rules.multiple,
+    modulus: { modulus: rules.multiple, offset: 0 },
+    default: value,
+    depends_on: [{ param: 'resolution', equals: CUSTOM_RESOLUTION }],
+  })
+  return [
+    side('custom_width', 'Custom width', rules.native[0]),
+    side('custom_height', 'Custom height', rules.native[1]),
+  ]
+}
+
+const FALLBACK_OUTPUT_SIZES: EngineOutputSize[] = [
+  { id: 'native', label: 'As rendered', long_edge: 0 },
+]
+
+/** Output size (upscale target) and the upscaler that gets it there. */
+function outputSizeSpecs(
+  outputSizes: EngineOutputSize[],
+  upscalers: EngineUpscalerStatus[]
+): MediaParamSpec[] {
+  const sizes = outputSizes.length ? outputSizes : FALLBACK_OUTPUT_SIZES
+  if (sizes.length < 2) return []
+  return [
+    {
+      id: 'output_size',
+      type: 'enum',
+      group: 'output',
+      label: 'Output size',
+      help: 'Renders at the model’s own size, then upscales the finished image. Upscaled results are labelled as such.',
+      options: sizes.map((size) => ({
+        value: size.id,
+        label: size.label,
+        long_edge: size.long_edge,
+      })),
+      default: sizes[0].id,
+    },
+    {
+      id: 'upscaler',
+      type: 'enum',
+      group: 'output',
+      label: 'Upscaler',
+      advanced: true,
+      depends_on: [{ param: 'output_size', in: sizes.filter((s) => s.long_edge > 0).map((s) => s.id) }],
+      options: [
+        { value: 'auto', label: 'Best available (ESRGAN if downloaded, else Lanczos)' },
+        { value: 'lanczos', label: 'Lanczos (fast, no download)' },
+        ...upscalers.map((upscaler) => ({
+          value: upscaler.id,
+          label: upscaler.installed
+            ? `${upscaler.label} (ESRGAN)`
+            : `${upscaler.label} (ESRGAN · downloads on first use)`,
+        })),
+      ],
+      default: 'auto',
+    },
+  ]
 }
 
 /** The engine names a model-backed upscaler by its `.pth` stem. */
@@ -317,7 +405,8 @@ function upscalerEngineName(fileName: string): string {
 function paramsFor(
   model: EngineModelStatus,
   task: EngineModelTask,
-  upscalers: EngineUpscalerStatus[] = []
+  upscalers: EngineUpscalerStatus[] = [],
+  outputSizes: EngineOutputSize[] = []
 ): MediaParamSpec[] {
   const specs: MediaParamSpec[] = [
     { id: 'prompt', type: 'text', group: 'core', label: 'Prompt', required: true },
@@ -341,6 +430,7 @@ function paramsFor(
           help: 'Optional: a picture to change so it matches the prompt.',
         },
     resolutionSpec(model),
+    ...customSizeSpecs(model),
     sdStepsSpec(model.defaults.steps),
     {
       id: 'guidance_scale',
@@ -354,6 +444,7 @@ function paramsFor(
     },
   ]
   if (task === 'text_to_image') {
+    specs.push(...outputSizeSpecs(outputSizes, upscalers))
     specs.push(
       {
         id: 'strength',
@@ -449,6 +540,7 @@ function paramsFor(
         type: 'enum',
         group: 'motion',
         label: 'Length',
+        help: 'Frames follow the model’s rule (Wan: 4n + 1), so the clip may be a frame longer or shorter.',
         options: videoDefaultsOf(model).length_seconds.map((seconds) => ({
           value: seconds,
           label: seconds === 1 ? '1 second' : `${seconds} seconds`,
@@ -460,6 +552,9 @@ function paramsFor(
         type: 'int',
         group: 'motion',
         label: 'FPS',
+        help: videoDefaultsOf(model).native_fps
+          ? `The model was trained at ${videoDefaultsOf(model).native_fps} fps.`
+          : undefined,
         min: videoDefaultsOf(model).fps_min,
         max: videoDefaultsOf(model).fps_max,
         default: videoDefaultsOf(model).fps,
@@ -483,7 +578,8 @@ function memoryFor(model: EngineModelStatus, sizeBytes: number): number {
 function modelDescriptors(
   model: EngineModelStatus,
   providerId: string,
-  upscalers: EngineUpscalerStatus[] = []
+  upscalers: EngineUpscalerStatus[] = [],
+  outputSizes: EngineOutputSize[] = []
 ): MediaModelDescriptor[] {
   const tasks = model.tasks.filter(
     (task) => task === MEDIA_TASK.TEXT_TO_IMAGE || task === MEDIA_TASK.TEXT_TO_VIDEO
@@ -494,7 +590,9 @@ function modelDescriptors(
     local_id: localId,
     family: model.family,
     tasks,
-    params: Object.fromEntries(tasks.map((task) => [task, paramsFor(model, task, upscalers)])),
+    params: Object.fromEntries(
+      tasks.map((task) => [task, paramsFor(model, task, upscalers, outputSizes)])
+    ),
     license: { id: model.license, url: model.license_url },
     outputs: Object.fromEntries(
       tasks.map((task) => [
@@ -565,7 +663,10 @@ export function engineRequestBody(req: NormalizedMediaRequest): Record<string, u
     body.negative_prompt = params.negative_prompt
   }
   const resolution = typeof params.resolution === 'string' ? params.resolution : ''
-  const [width, height] = resolution.split('x').map(Number)
+  const [width, height] =
+    resolution === CUSTOM_RESOLUTION
+      ? [Number(params.custom_width), Number(params.custom_height)]
+      : resolution.split('x').map(Number)
   if (width > 0 && height > 0) {
     body.width = width
     body.height = height
@@ -597,7 +698,7 @@ export function engineRequestBody(req: NormalizedMediaRequest): Record<string, u
   }
   if (req.task === MEDIA_TASK.TEXT_TO_VIDEO) {
     if (isDataUrl(params.end_image)) body.end_image = params.end_image
-    const fps = typeof params.fps === 'number' ? params.fps : 16
+    const fps = typeof params.fps === 'number' ? params.fps : FALLBACK_VIDEO.fps
     body.fps = fps
     const seconds = Number(params.length_seconds)
     if (Number.isFinite(seconds) && seconds > 0) {
@@ -643,6 +744,50 @@ export function createBuiltinEngineAdapter(
   const providerId = descriptor.id
   /** Where each job was sent, so polling finds it again. */
   const jobBaseUrls = new Map<string, string>()
+  /** Jobs whose finished image is upscaled to an output size, and how. */
+  const jobUpscales = new Map<string, { outputSize: string; upscaler: string }>()
+  /** Upscaled outputs, so a repeated poll does not upscale again. */
+  const upscaledOutputs = new Map<string, MediaOutputRef[]>()
+
+  /**
+   * Enlarges each finished image to the job's output size in Rust (ESRGAN
+   * through the engine's upscale tool when downloaded, else Lanczos). Each
+   * output carries `upscale` so the UI and library label it as upscaled.
+   */
+  async function upscaleOutputs(
+    providerJobId: string,
+    outputs: MediaOutputRef[],
+    signal?: AbortSignal
+  ): Promise<MediaOutputRef[]> {
+    const plan = jobUpscales.get(providerJobId)
+    if (!plan) return outputs
+    const cached = upscaledOutputs.get(providerJobId)
+    if (cached) return cached
+    const result: MediaOutputRef[] = []
+    for (const output of outputs) {
+      if (output.kind !== 'inline' || !output.mime.startsWith('image/')) {
+        result.push(output)
+        continue
+      }
+      const upscaled = await transport.invoke<{
+        image_base64: string
+        mime: string
+        info: MediaUpscaleInfo
+      }>(
+        'media_upscale_image',
+        { imageBase64: output.base64, outputSize: plan.outputSize, upscaler: plan.upscaler },
+        signal
+      )
+      result.push({
+        kind: 'inline',
+        base64: upscaled.image_base64,
+        mime: upscaled.mime,
+        upscale: upscaled.info,
+      })
+    }
+    upscaledOutputs.set(providerJobId, result)
+    return result
+  }
 
   async function baseUrlFor(providerJobId: string, signal?: AbortSignal): Promise<string> {
     const known = jobBaseUrls.get(providerJobId)
@@ -737,6 +882,13 @@ export function createBuiltinEngineAdapter(
     }
   }
 
+  async function ensureUpscalerById(upscalerId: string, signal?: AbortSignal): Promise<void> {
+    const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
+    const match = status.upscalers.find((upscaler) => upscaler.id === upscalerId)
+    if (!match) return
+    await ensureUpscaler(upscalerEngineName(match.file_name), signal)
+  }
+
   async function poll(handle: MediaJobHandle, signal?: AbortSignal): Promise<MediaJobSnapshot> {
     ensureProgressListener()
     const providerJobId = handle.provider_job_id
@@ -777,9 +929,11 @@ export function createBuiltinEngineAdapter(
         },
       })
     }
+    const outputs =
+      state === 'succeeded' ? await upscaleOutputs(providerJobId, outputsOf(job), signal) : []
     return snapshot(handle, providerJobId, state, {
       queue_position: job.queue_position ?? null,
-      ...(state === 'succeeded' ? { outputs: outputsOf(job) } : {}),
+      ...(state === 'succeeded' ? { outputs } : {}),
       ...(state === 'succeeded' ? { progress: 100, step: null } : progressOf()),
       ...(job.started ? { started_at: job.started * 1000 } : {}),
       ...(job.completed ? { finished_at: job.completed * 1000 } : {}),
@@ -801,7 +955,7 @@ export function createBuiltinEngineAdapter(
     async capabilities(signal?: AbortSignal): Promise<MediaCapabilities> {
       const status = await transport.invoke<EngineStatus>('media_engine_status', undefined, signal)
       const models = status.models.flatMap((model) =>
-        modelDescriptors(model, providerId, status.upscalers)
+        modelDescriptors(model, providerId, status.upscalers, status.output_sizes ?? [])
       )
       const taskIds = [...new Set(models.flatMap((model) => model.tasks))]
       return {
@@ -845,6 +999,17 @@ export function createBuiltinEngineAdapter(
         // The upscaler's download bar is not this job's generation bar.
         latestProgress = null
       }
+      // An output size above "as rendered" upscales the finished image; a
+      // named ESRGAN model is downloaded first so choosing it just works.
+      const outputSize = typeof req.params.output_size === 'string' ? req.params.output_size : ''
+      const wantsUpscale =
+        req.task !== MEDIA_TASK.TEXT_TO_VIDEO && outputSize !== '' && outputSize !== 'native'
+      const upscalerChoice =
+        typeof req.params.upscaler === 'string' ? req.params.upscaler : 'auto'
+      if (wantsUpscale && upscalerChoice !== 'auto' && upscalerChoice !== 'lanczos') {
+        await ensureUpscalerById(upscalerChoice, signal)
+        latestProgress = null
+      }
       // Loads the model the first time, which can take a while; a later job for
       // the same model returns straight away.
       const started = await transport.invoke<StartedEngine>(
@@ -868,6 +1033,9 @@ export function createBuiltinEngineAdapter(
         )
       }
       jobBaseUrls.set(body.id, started.base_url)
+      if (wantsUpscale) {
+        jobUpscales.set(body.id, { outputSize, upscaler: upscalerChoice })
+      }
       return snapshot(req, body.id, JOB_STATE[body.status as EngineJobStatus] ?? 'queued', {
         queue_position: body.queue_position ?? null,
       })

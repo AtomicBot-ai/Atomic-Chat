@@ -53,6 +53,7 @@ export {
   type MediaJobSnapshot,
   type MediaJobState,
   type MediaOutputRef,
+  type MediaUpscaleInfo,
   type MediaProviderAdapter,
   type MediaProviderAdapterId,
   type MediaProviderDescriptor,
