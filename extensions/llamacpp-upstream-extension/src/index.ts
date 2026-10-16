@@ -7,6 +7,7 @@
  */
 
 import { planGpuPlacement } from './gpuPlacement'
+import { checkChatModel } from './ggufClassify'
 import {
   AIEngine,
   getJanDataFolderPath,
@@ -441,6 +442,44 @@ function get_backend_category(backend: string): string {
 //    - model.yml (required)
 //    - model.gguf (optional, present if downloaded from URL)
 //    - mmproj.gguf (optional, present if mmproj exists and it was downloaded from URL)
+interface RustScanReport {
+  root: string
+  models: {
+    id: string
+    name: string
+    path: string
+    size_bytes: number
+    architecture: string
+    context_length?: number | null
+    quant?: string | null
+    mmproj_path?: string | null
+    origin: string
+    split_parts?: number | null
+  }[]
+  skipped: { path: string; reason: string }[]
+  truncated: boolean
+}
+
+/** Result of `rescanModels()`, shown by the "Rescan models" action. */
+export interface ModelScanReport {
+  root: string
+  found: {
+    id: string
+    name: string
+    path: string
+    origin: string
+    architecture: string
+    quant?: string
+    mmproj?: string
+  }[]
+  /** Ids newly registered by this scan. */
+  registered: string[]
+  skipped: { path: string; reason: string }[]
+  /** Existing entries hidden because their weights are not a chat model. */
+  hidden: { id: string; path: string; reason: string }[]
+  truncated: boolean
+}
+
 // Contents of model.yml can be found in ModelConfig interface
 //
 //  - backends/<backend_version>/<backend_type>/
@@ -559,6 +598,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
   /// runs alongside the chat model, so leaving ~3 GB resident forever after
   /// one dictation would be rude.
   private transcriptionIdleTimer?: ReturnType<typeof setTimeout>
+  /** Auto-detect GGUFs without a model.yml once per session (first list()). */
+  private autoScanDone = false
+  private scanInFlight?: Promise<ModelScanReport>
+  /** model.yml entries whose weights are not a chat model: hidden, never deleted. */
+  private nonChatModels = new Map<string, string>()
+  private lastScanReport?: ModelScanReport
 
   /**
    * Returns the provider-scoped optimal-backend cache when its schema and
@@ -3466,41 +3511,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     await this.migrateLegacyModels()
 
-    let modelIds: string[] = []
-
-    // DFS
-    let stack = [modelsDir]
-    while (stack.length > 0) {
-      const currentDir = stack.pop()
-
-      // check if model.yml exists
-      const modelConfigPath = await joinPath([currentDir, 'model.yml'])
-      if (await fs.existsSync(modelConfigPath)) {
-        // Normalize Windows '\' to '/' so the id matches the catalog
-        modelIds.push(
-          currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
-        )
-        continue
-      }
-
-      // otherwise, look into subdirectories
-      const children = await fs.readdirSync(currentDir)
-      for (const child of children) {
-        const childPath = await joinPath([currentDir, child])
-        // skip files
-        const dirInfo = await fs.fileStat(childPath)
-        if (!dirInfo.isDirectory) {
-          continue
-        }
-
-        stack.push(childPath)
+    // Register GGUFs that sit in the models folder without a model.yml
+    // (LM Studio / HF cache / Ollama). Once per session; "Rescan models"
+    // in settings runs it again on demand.
+    if (!this.autoScanDone) {
+      this.autoScanDone = true
+      try {
+        await this.rescanModels()
+      } catch (e) {
+        logger.warn('Automatic GGUF scan failed', e)
       }
     }
 
+    const modelIds = await this.listModelYmlIds(modelsDir)
     const janDataFolderPath = await getJanDataFolderPath()
 
     let modelInfos: modelInfo[] = []
     for (const modelId of modelIds) {
+      // Entries pointing at diffusion / encoder GGUFs stay on disk but are
+      // not offered as chat models.
+      if (this.nonChatModels.has(modelId)) continue
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
       const isEmbedding = await this.resolveEmbeddingConfig(
@@ -3543,6 +3573,162 @@ export default class llamacpp_upstream_extension extends AIEngine {
     }
 
     return modelInfos
+  }
+
+  /** Ids (relative folder paths) of every model.yml under the models folder. */
+  private async listModelYmlIds(modelsDir: string): Promise<string[]> {
+    const modelIds: string[] = []
+
+
+    // DFS
+    let stack = [modelsDir]
+    while (stack.length > 0) {
+      const currentDir = stack.pop()
+
+      // check if model.yml exists
+      const modelConfigPath = await joinPath([currentDir, 'model.yml'])
+      if (await fs.existsSync(modelConfigPath)) {
+        // Normalize Windows '\' to '/' so the id matches the catalog
+        modelIds.push(
+          currentDir.slice(modelsDir.length + 1).replace(/\\/g, '/')
+        )
+        continue
+      }
+
+      // otherwise, look into subdirectories
+      const children = await fs.readdirSync(currentDir)
+      for (const child of children) {
+        const childPath = await joinPath([currentDir, child])
+        // skip files
+        const dirInfo = await fs.fileStat(childPath)
+        if (!dirInfo.isDirectory) {
+          continue
+        }
+
+        stack.push(childPath)
+      }
+    }
+    return modelIds
+  }
+
+  /** Report of the last GGUF scan, if one ran this session. */
+  getLastScanReport(): ModelScanReport | undefined {
+    return this.lastScanReport
+  }
+
+  /**
+   * Scan the models folder for GGUFs without a model.yml and register the chat
+   * models in place: a small `discovered/<path>/model.yml` points at the file
+   * where it is, nothing is copied. Existing model.yml entries win (their
+   * weights are passed as known and never re-registered). Entries whose
+   * weights turn out to be diffusion / encoder GGUFs are hidden, not deleted.
+   */
+  async rescanModels(): Promise<ModelScanReport> {
+    if (this.scanInFlight) return this.scanInFlight
+    this.scanInFlight = this.doRescanModels().finally(() => {
+      this.scanInFlight = undefined
+    })
+    return this.scanInFlight
+  }
+
+  private async doRescanModels(): Promise<ModelScanReport> {
+    const modelsDir = await this.getModelsRootPath()
+    if (!(await fs.existsSync(modelsDir))) {
+      await fs.mkdir(modelsDir)
+    }
+    const janDataFolderPath = await getJanDataFolderPath()
+    const ids = await this.listModelYmlIds(modelsDir)
+
+    const known: string[] = []
+    const userEntries: { id: string; path: string }[] = []
+    for (const id of ids) {
+      try {
+        const cfg = await invoke<ModelConfig>('read_yaml', {
+          path: await joinPath([modelsDir, id, 'model.yml']),
+        })
+        const resolved = await this.resolveModelPath(
+          janDataFolderPath,
+          cfg.model_path
+        )
+        if (!resolved) continue
+        known.push(resolved)
+        userEntries.push({ id, path: resolved })
+      } catch (e) {
+        logger.warn(`Could not read model.yml for ${id}`, e)
+      }
+    }
+
+    const scan = await invoke<RustScanReport>('scan_gguf_models', {
+      path: modelsDir,
+      knownPaths: known,
+    })
+
+    const registered: string[] = []
+    for (const m of scan.models) {
+      const dir = await joinPath([modelsDir, m.id])
+      const configPath = await joinPath([dir, 'model.yml'])
+      if (await fs.existsSync(configPath)) continue
+      const config: Record<string, unknown> = {
+        model_path: m.path,
+        name: m.name,
+        size_bytes: m.size_bytes,
+        source: 'discovered',
+        discovered_origin: m.origin,
+        architecture: m.architecture,
+      }
+      if (m.mmproj_path) config.mmproj_path = m.mmproj_path
+      if (m.quant) config.quant_type = m.quant
+      if (m.context_length) config.context_length = m.context_length
+      try {
+        await fs.mkdir(dir)
+        await invoke<void>('write_yaml', { data: config, savePath: configPath })
+        registered.push(m.id)
+      } catch (e) {
+        logger.warn(`Could not register discovered model ${m.path}`, e)
+      }
+    }
+
+    // Flag existing entries whose weights are not a chat model.
+    const hidden: { id: string; path: string; reason: string }[] = []
+    this.nonChatModels.clear()
+    if (userEntries.length > 0) {
+      try {
+        const classes = await invoke<
+          { path: string; is_chat: boolean; reason?: string }[]
+        >('classify_gguf_files', { paths: userEntries.map((e) => e.path) })
+        classes.forEach((c, i) => {
+          const entry = userEntries[i]
+          if (!entry || c.is_chat) return
+          const reason = c.reason ?? 'not a chat model'
+          this.nonChatModels.set(entry.id, reason)
+          hidden.push({ id: entry.id, path: entry.path, reason })
+        })
+      } catch (e) {
+        logger.warn('Could not classify registered models', e)
+      }
+    }
+
+    const report: ModelScanReport = {
+      root: scan.root,
+      found: scan.models.map((m) => ({
+        id: m.id,
+        name: m.name,
+        path: m.path,
+        origin: m.origin,
+        architecture: m.architecture,
+        quant: m.quant ?? undefined,
+        mmproj: m.mmproj_path ?? undefined,
+      })),
+      registered,
+      skipped: scan.skipped,
+      hidden,
+      truncated: scan.truncated,
+    }
+    this.lastScanReport = report
+    logger.info(
+      `GGUF scan: ${report.found.length} chat models (${registered.length} new), ${report.skipped.length} skipped, ${hidden.length} hidden`
+    )
+    return report
   }
 
   // Resolve `model_path` (absolute or data-folder-relative) like `load()`; undefined if unknown.
@@ -7333,6 +7519,20 @@ export default class llamacpp_upstream_extension extends AIEngine {
         return {
           isValid: false,
           error: errorMessage,
+          metadata,
+        }
+      }
+
+      // Diffusion transformers (Wan, Flux, Qwen-Image), T5/UMT5 text
+      // encoders and VAEs load in llama-server only to fail: refuse them here.
+      const check = checkChatModel(
+        metadata.metadata,
+        filePath.split(/[\\/]/).pop() ?? ''
+      )
+      if (!check.chat && !/mmproj/i.test(filePath)) {
+        return {
+          isValid: false,
+          error: `This GGUF is not a chat model (${'reason' in check ? check.reason : 'unknown'}) and cannot be imported as one.`,
           metadata,
         }
       }

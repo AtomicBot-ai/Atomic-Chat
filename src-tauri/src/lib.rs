@@ -145,6 +145,8 @@ pub fn run() {
         core::app::commands::change_app_data_folder,
         core::app::models_folder::get_models_folder,
         core::app::models_folder::set_models_folder,
+        core::app::gguf_scan::scan_gguf_models,
+        core::app::gguf_scan::classify_gguf_files,
         core::app::commands::app_token,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,
@@ -284,6 +286,8 @@ pub fn run() {
         // credential-store.md. Desktop only, and deliberately no enumeration
         // command: the caller always knows the key it is asking about.
         core::media::commands::media_secret_set,
+        core::media::stitch::media_ffmpeg_available,
+        core::media::stitch::media_stitch_videos,
         core::media::commands::media_secret_get,
         core::media::commands::media_secret_delete,
         core::media::commands::media_secret_available,
@@ -347,6 +351,8 @@ pub fn run() {
         core::app::commands::change_app_data_folder,
         core::app::models_folder::get_models_folder,
         core::app::models_folder::set_models_folder,
+        core::app::gguf_scan::scan_gguf_models,
+        core::app::gguf_scan::classify_gguf_files,
         core::app::commands::app_token,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,

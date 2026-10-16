@@ -30,6 +30,7 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'media_engine_start',
   'media_engine_status',
   'media_engine_stop',
+  'media_ffmpeg_available',
   'media_upscaler_install',
   'media_upscale_image',
   // Radium Media provider credentials, in the OS credential store. Desktop
@@ -41,6 +42,7 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'media_secret_delete',
   'media_secret_get',
   'media_secret_set',
+  'media_stitch_videos',
   // The panel board and its sandboxed custom panels. Desktop only on purpose:
   // the board is a desktop surface, a panel is a folder on a filesystem the
   // user can reach, and the `panel://` scheme handler serves it from there.

@@ -12,7 +12,7 @@
  * the model's own parameter schema rather than by hand-written controls.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { IconLibrary, IconWand } from '@tabler/icons-react'
+import { IconLibrary, IconMovie, IconWand } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
 import {
@@ -22,6 +22,7 @@ import {
 import { MediaJobStatus } from './MediaJobStatus'
 import { MediaPreview } from './MediaPreview'
 import { MediaLibrary } from './MediaLibrary'
+import { ContinuousStudio } from './continuous/ContinuousStudio'
 import { MediaOutputSettings } from './MediaOutputSettings'
 import { extractLastFrameDataUrl } from './videoLastFrame'
 import { useMediaGeneration } from '@/hooks/useMediaGeneration'
@@ -60,7 +61,7 @@ export function MediaStudio() {
 
   const { latest, submit, cancel } = useMediaGeneration()
   const [task, setTask] = useState<MediaTaskId | null>(null)
-  const [view, setView] = useState<'create' | 'library'>('create')
+  const [view, setView] = useState<'create' | 'library' | 'continuous'>('create')
 
   /**
    * A generation handed over from the library (decision D17).
@@ -320,12 +321,33 @@ export function MediaStudio() {
                 <IconLibrary size={14} aria-hidden="true" />
                 {t('media:studio.tabs.library', { defaultValue: 'Library' })}
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'continuous'}
+                onClick={() => setView('continuous')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  view === 'continuous'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <IconMovie size={14} aria-hidden="true" />
+                {t('media:studio.tabs.continuous', { defaultValue: 'Continuous' })}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {view === 'library' ? (
+      {view === 'continuous' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
+          <div className="mx-auto w-full max-w-[1500px]">
+            <ContinuousStudio />
+          </div>
+        </div>
+      ) : view === 'library' ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-5">
           <div className="mx-auto w-full max-w-[1500px]">
             <MediaOutputSettings />
