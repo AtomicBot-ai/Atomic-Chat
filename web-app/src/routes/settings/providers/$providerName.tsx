@@ -30,6 +30,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
+import { RescanModelsDialog } from '@/containers/dialogs/RescanModelsDialog'
 import { DflashUnsupportedDialog } from '@/containers/dialogs/DflashUnsupportedDialog'
 import { MtpUnsupportedDialog } from '@/containers/dialogs/MtpUnsupportedDialog'
 import { Eagle3UnsupportedDialog } from '@/containers/dialogs/Eagle3UnsupportedDialog'
@@ -2691,6 +2692,13 @@ function ProviderDetail() {
                                 <span>{t('providers:import')}</span>
                               </Button>
                             }
+                          />
+                        )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'llamacpp-upstream') && (
+                          <RescanModelsDialog
+                            onScanned={() => handleModelImportSuccess()}
                           />
                         )}
                       {provider && provider.provider === 'mlx' && (

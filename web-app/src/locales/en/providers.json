@@ -83,5 +83,16 @@
     "concurrentMode": {
       "perSlotContextWarning": "Per-slot context equals ctx_size divided by slot count. Lower slot counts give each request more context."
     }
+  },
+  "rescan": {
+    "button": "Rescan models",
+    "title": "Model scan",
+    "summary": "{{found}} chat models found ({{registered}} new), {{skipped}} files skipped, {{hidden}} entries hidden.",
+    "found": "Chat models",
+    "new": "new",
+    "hidden": "Hidden (not chat models, files kept)",
+    "skipped": "Skipped",
+    "truncated": "The folder is very large; the scan stopped early.",
+    "failed": "Could not scan the models folder"
   }
 }

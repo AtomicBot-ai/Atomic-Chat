@@ -145,6 +145,8 @@ pub fn run() {
         core::app::commands::change_app_data_folder,
         core::app::models_folder::get_models_folder,
         core::app::models_folder::set_models_folder,
+        core::app::gguf_scan::scan_gguf_models,
+        core::app::gguf_scan::classify_gguf_files,
         core::app::commands::app_token,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,
@@ -346,6 +348,8 @@ pub fn run() {
         core::app::commands::change_app_data_folder,
         core::app::models_folder::get_models_folder,
         core::app::models_folder::set_models_folder,
+        core::app::gguf_scan::scan_gguf_models,
+        core::app::gguf_scan::classify_gguf_files,
         core::app::commands::app_token,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,
