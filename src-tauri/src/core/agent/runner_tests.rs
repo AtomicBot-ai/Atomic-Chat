@@ -585,9 +585,47 @@ async fn two_docs_retrieves_batch_as_pure_reads() {
 }
 
 #[tokio::test]
-async fn read_only_mcp_tool_executes_without_any_approval() {
+async fn read_only_hint_does_not_skip_the_approval_gate() {
+    // `readOnlyHint` is the server's own claim about itself; the user still
+    // decides. Denied, the call never reaches the server.
     let bridge = ScriptedMcpBridge::new(&[("search", true)]);
     let approval = RecordingApproval::deny();
+    let run = run_mcp_script(
+        vec![
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.search","args":{"query":"atomic"}}]"#,
+            ),
+            ScriptedResponse::completion(r#"[{"tool":"reply","args":{"text":"denied"}}]"#),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    assert!(run.result.is_ok());
+    assert_eq!(
+        executed(&run.events),
+        [
+            ("mcp.test.search", ToolStatus::Denied),
+            ("reply", ToolStatus::Ok)
+        ]
+    );
+    let requests = approval.requests();
+    assert_eq!(requests.len(), 1, "readOnlyHint must not skip the gate");
+    assert_eq!(requests[0].tool, "mcp.test.search");
+    assert!(requests[0].can_remember, "Always allow must be offered");
+    assert!(bridge.calls().is_empty());
+    // The grammar for the step advertises the MCP alternation.
+    let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
+    assert!(grammar.contains("mcp-tool-name"));
+    assert!(grammar.contains("mcp.test.search"));
+}
+
+#[tokio::test]
+async fn approved_mcp_call_runs_once_the_user_allows_it() {
+    let bridge = ScriptedMcpBridge::new(&[("search", true)]);
+    let approval = RecordingApproval::allow();
     let run = run_mcp_script(
         vec![
             ScriptedResponse::completion(
@@ -602,22 +640,47 @@ async fn read_only_mcp_tool_executes_without_any_approval() {
     .await;
 
     assert!(run.result.is_ok());
+    assert_eq!(approval.requests().len(), 1);
+    assert_eq!(bridge.calls(), ["mcp.test.search"]);
+}
+
+#[tokio::test]
+async fn always_allow_remembers_the_exact_mcp_action() {
+    // "Always allow" is the user's deliberate per-tool choice: the same call
+    // runs silently afterwards, a call with different arguments asks again.
+    let bridge = ScriptedMcpBridge::new(&[("create_issue", false)]);
+    let approval = RecordingApproval::always_allow();
+    let call = r#"[{"tool":"mcp.test.create_issue","args":{"title":"bug"}}]"#;
+    run_mcp_script(
+        vec![
+            ScriptedResponse::completion(call),
+            ScriptedResponse::completion(call),
+            ScriptedResponse::completion(
+                r#"[{"tool":"mcp.test.create_issue","args":{"title":"other"}}]"#,
+            ),
+        ],
+        &bridge,
+        &approval,
+        false,
+    )
+    .await;
+
+    let requests = approval.requests();
     assert_eq!(
-        executed(&run.events),
+        requests.len(),
+        2,
+        "remembered action skips the second prompt only"
+    );
+    assert_eq!(requests[0].tool, "mcp.test.create_issue");
+    assert_ne!(requests[0].fingerprint, requests[1].fingerprint);
+    assert_eq!(
+        bridge.calls(),
         [
-            ("mcp.test.search", ToolStatus::Ok),
-            ("reply", ToolStatus::Ok)
+            "mcp.test.create_issue",
+            "mcp.test.create_issue",
+            "mcp.test.create_issue"
         ]
     );
-    assert!(
-        approval.requests().is_empty(),
-        "readOnlyHint skips the gate"
-    );
-    assert_eq!(bridge.calls(), ["mcp.test.search"]);
-    // The grammar for the step advertises the MCP alternation.
-    let grammar = run.requests[0]["grammar"].as_str().expect("grammar");
-    assert!(grammar.contains("mcp-tool-name"));
-    assert!(grammar.contains("mcp.test.search"));
 }
 
 #[tokio::test]
@@ -660,7 +723,7 @@ async fn non_read_only_mcp_tool_is_gated_and_fails_closed_on_deny() {
 }
 
 #[tokio::test]
-async fn auto_approve_mcp_bypasses_the_gate_for_mcp_tools_only() {
+async fn explicit_mcp_opt_in_bypasses_the_gate_for_mcp_tools() {
     let bridge = ScriptedMcpBridge::new(&[("create_issue", false)]);
     let approval = RecordingApproval::deny();
     let run = run_mcp_script(
@@ -691,7 +754,7 @@ async fn auto_approve_mcp_bypasses_the_gate_for_mcp_tools_only() {
 #[tokio::test]
 async fn dead_mcp_server_yields_a_structured_error_outcome() {
     let bridge = ScriptedMcpBridge::failing(&[("search", true)]);
-    let approval = RecordingApproval::deny();
+    let approval = RecordingApproval::allow();
     let run = run_mcp_script(
         vec![
             ScriptedResponse::completion(

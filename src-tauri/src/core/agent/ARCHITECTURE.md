@@ -105,11 +105,15 @@ browser automation, window control, and filesystem watchers are deferred.
 - Grammar/schema: an `mcp-call` alternation with a generic `json-object` args
   rule — argument shape is validated by the serving MCP server and previewed
   for approval, mirroring the open `args` object on the JSON-schema path.
-- Resource classes: `readOnlyHint` ⇒ `McpRead` (batchable, serialized within
-  its group — the hint is untrusted); everything else ⇒ `ApprovalGated` with
-  `Always allow` fingerprints. `auto_approve_mcp` (the migrated chat
-  `allowAllMCPPermissions`, default true) bypasses the gate for MCP-origin
-  tools only, never for built-in shell/fs tools.
+- Approval: every resolved MCP tool is `ApprovalGated` (runs solo, asks first)
+  with `Always allow` fingerprints. `readOnlyHint` is the server's untrusted
+  claim about itself: it only adds a `[read-only]` prompt marker and never
+  skips the gate or earns batching. `auto_approve_mcp` (chat's
+  `allowAllMCPPermissions` or the composer's per-thread "skip") is an explicit
+  user opt-in, default **false** on the wire and in the frontend store (reset
+  once for existing users by store v2). `mcp_opt_in_waives_approval` is the
+  single place it applies, and only to `mcp.*` names, never to built-in
+  shell/fs/net tools or `skill.run_script`. See ADR 2026-10-16.
 - Dispatch goes through the `McpBridge` trait (`LiveMcpBridge` in production,
   a scripted bridge in `runner_tests`), with the MCP per-call timeout and the
   run's cancellation token; a dead server yields a structured "do not retry"

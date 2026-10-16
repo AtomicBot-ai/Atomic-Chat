@@ -19,10 +19,48 @@ export type ToolApprovalModalProps = {
   onDeny: () => void
 }
 
+/**
+ * Version of the persisted tool-approval state.
+ *
+ * - v1 forced `allowAllMCPPermissions` on for everyone (an inherited upstream
+ *   default, never a user choice).
+ * - v2 resets it to off once, so every MCP tool call asks again. A user who
+ *   turns it back on afterwards keeps that choice: the reset never re-runs.
+ */
+export const TOOL_APPROVAL_STORE_VERSION = 2
+
+type PersistedToolApprovalState = Pick<
+  ToolApprovalState,
+  'approvedTools' | 'allowAllMCPPermissions'
+>
+
+/**
+ * Upgrade persisted tool-approval state from `fromVersion` to
+ * {@link TOOL_APPROVAL_STORE_VERSION}. Per-thread approvals ("Always allow"
+ * for one tool) are deliberate user choices and survive every step.
+ */
+export function migrateToolApprovalState(
+  persistedState: unknown,
+  fromVersion: number
+): PersistedToolApprovalState {
+  const state = (persistedState ?? {}) as Partial<PersistedToolApprovalState>
+  const migrated: PersistedToolApprovalState = {
+    approvedTools: state.approvedTools ?? {},
+    allowAllMCPPermissions: state.allowAllMCPPermissions ?? false,
+  }
+  if (fromVersion < 2) {
+    migrated.allowAllMCPPermissions = false
+  }
+  return migrated
+}
+
 type ToolApprovalState = {
   // Track approved tools per thread
   approvedTools: Record<string, string[]> // threadId -> toolNames[]
-  // Global MCP permission toggle
+  /**
+   * Explicit opt-in to run every MCP tool call without asking. Off by default:
+   * MCP servers are third-party code acting on the user's behalf.
+   */
   allowAllMCPPermissions: boolean
   // Modal state
   isModalOpen: boolean
@@ -46,7 +84,7 @@ export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
-      allowAllMCPPermissions: true,
+      allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
 
@@ -76,7 +114,7 @@ export const useToolApproval = create<ToolApprovalState>()(
         return new Promise<boolean>((resolve) => {
           const state = get()
 
-          // Auto-approve if the user has enabled auto-approval setting
+          // The user explicitly opted in to run MCP tools without asking
           if (
             state.allowAllMCPPermissions &&
             !options?.bypassGlobalAutoApprove
@@ -135,17 +173,12 @@ export const useToolApproval = create<ToolApprovalState>()(
     {
       name: localStorageKey.toolApproval,
       storage: createJSONStorage(() => localStorage),
-      version: 1,
-      // One-time migration: force auto-approve for every existing user so the
-      // tool approval popup is hidden by default. Users can opt back in via
-      // General → Chat Behavior or MCP Servers settings.
-      migrate: (persistedState) => {
-        const state = (persistedState ?? {}) as Partial<ToolApprovalState>
-        return {
-          ...state,
-          allowAllMCPPermissions: true,
-        } as ToolApprovalState
-      },
+      version: TOOL_APPROVAL_STORE_VERSION,
+      migrate: (persistedState, fromVersion) =>
+        migrateToolApprovalState(
+          persistedState,
+          fromVersion
+        ) as ToolApprovalState,
       // Only persist approved tools and global permission setting, not modal state
       partialize: (state) => ({
         approvedTools: state.approvedTools,

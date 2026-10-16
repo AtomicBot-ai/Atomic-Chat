@@ -39,7 +39,9 @@ use super::mcp_tools::{McpBridge, MCP_TOOL_PREFIX};
 use super::path_policy::{prepare_call_paths, EditableRoots};
 use super::pty::PtyRegistry;
 use super::rag_bridge::DocsBridge;
-use super::resource_class::{resource_class_for_call, ResourceClass};
+use super::resource_class::{
+    mcp_opt_in_waives_approval, resource_class_for_call, ResourceClass,
+};
 use super::shell_guard::{evaluate_shell_command, join_command_stream, ShellGuardVerdict};
 use super::skills::{loaded::LoadedSkills, SkillRegistry};
 use super::types::{
@@ -278,11 +280,9 @@ async fn authorize_call(
         }
         skill_invocation = Some(invocation);
     }
-    let is_mcp = prepared.call.tool.starts_with(MCP_TOOL_PREFIX);
-    let is_approval_gated = resource_class_for_call(&prepared.call.tool, context.mcp) == ResourceClass::ApprovalGated
-            // The legacy chat pipeline auto-approved every MCP tool; the
-            // migrated setting keeps that contract for MCP-origin tools only.
-            && !(is_mcp && context.auto_approve_mcp);
+    let is_approval_gated = resource_class_for_call(&prepared.call.tool, context.mcp)
+        == ResourceClass::ApprovalGated
+        && !mcp_opt_in_waives_approval(&prepared.call.tool, context.auto_approve_mcp);
     if is_approval_gated {
         reasons.push("tool is approval-gated".to_string());
     }

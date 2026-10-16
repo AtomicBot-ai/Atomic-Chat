@@ -69,24 +69,39 @@ impl Drop for TestWorkspace {
 
 pub(crate) struct RecordingApproval {
     approved: bool,
+    /// Answer approvals with "Always allow" and honour the remembered
+    /// fingerprints on later calls, like the production approval store.
+    always: bool,
     error: Option<String>,
     requests: Mutex<Vec<ApprovalRequest>>,
+    remembered: Mutex<BTreeSet<String>>,
 }
 
 impl RecordingApproval {
     pub(crate) fn allow() -> Self {
         Self {
             approved: true,
+            always: false,
             error: None,
             requests: Mutex::new(Vec::new()),
+            remembered: Mutex::new(BTreeSet::new()),
+        }
+    }
+
+    pub(crate) fn always_allow() -> Self {
+        Self {
+            always: true,
+            ..Self::allow()
         }
     }
 
     pub(crate) fn deny() -> Self {
         Self {
             approved: false,
+            always: false,
             error: None,
             requests: Mutex::new(Vec::new()),
+            remembered: Mutex::new(BTreeSet::new()),
         }
     }
 
@@ -97,18 +112,29 @@ impl RecordingApproval {
 
 #[async_trait]
 impl ApprovalHook for RecordingApproval {
-    async fn is_allowed(&self, _fingerprint: &str) -> bool {
-        false
+    async fn is_allowed(&self, fingerprint: &str) -> bool {
+        self.remembered
+            .lock()
+            .expect("remembered approvals")
+            .contains(fingerprint)
     }
 
     async fn request(&self, request: ApprovalRequest) -> Result<ApprovalDecision, String> {
+        if self.always && request.can_remember && self.error.is_none() {
+            self.remembered
+                .lock()
+                .expect("remembered approvals")
+                .insert(request.fingerprint.clone());
+        }
         self.requests
             .lock()
             .expect("approval requests")
             .push(request);
         match &self.error {
             Some(error) => Err(error.clone()),
-            None => Ok(if self.approved {
+            None => Ok(if self.always {
+                ApprovalDecision::AlwaysAllow
+            } else if self.approved {
                 ApprovalDecision::AllowOnce
             } else {
                 ApprovalDecision::Deny

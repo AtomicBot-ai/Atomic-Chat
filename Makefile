@@ -492,7 +492,8 @@ test-hardening-contracts:
 		tests/panel-sandbox.test.mjs \
 		tests/capability-remote-grants.test.mjs \
 		tests/csp-connect-src.test.mjs \
-		tests/no-atomic-sources.test.mjs
+		tests/no-atomic-sources.test.mjs \
+		tests/mcp-approval-contract.test.mjs
 	python3 -m unittest discover -s tests -p test_concurrent_demo_security.py
 
 # Every build gets a new version number (tracker D34). VERSION=x.y.z sets one.

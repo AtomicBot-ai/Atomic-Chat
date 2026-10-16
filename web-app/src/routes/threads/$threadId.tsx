@@ -106,8 +106,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
-import { useToolApproval } from '@/hooks/useToolApproval'
-import { resolveMcpAutoApprove } from '@/lib/mcp-approval'
+import {
+  approveChatToolCall,
+  resolveMcpAutoApprove,
+} from '@/lib/mcp-approval'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { buildAgentRagRequest } from '@/lib/agent-rag-request'
@@ -472,17 +474,8 @@ function ThreadDetail() {
           threadId,
           ragToolNames,
           mcpToolNames,
-          // The composer's approval select governs chat tool calls too: an
-          // explicit "skip" runs them silently, an explicit "manual" prompts
-          // even while the global MCP auto-approve switch is on.
-          approve: (toolName, currentThreadId, input) =>
-            resolveMcpAutoApprove(currentThreadId)
-              ? Promise.resolve(true)
-              : useToolApproval
-                  .getState()
-                  .showApprovalModal(toolName, currentThreadId, input, {
-                    bypassGlobalAutoApprove: true,
-                  }),
+          // Same rule as the agent engine: ask unless the user opted in.
+          approve: approveChatToolCall,
           callRagTool: (args) => serviceHub.rag().callTool(args),
           callMcpTool: (args) => serviceHub.mcp().callTool(args),
           // Resolve project scope from the live route-keyed thread record.

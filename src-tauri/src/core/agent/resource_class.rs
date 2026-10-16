@@ -15,10 +15,6 @@ pub enum ResourceClass {
     Vision,
     ApprovalGated,
     Terminal,
-    /// An MCP tool whose server advertises `readOnlyHint`. Batchable but
-    /// serialized within its group: the hint comes from an external server, so
-    /// it never earns `PureRead`'s parallelism.
-    McpRead,
     /// `agent.delegate`: runs a whole specialist turn that may read, write and
     /// request approvals of its own. Needs no approval itself, but must run
     /// solo — other class groups in a batch execute concurrently with it.
@@ -92,18 +88,29 @@ pub fn resource_class_for(tool_name: &str) -> ResourceClass {
     }
 }
 
-/// Class lookup for a concrete call, MCP-aware. `mcp.*` names resolve through
-/// the turn's bridge: read-only → [`ResourceClass::McpRead`], anything else →
-/// [`ResourceClass::ApprovalGated`], unresolved → fail-closed `Unknown`.
+/// Class lookup for a concrete call, MCP-aware. Every `mcp.*` name the turn's
+/// bridge resolves is [`ResourceClass::ApprovalGated`]; an unresolved one is
+/// fail-closed `Unknown`.
+///
+/// MCP tools are third-party code acting on the user's behalf, so they ask
+/// first regardless of their annotations: `readOnlyHint` is a claim made by
+/// the server itself and earns neither a skipped approval nor batching.
 pub fn resource_class_for_call(tool_name: &str, mcp: Option<&dyn McpBridge>) -> ResourceClass {
     if tool_name.starts_with(MCP_TOOL_PREFIX) {
         return match mcp.and_then(|bridge| bridge.resolve(tool_name)) {
-            Some(descriptor) if descriptor.read_only => ResourceClass::McpRead,
             Some(_) => ResourceClass::ApprovalGated,
             None => ResourceClass::Unknown,
         };
     }
     resource_class_for(tool_name)
+}
+
+/// Whether the user's explicit "auto-approve MCP tools" opt-in waives the
+/// approval gate for this call. It covers MCP-origin tools only: built-in
+/// shell/fs/network fixes and skill scripts keep asking (or follow the
+/// run-scoped `auto_approve`), whatever this setting says.
+pub fn mcp_opt_in_waives_approval(tool_name: &str, auto_approve_mcp: bool) -> bool {
+    auto_approve_mcp && tool_name.starts_with(MCP_TOOL_PREFIX)
 }
 
 pub fn is_batchable(class: ResourceClass) -> bool {
@@ -185,6 +192,23 @@ mod tests {
         assert!(runs_solo(class));
         assert!(runs_solo(ResourceClass::ApprovalGated));
         assert!(!runs_solo(ResourceClass::FsWrite));
+    }
+
+    #[test]
+    fn mcp_opt_in_never_reaches_built_in_or_skill_tools() {
+        assert!(mcp_opt_in_waives_approval("mcp.github.create_issue", true));
+        assert!(!mcp_opt_in_waives_approval(
+            "mcp.github.create_issue",
+            false
+        ));
+        for tool in [
+            "os.shell.run",
+            "os.proc.spawn",
+            "skill.run_script",
+            "net.set_dns",
+        ] {
+            assert!(!mcp_opt_in_waives_approval(tool, true), "{tool}");
+        }
     }
 
     #[test]

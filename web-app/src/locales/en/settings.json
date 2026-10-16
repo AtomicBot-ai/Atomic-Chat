@@ -77,8 +77,8 @@
   },
   "chatBehavior": {
     "title": "Chat Behavior",
-    "autoApproveTools": "Auto-approve tool calls",
-    "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
+    "autoApproveTools": "Auto-approve MCP tool calls (not recommended)",
+    "autoApproveToolsDesc": "Off by default. When on, every MCP tool call runs without asking, so the connected MCP servers (third-party code) can act on your behalf unchecked, including tools that only claim to be read-only. Prefer \"Always allow\" on the specific tools you trust. Built-in shell, file and skill-script actions keep asking either way.",
     "desktopNotifications": "Desktop notifications",
     "desktopNotificationsDesc": "Send a system notification when a reply finishes generating and the window isn't focused.",
     "legacyChatEngine": "Use legacy chat engine",
