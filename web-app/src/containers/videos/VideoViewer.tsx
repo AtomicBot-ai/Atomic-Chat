@@ -7,6 +7,7 @@ import {
   IconExternalLink,
   IconFolderOpen,
   IconMovie,
+  IconPlayerPlayFilled,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -34,6 +35,12 @@ import {
   type GalleryVideoItem,
 } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
+import {
+  clipBlobUrl,
+  webviewAutoloadsVideo,
+  webviewCanPlay,
+  webviewReadsAssetMedia,
+} from '@/lib/video/webview-playback'
 import { useVideoGalleryStore } from '@/stores/video-gallery-store'
 import { VideoRecipePopover } from './VideoRecipePopover'
 
@@ -61,6 +68,8 @@ const isEditableTarget = (target: EventTarget | null) => {
  * copy, reveal in the file manager, delete. The player is the browser's own
  * (controls, sound, fullscreen), fed over the asset protocol; a clip the
  * webview cannot decode gets a button that opens it in the system player.
+ * Where the webview may not load clips unasked (Linux), the player is mounted
+ * only once Play is pressed; until then the frame shows the poster.
  *
  * Arrow keys step through the gallery and Delete opens the confirmation —
  * unless focus is in a text field, where those keys mean what they always do.
@@ -87,6 +96,23 @@ export const VideoViewer = memo(function VideoViewer({
   const remoteGroups = useRemoteMediaGroups('video')
   const [pendingDelete, setPendingDelete] = useState<string[]>([])
   const [unplayableId, setUnplayableId] = useState<string | null>(null)
+  // The clip whose Play was pressed, where the player is not mounted unasked.
+  const [armedId, setArmedId] = useState<string | null>(null)
+  // Where the player cannot read asset:// (Linux): the clip as a blob: URL,
+  // read when Play is pressed and revoked when another clip replaces it.
+  const [blobSrc, setBlobSrc] = useState<{ id: string; url: string } | null>(
+    null
+  )
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!blobSrc) return
+    return () => URL.revokeObjectURL(blobSrc.url)
+  }, [blobSrc])
+  // A clip can be hundreds of MB: let it go as soon as another is shown.
+  useEffect(() => {
+    if (blobSrc && blobSrc.id !== item?.id) setBlobSrc(null)
+  }, [blobSrc, item?.id])
 
   const requestDelete = useCallback(() => {
     if (!item) return
@@ -124,9 +150,35 @@ export const VideoViewer = memo(function VideoViewer({
     )
   }
 
-  const src = convertFileSrc(item.path)
+  const src =
+    blobSrc?.id === item.id ? blobSrc.url : convertFileSrc(item.path)
   const poster = item.posterPath ? convertFileSrc(item.posterPath) : undefined
   const unplayable = unplayableId === item.id
+  const autoloads = webviewAutoloadsVideo()
+  const armed = autoloads || armedId === item.id
+
+  const play = () => {
+    const { id, path } = item
+    // Asking the registry builds no pipeline; a clip it cannot demux would hang.
+    if (!webviewCanPlay(path)) {
+      setUnplayableId(id)
+      return
+    }
+    if (webviewReadsAssetMedia()) {
+      setArmedId(id)
+      return
+    }
+    setLoadingId(id)
+    clipBlobUrl(path)
+      .then((url) => {
+        setBlobSrc({ id, url })
+        setArmedId(id)
+      })
+      .catch(() => setUnplayableId(id))
+      .finally(() =>
+        setLoadingId((current) => (current === id ? null : current))
+      )
+  }
   // A provider's file whose header the core could not read has no size: 16:9 frames it.
   const [frameWidth, frameHeight] =
     item.width > 0 && item.height > 0 ? [item.width, item.height] : [16, 9]
@@ -256,6 +308,33 @@ export const VideoViewer = memo(function VideoViewer({
                 {t('videos:viewer.openInPlayer')}
               </Button>
             </div>
+          ) : !armed ? (
+            <div
+              className="relative flex size-full items-center justify-center text-muted-foreground"
+              data-testid="video-play-gate"
+            >
+              {poster ? (
+                <img
+                  src={poster}
+                  alt=""
+                  draggable={false}
+                  className="absolute inset-0 block size-full object-contain"
+                />
+              ) : (
+                <IconMovie size={32} stroke={1.5} />
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute rounded-full bg-background/80 backdrop-blur"
+                aria-label={t('videos:viewer.play')}
+                disabled={loadingId === item.id}
+                onClick={play}
+                data-testid="video-play"
+              >
+                <IconPlayerPlayFilled size={18} />
+              </Button>
+            </div>
           ) : (
             <video
               key={item.id}
@@ -263,6 +342,7 @@ export const VideoViewer = memo(function VideoViewer({
               poster={poster}
               controls
               playsInline
+              autoPlay={!autoloads}
               preload="metadata"
               className="block size-full object-contain"
               data-testid="video-player"

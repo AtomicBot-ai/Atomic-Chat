@@ -139,6 +139,7 @@
     "revealFailed": "The folder could not be opened",
     "playbackUnsupported": "This clip cannot be played here.",
     "openInPlayer": "Open in player",
+    "play": "Play",
     "openFailed": "The video could not be opened",
     "details": {
       "model": "Model",
